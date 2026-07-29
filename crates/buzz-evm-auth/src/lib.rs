@@ -34,5 +34,8 @@ pub mod verifier;
 pub use address::EvmAddress;
 pub use attestation::{Eip712Domain, NostrSignerAttestation};
 pub use error::EvmAuthError;
-pub use siwe::{verify as verify_siwe, SiweMessage, SiweRequirements, DEFAULT_LEEWAY_SECS};
+pub use siwe::{
+    personal_sign_digest, verify as verify_siwe, SiweMessage, SiweRequirements,
+    DEFAULT_LEEWAY_SECS,
+};
 pub use verifier::{EoaVerifier, SignatureVerifier};
