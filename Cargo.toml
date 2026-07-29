@@ -7,6 +7,7 @@ members = [
     "crates/buzz-db",
     "crates/buzz-pubsub",
     "crates/buzz-auth",
+    "crates/buzz-evm-auth",
     "crates/buzz-search",
     "crates/buzz-audit",
     "crates/buzz-acp",
@@ -106,6 +107,9 @@ sha2      = "0.11"
 hex       = "0.4"
 hmac      = "0.13"
 base64    = "0.22"
+# EVM (creabuzz: SIWE / EIP-712 verification)
+k256      = { version = "0.13", features = ["ecdsa"] }
+sha3      = "0.10"
 
 # Randomness
 rand = "0.10"
@@ -135,6 +139,7 @@ buzz-core = { path = "crates/buzz-core" }
 buzz-conformance = { path = "crates/buzz-conformance" }
 buzz-db = { path = "crates/buzz-db" }
 buzz-auth = { path = "crates/buzz-auth" }
+buzz-evm-auth = { path = "crates/buzz-evm-auth" }
 buzz-pubsub = { path = "crates/buzz-pubsub" }
 buzz-search = { path = "crates/buzz-search" }
 buzz-audit = { path = "crates/buzz-audit" }
