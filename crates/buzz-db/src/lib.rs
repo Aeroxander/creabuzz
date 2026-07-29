@@ -23,6 +23,9 @@ pub mod dm;
 pub mod error;
 /// Event storage and retrieval.
 pub mod event;
+
+/// EVM identity bindings (creabuzz).
+pub mod evm_identities;
 /// Home feed queries.
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
@@ -4069,6 +4072,28 @@ impl Db {
         policy_version: Option<&str>,
     ) -> Result<bool> {
         relay_members::claim_relay_membership(&self.pool, community, pubkey, role, policy_version)
+            .await
+    }
+
+    /// Claims relay membership via SIWE (creabuzz) — `added_by = 'evm_siwe'`.
+    pub async fn claim_relay_membership_evm(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        role: &str,
+    ) -> Result<bool> {
+        evm_identities::claim_relay_membership_evm(&self.pool, community, pubkey, role).await
+    }
+
+    /// Inserts or refreshes the npub → EVM account binding (creabuzz).
+    pub async fn upsert_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        evm_address: &[u8; 20],
+        attestation: Option<&serde_json::Value>,
+    ) -> Result<()> {
+        evm_identities::upsert_evm_identity(&self.pool, community, pubkey, evm_address, attestation)
             .await
     }
 

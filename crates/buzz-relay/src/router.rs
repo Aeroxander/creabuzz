@@ -59,6 +59,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let admin_router = admin_enabled
         .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
+    // creabuzz: SIWE onboarding routes — registered only when BUZZ_EVM_AUTH is
+    // enabled; a stock relay never exposes them.
+    let evm_auth_router = state.config.evm_auth.is_some().then(|| {
+        Router::new()
+            .route("/auth/siwe/nonce", get(api::evm_auth::issue_nonce))
+            .route("/auth/siwe/register", post(api::evm_auth::register))
+            .with_state(state.clone())
+    });
+
     let api_router = Router::new()
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
@@ -139,6 +148,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(git_policy_router);
     if let Some(admin_router) = admin_router {
         merged = merged.merge(admin_router);
+    }
+    if let Some(evm_auth_router) = evm_auth_router {
+        merged = merged.merge(evm_auth_router);
     }
 
     // Serve both bundles from one fallback. The admin host is checked first so

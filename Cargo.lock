@@ -1210,6 +1210,7 @@ dependencies = [
  "buzz-conformance",
  "buzz-core",
  "buzz-db",
+ "buzz-evm-auth",
  "buzz-media",
  "buzz-pubsub",
  "buzz-relay-mesh",

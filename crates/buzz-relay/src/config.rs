@@ -46,6 +46,15 @@ pub struct JoinPolicyConfig {
     pub version: String,
 }
 
+/// EVM identity configuration (creabuzz). `None` disables SIWE onboarding.
+#[derive(Debug, Clone)]
+pub struct EvmAuthConfig {
+    /// Expected EIP-155 chain id for SIWE messages; `None` accepts any chain.
+    pub chain_id: Option<u64>,
+    /// Ethereum JSON-RPC endpoint for future EIP-1271/6492 verification.
+    pub rpc_url: Option<String>,
+}
+
 /// Relay runtime configuration, loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -121,6 +130,10 @@ pub struct Config {
     /// API tokens bypass the allowlist entirely.
     /// Applies to all NIP-42 pubkey-only connections, regardless of `require_auth_token`.
     pub pubkey_allowlist_enabled: bool,
+
+    /// SIWE (EIP-4361) onboarding via `/auth/siwe/*`; `None` when
+    /// `BUZZ_EVM_AUTH` is unset — the relay stays stock-compatible.
+    pub evm_auth: Option<EvmAuthConfig>,
 
     /// When true, every authenticated request must also pass a relay-level
     /// membership check against the `relay_members` table.
@@ -528,6 +541,16 @@ impl Config {
         let pubkey_allowlist_enabled = std::env::var("BUZZ_PUBKEY_ALLOWLIST")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+
+        let evm_auth = std::env::var("BUZZ_EVM_AUTH")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false)
+            .then(|| EvmAuthConfig {
+                chain_id: std::env::var("BUZZ_EVM_CHAIN_ID")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                rpc_url: std::env::var("BUZZ_ETH_RPC_URL").ok(),
+            });
 
         let require_relay_membership = std::env::var("BUZZ_REQUIRE_RELAY_MEMBERSHIP")
             .map(|v| v == "true" || v == "1")
@@ -953,6 +976,7 @@ impl Config {
             health_port,
             metrics_port,
             pubkey_allowlist_enabled,
+            evm_auth,
             require_relay_membership,
             huddle_audio_available,
             mesh,
