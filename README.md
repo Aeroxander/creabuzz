@@ -1,3 +1,5 @@
+> **Fork note:** this is **creabuzz** — a fork of [block/buzz](https://github.com/block/buzz) adding an EVM identity layer (SIWE, ERC-4337) on top of the Nostr relay. See [CREABUZZ.md](CREABUZZ.md) and [docs/protocol-strategy.md](docs/protocol-strategy.md).
+
 <h1 align="center">Buzz 🐝</h1>
 
 <p align="center">
