@@ -141,13 +141,41 @@ pub async fn register(
         domain: host_domain(tenant.host()),
         chain_id: evm_config.chain_id,
     };
-    let siwe = buzz_evm_auth::verify_siwe(
-        &request.message,
-        &request.signature,
-        &requirements,
-        Utc::now(),
-    )
-    .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("siwe: {e}")))?;
+
+    // Route signature verification through the RPC-backed verifier when a
+    // JSON-RPC endpoint is configured — this extends SIWE to smart accounts
+    // (EIP-1271 deployed, EIP-6492 counterfactual) while falling back to the
+    // offline EOA path (`verify_siwe`) otherwise.
+    let siwe = match &evm_config.rpc_url {
+        Some(rpc_url) => {
+            let mut verifier = buzz_evm_auth::RpcSignatureVerifier::new(rpc_url);
+            if let Some(validator) = &evm_config.erc6492_validator {
+                let validator = EvmAddress::parse(validator).map_err(|e| {
+                    api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &format!("bad BUZZ_EVM_ERC6492_VALIDATOR: {e}"),
+                    )
+                })?;
+                verifier = verifier.with_erc6492_validator(validator);
+            }
+            buzz_evm_auth::verify_siwe_smart(
+                &request.message,
+                &request.signature,
+                &requirements,
+                Utc::now(),
+                &verifier,
+            )
+            .await
+            .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("siwe: {e}")))?
+        }
+        None => buzz_evm_auth::verify_siwe(
+            &request.message,
+            &request.signature,
+            &requirements,
+            Utc::now(),
+        )
+        .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("siwe: {e}")))?,
+    };
 
     // 3. Binding checks (both directions):
     //    - the Nostr proof's content address == the SIWE message address

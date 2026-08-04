@@ -31,10 +31,23 @@ pub mod siwe;
 /// Pluggable signature verification (EOA now; EIP-1271/6492 later).
 pub mod verifier;
 
+/// ERC-6492 wrapper + ABI helpers.
+pub mod erc6492;
+
+/// RPC-backed verification (EIP-1271/6492) for smart accounts.
+#[cfg(feature = "rpc")]
+pub mod rpc;
+
 pub use address::EvmAddress;
 pub use attestation::{Eip712Domain, NostrSignerAttestation};
 pub use error::EvmAuthError;
 pub use siwe::{
     personal_sign_digest, verify as verify_siwe, SiweMessage, SiweRequirements, DEFAULT_LEEWAY_SECS,
 };
+
+#[cfg(feature = "rpc")]
+pub use siwe::verify_siwe_smart;
 pub use verifier::{EoaVerifier, SignatureVerifier};
+
+#[cfg(feature = "rpc")]
+pub use rpc::{HttpJsonRpc, JsonRpc, RpcSignatureVerifier};

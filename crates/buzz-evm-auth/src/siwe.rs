@@ -209,6 +209,53 @@ pub fn verify(
     Ok(message)
 }
 
+/// Smart-account-aware SIWE verification (requires the `rpc` feature).
+///
+/// Like [`verify`], but the signature check is dispatched through an RPC-back
+/// verifier so deployed accounts (EIP-1271) and counterfactual accounts
+/// (EIP-6492) verify alongside plain EOAs. Returns the verified message.
+#[cfg(feature = "rpc")]
+pub async fn verify_siwe_smart(
+    raw_message: &str,
+    signature_hex: &str,
+    requirements: &SiweRequirements,
+    now: DateTime<Utc>,
+    verifier: &crate::rpc::RpcSignatureVerifier,
+) -> Result<SiweMessage, EvmAuthError> {
+    let message = SiweMessage::parse(raw_message)?;
+
+    if message.domain != requirements.domain {
+        return Err(EvmAuthError::DomainMismatch {
+            expected: requirements.domain.clone(),
+            got: message.domain.clone(),
+        });
+    }
+    if let Some(expected_chain) = requirements.chain_id {
+        if message.chain_id != expected_chain {
+            return Err(EvmAuthError::ChainIdMismatch {
+                expected: expected_chain,
+                got: message.chain_id,
+            });
+        }
+    }
+
+    // Verify the signature against the SIWE message address (EOA + smart
+    // accounts). The verifier returns whether `message.address` genuinely
+    // signed `raw_message`.
+    let ok = verifier
+        .verify_personal_sign(&message.address, raw_message.as_bytes(), signature_hex)
+        .await?;
+    if !ok {
+        return Err(EvmAuthError::SignerMismatch {
+            expected: message.address.to_hex(),
+            got: String::new(),
+        });
+    }
+
+    message.validate_window(now)?;
+    Ok(message)
+}
+
 /// EIP-191 `personal_sign` digest: `keccak256("\x19Ethereum Signed Message:\n" ‖ len ‖ msg)`.
 pub fn personal_sign_digest(message: &[u8]) -> [u8; 32] {
     let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());

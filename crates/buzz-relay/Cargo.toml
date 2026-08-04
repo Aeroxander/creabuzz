@@ -20,7 +20,7 @@ buzz-core = { workspace = true }
 buzz-conformance = { workspace = true }
 buzz-db = { workspace = true }
 buzz-auth = { workspace = true }
-buzz-evm-auth = { workspace = true }
+buzz-evm-auth = { workspace = true, features = ["rpc"] }
 buzz-pubsub = { workspace = true }
 buzz-audit = { workspace = true }
 buzz-search = { workspace = true }

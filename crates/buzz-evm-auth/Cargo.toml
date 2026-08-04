@@ -15,3 +15,24 @@ chrono     = { workspace = true }
 hex        = { workspace = true }
 k256       = { workspace = true }
 sha3       = { workspace = true }
+
+[features]
+default = []
+# RPC-backed smart-account verification (EIP-1271/6492). Adds transport + async deps.
+rpc = ["dep:reqwest", "dep:tokio", "dep:async-trait"]
+
+[dependencies.reqwest]
+workspace = true
+optional = true
+
+[dependencies.async-trait]
+version = "0.1"
+optional = true
+
+[dependencies.tokio]
+workspace = true
+optional = true
+
+[dev-dependencies]
+# Driving the async verifier tests when `rpc` is enabled.
+tokio = { workspace = true, features = ["rt", "macros", "time"] }

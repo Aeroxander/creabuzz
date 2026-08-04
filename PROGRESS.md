@@ -46,7 +46,7 @@
    nonce → wallet signature → kind-27235 Nostr proof → `POST /auth/siwe/register`.
 2. Wire the resulting membership into the existing community/join flow.
 
-### Phase 2 backend items (still open, upstream-agnostic)
+### Phase 2 remaining (still open, upstream-agnostic)
 
 1. **Revocation** — `POST /auth/siwe/revoke`: mark npub revoked in
    `evm_identities`, remove from `relay_members`.
@@ -54,8 +54,13 @@
    npub; clients resolve continuity.
 3. **Attestation enforcement at EVENT intake** — relay checks valid attestation
    for kind 40002 publishers.
-4. **RPC-backed SignatureVerifier** — EIP-1271/6492 via `BUZZ_ETH_RPC_URL`
-   (trait seam ready in `verifier.rs`).
+4. **RPC-backed SignatureVerifier** — ✅ **done (EIP-1271 + EIP-6492)**:
+   `buzz-evm-auth::rpc::RpcSignatureVerifier` (behind the `rpc` feature) verifies
+   deployed accounts via EIP-1271 `isValidSignature`, counterfactual accounts via
+   the ERC-6492 `UniversalSigValidator` singleton (configurable through
+   `BUZZ_EVM_ERC6492_VALIDATOR`), and EOAs via `ecrecover`. Wired into
+   `/auth/siwe/register` when `BUZZ_ETH_RPC_URL` is set. Targets ZeroDev Kernel
+   v2. **Remaining:** live-chain E2E + deploying the validator singleton.
 5. **NIP-05 alias endpoint** — optional human names for vanilla Nostr clients.
 
 ### Phase 5 — deploy + payments

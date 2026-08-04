@@ -51,4 +51,8 @@ pub enum EvmAuthError {
     /// The message is not valid yet (`Not Before` or future `Issued At`).
     #[error("message not yet valid")]
     NotYetValid,
+
+    /// An RPC-backed verification step failed (transport or on-chain error).
+    #[error("rpc: {0}")]
+    Rpc(String),
 }

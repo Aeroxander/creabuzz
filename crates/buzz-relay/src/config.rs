@@ -51,8 +51,11 @@ pub struct JoinPolicyConfig {
 pub struct EvmAuthConfig {
     /// Expected EIP-155 chain id for SIWE messages; `None` accepts any chain.
     pub chain_id: Option<u64>,
-    /// Ethereum JSON-RPC endpoint for future EIP-1271/6492 verification.
+    /// Ethereum JSON-RPC endpoint for EIP-1271/6492 verification.
     pub rpc_url: Option<String>,
+    /// Optional ERC-6492 universal validator singleton address for
+    /// counterfactual (undeployed) smart-account signatures.
+    pub erc6492_validator: Option<String>,
 }
 
 /// Relay runtime configuration, loaded from environment variables.
@@ -550,6 +553,7 @@ impl Config {
                     .ok()
                     .and_then(|v| v.parse().ok()),
                 rpc_url: std::env::var("BUZZ_ETH_RPC_URL").ok(),
+                erc6492_validator: std::env::var("BUZZ_EVM_ERC6492_VALIDATOR").ok(),
             });
 
         let require_relay_membership = std::env::var("BUZZ_REQUIRE_RELAY_MEMBERSHIP")
