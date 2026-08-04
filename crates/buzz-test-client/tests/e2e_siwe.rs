@@ -131,7 +131,8 @@ async fn siwe_register_flow() {
     let nonce = fetch_nonce(&client, &base).await;
     let message = build_siwe_message(&identity, &nonce, true);
 
-    let (status, body) = post_register(&client, &base, &identity, &message, &identity.address).await;
+    let (status, body) =
+        post_register(&client, &base, &identity, &message, &identity.address).await;
     assert_eq!(status, 200, "register: {body}");
     assert_eq!(body["status"], "joined");
     assert_eq!(body["npub"], identity.npub_hex());
@@ -155,7 +156,8 @@ async fn siwe_rejects_unknown_nonce() {
 
     // Well-formed but never-issued nonce.
     let message = build_siwe_message(&identity, "deadbeefdeadbeefdeadbeefdeadbeef", true);
-    let (status, body) = post_register(&client, &base, &identity, &message, &identity.address).await;
+    let (status, body) =
+        post_register(&client, &base, &identity, &message, &identity.address).await;
     assert_eq!(status, 403, "expected nonce rejection: {body}");
     assert_eq!(body["error"], "nonce_invalid");
 }
@@ -170,7 +172,8 @@ async fn siwe_rejects_missing_npub_binding() {
     let nonce = fetch_nonce(&client, &base).await;
     // Signed message WITHOUT the `Resources: - nostr:<npub>` binding.
     let message = build_siwe_message(&identity, &nonce, false);
-    let (status, body) = post_register(&client, &base, &identity, &message, &identity.address).await;
+    let (status, body) =
+        post_register(&client, &base, &identity, &message, &identity.address).await;
     assert_eq!(status, 403, "expected binding rejection: {body}");
 }
 
@@ -188,4 +191,3 @@ async fn siwe_rejects_proof_address_mismatch() {
     let (status, body) = post_register(&client, &base, &identity, &message, &other.address).await;
     assert_eq!(status, 403, "expected mismatch rejection: {body}");
 }
-

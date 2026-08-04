@@ -62,7 +62,7 @@ impl EvmAddress {
     }
 
     /// 32-byte left-padded word (ABI encoding).
-    pub(crate) fn to_word(&self) -> [u8; 32] {
+    pub(crate) fn to_word(self) -> [u8; 32] {
         let mut word = [0u8; 32];
         word[12..].copy_from_slice(&self.0);
         word

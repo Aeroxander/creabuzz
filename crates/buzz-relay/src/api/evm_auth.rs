@@ -11,6 +11,7 @@
 //!      the EVM root account.
 //!   3. The SIWE `Resources:` entry `nostr:<npub-hex>` binds the two inside
 //!      the EVM-signed payload.
+//!
 //!   On success the npub becomes a relay member (`added_by = 'evm_siwe'`) and
 //!   the npub ↔ EVM binding is recorded in `evm_identities`.
 //!
@@ -107,8 +108,12 @@ pub async fn register(
         .await
         .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
 
-    let request: SiweRegisterRequest = serde_json::from_slice(&body)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid register JSON: {e}")))?;
+    let request: SiweRegisterRequest = serde_json::from_slice(&body).map_err(|e| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            &format!("invalid register JSON: {e}"),
+        )
+    })?;
 
     let npub_hex = request.nostr_proof.pubkey.to_hex();
 
@@ -172,12 +177,7 @@ pub async fn register(
         .map_err(|e| internal_error(&format!("evm membership insert: {e}")))?;
     state
         .db
-        .upsert_evm_identity(
-            tenant.community(),
-            &npub_hex,
-            siwe.address.as_bytes(),
-            None,
-        )
+        .upsert_evm_identity(tenant.community(), &npub_hex, siwe.address.as_bytes(), None)
         .await
         .map_err(|e| internal_error(&format!("evm identity upsert: {e}")))?;
 
@@ -211,7 +211,9 @@ fn verify_nostr_proof(event: &nostr::Event) -> Result<EvmAddress, String> {
     if event.kind != nostr::Kind::from(NOSTR_PROOF_KIND) {
         return Err(format!("expected kind {NOSTR_PROOF_KIND}"));
     }
-    event.verify().map_err(|e| format!("bad event signature: {e}"))?;
+    event
+        .verify()
+        .map_err(|e| format!("bad event signature: {e}"))?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

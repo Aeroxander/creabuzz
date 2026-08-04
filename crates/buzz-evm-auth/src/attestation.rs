@@ -37,8 +37,7 @@ pub struct NostrSignerAttestation {
 }
 
 /// EIP-712 type string for the attestation struct.
-const TYPE_STRING: &str =
-    "NostrSigner(address account,bytes32 npub,uint256 expires,uint256 nonce)";
+const TYPE_STRING: &str = "NostrSigner(address account,bytes32 npub,uint256 expires,uint256 nonce)";
 /// EIP-712 type string for the domain struct.
 const DOMAIN_TYPE_STRING: &str =
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
@@ -175,4 +174,3 @@ mod tests {
         assert!(att.verify(&other_chain, &sig).is_err());
     }
 }
-

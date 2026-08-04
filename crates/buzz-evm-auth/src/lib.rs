@@ -35,7 +35,6 @@ pub use address::EvmAddress;
 pub use attestation::{Eip712Domain, NostrSignerAttestation};
 pub use error::EvmAuthError;
 pub use siwe::{
-    personal_sign_digest, verify as verify_siwe, SiweMessage, SiweRequirements,
-    DEFAULT_LEEWAY_SECS,
+    personal_sign_digest, verify as verify_siwe, SiweMessage, SiweRequirements, DEFAULT_LEEWAY_SECS,
 };
 pub use verifier::{EoaVerifier, SignatureVerifier};
