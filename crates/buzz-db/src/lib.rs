@@ -2528,6 +2528,16 @@ impl Db {
         user::get_user_by_nip05(&self.pool, community_id, local_part, domain).await
     }
 
+    /// Create or update a user's NIP-05 handle (creabuzz SIWE alias claim).
+    pub async fn set_user_nip05(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        nip05_handle: Option<&str>,
+    ) -> Result<()> {
+        user::set_user_nip05(&self.pool, community_id, pubkey, nip05_handle).await
+    }
+
     /// Search users by display name, NIP-05 handle, or pubkey prefix.
     pub async fn search_users(
         &self,

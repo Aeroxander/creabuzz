@@ -69,6 +69,12 @@ pub struct SiweRegisterRequest {
     /// `BUZZ_EVM_ENFORCE_ATTESTATION` is enabled.
     #[serde(default)]
     pub attestation: Option<serde_json::Value>,
+    /// Optional NIP-05 alias to claim for this npub (e.g. `alice` → resolved as
+    /// `alice@<relay-host>`). Validated against the tenant host and stored in
+    /// `users` so `/.well-known/nostr.json` resolves it even before a kind:0
+    /// profile exists.
+    #[serde(default)]
+    pub nip05_handle: Option<String>,
 }
 
 /// Body for `POST /auth/siwe/revoke`.
@@ -247,6 +253,20 @@ pub async fn register(
         }
     }
 
+    // 3d. If a NIP-05 alias was claimed, validate it against the tenant host
+    //     and bind it to this npub in `users`. Reused by the existing NIP-05
+    //     endpoint with zero new lookup code.
+    let nip05_handle = match &request.nip05_handle {
+        Some(raw) if !raw.trim().is_empty() => {
+            let canonical =
+                crate::api::nip05::canonicalize_nip05(raw, tenant.host()).map_err(|e| {
+                    api_error(StatusCode::BAD_REQUEST, &format!("bad nip05_handle: {e}"))
+                })?;
+            Some(canonical)
+        }
+        _ => None,
+    };
+
     // 4. Consume the single-use nonce (only now, after all free checks pass).
     consume_nonce(&state, &siwe.nonce).await?;
 
@@ -266,6 +286,18 @@ pub async fn register(
         )
         .await
         .map_err(|e| internal_error(&format!("evm identity upsert: {e}")))?;
+
+    // 5b. Bind the claimed NIP-05 alias (if any) so the NIP-05 endpoint
+    //     resolves it even before a kind:0 profile exists.
+    if let Some(handle) = &nip05_handle {
+        let pubkey_bytes =
+            hex::decode(&npub_hex).map_err(|e| internal_error(&format!("npub hex: {e}")))?;
+        state
+            .db
+            .set_user_nip05(tenant.community(), &pubkey_bytes, Some(handle))
+            .await
+            .map_err(|e| internal_error(&format!("nip05 alias insert: {e}")))?;
+    }
 
     if was_inserted {
         tracing::info!(

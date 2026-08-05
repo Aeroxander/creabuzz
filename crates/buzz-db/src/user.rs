@@ -164,6 +164,36 @@ pub async fn update_user_profile(
     Ok(())
 }
 
+/// Create or update a user's NIP-05 handle (creabuzz SIWE alias claim).
+///
+/// Inserts a minimal `users` row when the npub has no profile yet (e.g. a
+/// SIWE-joined member who hasn't published kind:0), then sets `nip05_handle`.
+/// The NIP-05 endpoint resolves through the same `users` table, so no new
+/// lookup path is needed. Pass `None`/empty to clear the alias.
+pub async fn set_user_nip05(
+    pool: &PgPool,
+    community_id: CommunityId,
+    pubkey: &[u8],
+    nip05_handle: Option<&str>,
+) -> Result<()> {
+    let handle = nip05_handle.filter(|s| !s.is_empty());
+    sqlx::query(
+        r#"
+        INSERT INTO users (community_id, pubkey, nip05_handle)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (community_id, pubkey) DO UPDATE SET
+            nip05_handle = EXCLUDED.nip05_handle,
+            updated_at = now()
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(pubkey)
+    .bind(handle)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Look up a user by their full NIP-05 handle (exact match, case-insensitive).
 /// Both `local_part` and `domain` must already be lowercased by the caller.
 pub async fn get_user_by_nip05(

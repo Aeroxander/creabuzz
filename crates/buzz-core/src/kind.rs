@@ -108,6 +108,17 @@ pub const KIND_EVENT_REMINDER: u32 = 30300;
 /// dedicated push lease tables.
 pub const KIND_PUSH_LEASE: u32 = 30350;
 
+/// creabuzz: EVM key-rotation continuity claim (parameterized replaceable).
+///
+/// Authored by the **old** npub (the delegator) to declare the **new** npub as
+/// its successor. Carries a NIP-26-style `delegation` tag signed by the old
+/// npub over `nostr:delegation:<new-npub>:<conditions>`, plus the shared EVM
+/// account address. Clients resolve continuity by querying
+/// `{ kinds: [30200], authors: [old-npub] }` and following the new npub.
+///
+/// Replaceable per target: `d = "evm-rotation:<new-npub>"`.
+pub const KIND_EVM_ROTATION: u32 = 30200;
+
 /// Kinds whose stored events are readable only by their author.
 ///
 /// The relay must never reveal the existence, count, tags, content, schedule,

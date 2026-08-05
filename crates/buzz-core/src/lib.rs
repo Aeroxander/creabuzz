@@ -16,6 +16,8 @@ pub mod engram;
 pub mod error;
 /// Relay-side event wrapper with verification tracking.
 pub mod event;
+/// EVM key-rotation continuity — NIP-26-style delegation verification.
+pub mod evm_rotation;
 /// NIP-01 subscription filter matching.
 pub mod filter;
 /// Git permission types — ref patterns, protection rules, policy evaluation.

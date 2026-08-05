@@ -86,8 +86,11 @@
 
 ### Live verification
 
-1. **Run e2e_siwe + revoke + attestation tests** against a live relay
-   (`BUZZ_EVM_AUTH=true`, Postgres + Redis). Requires Docker or a running stack.
+1. ✅ **e2e_siwe + revoke + attestation** — 13/13 live-relay tests pass against
+   Dockerized Postgres + Redis (register, idempotent re-register, revoke +
+   revoked-re-register, attestation, rotation accept/forged-reject, NIP-05).
+   Run with `BUZZ_EVM_AUTH=true` (relay from `.env`) +
+   `cargo test -p buzz-test-client --test e2e_siwe -- --ignored`.
 2. **ZeroDev live round trip** — desktop signs a Sepolia SIWE → relay verifies
    via `BUZZ_ETH_RPC_URL` → membership provisioned. Deploy the EIP-6492
    `UniversalSigValidator` singleton on Sepolia for the counterfactual path.
@@ -95,12 +98,18 @@
    _ensure-sidecar-stubs`), and the prebuilt `buzz-acp` sidecar; verify a full
    Tauri build + the onboarding UI end to end.
 
-### Backend items still open
+### Backend items (recently completed)
 
-1. **Rotation-continuity events** — old npub signs NIP-26 delegation to new npub;
-   clients resolve continuity.
-2. **NIP-05 alias endpoint** — optional human names for vanilla Nostr clients
-   (upstream NIP-05 exists; wiring EVM-address users to aliases is the delta).
+1. ✅ **Rotation-continuity events** — `KIND_EVM_ROTATION` (30200, NIP-33). The
+   old npub publishes a NIP-26 `delegation` tag signed over
+   `sha256("nostr:delegation:<new>:<conditions>")` (k256 Schnorr). Verified at
+   ingest (forged tokens rejected), stored, and resolvable by
+   `{kinds:[30200], authors:[old]}`. buzz-core unit tests + live e2e.
+2. ✅ **NIP-05 alias wiring for SIWE users** — `POST /auth/siwe/register`
+   accepts an optional `nip05_handle` (validated against the tenant host via
+   `canonicalize_nip05`), upserted into `users` so `/.well-known/nostr.json`
+   resolves the alias to the npub even before a kind:0 profile exists. Live e2e
+   (alias resolves; foreign domain rejected).
 
 ### Phase 5 — deploy + payments
 

@@ -41,6 +41,8 @@ buzz-sdk = { workspace = true }
 buzz-evm-auth = { workspace = true }
 k256 = { workspace = true }
 sha3 = { workspace = true }
+# PrehashSigner / SignatureEncoding traits for NIP-26 delegation tokens.
+signature = "2"
 
 [[bin]]
 name = "buzz-test-cli"

@@ -16,8 +16,11 @@ use buzz_evm_auth::{
 };
 use chrono::{SecondsFormat, Utc};
 use k256::ecdsa::SigningKey;
+use k256::schnorr::SigningKey as SchnorrSigningKey;
 use nostr::{EventBuilder, Keys, Kind, Tag};
 use serde_json::{json, Value};
+use sha2::{Digest as _, Sha256};
+use signature::hazmat::PrehashSigner;
 
 fn relay_http_url() -> String {
     std::env::var("RELAY_URL")
@@ -372,4 +375,197 @@ async fn siwe_rejects_attestation_address_mismatch() {
     let status = response.status().as_u16();
     let body: Value = response.json().await.expect("register json");
     assert_eq!(status, 403, "expected attestation mismatch: {body}");
+}
+
+// ── EVM key-rotation continuity (kind 30200) ─────────────────────────────────
+
+fn rotation_ws_url() -> String {
+    std::env::var("RELAY_URL")
+        .unwrap_or_else(|_| "ws://localhost:3000".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Build a signed kind:30200 rotation event: old npub delegates to new npub.
+fn build_rotation_event(old_keys: &Keys, new_npub: &str, evm: &str) -> nostr::Event {
+    // NIP-26 delegation token: old npub signs sha256("nostr:delegation:<new>:<conditions>").
+    let conditions = "kind=1&created_at>1674834236&created_at<2000000000";
+    let message = format!("nostr:delegation:{new_npub}:{conditions}");
+    let digest = Sha256::digest(message.as_bytes());
+    let secret: [u8; 32] = {
+        let mut s = [0u8; 32];
+        hex::decode_to_slice(&old_keys.secret_key().to_secret_hex(), &mut s)
+            .expect("old secret hex");
+        s
+    };
+    let sk = SchnorrSigningKey::from_bytes(&secret).expect("schnorr key");
+    let token = sk.sign_prehash(&digest).expect("sign delegation");
+    let token_hex = hex::encode(token.to_bytes());
+
+    let d_tag = Tag::parse(["d", &format!("evm-rotation:{new_npub}")]).expect("d tag");
+    let p_tag = Tag::parse(["p", new_npub]).expect("p tag");
+    let delegation_tag = Tag::parse([
+        "delegation",
+        &old_keys.public_key().to_hex(),
+        conditions,
+        &token_hex,
+    ])
+    .expect("delegation tag");
+
+    EventBuilder::new(Kind::Custom(30200), evm)
+        .tags([d_tag, p_tag, delegation_tag])
+        .sign_with_keys(old_keys)
+        .expect("sign rotation event")
+}
+
+#[tokio::test]
+#[ignore]
+async fn evm_rotation_event_is_accepted_and_stored() {
+    use buzz_test_client::BuzzTestClient;
+
+    let old_keys = Keys::parse(&hex::encode([7u8; 32])).unwrap();
+    let new_keys = Keys::parse(&hex::encode([9u8; 32])).unwrap();
+    let new_npub = new_keys.public_key().to_hex();
+
+    let event = build_rotation_event(&old_keys, &new_npub, "0xdeadbeef");
+
+    let mut client = BuzzTestClient::connect(&rotation_ws_url(), &old_keys)
+        .await
+        .expect("connect + auth");
+    let ok = client
+        .send_event(event.clone())
+        .await
+        .expect("send rotation event");
+    assert!(ok.accepted, "rotation event should be accepted: {ok:?}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn evm_rotation_forged_token_is_rejected() {
+    use buzz_test_client::BuzzTestClient;
+
+    let old_keys = Keys::parse(&hex::encode([7u8; 32])).unwrap();
+    let new_keys = Keys::parse(&hex::encode([9u8; 32])).unwrap();
+    let new_npub = new_keys.public_key().to_hex();
+
+    // Tamper: sign the delegation for a *different* condition than the tag
+    // carries, so the token no longer matches.
+    let conditions_tag = "kind=7";
+    let conditions_signed = "kind=1";
+    let message = format!("nostr:delegation:{new_npub}:{conditions_signed}");
+    let digest = Sha256::digest(message.as_bytes());
+    let secret: [u8; 32] = {
+        let mut s = [0u8; 32];
+        hex::decode_to_slice(&old_keys.secret_key().to_secret_hex(), &mut s).unwrap();
+        s
+    };
+    let sk = SchnorrSigningKey::from_bytes(&secret).unwrap();
+    let token = sk.sign_prehash(&digest).unwrap();
+    let token_hex = hex::encode(token.to_bytes());
+
+    let d_tag = Tag::parse(["d", &format!("evm-rotation:{new_npub}")]).expect("d tag");
+    let p_tag = Tag::parse(["p", &new_npub]).expect("p tag");
+    let delegation_tag = Tag::parse([
+        "delegation",
+        &old_keys.public_key().to_hex(),
+        conditions_tag,
+        &token_hex,
+    ])
+    .expect("delegation tag");
+    let event = EventBuilder::new(Kind::Custom(30200), "0xdeadbeef")
+        .tags([d_tag, p_tag, delegation_tag])
+        .sign_with_keys(&old_keys)
+        .expect("sign rotation event");
+
+    let mut client = BuzzTestClient::connect(&rotation_ws_url(), &old_keys)
+        .await
+        .expect("connect + auth");
+    let ok = client
+        .send_event(event)
+        .await
+        .expect("send forged rotation event");
+    assert!(
+        !ok.accepted,
+        "forged rotation delegation must be rejected, got: {ok:?}"
+    );
+    assert!(
+        ok.message.contains("rotation delegation rejected"),
+        "unexpected rejection message: {ok:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn siwe_nip05_alias_claims_and_resolves() {
+    let client = reqwest::Client::new();
+    let base = relay_http_url();
+    let identity = TestIdentity::generate();
+
+    let nonce = fetch_nonce(&client, &base).await;
+    let message = build_siwe_message(&identity, &nonce, true);
+    let signature = sign_personal(&identity.evm_key, message.as_bytes());
+    let proof = build_nostr_proof(&identity, &identity.address);
+
+    let alias = format!("alice-siwe-{}", &identity.npub_hex()[..12]);
+
+    let response = client
+        .post(format!("{base}/auth/siwe/register"))
+        .json(&json!({
+            "message": message,
+            "signature": signature,
+            "nostr_proof": proof,
+            "nip05_handle": format!("{alias}@localhost"),
+        }))
+        .send()
+        .await
+        .expect("register request");
+    let status = response.status().as_u16();
+    let body: Value = response.json().await.expect("register json");
+    assert_eq!(status, 200, "register with nip05: {body}");
+
+    // Resolve the alias via NIP-05 → should point at the joining npub.
+    let nip05 = client
+        .get(format!("{base}/.well-known/nostr.json?name={alias}"))
+        .send()
+        .await
+        .expect("nip05 request");
+    let nip05_body: Value = nip05.json().await.expect("nip05 json");
+    let resolved = nip05_body["names"][alias]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        resolved,
+        identity.npub_hex(),
+        "nip05 resolution: {nip05_body}"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn siwe_nip05_rejects_foreign_domain() {
+    let client = reqwest::Client::new();
+    let base = relay_http_url();
+    let identity = TestIdentity::generate();
+
+    let nonce = fetch_nonce(&client, &base).await;
+    let message = build_siwe_message(&identity, &nonce, true);
+    let signature = sign_personal(&identity.evm_key, message.as_bytes());
+    let proof = build_nostr_proof(&identity, &identity.address);
+
+    // Alias claims a domain that is not the relay host → rejected.
+    let response = client
+        .post(format!("{base}/auth/siwe/register"))
+        .json(&json!({
+            "message": message,
+            "signature": signature,
+            "nostr_proof": proof,
+            "nip05_handle": "alice@other.example",
+        }))
+        .send()
+        .await
+        .expect("register request");
+    let status = response.status().as_u16();
+    let body: Value = response.json().await.expect("register json");
+    assert_eq!(status, 400, "foreign nip05 domain: {body}");
 }
