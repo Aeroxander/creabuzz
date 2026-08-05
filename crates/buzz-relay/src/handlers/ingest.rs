@@ -2186,6 +2186,52 @@ async fn ingest_event_inner(
         }
     }
 
+    // creabuzz: EVM attestation enforcement at event intake. When enabled, a
+    // kind-40002 publisher who has an `evm_identities` binding (joined via
+    // SIWE) must have a valid, unexpired `NostrSigner` attestation recorded
+    // against that binding; otherwise their messages are rejected. Publishers
+    // without an EVM binding are unaffected.
+    if kind_u32 == KIND_STREAM_MESSAGE_V2
+        && state
+            .config
+            .evm_auth
+            .as_ref()
+            .is_some_and(|cfg| cfg.enforce_attestation)
+    {
+        let sender_hex = auth.pubkey().to_hex();
+        let binding = state
+            .db
+            .get_evm_identity(tenant.community(), &sender_hex)
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: evm identity lookup: {e}")))?;
+
+        if let Some(binding) = binding {
+            if binding.is_revoked() {
+                return Err(IngestError::Rejected(
+                    "invalid: evm identity is revoked".into(),
+                ));
+            }
+            let Some(attestation_json) = binding.attestation.as_ref() else {
+                return Err(IngestError::Rejected(
+                    "invalid: publisher joined via SIWE but has no NostrSigner attestation".into(),
+                ));
+            };
+            let envelope: buzz_evm_auth::AttestationEnvelope =
+                serde_json::from_value(attestation_json.clone()).map_err(|e| {
+                    IngestError::Rejected(format!(
+                        "invalid: malformed attestation stored for publisher: {e}"
+                    ))
+                })?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            envelope.verify_for_npub(&sender_hex, now).map_err(|e| {
+                IngestError::Rejected(format!("invalid: attestation check failed: {e}"))
+            })?;
+        }
+    }
+
     // Handled directly — these mutate relay_members and do NOT get stored.
     // The handler enforces the durable community ban itself: the write-path
     // gate above exempts relay-admin kinds so timed-out admins keep their

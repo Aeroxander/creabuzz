@@ -48,8 +48,10 @@ const RATE_MAX_ATTEMPTS: u32 = 10;
 const NOSTR_PROOF_MAX_AGE_SECS: u64 = 600;
 /// Kind of the Nostr proof event (NIP-98 HTTP Auth).
 const NOSTR_PROOF_KIND: u16 = 27235;
-/// URI tag expected in the Nostr proof event.
+/// URI tag expected in the Nostr proof event for registration.
 const NOSTR_PROOF_URI: &str = "/auth/siwe/register";
+/// URI tag expected in the Nostr proof event for revocation.
+const REVOKE_PROOF_URI: &str = "/auth/siwe/revoke";
 
 /// Body for `POST /auth/siwe/register`.
 #[derive(Debug, Deserialize)]
@@ -61,6 +63,20 @@ pub struct SiweRegisterRequest {
     /// Signed Nostr event proving control of the joining npub:
     /// kind 27235, fresh `created_at`, `["u", "/auth/siwe/register"]` tag,
     /// content = the same EVM address as in the SIWE message.
+    pub nostr_proof: nostr::Event,
+    /// Optional EIP-712 `NostrSigner` attestation binding the EVM root to this
+    /// npub. Stored against the binding and enforced at event intake when
+    /// `BUZZ_EVM_ENFORCE_ATTESTATION` is enabled.
+    #[serde(default)]
+    pub attestation: Option<serde_json::Value>,
+}
+
+/// Body for `POST /auth/siwe/revoke`.
+#[derive(Debug, Deserialize)]
+pub struct SiweRevokeRequest {
+    /// Signed Nostr event proving control of the npub to revoke:
+    /// kind 27235, fresh `created_at`, `["u", "/auth/siwe/revoke"]` tag,
+    /// content = the EVM address bound to that npub.
     pub nostr_proof: nostr::Event,
 }
 
@@ -128,7 +144,7 @@ pub async fn register(
 
     // 1. Nostr proof: valid signature, right kind, fresh, tagged for this
     //    endpoint, and carrying the EVM address in its content.
-    let proof_address = verify_nostr_proof(&request.nostr_proof)
+    let proof_address = verify_nostr_proof(&request.nostr_proof, NOSTR_PROOF_URI)
         .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("nostr_proof: {e}")))?;
 
     // 2. SIWE: parse, verify domain/chain/signature/time-window.
@@ -194,6 +210,43 @@ pub async fn register(
         ));
     }
 
+    // 3b. Reject re-registration of a soft-revoked binding.
+    if state
+        .db
+        .is_evm_identity_revoked(tenant.community(), &npub_hex)
+        .await
+        .map_err(|e| internal_error(&format!("evm revoked check: {e}")))?
+        == Some(true)
+    {
+        return Err(api_error(StatusCode::FORBIDDEN, "evm_identity_revoked"));
+    }
+
+    // 3c. If an attestation was supplied, verify it binds this npub to the
+    //     SIWE address before storing. Malformed/unexpired/foreign attestations
+    //     are rejected rather than silently dropped.
+    if let Some(attestation_json) = &request.attestation {
+        let envelope: buzz_evm_auth::AttestationEnvelope =
+            serde_json::from_value(attestation_json.clone()).map_err(|e| {
+                api_error(
+                    StatusCode::BAD_REQUEST,
+                    &format!("bad attestation JSON: {e}"),
+                )
+            })?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let attested_account = envelope
+            .verify_for_npub(&npub_hex, now)
+            .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("attestation: {e}")))?;
+        if attested_account != siwe.address {
+            return Err(api_error(
+                StatusCode::FORBIDDEN,
+                "attestation account does not match siwe address",
+            ));
+        }
+    }
+
     // 4. Consume the single-use nonce (only now, after all free checks pass).
     consume_nonce(&state, &siwe.nonce).await?;
 
@@ -205,7 +258,12 @@ pub async fn register(
         .map_err(|e| internal_error(&format!("evm membership insert: {e}")))?;
     state
         .db
-        .upsert_evm_identity(tenant.community(), &npub_hex, siwe.address.as_bytes(), None)
+        .upsert_evm_identity(
+            tenant.community(),
+            &npub_hex,
+            siwe.address.as_bytes(),
+            request.attestation.as_ref(),
+        )
         .await
         .map_err(|e| internal_error(&format!("evm identity upsert: {e}")))?;
 
@@ -234,8 +292,113 @@ pub async fn register(
     })))
 }
 
+/// `POST /auth/siwe/revoke` — soft-revoke an EVM identity binding.
+///
+/// The caller proves control of the npub via the same Nostr proof format as
+/// registration (kind 27235, fresh, `["u", "/auth/siwe/revoke"]` tag, content
+/// = the EVM address bound to that npub). On success the binding is marked
+/// `revoked_at` and the npub is removed from `relay_members`. The binding
+/// row is preserved for audit; a revoked npub cannot re-register.
+pub async fn revoke(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
+
+    let request: SiweRevokeRequest = serde_json::from_slice(&body).map_err(|e| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            &format!("invalid revoke JSON: {e}"),
+        )
+    })?;
+
+    let npub_hex = request.nostr_proof.pubkey.to_hex();
+
+    // Nostr proof proves control of the npub being revoked, and carries the
+    // EVM address bound to it (so a stale/mismatched proof can't revoke a
+    // binding whose EVM root differs).
+    let proof_address = verify_nostr_proof(&request.nostr_proof, REVOKE_PROOF_URI)
+        .map_err(|e| api_error(StatusCode::FORBIDDEN, &format!("nostr_proof: {e}")))?;
+
+    // The binding must exist and must not already be revoked.
+    let binding = state
+        .db
+        .get_evm_identity(tenant.community(), &npub_hex)
+        .await
+        .map_err(|e| internal_error(&format!("evm identity get: {e}")))?;
+    let binding =
+        binding.ok_or_else(|| api_error(StatusCode::NOT_FOUND, "evm_identity_not_found"))?;
+    if binding.is_revoked() {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "evm_identity_already_revoked",
+        ));
+    }
+    let bound_address = EvmAddress::parse(&hex::encode(&binding.evm_address))
+        .map_err(|e| internal_error(&format!("stored evm address: {e}")))?;
+    if bound_address != proof_address {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "address mismatch between nostr_proof and bound evm identity",
+        ));
+    }
+
+    // Soft-revoke the binding and remove relay membership (owner cannot be
+    // removed, which is fine — an owner revoking via this path is a misconfig
+    // that the admin flow handles separately).
+    state
+        .db
+        .revoke_evm_identity(tenant.community(), &npub_hex, &npub_hex, None)
+        .await
+        .map_err(|e| internal_error(&format!("evm identity revoke: {e}")))?;
+
+    use buzz_db::relay_members::RemoveResult;
+    match state
+        .db
+        .remove_relay_member(tenant.community(), &npub_hex)
+        .await
+    {
+        Ok(RemoveResult::Removed) | Ok(RemoveResult::NotFound) => {}
+        Ok(RemoveResult::IsOwner) => {
+            tracing::warn!(community = %tenant.community(), member = %npub_hex,
+                "SIWE revoke: binding revoked but membership is owner; kept");
+        }
+        Ok(RemoveResult::RoleMismatch) => {
+            tracing::warn!(community = %tenant.community(), member = %npub_hex,
+                "SIWE revoke: membership role changed during revoke");
+        }
+        Err(e) => {
+            return Err(internal_error(&format!("relay member remove: {e}")));
+        }
+    }
+
+    tracing::info!(
+        community = %tenant.community(),
+        member = %npub_hex,
+        evm = %bound_address,
+        "relay member revoked via SIWE"
+    );
+
+    Ok(Json(json!({
+        "status": "revoked",
+        "community_id": tenant.community().to_string(),
+        "npub": npub_hex,
+        "evm_address": bound_address.to_hex(),
+    })))
+}
+
 /// Verify the Nostr proof event; returns the EVM address from its content.
-fn verify_nostr_proof(event: &nostr::Event) -> Result<EvmAddress, String> {
+///
+/// `uri` is the endpoint the proof is bound to (`["u", "<uri>"]` tag):
+/// `NOSTR_PROOF_URI` for registration, `REVOKE_PROOF_URI` for revocation.
+fn verify_nostr_proof(event: &nostr::Event, uri: &str) -> Result<EvmAddress, String> {
     if event.kind != nostr::Kind::from(NOSTR_PROOF_KIND) {
         return Err(format!("expected kind {NOSTR_PROOF_KIND}"));
     }
@@ -254,10 +417,10 @@ fn verify_nostr_proof(event: &nostr::Event) -> Result<EvmAddress, String> {
 
     let has_uri_tag = event.tags.iter().any(|tag| {
         let slice = tag.as_slice();
-        slice.len() == 2 && slice[0] == "u" && slice[1] == NOSTR_PROOF_URI
+        slice.len() == 2 && slice[0] == "u" && slice[1] == uri
     });
     if !has_uri_tag {
-        return Err(format!("missing [\"u\", \"{NOSTR_PROOF_URI}\"] tag"));
+        return Err(format!("missing [\"u\", \"{uri}\"] tag"));
     }
 
     EvmAddress::parse(event.content.trim()).map_err(|e| e.to_string())

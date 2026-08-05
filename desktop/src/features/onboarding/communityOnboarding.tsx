@@ -12,10 +12,12 @@ export type CommunityOnboardingSource =
   | "add-community"
   | "membership-recovery"
   | "deep-link-connect"
-  | "deep-link-join";
+  | "deep-link-join"
+  | "siwe";
 
 export type CommunityOnboardingStage =
   | "claiming"
+  | "siwe-registering"
   | "connecting"
   | "profile"
   | "team-intro"
@@ -49,6 +51,11 @@ export type CommunityOnboardingTransaction = {
   communityId?: string;
   previousCommunityId?: string;
   addedCommunity?: boolean;
+  /**
+   * EVM identity registered via SIWE (0x-prefixed). Persisted once
+   * registration succeeds so the connecting step and later flows can show it.
+   */
+  siweAddress?: string;
   createdAt: string;
   updatedAt: string;
   error?: string;
@@ -68,6 +75,7 @@ export type CommunityOnboardingTransactionPatch = Partial<
     | "communityName"
     | "error"
     | "acknowledged"
+    | "siweAddress"
   >
 >;
 
@@ -107,6 +115,7 @@ function isTransaction(
     typeof transaction.updatedAt === "string" &&
     [
       "claiming",
+      "siwe-registering",
       "connecting",
       "profile",
       "team-intro",
@@ -174,11 +183,17 @@ export function startCommunityOnboarding(
   }
 
   const timestamp = now.toISOString();
+  const initialStage =
+    input.source === "siwe"
+      ? "siwe-registering"
+      : input.inviteCode?.trim()
+        ? "claiming"
+        : "connecting";
   const transaction: CommunityOnboardingTransaction = {
     id: crypto.randomUUID(),
     source: input.source,
     firstCommunityPage: input.firstCommunityPage,
-    stage: input.inviteCode?.trim() ? "claiming" : "connecting",
+    stage: initialStage,
     relayUrl,
     inviteCode: input.inviteCode?.trim() || undefined,
     communityName: input.communityName?.trim() || deriveCommunityName(relayUrl),

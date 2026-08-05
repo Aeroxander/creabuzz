@@ -4097,6 +4097,53 @@ impl Db {
             .await
     }
 
+    /// Fetches the EVM identity binding for `pubkey` in `community` (creabuzz).
+    pub async fn get_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+    ) -> Result<Option<evm_identities::EvmIdentity>> {
+        evm_identities::get_evm_identity(&self.pool, community, pubkey).await
+    }
+
+    /// Lists all device-npub bindings for one EVM root account (creabuzz).
+    pub async fn list_identities_for_address(
+        &self,
+        community: CommunityId,
+        evm_address: &[u8; 20],
+    ) -> Result<Vec<evm_identities::EvmIdentity>> {
+        evm_identities::list_identities_for_address(&self.pool, community, evm_address).await
+    }
+
+    /// Soft-revokes the npub → EVM binding (creabuzz).
+    pub async fn revoke_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        revoked_by: &str,
+        reason: Option<&str>,
+    ) -> Result<bool> {
+        evm_identities::revoke_evm_identity(&self.pool, community, pubkey, revoked_by, reason).await
+    }
+
+    /// Whether a binding exists and is soft-revoked (creabuzz).
+    pub async fn is_evm_identity_revoked(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+    ) -> Result<Option<bool>> {
+        evm_identities::is_evm_identity_revoked(&self.pool, community, pubkey).await
+    }
+
+    /// Re-activates a previously revoked binding (creabuzz).
+    pub async fn unrevoke_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+    ) -> Result<bool> {
+        evm_identities::unrevoke_evm_identity(&self.pool, community, pubkey).await
+    }
+
     /// Returns whether a member has persisted acceptance evidence for a policy version.
     pub async fn has_join_policy_acceptance(
         &self,

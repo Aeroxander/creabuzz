@@ -21,7 +21,13 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
-type WelcomeSetupPage = "welcome" | "existing" | "join" | "member" | "owned";
+type WelcomeSetupPage =
+  | "welcome"
+  | "existing"
+  | "join"
+  | "member"
+  | "owned"
+  | "siwe";
 type WelcomeTransitionMode = "initial" | OnboardingTransitionDirection;
 
 type WelcomeSetupProps = {
@@ -92,6 +98,17 @@ export function WelcomeSetup({
     [communityOnboarding, page],
   );
 
+  const startSiwe = React.useCallback(
+    (relayUrl: string) => {
+      communityOnboarding.start({
+        source: "siwe",
+        firstCommunityPage: "join",
+        relayUrl,
+      });
+    },
+    [communityOnboarding],
+  );
+
   const transitionDirection =
     transitionMode === "backward" ? "backward" : "forward";
   const welcomeEffect =
@@ -135,6 +152,19 @@ export function WelcomeSetup({
                     type="button"
                   >
                     Join a community
+                  </button>
+                </Card>
+                <Card
+                  asChild
+                  className={COMMUNITY_OPTION_CARD_CLASS}
+                  variant="textured"
+                >
+                  <button
+                    data-testid="community-choice-siwe"
+                    onClick={() => showPage("siwe")}
+                    type="button"
+                  >
+                    Sign in with Ethereum
                   </button>
                 </Card>
                 <Card
@@ -238,6 +268,45 @@ export function WelcomeSetup({
               transitionKey={`owned-${transitionDirection}`}
             >
               <HostedCommunityOnboarding onBack={() => showPage("welcome")} />
+            </OnboardingSlideTransition>
+          ) : page === "siwe" ? (
+            <OnboardingSlideTransition
+              className="flex min-h-[calc(100dvh-15.625rem)] w-full flex-col items-center text-center"
+              direction={transitionDirection}
+              transitionKey={`siwe-${transitionDirection}`}
+            >
+              <div className="w-full max-w-[620px]">
+                <h1 className="text-title font-normal">
+                  Sign in with Ethereum
+                </h1>
+                <p className="mt-3 text-sm leading-6 text-foreground/80">
+                  Enter the community URL you were invited to. Your EVM wallet
+                  becomes your identity and provisions your membership
+                  automatically.
+                </p>
+              </div>
+              <div className="flex w-full flex-1 flex-col items-center justify-center gap-16">
+                <InviteRedeemForm
+                  error={null}
+                  isRedeeming={false}
+                  onCancel={() => showPage("welcome")}
+                  onConnect={startSiwe}
+                  onRedeem={startSiwe}
+                  placeholder="Community URL"
+                  variant="onboarding-spotlight"
+                />
+              </div>
+              <OnboardingFooter>
+                <Button
+                  className="h-9 rounded-full bg-foreground/10 px-6 hover:bg-foreground/15"
+                  data-testid="siwe-back"
+                  onClick={() => showPage("welcome")}
+                  type="button"
+                  variant="ghost"
+                >
+                  Back
+                </Button>
+              </OnboardingFooter>
             </OnboardingSlideTransition>
           ) : (
             <OnboardingSlideTransition

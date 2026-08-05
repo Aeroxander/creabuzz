@@ -33,6 +33,7 @@ mod relay_admission;
 mod reset;
 mod secret_store;
 mod shutdown;
+mod siwe_config;
 mod templates;
 mod terminal_runtime;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -678,6 +679,9 @@ pub fn run() {
             sign_event,
             sign_nostr_identity_binding,
             sign_out,
+            siwe_get_account,
+            sign_siwe_message,
+            siwe_has_account,
             decrypt_observer_event,
             build_observer_control_event,
             create_auth_event,

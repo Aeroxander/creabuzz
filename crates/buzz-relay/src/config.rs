@@ -56,6 +56,11 @@ pub struct EvmAuthConfig {
     /// Optional ERC-6492 universal validator singleton address for
     /// counterfactual (undeployed) smart-account signatures.
     pub erc6492_validator: Option<String>,
+    /// When true, kind-40002 events from publishers with an `evm_identities`
+    /// binding are rejected unless the binding carries a valid, unexpired
+    /// `NostrSigner` attestation. Rollout knob — SIWE registration works
+    /// without it.
+    pub enforce_attestation: bool,
 }
 
 /// Relay runtime configuration, loaded from environment variables.
@@ -554,6 +559,9 @@ impl Config {
                     .and_then(|v| v.parse().ok()),
                 rpc_url: std::env::var("BUZZ_ETH_RPC_URL").ok(),
                 erc6492_validator: std::env::var("BUZZ_EVM_ERC6492_VALIDATOR").ok(),
+                enforce_attestation: std::env::var("BUZZ_EVM_ENFORCE_ATTESTATION")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
             });
 
         let require_relay_membership = std::env::var("BUZZ_REQUIRE_RELAY_MEMBERSHIP")

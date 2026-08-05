@@ -8,6 +8,7 @@ import {
 } from "@/features/onboarding/communityOnboarding";
 import { initializeStarterChannels } from "@/features/onboarding/hooks";
 import { useClaimInvite } from "@/features/onboarding/useClaimInvite";
+import { useSiweRegister } from "@/features/onboarding/useSiweRegister";
 import { CommunityChangeOverlay } from "@/features/communities/ui/CommunityChangeOverlay";
 import {
   takePendingWelcomeChannelForDirectEntry,
@@ -197,6 +198,7 @@ export function CommunityOnboardingFlow({
   }, [isTeamIntroVisible]);
 
   useClaimInvite();
+  useSiweRegister();
 
   React.useEffect(() => {
     if (transaction?.stage === "connecting") onConnect();
@@ -232,7 +234,12 @@ export function CommunityOnboardingFlow({
 
   const retry = () =>
     update({
-      stage: transaction?.inviteCode ? "claiming" : "connecting",
+      stage:
+        transaction?.source === "siwe"
+          ? "siwe-registering"
+          : transaction?.inviteCode
+            ? "claiming"
+            : "connecting",
       error: undefined,
     });
   const relayUrl = transaction?.relayUrl;
@@ -480,6 +487,7 @@ export function CommunityOnboardingFlow({
           data-testid="community-onboarding-body"
         >
           {transaction.stage === "claiming" ||
+          transaction.stage === "siwe-registering" ||
           transaction.stage === "connecting" ? (
             <>
               <Users className="mx-auto h-10 w-10" />
@@ -490,7 +498,9 @@ export function CommunityOnboardingFlow({
                 {transaction.error ??
                   (transaction.stage === "claiming"
                     ? "Accepting your invite…"
-                    : "Connecting securely…")}
+                    : transaction.stage === "siwe-registering"
+                      ? "Verifying your wallet…"
+                      : "Connecting securely…")}
               </p>
               <div className="mt-6 flex justify-center gap-3">
                 {transaction.error ? (

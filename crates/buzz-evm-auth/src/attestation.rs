@@ -10,7 +10,7 @@ use crate::error::EvmAuthError;
 use crate::siwe::recover_address;
 
 /// EIP-712 domain for creabuzz attestations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Eip712Domain {
     /// Human-readable protocol name (e.g. `"creabuzz"`).
     pub name: String,
@@ -24,7 +24,7 @@ pub struct Eip712Domain {
 }
 
 /// An authorization binding an EVM account to a Nostr signer pubkey.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NostrSignerAttestation {
     /// EVM account granting the authorization (the identity root).
     pub account: EvmAddress,
@@ -88,6 +88,41 @@ impl NostrSignerAttestation {
             });
         }
         Ok(())
+    }
+
+    /// Whether the attestation is expired at `now` (unix seconds).
+    pub fn is_expired(&self, now: u64) -> bool {
+        self.expires < now
+    }
+}
+
+/// A signed, stored attestation: the EIP-712 struct + domain + 65-byte hex
+/// signature. This is the JSON shape persisted in `evm_identities.attestation`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AttestationEnvelope {
+    /// The authorized signing relationship.
+    pub attestation: NostrSignerAttestation,
+    /// The EIP-712 domain the attestation was signed under.
+    pub domain: Eip712Domain,
+    /// 65-byte hex signature over the attestation digest.
+    pub signature: String,
+}
+
+impl AttestationEnvelope {
+    /// Verify the signature, expiry, and that the authorized npub matches the
+    /// publishing device key. Returns the EVM account that granted it.
+    pub fn verify_for_npub(&self, npub_hex: &str, now: u64) -> Result<EvmAddress, EvmAuthError> {
+        if self.attestation.is_expired(now) {
+            return Err(EvmAuthError::Expired);
+        }
+        if hex::encode(self.attestation.npub) != npub_hex {
+            return Err(EvmAuthError::SignerMismatch {
+                expected: npub_hex.to_string(),
+                got: hex::encode(self.attestation.npub),
+            });
+        }
+        self.attestation.verify(&self.domain, &self.signature)?;
+        Ok(self.attestation.account)
     }
 }
 
@@ -172,5 +207,74 @@ mod tests {
             ..test_domain()
         };
         assert!(att.verify(&other_chain, &sig).is_err());
+    }
+
+    #[test]
+    fn envelope_roundtrip_json() {
+        let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
+        let att = attestation_for(&key);
+        let sig = sign_attestation(&key, &att);
+        let env = AttestationEnvelope {
+            attestation: att.clone(),
+            domain: test_domain(),
+            signature: sig.clone(),
+        };
+        let json = serde_json::to_string(&env).unwrap();
+        let back: AttestationEnvelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, env);
+        assert_eq!(back.signature, sig);
+    }
+
+    #[test]
+    fn envelope_verifies_for_correct_npub() {
+        let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
+        let att = attestation_for(&key);
+        let sig = sign_attestation(&key, &att);
+        let env = AttestationEnvelope {
+            attestation: att.clone(),
+            domain: test_domain(),
+            signature: sig.clone(),
+        };
+        let now = 1_800_000_100; // after expires in attestation_for
+                                 // attestation_for uses expires 1_800_000_000; now slightly after → expired.
+        assert!(env.verify_for_npub(&hex::encode(att.npub), now).is_err());
+        // Before expiry, correct npub verifies.
+        let now_ok = 1_700_000_000;
+        let account = env.verify_for_npub(&hex::encode(att.npub), now_ok).unwrap();
+        assert_eq!(account, att.account);
+    }
+
+    #[test]
+    fn envelope_rejects_wrong_npub() {
+        let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
+        let att = attestation_for(&key);
+        let sig = sign_attestation(&key, &att);
+        let env = AttestationEnvelope {
+            attestation: att.clone(),
+            domain: test_domain(),
+            signature: sig.clone(),
+        };
+        // Attestation authorizes npub = [42u8; 32]; presenting a different npub
+        // must fail.
+        let wrong = hex::encode([43u8; 32]);
+        assert_ne!(wrong, hex::encode(att.npub));
+        assert!(env.verify_for_npub(&wrong, 1_700_000_000).is_err());
+    }
+
+    #[test]
+    fn envelope_rejects_bad_signature() {
+        let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
+        let other = SigningKey::from_slice(&[9u8; 32]).unwrap();
+        let att = attestation_for(&other);
+        // Signed by `key`, but account is `other` → mismatch.
+        let sig = sign_attestation(&key, &att);
+        let env = AttestationEnvelope {
+            attestation: att.clone(),
+            domain: test_domain(),
+            signature: sig.clone(),
+        };
+        assert!(env
+            .verify_for_npub(&hex::encode(att.npub), 1_700_000_000)
+            .is_err());
     }
 }

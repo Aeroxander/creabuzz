@@ -55,6 +55,40 @@ test("non-invite onboarding starts at connection", () => {
   assert.equal(transaction.stage, "connecting");
 });
 
+test("siwe onboarding starts at siwe-registering", () => {
+  const transaction = startCommunityOnboarding(
+    { source: "siwe", relayUrl: "wss://relay.example" },
+    createMemoryStorage(),
+    new Date("2026-07-16T00:00:00Z"),
+  );
+  assert.equal(transaction.stage, "siwe-registering");
+  const persisted = loadCommunityOnboardingTransaction(
+    createMemoryStorage({
+      "buzz-community-onboarding-transaction.v1": JSON.stringify(transaction),
+    }),
+  );
+  assert.equal(persisted?.stage, "siwe-registering");
+});
+
+test("siwe registration persists its evm address on the transaction", () => {
+  const storage = createMemoryStorage();
+  const transaction = startCommunityOnboarding(
+    { source: "siwe", relayUrl: "wss://relay.example" },
+    storage,
+  );
+  const updated = updateCommunityOnboardingTransaction(
+    transaction,
+    { stage: "connecting", siweAddress: "0x1234" },
+    storage,
+  );
+  assert.equal(updated.stage, "connecting");
+  assert.equal(updated.siweAddress, "0x1234");
+  assert.equal(
+    loadCommunityOnboardingTransaction(storage)?.siweAddress,
+    "0x1234",
+  );
+});
+
 test("same-relay ingress resumes rather than replacing progress", () => {
   const storage = createMemoryStorage();
   const first = startCommunityOnboarding(

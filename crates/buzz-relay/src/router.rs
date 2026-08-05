@@ -65,6 +65,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         Router::new()
             .route("/auth/siwe/nonce", get(api::evm_auth::issue_nonce))
             .route("/auth/siwe/register", post(api::evm_auth::register))
+            .route("/auth/siwe/revoke", post(api::evm_auth::revoke))
             .with_state(state.clone())
     });
 
