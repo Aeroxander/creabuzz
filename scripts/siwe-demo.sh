@@ -6,9 +6,8 @@
 #
 # 1. Starts Docker services (postgres, redis, minio)
 # 2. Builds the relay if needed, starts it with SIWE + auto-migrate enabled
-# 3. Builds the desktop app if needed (frontend + Tauri binary)
-# 4. Launches the desktop app
-# 5. Prints how to verify SIWE registration
+# 3. Installs desktop deps + sidecar stubs, derives the dev config
+# 4. Launches the desktop app via `tauri dev` (foreground; Ctrl-C to stop)
 #
 # Requires: Docker Desktop running, cmake (for the desktop build).
 # =============================================================================
@@ -132,97 +131,80 @@ done
 NONCE_RESPONSE="$(curl -sf "http://localhost:3000/auth/siwe/nonce" -H "Host: localhost:3000" || true)"
 success "Relay is up — SIWE nonce endpoint responding: ${NONCE_RESPONSE}"
 
-# ---- 3. Build the desktop app -----------------------------------------------
+# ---- 3. Prepare the desktop app launch ---------------------------------------
 
 DESKTOP_DIR="${REPO_ROOT}/desktop"
-DESKTOP_BIN="${DESKTOP_DIR}/src-tauri/target/debug/buzz-desktop"
 
-# The Tauri build embeds the frontend, so both must exist.
-if [[ ! -x "${DESKTOP_BIN}" || ! -d "${DESKTOP_DIR}/dist" ]]; then
-  log "Building the desktop app (frontend + Tauri binary — takes a while)..."
-
-  # Sidecar stubs so the Tauri build compiles without the real binaries.
-  TARGET="$(rustc -vV 2>/dev/null | sed -n 's|host: ||p')"
-  if [[ -z "${TARGET}" ]]; then TARGET="aarch64-apple-darwin"; fi
-  mkdir -p "${DESKTOP_DIR}/src-tauri/binaries"
-  for bin in buzz-acp buzz-agent buzz-dev-mcp git-credential-nostr buzz buzz-backend-kubernetes; do
-    touch "${DESKTOP_DIR}/src-tauri/binaries/${bin}-${TARGET}"
-  done
-
+# Ensure frontend deps are present (needed for the Vite dev server + tauri CLI).
+if [[ ! -d "${DESKTOP_DIR}/node_modules" ]]; then
+  log "Installing desktop dependencies (first run — takes a while)..."
   if ! command -v cmake &>/dev/null; then
     warn "cmake not found — installing via Homebrew (needed for the desktop build)."
     brew install cmake
   fi
-
-  # Frontend. Prefer corepack pnpm (repo pins pnpm@11.4) with a recent Node.
-  build_frontend() {
-    (cd "${DESKTOP_DIR}" && npm run build)
-  }
+  # Prefer hermit pnpm; else corepack pnpm on a recent Node.
   if [[ -x "${REPO_ROOT}/bin/pnpm" ]]; then
-    log "Using hermit pnpm for the frontend build..."
-    PATH="${REPO_ROOT}/bin:$PATH" build_frontend
+    (cd "${DESKTOP_DIR}" && PATH="${REPO_ROOT}/bin:$PATH" pnpm install)
   elif command -v corepack &>/dev/null; then
-    log "Using corepack pnpm for the frontend build..."
     for NODE in "$HOME/.nvm/versions/node/v24.12.0/bin" "$HOME/.nvm/versions/node/v24.14.0/bin" /opt/homebrew/opt/node/bin; do
-      if [[ -x "${NODE}/node" ]]; then
-        export PATH="${NODE}:$PATH"
-        break
-      fi
+      if [[ -x "${NODE}/node" ]]; then export PATH="${NODE}:$PATH"; break; fi
     done
-    (cd "${DESKTOP_DIR}" && corepack pnpm install >/dev/null 2>&1 && npm run build)
+    (cd "${DESKTOP_DIR}" && CI=true corepack pnpm install)
   else
-    build_frontend
+    (cd "${DESKTOP_DIR}" && pnpm install)
   fi
-  success "Frontend built"
-
-  # Tauri Rust binary.
-  if [[ -x "${REPO_ROOT}/bin/cargo" ]]; then
-    (cd "${DESKTOP_DIR}/src-tauri" && "${REPO_ROOT}/bin/cargo" build)
-  else
-    (cd "${DESKTOP_DIR}/src-tauri" && cargo build)
-  fi
-  success "Desktop app built"
+  success "Desktop dependencies installed"
 fi
 
-# ---- 4. Launch the desktop app ----------------------------------------------
+# Sidecar stubs so tauri dev compiles without the real binaries.
+TARGET="$(rustc -vV 2>/dev/null | sed -n 's|host: ||p')"
+if [[ -z "${TARGET}" ]]; then TARGET="aarch64-apple-darwin"; fi
+mkdir -p "${DESKTOP_DIR}/src-tauri/binaries"
+for bin in buzz-acp buzz-agent buzz-dev-mcp git-credential-nostr buzz buzz-backend-kubernetes; do
+  touch "${DESKTOP_DIR}/src-tauri/binaries/${bin}-${TARGET}"
+done
 
-if pgrep -f "buzz-desktop" >/dev/null 2>&1; then
-  warn "An existing buzz-desktop instance is running — leaving it as-is."
-else
-  log "Launching the desktop app..."
-  python3 - <<PYEOF
-import subprocess
-with open('/tmp/buzz-desktop.log', 'wb') as log:
-    subprocess.Popen(
-        ['${DESKTOP_BIN}'],
-        stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-print('desktop launched detached')
-PYEOF
-  sleep 3
-fi
-success "Desktop app launched"
+# Derive the dev config (Vite port, relay URL, tauri dev config). This is the
+# canonical pipeline `just dev` uses — it points the webview at the Vite dev
+# server so the frontend actually loads (running the bare debug binary serves
+# no frontend and renders a blank/black window).
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/scripts/instance-env.sh"
 
-# ---- 5. Next steps ----------------------------------------------------------
+# ---- 4. Print next steps, then launch the app (foreground) -------------------
 
 cat <<'EOF'
 
-──────────────────────────────────────────────────────────────────────────────
-✅ Everything is running.
+─────────────────────────────────────────────────────────────────────────────
+✅ Stack is up (relay on ws://localhost:3000, SIWE enabled).
 
-In the desktop app, first-run onboarding:
+Next, the desktop app opens. In first-run onboarding:
   1. Click "Sign in with Ethereum"
   2. Enter the community URL: ws://localhost:3000
   3. The app generates an EVM key (stored in your macOS Keychain), derives the
      ZeroDev account, signs the SIWE message, and provisions membership.
 
-Verify registration:
+Verify registration (in another terminal):
   docker exec buzz-postgres psql -U buzz -d buzz -c \
     "SELECT pubkey, encode(evm_address,'hex') AS evm FROM evm_identities ORDER BY created_at DESC LIMIT 3;"
 
-Logs:
-  relay:    /tmp/buzz-relay.log
-  desktop:  /tmp/buzz-desktop.log
-──────────────────────────────────────────────────────────────────────────────
+Relay log:  /tmp/buzz-relay.log
+Press Ctrl-C in this terminal to stop the desktop app (the relay keeps running).
+─────────────────────────────────────────────────────────────────────────────
 EOF
+
+# Launch via tauri dev so the webview is served the real frontend. This runs in
+# the foreground (blocking) — Ctrl-C stops the app.
+log "Launching the desktop app via tauri dev (Vite port ${BUZZ_VITE_PORT}, relay ${BUZZ_RELAY_URL})..."
+cd "${DESKTOP_DIR}"
+
+if [[ -x "${REPO_ROOT}/bin/pnpm" ]]; then
+  PATH="${REPO_ROOT}/bin:$PATH" pnpm exec tauri dev --config "$BUZZ_TAURI_CONFIG"
+elif command -v corepack &>/dev/null; then
+  for NODE in "$HOME/.nvm/versions/node/v24.12.0/bin" "$HOME/.nvm/versions/node/v24.14.0/bin" /opt/homebrew/opt/node/bin; do
+    if [[ -x "${NODE}/node" ]]; then export PATH="${NODE}:$PATH"; break; fi
+  done
+  corepack pnpm exec tauri dev --config "$BUZZ_TAURI_CONFIG"
+else
+  pnpm exec tauri dev --config "$BUZZ_TAURI_CONFIG"
+fi

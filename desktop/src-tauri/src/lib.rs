@@ -164,20 +164,37 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move {
                             wait_for_stable_initial_window_geometry(&window).await;
 
-                            if tokio::time::timeout(
-                                std::time::Duration::from_secs(5),
+                            // Cold start can be slow (first launch, cold disk,
+                            // large bundle). Give React generous time to commit
+                            // its startup surface before revealing the window.
+                            const INITIAL_RENDER_TIMEOUT_SECS: u64 = 30;
+                            let render_ready = tokio::time::timeout(
+                                std::time::Duration::from_secs(INITIAL_RENDER_TIMEOUT_SECS),
                                 initial_render_rx,
                             )
                             .await
-                            .is_err()
-                            {
-                                eprintln!(
-                                    "buzz-desktop: initial render did not commit before reveal timeout"
-                                );
-                            }
+                            .is_ok();
 
                             reveal_initial_window(&window);
-                            clear_initial_window_backing(&window).await;
+
+                            if render_ready {
+                                // WebKit has committed its first surface —
+                                // hand the window over to the webview and drop
+                                // the opaque boot backing (the window is
+                                // transparent at runtime for vibrancy).
+                                clear_initial_window_backing(&window).await;
+                            } else {
+                                // The webview never signaled a committed frame.
+                                // Keep the opaque backing so the transparent
+                                // window does NOT show the desktop through a
+                                // blank surface — the webview paints over the
+                                // backing once it does render. (A truly stuck
+                                // load shows a solid dark window instead of a
+                                // see-through one.)
+                                eprintln!(
+                                    "buzz-desktop: initial render did not commit before reveal timeout; keeping opaque boot backing"
+                                );
+                            }
                         });
                     }
 
