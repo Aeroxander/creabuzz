@@ -1,6 +1,12 @@
-import { BookMarked, Compass, Users } from "lucide-react";
+import { BookMarked, Compass, Globe, Users } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
+import {
+  normalizeRelayWsUrl,
+  setStoredRelayWsUrl,
+} from "@/shared/lib/relay-url";
 import {
   useCommunities,
   type CommunityDirectoryEntry,
@@ -62,15 +68,53 @@ function CardSkeleton() {
   );
 }
 
+function AddCommunityForm() {
+  const [value, setValue] = useState("");
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const host = value.trim();
+    if (!host) return;
+    try {
+      setStoredRelayWsUrl(normalizeRelayWsUrl(host));
+      window.location.reload();
+    } catch {
+      toast.error("That doesn't look like a relay host");
+    }
+  };
+  return (
+    <form onSubmit={submit} className="flex w-full max-w-sm items-center gap-2">
+      <label className="sr-only" htmlFor="add-community">
+        Relay host
+      </label>
+      <input
+        id="add-community"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="relay.example.com"
+        className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+        data-testid="add-community-input"
+      />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1.5 rounded-md border border-black/15 bg-white px-3 py-1.5 text-sm font-medium text-black shadow-xs hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+        data-testid="add-community-submit"
+      >
+        <Globe className="h-4 w-4" /> Add community
+      </button>
+    </form>
+  );
+}
+
 export function CommunityDirectoryPage() {
   const { data, isLoading } = useCommunities();
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-xl font-semibold text-black dark:text-white">
           <Compass className="h-5 w-5" /> Communities
         </h1>
+        <AddCommunityForm />
         <Link
           to="/repos"
           className="flex items-center gap-1.5 rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-white dark:hover:bg-white/10"

@@ -1,6 +1,13 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Hash, MessageSquare, Reply, Smile } from "lucide-react";
+import {
+  Hash,
+  MessageSquare,
+  Pencil,
+  Reply,
+  Smile,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -12,7 +19,7 @@ import {
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
+import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import {
@@ -20,7 +27,7 @@ import {
   useProfiles,
   type Profile,
 } from "@/features/profiles/use-profiles";
-import { Composer } from "./Composer";
+import { Composer, type EditTarget } from "./Composer";
 
 function getTag(event: NostrEvent, name: string): string | undefined {
   return event.tags.find((t) => t[0] === name)?.[1];
@@ -43,6 +50,40 @@ function useReactionGroups(
       groups.set(target, list);
     }
     return groups;
+  }, [messages]);
+}
+
+/** Latest kind:40003 edit content per target (author-matched), and the set of
+ * targets deleted via kind:5. */
+function useMessageOverlays(messages: ChannelMessages): {
+  edits: Map<string, string>;
+  deleted: Set<string>;
+} {
+  return useMemo(() => {
+    const edits = new Map<string, string>();
+    const deleted = new Set<string>();
+    for (const event of messages.byId.values()) {
+      if (event.kind === 40003) {
+        const target = getTag(event, "e");
+        const original = target ? messages.byId.get(target) : undefined;
+        if (target && original && event.pubkey === original.pubkey) {
+          const previous = edits.get(target);
+          if (!previous || event.created_at > 0) {
+            edits.set(
+              target,
+              typeof event.content === "string" ? event.content : "",
+            );
+          }
+        }
+      } else if (event.kind === 5) {
+        const target = getTag(event, "e");
+        const original = target ? messages.byId.get(target) : undefined;
+        if (target && original && event.pubkey === original.pubkey) {
+          deleted.add(target);
+        }
+      }
+    }
+    return { edits, deleted };
   }, [messages]);
 }
 
@@ -70,16 +111,29 @@ function MessageRow({
   isReply,
   reactions,
   onReply,
+  onEdit,
+  onDelete,
+  ownPubkey,
+  overlayContent,
+  isDeleted,
   profile,
 }: {
   event: NostrEvent;
   isReply?: boolean;
   reactions: NostrEvent[];
   onReply?: (eventId: string) => void;
+  onEdit?: (event: NostrEvent) => void;
+  onDelete?: (eventId: string) => void;
+  ownPubkey: string;
+  overlayContent?: string;
+  isDeleted?: boolean;
   profile?: Profile;
 }) {
-  const content =
-    typeof event.content === "string" ? event.content.slice(0, 4000) : "";
+  const isOwn = event.pubkey === ownPubkey;
+  const content = isDeleted
+    ? ""
+    : (overlayContent ??
+      (typeof event.content === "string" ? event.content.slice(0, 4000) : ""));
 
   const react = async (emoji: string) => {
     try {
@@ -129,21 +183,51 @@ function MessageRow({
           <time className="text-xs text-black/40 dark:text-white/40">
             {relativeTime(event.created_at * 1000)}
           </time>
-          {onReply && (
-            <button
-              type="button"
-              onClick={() => onReply(event.id)}
-              className="ml-auto flex items-center gap-1 text-xs text-black/40 opacity-0 transition-opacity hover:text-black/70 group-hover:opacity-100 dark:text-white/40 dark:hover:text-white/70"
-              aria-label="Reply"
-              data-testid="reply-button"
-            >
-              <Reply className="h-3 w-3" /> Reply
-            </button>
-          )}
+          <span className="ml-auto flex items-center gap-2 text-xs text-black/40 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/40">
+            {onReply && !isDeleted && (
+              <button
+                type="button"
+                onClick={() => onReply(event.id)}
+                className="flex items-center gap-1 hover:text-black/70 dark:hover:text-white/70"
+                aria-label="Reply"
+                data-testid="reply-button"
+              >
+                <Reply className="h-3 w-3" /> Reply
+              </button>
+            )}
+            {isOwn && onEdit && !isDeleted && (
+              <button
+                type="button"
+                onClick={() => onEdit(event)}
+                className="flex items-center gap-1 hover:text-black/70 dark:hover:text-white/70"
+                aria-label="Edit message"
+                data-testid="edit-button"
+              >
+                <Pencil className="h-3 w-3" /> Edit
+              </button>
+            )}
+            {isOwn && onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(event.id)}
+                className="flex items-center gap-1 hover:text-red-500"
+                aria-label="Delete message"
+                data-testid="delete-button"
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </button>
+            )}
+          </span>
         </div>
-        <div className="mt-0.5 break-words text-[0.9375rem] leading-relaxed text-black dark:text-white [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-black/5 [&_pre]:p-2 [&_pre]:dark:bg-white/10">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
+        {isDeleted ? (
+          <p className="mt-0.5 text-sm italic text-black/40 dark:text-white/40">
+            message deleted
+          </p>
+        ) : (
+          <div className="mt-0.5 break-words text-[0.9375rem] leading-relaxed text-black dark:text-white [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-black/5 [&_pre]:p-2 [&_pre]:dark:bg-white/10">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
+        )}
         {reactions.length > 0 && <ReactionPills events={reactions} />}
         <div className="mt-1 flex items-center gap-2 text-xs text-black/45 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/45">
           <Smile className="h-3.5 w-3.5" />
@@ -169,15 +253,23 @@ function ThreadTree({
   messages,
   reactionsByTarget,
   onReply,
+  onEdit,
+  onDelete,
   depth,
   profile,
+  ownPubkey,
+  overlays,
 }: {
   event: NostrEvent;
   messages: ChannelMessages;
   reactionsByTarget: Map<string, NostrEvent[]>;
   onReply: (eventId: string) => void;
+  onEdit?: (event: NostrEvent) => void;
+  onDelete?: (eventId: string) => void;
   depth: number;
   profile?: Profile;
+  ownPubkey: string;
+  overlays: { edits: Map<string, string>; deleted: Set<string> };
 }) {
   const children = messages.ordered.filter((e) => getTag(e, "e") === event.id);
   return (
@@ -187,6 +279,11 @@ function ThreadTree({
         isReply={depth > 0}
         reactions={reactionsByTarget.get(event.id) ?? []}
         onReply={onReply}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        ownPubkey={ownPubkey}
+        overlayContent={overlays.edits.get(event.id)}
+        isDeleted={overlays.deleted.has(event.id)}
         profile={profile}
       />
       {children.map((child) => (
@@ -196,8 +293,12 @@ function ThreadTree({
           messages={messages}
           reactionsByTarget={reactionsByTarget}
           onReply={onReply}
+          onEdit={onEdit}
+          onDelete={onDelete}
           depth={depth + 1}
           profile={profile}
+          ownPubkey={ownPubkey}
+          overlays={overlays}
         />
       ))}
     </div>
@@ -207,6 +308,7 @@ function ThreadTree({
 export function ChannelTimeline({ channel }: { channel: Channel }) {
   const messages = useChannelMessages(channel.id);
   const reactionsByTarget = useReactionGroups(messages);
+  const overlays = useMessageOverlays(messages);
   const authors = useMemo(
     () => [...new Set(messages.ordered.map((e) => e.pubkey))],
     [messages.ordered],
@@ -219,6 +321,43 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const ownPubkey = userPubkey();
+
+  const startEdit = (event: NostrEvent) => {
+    setReplyTo(null);
+    setEditTarget({
+      eventId: event.id,
+      content:
+        overlays.edits.get(event.id) ??
+        (typeof event.content === "string" ? event.content : ""),
+    });
+  };
+
+  const deleteMessage = async (eventId: string) => {
+    if (!window.confirm("Delete this message?")) return;
+    try {
+      const signed = await signAsUser({
+        kind: 5,
+        tags: [
+          ["h", channel.id],
+          ["e", eventId],
+        ],
+        content: "",
+      });
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsUser,
+      });
+      if (!result.accepted) {
+        throw new Error(result.message ?? "relay rejected the deletion");
+      }
+    } catch (error) {
+      console.error("[delete]", error);
+      toast.error("Couldn't delete message", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   // Message count is an intentional scroll trigger: new live messages pull
   // the viewport to the bottom when the user hasn't scrolled up.
@@ -277,8 +416,14 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
                 messages={messages}
                 reactionsByTarget={reactionsByTarget}
                 onReply={(id) => setReplyTo(id)}
+                onEdit={(event) => startEdit(event)}
+                onDelete={(id) => {
+                  void deleteMessage(id);
+                }}
                 depth={0}
                 profile={profileByPubkey.get(root.pubkey)}
+                ownPubkey={ownPubkey}
+                overlays={overlays}
               />
             ))}
           </div>
@@ -289,11 +434,14 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
       <Composer
         channelId={channel.id}
         replyTo={replyTo}
+        editTarget={editTarget}
         onPosted={() => {
           setReplyTo(null);
+          setEditTarget(null);
           setAutoScroll(true);
         }}
         onCancelReply={() => setReplyTo(null)}
+        onCancelEdit={() => setEditTarget(null)}
       />
     </div>
   );

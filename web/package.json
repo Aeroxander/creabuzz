@@ -38,7 +38,8 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
-    "trystero": "^0.25.4"
+    "trystero": "^0.25.4",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

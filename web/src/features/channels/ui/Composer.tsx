@@ -8,22 +8,33 @@ import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 
+export interface EditTarget {
+  eventId: string;
+  content: string;
+}
+
 export function Composer({
   channelId,
   replyTo,
+  editTarget,
   onPosted,
   onCancelReply,
+  onCancelEdit,
 }: {
   channelId: string;
   replyTo?: string | null;
+  editTarget?: EditTarget | null;
   onPosted: () => void;
   onCancelReply?: () => void;
+  onCancelEdit?: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(editTarget?.content ?? "");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [identityError, setIdentityError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isEditing = editTarget != null;
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -35,8 +46,11 @@ export function Composer({
       if (replyTo) {
         tags.push(["e", replyTo]);
       }
+      if (isEditing) {
+        tags.push(["e", editTarget.eventId]);
+      }
       const signed = await signAsUser({
-        kind: 9,
+        kind: isEditing ? 40003 : 9,
         tags,
         content,
       });
@@ -50,9 +64,12 @@ export function Composer({
       onPosted();
     } catch (error) {
       console.error("[composer]", error);
-      toast.error("Couldn't send message", {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      toast.error(
+        isEditing ? "Couldn't edit message" : "Couldn't send message",
+        {
+          description: error instanceof Error ? error.message : String(error),
+        },
+      );
       if (window.localStorage.getItem("buzz.identity.nsec") === null) {
         setIdentityError(true);
       }
@@ -71,8 +88,7 @@ export function Composer({
       const name = file.name.replace(/[[\]()]/g, "_");
       setDraft((previous) =>
         previous.length > 0
-          ? `${previous}
-![${name}](${descriptor.url})`
+          ? `${previous}\n![${name}](${descriptor.url})`
           : `![${name}](${descriptor.url})`,
       );
     } catch (error) {
@@ -102,6 +118,18 @@ export function Composer({
           </button>
         </div>
       )}
+      {isEditing && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
+          <span>Editing your message</span>
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="text-black/60 underline dark:text-white/60"
+          >
+            cancel
+          </button>
+        </div>
+      )}
       <textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -120,7 +148,7 @@ export function Composer({
         <span className="flex items-center gap-1.5 text-xs text-black/40 dark:text-white/40">
           <button
             type="button"
-            disabled={uploading || sending}
+            disabled={uploading || sending || isEditing}
             onClick={() => fileInputRef.current?.click()}
             className="inline-flex items-center gap-1 rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
             aria-label="Attach file"
@@ -154,7 +182,7 @@ export function Composer({
           data-testid="composer-send"
         >
           <SendHorizonal className="h-4 w-4" />
-          {sending ? "Sending…" : "Send"}
+          {sending ? "Sending…" : isEditing ? "Save edit" : "Send"}
         </button>
       </div>
     </form>

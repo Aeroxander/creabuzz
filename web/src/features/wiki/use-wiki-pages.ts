@@ -71,6 +71,7 @@ async function loadCachedPages(): Promise<WikiPage[]> {
 
 async function cachePage(page: WikiPage): Promise<void> {
   const db = await openWikiDb();
+  if (!db) return;
   await db.execute(
     "INSERT OR REPLACE INTO pages (slug, content, updated_at) VALUES (?, ?, ?)",
     [page.slug, page.content, page.updatedAt],
@@ -115,6 +116,9 @@ export function useWikiPages(enabled: boolean) {
     enabled,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
+    // Cross-tab snapshot convergence: every tab polls the relay so edits
+    // auto-saved by another tab reach this one without P2P signaling.
+    refetchInterval: enabled ? 5000 : false,
   });
 
   useEffect(() => {
@@ -136,7 +140,9 @@ export function useWikiPages(enabled: boolean) {
       tags: [["d", slug]],
       content,
     });
-    const result = await publishEvent(relayWsUrl(), signed);
+    const result = await publishEvent(relayWsUrl(), signed, {
+      signAuth: signAsUser,
+    });
     if (!result.accepted) {
       throw new Error(result.message ?? "relay rejected the wiki page");
     }

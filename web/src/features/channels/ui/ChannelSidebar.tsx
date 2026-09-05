@@ -1,4 +1,4 @@
-import { Hash, LoaderCircle, Users } from "lucide-react";
+import { Hash, LoaderCircle, Lock, Users } from "lucide-react";
 
 import type { Channel } from "../use-channels";
 
@@ -29,8 +29,20 @@ export function ChannelSidebar({
             }`}
             data-testid={`channel-${channel.name}`}
           >
-            <Hash className="h-3.5 w-3.5 shrink-0" />
+            {channel.visibility === "private" ? (
+              <Lock className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Hash className="h-3.5 w-3.5 shrink-0" />
+            )}
             <span className="truncate">{channel.name}</span>
+            {channel.visibility === "private" && (
+              <span
+                className="ml-auto shrink-0 text-[10px] text-black/40 uppercase dark:text-white/40"
+                title="Private channel — join requires a member with admin rights to add you"
+              >
+                private
+              </span>
+            )}
           </button>
         ))}
       </nav>

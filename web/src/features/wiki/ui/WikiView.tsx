@@ -1,29 +1,35 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { BookOpen, FilePlus2, Save, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { BookOpen, CloudUpload, FilePlus2, Save, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
+import { useLiveWikiDoc } from "../wiki-sync";
 import { WikiGraph } from "./WikiGraph";
 
 type Tab = "edit" | "graph";
 
 export function WikiView() {
   const { pages, isLoading, savePage } = useWikiPages(true);
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("edit");
   const [activeSlug, setActiveSlug] = useState<string | null>(
     () => pages[0]?.slug ?? null,
   );
-  const [draft, setDraft] = useState<string>("");
   const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   const active = pages.find((p) => p.slug === activeSlug) ?? null;
+  const { content, setContent } = useLiveWikiDoc(
+    activeSlug,
+    active?.content ?? "",
+  );
 
   const selectPage = (page: WikiPage) => {
     setActiveSlug(page.slug);
-    setDraft(page.content);
     setPreview(false);
   };
 
@@ -36,7 +42,6 @@ export function WikiView() {
       return;
     }
     setActiveSlug(normalized);
-    setDraft(`# ${normalized}\n\nStart writing…`);
     setPreview(false);
   };
 
@@ -44,7 +49,8 @@ export function WikiView() {
     if (!activeSlug) return;
     setSaving(true);
     try {
-      await savePage(activeSlug, draft);
+      await savePage(activeSlug, content);
+      setDirty(false);
       toast.success("Page saved");
     } catch (error) {
       console.error("[wiki]", error);
@@ -56,8 +62,32 @@ export function WikiView() {
     }
   };
 
-  const activeContent = active?.content ?? "";
-  const links = useMemo(() => extractLinks(activeContent), [activeContent]);
+  const links = useMemo(() => extractLinks(content), [content]);
+
+  // Live multi-tab convergence: debounce auto-save to the relay so every tab
+  // converges via snapshots even without a P2P signaling path; manual Save is
+  // still available. (True CRDT P2P stays wired in wiki-sync for relays that
+  // accept Trystero signaling.)
+  useEffect(() => {
+    if (!activeSlug || !dirty) return;
+    const timer = setTimeout(() => {
+      void savePage(activeSlug, content)
+        .then(() => {
+          setDirty(false);
+          void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
+        })
+        .catch((error) => {
+          console.warn("[wiki] auto-save failed", error);
+        });
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [activeSlug, content, dirty, savePage, queryClient]);
+
+  // Pull in snapshots saved by other tabs when we have no unsaved edits.
+  useEffect(() => {
+    if (!active || dirty || content === active.content) return;
+    setContent(active.content);
+  }, [active, content, dirty, setContent]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1">
@@ -140,7 +170,8 @@ export function WikiView() {
           <span className="truncate text-sm font-medium text-black/70 dark:text-white/70">
             {activeSlug ?? "wiki"}
           </span>
-          <span className="ml-auto flex items-center gap-2 text-xs text-black/45 dark:text-white/45">
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-black/45 dark:text-white/45">
+            <CloudUpload className="h-3 w-3" /> auto-saves
             {links.length > 0 && (
               <span className="flex items-center gap-1">
                 <Sparkles className="h-3 w-3" /> {links.length} link
@@ -166,13 +197,16 @@ export function WikiView() {
               {preview ? (
                 <article className="prose prose-sm max-w-none dark:prose-invert [&_pre]:overflow-x-auto">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {draft}
+                    {content}
                   </ReactMarkdown>
                 </article>
               ) : (
                 <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  value={content}
+                  onChange={(e) => {
+                    setDirty(true);
+                    setContent(e.target.value);
+                  }}
                   className="h-full min-h-[60vh] w-full resize-none rounded-md border border-black/10 bg-white p-3 font-mono text-sm text-black outline-none focus:ring-1 focus:ring-black dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-white"
                   placeholder="Write in markdown. [[Other Page]] links create the graph."
                   data-testid="wiki-editor"
