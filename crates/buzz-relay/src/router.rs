@@ -64,6 +64,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
         .route("/info", get(relay_info_handler))
+        .route("/communities", get(api::communities::directory))
         .route("/.well-known/nostr.json", get(api::nip05::nostr_nip05))
         // Health endpoints
         .route("/health", get(health_handler))
@@ -162,6 +163,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
         let web_files = web_dir.map(ServeDir::new);
         let serve_git_web_gui = state.config.serve_git_web_gui;
+        let web_spa_full = state.config.web_spa_full;
         let fallback_state = state.clone();
         let spa_fallback = tower::service_fn(move |req: axum::extract::Request| {
             let admin_index = admin_index.clone();
@@ -189,10 +191,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
                 if let (Some(index), Some(files)) = (web_index, web_files) {
                     if path.starts_with("/assets/") {
-                        return files.oneshot(req).await.map(IntoResponse::into_response);
+                        return files
+                            .oneshot(req)
+                            .await
+                            .map(|response| with_spa_coi(response.into_response()));
                     }
-                    if should_serve_spa(path, serve_git_web_gui) {
-                        return Ok(read_spa_index(&index).await);
+                    if should_serve_spa(path, serve_git_web_gui, web_spa_full) {
+                        return Ok(with_spa_coi(read_spa_index(&index).await));
                     }
                 }
                 Ok(StatusCode::NOT_FOUND.into_response())
@@ -241,8 +246,40 @@ fn is_invite_landing_path(path: &str) -> bool {
         .is_some_and(|code| !code.is_empty() && !code.contains('/'))
 }
 
-fn should_serve_spa(path: &str, serve_git_web_gui: bool) -> bool {
+/// Decide whether a public-web request should receive the SPA shell.
+///
+/// Without full-SPA mode, only the invite landing page and (optionally) the
+/// git web GUI paths fall back to the shell. With `BUZZ_WEB_SPA=full`, any
+/// path the relay does not own itself falls back to the shell, which is what
+/// lets the web client own arbitrary client-side routes without a per-route
+/// predicate.
+fn should_serve_spa(path: &str, serve_git_web_gui: bool, web_spa_full: bool) -> bool {
+    if web_spa_full {
+        return !is_server_owned_path(path);
+    }
     is_invite_landing_path(path) || (serve_git_web_gui && is_git_web_gui_path(path))
+}
+
+/// Server-owned path prefixes that must never fall through to the SPA shell.
+/// In full-SPA mode a mistyped API call 404s instead of returning HTML that a
+/// client would then try to parse as JSON.
+fn is_server_owned_path(path: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "/api/",
+        "/git/",
+        "/hooks/",
+        "/media/",
+        "/upload",
+        "/.well-known/",
+        "/_",
+        "/events",
+        "/query",
+        "/count",
+        "/info",
+        "/health",
+        "/moderation",
+    ];
+    PREFIXES.iter().any(|prefix| path.starts_with(prefix))
 }
 
 fn is_git_web_gui_path(path: &str) -> bool {
@@ -268,6 +305,24 @@ fn with_admin_csp(mut response: axum::response::Response) -> axum::response::Res
     response.headers_mut().insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(ADMIN_CSP),
+    );
+    response
+}
+
+/// Same-origin isolation for the public web bundle.
+///
+/// `Cross-Origin-Opener-Policy: same-origin` plus
+/// `Cross-Origin-Embedder-Policy: require-corp` let the web client use
+/// OPFS-backed SQLite-WASM (op-sqlite web): the feature is not available
+/// without a cross-origin-isolated document.
+fn with_spa_coi(mut response: axum::response::Response) -> axum::response::Response {
+    response.headers_mut().insert(
+        header::HeaderName::from_static("cross-origin-opener-policy"),
+        header::HeaderValue::from_static("same-origin"),
+    );
+    response.headers_mut().insert(
+        header::HeaderName::from_static("cross-origin-embedder-policy"),
+        header::HeaderValue::from_static("require-corp"),
     );
     response
 }
@@ -372,13 +427,14 @@ async fn nip11_or_ws_handler(
                 .into_response()
         }
         Err(_) => {
-            // Browser requesting HTML and Git web GUI is enabled → serve SPA.
-            if state.config.serve_git_web_gui {
+            // Browser requesting HTML → serve the SPA when the git web GUI is
+            // enabled or the deployment is in full-SPA mode.
+            if state.config.serve_git_web_gui || state.config.web_spa_full {
                 if let Some(ref dir) = state.config.web_dir {
                     if accept.contains("text/html") {
                         let index = dir.join("index.html");
                         if let Ok(body) = tokio::fs::read(&index).await {
-                            return axum::response::Html(body).into_response();
+                            return with_spa_coi(axum::response::Html(body).into_response());
                         }
                     }
                 }
@@ -653,13 +709,39 @@ mod tests {
 
     #[test]
     fn invite_is_always_served_but_git_gui_requires_opt_in() {
-        assert!(should_serve_spa("/invite/payload.mac", false));
-        assert!(should_serve_spa("/invite/payload.mac", true));
-        assert!(!should_serve_spa("/", false));
-        assert!(!should_serve_spa("/repos/example", false));
-        assert!(should_serve_spa("/", true));
-        assert!(should_serve_spa("/repos/example", true));
-        assert!(!should_serve_spa("/arbitrary", true));
+        assert!(should_serve_spa("/invite/payload.mac", false, false));
+        assert!(should_serve_spa("/invite/payload.mac", true, false));
+        assert!(!should_serve_spa("/", false, false));
+        assert!(!should_serve_spa("/repos/example", false, false));
+        assert!(should_serve_spa("/", true, false));
+        assert!(should_serve_spa("/repos/example", true, false));
+        assert!(!should_serve_spa("/arbitrary", true, false));
+
+        // Full-SPA mode: any non-server-owned path is a client route.
+        assert!(should_serve_spa("/", false, true));
+        assert!(should_serve_spa("/channels/general", false, true));
+        assert!(should_serve_spa("/c/relay.example.com", false, true));
+        // Server-owned paths still 404 rather than returning HTML.
+        for owned in [
+            "/api/events",
+            "/git/owner/repo.git/info/refs",
+            "/hooks/abc",
+            "/media/abc123",
+            "/upload",
+            "/.well-known/nostr.json",
+            "/_liveness",
+            "/events",
+            "/query",
+            "/count",
+            "/info",
+            "/health",
+            "/moderation",
+        ] {
+            assert!(
+                !should_serve_spa(owned, false, true),
+                "{owned} must not fall through to the SPA shell"
+            );
+        }
     }
 
     /// Relay state serving both bundles: the admin SPA on `admin.example` and
