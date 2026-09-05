@@ -212,11 +212,11 @@ export function RepoDetailPage() {
     isLoading: areCommitsLoading,
     error: commitsError,
   } = useGitLog(browseOwner, repoName, defaultRef);
-  const { data: fetchedReadme, isLoading: isReadmeLoading } = useGitReadme(
-    browseOwner,
-    repoName,
-    defaultRef,
-  );
+  const {
+    data: fetchedReadme,
+    isLoading: isReadmeLoading,
+    error: readmeError,
+  } = useGitReadme(browseOwner, repoName, defaultRef);
   const treeEntries = showMockRepo ? mockRepoTree : fetchedTreeEntries;
   const commits = showMockRepo ? mockRepoCommits : fetchedCommits;
   const readme = showMockRepo ? mockRepoReadme : fetchedReadme;
@@ -224,8 +224,11 @@ export function RepoDetailPage() {
   const commitsLoading = showMockRepo ? false : areCommitsLoading;
   const readmeLoading = showMockRepo ? false : isReadmeLoading;
 
-  // Surface clone/browse errors — these are otherwise silent
-  const browseError = treeError || commitsError;
+  // Surface clone/browse errors. The git read queries are chained off the
+  // clone query (`enabled: !!cloneQuery.data`), so a failed clone leaves them
+  // permanently disabled and their own `error` is never set — the hooks now
+  // propagate the clone error, which is what makes this banner reachable.
+  const browseError = treeError || commitsError || readmeError;
   useEffect(() => {
     if (browseError) {
       console.error("[git-browse]", browseError);
@@ -303,12 +306,22 @@ export function RepoDetailPage() {
         <RepoRefsSection refs={refs} isLoading={refsLoading} />
 
         {/* Clone/browse error banner */}
-        {browseError && (
-          <div className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            Failed to load repository contents:{" "}
-            {browseError instanceof Error
-              ? browseError.message
-              : String(browseError)}
+        {browseError && !isLoading && (
+          <div
+            role="alert"
+            className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            <p className="font-semibold">Couldn't load repository contents</p>
+            <p className="mt-1 opacity-90">
+              {browseError instanceof Error
+                ? browseError.message
+                : String(browseError)}
+            </p>
+            <p className="mt-2 text-xs opacity-80">
+              Repository reads require an authenticated member of this
+              community. Install a NIP-07 extension to sign in, or open this
+              repository in the Buzz desktop app.
+            </p>
           </div>
         )}
 

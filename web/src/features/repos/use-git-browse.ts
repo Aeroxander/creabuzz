@@ -38,8 +38,7 @@ export function useGitTree(
   path?: string,
 ) {
   const cloneQuery = useGitClone(owner, repoName, ref);
-
-  return useQuery({
+  const query = useQuery({
     queryKey: ["git-tree", owner, repoName, ref, path ?? ""],
     queryFn: async () => {
       if (!cloneQuery.data) throw new Error("unreachable: enabled guards data");
@@ -57,13 +56,23 @@ export function useGitTree(
     enabled: !!cloneQuery.data,
     staleTime: 5 * 60_000,
   });
+
+  return {
+    data: query.data,
+    // While the clone is still in flight the read query is disabled and
+    // reports nothing — surface the clone's own loading state instead.
+    isLoading:
+      cloneQuery.isLoading || (cloneQuery.isSuccess ? query.isLoading : false),
+    // A failed clone leaves the read query permanently disabled (never
+    // errors) — propagate the clone error or the UI hangs on a blank tab.
+    error: query.error ?? cloneQuery.error ?? null,
+  };
 }
 
 /** Get recent commits for the given ref. */
 export function useGitLog(owner: string, repoName: string, ref: string) {
   const cloneQuery = useGitClone(owner, repoName, ref);
-
-  return useQuery({
+  const query = useQuery({
     queryKey: ["git-log", owner, repoName, ref],
     queryFn: async () => {
       if (!cloneQuery.data) throw new Error("unreachable: enabled guards data");
@@ -73,13 +82,19 @@ export function useGitLog(owner: string, repoName: string, ref: string) {
     enabled: !!cloneQuery.data,
     staleTime: 5 * 60_000,
   });
+
+  return {
+    data: query.data,
+    isLoading:
+      cloneQuery.isLoading || (cloneQuery.isSuccess ? query.isLoading : false),
+    error: query.error ?? cloneQuery.error ?? null,
+  };
 }
 
 /** Find and read the README from the repo root. */
 export function useGitReadme(owner: string, repoName: string, ref: string) {
   const cloneQuery = useGitClone(owner, repoName, ref);
-
-  return useQuery({
+  const query = useQuery({
     queryKey: ["git-readme", owner, repoName, ref],
     queryFn: async () => {
       if (!cloneQuery.data) throw new Error("unreachable: enabled guards data");
@@ -89,6 +104,13 @@ export function useGitReadme(owner: string, repoName: string, ref: string) {
     enabled: !!cloneQuery.data,
     staleTime: 5 * 60_000,
   });
+
+  return {
+    data: query.data,
+    isLoading:
+      cloneQuery.isLoading || (cloneQuery.isSuccess ? query.isLoading : false),
+    error: query.error ?? cloneQuery.error ?? null,
+  };
 }
 
 /** Read a single file's content as a classified `BlobView`. */
@@ -99,8 +121,7 @@ export function useGitBlob(
   filepath: string,
 ) {
   const cloneQuery = useGitClone(owner, repoName, ref);
-
-  return useQuery({
+  const query = useQuery({
     queryKey: ["git-blob", owner, repoName, ref, filepath],
     queryFn: async () => {
       if (!cloneQuery.data) throw new Error("unreachable: enabled guards data");
@@ -111,6 +132,13 @@ export function useGitBlob(
     enabled: !!cloneQuery.data && !!filepath,
     staleTime: 5 * 60_000,
   });
+
+  return {
+    data: query.data,
+    isLoading:
+      cloneQuery.isLoading || (cloneQuery.isSuccess ? query.isLoading : false),
+    error: query.error ?? cloneQuery.error ?? null,
+  };
 }
 
 /**

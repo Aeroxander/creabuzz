@@ -347,3 +347,26 @@ test("invite download falls back for mobile and non-desktop devices", async ({
     await context.close();
   }
 });
+
+test("wrong relay shows connect form and stores the relay URL", async ({
+  page,
+}) => {
+  // Served from a non-relay origin (vite preview / static host), the app
+  // cannot reach a WebSocket endpoint and must surface the connect form
+  // instead of silently rendering the empty-community icon screen.
+  await page.goto("/");
+  // Clear once up front; addInitScript would re-clear on the reload that
+  // Connect triggers and race the write.
+  await page.evaluate(() => window.localStorage.removeItem("buzz.relayUrl"));
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Couldn't reach the relay" }),
+  ).toBeVisible();
+  await page.getByLabel("Relay URL").fill("wss://relay.example.com");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem("buzz.relayUrl")),
+    )
+    .toBe("wss://relay.example.com");
+});

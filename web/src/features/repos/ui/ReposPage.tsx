@@ -1,8 +1,15 @@
-import { BookMarked, GitBranch } from "lucide-react";
+import { BookMarked, GitBranch, WifiOff } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import buzzAppIcon from "@/assets/app-icon@3x.png";
+import {
+  normalizeRelayWsUrl,
+  relayWsUrl,
+  setStoredRelayWsUrl,
+} from "@/shared/lib/relay-url";
+import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { mockRepos } from "../mock-repos";
 import { useRepos } from "../use-repos";
@@ -63,6 +70,93 @@ function CommunityEmptyState() {
           community in the Buzz desktop app to start pushing code.
         </p>
         <ConnectButton className="mt-6" />
+      </div>
+    </div>
+  );
+}
+
+function CommunityConnectionError({ message }: { message: string }) {
+  const queryClient = useQueryClient();
+  const currentRelay = relayWsUrl();
+  const [relayInput, setRelayInput] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const retry = () => {
+    setConnectError(null);
+    void queryClient.invalidateQueries({ queryKey: ["repos"] });
+  };
+
+  const connect = (event: FormEvent) => {
+    event.preventDefault();
+    if (!relayInput.trim()) {
+      setConnectError("Enter a relay URL to connect to.");
+      return;
+    }
+    try {
+      const normalized = normalizeRelayWsUrl(relayInput);
+      setStoredRelayWsUrl(normalized);
+      window.location.reload();
+    } catch {
+      setConnectError("That doesn't look like a valid relay URL.");
+    }
+  };
+
+  return (
+    <div className="flex flex-1 items-center justify-center bg-[#F3F3F3] px-4 py-16 text-center dark:bg-[#171717]">
+      <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
+        <div
+          className="h-16 w-16 overflow-hidden bg-black"
+          style={{ borderRadius: "22.37%" }}
+        >
+          <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+        </div>
+        <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
+          <WifiOff className="h-5 w-5 text-black/60 dark:text-white/60" />
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black dark:text-white">
+          Couldn't reach the relay
+        </h1>
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
+          {message}
+        </p>
+        <p className="mt-4 max-w-md text-xs leading-relaxed text-black/50 dark:text-white/50">
+          The web app is trying to reach{" "}
+          <code className="rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">
+            {currentRelay}
+          </code>
+          . If that isn't your community's relay, enter its URL to connect.
+        </p>
+        <form
+          onSubmit={connect}
+          className="mt-4 flex w-full max-w-sm flex-col items-stretch gap-2"
+        >
+          <label className="sr-only" htmlFor="relay-url">
+            Relay URL
+          </label>
+          <Input
+            id="relay-url"
+            type="text"
+            placeholder="wss://relay.example.com"
+            value={relayInput}
+            onChange={(e) => setRelayInput(e.target.value)}
+            className="border-black/10 bg-white text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1">
+              Connect
+            </Button>
+            <button
+              type="button"
+              onClick={retry}
+              className="flex-1 rounded-md border border-black/15 bg-white px-4 py-2 text-sm font-medium text-black shadow-xs hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+            >
+              Try again
+            </button>
+          </div>
+          {connectError && (
+            <p className="text-xs text-destructive">{connectError}</p>
+          )}
+        </form>
       </div>
     </div>
   );
@@ -139,6 +233,10 @@ export function ReposPage() {
         <aside className="hidden w-72 shrink-0 lg:block" />
       </div>
     );
+  }
+
+  if (error) {
+    return <CommunityConnectionError message={error.message} />;
   }
 
   if (!repos || repos.length === 0) {
