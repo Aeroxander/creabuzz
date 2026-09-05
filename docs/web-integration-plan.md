@@ -154,6 +154,18 @@ Phase 0 (shared foundation) ────────┬────────�
 - Each track is its own PR series on `web-launchpad`; each ships behind the
   same e2e gates.
 
+
+## Implementation status (2026-09-05, web-launchpad)
+
+Phase/Track | Scope | Status
+--- | --- | ---
+Phase 0 | SPA fallback (BUZZ_WEB_SPA=full), COOP/COEP, op-sqlite spike, Trystero P2P spike, client core, CI-ready smoke suite | ✅ done (commits 7ad455614, 68dac9cf0)
+Track 1 — Flotilla model | GET /communities, directory landing, /c/<host> pages, open-channel browse | ✅ done (81ee93953); private-channel join/membership + start-community remain open
+Phase 2 reads | channels + live timeline + threads + markdown + reactions + profiles (kind 0) + NIP-50 search | ✅ done (26a7c5db7, 1aab0d385, profiles/search commit)
+Phase 3 writes | identity (nsec/NIP-07), composer, replies, reactions, media upload (BUD-11) | ✅ code + live-verified except Blossom store which needs the deployment's S3/MinIO backend (not running in dev); edits/deletes/notification polish remain
+Track 2 — Prime Agent | relay ACP harness already spawns any ACP binary; config documented (.env.example: `BUZZ_ACP_AGENT_COMMAND=prime-agent` + `--mode acp`); agent turns render in timeline (40002) | ✅ wiring+docs done; deploying prime-agent on a relay host + agent-management UI = follow-up (needs LLM API keys)
+Track 3 — OpenKnowledge model | kind:44001 wiki pages (relay-approved), op-sqlite OPFS cache, markdown editor + preview, save relay write, [[wikilinks]]/#tag knowledge graph, media-attached chat | ✅ done (b571c45a3): editor/sync/graph v1; TipTap WYSIWYG, Trystero live co-editing, git export = follow-ups
+
 ## Risks
 
 - **op-sqlite web** (worker/wasm packaging in Vite, COOP/COEP in the relay,
