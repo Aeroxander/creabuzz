@@ -1,6 +1,5 @@
-import { ArrowLeft, MessagesSquare, Users } from "lucide-react";
+import { ArrowLeft, Users } from "lucide-react";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
 
 import {
   normalizeRelayWsUrl,
@@ -9,16 +8,13 @@ import {
 import { Button } from "@/shared/ui/button";
 import { useCommunities } from "../use-communities";
 import { useChannels } from "@/features/channels/use-channels";
-import {
-  ChannelSidebar,
-  ChannelSidebarLoading,
-} from "@/features/channels/ui/ChannelSidebar";
-import { ChannelTimeline } from "@/features/channels/ui/ChannelTimeline";
+import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
+import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
 /**
- * Public page for one community (`/c/<host>`). The displayed metadata comes
- * from the unauthenticated directory; joining stores the community relay URL
- * locally (localStorage) and reloads into the full client.
+ * Public page for one community (`/c/<host>`). Communities with open
+ * channels open directly into the app shell (sidebar + search + timeline);
+ * empty communities show their public card with join/connect CTAs.
  */
 export function CommunityHomePage() {
   const { host } = useParams({ from: "/c/$host" });
@@ -27,19 +23,11 @@ export function CommunityHomePage() {
   const channels = useChannels();
   const entry = data?.communities.find((c) => c.host === host);
 
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(() =>
-    typeof search.channel === "string" ? search.channel : null,
-  );
-  const activeChannel = useMemo(
-    () => channels.data?.find((c) => c.id === selectedChannel) ?? null,
-    [channels.data, selectedChannel],
-  );
-
   const hostName = entry?.name || host;
   const icon = entry?.icon;
   const memberCount = entry?.member_count ?? 0;
 
-  const wsUrl = normalizeRelayWsUrl(host.startsWith("http") ? host : host);
+  const wsUrl = normalizeRelayWsUrl(host);
   const deepLink = `buzz://connect?relay=${encodeURIComponent(wsUrl)}`;
 
   const joinInBrowser = () => {
@@ -47,15 +35,15 @@ export function CommunityHomePage() {
     window.location.reload();
   };
 
-  if (activeChannel) {
+  if (channels.isSuccess && channels.data && channels.data.length > 0) {
+    const initialChannelId =
+      typeof search.channel === "string" ? search.channel : undefined;
     return (
       <div className="flex h-full min-h-0 w-full flex-1">
-        <ChannelSidebar
-          channels={channels.data ?? []}
-          selectedId={activeChannel.id}
-          onSelect={(id) => setSelectedChannel(id)}
+        <CommunityShell
+          channels={channels.data}
+          initialChannelId={initialChannelId}
         />
-        <ChannelTimeline channel={activeChannel} />
       </div>
     );
   }
@@ -124,27 +112,6 @@ export function CommunityHomePage() {
           </p>
 
           {channels.isLoading && <ChannelSidebarLoading />}
-          {channels.isSuccess && channels.data && channels.data.length > 0 && (
-            <div className="mt-6">
-              <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-black/70 dark:text-white/70">
-                <MessagesSquare className="h-4 w-4" /> Open channels
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {channels.data.map((channel) => (
-                  <button
-                    key={channel.id}
-                    type="button"
-                    onClick={() => setSelectedChannel(channel.id)}
-                    className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-left text-sm text-black hover:border-black/25 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-white/25"
-                    data-testid={`open-channel-${channel.name}`}
-                  >
-                    <MessagesSquare className="h-4 w-4 text-black/40 dark:text-white/40" />
-                    <span className="truncate">{channel.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

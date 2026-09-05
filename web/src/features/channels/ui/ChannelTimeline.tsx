@@ -15,6 +15,11 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import {
+  profileDisplayName,
+  useProfiles,
+  type Profile,
+} from "@/features/profiles/use-profiles";
 import { Composer } from "./Composer";
 
 function getTag(event: NostrEvent, name: string): string | undefined {
@@ -65,11 +70,13 @@ function MessageRow({
   isReply,
   reactions,
   onReply,
+  profile,
 }: {
   event: NostrEvent;
   isReply?: boolean;
   reactions: NostrEvent[];
   onReply?: (eventId: string) => void;
+  profile?: Profile;
 }) {
   const content =
     typeof event.content === "string" ? event.content.slice(0, 4000) : "";
@@ -103,13 +110,21 @@ function MessageRow({
       className={`group flex gap-3 py-2 ${isReply ? "ml-8" : ""}`}
       data-testid="message-row"
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-semibold text-black/60 dark:bg-white/10 dark:text-white/70">
-        {truncatePubkey(event.pubkey).slice(0, 2)}
-      </div>
+      {profile?.picture ? (
+        <img
+          alt=""
+          src={profile.picture}
+          className="h-8 w-8 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-semibold text-black/60 dark:bg-white/10 dark:text-white/70">
+          {truncatePubkey(event.pubkey).slice(0, 2)}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-medium text-black/70 dark:text-white/70">
-            {truncatePubkey(event.pubkey)}
+            {profileDisplayName(profile, event.pubkey)}
           </span>
           <time className="text-xs text-black/40 dark:text-white/40">
             {relativeTime(event.created_at * 1000)}
@@ -155,12 +170,14 @@ function ThreadTree({
   reactionsByTarget,
   onReply,
   depth,
+  profile,
 }: {
   event: NostrEvent;
   messages: ChannelMessages;
   reactionsByTarget: Map<string, NostrEvent[]>;
   onReply: (eventId: string) => void;
   depth: number;
+  profile?: Profile;
 }) {
   const children = messages.ordered.filter((e) => getTag(e, "e") === event.id);
   return (
@@ -170,6 +187,7 @@ function ThreadTree({
         isReply={depth > 0}
         reactions={reactionsByTarget.get(event.id) ?? []}
         onReply={onReply}
+        profile={profile}
       />
       {children.map((child) => (
         <ThreadTree
@@ -179,6 +197,7 @@ function ThreadTree({
           reactionsByTarget={reactionsByTarget}
           onReply={onReply}
           depth={depth + 1}
+          profile={profile}
         />
       ))}
     </div>
@@ -188,6 +207,15 @@ function ThreadTree({
 export function ChannelTimeline({ channel }: { channel: Channel }) {
   const messages = useChannelMessages(channel.id);
   const reactionsByTarget = useReactionGroups(messages);
+  const authors = useMemo(
+    () => [...new Set(messages.ordered.map((e) => e.pubkey))],
+    [messages.ordered],
+  );
+  const { data: profiles } = useProfiles(authors);
+  const profileByPubkey = useMemo(
+    () => new Map((profiles ?? []).map((p, i) => [authors[i], p])),
+    [profiles, authors],
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -250,6 +278,7 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
                 reactionsByTarget={reactionsByTarget}
                 onReply={(id) => setReplyTo(id)}
                 depth={0}
+                profile={profileByPubkey.get(root.pubkey)}
               />
             ))}
           </div>
