@@ -8,9 +8,87 @@ test("home page loads with Buzz branding", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("home page shows repositories section", async ({ page }) => {
+const directoryFixture = {
+  communities: [
+    {
+      host: "alpha.example.com",
+      name: "Alpha",
+      description: "A test community.",
+      icon: null,
+      member_count: 3,
+      archived: false,
+    },
+    {
+      host: "beta.example.com",
+      name: "Beta",
+      description: "Another one.",
+      member_count: 11,
+      archived: false,
+    },
+  ],
+};
+
+async function mockCommunityDirectory(page: import("@playwright/test").Page) {
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(directoryFixture),
+    });
+  });
+}
+
+test("home page shows the community directory from the relay", async ({
+  page,
+}) => {
+  await mockCommunityDirectory(page);
   await page.goto("/");
-  await expect(page.getByText("Repositories")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Communities" }),
+  ).toBeVisible();
+  await expect(page.getByText("alpha.example.com")).toBeVisible();
+  await expect(page.getByText("11 members")).toBeVisible();
+});
+
+test("empty directory shows the discovery empty state", async ({ page }) => {
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ communities: [] }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByText("No communities on this relay yet")).toBeVisible();
+});
+
+test("home page falls back when the directory endpoint is missing", async ({
+  page,
+}) => {
+  // Older relays without GET /communities: the landing degrades to the repo
+  // browser, which surfaces its own connection error state.
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({ status: 404, body: "not found" });
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Couldn't reach the relay" }),
+  ).toBeVisible();
+});
+
+test("community page shows metadata and join stores the relay URL", async ({
+  page,
+}) => {
+  await mockCommunityDirectory(page);
+  await page.goto("/c/alpha.example.com");
+  await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
+  await expect(page.getByText("3 members")).toBeVisible();
+  await page.getByRole("button", { name: "Join in browser" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem("buzz.relayUrl")),
+    )
+    .toBe("ws://alpha.example.com");
 });
 
 test("invite requires age and legal consent before opening Buzz", async ({
