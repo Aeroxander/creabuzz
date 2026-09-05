@@ -19,14 +19,36 @@ carry over.
 5. **License boundary.** OpenKnowledge is GPLv3 → blueprint + MIT-compatible
    deps only; never vendored code. Buzz is Apache-2.0.
 
+## Two data planes
+
+- **Canonical plane = the relay** (Nostr events + git): durable, auditable,
+  async. Messages, membership, identities, wiki snapshots, agent turns, repos.
+  P2P never replaces this.
+- **Live plane = WebRTC peer-to-peer via [Trystero](https://github.com/dmotz/trystero)**
+  (MIT, TypeScript, browser-only): ephemeral, co-present, low-latency, zero
+  relay load. Peer discovery/signaling rides the Buzz relay itself (Trystero's
+  Nostr strategy — the relay only sees tiny SDP handshakes; payloads go
+  peer-to-peer, end-to-end encrypted). Trystero also ships chunked large
+  transfers with progress and React hooks.
+
+Feature routing: chat = relay only · wiki = relay snapshots + P2P deltas ·
+presence/typing/cursors = P2P only · media = Blossom canonical + P2P transport.
+
+Caveats: (a) a lone editor or same-device multi-tab has no peer — the wiki
+provider always persists snapshots on save, so relay-land stays in sync;
+(b) pin the Nostr strategy to the community relay — never the default public
+BitTorrent rendezvous; (c) enterprise NAT may need a TURN server (UDP infra on
+the relay host — not Node, but new ops surface; defer until needed).
+
 ## One-time shared foundation (Phase 0 — gates everything)
 
 - SPA fallback for every client route (equivalent of upstream `BUZZ_WEB_SPA=full`).
 - Relay sends `Cross-Origin-Opener-Policy: same-origin` +
   `Cross-Origin-Embedder-Policy: require-corp` on SPA responses (op-sqlite OPFS requirement).
-- op-sqlite web spike in the Vite app: open/insert/select/FTS5, worker+wasm
-  packaging, persistence across reloads (currently blocked by npm network;
-  retry on this branch).
+- Storage + peer spike in the Vite app: op-sqlite web (open/insert/select/
+  FTS5, worker+wasm packaging, reload persistence) **and a Trystero
+  browser-to-browser round-trip with Nostr signaling through the community
+  relay** (currently blocked by npm network; retry on this branch).
 - Web-native client core: WS + HTTP bridge, typed errors (fail-closed —
   keep the relay-URL fix from dao-launchpad `95eef0701`, cherry-pick into
   web-launchpad), identity interface (ephemeral / NIP-07 / passkey / nsec).
@@ -79,7 +101,8 @@ a pure UI over relay events.
 3. Multiplayer / shared company context: agent turns + summaries publish
    context events on the relay (no daemon in browser); browser caches in
    op-sqlite; shared brain = wiki (Track 3), which agents read/write through
-   the same relay data plane — no MCP server to host.
+   the same relay data plane — no MCP server to host. Connected viewers may
+   stream live turn deltas over the Trystero peer plane (optional, later).
 4. Optional local-first fallback: buzz CLI + desktop already run managed
    agents against `BUZZ_RELAY_URL`; the same pattern lets an operator run
    prime-agent on their own machine.
@@ -99,9 +122,10 @@ relay as the transport (no Hocuspocus server, no git server beyond Buzz's).
 - Editor: TipTap (MIT) WYSIWYG + CodeMirror (MIT) source mode.
 - Local storage: pages/attrs/graph edges in op-sqlite web; FTS5 for local
   search (verify in wasm build; fallback: in-memory search index).
-- Sync without a server: custom **Yjs-over-Nostr provider** — update deltas
-  published as events on the relay (pub/sub bus replaces Hocuspocus); state
-  vectors for catch-up; addressable page metadata (NIP-33) for listing.
+- Sync without a server, hybrid: **Yjs update deltas over Trystero**
+  (live co-editing P2P, relay signaling only) + **periodic snapshots as
+  addressable events on the relay** (NIP-33) for durability and late joiners.
+  No Hocuspocus, no delta flood through the relay.
 - Durability: browser→relay git push via **isomorphic-git** (already a dep)
   to Buzz repo storage (relay git smart HTTP + git-credential-nostr) = the
   "team sharing / backup" story, with no Node.
@@ -110,8 +134,9 @@ relay as the transport (no Hocuspocus server, no git server beyond Buzz's).
 - Agent access: wiki is relay-native (events + git) → Track 2 agents query it
   directly; no separate MCP service.
 
-**Exit:** two users co-edit a page live (Yjs via relay); graph view renders
-links/mentions; an agent writes a wiki entry from chat context.
+**Exit:** two users co-edit a page live (Yjs P2P deltas, relay signaling +
+snapshots); graph view renders links/mentions; an agent writes a wiki entry
+from chat context.
 
 ---
 
