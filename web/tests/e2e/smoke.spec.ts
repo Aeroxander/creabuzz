@@ -59,7 +59,9 @@ test("empty directory shows the discovery empty state", async ({ page }) => {
     });
   });
   await page.goto("/");
-  await expect(page.getByText("No communities on this relay yet")).toBeVisible();
+  await expect(
+    page.getByText("No communities on this relay yet"),
+  ).toBeVisible();
 });
 
 test("home page falls back when the directory endpoint is missing", async ({
