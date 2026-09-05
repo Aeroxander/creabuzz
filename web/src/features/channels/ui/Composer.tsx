@@ -1,11 +1,12 @@
-import { SendHorizonal } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Paperclip, SendHorizonal } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { uploadBlob } from "@/shared/lib/upload-blob";
 
 export function Composer({
   channelId,
@@ -20,7 +21,9 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [identityError, setIdentityError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -60,6 +63,28 @@ export function Composer({
 
   const pubkey = truncatePubkey(userPubkey());
 
+  const attachFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const descriptor = await uploadBlob(file);
+      const name = file.name.replace(/[[\]()]/g, "_");
+      setDraft((previous) =>
+        previous.length > 0
+          ? `${previous}
+![${name}](${descriptor.url})`
+          : `![${name}](${descriptor.url})`,
+      );
+    } catch (error) {
+      console.error("[attach]", error);
+      toast.error("Couldn't upload file", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <form
       onSubmit={send}
@@ -92,12 +117,35 @@ export function Composer({
         data-testid="composer-input"
       />
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs text-black/40 dark:text-white/40">
-          posting as{" "}
-          <span className="font-medium text-black/60 dark:text-white/60">
-            {pubkey}…
+        <span className="flex items-center gap-1.5 text-xs text-black/40 dark:text-white/40">
+          <button
+            type="button"
+            disabled={uploading || sending}
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+            aria-label="Attach file"
+            data-testid="attach-button"
+            title="Attach a file"
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+            {uploading ? "Uploading…" : "Attach"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              void attachFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <span className="ml-1">
+            posting as{" "}
+            <span className="font-medium text-black/60 dark:text-white/60">
+              {pubkey}
+            </span>
+            {identityError && " — sign in to post"}
           </span>
-          {identityError && " — sign in to post"}
         </span>
         <button
           type="submit"

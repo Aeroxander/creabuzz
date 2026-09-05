@@ -1,10 +1,11 @@
-import { Search } from "lucide-react";
+import { BookOpen, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { SearchResults } from "@/features/search/ui/SearchResults";
+import { WikiView } from "@/features/wiki/ui/WikiView";
 
 /**
  * In-community shell: channel sidebar, full-text search across open
@@ -21,6 +22,7 @@ export function CommunityShell({
     () => initialChannelId ?? null,
   );
   const [searchTerm, setSearchTerm] = useState("");
+  const [showingWiki, setShowingWiki] = useState(false);
 
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
@@ -44,17 +46,36 @@ export function CommunityShell({
             />
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowingWiki((v) => !v);
+            setSearchTerm("");
+          }}
+          className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+            showingWiki
+              ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+              : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+          }`}
+          data-testid="wiki-toggle"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          {showingWiki ? "Chat" : "Wiki"}
+        </button>
         <ChannelSidebar
           channels={channels}
           selectedId={activeChannel?.id ?? null}
           onSelect={(id) => {
             setSelectedId(id);
             setSearchTerm("");
+            setShowingWiki(false);
           }}
         />
       </div>
 
-      {searching ? (
+      {showingWiki ? (
+        <WikiView />
+      ) : searching ? (
         <SearchResults
           term={searchTerm.trim()}
           channels={channels}

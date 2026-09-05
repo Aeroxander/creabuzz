@@ -544,6 +544,12 @@ pub const KIND_MEMBER_REMOVED_NOTIFICATION: u32 = 44101;
 /// See `docs/nips/NIP-AM.md`.
 pub const KIND_AGENT_TURN_METRIC: u32 = 44200;
 
+// Wiki (44001) — community knowledge base pages.
+/// A wiki page (addressable, NIP-33): `d` tag = page slug, content = markdown.
+/// The community brain in the web client: humans and agents read/write the
+/// same pages through the relay data plane.
+pub const KIND_WIKI_PAGE: u32 = 44001;
+
 // Forum / social (45000–45999)
 // V1 used addressable range (30001–30003) — wrong.
 /// A forum post (thread root).
