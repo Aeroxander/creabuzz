@@ -1,5 +1,6 @@
-import { ArrowLeft, Users } from "lucide-react";
-import { Link, useParams } from "@tanstack/react-router";
+import { ArrowLeft, MessagesSquare, Users } from "lucide-react";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 
 import {
   normalizeRelayWsUrl,
@@ -7,6 +8,12 @@ import {
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { useCommunities } from "../use-communities";
+import { useChannels } from "@/features/channels/use-channels";
+import {
+  ChannelSidebar,
+  ChannelSidebarLoading,
+} from "@/features/channels/ui/ChannelSidebar";
+import { ChannelTimeline } from "@/features/channels/ui/ChannelTimeline";
 
 /**
  * Public page for one community (`/c/<host>`). The displayed metadata comes
@@ -15,8 +22,18 @@ import { useCommunities } from "../use-communities";
  */
 export function CommunityHomePage() {
   const { host } = useParams({ from: "/c/$host" });
+  const search = useSearch({ from: "/c/$host" });
   const { data } = useCommunities();
+  const channels = useChannels();
   const entry = data?.communities.find((c) => c.host === host);
+
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(() =>
+    typeof search.channel === "string" ? search.channel : null,
+  );
+  const activeChannel = useMemo(
+    () => channels.data?.find((c) => c.id === selectedChannel) ?? null,
+    [channels.data, selectedChannel],
+  );
 
   const hostName = entry?.name || host;
   const icon = entry?.icon;
@@ -29,6 +46,19 @@ export function CommunityHomePage() {
     setStoredRelayWsUrl(wsUrl);
     window.location.reload();
   };
+
+  if (activeChannel) {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-1">
+        <ChannelSidebar
+          channels={channels.data ?? []}
+          selectedId={activeChannel.id}
+          onSelect={(id) => setSelectedChannel(id)}
+        />
+        <ChannelTimeline channel={activeChannel} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex w-full flex-1 items-start justify-center bg-[#F3F3F3] px-4 py-10 dark:bg-[#171717]">
@@ -92,6 +122,29 @@ export function CommunityHomePage() {
             Joining doesn't require an account here — Buzz creates a local
             identity only when you post or join privately.
           </p>
+
+          {channels.isLoading && <ChannelSidebarLoading />}
+          {channels.isSuccess && channels.data && channels.data.length > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-black/70 dark:text-white/70">
+                <MessagesSquare className="h-4 w-4" /> Open channels
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {channels.data.map((channel) => (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    onClick={() => setSelectedChannel(channel.id)}
+                    className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-left text-sm text-black hover:border-black/25 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-white/25"
+                    data-testid={`open-channel-${channel.name}`}
+                  >
+                    <MessagesSquare className="h-4 w-4 text-black/40 dark:text-white/40" />
+                    <span className="truncate">{channel.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
