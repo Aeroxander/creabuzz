@@ -37,15 +37,11 @@ async function fetchHistory(
   return events.sort((a, b) => a.created_at - b.created_at);
 }
 
-async function fetchAux(
-  channelId: string,
-  messageIds: string[],
-): Promise<NostrEvent[]> {
+async function fetchAux(messageIds: string[]): Promise<NostrEvent[]> {
   if (messageIds.length === 0) return [];
   const events = await queryEvents(relayWsUrl(), {
     kinds: AUX_KINDS,
     "#e": messageIds.slice(0, 100),
-    "#h": [channelId],
     limit: 200,
   });
   return events;
@@ -110,7 +106,7 @@ export function useChannelMessages(channelId: string | null) {
   );
   const auxQuery = useQuery({
     queryKey: ["channel-aux", channelId, historyIds.join(",").slice(0, 400)],
-    queryFn: () => fetchAux(channelId ?? "", historyIds),
+    queryFn: () => fetchAux(historyIds),
     enabled: enabled && historyIds.length > 0,
     staleTime: 60_000,
   });
