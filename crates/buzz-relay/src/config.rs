@@ -85,6 +85,38 @@ pub struct JoinPolicyConfig {
     pub version: String,
 }
 
+/// Optional LLM gateway (browser-agent key gateway).
+///
+/// Browser agents can't carry API keys (nor call arbitrary hosts through
+/// CORS), so the relay forwards `/llm/chat/completions` to this upstream,
+/// injecting the operator's key server-side. Auth: NIP-98, same as `/query`.
+#[derive(Clone)]
+pub struct LlmConfig {
+    proxy_url: String,
+    api_key: Option<String>,
+}
+
+impl LlmConfig {
+    /// Upstream OpenAI-compatible `/chat/completions` URL.
+    pub(crate) fn proxy_url(&self) -> &str {
+        &self.proxy_url
+    }
+
+    /// Optional bearer key injected server-side; browsers never see it.
+    pub(crate) fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
+    }
+}
+
+impl std::fmt::Debug for LlmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LlmConfig")
+            .field("proxy_url", &self.proxy_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
+}
+
 /// Optional KLIPY GIF-search integration owned by the relay operator.
 ///
 /// The API key deliberately stays private and its [`Debug`] implementation is
@@ -285,6 +317,9 @@ pub struct Config {
     ///
     /// Default: `false`. Set via `BUZZ_ALLOW_NIP_OA_AUTH=true`.
     pub allow_nip_oa_auth: bool,
+
+    /// Relay-owned LLM gateway. Unset means `/llm/chat/completions` returns 404.
+    pub llm: Option<LlmConfig>,
 
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
@@ -718,6 +753,18 @@ impl Config {
         let allow_nip_oa_auth = std::env::var("BUZZ_ALLOW_NIP_OA_AUTH")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+
+        let llm = {
+            let proxy_url = std::env::var("BUZZ_LLM_PROXY_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let api_key = std::env::var("BUZZ_LLM_API_KEY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            proxy_url.map(|proxy_url| LlmConfig { proxy_url, api_key })
+        };
 
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
@@ -1250,6 +1297,7 @@ impl Config {
             relay_operator_api_origin,
             relay_operator_pubkeys,
             allow_nip_oa_auth,
+            llm,
             klipy,
             media,
             media_max_concurrent_uploads,

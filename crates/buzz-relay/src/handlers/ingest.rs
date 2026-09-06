@@ -36,6 +36,8 @@ use buzz_core::kind::{
     RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
     RELAY_ADMIN_SET_WORKSPACE_PROFILE,
     KIND_WIKI_PAGE,
+    KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_TASK,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -542,6 +544,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // Command kinds — DM management, workflows, approvals
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
         KIND_WIKI_PAGE => Ok(Scope::MessagesWrite),
+        KIND_AGENT_CAPABILITIES | KIND_AGENT_TASK => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
         _ => Err("restricted: unknown event kind"),

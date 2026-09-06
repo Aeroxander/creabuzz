@@ -76,6 +76,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/count", post(api::bridge::count_events))
         // Relay-owned third-party GIF metadata proxy (NIP-98 auth).
         .route(api::gifs::SEARCH_PATH, post(api::gifs::search))
+        // Relay-owned LLM gateway for browser agents (NIP-98 auth, opt-in).
+        .route(api::llm_gateway::LLM_CHAT_PATH, post(api::llm_gateway::chat_completions))
         .route(api::gifs::SHARE_PATH, post(api::gifs::share))
         .route(
             "/workflows/{workflow_id}/runs",

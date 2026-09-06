@@ -544,6 +544,25 @@ pub const KIND_MEMBER_REMOVED_NOTIFICATION: u32 = 44101;
 /// See `docs/nips/NIP-AM.md`.
 pub const KIND_AGENT_TURN_METRIC: u32 = 44200;
 
+// Agent fleet (44010–44019) — cooperation plane for multi-agent fleets.
+/// Fleet: an agent's capabilities advertisement (addressable, agent-authored).
+///
+/// Addressed by `d` = stable agent id (pubkey by default). Content is JSON:
+/// `{ "name": string, "runtype": "browser"|"desktop"|"sandbox", "status":
+/// "available"|"busy"|"offline", "tools": string[], "heartbeat": unix_sec }`.
+/// The live fleet roster is a subscription over this kind; liveness is
+/// heartbeat recency, so agents refresh this event periodically.
+pub const KIND_AGENT_CAPABILITIES: u32 = 44010;
+
+/// Fleet: a coordination task (addressable).
+///
+/// Addressed by `d` = task id. Content is JSON:
+/// `{ "title": string, "description": string, "status":
+/// "open"|"assigned"|"in_progress"|"needs_approval"|"done"|"cancelled" }`.
+/// `p` tag = assignee pubkey, `e` tag = parent task/thread. Approvals reuse
+/// the workflow approval kinds; any fleet member may pick up an open task.
+pub const KIND_AGENT_TASK: u32 = 44011;
+
 // Wiki (44001) — community knowledge base pages.
 /// A wiki page (addressable, NIP-33): `d` tag = page slug, content = markdown.
 /// The community brain in the web client: humans and agents read/write the
