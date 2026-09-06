@@ -174,7 +174,7 @@ export function WikiView() {
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
-                className={`rounded px-2 py-1 text-xs font-medium ${
+                className={`rounded-md px-2 py-1 text-xs font-medium ${
                   tab === t
                     ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
                     : "text-black/60 dark:text-white/60"
@@ -210,7 +210,7 @@ export function WikiView() {
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
-                className={`rounded border px-2 py-1 ${
+                className={`rounded-md border px-2 py-1 ${
                   mode === m
                     ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
                     : "border-black/15 dark:border-white/15"

@@ -43,6 +43,7 @@ export function CommunityHomePage() {
         <CommunityShell
           channels={channels.data}
           initialChannelId={initialChannelId}
+          host={host}
         />
       </div>
     );

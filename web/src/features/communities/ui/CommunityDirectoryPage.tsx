@@ -11,6 +11,7 @@ import {
   useCommunities,
   type CommunityDirectoryEntry,
 } from "../use-communities";
+import { Button } from "@/shared/ui/button";
 
 function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
   const hostName = entry.name || entry.host;
@@ -94,13 +95,15 @@ function AddCommunityForm() {
         className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
         data-testid="add-community-input"
       />
-      <button
+      <Button
         type="submit"
-        className="inline-flex items-center gap-1.5 rounded-md border border-black/15 bg-white px-3 py-1.5 text-sm font-medium text-black shadow-xs hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+        variant="outline"
+        size="sm"
+        className="dark:border-white/15"
         data-testid="add-community-submit"
       >
-        <Globe className="h-4 w-4" /> Add community
-      </button>
+        <Globe /> Add community
+      </Button>
     </form>
   );
 }
@@ -115,11 +118,10 @@ export function CommunityDirectoryPage() {
           <Compass className="h-5 w-5" /> Communities
         </h1>
         <AddCommunityForm />
-        <Link
-          to="/repos"
-          className="flex items-center gap-1.5 rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-white dark:hover:bg-white/10"
-        >
-          <BookMarked className="h-4 w-4" /> Repositories
+        <Link to="/repos">
+          <Button variant="outline" size="sm" className="dark:border-white/15">
+            <BookMarked /> Repositories
+          </Button>
         </Link>
       </header>
 
