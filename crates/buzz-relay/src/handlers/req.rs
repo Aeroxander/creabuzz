@@ -7,9 +7,9 @@ use tracing::{debug, warn};
 
 use buzz_core::filter::filters_match;
 use buzz_core::kind::{
-    is_unshared_gated_event, AUTHOR_ONLY_KINDS, KIND_AGENT_ENGRAM, KIND_AGENT_TURN_METRIC,
-    KIND_DM_VISIBILITY, KIND_HUDDLE_LIVENESS, P_GATED_KINDS, RESULT_GATED_KINDS,
-    SHARED_GATED_KINDS,
+    is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS, KIND_AGENT_ENGRAM,
+    KIND_AGENT_TURN_METRIC, KIND_DM_VISIBILITY, KIND_HUDDLE_LIVENESS, P_GATED_KINDS,
+    RESULT_GATED_KINDS, SHARED_GATED_KINDS,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::EventQuery;
@@ -81,6 +81,12 @@ pub async fn handle_req(
                 }
 
                 (conn.conn_id, pk_bytes, ctx.channel_ids.clone())
+            }
+            // P2P signaling mode: anonymous subscriptions are allowed when
+            // every filter is limited to NIP-01 ephemeral kinds. Ephemeral
+            // events are never stored, so this cannot read community data.
+            _ if state.config.p2p_signaling && filters_are_ephemeral_only(&filters) => {
+                (conn.conn_id, vec![0u8; 32], None)
             }
             _ => {
                 conn.send(RelayMessage::notice(
@@ -932,6 +938,22 @@ fn filters_are_nip43_membership_only(filters: &[Filter]) -> bool {
 /// to one `EventQuery::channel_id` without dropping matches from the other
 /// channels. Return `None` in that case and let the caller apply the accessible
 /// channel set in SQL before the full filter is evaluated in Rust.
+/// True when every filter targets only NIP-01 ephemeral kinds (20000–29999)
+/// without ids/authors. Used by the anonymous P2P-signaling REQ bypass.
+fn filters_are_ephemeral_only(filters: &[Filter]) -> bool {
+    !filters.is_empty()
+        && filters
+            .iter()
+            .all(|filter| match filter.kinds.as_ref() {
+                Some(kinds) => !kinds.is_empty()
+                    && kinds.iter().all(|kind| is_ephemeral(kind.as_u16() as u32)),
+                None => false,
+            })
+        && filters
+            .iter()
+            .all(|filter| filter.ids.is_none() && filter.authors.is_none())
+}
+
 fn extract_channel_id_from_filter(filter: &Filter) -> Option<uuid::Uuid> {
     let h_tag = nostr::SingleLetterTag::lowercase(nostr::Alphabet::H);
     let values = filter.generic_tags.get(&h_tag)?;

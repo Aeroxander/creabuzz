@@ -641,6 +641,17 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 ctx.scopes.clone(),
                 ctx.channel_ids.clone(),
             ),
+            // P2P signaling mode: anonymous ephemeral events are accepted so
+            // browser P2P layers (e.g. Trystero over Nostr) can rendezvous
+            // through the relay. Ephemeral events are broadcast to live
+            // subscribers and never stored, so no durable data is opened.
+            _ if state.config.p2p_signaling && is_ephemeral(kind_u32) => (
+                conn.conn_id,
+                event.pubkey.to_bytes().to_vec(),
+                event.pubkey,
+                vec![buzz_auth::Scope::MessagesWrite],
+                None,
+            ),
             _ => {
                 reject("auth");
                 conn.send(RelayMessage::ok(

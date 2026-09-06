@@ -371,6 +371,13 @@ pub struct Config {
     /// itself falls back to the web bundle's `index.html`, enabling arbitrary
     /// client-side routing in the web SPA.
     pub web_spa_full: bool,
+    /// When true (`BUZZ_P2P_SIGNALING=1`), anonymous clients may subscribe and
+    /// publish NIP-01 ephemeral events (kinds 20000–29999) without NIP-42
+    /// auth. Ephemeral events are broadcast to live subscribers only and never
+    /// stored, so this opens no durable data: it lets browser P2P layers
+    /// (e.g. Trystero over Nostr signaling) rendezvous through the relay.
+    /// Defaults to off; the relay's read/write auth posture is unchanged.
+    pub p2p_signaling: bool,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -1186,6 +1193,9 @@ impl Config {
         let web_spa_full = std::env::var("BUZZ_WEB_SPA")
             .map(|value| value.eq_ignore_ascii_case("full"))
             .unwrap_or(false);
+        let p2p_signaling = std::env::var("BUZZ_P2P_SIGNALING")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
 
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
@@ -1265,6 +1275,7 @@ impl Config {
             web_dir,
             serve_git_web_gui,
             web_spa_full,
+            p2p_signaling,
         })
     }
 }
