@@ -124,6 +124,11 @@ pub async fn chat_completions(
     if upstream_body.len() > MAX_RESPONSE_BYTES {
         return Err(api_error(StatusCode::BAD_GATEWAY, "LLM provider response too large"));
     }
+    if upstream_status.is_client_error() || upstream_status.is_server_error() {
+        let preview: String = String::from_utf8_lossy(&upstream_body[..upstream_body.len().min(400)])
+            .into_owned();
+        tracing::warn!(status = upstream_status.as_u16(), "LLM upstream error: {preview}");
+    }
 
     Ok(Response::builder()
         .status(upstream_status)

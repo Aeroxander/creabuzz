@@ -166,6 +166,7 @@ class BrowserAgent {
       );
       await this.postTurn(channelId, answer);
     } catch (error) {
+      console.error("[browser-agent] mention failed:", error);
       await this.postTurn(
         channelId,
         `⚠️ gateway/agent error: ${error instanceof Error ? error.message : "unknown"} (echo: ${event.content.slice(0, 160)})`,
@@ -199,13 +200,19 @@ class BrowserAgent {
     userPrompt: string,
   ): Promise<string> {
     const url = `${relayHttpBaseUrl()}/llm/chat/completions`;
+    // The gateway forwards this body to the relay's configured upstream;
+    // VITE_AGENT_MODEL overrides the deployment default.
+    const model =
+      import.meta.env.VITE_AGENT_MODEL ?? "umans-deepseek-v4-flash-0731";
     const body = JSON.stringify({
-      model: "qwen3.8",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 700,
+      // Reasoning models spend tokens before answering — keep the budget high
+      // enough that `content` is never an empty cut-off.
+      max_tokens: 4096,
     });
     const { makeNip98AuthHeader } = await import("@/shared/lib/nip98");
     const auth = await makeNip98AuthHeader(url, "POST", { body });
