@@ -164,7 +164,7 @@ Track 1 — Flotilla model | GET /communities, directory landing, /c/<host> page
 Phase 2 reads | channels + live timeline + threads + markdown + reactions + profiles (kind 0) + NIP-50 search | ✅ done (26a7c5db7, 1aab0d385, profiles/search commit)
 Phase 3 writes | identity (nsec/NIP-07), composer, replies, reactions, edits (40003), deletes (kind 5), media upload (BUD-11) | ✅ code + live-verified except Blossom store which needs the deployment's S3/MinIO backend (not running in dev) — media intentionally deferred last
 Track 2 — Prime Agent | relay ACP harness already spawns any ACP binary; config documented (.env.example: `BUZZ_ACP_AGENT_COMMAND=prime-agent` + `--mode acp`); agent turns render in timeline (40002) | ✅ wiring+docs done; deploying prime-agent on a relay host + agent-management UI = follow-up (needs LLM API keys)
-Track 3 — OpenKnowledge model | kind:44001 wiki pages (relay-approved), best-effort op-sqlite OPFS cache, markdown editor + preview, auto-save snapshots, [[wikilinks]]/#tag knowledge graph | ✅ done (b571c45a3, 288b6d977): two-tab convergence via relay snapshots verified; TipTap WYSIWYG + git export = follow-ups; pure-P2P Yjs/Trystero co-editing deferred — this relay requires NIP-42 signaling auth Trystero can't speak
+Track 3 — OpenKnowledge model | kind:44001 wiki pages (relay-approved), best-effort op-sqlite OPFS cache, WYSIWYG/Source/Preview editor, auto-save snapshots + P2P live co-editing, [[wikilinks]]/#tag knowledge graph, markdown export bundle | ✅ done (b571c45a3, 288b6d977, 371e0b7ca, d105104ba): two-tab P2P convergence via anonymous ephemeral signaling (BUZZ_P2P_SIGNALING) + snapshot fallback, WYSIWYG + export verified live; git-push export = follow-up (repo ACL/permissions)
 
 ## Risks
 
