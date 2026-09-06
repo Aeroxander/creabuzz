@@ -337,6 +337,15 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.168.10
         version: 1.170.7(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tiptap/pm':
+        specifier: ^3.22.5
+        version: 3.22.5
+      '@tiptap/react':
+        specifier: ^3.22.5
+        version: 3.22.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.22.5(@tiptap/pm@3.22.5))(@tiptap/pm@3.22.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tiptap/starter-kit':
+        specifier: ^3.22.5
+        version: 3.22.5
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -373,6 +382,9 @@ importers:
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.6.0
+      tiptap-markdown:
+        specifier: ^0.9.0
+        version: 0.9.0(@tiptap/core@3.22.5(@tiptap/pm@3.22.5))
       trystero:
         specifier: ^0.25.4
         version: 0.25.4

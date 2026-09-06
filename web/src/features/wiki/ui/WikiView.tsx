@@ -1,12 +1,20 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, CloudUpload, FilePlus2, Save, Sparkles } from "lucide-react";
+import {
+  BookOpen,
+  CloudUpload,
+  Download,
+  FilePlus2,
+  Save,
+  Sparkles,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
 import { useLiveWikiDoc } from "../wiki-sync";
+import { WikiEditor } from "./WikiEditor";
 import { WikiGraph } from "./WikiGraph";
 
 type Tab = "edit" | "graph";
@@ -18,7 +26,8 @@ export function WikiView() {
   const [activeSlug, setActiveSlug] = useState<string | null>(
     () => pages[0]?.slug ?? null,
   );
-  const [preview, setPreview] = useState(false);
+  type EditMode = "wysiwyg" | "source" | "preview";
+  const [mode, setMode] = useState<EditMode>("wysiwyg");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -30,7 +39,7 @@ export function WikiView() {
 
   const selectPage = (page: WikiPage) => {
     setActiveSlug(page.slug);
-    setPreview(false);
+    setMode("wysiwyg");
   };
 
   const createPage = () => {
@@ -42,7 +51,7 @@ export function WikiView() {
       return;
     }
     setActiveSlug(normalized);
-    setPreview(false);
+    setMode("wysiwyg");
   };
 
   const save = async () => {
@@ -63,6 +72,20 @@ export function WikiView() {
   };
 
   const links = useMemo(() => extractLinks(content), [content]);
+
+  const exportWiki = () => {
+    const header = `# Buzz Wiki Export\n\nExported ${new Date().toISOString()} — ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
+    const body = pages
+      .map((page) => `\n---\n\n# Page: ${page.slug}\n\n${page.content}`)
+      .join("\n");
+    const blob = new Blob([header + body], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `wiki-export-${new Date().toISOString().slice(0, 10)}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Live multi-tab convergence: debounce auto-save to the relay so every tab
   // converges via snapshots even without a P2P signaling path; manual Save is
@@ -146,33 +169,35 @@ export function WikiView() {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-black/10 px-4 py-2 dark:border-white/10">
           <div className="flex items-center gap-1 rounded-md bg-black/5 p-1 dark:bg-white/10">
-            <button
-              type="button"
-              onClick={() => setTab("edit")}
-              className={`rounded px-2 py-1 text-xs font-medium ${
-                tab === "edit"
-                  ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
-                  : "text-black/60 dark:text-white/60"
-              }`}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("graph")}
-              className={`rounded px-2 py-1 text-xs font-medium ${
-                tab === "graph"
-                  ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
-                  : "text-black/60 dark:text-white/60"
-              }`}
-            >
-              Graph
-            </button>
+            {(["edit", "graph"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  tab === t
+                    ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
+                    : "text-black/60 dark:text-white/60"
+                }`}
+              >
+                {t === "edit" ? "Edit" : "Graph"}
+              </button>
+            ))}
           </div>
           <span className="truncate text-sm font-medium text-black/70 dark:text-white/70">
             {activeSlug ?? "wiki"}
           </span>
           <span className="ml-auto flex items-center gap-1.5 text-xs text-black/45 dark:text-white/45">
+            <button
+              type="button"
+              onClick={exportWiki}
+              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+              aria-label="Export wiki as markdown"
+              data-testid="wiki-export"
+              title="Download all pages as one markdown file"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
             <CloudUpload className="h-3 w-3" /> auto-saves
             {links.length > 0 && (
               <span className="flex items-center gap-1">
@@ -180,14 +205,25 @@ export function WikiView() {
                 {links.length === 1 ? "" : "s"}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => setPreview((p) => !p)}
-              className="rounded border border-black/15 px-2 py-1 dark:border-white/15"
-              data-testid="wiki-preview-toggle"
-            >
-              {preview ? "Source" : "Preview"}
-            </button>
+            {(["wysiwyg", "source", "preview"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`rounded border px-2 py-1 ${
+                  mode === m
+                    ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
+                    : "border-black/15 dark:border-white/15"
+                }`}
+                data-testid={`wiki-mode-${m}`}
+              >
+                {m === "wysiwyg"
+                  ? "WYSIWYG"
+                  : m === "source"
+                    ? "Source"
+                    : "Preview"}
+              </button>
+            ))}
           </span>
         </div>
 
@@ -195,14 +231,14 @@ export function WikiView() {
           <WikiGraph pages={pages} />
         ) : activeSlug ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {preview ? (
-                <article className="prose prose-sm max-w-none dark:prose-invert [&_pre]:overflow-x-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {mode === "preview" ? (
+                <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {content}
                   </ReactMarkdown>
                 </article>
-              ) : (
+              ) : mode === "source" ? (
                 <textarea
                   value={content}
                   onChange={(e) => {
@@ -213,6 +249,16 @@ export function WikiView() {
                   placeholder="Write in markdown. [[Other Page]] links create the graph."
                   data-testid="wiki-editor"
                 />
+              ) : (
+                <div className="border-b border-black/10 dark:border-white/10">
+                  <WikiEditor
+                    content={content}
+                    onChange={(markdown) => {
+                      setDirty(true);
+                      setContent(markdown);
+                    }}
+                  />
+                </div>
               )}
             </div>
             <div className="flex items-center justify-end border-t border-black/10 px-4 py-2 dark:border-white/10">

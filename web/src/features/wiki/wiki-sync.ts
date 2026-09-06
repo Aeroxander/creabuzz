@@ -126,7 +126,7 @@ export function useLiveWikiDoc(
     doc.on("update", onDocUpdate);
 
     if (room) {
-      room.raw.onPeerJoin = (id) => {
+      room.raw.onPeerJoin = () => {
         // A new peer only has its own doc; hand ours over so it converges.
         sendBuffer(Y.encodeStateAsUpdate(doc));
       };
