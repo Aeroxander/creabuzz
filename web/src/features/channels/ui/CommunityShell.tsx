@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, Search, Zap } from "lucide-react";
+import { ArrowLeft, BookOpen, Bot, Search, Zap } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
@@ -7,6 +7,7 @@ import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { SearchResults } from "@/features/search/ui/SearchResults";
 import { WikiView } from "@/features/wiki/ui/WikiView";
+import { FleetView } from "@/features/fleet/ui/FleetView";
 
 /**
  * In-community shell: channel sidebar, full-text search across open
@@ -26,6 +27,7 @@ export function CommunityShell({
   );
   const [searchTerm, setSearchTerm] = useState("");
   const [showingWiki, setShowingWiki] = useState(false);
+  const [showingFleet, setShowingFleet] = useState(false);
 
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
@@ -73,6 +75,7 @@ export function CommunityShell({
         <button
           type="button"
           onClick={() => {
+            setShowingFleet(false);
             setShowingWiki((v) => !v);
             setSearchTerm("");
           }}
@@ -86,6 +89,23 @@ export function CommunityShell({
           <BookOpen className="h-3.5 w-3.5" />
           {showingWiki ? "Chat" : "Wiki"}
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowingWiki(false);
+            setShowingFleet((v) => !v);
+            setSearchTerm("");
+          }}
+          className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+            showingFleet
+              ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+              : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+          }`}
+          data-testid="fleet-toggle"
+        >
+          <Bot className="h-3.5 w-3.5" />
+          {showingFleet ? "Chat" : "Agents"}
+        </button>
         <ChannelSidebar
           channels={channels}
           selectedId={activeChannel?.id ?? null}
@@ -93,11 +113,14 @@ export function CommunityShell({
             setSelectedId(id);
             setSearchTerm("");
             setShowingWiki(false);
+            setShowingFleet(false);
           }}
         />
       </div>
 
-      {showingWiki ? (
+      {showingFleet ? (
+        <FleetView channels={channels} />
+      ) : showingWiki ? (
         <WikiView />
       ) : searching ? (
         <SearchResults
