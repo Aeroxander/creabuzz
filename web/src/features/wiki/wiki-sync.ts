@@ -3,8 +3,11 @@
  * Trystero (WebRTC with the community relay as Nostr signaling only) and
  * snapshotted to the relay (kind:44001) on save.
  *
- * Three tabs/people editing one page converge in real time with zero relay
- * payload; the relay stays the durable source of truth via save.
+ * Protocol (y-webrtc-style): connect → announce → when a new peer joins,
+ * send the full state vector delta; live edits broadcast as throttled Yjs
+ * update deltas; every received update echoes our state back (throttled)
+ * so late joiners fully converge. The relay stays the durable source of
+ * truth via explicit saves.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,6 +25,10 @@ interface WikiAction {
 
 interface RoomHandle {
   action: WikiAction;
+  raw: {
+    onPeerJoin: ((id: string) => void) | null;
+    getPeers: () => Record<string, unknown>;
+  };
   destroy: () => void;
 }
 
@@ -31,9 +38,9 @@ function openRoom(slug: string): RoomHandle | null {
       { appId: APP_ID, relayConfig: { urls: [relayWsUrl()] } },
       `wiki:${slug}`,
     );
-    const action = room.makeAction("updates") as WikiAction;
     return {
-      action,
+      action: room.makeAction("updates") as WikiAction,
+      raw: room as unknown as RoomHandle["raw"],
       destroy: () => {
         void room.leave();
       },
@@ -62,10 +69,16 @@ function toUint8(data: unknown): Uint8Array | null {
 export function useLiveWikiDoc(
   slug: string | null,
   initialContent: string,
-): { content: string; setContent: (value: string) => void } {
+): {
+  content: string;
+  setContent: (value: string) => void;
+  touched: boolean;
+} {
   const docRef = useRef<Y.Doc | null>(null);
   const textRef = useRef<Y.Text | null>(null);
   const [content, setContentState] = useState(initialContent);
+  const [touched, setTouched] = useState(false);
+  const seededRef = useRef(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -81,18 +94,23 @@ export function useLiveWikiDoc(
 
     const room = openRoom(slug);
     let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
+    let echoTimer: ReturnType<typeof setTimeout> | null = null;
     const pendingUpdate: Uint8Array[] = [];
 
-    const flush = () => {
+    const sendBuffer = (bytes: Uint8Array) => {
+      room?.action.send(
+        bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ),
+      );
+    };
+
+    const flushUpdates = () => {
       if (pendingUpdate.length === 0) return;
       const merged = Y.mergeUpdates(pendingUpdate);
       pendingUpdate.length = 0;
-      room?.action.send(
-        merged.buffer.slice(
-          merged.byteOffset,
-          merged.byteOffset + merged.byteLength,
-        ),
-      );
+      sendBuffer(merged);
     };
 
     const onDocUpdate = (update: Uint8Array, origin: unknown) => {
@@ -101,15 +119,24 @@ export function useLiveWikiDoc(
       if (broadcastTimer == null) {
         broadcastTimer = setTimeout(() => {
           broadcastTimer = null;
-          flush();
+          flushUpdates();
         }, 150);
       }
     };
     doc.on("update", onDocUpdate);
 
     if (room) {
-      let echoTimer: ReturnType<typeof setTimeout> | null = null;
+      room.raw.onPeerJoin = (id) => {
+        // A new peer only has its own doc; hand ours over so it converges.
+        sendBuffer(Y.encodeStateAsUpdate(doc));
+      };
       room.action.onMessage = (data) => {
+        console.log(
+          "[wiki-sync] RECEIVED",
+          data?.constructor?.name,
+          "bytes",
+          toUint8(data)?.length,
+        );
         const bytes = toUint8(data);
         if (!bytes) return;
         try {
@@ -118,30 +145,37 @@ export function useLiveWikiDoc(
           console.warn("[wiki-sync] apply failed", error);
         }
         setContentState(text.toString());
-        // Echo our current state (throttled): a peer that joined after us
-        // may only have its own snapshot, and Yjs needs both to converge.
+        // Echo our state (throttled) so a peer that joined mid-edit converges
+        // on everything we have.
         if (echoTimer == null) {
           echoTimer = setTimeout(() => {
             echoTimer = null;
-            room.action.send(Y.encodeStateAsUpdate(doc).buffer);
+            sendBuffer(Y.encodeStateAsUpdate(doc));
           }, 500);
         }
       };
-      // Send our current state so peers that were already in the room
-      // converge, and any peer joining later receives ours via their request.
-      room.action.send(Y.encodeStateAsUpdate(doc).buffer);
     }
 
-    const onTextChange = () => setContentState(text.toString());
+    const onTextChange = () => {
+      const value = text.toString();
+      if (!seededRef.current) {
+        // Initial render from the seed/snapshot — not a user edit.
+        seededRef.current = true;
+        setContentState(value);
+        return;
+      }
+      setTouched(true);
+      setContentState(value);
+    };
     text.observe(onTextChange);
     setContentState(text.toString());
+    seededRef.current = true;
 
     return () => {
       doc.off("update", onDocUpdate);
       text.unobserve(onTextChange);
-      if (broadcastTimer != null) {
-        clearTimeout(broadcastTimer);
-      }
+      if (broadcastTimer != null) clearTimeout(broadcastTimer);
+      if (echoTimer != null) clearTimeout(echoTimer);
       room?.destroy();
       doc.destroy();
       docRef.current = null;
@@ -161,5 +195,5 @@ export function useLiveWikiDoc(
     setContentState(value);
   }, []);
 
-  return { content, setContent };
+  return { content, setContent, touched };
 }

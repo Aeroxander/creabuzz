@@ -23,7 +23,7 @@ export function WikiView() {
   const [dirty, setDirty] = useState(false);
 
   const active = pages.find((p) => p.slug === activeSlug) ?? null;
-  const { content, setContent } = useLiveWikiDoc(
+  const { content, setContent, touched } = useLiveWikiDoc(
     activeSlug,
     active?.content ?? "",
   );
@@ -83,11 +83,13 @@ export function WikiView() {
     return () => clearTimeout(timer);
   }, [activeSlug, content, dirty, savePage, queryClient]);
 
-  // Pull in snapshots saved by other tabs when we have no unsaved edits.
+  // Pull in snapshots saved by other tabs only while the live doc is
+  // untouched — once we've typed or received P2P edits, the live doc is
+  // authoritative and must never be clobbered by a stale snapshot.
   useEffect(() => {
-    if (!active || dirty || content === active.content) return;
+    if (!active || touched || content === active.content) return;
     setContent(active.content);
-  }, [active, content, dirty, setContent]);
+  }, [active, content, touched, setContent]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1">
