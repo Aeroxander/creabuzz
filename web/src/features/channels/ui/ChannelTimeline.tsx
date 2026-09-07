@@ -320,9 +320,11 @@ function ThreadTree({
 export function ChannelTimeline({
   channel,
   onShowFleet,
+  onShowWork,
 }: {
   channel: Channel;
   onShowFleet?: () => void;
+  onShowWork?: () => void;
 }) {
   const messages = useChannelMessages(channel.id);
   const reactionsByTarget = useReactionGroups(messages);
@@ -406,6 +408,13 @@ export function ChannelTimeline({
           </span>
         )}
         <span className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onShowWork?.()}
+            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            New work
+          </button>
           <button
             type="button"
             onClick={() => onShowFleet?.()}

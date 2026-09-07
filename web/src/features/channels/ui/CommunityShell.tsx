@@ -1,4 +1,11 @@
-import { ArrowLeft, BookOpen, Bot, Search, Zap } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Bot,
+  ListChecks,
+  Search,
+  Zap,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
@@ -8,6 +15,7 @@ import { ChannelTimeline } from "./ChannelTimeline";
 import { SearchResults } from "@/features/search/ui/SearchResults";
 import { WikiView } from "@/features/wiki/ui/WikiView";
 import { FleetView } from "@/features/fleet/ui/FleetView";
+import { WorkBoard } from "@/features/fleet/ui/WorkBoard";
 import {
   useProfiles,
   profileDisplayName,
@@ -35,6 +43,7 @@ export function CommunityShell({
   const [searchTerm, setSearchTerm] = useState("");
   const [showingWiki, setShowingWiki] = useState(false);
   const [showingFleet, setShowingFleet] = useState(false);
+  const [showingWork, setShowingWork] = useState(false);
 
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
@@ -113,6 +122,24 @@ export function CommunityShell({
           <Bot className="h-3.5 w-3.5" />
           Agents
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowingWiki(false);
+            setShowingFleet(false);
+            setShowingWork((v) => !v);
+            setSearchTerm("");
+          }}
+          className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+            showingWork
+              ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+              : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+          }`}
+          data-testid="work-toggle"
+        >
+          <ListChecks className="h-3.5 w-3.5" />
+          Work
+        </button>
         <ChannelSidebar
           channels={channels}
           selectedId={activeChannel?.id ?? null}
@@ -121,6 +148,7 @@ export function CommunityShell({
             setSearchTerm("");
             setShowingWiki(false);
             setShowingFleet(false);
+            setShowingWork(false);
           }}
         />
         <div className="mt-auto border-t border-black/10 px-3 py-2.5 dark:border-white/10">
@@ -129,7 +157,9 @@ export function CommunityShell({
       </div>
 
       <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
-        {showingFleet ? (
+        {showingWork ? (
+          <WorkBoard channels={channels} />
+        ) : showingFleet ? (
           <FleetView channels={channels} />
         ) : showingWiki ? (
           <WikiView />
@@ -148,6 +178,12 @@ export function CommunityShell({
             onShowFleet={() => {
               setShowingWiki(false);
               setShowingFleet(true);
+              setShowingWork(false);
+            }}
+            onShowWork={() => {
+              setShowingWiki(false);
+              setShowingFleet(false);
+              setShowingWork(true);
             }}
           />
         ) : (

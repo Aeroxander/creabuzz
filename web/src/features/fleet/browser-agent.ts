@@ -258,7 +258,11 @@ class BrowserAgent {
     const channelId = task.channelId;
     await this.publishTaskUpdate(task.id, "in_progress", task.title, channelId);
     if (channelId) {
-      await this.postTurn(channelId, `⚙️ Working: ${task.title}`);
+      await this.postTurn(
+        channelId,
+        `⚙️ Working: ${task.title}`,
+        task.parentEventId ?? undefined,
+      );
     }
     try {
       const answer = await this.askLlm(
@@ -269,6 +273,7 @@ class BrowserAgent {
       await this.postTurn(
         channelId ?? undefined,
         `✅ Done: ${task.title}\n\n${answer}`,
+        task.parentEventId ?? undefined,
       );
     } catch (error) {
       await this.postTurn(
@@ -387,9 +392,15 @@ class BrowserAgent {
     }
   }
 
-  private async postTurn(channelId: string | undefined, content: string) {
+  private async postTurn(
+    channelId: string | undefined,
+    content: string,
+    parentEventId?: string,
+  ) {
     const tags: string[][] = [];
     if (channelId) tags.push(["h", channelId]);
+    // Thread participation: delegation replies attach to the assignment message.
+    if (parentEventId) tags.push(["e", parentEventId]);
     const signed = await signAsAgent({
       kind: 40002,
       tags,

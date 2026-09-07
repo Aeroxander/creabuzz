@@ -155,7 +155,9 @@ export function useAgentTasks(): {
           status: input.assignee ? "assigned" : "open",
         }),
       });
-      const result = await publishEvent(relayWsUrl(), signed);
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsUser,
+      });
       if (!result.accepted) {
         throw new Error(result.message ?? "task publish rejected");
       }
