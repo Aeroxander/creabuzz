@@ -8,6 +8,13 @@ import { ChannelTimeline } from "./ChannelTimeline";
 import { SearchResults } from "@/features/search/ui/SearchResults";
 import { WikiView } from "@/features/wiki/ui/WikiView";
 import { FleetView } from "@/features/fleet/ui/FleetView";
+import {
+  useProfiles,
+  profileDisplayName,
+} from "@/features/profiles/use-profiles";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { userPubkey } from "@/shared/lib/identity";
+import { truncatePubkey } from "@/shared/lib/pubkey";
 
 /**
  * In-community shell: channel sidebar, full-text search across open
@@ -116,6 +123,9 @@ export function CommunityShell({
             setShowingFleet(false);
           }}
         />
+        <div className="mt-auto border-t border-black/10 px-3 py-2.5 dark:border-white/10">
+          <UserChip />
+        </div>
       </div>
 
       {showingFleet ? (
@@ -139,5 +149,36 @@ export function CommunityShell({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The "you" chip: avatar + profile name for the browser identity. This is the
+ * seed of the account layer — a tap target for profile/identity (queued).
+ */
+function UserChip() {
+  const pubkey = userPubkey();
+  const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
+  const profile = profiles?.[0];
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+      title="Your identity (profile editing coming soon)"
+    >
+      <UserAvatar
+        avatarUrl={profile?.picture ?? null}
+        displayName={profileDisplayName(profile, pubkey)}
+        size="sm"
+      />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-black dark:text-white">
+          {profileDisplayName(profile, pubkey)}
+        </span>
+        <span className="block truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+          {truncatePubkey(pubkey)}
+        </span>
+      </span>
+    </button>
   );
 }
