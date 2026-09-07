@@ -335,6 +335,7 @@ export function ChannelTimeline({
   );
   const { data: profiles } = useProfiles(authors);
   const { agents: rosterAgents } = useAgentRoster();
+  const agentsOnline = rosterAgents.filter((a) => a.alive).length;
   const profileByPubkey = useMemo(
     () => new Map((profiles ?? []).map((p, i) => [authors[i], p])),
     [profiles, authors],
@@ -408,6 +409,16 @@ export function ChannelTimeline({
           </span>
         )}
         <span className="ml-auto flex items-center gap-2">
+          {agentsOnline > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs font-medium text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
+              title="Fleet agents online in this community"
+              data-testid="agents-online-chip"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {agentsOnline} {agentsOnline === 1 ? "agent" : "agents"} online
+            </span>
+          )}
           <button
             type="button"
             onClick={() => onShowWork?.()}

@@ -17,6 +17,12 @@ import {
 } from "@/shared/constants/kinds";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
 import { parseTask } from "@/features/fleet/use-agent-tasks";
+import {
+  readMemory,
+  writeMemory,
+  recentChannelMemory,
+  appendChannelMemory,
+} from "@/features/fleet/agent-memory";
 import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -224,11 +230,17 @@ class BrowserAgent {
 
     try {
       const context = await this.loadChannelContext(channelId);
+      const priorTurns = recentChannelMemory(channelId);
+      const memoryBlock =
+        priorTurns.length > 0
+          ? `\n\nPrior turns with you in this channel:\n${priorTurns.join("\n")}`
+          : "";
       const answer = await this.askLlm(
         `You are ${AGENT_NAME}, a browser-hosted fleet agent in a Buzz community channel. ` +
           "Answer the last message concisely. Use the channel context below.",
-        `${context}\n\nSomeone wrote: ${event.content}`,
+        `${context}${memoryBlock}\n\nSomeone wrote: ${event.content}`,
       );
+      appendChannelMemory(channelId, event.content.slice(0, 200), answer);
       await this.postTurn(channelId, answer);
     } catch (error) {
       console.error("[browser-agent] mention failed:", error);
@@ -265,11 +277,21 @@ class BrowserAgent {
       );
     }
     try {
+      const prior = readMemory({ taskId: task.id });
+      const prompt = prior
+        ? `You already worked on this task earlier (outcome: ${prior.outcome.slice(0, 300)}). Continue from there if relevant.`
+        : "This is a new task. Complete it concisely.";
       const answer = await this.askLlm(
-        `You are ${AGENT_NAME}, a browser-hosted fleet agent. You were assigned a task in a Buzz community. Complete it concisely.`,
+        `You are ${AGENT_NAME}, a browser-hosted fleet agent. ${prompt}`,
         `Task: ${task.title}\n\n${task.description}`,
       );
       await this.publishTaskUpdate(task.id, "done", task.title, channelId);
+      writeMemory({
+        taskId: task.id,
+        channelId: channelId ?? undefined,
+        instruction: task.title,
+        outcome: answer,
+      });
       await this.postTurn(
         channelId ?? undefined,
         `✅ Done: ${task.title}\n\n${answer}`,
