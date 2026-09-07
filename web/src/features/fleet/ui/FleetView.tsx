@@ -13,6 +13,7 @@ import {
   Cpu,
   Globe,
   HardDrive,
+  ListChecks,
   Play,
   Power,
   Wifi,
@@ -22,6 +23,7 @@ import {
 import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { useAgentTasks, type FleetTask } from "../use-agent-tasks";
 
 import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
 import type { Channel } from "@/features/channels/use-channels";
@@ -99,8 +101,46 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
   );
 }
 
+const STATUS_VARIANT: Record<
+  FleetTask["status"],
+  "default" | "secondary" | "outline"
+> = {
+  open: "outline",
+  assigned: "outline",
+  in_progress: "secondary",
+  needs_approval: "secondary",
+  done: "default",
+  cancelled: "outline",
+};
+
+function TaskCard({ task }: { task: FleetTask }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-black dark:text-white">
+          {task.title}
+        </p>
+        <p className="mt-0.5 truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+          {task.id}
+        </p>
+      </div>
+      <Badge
+        variant={STATUS_VARIANT[task.status]}
+        className="shrink-0 capitalize"
+      >
+        {task.status.replace("_", " ")}
+      </Badge>
+    </div>
+  );
+}
+
 export function FleetView({ channels }: { channels: Channel[] }) {
   const { agents, loading } = useAgentRoster();
+  const { tasks, createTask } = useAgentTasks();
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskAssignee, setTaskAssignee] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [state, setState] = useState<AgentLifecycleState>("stopped");
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -183,6 +223,75 @@ export function FleetView({ channels }: { channels: Channel[] }) {
           in a channel to get a response.
         </p>
       ) : null}
+
+      <section className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+        <div className="flex items-center gap-2">
+          <ListChecks className="h-3.5 w-3.5 text-black/50 dark:text-white/50" />
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+            Tasks
+          </h3>
+          <span className="ml-auto text-xs text-black/40 dark:text-white/40">
+            {tasks.length}
+          </span>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <input
+            value={taskTitle}
+            onChange={(e) => setTaskTitle(e.target.value)}
+            placeholder="Assign a task…"
+            className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+            data-testid="task-title-input"
+          />
+          <select
+            value={taskAssignee}
+            onChange={(e) => setTaskAssignee(e.target.value)}
+            className="w-32 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
+            data-testid="task-assignee-select"
+          >
+            <option value="">Anyone</option>
+            {agents.map((a) => (
+              <option key={a.pubkey} value={a.pubkey}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={creating || taskTitle.trim().length === 0}
+            onClick={() => {
+              setCreating(true);
+              setTaskError(null);
+              void createTask({
+                title: taskTitle.trim(),
+                assignee: taskAssignee || undefined,
+              })
+                .catch((e) =>
+                  setTaskError(e instanceof Error ? e.message : "task failed"),
+                )
+                .finally(() => {
+                  setCreating(false);
+                  setTaskTitle("");
+                });
+            }}
+            className="rounded-md bg-black px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-white/80"
+            data-testid="task-create"
+          >
+            Create
+          </button>
+        </div>
+        {taskError ? (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+            {taskError}
+          </p>
+        ) : null}
+        {tasks.length > 0 ? (
+          <div className="mt-2 grid gap-1.5">
+            {tasks.slice(0, 12).map((task) => (
+              <TaskCard key={task.id} task={task} />
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       <div className="grid min-h-0 flex-1 auto-rows-min gap-2 overflow-y-auto">
         {loading && agents.length === 0 ? (

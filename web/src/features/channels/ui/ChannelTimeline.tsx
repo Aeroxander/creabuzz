@@ -21,13 +21,15 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import {
   profileDisplayName,
   useProfiles,
   type Profile,
 } from "@/features/profiles/use-profiles";
 import { Composer, type EditTarget } from "./Composer";
+import { useAgentRoster } from "@/features/fleet/use-agent-roster";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { Bot } from "lucide-react";
 
 function getTag(event: NostrEvent, name: string): string | undefined {
   return event.tags.find((t) => t[0] === name)?.[1];
@@ -117,6 +119,7 @@ function MessageRow({
   overlayContent,
   isDeleted,
   profile,
+  agent,
 }: {
   event: NostrEvent;
   isReply?: boolean;
@@ -128,6 +131,7 @@ function MessageRow({
   overlayContent?: string;
   isDeleted?: boolean;
   profile?: Profile;
+  agent?: { name: string };
 }) {
   const isOwn = event.pubkey === ownPubkey;
   const content = isDeleted
@@ -164,22 +168,21 @@ function MessageRow({
       className={`group flex gap-3 py-2 ${isReply ? "ml-8" : ""}`}
       data-testid="message-row"
     >
-      {profile?.picture ? (
-        <img
-          alt=""
-          src={profile.picture}
-          className="h-8 w-8 shrink-0 rounded-full object-cover"
+      <div className="shrink-0">
+        <UserAvatar
+          avatarUrl={profile?.picture ?? null}
+          displayName={agent?.name ?? profileDisplayName(profile, event.pubkey)}
+          size="sm"
         />
-      ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-semibold text-black/60 dark:bg-white/10 dark:text-white/70">
-          {truncatePubkey(event.pubkey).slice(0, 2)}
-        </div>
-      )}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-medium text-black/70 dark:text-white/70">
-            {profileDisplayName(profile, event.pubkey)}
+            {agent?.name ?? profileDisplayName(profile, event.pubkey)}
           </span>
+          {agent ? (
+            <Bot className="h-3 w-3 self-center text-black/40 dark:text-white/40" />
+          ) : null}
           <time className="text-xs text-black/40 dark:text-white/40">
             {relativeTime(event.created_at * 1000)}
           </time>
@@ -268,6 +271,7 @@ function ThreadTree({
   onDelete?: (eventId: string) => void;
   depth: number;
   profile?: Profile;
+  agent?: { name: string };
   ownPubkey: string;
   overlays: { edits: Map<string, string>; deleted: Set<string> };
 }) {
@@ -314,9 +318,14 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
     [messages.ordered],
   );
   const { data: profiles } = useProfiles(authors);
+  const { agents: rosterAgents } = useAgentRoster();
   const profileByPubkey = useMemo(
     () => new Map((profiles ?? []).map((p, i) => [authors[i], p])),
     [profiles, authors],
+  );
+  const agentByPubkey = useMemo(
+    () => new Map(rosterAgents.map((a) => [a.pubkey, { name: a.name }])),
+    [rosterAgents],
   );
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -422,6 +431,7 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
                 }}
                 depth={0}
                 profile={profileByPubkey.get(root.pubkey)}
+                agent={agentByPubkey.get(root.pubkey)}
                 ownPubkey={ownPubkey}
                 overlays={overlays}
               />

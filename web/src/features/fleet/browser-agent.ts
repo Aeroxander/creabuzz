@@ -16,6 +16,7 @@ import {
   KIND_AGENT_TASK,
 } from "@/shared/constants/kinds";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
+import { parseTask } from "@/features/fleet/use-agent-tasks";
 import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -63,6 +64,16 @@ class BrowserAgent {
   async start(): Promise<void> {
     if (this.state !== "stopped") return;
     this.setState("starting");
+    // One agent service per browser origin: tabs race for the lock, and the
+    // winner runs the fleet worker for the shared identity.
+    const lock = await this.acquireOriginLock();
+    if (!lock) {
+      this.setState("stopped");
+      throw new Error(
+        "The tab agent is already running in another tab of this browser.",
+      );
+    }
+    this.originLock = lock;
     try {
       await this.announce("available");
       this.heartbeatTimer = setInterval(() => {
@@ -73,12 +84,14 @@ class BrowserAgent {
       if (this.channelIds.length > 0) {
         // One socket per channel (same shape as the timeline's live pump —
         // multi-value "#h" filters are not matched by the relay).
+        const liveSince = Math.floor(Date.now() / 1000) - 5;
         const unsubs = this.channelIds.map((channelId) =>
           subscribeChannel(
             relayWsUrl(),
             {
               kinds: TIMELINE_CONTENT_KINDS,
               "#h": [channelId],
+              since: liveSince,
             } satisfies NostrFilter,
             {
               onEvent: (event) => void this.onMention(event),
@@ -88,15 +101,32 @@ class BrowserAgent {
         this.unsubscribeMentions = () => {
           for (const unsubscribe of unsubs) unsubscribe();
         };
+        // Tasks are channel-scoped when captured (they carry the channel tag),
+        // but community-global when created from the board without one. The
+        // relay's scoping invariant walls global subs off from channel events
+        // and vice versa, so we subscribe to both planes and route by the
+        // assignee tag ourselves.
+        const unsubTasks = this.channelIds.map((channelId) =>
+          subscribeChannel(
+            relayWsUrl(),
+            {
+              kinds: [KIND_AGENT_TASK],
+              "#h": [channelId],
+            } satisfies NostrFilter,
+            { onEvent: (event) => void this.onTaskAssigned(event) },
+          ),
+        );
+        unsubTasks.push(
+          subscribeChannel(
+            relayWsUrl(),
+            { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
+            { onEvent: (event) => void this.onTaskAssigned(event) },
+          ),
+        );
+        this.unsubscribeTasks = () => {
+          for (const unsubscribe of unsubTasks) unsubscribe();
+        };
       }
-      this.unsubscribeTasks = subscribeChannel(
-        relayWsUrl(),
-        {
-          kinds: [KIND_AGENT_TASK],
-          "#p": [getAgentPubkey()],
-        } satisfies NostrFilter,
-        { onEvent: (event) => void this.onTaskAssigned(event) },
-      );
       this.setState("running");
     } catch (error) {
       console.error("[browser-agent] start failed", error);
@@ -116,7 +146,32 @@ class BrowserAgent {
     void this.announce("offline").catch(() => {
       // best-effort offline beacon
     });
+    void this.originLock?.release();
+    this.originLock = null;
     this.setState("stopped");
+  }
+
+  private originLock: { release(): Promise<void> } | null = null;
+
+  private async acquireOriginLock(): Promise<{
+    release(): Promise<void>;
+  } | null> {
+    if (typeof navigator === "undefined" || !navigator.locks) {
+      return { release: async () => {} };
+    }
+    return new Promise<{ release(): Promise<void> } | null>((resolve) => {
+      void navigator.locks.request(
+        "buzz-agent",
+        { ifAvailable: true },
+        (lock) => {
+          resolve(
+            lock as {
+              release(): Promise<void>;
+            } | null,
+          );
+        },
+      );
+    });
   }
 
   private setState(state: AgentLifecycleState): void {
@@ -146,9 +201,19 @@ class BrowserAgent {
     }
   }
 
+  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}\s*:`, "i");
+
   private async onMention(event: NostrEvent) {
     if (event.pubkey === getAgentPubkey()) return;
     if (!MENTION_PATTERN.test(event.content)) return;
+    // "@agent: <instruction>" delegates work — capture it as a task; the
+    // task subscription (below) picks it up and processes it.
+    if (this.TASK_PATTERN.test(event.content)) {
+      void this.captureTask(event).catch((error) => {
+        console.error("[browser-agent] task capture failed:", error);
+      });
+      return;
+    }
     const channelId = event.tags.find((t) => t[0] === "h")?.[1];
     if (!channelId) return;
     if (Date.now() - this.lastReplyAt < MENTION_REPLY_COOLDOWN_MS) return;
@@ -176,12 +241,69 @@ class BrowserAgent {
     }
   }
 
+  private processedTaskRows = new Set<string>();
+
   private async onTaskAssigned(event: NostrEvent) {
-    const channelId = event.tags.find((t) => t[0] === "h")?.[1];
-    await this.postTurn(
-      channelId,
-      `📋 Task received: ${event.content.slice(0, 200)} — starting work (browser agent).`,
-    );
+    if (this.processedTaskRows.has(event.id)) return;
+    this.processedTaskRows.add(event.id);
+    const task = parseTask(event);
+    if (!task) return;
+    if (task.assignee !== getAgentPubkey()) return;
+    // Own status-update rows (in_progress/done) are not new work. New work is
+    // authored by others, or captured by us in the opening statuses.
+    const ownRow = event.pubkey === getAgentPubkey();
+    if (ownRow && task.status !== "open" && task.status !== "assigned") {
+      return;
+    }
+    const channelId = task.channelId;
+    await this.publishTaskUpdate(task.id, "in_progress", task.title, channelId);
+    if (channelId) {
+      await this.postTurn(channelId, `⚙️ Working: ${task.title}`);
+    }
+    try {
+      const answer = await this.askLlm(
+        `You are ${AGENT_NAME}, a browser-hosted fleet agent. You were assigned a task in a Buzz community. Complete it concisely.`,
+        `Task: ${task.title}\n\n${task.description}`,
+      );
+      await this.publishTaskUpdate(task.id, "done", task.title, channelId);
+      await this.postTurn(
+        channelId ?? undefined,
+        `✅ Done: ${task.title}\n\n${answer}`,
+      );
+    } catch (error) {
+      await this.postTurn(
+        channelId ?? undefined,
+        `⚠️ Task failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+  }
+
+  private async captureTask(mention: NostrEvent) {
+    const instruction = mention.content
+      .replace(this.TASK_PATTERN, "")
+      .trim()
+      .slice(0, 400);
+    const taskId = `task-${mention.id.slice(0, 16)}`;
+    const channelId = mention.tags.find((t) => t[0] === "h")?.[1];
+    const tags: string[][] = [["d", taskId]];
+    if (channelId) tags.push(["h", channelId]);
+    tags.push(["e", mention.id]);
+    tags.push(["p", getAgentPubkey()]);
+    const signed = await signAsAgent({
+      kind: KIND_AGENT_TASK,
+      tags,
+      content: JSON.stringify({
+        title: instruction || "Untitled task",
+        description: "",
+        status: "assigned",
+      }),
+    });
+    const result = await publishEvent(relayWsUrl(), signed, {
+      signAuth: signAsAgent,
+    });
+    if (!result.accepted) {
+      console.warn("[browser-agent] task capture rejected", result.message);
+    }
   }
 
   private async loadChannelContext(channelId: string): Promise<string> {
@@ -237,6 +359,32 @@ class BrowserAgent {
     const content = json.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error("empty LLM response");
     return content;
+  }
+
+  private async publishTaskUpdate(
+    taskId: string,
+    status: string,
+    title: string,
+    channelId: string | null = null,
+  ) {
+    const tags: string[][] = [
+      ["d", taskId],
+      ["p", getAgentPubkey()],
+    ];
+    // Carry the original task's channel so the update is findable in-context.
+    if (channelId) tags.push(["h", channelId]);
+    // Carry the original task's channel so the update is findable in-context.
+    const signed = await signAsAgent({
+      kind: KIND_AGENT_TASK,
+      tags,
+      content: JSON.stringify({ title, description: "", status }),
+    });
+    const result = await publishEvent(relayWsUrl(), signed, {
+      signAuth: signAsAgent,
+    });
+    if (!result.accepted) {
+      console.warn("[browser-agent] task update rejected", result.message);
+    }
   }
 
   private async postTurn(channelId: string | undefined, content: string) {
