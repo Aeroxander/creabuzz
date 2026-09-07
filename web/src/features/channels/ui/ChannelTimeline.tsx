@@ -20,7 +20,6 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
-import { relativeTime } from "@/shared/lib/relative-time";
 import {
   profileDisplayName,
   useProfiles,
@@ -183,8 +182,14 @@ function MessageRow({
           {agent ? (
             <Bot className="h-3 w-3 self-center text-black/40 dark:text-white/40" />
           ) : null}
-          <time className="text-xs text-black/40 dark:text-white/40">
-            {relativeTime(event.created_at * 1000)}
+          <time
+            className="text-xs text-black/40 dark:text-white/40"
+            title={new Date(event.created_at * 1000).toLocaleString()}
+          >
+            {new Date(event.created_at * 1000).toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
           </time>
           <span className="ml-auto flex items-center gap-2 text-xs text-black/40 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/40">
             {onReply && !isDeleted && (
@@ -259,7 +264,8 @@ function ThreadTree({
   onEdit,
   onDelete,
   depth,
-  profile,
+  profileByPubkey,
+  agentByPubkey,
   ownPubkey,
   overlays,
 }: {
@@ -270,8 +276,8 @@ function ThreadTree({
   onEdit?: (event: NostrEvent) => void;
   onDelete?: (eventId: string) => void;
   depth: number;
-  profile?: Profile;
-  agent?: { name: string };
+  profileByPubkey: Map<string, Profile | undefined>;
+  agentByPubkey: Map<string, { name: string }>;
   ownPubkey: string;
   overlays: { edits: Map<string, string>; deleted: Set<string> };
 }) {
@@ -288,7 +294,8 @@ function ThreadTree({
         ownPubkey={ownPubkey}
         overlayContent={overlays.edits.get(event.id)}
         isDeleted={overlays.deleted.has(event.id)}
-        profile={profile}
+        profile={profileByPubkey.get(event.pubkey)}
+        agent={agentByPubkey.get(event.pubkey)}
       />
       {children.map((child) => (
         <ThreadTree
@@ -300,7 +307,8 @@ function ThreadTree({
           onEdit={onEdit}
           onDelete={onDelete}
           depth={depth + 1}
-          profile={profile}
+          profileByPubkey={profileByPubkey}
+          agentByPubkey={agentByPubkey}
           ownPubkey={ownPubkey}
           overlays={overlays}
         />
@@ -309,7 +317,13 @@ function ThreadTree({
   );
 }
 
-export function ChannelTimeline({ channel }: { channel: Channel }) {
+export function ChannelTimeline({
+  channel,
+  onShowFleet,
+}: {
+  channel: Channel;
+  onShowFleet?: () => void;
+}) {
   const messages = useChannelMessages(channel.id);
   const reactionsByTarget = useReactionGroups(messages);
   const overlays = useMessageOverlays(messages);
@@ -391,6 +405,32 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
             — {channel.description}
           </span>
         )}
+        <span className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onShowFleet?.()}
+            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            Add an agent here.
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const url = window.location.href;
+              if (navigator.clipboard) {
+                void navigator.clipboard
+                  .writeText(url)
+                  .then(() => toast.success("Invite link copied"))
+                  .catch(() => toast.error("Couldn't copy invite link"));
+              } else {
+                toast.error("Couldn't copy invite link");
+              }
+            }}
+            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            Invite members.
+          </button>
+        </span>
       </header>
 
       <div
@@ -430,8 +470,8 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
                   void deleteMessage(id);
                 }}
                 depth={0}
-                profile={profileByPubkey.get(root.pubkey)}
-                agent={agentByPubkey.get(root.pubkey)}
+                profileByPubkey={profileByPubkey}
+                agentByPubkey={agentByPubkey}
                 ownPubkey={ownPubkey}
                 overlays={overlays}
               />
@@ -443,6 +483,7 @@ export function ChannelTimeline({ channel }: { channel: Channel }) {
 
       <Composer
         channelId={channel.id}
+        channelName={channel.name}
         replyTo={replyTo}
         editTarget={editTarget}
         onPosted={() => {

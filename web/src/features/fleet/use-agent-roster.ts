@@ -59,6 +59,8 @@ function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
   )
     ? (body.status as AgentStatus)
     : "available";
+  // body.heartbeat is unix seconds (as published by agents); normalize to ms.
+  const heartbeatMs = (body.heartbeat ?? event.created_at) * 1000;
   return {
     id,
     pubkey: event.pubkey,
@@ -66,11 +68,9 @@ function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
     runtype,
     status,
     tools: body.tools ?? [],
-    heartbeat: body.heartbeat ?? event.created_at * 1000,
+    heartbeat: heartbeatMs,
     updatedAt: event.created_at * 1000,
-    alive:
-      Date.now() - (body.heartbeat ?? event.created_at * 1000) <
-      LIVENESS_WINDOW_MS,
+    alive: Date.now() - heartbeatMs < LIVENESS_WINDOW_MS,
   };
 }
 
@@ -83,16 +83,22 @@ export function useAgentRoster(): {
 
   useEffect(() => {
     const wsUrl = relayWsUrl();
+    // Heartbeat rows flood history (one per agent per minute), so pull a wide
+    // window and keep newest-per-agent client-side.
     const filter: NostrFilter = {
       kinds: [KIND_AGENT_CAPABILITIES],
-      limit: 200,
+      limit: 1000,
     };
     let disposed = false;
 
     const upsert = (event: NostrEvent) => {
       const parsed = parseCapabilities(event);
       if (!parsed) return;
-      setAgents((prev) => ({ ...prev, [parsed.id]: parsed }));
+      setAgents((prev) => {
+        const existing = prev[parsed.id];
+        if (existing && existing.updatedAt >= parsed.updatedAt) return prev;
+        return { ...prev, [parsed.id]: parsed };
+      });
     };
 
     void queryEvents(wsUrl, filter)
@@ -102,7 +108,11 @@ export function useAgentRoster(): {
           const next = { ...prev };
           for (const event of events) {
             const parsed = parseCapabilities(event);
-            if (parsed) next[parsed.id] = parsed;
+            if (!parsed) continue;
+            const existing = next[parsed.id];
+            if (!existing || existing.updatedAt < parsed.updatedAt) {
+              next[parsed.id] = parsed;
+            }
           }
           return next;
         });

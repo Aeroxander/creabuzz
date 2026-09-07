@@ -112,7 +112,7 @@ export function CommunityDirectoryPage() {
   const { data, isLoading } = useCommunities();
 
   return (
-    <div className="flex h-full w-full flex-1 flex-col gap-6 overflow-y-auto bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+    <div className="flex h-full w-full flex-1 flex-col gap-6 overflow-y-auto px-4 py-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-xl font-semibold text-black dark:text-white">
           <Compass className="h-5 w-5" /> Communities

@@ -50,7 +50,7 @@ export function CommunityHomePage() {
   }
 
   return (
-    <div className="flex h-full w-full flex-1 items-start justify-center overflow-y-auto bg-[#F3F3F3] px-4 py-10 dark:bg-[#171717]">
+    <div className="flex h-full w-full flex-1 items-start justify-center overflow-y-auto px-4 py-10">
       <div className="w-full max-w-2xl">
         <Link
           to="/"

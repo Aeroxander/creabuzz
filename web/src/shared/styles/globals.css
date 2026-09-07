@@ -40,6 +40,11 @@
     --sidebar-accent-foreground: 234 16.02% 35.49%;
     --sidebar-border: 225 13.56% 76.86%;
     --sidebar-ring: 225 13.56% 76.86%;
+    /* Buzz gradient wash (matches desktop BuzzThemeSurfaces). */
+    --buzz-gradient-light-top: #e6e6b6;
+    --buzz-gradient-light-bottom: #c4d0da;
+    --buzz-gradient-dark-top: #4a4616;
+    --buzz-gradient-dark-bottom: #0a1423;
   }
 
   .dark {
@@ -97,4 +102,33 @@
     @apply bg-background text-foreground antialiased;
     font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
   }
+}
+
+/* App backdrop wash painted on <body> (backgrounds always composite behind
+   content — no stacking-context games). Pale yellow -> pale blue (light),
+   deep olive -> navy (dark). */
+body {
+  background-image: linear-gradient(
+    to bottom,
+    var(--buzz-gradient-light-top),
+    var(--buzz-gradient-light-bottom)
+  );
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+.dark body {
+  background-image: linear-gradient(
+    to bottom,
+    var(--buzz-gradient-dark-top),
+    var(--buzz-gradient-dark-bottom)
+  );
+}
+
+/* Floating content card over the wash (mirrors desktop ContentSurface). */
+.buzz-content-card {
+  background-color: hsl(var(--background));
+  border-radius: 1rem;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.06);
+  overflow: hidden;
 }

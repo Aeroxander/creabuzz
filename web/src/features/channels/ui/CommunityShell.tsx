@@ -45,7 +45,7 @@ export function CommunityShell({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1">
-      <div className="flex w-60 shrink-0 flex-col border-r border-black/10 bg-[#F8F8F8] dark:border-white/10 dark:bg-[#1B1B1B]">
+      <div className="flex w-60 shrink-0 flex-col">
         <div className="flex items-center gap-2 px-3 pt-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/5 dark:bg-white/10">
             <Zap className="h-4 w-4 text-black/60 dark:text-white/60" />
@@ -94,7 +94,7 @@ export function CommunityShell({
           data-testid="wiki-toggle"
         >
           <BookOpen className="h-3.5 w-3.5" />
-          {showingWiki ? "Chat" : "Wiki"}
+          Wiki
         </button>
         <button
           type="button"
@@ -111,7 +111,7 @@ export function CommunityShell({
           data-testid="fleet-toggle"
         >
           <Bot className="h-3.5 w-3.5" />
-          {showingFleet ? "Chat" : "Agents"}
+          Agents
         </button>
         <ChannelSidebar
           channels={channels}
@@ -128,26 +128,34 @@ export function CommunityShell({
         </div>
       </div>
 
-      {showingFleet ? (
-        <FleetView channels={channels} />
-      ) : showingWiki ? (
-        <WikiView />
-      ) : searching ? (
-        <SearchResults
-          term={searchTerm.trim()}
-          channels={channels}
-          onOpenChannel={(channelId) => {
-            setSelectedId(channelId);
-            setSearchTerm("");
-          }}
-        />
-      ) : activeChannel ? (
-        <ChannelTimeline channel={activeChannel} />
-      ) : (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
-          Select a channel to start reading.
-        </div>
-      )}
+      <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
+        {showingFleet ? (
+          <FleetView channels={channels} />
+        ) : showingWiki ? (
+          <WikiView />
+        ) : searching ? (
+          <SearchResults
+            term={searchTerm.trim()}
+            channels={channels}
+            onOpenChannel={(channelId) => {
+              setSelectedId(channelId);
+              setSearchTerm("");
+            }}
+          />
+        ) : activeChannel ? (
+          <ChannelTimeline
+            channel={activeChannel}
+            onShowFleet={() => {
+              setShowingWiki(false);
+              setShowingFleet(true);
+            }}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
+            Select a channel to start reading.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
