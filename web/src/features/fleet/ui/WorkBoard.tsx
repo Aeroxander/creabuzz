@@ -501,13 +501,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   );
 }
 
-function RecentThread({
-  parentId,
-  entryVersion,
-}: {
-  parentId: string;
-  entryVersion: number;
-}) {
+function RecentThread({ parentId }: { parentId: string }) {
   const [rows, setRows] = useState<
     { author: string; content: string; created: number }[]
   >([]);
