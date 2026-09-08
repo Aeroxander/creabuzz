@@ -128,7 +128,11 @@ export function useWorkBoard(): {
     if (!task) return;
     setTasks((prev) => {
       const existing = prev[task.id];
-      if (existing && existing.updatedAt >= task.updatedAt) return prev;
+      const needParent =
+        existing && !existing.parentEventId && task.parentEventId;
+      if (existing && existing.updatedAt >= task.updatedAt && !needParent) {
+        return prev;
+      }
       const item: WorkItem = {
         type: "task",
         id: task.id,
@@ -138,7 +142,10 @@ export function useWorkBoard(): {
         assignee: task.assignee,
         scope: task.channelId,
         scopeLabel: "channel",
-        parentEventId: task.parentEventId,
+        // Never lose the thread link: newer rows keep it, but if one drops
+        // the e-tag, retain the previously known parent.
+        parentEventId:
+          task.parentEventId ?? prev[task.id]?.parentEventId ?? null,
         author: task.author,
         approver: taskApprover(event),
         updatedAt: task.updatedAt,
@@ -213,25 +220,39 @@ export function useWorkBoard(): {
           approverByTask.set(target, approval.pubkey);
         }
         const tasksNext: Record<string, WorkItem> = {};
+        // Oldest-first so a row that drops the e-tag (earlier agent status
+        // rows) never loses the thread link established on creation.
+        const byTask = new Map<string, NostrEvent[]>();
         for (const event of taskEvents) {
-          const task = parseTask(event);
-          if (!task) continue;
-          const existing = tasksNext[task.id];
-          if (existing && existing.updatedAt >= task.updatedAt) continue;
-          tasksNext[task.id] = {
-            type: "task",
-            id: task.id,
-            title: task.title,
-            description: task.description,
-            status: task.status,
-            assignee: task.assignee,
-            scope: task.channelId,
-            scopeLabel: "channel",
-            parentEventId: task.parentEventId,
-            author: task.author,
-            approver: null,
-            updatedAt: task.updatedAt,
-          };
+          const taskId = event.tags.find((t) => t[0] === "d")?.[1] ?? event.id;
+          const rows = byTask.get(taskId) ?? [];
+          rows.push(event);
+          byTask.set(taskId, rows);
+        }
+        for (const rows of byTask.values()) {
+          rows.sort((a, b) => a.created_at - b.created_at);
+          let parent: string | null = null;
+          for (const event of rows) {
+            const task = parseTask(event);
+            if (!task) continue;
+            if (task.parentEventId && !parent) parent = task.parentEventId;
+            const existing = tasksNext[task.id];
+            if (existing && existing.updatedAt >= task.updatedAt) continue;
+            tasksNext[task.id] = {
+              type: "task",
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              status: task.status,
+              assignee: task.assignee,
+              scope: task.channelId,
+              scopeLabel: "channel",
+              parentEventId: task.parentEventId ?? parent,
+              author: task.author,
+              approver: taskApprover(event),
+              updatedAt: task.updatedAt,
+            };
+          }
         }
         setTasks((prev) => ({ ...prev, ...tasksNext }));
 

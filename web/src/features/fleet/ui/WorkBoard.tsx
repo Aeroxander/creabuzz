@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 
 import { useAgentRoster } from "../use-agent-roster";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import { publishEvent } from "@/shared/lib/publish-event";
+import { signAsUser } from "@/shared/lib/identity";
+import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
 import type { Channel } from "@/features/channels/use-channels";
 import { userPubkey } from "@/shared/lib/identity";
@@ -117,8 +121,44 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   const [channelId, setChannelId] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [reply, setReply] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   const myPubkey = userPubkey();
+  const selected = items.find((i) => i.id === selectedId) ?? null;
+
+  const canReplyToThread =
+    selected?.type === "task" && !!selected.scope && !!selected.parentEventId;
+
+  const sendThreadReply = () => {
+    if (!selected || !canReplyToThread || reply.trim().length === 0) return;
+    setSendingReply(true);
+    setReplyError(null);
+    void (async () => {
+      try {
+        const signed = await signAsUser({
+          kind: 9,
+          tags: [
+            ["h", selected.scope!],
+            ["e", selected.parentEventId!],
+          ],
+          content: reply.trim(),
+        });
+        const result = await publishEvent(relayWsUrl(), signed, {
+          signAuth: signAsUser,
+        });
+        if (!result.accepted) {
+          throw new Error(result.message ?? "reply rejected");
+        }
+        setReply("");
+      } catch (error) {
+        setReplyError(error instanceof Error ? error.message : "reply failed");
+      } finally {
+        setSendingReply(false);
+      }
+    })();
+  };
   const filtered = useMemo(() => {
     return items.filter((item) => {
       if (typeFilter !== "all" && item.type !== typeFilter) return false;
@@ -142,8 +182,6 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
       return true;
     });
   }, [items, filter, typeFilter, myPubkey]);
-
-  const selected = items.find((i) => i.id === selectedId) ?? null;
 
   const submit = () => {
     if (title.trim().length === 0) return;
@@ -420,6 +458,34 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                   </p>
                 )}
               </div>
+
+              {canReplyToThread ? (
+                <div className="mt-2 flex items-end gap-2 border-t border-black/10 pt-2 dark:border-white/10">
+                  <textarea
+                    value={reply}
+                    onChange={(e) => setReply(e.target.value)}
+                    rows={2}
+                    placeholder={"Ask @buzz-tab in this thread…"}
+                    className="min-w-0 flex-1 resize-none rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+                    data-testid="thread-reply-input"
+                  />
+                  <button
+                    type="button"
+                    disabled={sendingReply || reply.trim().length === 0}
+                    onClick={sendThreadReply}
+                    aria-label="Reply in thread"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-white disabled:opacity-30 dark:bg-white dark:text-black"
+                    data-testid="thread-reply-send"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
+              {replyError ? (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {replyError}
+                </p>
+              ) : null}
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center text-center">
@@ -435,36 +501,47 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   );
 }
 
-function RecentThread({ parentId }: { parentId: string }) {
+function RecentThread({
+  parentId,
+  entryVersion,
+}: {
+  parentId: string;
+  entryVersion: number;
+}) {
   const [rows, setRows] = useState<
     { author: string; content: string; created: number }[]
   >([]);
   useEffect(() => {
     let disposed = false;
-    void import("@/shared/lib/http-query").then(({ queryEventsHttp }) =>
-      queryEventsHttp([
-        {
-          kinds: [9, 40002, 44011],
-          "#e": [parentId],
-          limit: 50,
-        },
-      ])
-        .then((events) => {
-          if (disposed) return;
-          setRows(
-            events
-              .sort((a, b) => a.created_at - b.created_at)
-              .map((e) => ({
-                author: e.pubkey,
-                content: e.content.slice(0, 400),
-                created: e.created_at,
-              })),
-          );
-        })
-        .catch(() => {}),
-    );
+    const load = () =>
+      void import("@/shared/lib/http-query").then(({ queryEventsHttp }) =>
+        queryEventsHttp([
+          {
+            kinds: [9, 40002, 44011],
+            "#e": [parentId],
+            limit: 50,
+          },
+        ])
+          .then((events) => {
+            if (disposed) return;
+            setRows(
+              events
+                .sort((a, b) => a.created_at - b.created_at)
+                .map((e) => ({
+                  author: e.pubkey,
+                  content: e.content.slice(0, 400),
+                  created: e.created_at,
+                })),
+            );
+          })
+          .catch(() => {}),
+      );
+    load();
+    // Live-ish: refresh while the pane is open so agent replies land.
+    const timer = setInterval(load, 3000);
     return () => {
       disposed = true;
+      clearInterval(timer);
     };
   }, [parentId]);
 

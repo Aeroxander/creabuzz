@@ -14,6 +14,7 @@
 import {
   KIND_AGENT_CAPABILITIES,
   KIND_AGENT_TASK,
+  KIND_WIKI_PAGE,
 } from "@/shared/constants/kinds";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
 import { parseTask } from "@/features/fleet/use-agent-tasks";
@@ -46,6 +47,7 @@ class BrowserAgent {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribeMentions: (() => void) | null = null;
   private unsubscribeTasks: (() => void) | null = null;
+  private unsubscribeWiki: (() => void) | null = null;
   private lastReplyAt = 0;
   private events: BrowserAgentEvents = {};
   private channelIds: string[] = [];
@@ -132,6 +134,12 @@ class BrowserAgent {
         this.unsubscribeTasks = () => {
           for (const unsubscribe of unsubTasks) unsubscribe();
         };
+        // Wiki copilot: answer "@buzz-tab:" inside wiki page content in-place.
+        this.unsubscribeWiki = subscribeChannel(
+          relayWsUrl(),
+          { kinds: [KIND_WIKI_PAGE], since: liveSince } satisfies NostrFilter,
+          { onEvent: (event) => void this.onWikiEdit(event) },
+        );
       }
       this.setState("running");
     } catch (error) {
@@ -149,6 +157,8 @@ class BrowserAgent {
     this.unsubscribeMentions = null;
     this.unsubscribeTasks?.();
     this.unsubscribeTasks = null;
+    this.unsubscribeWiki?.();
+    this.unsubscribeWiki = null;
     void this.announce("offline").catch(() => {
       // best-effort offline beacon
     });
@@ -241,7 +251,8 @@ class BrowserAgent {
         `${context}${memoryBlock}\n\nSomeone wrote: ${event.content}`,
       );
       appendChannelMemory(channelId, event.content.slice(0, 200), answer);
-      await this.postTurn(channelId, answer);
+      const threadParent = event.tags.find((t) => t[0] === "e")?.[1];
+      await this.postTurn(channelId, answer, threadParent);
     } catch (error) {
       console.error("[browser-agent] mention failed:", error);
       await this.postTurn(
@@ -268,7 +279,13 @@ class BrowserAgent {
       return;
     }
     const channelId = task.channelId;
-    await this.publishTaskUpdate(task.id, "in_progress", task.title, channelId);
+    await this.publishTaskUpdate(
+      task.id,
+      "in_progress",
+      task.title,
+      channelId,
+      task.parentEventId ?? undefined,
+    );
     if (channelId) {
       await this.postTurn(
         channelId,
@@ -285,7 +302,13 @@ class BrowserAgent {
         `You are ${AGENT_NAME}, a browser-hosted fleet agent. ${prompt}`,
         `Task: ${task.title}\n\n${task.description}`,
       );
-      await this.publishTaskUpdate(task.id, "done", task.title, channelId);
+      await this.publishTaskUpdate(
+        task.id,
+        "done",
+        task.title,
+        channelId,
+        task.parentEventId ?? undefined,
+      );
       writeMemory({
         taskId: task.id,
         channelId: channelId ?? undefined,
@@ -302,6 +325,38 @@ class BrowserAgent {
         channelId ?? undefined,
         `⚠️ Task failed: ${error instanceof Error ? error.message : "unknown"}`,
       );
+    }
+  }
+
+  private async onWikiEdit(event: NostrEvent) {
+    if (event.pubkey === getAgentPubkey()) return;
+    if (!this.TASK_PATTERN.test(event.content)) return;
+    const slug = event.tags.find((t) => t[0] === "d")?.[1];
+    if (!slug) return;
+    const instruction = event.content
+      .replace(this.TASK_PATTERN, "")
+      .trim()
+      .slice(0, 400);
+    try {
+      const answer = await this.askLlm(
+        `You are ${AGENT_NAME}, a browser-hosted wiki copilot. A user asked you inside this wiki page. Answer concisely; the answer is appended to the page.`,
+        `Wiki page "${slug}":\n\n${event.content.slice(0, 3000)}\n\nInstruction: ${instruction}`,
+      );
+      if (!this.TASK_PATTERN.test(event.content)) return; // user already edited past the ask
+      const updated = `${event.content}\n\n---\n> ✍️ ${AGENT_NAME}\n\n${answer.slice(0, 2000)}`;
+      const signed = await signAsAgent({
+        kind: KIND_WIKI_PAGE,
+        tags: [["d", slug]],
+        content: updated,
+      });
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsAgent,
+      });
+      if (!result.accepted) {
+        console.warn("[browser-agent] wiki reply rejected", result.message);
+      }
+    } catch (error) {
+      console.error("[browser-agent] wiki copilot failed:", error);
     }
   }
 
@@ -393,13 +448,16 @@ class BrowserAgent {
     status: string,
     title: string,
     channelId: string | null = null,
+    parentEventId?: string,
   ) {
     const tags: string[][] = [
       ["d", taskId],
       ["p", getAgentPubkey()],
     ];
-    // Carry the original task's channel so the update is findable in-context.
+    // Carry the original task's channel + thread link so the update stays
+    // findable in-context and the board keeps the parent e-tag.
     if (channelId) tags.push(["h", channelId]);
+    if (parentEventId) tags.push(["e", parentEventId]);
     // Carry the original task's channel so the update is findable in-context.
     const signed = await signAsAgent({
       kind: KIND_AGENT_TASK,
