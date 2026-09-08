@@ -13,6 +13,7 @@ import {
   Cpu,
   Globe,
   HardDrive,
+  Gauge,
   ListChecks,
   Play,
   Power,
@@ -24,6 +25,7 @@ import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useAgentTasks, type FleetTask } from "../use-agent-tasks";
+import { usageTotals, resetUsage } from "../agent-usage";
 
 import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
 import type { Channel } from "@/features/channels/use-channels";
@@ -98,6 +100,57 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function UsageCard() {
+  const totals = usageTotals();
+  return (
+    <section
+      className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5"
+      data-testid="usage-card"
+    >
+      <div className="flex items-center gap-2">
+        <Gauge className="h-3.5 w-3.5 text-black/50 dark:text-white/50" />
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+          This tab agent · usage
+        </h3>
+        <span className="ml-auto text-xs text-black/40 dark:text-white/40">
+          ~${totals.est.toFixed(3)}
+        </span>
+      </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
+          <p className="text-sm font-semibold text-black dark:text-white">
+            {totals.calls}
+          </p>
+          <p className="text-[10px] text-black/45 dark:text-white/45">calls</p>
+        </div>
+        <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
+          <p className="text-sm font-semibold text-black dark:text-white">
+            {totals.prompt.toLocaleString()}
+          </p>
+          <p className="text-[10px] text-black/45 dark:text-white/45">
+            prompt tk
+          </p>
+        </div>
+        <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
+          <p className="text-sm font-semibold text-black dark:text-white">
+            {totals.completion.toLocaleString()}
+          </p>
+          <p className="text-[10px] text-black/45 dark:text-white/45">
+            output tk
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => resetUsage()}
+        className="mt-1.5 text-[11px] text-black/40 hover:text-black/70 dark:text-white/40 dark:hover:text-white/70"
+      >
+        Reset ledger
+      </button>
+    </section>
   );
 }
 
@@ -223,6 +276,8 @@ export function FleetView({ channels }: { channels: Channel[] }) {
           in a channel to get a response.
         </p>
       ) : null}
+
+      {state === "running" ? <UsageCard /> : null}
 
       <section className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
         <div className="flex items-center gap-2">

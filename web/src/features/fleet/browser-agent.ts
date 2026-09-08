@@ -24,6 +24,7 @@ import {
   recentChannelMemory,
   appendChannelMemory,
 } from "@/features/fleet/agent-memory";
+import { recordUsage } from "@/features/fleet/agent-usage";
 import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -461,7 +462,15 @@ class BrowserAgent {
     }
     const json = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    if (json.usage) {
+      recordUsage({
+        prompt: json.usage.prompt_tokens ?? 0,
+        completion: json.usage.completion_tokens ?? 0,
+        model,
+      });
+    }
     const content = json.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error("empty LLM response");
     return content;
