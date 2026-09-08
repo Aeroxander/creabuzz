@@ -28,6 +28,7 @@ export interface AgentCapabilities {
   runtype: AgentRuntype;
   status: AgentStatus;
   tools: string[];
+  team: string | null;
   heartbeat: number;
   updatedAt: number;
   alive: boolean;
@@ -42,6 +43,7 @@ function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
     runtype?: string;
     status?: string;
     tools?: string[];
+    team?: string;
     heartbeat?: number;
   } = {};
   try {
@@ -68,6 +70,7 @@ function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
     runtype,
     status,
     tools: body.tools ?? [],
+    team: (body.team ?? "").trim() || null,
     heartbeat: heartbeatMs,
     updatedAt: event.created_at * 1000,
     alive: Date.now() - heartbeatMs < LIVENESS_WINDOW_MS,

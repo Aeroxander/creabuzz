@@ -65,6 +65,21 @@ class BrowserAgent {
     this.channelIds = channelIds;
   }
 
+  /** Team label announced in capabilities (persisted per browser). */
+  setTeam(team: string | null): void {
+    const value = (team ?? "").trim();
+    try {
+      if (value) localStorage.setItem("buzz.agent.team", value);
+      else localStorage.removeItem("buzz.agent.team");
+    } catch {
+      // storage unavailable — announce still uses the in-memory value
+    }
+    this.teamOverride = value || null;
+    void this.announce("available").catch(() => {});
+  }
+
+  private teamOverride: string | null = null;
+
   isRunning(): boolean {
     return this.state === "running";
   }
@@ -197,11 +212,20 @@ class BrowserAgent {
 
   private async announce(status: "available" | "busy" | "offline") {
     const pubkey = getAgentPubkey();
+    let team: string | null = this.teamOverride;
+    if (!team) {
+      try {
+        team = localStorage.getItem("buzz.agent.team")?.trim() || null;
+      } catch {
+        team = null;
+      }
+    }
     const capabilities = {
       name: AGENT_NAME,
       runtype: "browser",
       status,
       tools: ["chat", "wiki", "search"],
+      team,
       heartbeat: Math.floor(Date.now() / 1000),
     };
     const event = await signAsAgent({

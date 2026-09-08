@@ -4,6 +4,7 @@ import {
   Bot,
   ListChecks,
   Search,
+  Users,
   Zap,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -15,6 +16,7 @@ import { ChannelTimeline } from "./ChannelTimeline";
 import { SearchResults } from "@/features/search/ui/SearchResults";
 import { WikiView } from "@/features/wiki/ui/WikiView";
 import { FleetView } from "@/features/fleet/ui/FleetView";
+import { OrgView } from "@/features/fleet/ui/OrgView";
 import { WorkBoard } from "@/features/fleet/ui/WorkBoard";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 
@@ -38,6 +40,7 @@ export function CommunityShell({
   const [showingWiki, setShowingWiki] = useState(false);
   const [showingFleet, setShowingFleet] = useState(false);
   const [showingWork, setShowingWork] = useState(false);
+  const [showingOrg, setShowingOrg] = useState(false);
 
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
@@ -134,6 +137,25 @@ export function CommunityShell({
           <ListChecks className="h-3.5 w-3.5" />
           Work
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowingWiki(false);
+            setShowingFleet(false);
+            setShowingWork(false);
+            setShowingOrg((v) => !v);
+            setSearchTerm("");
+          }}
+          className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+            showingOrg
+              ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+              : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+          }`}
+          data-testid="org-toggle"
+        >
+          <Users className="h-3.5 w-3.5" />
+          Org
+        </button>
         <ChannelSidebar
           channels={channels}
           selectedId={activeChannel?.id ?? null}
@@ -143,6 +165,7 @@ export function CommunityShell({
             setShowingWiki(false);
             setShowingFleet(false);
             setShowingWork(false);
+            setShowingOrg(false);
           }}
         />
         <div className="mt-auto border-t border-black/10 px-3 py-2.5 dark:border-white/10">
@@ -151,7 +174,9 @@ export function CommunityShell({
       </div>
 
       <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
-        {showingWork ? (
+        {showingOrg ? (
+          <OrgView />
+        ) : showingWork ? (
           <WorkBoard channels={channels} />
         ) : showingFleet ? (
           <FleetView channels={channels} />
