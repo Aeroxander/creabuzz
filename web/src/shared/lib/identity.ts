@@ -76,6 +76,16 @@ export function nsecToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
+/** True when a durable identity already exists on this browser. */
+export function hasStoredIdentity(): boolean {
+  try {
+    const existing = window.localStorage.getItem(IDENTITY_STORAGE_KEY);
+    return existing != null && existing.length === 64;
+  } catch {
+    return false;
+  }
+}
+
 /** Replace the stored identity with an imported hex nsec. */
 export function importIdentity(hex: string): string {
   const pubkey = getPublicKey(nsecToBytes(hex.trim().toLowerCase()));
