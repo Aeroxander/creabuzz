@@ -28,11 +28,12 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
 import { OnboardingDialog } from "./OnboardingDialog";
 import {
-  createPasskeyIdentity,
+  setupPasskey,
   activePasskeyPubkey,
   signInPasskeyIdentity,
   hasPasskeyIdentity,
   isPasskeyActive,
+  passkeyMode,
   exportPasskeyNsec,
   removePasskeyIdentity,
   registerPasskeySigner,
@@ -82,10 +83,10 @@ export function ProfileMenu() {
   const profile = profiles?.[0];
   const displayName = profileDisplayName(profile, pubkey);
 
-  // Auto sign-in on boot when a passkey identity exists (one touch; in the
-  // mock mode it is instant). Runs once per mount.
+  // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
+  // mock). Unlock mode is left to the PasskeyUnlockGate overlay instead.
   useEffect(() => {
-    if (hasPasskeyIdentity() && !isPasskeyActive()) {
+    if (hasPasskeyIdentity() && passkeyMode() === "prf" && !isPasskeyActive()) {
       void signInPasskeyIdentity().catch((e) => {
         console.error("[passkey] auto sign-in failed", e);
       });
@@ -121,6 +122,7 @@ export function ProfileMenu() {
 
   const passkeyActive = isPasskeyActive();
   const passkeySetUp = hasPasskeyIdentity();
+  const passkeyModeNow = passkeyMode();
   const passkeyNsec = exportPasskeyNsec();
 
   const runPasskey = async (fn: () => Promise<unknown>) => {
@@ -275,7 +277,9 @@ export function ProfileMenu() {
                 <>
                   <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-[11px] text-black/50 dark:bg-white/5 dark:text-white/50">
                     <Fingerprint className="h-3 w-3" />
-                    Signed in with passkey
+                    {passkeyModeNow === "unlock"
+                      ? "Passkey unlock (Touch ID) — key stays in browser"
+                      : "Signed in with passkey"}
                   </div>
                   <MenuItem
                     icon={<KeyRound className="h-3.5 w-3.5" />}
@@ -306,7 +310,7 @@ export function ProfileMenu() {
                     void runPasskey(
                       passkeySetUp
                         ? () => signInPasskeyIdentity()
-                        : () => createPasskeyIdentity(displayName),
+                        : () => setupPasskey(displayName),
                     );
                   }}
                 />

@@ -13,6 +13,16 @@ export interface PrfResult {
   okm: ArrayBuffer;
 }
 
+/** Thrown when the platform passkey cannot provide PRF outputs. */
+export class PrfUnavailableError extends Error {
+  constructor() {
+    super(
+      "This platform did not provide a PRF output for the passkey — passkey identity needs PRF support (Windows Hello / Google Password Manager).",
+    );
+    this.name = "PrfUnavailableError";
+  }
+}
+
 export type PrfProvider = {
   /** Register a platform passkey with the PRF extension for the given salt. */
   create(
@@ -21,6 +31,9 @@ export type PrfProvider = {
   ): Promise<{ credentialId: string }>;
   /** Authenticate the passkey with the PRF extension and return the output. */
   get(salt: Uint8Array, credentialId: string): Promise<PrfResult>;
+  /** Plain assertion (no PRF) — passkey-unlock mode for platforms without
+   * PRF (e.g. iCloud Keychain). */
+  assert(credentialId: string): Promise<void>;
 };
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -158,12 +171,22 @@ export const webAuthnPrf: PrfProvider = {
       }
     ).clientExtensionResults?.prf?.results?.first;
     if (!prf) {
-      throw new Error(
-        "This platform did not provide a PRF output for the passkey — " +
-          "passkey identity needs PRF support (Windows Hello / supported sync).",
-      );
+      throw new PrfUnavailableError();
     }
     return { okm: prf };
+  },
+
+  async assert(credentialId) {
+    const assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge: toAB(generateChallenge()),
+        allowCredentials: [
+          { id: toAB(b64urlDecode(credentialId)), type: "public-key" },
+        ],
+        userVerification: "required",
+      },
+    })) as PublicKeyCredential | null;
+    if (!assertion) throw new Error("passkey authentication cancelled");
   },
 };
 
@@ -177,17 +200,32 @@ export const mockPrf: PrfProvider = {
     return { credentialId: "mock-" + b64urlEncode(salt).slice(0, 24) };
   },
   async get(salt, _credentialId) {
-    // stable pseudo-PRF: HMAC-collapse salt (Web Crypto SHA-256)
+    // '"buzz.passkey.mock=noprf"' simulates iCloud Keychain (no PRF output).
+    try {
+      if (sessionStorage.getItem("buzz.passkey.mock") === "noprf") {
+        throw new PrfUnavailableError();
+      }
+    } catch {
+      throw new PrfUnavailableError();
+    }
     const digest = await crypto.subtle.digest("SHA-256", toAB(salt));
     return { okm: digest };
   },
+  async assert() {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode("assert-" + Date.now()),
+    );
+    void digest; // any success marks the touch complete in mock mode
+  },
 };
 
-/** Select the provider: dev mock when opted in, native otherwise. */
 export function prfProvider(): PrfProvider {
   if (typeof sessionStorage !== "undefined") {
     try {
-      if (sessionStorage.getItem("buzz.passkey.mock") === "1") {
+      // Any mock flag routes to the dev provider; mockPrf.get simulates the
+      // "noprf" (iCloud Keychain) case internally.
+      if (sessionStorage.getItem("buzz.passkey.mock") !== null) {
         return mockPrf;
       }
     } catch {
