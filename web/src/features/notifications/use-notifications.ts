@@ -73,7 +73,9 @@ export function useNotifications(): {
         for (const e of tasks) {
           const status = (() => {
             try {
-              return (JSON.parse(e.content) as { status?: string }).status ?? "";
+              return (
+                (JSON.parse(e.content) as { status?: string }).status ?? ""
+              );
             } catch {
               return "";
             }
@@ -85,13 +87,16 @@ export function useNotifications(): {
             id: e.id,
             kind: "task",
             title: "Task assigned to you",
-            preview: (() => {
-              try {
-                return (JSON.parse(e.content) as { title?: string }).title ?? "";
-              } catch {
-                return "";
-              }
-            })().slice(0, 120) || e.content.slice(0, 120),
+            preview:
+              (() => {
+                try {
+                  return (
+                    (JSON.parse(e.content) as { title?: string }).title ?? ""
+                  );
+                } catch {
+                  return "";
+                }
+              })().slice(0, 120) || e.content.slice(0, 120),
             channelId: null,
             at: e.created_at * 1000,
           });
