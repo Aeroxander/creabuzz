@@ -49,6 +49,22 @@ export function CommunityShell({
 
   const searching = searchTerm.trim().length >= 2;
 
+  /** Exactly one sidebar view is on at a time (or none → chat). */
+  const setView = (view: "wiki" | "fleet" | "work" | "org") => {
+    const active =
+      view === "wiki"
+        ? showingWiki
+        : view === "fleet"
+          ? showingFleet
+          : view === "work"
+            ? showingWork
+            : showingOrg;
+    setShowingWiki(view === "wiki" && !active);
+    setShowingFleet(view === "fleet" && !active);
+    setShowingWork(view === "work" && !active);
+    setShowingOrg(view === "org" && !active);
+  };
+
   return (
     <div className="flex h-full min-h-0 w-full flex-1">
       <div className="flex w-60 shrink-0 flex-col">
@@ -88,9 +104,8 @@ export function CommunityShell({
         <button
           type="button"
           onClick={() => {
-            setShowingFleet(false);
-            setShowingWiki((v) => !v);
             setSearchTerm("");
+            setView("wiki");
           }}
           className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
             showingWiki
@@ -105,9 +120,8 @@ export function CommunityShell({
         <button
           type="button"
           onClick={() => {
-            setShowingWiki(false);
-            setShowingFleet((v) => !v);
             setSearchTerm("");
+            setView("fleet");
           }}
           className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
             showingFleet
@@ -122,10 +136,8 @@ export function CommunityShell({
         <button
           type="button"
           onClick={() => {
-            setShowingWiki(false);
-            setShowingFleet(false);
-            setShowingWork((v) => !v);
             setSearchTerm("");
+            setView("work");
           }}
           className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
             showingWork
@@ -140,11 +152,8 @@ export function CommunityShell({
         <button
           type="button"
           onClick={() => {
-            setShowingWiki(false);
-            setShowingFleet(false);
-            setShowingWork(false);
-            setShowingOrg((v) => !v);
             setSearchTerm("");
+            setView("org");
           }}
           className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
             showingOrg
