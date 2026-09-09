@@ -150,10 +150,10 @@ async fn post_turn(
 
 /// OpenAI-compatible chat completion via the relay gateway with NIP-98 auth.
 async fn ask_gateway(client: &reqwest::Client, keys: &Keys, prompt: &str) -> Result<String, String> {
-    // 127.0.0.1 (not localhost): the dev community row is bound to that
-    // host so the relay can resolve the tenant for the gateway request.
+    // Gateway host must match the community-bound host (localhost since the
+    // tenant migration) so the relay can resolve the community for the request.
     let gateway = std::env::var("BUZZ_FLEET_WORKER_GATEWAY")
-        .unwrap_or_else(|_| "http://127.0.0.1:3000/llm/chat/completions".into());
+        .unwrap_or_else(|_| "http://localhost:3000/llm/chat/completions".into());
     let model = std::env::var("BUZZ_FLEET_WORKER_MODEL")
         .unwrap_or_else(|_| "umans-deepseek-v4-flash-0731".into());
     let body = json!({
