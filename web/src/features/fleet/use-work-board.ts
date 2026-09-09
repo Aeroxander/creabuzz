@@ -24,7 +24,11 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK, KIND_GIT_ISSUE } from "@/shared/constants/kinds";
-import { parseTask, type FleetTask } from "./use-agent-tasks";
+import {
+  parseTask,
+  type FleetTask,
+  type TaskPriority,
+} from "./use-agent-tasks";
 
 export const KIND_GIT_STATUS_OPEN = 1630;
 export const KIND_GIT_STATUS_MERGED = 1631;
@@ -45,6 +49,9 @@ export interface WorkItem {
   parentEventId: string | null;
   author: string;
   approver: string | null;
+  priority: TaskPriority;
+  due: number | null;
+  labels: string[];
   updatedAt: number;
 }
 
@@ -114,10 +121,25 @@ export function useWorkBoard(): {
     description?: string;
     assignee?: string;
     channelId?: string;
+    priority?: TaskPriority;
+    due?: number | null;
+    labels?: string[];
   }) => Promise<void>;
   requestApproval: (task: FleetTask) => Promise<void>;
   approve: (task: FleetTask) => Promise<void>;
   reject: (task: FleetTask) => Promise<void>;
+  setStatus: (task: FleetTask, status: string) => Promise<void>;
+  setAssignee: (task: FleetTask, assignee: string | null) => Promise<void>;
+  updateTask: (
+    task: FleetTask,
+    patch: {
+      description?: string;
+      priority?: TaskPriority;
+      due?: number | null;
+      labels?: string[];
+      title?: string;
+    },
+  ) => Promise<void>;
 } {
   const [tasks, setTasks] = useState<Record<string, WorkItem>>({});
   const [issues, setIssues] = useState<Record<string, WorkItem>>({});
@@ -147,6 +169,9 @@ export function useWorkBoard(): {
         parentEventId:
           task.parentEventId ?? prev[task.id]?.parentEventId ?? null,
         author: task.author,
+        priority: task.priority,
+        due: task.due,
+        labels: task.labels,
         approver: taskApprover(event),
         updatedAt: task.updatedAt,
       };
@@ -185,6 +210,9 @@ export function useWorkBoard(): {
               parentEventId: null,
               author: event.pubkey,
               approver: null,
+              priority: "normal",
+              due: null,
+              labels: [],
               updatedAt: event.created_at * 1000,
             },
           }));
@@ -249,6 +277,9 @@ export function useWorkBoard(): {
               scopeLabel: "channel",
               parentEventId: task.parentEventId ?? parent,
               author: task.author,
+              priority: task.priority,
+              due: task.due,
+              labels: task.labels,
               approver: taskApprover(event),
               updatedAt: task.updatedAt,
             };
@@ -281,6 +312,9 @@ export function useWorkBoard(): {
             parentEventId: null,
             author: issue.pubkey,
             approver: null,
+            priority: "normal",
+            due: null,
+            labels: [],
             updatedAt: issue.created_at * 1000,
           };
         }
@@ -305,6 +339,9 @@ export function useWorkBoard(): {
       description?: string;
       assignee?: string;
       channelId?: string;
+      priority?: TaskPriority;
+      due?: number | null;
+      labels?: string[];
     }) => {
       const id =
         "task-" +
@@ -320,6 +357,9 @@ export function useWorkBoard(): {
           title: input.title,
           description: input.description ?? "",
           status: input.assignee ? "assigned" : "open",
+          priority: input.priority ?? "normal",
+          due: input.due ?? null,
+          labels: input.labels ?? [],
         }),
       });
       const result = await publishEvent(relayWsUrl(), signed, {
@@ -347,6 +387,9 @@ export function useWorkBoard(): {
           description: task.description,
           status,
           approver,
+          priority: task.priority,
+          due: task.due,
+          labels: task.labels,
           _taskId: task.id,
         }),
       });
@@ -383,6 +426,53 @@ export function useWorkBoard(): {
     [publishTaskRow],
   );
 
+  // Board actions: status/assignee/field updates publish a fresh LWW row.
+  const setStatus = useCallback(
+    async (task: FleetTask, status: string) => {
+      await publishTaskRow(task, status, null);
+    },
+    [publishTaskRow],
+  );
+
+  const setAssignee = useCallback(
+    async (task: FleetTask, assignee: string | null) => {
+      await publishTaskRow(
+        { ...task, assignee },
+        // Assigning transitions open -> assigned; unassigning returns to open.
+        assignee ? "assigned" : "open",
+        null,
+      );
+    },
+    [publishTaskRow],
+  );
+
+  const updateTask = useCallback(
+    async (
+      task: FleetTask,
+      patch: {
+        description?: string;
+        priority?: TaskPriority;
+        due?: number | null;
+        labels?: string[];
+        title?: string;
+      },
+    ) => {
+      await publishTaskRow(
+        {
+          ...task,
+          title: patch.title ?? task.title,
+          description: patch.description ?? task.description,
+          priority: patch.priority ?? task.priority,
+          due: patch.due !== undefined ? patch.due : task.due,
+          labels: patch.labels !== undefined ? patch.labels : task.labels,
+        },
+        task.status,
+        null,
+      );
+    },
+    [publishTaskRow],
+  );
+
   const items = useMemo(
     () =>
       [...Object.values(tasks), ...Object.values(issues)].sort(
@@ -391,5 +481,15 @@ export function useWorkBoard(): {
     [tasks, issues],
   );
 
-  return { items, loading, createTask, requestApproval, approve, reject };
+  return {
+    items,
+    loading,
+    createTask,
+    requestApproval,
+    approve,
+    reject,
+    setStatus,
+    setAssignee,
+    updateTask,
+  };
 }

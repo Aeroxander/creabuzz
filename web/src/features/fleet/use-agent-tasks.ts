@@ -28,6 +28,8 @@ export type TaskStatus =
   | "done"
   | "cancelled";
 
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
+
 export interface FleetTask {
   id: string;
   title: string;
@@ -37,6 +39,9 @@ export interface FleetTask {
   parentEventId: string | null;
   channelId: string | null;
   author: string;
+  priority: TaskPriority;
+  due: number | null;
+  labels: string[];
   updatedAt: number;
 }
 
@@ -47,6 +52,9 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     title?: string;
     description?: string;
     status?: string;
+    priority?: string;
+    due?: number | null;
+    labels?: string[];
   } = {};
   try {
     body = JSON.parse(event.content) as typeof body;
@@ -73,6 +81,13 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     parentEventId: event.tags.find((t) => t[0] === "e")?.[1] ?? null,
     channelId: event.tags.find((t) => t[0] === "h")?.[1] ?? null,
     author: event.pubkey,
+    priority: (["low", "normal", "high", "urgent"] as const).includes(
+      body.priority as TaskPriority,
+    )
+      ? (body.priority as TaskPriority)
+      : "normal",
+    due: typeof body.due === "number" && body.due > 0 ? body.due : null,
+    labels: Array.isArray(body.labels) ? body.labels : [],
     updatedAt: event.created_at * 1000,
   };
 }
@@ -86,6 +101,9 @@ export function useAgentTasks(): {
     assignee?: string;
     channelId?: string;
     parentEventId?: string;
+    priority?: TaskPriority;
+    due?: number | null;
+    labels?: string[];
   }) => Promise<void>;
 } {
   const [tasks, setTasks] = useState<Record<string, FleetTask>>({});
@@ -137,6 +155,9 @@ export function useAgentTasks(): {
       assignee?: string;
       channelId?: string;
       parentEventId?: string;
+      priority?: TaskPriority;
+      due?: number | null;
+      labels?: string[];
     }) => {
       const id =
         "task-" +
@@ -153,6 +174,9 @@ export function useAgentTasks(): {
           title: input.title,
           description: input.description ?? "",
           status: input.assignee ? "assigned" : "open",
+          priority: input.priority ?? "normal",
+          due: input.due ?? null,
+          labels: input.labels ?? [],
         }),
       });
       const result = await publishEvent(relayWsUrl(), signed, {

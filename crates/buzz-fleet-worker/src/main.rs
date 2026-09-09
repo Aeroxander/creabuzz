@@ -268,16 +268,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (d, p, h, e) = tags_for(&event);
             let Some(d) = d else { continue };
             let status = task_status(&event);
-            if p.as_deref() != Some(keys.public_key().to_hex().as_str()) {
-                continue;
-            }
-            if !matches!(status.as_str(), "open" | "assigned") {
+            let mine = p.as_deref() == Some(keys.public_key().to_hex().as_str());
+            // Autonomy: claim unassigned open tasks so the fleet keeps moving.
+            let is_open_unclaimed = status == "open" && p.is_none();
+            if (!mine && !is_open_unclaimed)
+                || !matches!(status.as_str(), "open" | "assigned")
+            {
                 continue;
             }
             if !processed.insert(d.clone()) {
                 continue;
             }
             let title = task_title(&event);
+            if is_open_unclaimed {
+                publish_task_row(&mut ws, &keys, &event, "assigned").await;
+                tracing::info!(task = %d, "claiming open task: {title}");
+            }
             tracing::info!(task = %d, "picking up task: {title}");
 
             publish_task_row(&mut ws, &keys, &event, "in_progress").await;
@@ -291,11 +297,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .await;
             }
-            match ask_gateway(&client, &keys, &format!("Task: {title}
-
-{}", event.content)).await {
-                Ok(answer) => {
-                    publish_task_row(&mut ws, &keys, &event, "done").await;
+            let mut answer_attempts = 0;
+            let llm_result = loop {
+                answer_attempts += 1;
+                match ask_gateway(&client, &keys, &format!("Task: {title}\n\n{}", event.content)).await {
+                    Ok(answer) => break Ok(answer),
+                    Err(err) if answer_attempts < 3 && err.contains("empty LLM response") => {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    Err(err) => break Err(err),
+                }
+            };
+            match llm_result {
+                Ok(answer) => {publish_task_row(&mut ws, &keys, &event, "done").await;
                     post_turn(
                         &mut ws,
                         &keys,
