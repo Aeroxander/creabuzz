@@ -271,7 +271,7 @@ class BrowserAgent {
           ? `\n\nPrior turns with you in this channel:\n${priorTurns.join("\n")}`
           : "";
       const answer = await this.askLlm(
-        `You are ${AGENT_NAME}, a browser-hosted fleet agent in a Buzz community channel. ` +
+        `You are ${AGENT_NAME}, a browser-hosted fleet agent in a Creaton community channel. ` +
           "Answer the last message concisely. Use the channel context below.",
         `${context}${memoryBlock}\n\nSomeone wrote: ${event.content}`,
       );

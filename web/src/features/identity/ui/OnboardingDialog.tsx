@@ -50,7 +50,7 @@ export function OnboardingDialog({
               setSaving(true);
               setError(null);
               try {
-                await createPasskeyIdentity(name.trim() || "Buzz user");
+                await createPasskeyIdentity(name.trim() || "Creaton user");
                 (onPasskeyDone ?? onDone)();
               } catch (e) {
                 setError(e instanceof Error ? e.message : "passkey failed");

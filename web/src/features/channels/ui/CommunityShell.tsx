@@ -71,12 +71,12 @@ export function CommunityShell({
       <div className="flex h-full min-h-0 w-full flex-1">
         <div className="flex w-60 shrink-0 flex-col">
           <div className="flex items-center gap-2 px-3 pt-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/5 dark:bg-white/10">
-              <Zap className="h-4 w-4 text-black/60 dark:text-white/60" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#43e296]/15 dark:bg-[#43e296]/20">
+              <Zap className="h-4 w-4 text-[#0e9f66] dark:text-[#43e296]" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-black dark:text-white">
-                Buzz
+                Creaton
               </p>
               <p className="truncate text-[10px] text-black/45 dark:text-white/45">
                 {host}

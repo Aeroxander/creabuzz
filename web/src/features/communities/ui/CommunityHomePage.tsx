@@ -103,12 +103,12 @@ export function CommunityHomePage() {
               variant="outline"
               className="border-black/15 dark:border-white/15"
             >
-              <a href={deepLink}>Open in Buzz</a>
+              <a href={deepLink}>Open in Creaton</a>
             </Button>
           </div>
 
           <p className="mt-4 text-xs text-black/45 dark:text-white/45">
-            Joining doesn't require an account here — Buzz creates a local
+            Joining doesn't require an account here — Creaton creates a local
             identity only when you post or join privately.
           </p>
 

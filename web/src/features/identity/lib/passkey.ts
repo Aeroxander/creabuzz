@@ -122,7 +122,7 @@ export const webAuthnPrf: PrfProvider = {
     const credential = (await navigator.credentials.create({
       publicKey: {
         challenge: toAB(generateChallenge()),
-        rp: { id: rpId(), name: "Buzz" },
+        rp: { id: rpId(), name: "Creaton" },
         user: {
           id: toAB(randomBytes(16)),
           name: displayName,
