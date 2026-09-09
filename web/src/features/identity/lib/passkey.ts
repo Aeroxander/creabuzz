@@ -40,7 +40,18 @@ function b64urlDecode(value: string): Uint8Array {
 
 /** Stable per-origin RP id (the app's host). */
 function rpId(): string {
-  return window.location.hostname || "localhost";
+  const host = window.location.hostname || "localhost";
+  // WebAuthn RP IDs must be domains; browsers reject IP literals (including
+  // 127.0.0.1). localhost is the sanctioned loopback id for dev, and the
+  // same RP id must be used for both registration and assertion.
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)
+  ) {
+    return "localhost";
+  }
+  return host;
 }
 
 /** Copy to an ArrayBuffer-backed view (WebCrypto BufferSource requirement). */
