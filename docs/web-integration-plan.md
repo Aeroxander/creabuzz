@@ -181,3 +181,9 @@ Track 3 — OpenKnowledge model | kind:44001 wiki pages (relay-approved), best-e
 - **Scope** — read/write parity phases from the previous plan stay the
   backbone; these three tracks are the differentiation layer, not a
   replacement for channels/chat parity.
+
+## Identity & token architecture (design)
+
+See [identity-token-architecture.md](./identity-token-architecture.md) — the agreed
+passkey-PRF Nostr identity + ZeroDev passkey smart wallet + SIWE binding model,
+and the DAO Launchpad web flow (projects → token release) planned on top.
