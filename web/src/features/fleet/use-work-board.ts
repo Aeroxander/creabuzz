@@ -113,7 +113,7 @@ function issueStatus(
   return { status: "open", approver: null };
 }
 
-export function useWorkBoard(): {
+export function useWorkBoard(channels?: { id: string }[]): {
   items: WorkItem[];
   loading: boolean;
   createTask: (input: {
@@ -141,6 +141,7 @@ export function useWorkBoard(): {
     },
   ) => Promise<void>;
 } {
+  const channelIds = channels?.map((c) => c.id) ?? [];
   const [tasks, setTasks] = useState<Record<string, WorkItem>>({});
   const [issues, setIssues] = useState<Record<string, WorkItem>>({});
   const [loading, setLoading] = useState(true);
@@ -182,13 +183,28 @@ export function useWorkBoard(): {
   useEffect(() => {
     const wsUrl = relayWsUrl();
     let disposed = false;
+    const cleanups: (() => void)[] = [];
 
     // --- fleet tasks (live + history) ---
+    // Global sub for scope-less rows + one per channel: the relay walls
+    // channel-scoped events off from global subscriptions, so drops on
+    // channel-tied tasks must be delivered per-channel or the board never
+    // re-renders.
     const taskUnsub = subscribeChannel(
       wsUrl,
       { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
       { onEvent: (event) => upsertTask(event) },
     );
+    cleanups.push(taskUnsub);
+    for (const channel of channelIds) {
+      cleanups.push(
+        subscribeChannel(
+          wsUrl,
+          { kinds: [KIND_AGENT_TASK], "#h": [channel] } satisfies NostrFilter,
+          { onEvent: (event) => upsertTask(event) },
+        ),
+      );
+    }
 
     // --- git issues + status events (history; live for issues too) ---
     const issueUnsub = subscribeChannel(
@@ -328,10 +344,10 @@ export function useWorkBoard(): {
 
     return () => {
       disposed = true;
-      taskUnsub();
+      for (const cleanup of cleanups) cleanup();
       issueUnsub();
     };
-  }, [upsertTask]);
+  }, [upsertTask, channelIds]);
 
   const createTask = useCallback(
     async (input: {

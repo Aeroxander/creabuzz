@@ -122,7 +122,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
     setStatus,
     setAssignee: setTaskAssignee,
     updateTask,
-  } = useWorkBoard();
+  } = useWorkBoard(channels);
   const { agents } = useAgentRoster();
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
