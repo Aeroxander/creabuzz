@@ -127,10 +127,15 @@ export async function setupPasskey(
 ): Promise<{ mode: PasskeyMode; pubkey: string }> {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const provider = prfProvider();
-  const { credentialId } = await provider.create(salt, displayName);
+  const { credentialId, okm: okmAtCreate } = await provider.create(
+    salt,
+    displayName,
+  );
   try {
-    // PRF output may be delivered on the follow-up assertion.
-    const { okm } = await provider.get(salt, credentialId);
+    // Prefer the PRF output delivered with the registration ceremony itself
+    // (Safari 18.4+ does this) — zero extra touches. Fall back to a single
+    // follow-up assertion when the platform defers the output.
+    const okm = okmAtCreate ?? (await provider.get(salt, credentialId)).okm;
     return signInWithOkm(credentialId, salt, okm, "prf");
   } catch (error) {
     if (!(error instanceof PrfUnavailableError)) throw error;

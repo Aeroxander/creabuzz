@@ -10,7 +10,13 @@ import { getOrCreateIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { Fingerprint } from "lucide-react";
 
-export function OnboardingDialog({ onDone }: { onDone: () => void }) {
+export function OnboardingDialog({
+  onDone,
+  onPasskeyDone,
+}: {
+  onDone: () => void;
+  onPasskeyDone?: () => void;
+}) {
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
@@ -45,7 +51,7 @@ export function OnboardingDialog({ onDone }: { onDone: () => void }) {
               setError(null);
               try {
                 await createPasskeyIdentity(name.trim() || "Buzz user");
-                window.location.reload();
+                (onPasskeyDone ?? onDone)();
               } catch (e) {
                 setError(e instanceof Error ? e.message : "passkey failed");
                 setSaving(false);

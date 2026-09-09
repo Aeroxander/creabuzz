@@ -64,7 +64,9 @@ export function ProfileMenu() {
   const [open, setOpen] = useState(false);
   // Read once at mount; sign out / import reload the page, so no setter
   // is needed — "create identity" itself reloads on completion.
-  const [created] = useState(() => hasStoredIdentity());
+  const [created, setCreated] = useState(
+    () => hasStoredIdentity() || hasPasskeyIdentity(),
+  );
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [editName, setEditName] = useState<string | null>(null);
   const [editAbout, setEditAbout] = useState("");
@@ -130,7 +132,8 @@ export function ProfileMenu() {
     setPasskeyError(null);
     try {
       await fn();
-      window.location.reload();
+      setPasskeyBusy(false);
+      setOpen(false);
     } catch (e) {
       setPasskeyError(e instanceof Error ? e.message : "passkey failed");
       setPasskeyBusy(false);
@@ -162,6 +165,13 @@ export function ProfileMenu() {
             onDone={() => {
               // Reload so the fresh profile (kind 0) renders in the chip.
               window.location.reload();
+            }}
+            onPasskeyDone={() => {
+              // Passkey setup re-renders in place — no reload, no extra
+              // ceremony; the session is already active with the derived key.
+              setCreated(true);
+              setShowOnboarding(false);
+              setOpen(false);
             }}
           />
         ) : null}

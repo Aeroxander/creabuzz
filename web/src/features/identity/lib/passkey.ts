@@ -28,7 +28,7 @@ export type PrfProvider = {
   create(
     salt: Uint8Array,
     displayName: string,
-  ): Promise<{ credentialId: string }>;
+  ): Promise<{ credentialId: string; okm?: ArrayBuffer }>;
   /** Authenticate the passkey with the PRF extension and return the output. */
   get(salt: Uint8Array, credentialId: string): Promise<PrfResult>;
   /** Plain assertion (no PRF) — passkey-unlock mode for platforms without
@@ -144,8 +144,16 @@ export const webAuthnPrf: PrfProvider = {
       },
     })) as PublicKeyCredential | null;
     if (!credential) throw new Error("passkey registration cancelled");
+    const prf = (
+      credential as unknown as {
+        clientExtensionResults?: {
+          prf?: { results?: { first?: ArrayBuffer } };
+        };
+      }
+    ).clientExtensionResults?.prf?.results?.first;
     return {
       credentialId: b64urlEncode(new Uint8Array(credential.rawId)),
+      okm: prf ?? undefined,
     };
   },
 
@@ -197,7 +205,11 @@ export const webAuthnPrf: PrfProvider = {
  */
 export const mockPrf: PrfProvider = {
   async create(salt) {
-    return { credentialId: "mock-" + b64urlEncode(salt).slice(0, 24) };
+    const okm = await crypto.subtle.digest("SHA-256", toAB(salt));
+    return {
+      credentialId: "mock-" + b64urlEncode(salt).slice(0, 24),
+      okm,
+    };
   },
   async get(salt, _credentialId) {
     // '"buzz.passkey.mock=noprf"' simulates iCloud Keychain (no PRF output).
