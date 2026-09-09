@@ -20,6 +20,7 @@ import { OrgView } from "@/features/fleet/ui/OrgView";
 import { WorkBoard } from "@/features/fleet/ui/WorkBoard";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
+import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 
 /**
  * In-community shell: channel sidebar, full-text search across open
@@ -91,6 +92,17 @@ export function CommunityShell({
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </div>
+          <NotificationBell
+            onOpenChannel={(channelId) => {
+              setSelectedId(channelId);
+              setSearchTerm("");
+              setShowingWiki(false);
+              setShowingFleet(false);
+              setShowingWork(false);
+              setShowingOrg(false);
+            }}
+            onOpenWork={() => setView("work")}
+          />
           <div className="px-3 pb-2 pt-3">
             <div className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-white/5">
               <Search className="h-3.5 w-3.5 shrink-0 text-black/40 dark:text-white/40" />

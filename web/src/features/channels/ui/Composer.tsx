@@ -6,6 +6,11 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser } from "@/shared/lib/identity";
 import { uploadBlob } from "@/shared/lib/upload-blob";
+import {
+  useMentionCandidates,
+  candidateName,
+} from "@/features/fleet/use-mention-candidates";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 export interface EditTarget {
   eventId: string;
@@ -44,6 +49,9 @@ export function Composer({
     setSending(true);
     try {
       const tags: string[][] = [["h", channelId]];
+      for (const pubkey of new Set(mentionPubkeys.current)) {
+        tags.push(["p", pubkey]);
+      }
       if (replyTo) {
         tags.push(["e", replyTo]);
       }
@@ -62,6 +70,7 @@ export function Composer({
         throw new Error(result.message ?? "relay rejected the event");
       }
       setDraft("");
+      mentionPubkeys.current = [];
       onPosted();
     } catch (error) {
       console.error("[composer]", error);
@@ -80,6 +89,49 @@ export function Composer({
   };
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionAt, setMentionAt] = useState<number>(-1);
+  const mentionPubkeys = useRef<string[]>([]);
+  const candidates = useMentionCandidates(channelId);
+
+  const onDraftChange = (value: string) => {
+    setDraft(value);
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const atIndex = value.lastIndexOf("@", caret - 1);
+    if (atIndex >= 0 && (atIndex === 0 || value[atIndex - 1] === " ")) {
+      setMentionAt(atIndex);
+      const token = value.slice(atIndex + 1, caret);
+      setMentionQuery(token.length > 0 ? token.toLowerCase() : "");
+    } else {
+      setMentionQuery(null);
+    }
+  };
+
+  const pickMention = (pubkey: string, name: string) => {
+    const at = mentionAt >= 0 ? mentionAt : draft.lastIndexOf("@");
+    const caret = textareaRef.current?.selectionStart ?? draft.length;
+    const before = at >= 0 ? draft.slice(0, at) : draft;
+    const after = draft.slice(caret);
+    const next = `${before}@${name} ${after}`;
+    setDraft(next);
+    if (!mentionPubkeys.current.includes(pubkey)) {
+      mentionPubkeys.current.push(pubkey);
+    }
+    setMentionQuery(null);
+    setMentionAt(-1);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const pos = before.length + name.length + 2;
+      textareaRef.current?.setSelectionRange(pos, pos);
+    });
+  };
+
+  const filteredMentions =
+    mentionQuery !== null
+      ? candidates.filter((c) =>
+          candidateName(c).toLowerCase().includes(mentionQuery),
+        )
+      : [];
 
   const insertMention = () => {
     setDraft((previous) => `${previous}@`);
@@ -137,10 +189,35 @@ export function Composer({
         </div>
       )}
       <div className="rounded-2xl border border-black/10 bg-white px-3 pt-2.5 pb-2 shadow-xs dark:border-white/10 dark:bg-white/5">
+        {mentionQuery !== null && filteredMentions.length > 0 ? (
+          <div className="mb-1.5 rounded-md border border-black/10 bg-background shadow-lg dark:border-white/10">
+            {filteredMentions.slice(0, 6).map((c) => (
+              <button
+                key={c.pubkey}
+                type="button"
+                onClick={() => pickMention(c.pubkey, candidateName(c))}
+                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                data-testid="mention-option"
+              >
+                <UserAvatar
+                  avatarUrl={null}
+                  displayName={candidateName(c)}
+                  size="xs"
+                />
+                <span className="truncate">{candidateName(c)}</span>
+                {c.agent ? (
+                  <span className="ml-auto text-[10px] text-black/40 dark:text-white/40">
+                    agent
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => onDraftChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
