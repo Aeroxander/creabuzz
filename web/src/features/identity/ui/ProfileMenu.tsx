@@ -27,8 +27,23 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
 import { OnboardingDialog } from "./OnboardingDialog";
+import {
+  createPasskeyIdentity,
+  activePasskeyPubkey,
+  signInPasskeyIdentity,
+  hasPasskeyIdentity,
+  isPasskeyActive,
+  exportPasskeyNsec,
+  removePasskeyIdentity,
+  registerPasskeySigner,
+} from "../lib/passkey-identity";
+import { Fingerprint } from "lucide-react";
 
 const BACKED_UP_KEY = "buzz.identity.backedUp";
+
+// Side-effect: make the passkey signer the primary signer while a passkey
+// session is active. Runs on first import of this module (mounted always).
+void registerPasskeySigner();
 
 function copyNsec(value: string, label = "Key copied") {
   void navigator.clipboard?.writeText(value).then(() => {
@@ -57,11 +72,25 @@ export function ProfileMenu() {
   const [showBackup, setShowBackup] = useState(false);
   const [revealKey, setRevealKey] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
-  const pubkey = userPubkey();
+  const pubkey = isPasskeyActive()
+    ? (activePasskeyPubkey() ?? userPubkey())
+    : userPubkey();
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const profile = profiles?.[0];
   const displayName = profileDisplayName(profile, pubkey);
+
+  // Auto sign-in on boot when a passkey identity exists (one touch; in the
+  // mock mode it is instant). Runs once per mount.
+  useEffect(() => {
+    if (hasPasskeyIdentity() && !isPasskeyActive()) {
+      void signInPasskeyIdentity().catch((e) => {
+        console.error("[passkey] auto sign-in failed", e);
+      });
+    }
+  }, []);
 
   // close on outside click
   useEffect(() => {
@@ -87,6 +116,22 @@ export function ProfileMenu() {
       setMenuError(e instanceof Error ? e.message : "couldn't save");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const passkeyActive = isPasskeyActive();
+  const passkeySetUp = hasPasskeyIdentity();
+  const passkeyNsec = exportPasskeyNsec();
+
+  const runPasskey = async (fn: () => Promise<unknown>) => {
+    setPasskeyBusy(true);
+    setPasskeyError(null);
+    try {
+      await fn();
+      window.location.reload();
+    } catch (e) {
+      setPasskeyError(e instanceof Error ? e.message : "passkey failed");
+      setPasskeyBusy(false);
     }
   };
 
@@ -226,16 +271,61 @@ export function ProfileMenu() {
                 }
                 onClick={() => setShowBackup(true)}
               />
-              <MenuItem
-                icon={<LogOut className="h-3.5 w-3.5" />}
-                label="Sign out (new key)"
-                onClick={() => setConfirmSignOut(true)}
-              />
+              {passkeyActive ? (
+                <>
+                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-[11px] text-black/50 dark:bg-white/5 dark:text-white/50">
+                    <Fingerprint className="h-3 w-3" />
+                    Signed in with passkey
+                  </div>
+                  <MenuItem
+                    icon={<KeyRound className="h-3.5 w-3.5" />}
+                    label="Back up passkey key"
+                    onClick={() => {
+                      if (passkeyNsec)
+                        copyNsec(passkeyNsec, "Passkey key copied");
+                    }}
+                  />
+                  <MenuItem
+                    icon={<LogOut className="h-3.5 w-3.5" />}
+                    label="Remove passkey sign-in"
+                    onClick={() => {
+                      removePasskeyIdentity();
+                      window.location.reload();
+                    }}
+                  />
+                </>
+              ) : (
+                <MenuItem
+                  icon={<Fingerprint className="h-3.5 w-3.5" />}
+                  label={
+                    passkeySetUp
+                      ? "Sign in with passkey"
+                      : "Set up passkey sign-in"
+                  }
+                  onClick={() => {
+                    void runPasskey(
+                      passkeySetUp
+                        ? () => signInPasskeyIdentity()
+                        : () => createPasskeyIdentity(displayName),
+                    );
+                  }}
+                />
+              )}
             </div>
           )}
           {menuError ? (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">
               {menuError}
+            </p>
+          ) : null}
+          {passkeyError ? (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+              {passkeyError}
+            </p>
+          ) : null}
+          {passkeyBusy ? (
+            <p className="mt-1 text-xs text-black/45 dark:text-white/45">
+              Waiting for your passkey…
             </p>
           ) : null}
         </div>

@@ -37,6 +37,26 @@ export class Nip07UnavailableError extends Error {
 
 let ephemeralSecretKey: Uint8Array | null = null;
 
+/**
+ * Optional user-signer override (e.g. the PRF passkey signer). Returns a
+ * signed event, or null to mean "fall through to the normal identity path".
+ */
+let userSignerOverride:
+  | ((template: UnsignedNostrEvent) => Promise<SignedNostrEvent | null>)
+  | null = null;
+
+export function setUserSignerOverride(
+  fn:
+    | ((template: UnsignedNostrEvent) => Promise<SignedNostrEvent | null>)
+    | null,
+): void {
+  userSignerOverride = fn;
+}
+
+export function getUserSignerOverride(): typeof userSignerOverride {
+  return userSignerOverride;
+}
+
 function getEphemeralSecretKey(): Uint8Array {
   if (!ephemeralSecretKey) {
     ephemeralSecretKey = generateSecretKey();
@@ -77,6 +97,10 @@ export async function signNostrEvent(
     ...template,
     created_at: template.created_at ?? Math.floor(Date.now() / 1000),
   };
+  if (userSignerOverride) {
+    const override = await userSignerOverride(unsigned);
+    if (override) return override;
+  }
   const provider = typeof window === "undefined" ? undefined : window.nostr;
 
   if (provider) {

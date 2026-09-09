@@ -15,6 +15,7 @@ import {
 
 import {
   hasNip07Provider,
+  getUserSignerOverride,
   type UnsignedNostrEvent,
   type SignedNostrEvent,
 } from "@/shared/lib/nostr-signer";
@@ -29,6 +30,12 @@ export async function signAsUser(
     ...template,
     created_at: template.created_at ?? Math.floor(Date.now() / 1000),
   };
+  // Active signer override (e.g. PRF passkey) takes precedence.
+  const override = getUserSignerOverride();
+  if (override) {
+    const signed = await override(unsigned);
+    if (signed) return signed;
+  }
   const provider = typeof window === "undefined" ? undefined : window.nostr;
   if (provider) {
     const expectedPubkey = await provider.getPublicKey();

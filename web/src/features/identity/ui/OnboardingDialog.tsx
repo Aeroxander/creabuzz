@@ -7,6 +7,8 @@ import { Sparkles } from "lucide-react";
 
 import { publishProfile } from "../lib/profile";
 import { getOrCreateIdentity } from "@/shared/lib/identity";
+import { createPasskeyIdentity } from "../lib/passkey-identity";
+import { Fingerprint } from "lucide-react";
 
 export function OnboardingDialog({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
@@ -35,6 +37,33 @@ export function OnboardingDialog({ onDone }: { onDone: () => void }) {
       data-testid="onboarding-dialog"
     >
       <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              setSaving(true);
+              setError(null);
+              try {
+                await createPasskeyIdentity(name.trim() || "Buzz user");
+                window.location.reload();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "passkey failed");
+                setSaving(false);
+              }
+            })();
+          }}
+          disabled={saving}
+          className="mb-3 flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+          data-testid="onboarding-passkey"
+        >
+          <Fingerprint className="h-4 w-4" />
+          Create with passkey (no key to manage)
+        </button>
+        <div className="mb-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
+          or with a backup key
+          <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
+        </div>
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
           <Sparkles className="h-5 w-5 text-black/60 dark:text-white/60" />
         </div>
