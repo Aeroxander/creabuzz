@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
-test("home page loads with Buzz branding", async ({ page }) => {
+test("home page loads with Creaton branding", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("main").getByRole("img", { name: "Buzz" }),
+    page.getByRole("main").getByRole("img", { name: "Creaton" }),
   ).toBeVisible();
 });
 
@@ -93,7 +93,7 @@ test("community page shows metadata and join stores the relay URL", async ({
     .toBe("ws://alpha.example.com");
 });
 
-test("invite requires age and legal consent before opening Buzz", async ({
+test("invite requires age and legal consent before opening Creaton", async ({
   page,
 }) => {
   await page.route("**/api/join-policy", async (route) => {
@@ -157,10 +157,10 @@ test("invite requires age and legal consent before opening Buzz", async ({
 
   const ageConfirmation = page.getByLabel("I am 18 years of age or older.");
   const agreementConfirmation = page.getByLabel(
-    "I agree to the Buzz Terms of Service and Privacy Policy.",
+    "I agree to the Creaton Terms of Service and Privacy Policy.",
   );
   const acceptInvite = page.getByRole("button", {
-    name: "Accept invite in Buzz",
+    name: "Accept invite in Creaton",
   });
 
   await expect(ageConfirmation).toBeVisible();
@@ -186,7 +186,7 @@ test("invite requires age and legal consent before opening Buzz", async ({
   await page
     .locator("label")
     .filter({
-      hasText: "I agree to the Buzz Terms of Service and Privacy Policy.",
+      hasText: "I agree to the Creaton Terms of Service and Privacy Policy.",
     })
     .click({ position: { x: 8, y: 8 } });
   await expect(agreementConfirmation).toBeChecked();

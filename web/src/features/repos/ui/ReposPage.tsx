@@ -60,7 +60,7 @@ function CommunityEmptyState() {
           className="h-16 w-16 overflow-hidden bg-black"
           style={{ borderRadius: "22.37%" }}
         >
-          <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+          <img alt="Creaton" className="h-full w-full" src={buzzAppIcon} />
         </div>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-black dark:text-white">
           This community is empty
@@ -108,7 +108,7 @@ function CommunityConnectionError({ message }: { message: string }) {
           className="h-16 w-16 overflow-hidden bg-black"
           style={{ borderRadius: "22.37%" }}
         >
-          <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+          <img alt="Creaton" className="h-full w-full" src={buzzAppIcon} />
         </div>
         <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
           <WifiOff className="h-5 w-5 text-black/60 dark:text-white/60" />
