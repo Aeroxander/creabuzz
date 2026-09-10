@@ -12,7 +12,7 @@
  * status row (done / closed) recording the approver.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   queryEvents,
@@ -34,6 +34,15 @@ export const KIND_GIT_STATUS_OPEN = 1630;
 export const KIND_GIT_STATUS_MERGED = 1631;
 export const KIND_GIT_STATUS_CLOSED = 1632;
 export const KIND_GIT_STATUS_DRAFT = 1633;
+
+/** Board column -> NIP-34 status kind for issue moves. */
+export const ISSUE_STATUS_KIND: Record<string, number> = {
+  open: KIND_GIT_STATUS_OPEN,
+  done: KIND_GIT_STATUS_MERGED,
+  closed: KIND_GIT_STATUS_CLOSED,
+  triage: KIND_GIT_STATUS_DRAFT,
+};
+export const ISSUE_MOVE_TARGETS = ["open", "done", "closed"];
 
 export type WorkItemType = "task" | "issue";
 
@@ -129,6 +138,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
   approve: (task: FleetTask) => Promise<void>;
   reject: (task: FleetTask) => Promise<void>;
   setStatus: (task: FleetTask, status: string) => Promise<void>;
+  publishIssueStatus: (issue: WorkItem, target: string) => Promise<void>;
   setAssignee: (task: FleetTask, assignee: string | null) => Promise<void>;
   updateTask: (
     task: FleetTask,
@@ -141,10 +151,33 @@ export function useWorkBoard(channels?: { id: string }[]): {
     },
   ) => Promise<void>;
 } {
-  const channelIds = channels?.map((c) => c.id) ?? [];
+  const channelIds = useMemo(
+    () => channels?.map((c) => c.id) ?? [],
+    [channels],
+  );
   const [tasks, setTasks] = useState<Record<string, WorkItem>>({});
   const [issues, setIssues] = useState<Record<string, WorkItem>>({});
   const [loading, setLoading] = useState(true);
+  const latestStatus = useRef(new Map<string, NostrEvent>());
+  const loadStarted = useRef(false);
+
+  // Track the newest status event per issue; recompute the issue's status.
+  const upsertIssueStatus = useCallback((event: NostrEvent) => {
+    const target = event.tags.find((t) => t[0] === "e")?.[1];
+    if (!target) return;
+    setIssues((prev) => {
+      const item = prev[target];
+      if (!item) return prev;
+      const current = latestStatus.current.get(target);
+      if (current && current.created_at > event.created_at) return prev;
+      latestStatus.current.set(target, event);
+      const next: WorkItem = { ...item };
+      if (event.kind === KIND_GIT_STATUS_MERGED) next.status = "done";
+      else if (event.kind === KIND_GIT_STATUS_CLOSED) next.status = "closed";
+      else if (event.kind === KIND_GIT_STATUS_DRAFT) next.status = "triage";
+      return { ...prev, [target]: next };
+    });
+  }, []);
 
   const upsertTask = useCallback((event: NostrEvent) => {
     const task = parseTask(event);
@@ -206,7 +239,21 @@ export function useWorkBoard(channels?: { id: string }[]): {
       );
     }
 
-    // --- git issues + status events (history; live for issues too) ---
+    // --- git issues + status events (history; live for issues + statuses) ---
+    cleanups.push(
+      subscribeChannel(
+        wsUrl,
+        {
+          kinds: [
+            KIND_GIT_STATUS_OPEN,
+            KIND_GIT_STATUS_MERGED,
+            KIND_GIT_STATUS_CLOSED,
+            KIND_GIT_STATUS_DRAFT,
+          ],
+        } satisfies NostrFilter,
+        { onEvent: (event) => upsertIssueStatus(event) },
+      ),
+    );
     const issueUnsub = subscribeChannel(
       wsUrl,
       { kinds: [KIND_GIT_ISSUE] } satisfies NostrFilter,
@@ -238,24 +285,33 @@ export function useWorkBoard(channels?: { id: string }[]): {
 
     // --- one-shot history: tasks, issues, status events, approvals ---
     const load = async () => {
+      if (loadStarted.current) return;
+      loadStarted.current = true;
       try {
-        const [taskEvents, issueEvents, statusEvents, approvalEvents] =
-          await Promise.all([
-            queryEvents(wsUrl, { kinds: [KIND_AGENT_TASK], limit: 200 }),
-            queryEvents(wsUrl, { kinds: [KIND_GIT_ISSUE], limit: 200 }),
-            queryEvents(wsUrl, {
-              kinds: [
-                KIND_GIT_STATUS_OPEN,
-                KIND_GIT_STATUS_MERGED,
-                KIND_GIT_STATUS_CLOSED,
-                KIND_GIT_STATUS_DRAFT,
-              ],
-              limit: 400,
-            }),
-            queryEvents(wsUrl, { kinds: [46030, 46031], limit: 400 }).catch(
-              () => [],
-            ),
-          ]);
+        const taskEvents = await queryEvents(wsUrl, {
+          kinds: [KIND_AGENT_TASK],
+          limit: 200,
+        }).catch(() => []);
+        const issueEvents = await queryEvents(wsUrl, {
+          kinds: [KIND_GIT_ISSUE],
+          limit: 200,
+        }).catch(() => []);
+        const { queryEventsHttp } = await import("@/shared/lib/http-query");
+        const statusEvents = await queryEventsHttp([
+          {
+            kinds: [
+              KIND_GIT_STATUS_OPEN,
+              KIND_GIT_STATUS_MERGED,
+              KIND_GIT_STATUS_CLOSED,
+              KIND_GIT_STATUS_DRAFT,
+            ],
+            limit: 400,
+          },
+        ]).catch(() => []);
+        const approvalEvents = await queryEvents(wsUrl, {
+          kinds: [46030, 46031],
+          limit: 400,
+        }).catch(() => []);
         if (disposed) return;
         const approverByTask = new Map<string, string>();
         for (const approval of approvalEvents) {
@@ -336,7 +392,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
         }
         setIssues((prev) => ({ ...prev, ...issuesNext }));
         setLoading(false);
-      } catch {
+      } catch (err) {
+        console.error("[workboard] load failed", err);
         if (!disposed) setLoading(false);
       }
     };
@@ -347,7 +404,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       for (const cleanup of cleanups) cleanup();
       issueUnsub();
     };
-  }, [upsertTask, channelIds]);
+  }, [upsertTask, upsertIssueStatus, channelIds]);
 
   const createTask = useCallback(
     async (input: {
@@ -489,6 +546,27 @@ export function useWorkBoard(channels?: { id: string }[]): {
     [publishTaskRow],
   );
 
+  // NIP-34: publish a status event targeting the issue. Allowed targets map
+  // to the status kinds (open/done/closed); other columns are no-ops.
+  const publishIssueStatus = useCallback(
+    async (issue: WorkItem, target: string) => {
+      const kind = ISSUE_STATUS_KIND[target];
+      if (!kind) return;
+      const signed = await signAsUser({
+        kind,
+        tags: [["e", issue.id]],
+        content: "",
+      });
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsUser,
+      });
+      if (!result.accepted) {
+        throw new Error(result.message ?? "issue status rejected");
+      }
+    },
+    [],
+  );
+
   const items = useMemo(
     () =>
       [...Object.values(tasks), ...Object.values(issues)].sort(
@@ -505,6 +583,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
     approve,
     reject,
     setStatus,
+    publishIssueStatus,
     setAssignee,
     updateTask,
   };

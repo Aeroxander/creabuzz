@@ -22,7 +22,7 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser } from "@/shared/lib/identity";
 import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
-import { KanbanBoard } from "./KanbanBoard";
+import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import type { TaskPriority } from "../use-agent-tasks";
 import type { Channel } from "@/features/channels/use-channels";
 import { userPubkey } from "@/shared/lib/identity";
@@ -120,6 +120,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
     approve,
     reject,
     setStatus,
+    publishIssueStatus,
     setAssignee: setTaskAssignee,
     updateTask,
   } = useWorkBoard(channels);
@@ -388,7 +389,17 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
         <KanbanBoard
           items={filtered}
           onSetStatus={(item, status) => {
-            void setStatus(asTask(item), status).catch(() => {});
+            if (item.type === "issue") {
+              if (ISSUE_MOVE_TARGETS.includes(status)) {
+                void publishIssueStatus(item, status).catch((e) =>
+                  console.error("[work] issue status", e),
+                );
+              }
+              return;
+            }
+            void setStatus(asTask(item), status).catch((e) =>
+              console.error("[work] task status", e),
+            );
           }}
           onAssignSelf={(item) => {
             if (item.type === "task") {

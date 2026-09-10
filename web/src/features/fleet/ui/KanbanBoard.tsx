@@ -13,6 +13,8 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
+export const ISSUE_MOVE_TARGETS = ["open", "done", "closed"];
+
 export const STATUS_COLUMNS = [
   { key: "open", label: "Open" },
   { key: "assigned", label: "Assigned" },
@@ -84,19 +86,24 @@ function Card({
 
       {menuOpen ? (
         <div className="mt-1.5 space-y-0.5 rounded-md bg-black/[0.03] p-1 dark:bg-white/5">
-          {STATUS_COLUMNS.filter((c) => c.key !== item.status).map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => {
-                onSetStatus(item, c.key);
-                setMenuOpen(false);
-              }}
-              className="block w-full rounded px-2 py-1 text-left text-xs text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-            >
-              Move to {c.label}
-            </button>
-          ))}
+          {STATUS_COLUMNS.filter((c) => c.key !== item.status)
+            .filter(
+              (c) =>
+                item.type !== "issue" || ISSUE_MOVE_TARGETS.includes(c.key),
+            )
+            .map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => {
+                  onSetStatus(item, c.key);
+                  setMenuOpen(false);
+                }}
+                className="block w-full rounded px-2 py-1 text-left text-xs text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+              >
+                Move to {c.label}
+              </button>
+            ))}
           {item.type === "task" ? (
             <>
               {item.assignee !== me ? (
@@ -204,7 +211,9 @@ export function KanbanBoard({
   const dropped = (id: string | null, status: string) => {
     if (!id) return;
     const item = items.find((i) => i.id === id);
-    if (item && item.status !== status) onSetStatus(item, status);
+    if (!item || item.status === status) return;
+    if (item.type === "issue" && !ISSUE_MOVE_TARGETS.includes(status)) return;
+    onSetStatus(item, status);
   };
 
   return (
