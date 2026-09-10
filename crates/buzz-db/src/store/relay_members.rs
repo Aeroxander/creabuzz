@@ -744,6 +744,72 @@ impl Db {
         claim_relay_membership(&self.pool, community, pubkey, role, policy_version).await
     }
 
+    /// Claims relay membership via SIWE (creabuzz) — `added_by = 'evm_siwe'`.
+    pub async fn claim_relay_membership_evm(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        role: &str,
+    ) -> Result<bool> {
+        crate::evm_identities::claim_relay_membership_evm(&self.pool, community, pubkey, role)
+            .await
+    }
+
+    /// Inserts or refreshes the npub → EVM account binding (creabuzz).
+    pub async fn upsert_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        evm_address: &[u8; 20],
+        attestation: Option<&serde_json::Value>,
+    ) -> Result<()> {
+        crate::evm_identities::upsert_evm_identity(
+            &self.pool,
+            community,
+            pubkey,
+            evm_address,
+            attestation,
+        )
+        .await
+    }
+
+    /// Fetches the EVM identity binding for `pubkey` in `community` (creabuzz).
+    pub async fn get_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+    ) -> Result<Option<crate::evm_identities::EvmIdentity>> {
+        crate::evm_identities::get_evm_identity(&self.pool, community, pubkey).await
+    }
+
+    /// Whether a binding exists and is soft-revoked (creabuzz).
+    pub async fn is_evm_identity_revoked(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+    ) -> Result<Option<bool>> {
+        crate::evm_identities::is_evm_identity_revoked(&self.pool, community, pubkey).await
+    }
+
+    /// Soft-revokes the npub → EVM binding (creabuzz).
+    pub async fn revoke_evm_identity(
+        &self,
+        community: CommunityId,
+        pubkey: &str,
+        revoked_by: &str,
+        reason: Option<&str>,
+    ) -> Result<bool> {
+        crate::evm_identities::revoke_evm_identity(
+            &self.pool,
+            community,
+            pubkey,
+            revoked_by,
+            reason,
+        )
+        .await
+    }
+
+
     /// Returns whether a member has persisted acceptance evidence for a policy version.
     #[datastore_span(name = "has_join_policy_acceptance", system = "postgresql")]
     pub async fn has_join_policy_acceptance(

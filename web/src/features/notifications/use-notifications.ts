@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
 
 const SEEN_KEY = "buzz.notifications.seen";
@@ -28,7 +28,7 @@ export function useNotifications(): {
   markRead: () => void;
   lastSeen: number;
 } {
-  const me = userPubkey();
+  const me = existingUserPubkey();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [lastSeen, setLastSeen] = useState<number>(() => {
     try {

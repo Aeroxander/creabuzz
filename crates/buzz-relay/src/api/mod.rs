@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod communities;
 pub mod events;
 pub mod gifs;
+pub mod evm_auth;
 pub mod git;
 pub mod invites;
 pub mod llm_gateway;

@@ -455,6 +455,29 @@ impl Db {
         crate::user::ensure_user(&self.pool, community_id, pubkey).await
     }
 
+    /// Set or clear the user's NIP-05 handle (creabuzz SIWE registration).
+    #[datastore_span(name = "set_user_nip05", system = "postgresql")]
+    pub async fn set_user_nip05(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        nip05_handle: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO users (community_id, pubkey, nip05_handle) \
+             VALUES ($1, $2, $3) \
+             ON CONFLICT (community_id, pubkey) \
+             DO UPDATE SET nip05_handle = EXCLUDED.nip05_handle",
+        )
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(nip05_handle)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+
     /// Ensure a principal while materializing an authenticated NIP-OA
     /// authorization relationship.
     #[datastore_span(name = "ensure_user_for_authorization", system = "postgresql")]

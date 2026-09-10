@@ -14,10 +14,10 @@ import {
 } from "lucide-react";
 
 import {
+  existingUserPubkey,
   hasStoredIdentity,
   importIdentity,
   rotateIdentity,
-  userPubkey,
 } from "@/shared/lib/identity";
 import {
   useProfiles,
@@ -79,8 +79,8 @@ export function ProfileMenu() {
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
   const pubkey = isPasskeyActive()
-    ? (activePasskeyPubkey() ?? userPubkey())
-    : userPubkey();
+    ? (activePasskeyPubkey() ?? existingUserPubkey() ?? "")
+    : (existingUserPubkey() ?? "");
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const profile = profiles?.[0];
   const displayName = profileDisplayName(profile, pubkey);

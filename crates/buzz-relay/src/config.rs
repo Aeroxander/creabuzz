@@ -90,6 +90,19 @@ pub struct JoinPolicyConfig {
 /// Browser agents can't carry API keys (nor call arbitrary hosts through
 /// CORS), so the relay forwards `/llm/chat/completions` to this upstream,
 /// injecting the operator's key server-side. Auth: NIP-98, same as `/query`.
+
+#[derive(Clone, Debug)]
+pub struct EvmAuthConfig {
+    /// EIP-155 chain id the SIWE message must claim.
+    pub chain_id: Option<u64>,
+    /// Optional EIP-6492 validator address (smart-account verification).
+    pub erc6492_validator: Option<String>,
+    /// Optional JSON-RPC URL for smart-account (EIP-1271/6492) verification.
+    pub rpc_url: Option<String>,
+    /// Require the EIP-712 attestation binding EVM root -> npub at intake.
+    pub enforce_attestation: bool,
+}
+
 #[derive(Clone)]
 pub struct LlmConfig {
     proxy_url: String,
@@ -320,6 +333,10 @@ pub struct Config {
 
     /// Relay-owned LLM gateway. Unset means `/llm/chat/completions` returns 404.
     pub llm: Option<LlmConfig>,
+
+    /// SIWE onboarding (creabuzz). Unset means the /auth/siwe routes 404
+    /// and the relay stays stock-compatible.
+    pub evm_auth: Option<EvmAuthConfig>,
 
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
@@ -766,6 +783,20 @@ impl Config {
             proxy_url.map(|proxy_url| LlmConfig { proxy_url, api_key })
         };
 
+        let evm_auth = std::env::var("BUZZ_EVM_AUTH")
+            .ok()
+            .map(|v| v.eq_ignore_ascii_case("on") || v == "true" || v == "1")
+            .unwrap_or(false)
+            .then(|| EvmAuthConfig {
+                chain_id: std::env::var("BUZZ_EVM_CHAIN_ID")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                erc6492_validator: std::env::var("BUZZ_EVM_ERC6492_VALIDATOR").ok(),
+                rpc_url: std::env::var("BUZZ_EVM_RPC_URL").ok(),
+                enforce_attestation: std::env::var("BUZZ_EVM_ENFORCE_ATTESTATION")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+            });
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
             .map(|value| value.trim().to_string())
@@ -1298,6 +1329,7 @@ impl Config {
             relay_operator_pubkeys,
             allow_nip_oa_auth,
             llm,
+            evm_auth,
             klipy,
             media,
             media_max_concurrent_uploads,

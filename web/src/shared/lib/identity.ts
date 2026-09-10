@@ -55,6 +55,19 @@ export function userPubkey(): string {
   return getPublicKey(nsecToBytes(getOrCreateIdentity()));
 }
 
+/** Current pubkey WITHOUT creating an identity (null when none stored). */
+export function existingUserPubkey(): string | null {
+  try {
+    const existing = window.localStorage.getItem("buzz.identity.nsec");
+    if (existing && existing.length === 64) {
+      return getPublicKey(nsecToBytes(existing));
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 /** Create or load the stored identity; returns the hex nsec. */
 export function getOrCreateIdentity(): string {
   try {

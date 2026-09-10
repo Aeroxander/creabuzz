@@ -25,6 +25,7 @@ mod runtime;
 mod store;
 
 /// Database error types.
+pub mod evm_identities;
 pub mod error;
 
 #[cfg(test)]

@@ -31,6 +31,7 @@ members = [
     "crates/buzz-voice",
     "crates/buzz-backend-kubernetes",
     "crates/buzz-datastore-tracing",
+    "crates/buzz-evm-auth",
     "crates/buzz-fleet-worker",
     "examples/countdown-bot",
 ]
@@ -110,6 +111,8 @@ reqwest = { version = "0.13", features = ["json", "rustls", "stream"], default-f
 
 # Cryptography
 sha2      = "0.11"
+k256      = { version = "0.13", features = ["ecdsa"] }
+sha3      = "0.10"
 hex       = "0.4"
 hmac      = "0.13"
 base64    = "0.22"

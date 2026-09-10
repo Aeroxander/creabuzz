@@ -61,6 +61,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
     let api_router = Router::new()
+        // SIWE onboarding (creabuzz) — handlers 404 when BUZZ_EVM_AUTH is off.
+        .route("/auth/siwe/nonce", get(api::evm_auth::issue_nonce))
+        .route("/auth/siwe/register", post(api::evm_auth::register))
+        .route("/auth/siwe/revoke", post(api::evm_auth::revoke))
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
         .route("/info", get(relay_info_handler))

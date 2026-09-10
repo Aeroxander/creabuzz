@@ -8,7 +8,8 @@ import { Sparkles } from "lucide-react";
 import { publishProfile } from "../lib/profile";
 import { getOrCreateIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
-import { Fingerprint } from "lucide-react";
+import { signInWithWallet, walletAvailable } from "../lib/siwe";
+import { Fingerprint, Wallet } from "lucide-react";
 
 export function OnboardingDialog({
   onDone,
@@ -65,6 +66,30 @@ export function OnboardingDialog({
           <Fingerprint className="h-4 w-4" />
           Create with passkey (no key to manage)
         </button>
+        {walletAvailable() ? (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              void (async () => {
+                setSaving(true);
+                setError(null);
+                try {
+                  await signInWithWallet();
+                  (onPasskeyDone ?? onDone)();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "wallet failed");
+                  setSaving(false);
+                }
+              })();
+            }}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-black/15 bg-white px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+            data-testid="onboarding-wallet"
+          >
+            <Wallet className="h-4 w-4" />
+            Sign in with wallet
+          </button>
+        ) : null}
         <div className="mb-3 flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
           or with a backup key
