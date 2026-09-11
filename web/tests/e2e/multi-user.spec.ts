@@ -113,3 +113,83 @@ test("a mention from another user raises the notification bell", async ({
   await readerContext.close();
   await authorContext.close();
 });
+
+test("an edit and a reaction reach the other client live", async ({
+  browser,
+}) => {
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("composer-input").fill("Original wording");
+  await author.getByTestId("composer-send").click();
+  await expect(reader.getByText("Original wording")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // The author edits the message.
+  const authorRow = author.getByTestId("message-row").first();
+  await authorRow.hover();
+  await authorRow.getByTestId("edit-button").click();
+  await author.getByTestId("composer-input").fill("Edited wording");
+  await author.getByTestId("composer-send").click();
+
+  // The reader must see the edit without a reload (kind 40003 overlay).
+  // Scoped to the row: the composer and the row can both match otherwise.
+  const readerRowText = reader.getByTestId("message-row").first();
+  await expect(readerRowText).toContainText("Edited wording", {
+    timeout: 15_000,
+  });
+  await expect(readerRowText).not.toContainText("Original wording");
+
+  // The reader reacts; the author sees the pill.
+  const readerRow = reader.getByTestId("message-row").first();
+  await readerRow.hover();
+  await readerRow.getByTestId("quick-react-👍").click();
+  await expect(
+    author.getByTestId("message-row").first().getByText("👍"),
+  ).toBeVisible({ timeout: 15_000 });
+
+  await first.close();
+  await second.close();
+});
+
+test("a task created by one client appears on the other's board", async ({
+  browser,
+}) => {
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("work-toggle").click();
+  await reader.getByTestId("work-toggle").click();
+  await expect(reader.getByText("0 items")).toBeVisible();
+
+  await author.getByTestId("kanban-add-open").click();
+  await author.getByTestId("kanban-quick-input").fill("Cross-client task");
+  await author
+    .getByTestId("kanban-quick-input")
+    .locator("xpath=following-sibling::button[1]")
+    .click();
+
+  await expect(reader.getByText("Cross-client task")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await first.close();
+  await second.close();
+});
