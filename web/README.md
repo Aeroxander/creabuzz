@@ -1,22 +1,45 @@
-# Buzz Web
+# Buzz Web ("Creaton")
 
-The web app served by the relay at `/`. It is a lightweight browser client:
-repository browsing (list, detail, tree, blob viewer, commits, README) plus
-the invite/join landing pages. It is intentionally smaller than the desktop
-client; feature parity work is tracked in the repo issue tracker.
+The browser client the relay serves at `/` (`BUZZ_WEB_DIR=./web/dist`). It is a
+full community client, not only a repo browser: channels and a live timeline,
+threads and reactions, the community directory, wiki with live co-editing, the
+agent fleet (including an in-tab agent), the work board, notifications, search,
+profiles, repositories, and the DAO launchpad.
+
+The desktop app remains the reference client; feature-parity work is tracked in
+`docs/web-ui-roadmap.md`.
+
+## Surfaces
+
+| Surface | Routes |
+|---|---|
+| Directory + invite landing | `/`, `/invite/$code` |
+| Community shell | `/c/$host` (`?channel=<uuid>` deep link) |
+| Repositories | `/repos`, `/repos/$repoId`, `/repos/$repoId/blob/$` |
+| Launchpad | `/launchpad`, `/launchpad/$launchId` |
+
+Wiki, fleet, work board and org views are panels of the community shell (the
+sidebar toggles), not separate routes.
+
+### Preview gating
+
+`preview-features.json` gates preview features in the **desktop** app only; the
+web client does not read it, so a feature listed there as desktop-only (for
+example `launchpad`) still ships here. That file also validates its `platforms`
+against `["desktop", "mobile"]` — add a platform there only together with the
+desktop schema, or the manifest fails validation and every preview feature
+silently disappears from the desktop app.
 
 ## Serving
-
-Point the relay at a production build:
 
 ```bash
 pnpm build                 # writes web/dist
 BUZZ_WEB_DIR=./web/dist    # relay serves the bundle at /
 ```
 
-The relay serves the bundle at `/` when `text/html` is requested; only the
-invite landing and repo-browse paths fall back to the SPA by default
-(`BUZZ_SERVE_GIT_WEB_GUI=true` extends the fallback to repo paths).
+The relay serves the bundle at `/` when `text/html` is requested. `BUZZ_WEB_SPA=full`
+makes every unknown path fall back to the SPA (required for the client-side
+routes above); the default fallback covers only the invite and repo paths.
 
 ## Connecting to a relay
 
@@ -32,11 +55,29 @@ cannot derive the relay from `window.location` and will show the
 "Couldn't reach the relay" screen; enter the community relay URL there to
 connect.
 
+## Identity
+
+Sign-in options, in precedence order: an active passkey signer (WebAuthn PRF
+derives the key, nothing is stored), NIP-07 browser extension, or the durable
+key in `localStorage["buzz.identity.nsec"]`. Wallet sign-in (SIWE) binds an
+EVM address to the npub for launchpad participation.
+
 ## Development
 
 ```bash
 pnpm dev                   # vite dev server
 pnpm typecheck
-pnpm check                 # biome + file-size + pubkey guards
-pnpm test:e2e:smoke        # build + playwright smoke suite
+pnpm check                 # biome + pubkey truncation guards
+pnpm check:file-sizes
+pnpm test                  # node:test unit tests (no browser or relay)
+pnpm test:e2e:smoke        # build + playwright smoke suite (mocked relay)
 ```
+
+The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
+**built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or
+the suite tests a stale build.
+
+## Layout
+
+`src/app` (routes, boundary views), `src/features/<domain>` (UI + hooks per
+surface), `src/shared` (transport, identity, UI primitives, kinds).

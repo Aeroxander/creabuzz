@@ -8,6 +8,12 @@ import type { FeatureDefinition, FeaturesManifest } from "./types";
 // On parse failure we fall back to an empty manifest and log a console warning.
 // The app keeps working; gated UI stays hidden; nothing accidentally leaks.
 
+// Only these platforms may appear in `preview-features.json`. An unknown value
+// fails validation, and `loadManifest` then falls back to an EMPTY manifest —
+// every preview feature silently disappears from the app. The web client does
+// not use this manifest at all, so a feature that is desktop-only here still
+// ships in `web/`; extend this schema and the resolver before listing a new
+// platform.
 const FeaturePlatformSchema = z.enum(["desktop", "mobile"]);
 
 const FeatureDefinitionSchema = z.object({
