@@ -3,12 +3,13 @@ import {
   BookOpen,
   Bot,
   ListChecks,
+  Menu,
   Search,
   Users,
   Zap,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -43,6 +44,22 @@ export function CommunityShell({
   const [showingFleet, setShowingFleet] = useState(false);
   const [showingWork, setShowingWork] = useState(false);
   const [showingOrg, setShowingOrg] = useState(false);
+  /**
+   * Slide-over channel list. Below `lg` the panel is off-canvas, so this is the
+   * only way to reach it; at `lg` and up it is a static column and this state
+   * no longer affects the layout.
+   */
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Escape closes the slide-over, matching every other dismissible surface.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
@@ -53,6 +70,8 @@ export function CommunityShell({
 
   /** Exactly one sidebar view is on at a time (or none → chat). */
   const setView = (view: "wiki" | "fleet" | "work" | "org") => {
+    // The toggles live in the slide-over: dismiss it so the view is visible.
+    setSidebarOpen(false);
     const active =
       view === "wiki"
         ? showingWiki
@@ -70,7 +89,20 @@ export function CommunityShell({
   return (
     <PasskeyUnlockGate>
       <div className="flex h-full min-h-0 w-full flex-1">
-        <div className="flex w-60 shrink-0 flex-col">
+        {sidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Close channel list"
+            className="fixed inset-0 z-30 cursor-default bg-black/40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        ) : null}
+        <div
+          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-[#F8F8F8] shadow-xl transition-transform duration-200 ease-out dark:bg-[#1B1B1B] lg:static lg:z-auto lg:translate-x-0 lg:bg-transparent lg:shadow-none lg:transition-none ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+          id="channel-sidebar"
+        >
           <div className="flex items-center gap-2 px-3 pt-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#43e296]/15 dark:bg-[#43e296]/20">
               <Zap className="h-4 w-4 text-[#0e9f66] dark:text-[#43e296]" />
@@ -100,6 +132,7 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setSidebarOpen(false);
             }}
             onOpenWork={() => setView("work")}
           />
@@ -108,7 +141,11 @@ export function CommunityShell({
               <Search className="h-3.5 w-3.5 shrink-0 text-black/40 dark:text-white/40" />
               <input
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  // Results render behind the slide-over; step aside for them.
+                  if (e.target.value.trim().length >= 2) setSidebarOpen(false);
+                }}
                 placeholder="Search messages…"
                 className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40 dark:text-white dark:placeholder:text-white/40"
                 data-testid="search-input"
@@ -189,6 +226,7 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setSidebarOpen(false);
             }}
           />
           <div className="mt-auto border-t border-black/10 px-3 py-2.5 dark:border-white/10">
@@ -196,43 +234,64 @@ export function CommunityShell({
           </div>
         </div>
 
-        <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
-          {showingOrg ? (
-            <OrgView />
-          ) : showingWork ? (
-            <WorkBoard channels={channels} />
-          ) : showingFleet ? (
-            <FleetView channels={channels} />
-          ) : showingWiki ? (
-            <WikiView />
-          ) : searching ? (
-            <SearchResults
-              term={searchTerm.trim()}
-              channels={channels}
-              onOpenChannel={(channelId) => {
-                setSelectedId(channelId);
-                setSearchTerm("");
-              }}
-            />
-          ) : activeChannel ? (
-            <ChannelTimeline
-              channel={activeChannel}
-              onShowFleet={() => {
-                setShowingWiki(false);
-                setShowingFleet(true);
-                setShowingWork(false);
-              }}
-              onShowWork={() => {
-                setShowingWiki(false);
-                setShowingFleet(false);
-                setShowingWork(true);
-              }}
-            />
-          ) : (
-            <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
-              Select a channel to start reading.
-            </div>
-          )}
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          data-testid="content-pane"
+        >
+          <div className="flex items-center gap-2 border-b border-black/10 px-3 py-2 lg:hidden dark:border-white/10">
+            <button
+              type="button"
+              aria-controls="channel-sidebar"
+              aria-expanded={sidebarOpen}
+              aria-label="Open channel list"
+              className="rounded-md p-1.5 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+              data-testid="open-channel-list"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+            <span className="truncate text-sm font-semibold text-black dark:text-white">
+              {host}
+            </span>
+          </div>
+          <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
+            {showingOrg ? (
+              <OrgView />
+            ) : showingWork ? (
+              <WorkBoard channels={channels} />
+            ) : showingFleet ? (
+              <FleetView channels={channels} />
+            ) : showingWiki ? (
+              <WikiView />
+            ) : searching ? (
+              <SearchResults
+                term={searchTerm.trim()}
+                channels={channels}
+                onOpenChannel={(channelId) => {
+                  setSelectedId(channelId);
+                  setSearchTerm("");
+                }}
+              />
+            ) : activeChannel ? (
+              <ChannelTimeline
+                channel={activeChannel}
+                onShowFleet={() => {
+                  setShowingWiki(false);
+                  setShowingFleet(true);
+                  setShowingWork(false);
+                }}
+                onShowWork={() => {
+                  setShowingWiki(false);
+                  setShowingFleet(false);
+                  setShowingWork(true);
+                }}
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
+                Select a channel to start reading.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </PasskeyUnlockGate>

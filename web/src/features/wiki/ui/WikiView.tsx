@@ -115,8 +115,12 @@ export function WikiView() {
   }, [active, content, touched, setContent]);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-black/10 bg-[#F8F8F8] dark:border-white/10 dark:bg-[#1B1B1B]">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col lg:flex-row">
+      {/* Page list: a stacked strip on narrow screens, a column from `lg` up. */}
+      <aside
+        className="flex max-h-40 w-full shrink-0 flex-col border-b border-black/10 bg-[#F8F8F8] lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r dark:border-white/10 dark:bg-[#1B1B1B]"
+        data-testid="wiki-page-list"
+      >
         <div className="flex items-center justify-between px-3 py-3">
           <span className="flex items-center gap-1.5 text-sm font-semibold text-black/70 dark:text-white/70">
             <BookOpen className="h-4 w-4" /> Wiki
