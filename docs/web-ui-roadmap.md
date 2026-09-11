@@ -1,24 +1,27 @@
-# Web UI Roadmap — agent handoff plan
+# Web UI Roadmap — handoff plan
 
 This document hands the Buzz web client to another agent. It assumes repo
-access at `/Volumes/MicroSD/creabuzz`, branch `web-agent-fleet` (off
-`web-launchpad`, which tracks upstream `block/buzz` main). Read sections 0–2
-before touching code; work items in section 3 are ordered by priority.
+access at `/Volumes/MicroSD/creabuzz`. Sections 0–2 are context you need before
+touching code; section 3 is the state of the work (what landed, what is open).
 
 ## 0. What this is
 
-A browser-based (local-first) web client for Buzz, a Nostr NIP-29 relay
-platform. Humans and AI agents share channels, wiki, and tasks as peers
-("multiplayer LLM"). The last completed pass aligned the web UI to the
-desktop app: gradient wash backdrop, floating content card, desktop-grade
-composer, channel-header pills, agent identity in the timeline
-(`494ca0456`). This plan covers what is still missing or rough.
+A browser-based web client for Buzz, a Nostr NIP-29 relay platform. Humans and
+AI agents share channels, wiki, and tasks as peers ("multiplayer LLM").
+
+**Status (last updated by the web production-readiness pass, 60 commits on
+`dao-launchpad-rewrite`).** The client is feature-complete against this
+document's original plan: channels and a live timeline, threads, reactions,
+edits/deletes, the community directory and invite landing, wiki with live
+co-editing, the agent fleet including the in-tab agent, the work board,
+notifications, search, profiles, repositories, and the DAO launchpad. It builds
+clean, passes its gates (68 unit tests, 90+ browser tests, bundle and a11y
+budgets), and has been run against a real relay (see §4).
 
 ## 1. Environment and commands
 
 ```bash
 cd /Volumes/MicroSD/creabuzz
-git rev-parse --abbrev-ref HEAD        # expect: web-agent-fleet
 . ./bin/activate-hermit               # REQUIRED before node/pnpm/cargo
 ```
 
@@ -26,9 +29,15 @@ Web checks (run from `web/`, after activating hermit):
 
 ```bash
 pnpm typecheck          # must be clean
-pnpm check              # lint + pubkey-truncation guard, must pass
+pnpm check              # biome + pubkey-truncation + px-text guards
+pnpm check:file-sizes   # per-surface file-size ratchet
 pnpm build              # must print ✓ built (output feeds the relay)
-pnpm test:e2e:smoke     # must be 10/10
+pnpm check:bundle-size  # first-load budget; needs a build. Also fails on any
+                        # .js in the dist root (the relay serves only /assets/*)
+pnpm test               # node:test unit tests, no browser or relay (68)
+pnpm test:e2e:smoke     # build + playwright suite, mocked relay (90+)
+pnpm test:e2e:real      # built client against a real relay; see
+                        # web/tests/e2e-real/README.md for the one-time setup
 ```
 
 Relay checks (repo root, hermit active):
@@ -79,10 +88,7 @@ Delete stray artifacts (`dump.rdb`) before committing.
 3. **One agent service per browser origin.** Agent identity (`buzz.agent.nsec`)
    persists per origin, so every tab would otherwise run a worker for the
    same key. `browser-agent.ts` holds a Web Locks (`"buzz-agent"`) singleton;
-   keep it. Related: stray Chromium processes from dead Playwright runs keep
-   heartbeating (kind 44010) and answering mentions — kill them
-   (`pkill -f chrome-linux`) before deterministic agent tests, and expect the
-   user's real browser tabs to join the fleet.
+   keep it.
 4. **Kinds registry.** 44010 capabilities, 44011 tasks, 44001 wiki pages,
    40002 agent turns, 20000–29999 ephemeral (anonymous use needs
    `BUZZ_P2P_SIGNALING=1`). Only 30000–39999 are storage-addressable;
@@ -90,130 +96,129 @@ Delete stray artifacts (`dump.rdb`) before committing.
    newest `created_at`. Any pubkey may publish an update row under the same
    `d`; there is no owner check for non-NIP-33 kinds.
 5. **Port discipline.** Web smoke uses vite preview on :4173
-   (`reuseExistingServer`). Never run anything else on :4173 (a desktop
-   preview server once shadowed it and broke smoke with unrelated errors).
-   Check `lsof -nP -iTCP:4173` when smoke fails mysteriously.
+   (`reuseExistingServer` outside CI). Never run anything else on :4173.
+   Check `lsof -nP -iTCP:4173` when smoke fails mysteriously, and remember the
+   preview serves the last **built** bundle: `pnpm build` first.
 6. **Heartbeat units.** Agent `heartbeat` fields are unix SECONDS;
-   `Date.now()` is ms — normalize before comparing (fixed once already in
-   `use-agent-roster.ts`; don't regress).
+   `Date.now()` is ms — normalize before comparing.
 7. **Silent no-op edits.** Biome reformats on save; exact-string replacements
-   can silently miss. Always re-grep after editing.
+   can silently miss. Always re-grep after editing — and **never run
+   `biome check --write` on a file whose parse is already broken**: it rewrites
+   whole regions and destroys the file. Restore from git and redo the edits in
+   one atomic pass instead.
 8. **Pubkey display.** Never hand-roll `pubkey.slice(...)` — use
    `truncatePubkey` from `shared/lib/pubkey` (a CI guard enforces this).
-9. **Test DB is polluted.** `buzz_web_test` holds leaked-agent rows (dozens
-   of `buzz-tab` capabilities, `Assigned`-forever test tasks, junk turns).
-   Prefer fresh markers per test run; do not delete rows without asking.
-10. **Vision.** If your model supports images, capture with Playwright and
+9. **The relay serves only `/assets/*` from the web directory.** Every other
+   path is answered with the SPA shell, so a script placed in the dist root is
+   served as HTML and never runs (this broke the theme bootstrap in production
+   while every mocked suite passed). `check:bundle-size` now fails on it.
+10. **A read that does not complete is a failure, not an empty result.** The
+    one-shot client resolves only on EOSE; a socket close before it rejects.
+    Surfaces must render `shared/ui/query-error` rather than their own empty
+    state, or a broken relay reads as "nothing here" (see the channel timeline,
+    wiki list, board, fleet, launchpad, search).
+11. **The relay authorizes a REQ against the authenticated identity.** A
+    subscription sent before the NIP-42 handshake finishes is closed with
+    `restricted: p-gated events require #p matching your pubkey`. Both clients
+    re-issue once after authentication; treating it as final kills a live pump
+    for the whole session.
+12. **Playwright `getByText` matches a textbox's value.** `fill(body)` followed
+    by `getByText(body)` passes even when nothing was sent. Assert on rendered
+    text (`page.locator("body").innerText()`) or scope to the message list.
+13. **Test DB is polluted.** `buzz_web_test` holds leaked-agent rows. Prefer
+    fresh markers per test run; do not delete rows without asking.
+14. **Vision.** If your model supports images, capture with Playwright and
     load via the `attach_image` skill, then look before/after every visual
     change. Without vision, use DOM probes + pixel sampling (PIL) as fallback.
 
-## 3. Work items (in priority order)
+## 3. Work state
 
-### A. Mobile / responsive layout — P0 usability, currently unusable
-- **Problem.** The sidebar is a fixed 240px column; at 390px width it eats
-  62% of the screen and the content pane is an unreadable sliver
-  (`/tmp/buzz-ui-shots/ux-05-mobile.png` showed this state).
-- **Scope.** Collapsible sidebar (hamburger in the channel header on narrow
-  screens), channel list as slide-over, full-width timeline/composer/wiki/
-  fleet; keep desktop layout ≥1024px untouched.
-- **Files.** `web/src/features/channels/ui/CommunityShell.tsx`,
-  `ChannelSidebar.tsx`, `ChannelTimeline.tsx`, `Composer.tsx`,
-  `features/wiki/ui/WikiView.tsx`, `features/fleet/ui/FleetView.tsx`.
-- **Accept.** Screenshots at 390×844 for landing/community/channel/wiki/fleet
-  with no sliver layout; desktop screenshots unchanged; smoke green.
+Landed (this document's original priority list, all done):
 
-### B. Onboarding + account layer (Pass A) — P1 completeness
-- **Problem.** Identity is silently generated; the sidebar user chip is a dead
-  button; there is no create/import/backup/profile flow ("where do I create
-  an account?").
-- **Scope.**
-  1. First-run onboarding (only when no `buzz.identity.nsec` exists):
-     create key → display name + avatar → backup step showing the nsec plus
-     a password-encrypted backup download (AES-GCM, in-browser; nothing
-     touches the server), plus import-existing-nsec path.
-  2. User-chip popover: edit kind-0 profile (name/picture/about → publish
-     kind 0), export nsec, import, reset (rotate). `identity.ts` already
-     exports `importIdentity`/`rotateIdentity`; `alert-dialog.tsx` exists
-     for destructive confirms.
-- **Files.** New `web/src/features/onboarding/*`, `CommunityShell.tsx`
-  (`UserChip`), `features/profiles/*`.
-- **Accept.** Fresh profile → onboarding → chosen name renders in timeline;
-  backup downloads; import restores identity; existing users never see
-  onboarding.
+- **A. Responsive layout** — collapsible sidebar and slide-over, full-width
+  panes below `lg`; `responsive.spec.ts` + `responsive-surfaces.spec.ts`
+  (13 surfaces at 390px) cover it (`70ab3ed84`, `8eba10666`).
+- **B. Onboarding + account layer** — first-run identity, profile editing that
+  merges instead of replacing, wallet bind/unbind, rotatable tab-agent key.
+  Remaining nicety: an encrypted nsec backup download (the nsec is still shown
+  and stored in plaintext in localStorage).
+- **C. Repositories** — `/repos` and `/repos/$repoId` are real routes with a
+  detail view, and the detail page has its own inline failure banner.
+- **D. Wiki consolidation** — one toolbar row, dirty state, page search,
+  rename/delete through the app's dialog, live co-editing with delta merges.
+  Open: page identity is slug-scoped (two people creating the same slug are the
+  same page), and an unresolvable overlapping edit is still last-writer-wins —
+  it now warns the writer instead of losing the text silently.
+- **E. Multiplayer feel** — roster-driven "who else is editing" state, live
+  delivery with reconnect backoff, notifications poll so mentions arrive while
+  the app is open, mention autocomplete that includes humans. Open: no typing
+  indicator, and agent memory is browser-local rather than NIP-AE engrams.
+- **G. Settings surface** — appearance/theme choice, wallet section, agent
+  controls. Open: relay directory management, gateway status.
 
-### C. Repositories dead-end — P1 navigation
-- **Problem.** The landing "Repositories" button routes to `/repos`, which is
-  a stub redirecting to `/`. It goes nowhere.
-- **Scope.** Either remove the button, or wire the existing
-  `features/repos` UI (detail pages exist) to real routes. Do not leave a
-  dead button.
-- **Accept.** Button gone, or repo list → detail navigation works live.
+Cross-cutting work also landed: two-client test harness (`tests/e2e/mock-relay.ts`
+with `refuse`, `requireAuth`, `setClosingChannels`, `liveSubscriptionReqs`),
+real-relay suite, a11y gate (axe), bundle budget, CSP, rem-only type scale,
+visible focus, reduced motion, history pagination, and upload size ceilings.
 
-### D. Wiki consolidation — P2 polish
-- **Problem.** Two stacked toolbar rows eat space; Save floats disconnected
-  at the bottom of empty gray; no dirty indicator; no page search/rename/
-  delete; stale demo content in `home`.
-- **Scope.** Merge mode switcher + formatting into one row; dirty dot and
-  disabled Save when clean; page-list search; rename/delete with
-  `alert-dialog` confirm (define delete as a kind-5 or empty-content
-  convention and document the choice); replace demo content with a real
-  welcome page.
-- **Files.** `features/wiki/ui/WikiView.tsx`, `WikiEditor.tsx`,
-  `use-wiki-pages.ts`.
-- **Accept.** Screenshots before/after; all wiki smoke paths green.
+Open items, roughly by value:
 
-### E. Multiplayer feel: presence + memory — next after A–D
-1. **Channel header "N agents online"** via the existing `useAgentRoster`
-   hook (wire into `ChannelTimeline` header).
-2. **Ephemeral "working…" indicator.** Agent publishes kind 20002 (typing)
-   or a dedicated 24xxx ephemeral with the channel tag while processing;
-   timeline subscribes per channel and shows "buzz-tab is working…".
-3. **Agent memory.** `KIND_AGENT_ENGRAM` (30174, NIP-AE/NIP-44 encrypted)
-   exists on the relay. Agent loads recent engrams into its prompt context;
-   add a memory viewer to FleetView.
-4. **Mentions from wiki editor + thread replies**, with the page/thread as
-   the agent's context.
-- **Accept for each.** Live two-tab or agent-flow verification + screenshots;
-  no new servers.
-
-### F. Sandbox runner — needs operator decisions first
-- Prime-agent in ACP mode on the relay host as the always-on fleet worker
-  subscribed to a fleet channel; the LLM key gateway
-  (`POST /llm/chat/completions`, NIP-98) already exists. Blocked on:
-  `BUZZ_LLM_*` endpoint choice and server-side agent key management.
-- Do not start without those answers.
-
-### G. Settings surface — later
-- Appearance/theme, P2P toggle, gateway status, relay directory management.
-  Identity backup overlaps item B — build it there, not twice.
+1. **CI has never run on this branch.** The web job's exact steps pass locally
+   (`pnpm install --frozen-lockfile`, `just web-check|web-test|web-build|
+   web-bundle-budget|web-e2e-smoke`); what is unverified is the Ubuntu runner,
+   `playwright install-deps`, and the 15-minute job budget (~5 minutes locally).
+2. **Wiki page identity** (slug-scoped) — needs a product decision before
+   touching it.
+3. **Channel list is capped at 200** with no older-page walk (message history is
+   paginated; the channel list is not).
+4. **Plaintext nsec in localStorage** and an open `connect-src` in the CSP.
+5. **Repository HTML preview runs without its own scripts** (the document CSP is
+   inherited by `srcdoc` frames); a separate preview origin would be a relay
+   change.
+6. **Untestable here**: repos browse needs a git server, the invite flow and
+   launchpad chain path need a live relay with real data.
 
 ## 4. Verification standard (every item)
 
-1. `pnpm typecheck`, `pnpm check`, `pnpm build`, `pnpm test:e2e:smoke`
-   (expect 10/10) from `web/` with hermit active.
-2. `cargo build -p buzz-relay` (+ lib tests) if the relay is touched.
-3. Live Playwright verification against the local relay (`buzz_web_test`);
-   attach before/after screenshots for anything visual.
-4. Small logical commits with `git commit -s`; tree clean (`git status`
-   empty apart from intended files).
+1. `pnpm typecheck`, `pnpm check`, `pnpm check:file-sizes`, `pnpm build`,
+   `pnpm check:bundle-size`, `pnpm test`, `pnpm test:e2e:smoke` from `web/`
+   with hermit active — all green.
+2. `pnpm test:e2e:real` when the change touches reads, writes, auth, or static
+   serving: it runs the built client against a real relay and asserts the
+   deployment contract, a clean page-error log, and a message round trip that
+   survives a reload.
+3. `cargo build -p buzz-relay` (+ lib tests) if the relay is touched.
+4. Falsifiability: for a defect fix, revert the fix, watch the test fail, then
+   restore it. A guard whose removal changes nothing protects nothing.
+5. Small logical commits with `git commit -s`; tree clean apart from intended
+   files.
 
 ## 5. Map of the relevant code
 
 - `web/src/app/routes/` — root (gradient is painted on `<body>`; do not use
   fixed negative-z-index layers, they composite above content), index,
-  `c.$host`, repos stubs.
-- `web/src/features/channels/ui/` — `CommunityShell` (shell + card),
-  `ChannelSidebar` (collapsible), `ChannelTimeline` (header pills, per-event
-  identity via ThreadTree maps), `Composer` (desktop-style card).
-- `web/src/features/fleet/` — `browser-agent.ts` (service, locks, pumps),
-  `use-agent-roster.ts`, `use-agent-tasks.ts`, `ui/FleetView.tsx`.
-- `web/src/features/wiki/` — pages hook + views + TipTap editor.
-- `web/src/features/profiles/` — kind-0 lookup; `shared/ui/` — ported
-  desktop primitives (`UserAvatar`, `badge`, `PageHeader`, `alert-dialog`);
-  `shared/lib/` — identity, agent-identity, publish, NIP-98, pubkey.
+  `c.$host`, invite, repos, launchpad.
+- `web/src/features/channels/` — `CommunityShell`, `ChannelSidebar`,
+  `ChannelTimeline` (header pills, thread maps, history pagination), `Composer`
+  (upload limits, mention editor), `use-channel-messages.ts` (history + live
+  merge), `subscribe-channel.ts` (NIP-42 + reconnect policy in
+  `lib/reconnect.ts`).
+- `web/src/features/fleet/` — `browser-agent.ts` (locks, pumps, task loop),
+  `use-agent-roster.ts`, `use-agent-tasks.ts`, `use-work-board.ts`, `ui/`.
+- `web/src/features/wiki/` — `use-wiki-pages.ts` (cache + relay source of
+  truth), `wiki-sync.ts` (Yjs over Trystero, `lib/sync-loop.ts`,
+  `lib/text-edit.ts`, `lib/page-index.ts`), `ui/`.
+- `web/src/features/notifications|profiles|repos|launchpad|invite|search/
+  ` — one feature per surface, each with its own failure state.
+- `web/src/shared/lib/` — `nostr-client.ts` (one-shot queries), `identity.ts`,
+  `agent-identity.ts`, `publish-event.ts`, `nip98.ts`, `upload-limits.ts`,
+  `pubkey.ts`, `relay-url.ts`.
+- `web/src/shared/ui/` — primitives including `query-error.tsx` (the shared
+  failed-read state) and `confirm-dialog.tsx`.
+- `web/tests/e2e/mock-relay.ts` — two-client harness; `web/tests/e2e-real/` —
+  real-relay suite + its setup README.
 - `crates/buzz-relay/src/api/llm_gateway.rs` — key gateway;
   `handlers/{req,ingest}.rs`, `subscription.rs` — fan-out scoping;
   `crates/buzz-core/src/kind.rs` — kind registry.
 - Reference design: `desktop/` (React 19 + TanStack Router; harvest UI +
-  relay-client logic, never Tauri shell code). Its e2e mock bridge builds
-  with `pnpm build:e2e`; `react-day-picker` must be installed for it.
+  relay-client logic, never Tauri shell code).

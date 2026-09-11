@@ -67,15 +67,29 @@ EVM address to the npub for launchpad participation.
 ```bash
 pnpm dev                   # vite dev server
 pnpm typecheck
-pnpm check                 # biome + pubkey truncation guards
-pnpm check:file-sizes
+pnpm check                 # biome + pubkey truncation + px-text guards
+pnpm check:file-sizes      # per-surface file-size ratchet
 pnpm test                  # node:test unit tests (no browser or relay)
-pnpm test:e2e:smoke        # build + playwright smoke suite (mocked relay)
+pnpm check:bundle-size     # first-load budget; needs a build first
+pnpm test:e2e:smoke        # build + playwright suite (mocked relay)
+pnpm test:e2e:real         # built client against a real relay
 ```
+
+`pnpm test:e2e:real` needs a relay serving the built bundle plus a seeded
+community; `tests/e2e-real/README.md` has the setup. Keep it green when
+touching the read, write, auth, or static-serving paths — it is the only suite
+that sees the real deployment (it caught the theme bootstrap being served as
+HTML, and a NIP-42 handshake race that killed live subscriptions).
 
 The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
 **built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or
 the suite tests a stale build.
+
+## Preview limits
+
+The repository HTML preview runs without its own scripts: `srcdoc` frames
+inherit the document CSP, so any `<script>` in a previewed file is blocked. A
+separate preview origin would lift that, but it is a relay change.
 
 ## Layout
 
