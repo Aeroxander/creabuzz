@@ -225,7 +225,9 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
   const rows: Array<[string, string]> = [
     [
       "Raised",
-      progress.data
+      // An unavailable read reports no amount at all: printing `0` would imply
+      // a funded state of zero rather than an unknown one.
+      progress.data && progress.data.source !== "unavailable"
         ? `${progress.data.raised.toString()} / ${progress.data.goal?.toString() ?? "—"}`
         : "—",
     ],

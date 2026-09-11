@@ -151,6 +151,11 @@ async function overflow(page: Page) {
 
 /** Controls that are clipped out of the viewport cannot be reached at all. */
 async function expectNoClippedControls(page: Page, container: string) {
+  const containers = await page.locator(container).count();
+  expect(
+    containers,
+    `no element matched ${container}, so the clipping check proves nothing`,
+  ).toBeGreaterThan(0);
   const clipped = await page
     .locator(`${container} button`)
     .evaluateAll((nodes) =>
@@ -411,4 +416,62 @@ test("wiki pages can be created, renamed and deleted", async ({ page }) => {
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-accept").click();
   await expect(page.getByTestId("wiki-page-changelog")).toBeHidden();
+});
+
+test("invite landing fits", async ({ page }) => {
+  await page.route("**/api/join-policy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        policy: {
+          terms_markdown: "# Terms",
+          privacy_markdown: "# Privacy",
+          age_attestation_required: true,
+          version: "policy-v1",
+        },
+      }),
+    });
+  });
+  // Offline for the release lookup: the page must still lay out its fallback.
+  await page.route("https://api.github.com/**", async (route) => {
+    await route.fulfill({ status: 503, body: "unavailable" });
+  });
+  await page.goto("/invite/demo-code");
+  await expect(
+    page.getByRole("button", { name: "Accept invite in Creaton" }),
+  ).toBeVisible();
+  await expectNoOverflow(page, "invite");
+  await expectNoClippedControls(page, "main");
+  await shot(page, "21-mobile-invite");
+});
+
+test("repository browser fits", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/repos");
+  await expect(
+    page.getByRole("heading", { name: "This community is empty" }),
+  ).toBeVisible();
+  await expectNoOverflow(page, "repos");
+  await shot(page, "22-mobile-repos");
+});
+
+test("launchpad detail fits", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/launchpad");
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await expectNoOverflow(page, "launchpad detail");
+  await expectNoClippedControls(page, "main");
+  await shot(page, "23-mobile-launchpad-detail");
+});
+
+test("an unavailable chain read reports no amount", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/launchpad/nebula");
+  await expect(page.getByTestId("launch-progress-source")).toHaveText(
+    "No chain data",
+  );
+  // "0 / —" would read as a funded state of zero, not an unknown one.
+  await expect(page.getByText("Raised").locator("..")).not.toContainText("0 /");
 });
