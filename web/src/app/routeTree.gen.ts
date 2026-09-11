@@ -6,8 +6,10 @@
 
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as reposRouteImport } from "./routes/repos";
+import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
+import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as cDothostRouteImport } from "./routes/c.$host";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
@@ -15,6 +17,11 @@ import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repo
 const reposRoute = reposRouteImport.update({
   id: "/repos",
   path: "/repos",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadRoute = launchpadRouteImport.update({
+  id: "/launchpad",
+  path: "/launchpad",
   getParentRoute: () => rootRouteImport,
 } as any);
 const indexRoute = indexRouteImport.update({
@@ -25,6 +32,11 @@ const indexRoute = indexRouteImport.update({
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
   id: "/repos/$repoId",
   path: "/repos/$repoId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
+  id: "/launchpad/$launchId",
+  path: "/launchpad/$launchId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
@@ -46,26 +58,32 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/launchpad": typeof launchpadRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/launchpad": typeof launchpadRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/launchpad": typeof launchpadRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -73,34 +91,42 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/launchpad"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/launchpad"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   id:
     | "__root__"
     | "/"
+    | "/launchpad"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  launchpadRoute: typeof launchpadRoute;
   reposRoute: typeof reposRoute;
   cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
+  launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -112,6 +138,13 @@ declare module "@tanstack/react-router" {
       path: "/repos";
       fullPath: "/repos";
       preLoaderRoute: typeof reposRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad": {
+      id: "/launchpad";
+      path: "/launchpad";
+      fullPath: "/launchpad";
+      preLoaderRoute: typeof launchpadRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/": {
@@ -126,6 +159,13 @@ declare module "@tanstack/react-router" {
       path: "/repos/$repoId";
       fullPath: "/repos/$repoId";
       preLoaderRoute: typeof reposDotrepoIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad/$launchId": {
+      id: "/launchpad/$launchId";
+      path: "/launchpad/$launchId";
+      fullPath: "/launchpad/$launchId";
+      preLoaderRoute: typeof launchpadDotlaunchIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite/$code": {
@@ -154,9 +194,11 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  launchpadRoute: launchpadRoute,
   reposRoute: reposRoute,
   cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
+  launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };

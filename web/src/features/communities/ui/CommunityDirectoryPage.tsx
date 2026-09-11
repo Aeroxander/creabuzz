@@ -1,4 +1,4 @@
-import { BookMarked, Compass, Globe, Users } from "lucide-react";
+import { BookMarked, Compass, Globe, Rocket, Users } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -118,11 +118,26 @@ export function CommunityDirectoryPage() {
           <Compass className="h-5 w-5" /> Communities
         </h1>
         <AddCommunityForm />
-        <Link to="/repos">
-          <Button variant="outline" size="sm" className="dark:border-white/15">
-            <BookMarked /> Repositories
-          </Button>
-        </Link>
+        <span className="flex gap-2">
+          <Link to="/repos">
+            <Button
+              variant="outline"
+              size="sm"
+              className="dark:border-white/15"
+            >
+              <BookMarked /> Repositories
+            </Button>
+          </Link>
+          <Link to="/launchpad">
+            <Button
+              variant="outline"
+              size="sm"
+              className="dark:border-white/15"
+            >
+              <Rocket /> Launchpad
+            </Button>
+          </Link>
+        </span>
       </header>
 
       {isLoading ? (

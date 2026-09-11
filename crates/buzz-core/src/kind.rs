@@ -658,6 +658,20 @@ pub const KIND_GIT_STATUS_DRAFT: u32 = 1633;
 /// announcement, never a project. See `docs/nips/NIP-MP.md`.
 pub const KIND_PROJECT: u32 = 30621;
 
+/// NIP-LP: DAO launch record — a named fundraise with a community link, chain
+/// addresses, and an auction parameter commitment (parameterized replaceable,
+/// d = launch id). One signer; grouping assertions only, no authority over
+/// linked projects, repositories, or channels. See `docs/nips/NIP-LP.md`.
+pub const KIND_LAUNCH_RECORD: u32 = 37001;
+/// NIP-LP: auction bid mirror (regular). Advisory — the chain is authoritative.
+pub const KIND_LAUNCH_BID: u32 = 47002;
+/// NIP-LP: founder-signed launch update (regular).
+pub const KIND_LAUNCH_UPDATE: u32 = 47003;
+/// NIP-LP: proposal record — plain, futarchy-budget, or signal (regular).
+pub const KIND_LAUNCH_PROPOSAL: u32 = 47004;
+/// NIP-LP: chain-state receipt mirror (regular). Advisory.
+pub const KIND_LAUNCH_RECEIPT: u32 = 47005;
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -791,6 +805,11 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIT_STATUS_CLOSED,
     KIND_GIT_STATUS_DRAFT,
     KIND_PROJECT,
+    KIND_LAUNCH_RECORD,
+    KIND_LAUNCH_BID,
+    KIND_LAUNCH_UPDATE,
+    KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -890,6 +909,7 @@ const _: () = assert!(is_parameterized_replaceable(KIND_WORKFLOW_DEF)); // 30620
 const _: () = assert!(is_parameterized_replaceable(KIND_EVENT_REMINDER)); // 30300 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 30622 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT)); // 30621 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD)); // 37001 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

@@ -219,6 +219,9 @@ enum Cmd {
     /// Create and manage multi-repo projects (NIP-MP)
     #[command(subcommand)]
     Projects(ProjectsCmd),
+    /// Discover and manage DAO launches (NIP-LP)
+    #[command(subcommand)]
+    Launchpad(LaunchpadCmd),
     /// Send, get, list, and set status on git patches (NIP-34)
     #[command(subcommand)]
     Patches(PatchesCmd),
@@ -1310,6 +1313,164 @@ impl ProjectVisibility {
 }
 
 #[derive(Subcommand)]
+pub enum LaunchpadCmd {
+    /// List launches (NIP-LP kind:37001 directory)
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Show a launch with mirrors and effective stage
+    Show {
+        /// Launch id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
+    },
+    /// Publish a launch record (NIP-LP kind:37001)
+    Curate {
+        /// Launch id (slug): ^[a-z0-9][a-z0-9_-]{0,63}$
+        id: String,
+        /// Display name
+        #[arg(long)]
+        name: String,
+        /// One-paragraph pitch
+        #[arg(long, default_value = "")]
+        pitch: String,
+        /// Numeric chain id (e.g. 11155111)
+        #[arg(long)]
+        chain: Option<String>,
+        /// Raise currency (0x address, e.g. USDC)
+        #[arg(long)]
+        currency: Option<String>,
+        /// Floor price in smallest currency units
+        #[arg(long, name = "floor-price")]
+        floor_price: Option<String>,
+        /// Graduation threshold in smallest currency units
+        #[arg(long, name = "required-raised")]
+        required_raised: Option<String>,
+        /// Auction contract (0x address)
+        #[arg(long)]
+        auction: Option<String>,
+        /// Token contract (0x address)
+        #[arg(long)]
+        token: Option<String>,
+        /// Treasury contract (0x address)
+        #[arg(long)]
+        treasury: Option<String>,
+        /// Admission track: `curated` (default) or `community`
+        #[arg(long, default_value = "curated")]
+        admission: String,
+    },
+    /// Delete own launch (signer-self tombstone)
+    Delete {
+        /// Launch id (slug)
+        id: String,
+    },
+    /// Mint a ProjectToken via forge script (dev-local chains by default)
+    #[command(name = "mint-token")]
+    MintToken {
+        /// Token name (1–64 chars)
+        #[arg(long)]
+        name: String,
+        /// Token symbol (1–16 chars)
+        #[arg(long)]
+        symbol: String,
+        /// Total supply in whole tokens (18 decimals)
+        #[arg(long)]
+        supply: String,
+        /// Treasury recipient (0x address, receives full supply)
+        #[arg(long)]
+        treasury: String,
+        /// JSON-RPC endpoint (default local Anvil)
+        #[arg(long, default_value = "http://127.0.0.1:8545")]
+        rpc_url: String,
+        /// Deployer private key (default Anvil key 0 — dev only)
+        #[arg(
+            long,
+            default_value = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        )]
+        private_key: String,
+        /// Contracts workspace dir
+        #[arg(long, default_value = "contracts")]
+        contracts_dir: String,
+        /// CREATE2 salt (default: unix time, always unique)
+        #[arg(long)]
+        salt: Option<String>,
+        /// Initial paired reserve in ETH (default 0.1; native pairing requires nonzero)
+        #[arg(long, name = "paired-deposit-eth", default_value = "0.1")]
+        paired_deposit_eth: String,
+        /// Allow public-network deploys
+        #[arg(long, name = "i-know-what-i-am-doing", default_value_t = false)]
+        i_know_what_i_am_doing: bool,
+    },
+    /// Mirror an onchain bid into the launch feed (advisory)
+    #[command(name = "record-bid")]
+    RecordBid {
+        /// Launch id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
+        /// Auction bucket id
+        #[arg(long, default_value = "bucket-0")]
+        bucket: String,
+        /// Bid budget in smallest currency units
+        #[arg(long)]
+        budget: Option<String>,
+        /// Bid max price
+        #[arg(long, name = "max-price")]
+        max_price: Option<String>,
+        /// Bid transaction hash (0x + 64 hex)
+        #[arg(long)]
+        tx: Option<String>,
+    },
+    /// Publish a founder update (NIP-LP kind:47003)
+    #[command(name = "post-update")]
+    PostUpdate {
+        /// Launch id (slug)
+        id: String,
+        /// Update title
+        #[arg(long)]
+        title: String,
+        /// Update body (markdown)
+        #[arg(long)]
+        body: String,
+    },
+    /// Mirror a proposal record (plain, futarchy-budget, or signal)
+    #[command(name = "record-proposal")]
+    RecordProposal {
+        /// Launch id (slug)
+        id: String,
+        /// Proposal title
+        #[arg(long)]
+        title: String,
+        /// Proposal kind
+        #[arg(long, default_value = "plain")]
+        kind: String,
+        /// Linked git issue coordinate
+        #[arg(long)]
+        issue: Option<String>,
+        /// Onchain proposal id
+        #[arg(long, name = "proposal-id")]
+        proposal_id: Option<String>,
+    },
+    /// Mirror a chain-state receipt (advisory — chain is authoritative)
+    #[command(name = "record-receipt")]
+    RecordReceipt {
+        /// Launch id (slug)
+        id: String,
+        /// Receipt table (e.g. sweep, claim, unlock, graduate)
+        #[arg(long)]
+        table: String,
+        /// Chain transaction hash
+        #[arg(long)]
+        tx: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum ProjectsCmd {
     /// Create a new multi-repo project (NIP-MP kind:30621)
     ///
@@ -2117,6 +2278,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Notes(sub) => commands::notes::dispatch(sub, &client).await,
         Cmd::Repos(sub) => commands::repos::dispatch(sub, &client).await,
         Cmd::Projects(sub) => commands::projects::dispatch(sub, &client).await,
+        Cmd::Launchpad(sub) => commands::launchpad::dispatch(sub, &client).await,
         Cmd::Patches(sub) => commands::patches::dispatch(sub, &client).await,
         Cmd::Issues(sub) => commands::issues::dispatch(sub, &client).await,
         Cmd::Pr(sub) => commands::pr::dispatch(sub, &client).await,
@@ -2260,6 +2422,7 @@ mod tests {
             "feed",
             "gifs",
             "issues",
+            "launchpad",
             "media",
             "mem",
             "messages",
@@ -2441,6 +2604,20 @@ mod tests {
             names(&cmd, "issues"),
             vec!["assign", "create", "get", "list", "status", "unassign"]
         );
+        assert_eq!(
+            names(&cmd, "launchpad"),
+            vec![
+                "curate",
+                "delete",
+                "list",
+                "mint-token",
+                "post-update",
+                "record-bid",
+                "record-proposal",
+                "record-receipt",
+                "show"
+            ]
+        );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
         assert_eq!(names(&cmd, "upload"), vec!["file"]);
         assert_eq!(names(&cmd, "pack"), vec!["inspect", "validate"]);
@@ -2469,6 +2646,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
+            ("launchpad", 9),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

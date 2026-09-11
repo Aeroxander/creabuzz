@@ -127,6 +127,30 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goLaunchpad = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/launchpad",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
+  const goLaunch = React.useCallback(
+    (launchId: string, options?: NavigationBehavior & { author?: string }) =>
+      commitNavigation(
+        {
+          to: "/launchpad/$launchId",
+          params: { launchId },
+          search: options?.author ? { author: options.author } : {},
+        },
+        options,
+      ),
+    [commitNavigation],
+  );
+
   const goProject = React.useCallback(
     (
       projectId: string,
@@ -464,6 +488,8 @@ export function useAppNavigation() {
     goEditWorkflow,
     goForumPost,
     goHome,
+    goLaunch,
+    goLaunchpad,
     goNewMessage,
     goNewWorkflow,
     goNewWorkflowForChannel,

@@ -20,6 +20,12 @@
       "platforms": ["desktop"]
     },
     {
+      "id": "launchpad",
+      "name": "Launchpad",
+      "description": "DAO launchpad: investor discovery and founder workspaces",
+      "platforms": ["desktop"]
+    },
+    {
       "id": "pulse",
       "name": "Pulse",
       "description": "Activity feed with notes, social posts, and agent activity",

@@ -71,6 +71,19 @@ export const KIND_REPO_ANNOUNCEMENT = 30617;
 export const KIND_REPO_STATE = 30618;
 // NIP-MP: project grouping above NIP-34 repositories.
 export const KIND_PROJECT_ANNOUNCEMENT = 30621;
+// NIP-LP: DAO launchpad (docs/nips/NIP-LP.md). 47006-47009 reserved.
+export const KIND_LAUNCH_RECORD = 37001;
+export const KIND_LAUNCH_BID = 47002;
+export const KIND_LAUNCH_UPDATE = 47003;
+export const KIND_LAUNCH_PROPOSAL = 47004;
+export const KIND_LAUNCH_RECEIPT = 47005;
+export const LAUNCHPAD_EVENT_KINDS = [
+  KIND_LAUNCH_RECORD,
+  KIND_LAUNCH_BID,
+  KIND_LAUNCH_UPDATE,
+  KIND_LAUNCH_PROPOSAL,
+  KIND_LAUNCH_RECEIPT,
+] as const;
 export const KIND_GIT_PATCH = 1617;
 export const KIND_GIT_PULL_REQUEST = 1618;
 export const KIND_GIT_PR_UPDATE = 1619;

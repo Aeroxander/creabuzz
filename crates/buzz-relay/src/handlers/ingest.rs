@@ -12,32 +12,30 @@ use uuid::Uuid;
 use buzz_auth::Scope;
 use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
-    is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE, KIND_AGENT_TURN_METRIC,
-    KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
-    KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
-    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT,
-    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
-    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
-    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
-    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
-    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
-    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
-    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
-    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
-    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
-    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION,
-    KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED,
-    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED,
-    KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
-    KIND_WIKI_PAGE,
-    KIND_AGENT_CAPABILITIES,
-    KIND_AGENT_TASK,
+    is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
+    KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH,
+    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION,
+    KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
+    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
+    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
+    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
+    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
+    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
+    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
+    KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_USER_STATUS,
+    KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -533,6 +531,14 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // NIP-MP: a project is repository metadata — grouping repositories needs
         // the same scope as announcing them.
         KIND_PROJECT => Ok(Scope::ReposWrite),
+        // NIP-LP: launchpad records and mirrors are ordinary member writes —
+        // same model as forum posts. Real authorization (money, membership)
+        // lives onchain; the relay only validates envelopes.
+        KIND_LAUNCH_RECORD
+        | KIND_LAUNCH_BID
+        | KIND_LAUNCH_UPDATE
+        | KIND_LAUNCH_PROPOSAL
+        | KIND_LAUNCH_RECEIPT => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -679,6 +685,14 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // `buzz-channel` tag is a metadata reference, not a routing directive,
             // so a project's state is never channel-scoped.
             | KIND_PROJECT
+            // NIP-LP: launches are addressed by (pubkey, kind, d_tag) for
+            // the record and stack-scoped via `a` tags for mirrors. The
+            // `buzz-channel` tag is a metadata reference, not routing.
+            | KIND_LAUNCH_RECORD
+            | KIND_LAUNCH_BID
+            | KIND_LAUNCH_UPDATE
+            | KIND_LAUNCH_PROPOSAL
+            | KIND_LAUNCH_RECEIPT
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -1534,6 +1548,220 @@ fn validate_team_catalog_envelope(event: &Event) -> Result<(), String> {
     validate_shared_tag(event, LABEL)?;
     single_bounded_d_tag(event, LABEL)?;
     Ok(())
+}
+
+/// True when `value` is a `0x` + 40-hex EVM address.
+fn is_0x_address(value: &str) -> bool {
+    value.len() == 42
+        && value.starts_with("0x")
+        && value[2..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// NIP-LP launchpad envelope caps.
+///
+/// Counted over raw tags (see `PROJECT_MEMBER_CAP`): the caps must hold before
+/// any allocation proportional to the tag list.
+const LAUNCH_A_TAG_CAP: usize = 64;
+const LAUNCH_TEAM_TAG_CAP: usize = 64;
+const LAUNCH_CHANNEL_TAG_CAP: usize = 8;
+const LAUNCH_NAME_MAX_LEN: usize = 256;
+/// Launch content is JSON; bound well above any honest record so a junk
+/// payload cannot win NIP-33 replacement against a valid head.
+const LAUNCH_CONTENT_MAX_LEN: usize = 65536;
+
+/// Validate the envelope of a kind:37001 NIP-LP launch record.
+///
+/// Exactly one slug-grammar `d` tag (the launch id), at most one `name`,
+/// bounded `a` (linked projects) / `team` / `buzz-channel` tags, well-formed
+/// chain addresses when present, and JSON-object content.
+///
+/// Deliberately absent: any authority over linked projects, repositories, or
+/// channels — membership is an assertion, never a permission grant.
+fn validate_launch_record_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "launch record event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    // Slug grammar: ^[a-z0-9][a-z0-9_-]{0,63}$
+    let bytes = d.as_bytes();
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return Err(format!(
+            "{LABEL} `d` tag must start with a lowercase letter or digit"
+        ));
+    }
+    if !bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    {
+        return Err(format!(
+            "{LABEL} `d` tag must match [a-z0-9_-] after the first character"
+        ));
+    }
+    let mut a_count = 0usize;
+    let mut team_count = 0usize;
+    let mut channel_count = 0usize;
+    let mut name_count = 0usize;
+    let mut chain_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "a" => a_count += 1,
+            "team" => {
+                team_count += 1;
+                if parts.len() != 3
+                    || value.len() != 64
+                    || !value.bytes().all(|b| b.is_ascii_hexdigit())
+                {
+                    return Err(format!(
+                        "{LABEL} `team` tag must be [`team`, <64-hex-pubkey>, <role>]"
+                    ));
+                }
+            }
+            "buzz-channel" => {
+                channel_count += 1;
+                if value.parse::<uuid::Uuid>().is_err() {
+                    return Err(format!(
+                        "{LABEL} `buzz-channel` tag must hold a channel UUID"
+                    ));
+                }
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > LAUNCH_NAME_MAX_LEN {
+                    return Err(format!(
+                        "{LABEL} `name` tag too long (max {LAUNCH_NAME_MAX_LEN} chars)"
+                    ));
+                }
+            }
+            "chain" => {
+                chain_count += 1;
+                if value.parse::<u64>().is_err() {
+                    return Err(format!("{LABEL} `chain` tag must hold a numeric chain id"));
+                }
+            }
+            "auction" | "token" | "treasury" if !is_0x_address(value) => {
+                return Err(format!("{LABEL} `{name}` tag must hold a 0x address"));
+            }
+            "hook" if parts.len() != 3 || !is_0x_address(value) => {
+                return Err(format!(
+                    "{LABEL} `hook` tag must be [`hook`, <0x-address>, <bucket>]"
+                ));
+            }
+            _ => {}
+        }
+    }
+    if name_count > 1 {
+        return Err(format!("{LABEL} must have at most one `name` tag"));
+    }
+    if chain_count > 1 {
+        return Err(format!("{LABEL} must have at most one `chain` tag"));
+    }
+    if a_count > LAUNCH_A_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_A_TAG_CAP} `a` tags (got {a_count})"
+        ));
+    }
+    if team_count > LAUNCH_TEAM_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_TEAM_TAG_CAP} `team` tags (got {team_count})"
+        ));
+    }
+    if channel_count > LAUNCH_CHANNEL_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_CHANNEL_TAG_CAP} `buzz-channel` tags (got {channel_count})"
+        ));
+    }
+    if event.content.len() > LAUNCH_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {LAUNCH_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{LABEL} content must be a JSON object")),
+    }
+}
+
+/// Check that `coordinate` is a canonical launch address:
+/// `37001:<lowercase-64-hex-author>:<non-empty-d>`.
+fn parse_launch_coordinate(coordinate: &str) -> Result<(), String> {
+    let mut segments = coordinate.splitn(3, ':');
+    let (Some(kind), Some(author), Some(d)) = (segments.next(), segments.next(), segments.next())
+    else {
+        return Err(format!(
+            "launch event `a` tag must be `37001:<author-hex>:<launch-id>` (got {coordinate:?})"
+        ));
+    };
+    if kind != "37001" {
+        return Err(format!(
+            "launch event `a` tag must reference kind 37001 (got {kind:?})"
+        ));
+    }
+    if author.len() != 64
+        || !author
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(format!(
+            "launch event `a` tag author must be lowercase 64-hex (got {author:?})"
+        ));
+    }
+    if d.is_empty() {
+        return Err("launch event `a` tag launch id must not be empty".to_string());
+    }
+    Ok(())
+}
+
+/// Validate the envelope of a NIP-LP mirror event (47002–47005).
+///
+/// Every mirror names exactly one launch via its `a` tag; receipts additionally
+/// carry the chain tx hash they mirror, and bids name their bucket. Content
+/// must be a JSON object so malformed mirrors cannot pollute launch feeds.
+fn validate_launch_mirror_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let mut a_tags: Vec<&str> = Vec::new();
+    let mut m_count = 0usize;
+    let mut tx_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "a" => a_tags.push(value),
+            "m" => m_count += 1,
+            "tx" => {
+                tx_count += 1;
+                if !(value.len() == 66
+                    && value.starts_with("0x")
+                    && value[2..].bytes().all(|b| b.is_ascii_hexdigit()))
+                {
+                    return Err(format!("{label} `tx` tag must hold a 0x tx hash"));
+                }
+            }
+            _ => {}
+        }
+    }
+    if a_tags.len() != 1 {
+        return Err(format!(
+            "{label} must have exactly one `a` tag (got {})",
+            a_tags.len()
+        ));
+    }
+    parse_launch_coordinate(a_tags[0])?;
+    let kind_u32 = event.kind.as_u16() as u32;
+    if kind_u32 == KIND_LAUNCH_BID && m_count != 1 {
+        return Err(format!("{label} must have exactly one `m` (bucket) tag"));
+    }
+    if kind_u32 == KIND_LAUNCH_RECEIPT && tx_count != 1 {
+        return Err(format!("{label} must have exactly one `tx` tag"));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
 }
 
 /// Maximum number of member `a` tags on a kind:30621 project.
@@ -2803,6 +3031,31 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_PROJECT {
         validate_project_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_RECORD {
+        validate_launch_record_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_BID {
+        validate_launch_mirror_envelope(&event, "launch bid event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_UPDATE {
+        validate_launch_mirror_envelope(&event, "launch update event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_PROPOSAL {
+        validate_launch_mirror_envelope(&event, "launch proposal event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_RECEIPT {
+        validate_launch_mirror_envelope(&event, "launch receipt event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -5315,6 +5568,166 @@ mod postgres_tests {
         // `buzz-channel` is a metadata reference, not a routing directive.
         assert!(is_global_only_kind(KIND_PROJECT));
         assert!(!requires_h_channel_scope(KIND_PROJECT));
+    }
+
+    #[test]
+    fn launchpad_kinds_are_in_scope_allowlist() {
+        let dummy = make_dummy_event();
+        for kind in [
+            KIND_LAUNCH_RECORD,
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+        }
+    }
+
+    #[test]
+    fn launchpad_kinds_are_global_only() {
+        // `buzz-channel` is a metadata reference, not a routing directive;
+        // mirrors are stack-scoped via `a` tags.
+        for kind in [
+            KIND_LAUNCH_RECORD,
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require h scope"
+            );
+        }
+    }
+
+    #[test]
+    fn launchpad_record_is_parameterized_replaceable() {
+        // Owner-only editing comes free from NIP-33 addressing.
+        assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD));
+        for kind in [
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert!(
+                !is_parameterized_replaceable(kind),
+                "kind {kind} must be a regular event"
+            );
+        }
+    }
+
+    fn make_launch_record(tags: &[&[&str]]) -> Event {
+        make_event_with_tags(KIND_LAUNCH_RECORD, "{\"stage\":\"draft\"}", tags)
+    }
+
+    fn launch_coord() -> String {
+        format!("37001:{}:nebula", "a".repeat(64))
+    }
+
+    #[test]
+    fn launch_record_envelope_accepts_valid() {
+        let coord_owner = "b".repeat(64);
+        let ev = make_launch_record(&[
+            &["d", "nebula"],
+            &["name", "Nebula DAO"],
+            &["chain", "11155111"],
+            &["auction", "0x1234567890123456789012345678901234567890"],
+            &["team", &coord_owner, "founder"],
+        ]);
+        assert!(validate_launch_record_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_missing_d() {
+        let ev = make_launch_record(&[&["name", "Nebula DAO"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_bad_slug() {
+        let ev = make_launch_record(&[&["d", "Nebula!"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(
+            err.contains("must match") || err.contains("start with"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_bad_address() {
+        let ev = make_launch_record(&[&["d", "nebula"], &["auction", "not-an-address"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("0x address"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_non_json_content() {
+        let ev = make_event_with_tags(KIND_LAUNCH_RECORD, "not json", &[&["d", "nebula"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_mirror_envelope_accepts_bid_and_receipt() {
+        let coord = launch_coord();
+        let bid = make_event_with_tags(
+            KIND_LAUNCH_BID,
+            "{\"budget\":\"100\"}",
+            &[&["a", &coord], &["m", "bucket-0"]],
+        );
+        assert!(validate_launch_mirror_envelope(&bid, "launch bid event").is_ok());
+        let receipt = make_event_with_tags(
+            KIND_LAUNCH_RECEIPT,
+            "{\"raised\":\"1\"}",
+            &[
+                &["a", &coord],
+                &[
+                    "tx",
+                    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                ],
+            ],
+        );
+        assert!(validate_launch_mirror_envelope(&receipt, "launch receipt event").is_ok());
+    }
+
+    #[test]
+    fn launch_mirror_envelope_rejects_missing_a() {
+        let ev = make_event_with_tags(KIND_LAUNCH_UPDATE, "{\"title\":\"hi\"}", &[]);
+        let err = validate_launch_mirror_envelope(&ev, "launch update event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_bid_envelope_rejects_missing_bucket() {
+        let coord = launch_coord();
+        let ev = make_event_with_tags(KIND_LAUNCH_BID, "{}", &[&["a", &coord]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch bid event").unwrap_err();
+        assert!(err.contains("`m`"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_receipt_envelope_rejects_missing_tx() {
+        let coord = launch_coord();
+        let ev = make_event_with_tags(KIND_LAUNCH_RECEIPT, "{}", &[&["a", &coord]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch receipt event").unwrap_err();
+        assert!(err.contains("`tx`"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_mirror_envelope_rejects_wrong_coordinate_kind() {
+        let bad = format!("30621:{}:proj", "a".repeat(64));
+        let ev = make_event_with_tags(KIND_LAUNCH_UPDATE, "{}", &[&["a", &bad]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch update event").unwrap_err();
+        assert!(err.contains("37001"), "got: {err}");
     }
 
     #[test]

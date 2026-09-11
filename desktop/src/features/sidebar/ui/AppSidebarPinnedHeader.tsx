@@ -1,4 +1,4 @@
-import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
+import { Activity, Bot, Folders, Inbox, Rocket, Zap } from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
@@ -21,7 +21,8 @@ type SidebarSelectedView =
   | "agents"
   | "workflows"
   | "pulse"
-  | "projects";
+  | "projects"
+  | "launchpad";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -43,6 +44,7 @@ type AppSidebarPrimaryMenuProps = {
   homeBadgeCount: number;
   onSelectAgents: () => void;
   onSelectHome: () => void;
+  onSelectLaunchpad: () => void;
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
@@ -93,6 +95,7 @@ export function AppSidebarPrimaryMenu({
   homeBadgeCount,
   onSelectAgents,
   onSelectHome,
+  onSelectLaunchpad,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
@@ -138,6 +141,20 @@ export function AppSidebarPrimaryMenu({
               >
                 <Activity className="h-4 w-4" />
                 <SidebarMenuLabel>Pulse</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </FeatureGate>
+          <FeatureGate feature="launchpad">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                data-testid="open-launchpad-view"
+                isActive={selectedView === "launchpad"}
+                onClick={onSelectLaunchpad}
+                tooltip="Launchpad"
+                type="button"
+              >
+                <Rocket className="h-4 w-4" />
+                <SidebarMenuLabel>Launchpad</SidebarMenuLabel>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
