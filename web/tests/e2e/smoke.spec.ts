@@ -1283,3 +1283,52 @@ test("a dropped live connection is shown instead of failing silently", async ({
   await expect(chip).toBeVisible();
   await expect(chip).toContainText(/Reconnecting|Connecting/);
 });
+
+test.describe("theme choice", () => {
+  test("an explicit theme wins over the system preference and survives reload", async ({
+    page,
+  }) => {
+    // Light system preference, dark chosen in the app.
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(() => {
+      window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await mockPartialRelay(page);
+    await page.goto("/c/alpha.example.com");
+    await page.getByTestId("content-pane").waitFor();
+    await page.getByTestId("user-chip").click();
+
+    await page.getByTestId("theme-dark").click();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.className))
+      .toContain("dark");
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem("buzz.theme")))
+      .toBe("dark");
+
+    // Reload: the stored choice must still win over the light system theme.
+    await page.reload();
+    await page.getByTestId("content-pane").waitFor();
+    const classes = await page.evaluate(
+      () => document.documentElement.className,
+    );
+    expect(classes).toContain("dark");
+  });
+
+  test("a stored theme is painted before the app bundle runs", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(() => {
+      window.localStorage.setItem("buzz.theme", "dark");
+    });
+    // Abort the bundle: only the boot script may set the class.
+    await page.route(/\/assets\/index-.*\.js$/, (route) => route.abort());
+    await page.goto("/");
+    const classes = await page.evaluate(
+      () => document.documentElement.className,
+    );
+    expect(classes).toContain("dark");
+  });
+});

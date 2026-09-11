@@ -26,6 +26,7 @@ import {
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
+import { useTheme } from "@/shared/theme/ThemeProvider";
 import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
@@ -79,6 +80,7 @@ export function ProfileMenu() {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const { theme, setTheme } = useTheme();
   const [walletBinding, setWalletBinding] = useState(() => readWalletBinding());
   const [confirmUnbind, setConfirmUnbind] = useState(false);
   const [walletBusy, setWalletBusy] = useState(false);
@@ -289,6 +291,31 @@ export function ProfileMenu() {
                 }
                 onClick={() => setShowBackup(true)}
               />
+              <div className="px-2 py-1.5">
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  Appearance
+                </p>
+                <div
+                  className="mt-1 flex items-center gap-1"
+                  data-testid="theme-control"
+                >
+                  {(["system", "light", "dark"] as const).map((option) => (
+                    <button
+                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                        theme === option
+                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                          : "border-black/15 dark:border-white/15"
+                      }`}
+                      data-testid={`theme-${option}`}
+                      key={option}
+                      onClick={() => setTheme(option)}
+                      type="button"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {passkeyActive ? (
                 <>
                   <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60">
