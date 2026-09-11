@@ -31,3 +31,41 @@ export function reconnectDelay(
   );
   return Math.round(base + base * JITTER_RATIO * random());
 }
+
+/**
+ * Backoff state for one subscription's reconnect loop.
+ *
+ * The counter must not reset when the socket merely opens. A relay that
+ * accepts the connection and drops it straight away — rate limiting, a refused
+ * subscription, a proxy that answers and hangs up — would otherwise re-open
+ * once a second forever, which is exactly the loop the backoff exists to
+ * prevent. Only a connection that proved usable resets it: the relay answered
+ * this subscription (an event, or the EOSE that ends the replay).
+ */
+export class ReconnectBackoff {
+  private attempts = 0;
+  private readonly random: () => number;
+
+  constructor(random: () => number = Math.random) {
+    this.random = random;
+  }
+
+  /** Failed attempts since the connection last proved usable. */
+  get attempt(): number {
+    return this.attempts;
+  }
+
+  /** The socket opened. The relay has not answered anything yet. */
+  onOpen(): void {}
+
+  /** The relay answered this subscription: it is working, start over. */
+  onHealthy(): void {
+    this.attempts = 0;
+  }
+
+  /** The socket closed: advance and return the delay before the next try. */
+  onClose(): number {
+    this.attempts += 1;
+    return reconnectDelay(this.attempts, this.random);
+  }
+}

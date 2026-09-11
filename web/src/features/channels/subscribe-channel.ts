@@ -19,9 +19,9 @@ import {
 } from "@/shared/lib/nostr-signer";
 import type { NostrFilter } from "@/shared/lib/nostr-client";
 
-import { reconnectDelay, type SubscriptionStatus } from "./lib/reconnect";
+import { ReconnectBackoff, type SubscriptionStatus } from "./lib/reconnect";
 
-export { reconnectDelay };
+export { ReconnectBackoff };
 export type { SubscriptionStatus };
 
 export interface ChannelSubscriptionCallbacks {
@@ -38,8 +38,12 @@ export function subscribeChannel(
   let closed = false;
   let socket: WebSocket | null = null;
   let authAccepted = false;
-  /** Failed attempts since the last healthy open; drives the backoff. */
-  let attempt = 0;
+  /**
+   * Reconnect policy. It only resets once the relay answers this subscription,
+   * not when the socket merely opens: an accept-then-close relay would
+   * otherwise re-open at the first step forever (see `ReconnectBackoff`).
+   */
+  const backoff = new ReconnectBackoff();
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const subId = `live-${Math.random().toString(36).slice(2)}`;
   const pendingAuthReq: (() => void)[] = [];
@@ -61,7 +65,7 @@ export function subscribeChannel(
 
   const open = () => {
     if (closed) return;
-    callbacks.onStatus?.(attempt === 0 ? "connecting" : "reconnecting");
+    callbacks.onStatus?.(backoff.attempt === 0 ? "connecting" : "reconnecting");
     socket = new WebSocket(wsUrl);
     socket.addEventListener("open", () => {
       authAccepted = false;
@@ -92,20 +96,21 @@ export function subscribeChannel(
           pendingAuthReq.length = 0;
           sendReq();
         } else if (type === "EVENT" && data[1] === subId && data[2]) {
+          backoff.onHealthy();
           callbacks.onEvent(data[2] as SignedNostrEvent);
+        } else if (type === "EOSE" && data[1] === subId) {
+          // The relay finished replaying for this subscription: it works.
+          backoff.onHealthy();
         } else if (type === "CLOSED" && data[1] === subId) {
           cleanup();
         }
       });
-      // Healthy again: a later drop retries from the short delay.
-      attempt = 0;
       callbacks.onStatus?.("open");
     });
     socket.addEventListener("close", () => {
       if (closed) return;
-      attempt += 1;
       callbacks.onStatus?.("reconnecting");
-      retryTimer = setTimeout(open, reconnectDelay(attempt));
+      retryTimer = setTimeout(open, backoff.onClose());
     });
     socket.addEventListener("error", () => {
       socket?.close();

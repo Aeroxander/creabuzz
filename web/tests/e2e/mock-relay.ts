@@ -56,11 +56,26 @@ export interface MockRelayOptions {
    * a client's writes instead of only the happy path.
    */
   refuse?: (event: StoredEvent) => string | null;
+  /**
+   * Close every socket as soon as it opens, the way a rate-limiting or
+   * misconfigured relay does. Lets a test observe the client's reconnect
+   * policy instead of only its happy path.
+   */
+  closeImmediately?: boolean;
 }
 
-export function createMockRelay({ refuse }: MockRelayOptions = {}) {
+export function createMockRelay({
+  refuse,
+  closeImmediately = false,
+}: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
+  let connectionsOpened = 0;
+  const openedAt: number[] = [];
+  /** Flipped on by a test that wants to watch the reconnect policy. */
+  let closingSockets = closeImmediately;
+  /** When each live-subscription socket asked for its subscription. */
+  const liveSubscriptionReqs: number[] = [];
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
 
   const deliver = (event: StoredEvent) => {
@@ -87,10 +102,13 @@ export function createMockRelay({ refuse }: MockRelayOptions = {}) {
       });
     });
     await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+      connectionsOpened += 1;
+      openedAt.push(Date.now());
       const socket: Socket = {
         send: (payload) => ws.send(payload),
         close: () => ws.close(),
       };
+
       sockets.add(socket);
       subscriptions.set(socket, new Map());
       ws.onClose(() => sockets.delete(socket));
@@ -102,6 +120,21 @@ export function createMockRelay({ refuse }: MockRelayOptions = {}) {
           return;
         }
         if (!Array.isArray(parsed)) return;
+        if (
+          parsed[0] === "REQ" &&
+          typeof parsed[1] === "string" &&
+          parsed[1].startsWith("live-")
+        ) {
+          // A `subscribeChannel` pump asking for its subscription: identify the
+          // socket so a test can count the reconnects that policy drives.
+          liveSubscriptionReqs.push(Date.now());
+        }
+        if (closingSockets && parsed[0] === "REQ") {
+          // Accept, let the client use the connection, then hang up: the client
+          // must back off, not reconnect at the first step forever.
+          ws.close();
+          return;
+        }
         const [type] = parsed;
         if (type === "EVENT" || type === "AUTH") {
           const event = parsed[1] as StoredEvent;
@@ -152,5 +185,21 @@ export function createMockRelay({ refuse }: MockRelayOptions = {}) {
     events.push(event);
   };
 
-  return { install, deliver, seed, dropConnections, events };
+  return {
+    install,
+    deliver,
+    seed,
+    dropConnections,
+    events,
+    /** Sockets the page has opened, across reconnects. */
+    connectionsOpened: () => connectionsOpened,
+    /** When live-subscription sockets issued their REQ (the reconnect rhythm). */
+    liveSubscriptionReqs: () => [...liveSubscriptionReqs],
+    /** Start hanging up on every socket that speaks. */
+    setClosingSockets: (value: boolean) => {
+      closingSockets = value;
+    },
+    /** Timestamps of those opens, to read the reconnect rhythm. */
+    openedAt: () => [...openedAt],
+  };
 }

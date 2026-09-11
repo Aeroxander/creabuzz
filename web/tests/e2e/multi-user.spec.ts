@@ -446,3 +446,41 @@ test("an author without a profile does not borrow someone else's name", async ({
 
   await context.close();
 });
+
+test("an accept-then-close relay backs off instead of looping once a second", async ({
+  page,
+}) => {
+  // A relay that accepts the socket and hangs up is the case the backoff exists
+  // for. If the counter resets when the socket merely opens, the tab re-opens
+  // every second forever and the reader never learns live updates stopped.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+
+  await relay.install(page);
+  // Pin the jitter so the retry rhythm is deterministic.
+  await page.addInitScript(() => {
+    Math.random = () => 0.5;
+  });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByTestId("composer-input")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  relay.setClosingSockets(true);
+  relay.dropConnections();
+  await page.waitForTimeout(12_000);
+
+  const offsets = relay.liveSubscriptionReqs();
+  expect(
+    offsets.length,
+    "one reconnect per pump, a few times over — not a one-second loop",
+  ).toBeLessThan(12);
+
+  const gaps = offsets
+    .slice(1)
+    .map((time, index) => time - offsets[index])
+    .sort((a, b) => b - a);
+  // The first retry is ~1s; the next is ~2x, then ~4x. A reset-on-open policy
+  // would hold every gap at ~1s and fail this.
+  expect(gaps[0]).toBeGreaterThan(3_000);
+});
