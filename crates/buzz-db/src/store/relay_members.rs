@@ -751,8 +751,7 @@ impl Db {
         pubkey: &str,
         role: &str,
     ) -> Result<bool> {
-        crate::evm_identities::claim_relay_membership_evm(&self.pool, community, pubkey, role)
-            .await
+        crate::evm_identities::claim_relay_membership_evm(&self.pool, community, pubkey, role).await
     }
 
     /// Inserts or refreshes the npub → EVM account binding (creabuzz).
@@ -800,15 +799,10 @@ impl Db {
         reason: Option<&str>,
     ) -> Result<bool> {
         crate::evm_identities::revoke_evm_identity(
-            &self.pool,
-            community,
-            pubkey,
-            revoked_by,
-            reason,
+            &self.pool, community, pubkey, revoked_by, reason,
         )
         .await
     }
-
 
     /// Returns whether a member has persisted acceptance evidence for a policy version.
     #[datastore_span(name = "has_join_policy_acceptance", system = "postgresql")]

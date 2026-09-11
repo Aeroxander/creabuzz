@@ -25,7 +25,9 @@ fn keys() -> Keys {
         if let Ok(keys) = Keys::parse(sk) {
             return keys;
         }
-        eprintln!("BUZZ_FLEET_WORKER_KEY invalid; generating a new key (state is lost unless saved).");
+        eprintln!(
+            "BUZZ_FLEET_WORKER_KEY invalid; generating a new key (state is lost unless saved)."
+        );
     }
     Keys::generate()
 }
@@ -34,7 +36,14 @@ fn t(src: &str, v: &str) -> Tag {
     Tag::parse([src, v]).expect("tag")
 }
 
-fn tags_for(event: &Event) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+fn tags_for(
+    event: &Event,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let mut d = None;
     let mut p = None;
     let mut h = None;
@@ -69,7 +78,9 @@ fn task_title(event: &Event) -> String {
 }
 
 async fn announce(ws: &mut buzz_ws_client::NostrWsConnection, keys: &Keys, name: &str) {
-    let team = std::env::var("BUZZ_FLEET_WORKER_TEAM").ok().unwrap_or_default();
+    let team = std::env::var("BUZZ_FLEET_WORKER_TEAM")
+        .ok()
+        .unwrap_or_default();
     let content = json!({
         "name": name,
         "runtype": "sandbox",
@@ -104,10 +115,7 @@ async fn publish_task_row(
 ) {
     let (d, _, h, e) = tags_for(task);
     let Some(d) = d else { return };
-    let mut tags = vec![
-        t("d", &d),
-        t("p", &keys.public_key().to_hex()),
-    ];
+    let mut tags = vec![t("d", &d), t("p", &keys.public_key().to_hex())];
     if let Some(h) = &h {
         tags.push(t("h", h));
     }
@@ -149,7 +157,11 @@ async fn post_turn(
 }
 
 /// OpenAI-compatible chat completion via the relay gateway with NIP-98 auth.
-async fn ask_gateway(client: &reqwest::Client, keys: &Keys, prompt: &str) -> Result<String, String> {
+async fn ask_gateway(
+    client: &reqwest::Client,
+    keys: &Keys,
+    prompt: &str,
+) -> Result<String, String> {
     // Gateway host must match the community-bound host (localhost since the
     // tenant migration) so the relay can resolve the community for the request.
     let gateway = std::env::var("BUZZ_FLEET_WORKER_GATEWAY")
@@ -201,7 +213,10 @@ async fn ask_gateway(client: &reqwest::Client, keys: &Keys, prompt: &str) -> Res
         .await
         .map_err(|e| e.to_string())?;
     let status = resp.status();
-    let json: Value = resp.json().await.map_err(|e| format!("bad upstream: {e}"))?;
+    let json: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("bad upstream: {e}"))?;
     if !status.is_success() {
         return Err(format!(
             "gateway {status}: {}",
@@ -271,9 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mine = p.as_deref() == Some(keys.public_key().to_hex().as_str());
             // Autonomy: claim unassigned open tasks so the fleet keeps moving.
             let is_open_unclaimed = status == "open" && p.is_none();
-            if (!mine && !is_open_unclaimed)
-                || !matches!(status.as_str(), "open" | "assigned")
-            {
+            if (!mine && !is_open_unclaimed) || !matches!(status.as_str(), "open" | "assigned") {
                 continue;
             }
             if !processed.insert(d.clone()) {
@@ -300,7 +313,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut answer_attempts = 0;
             let llm_result = loop {
                 answer_attempts += 1;
-                match ask_gateway(&client, &keys, &format!("Task: {title}\n\n{}", event.content)).await {
+                match ask_gateway(
+                    &client,
+                    &keys,
+                    &format!("Task: {title}\n\n{}", event.content),
+                )
+                .await
+                {
                     Ok(answer) => break Ok(answer),
                     Err(err) if answer_attempts < 3 && err.contains("empty LLM response") => {
                         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -309,15 +328,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             match llm_result {
-                Ok(answer) => {publish_task_row(&mut ws, &keys, &event, "done").await;
+                Ok(answer) => {
+                    publish_task_row(&mut ws, &keys, &event, "done").await;
                     post_turn(
                         &mut ws,
                         &keys,
                         h.as_deref(),
                         e.as_deref(),
-                        &format!("✅ Done: {title}
+                        &format!(
+                            "✅ Done: {title}
 
-{answer}"),
+{answer}"
+                        ),
                     )
                     .await;
                     tracing::info!(task = %d, "completed");

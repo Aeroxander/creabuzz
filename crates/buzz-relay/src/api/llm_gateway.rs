@@ -47,7 +47,10 @@ pub async fn chat_completions(
     body: Bytes,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let Some(llm) = state.config.llm.as_ref() else {
-        return Err(api_error(StatusCode::NOT_FOUND, "LLM gateway is not configured"));
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "LLM gateway is not configured",
+        ));
     };
 
     if body.len() > MAX_REQUEST_BODY_BYTES {
@@ -101,15 +104,16 @@ pub async fn chat_completions(
         .body(body)
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(key) = llm.api_key() {
-        request = request.header(
-            header::AUTHORIZATION,
-            format!("Bearer {key}"),
-        );
+        request = request.header(header::AUTHORIZATION, format!("Bearer {key}"));
     }
-    let response = request.timeout(UPSTREAM_TIMEOUT).send().await.map_err(|error| {
-        tracing::warn!(timeout = error.is_timeout(), "LLM upstream request failed");
-        api_error(StatusCode::BAD_GATEWAY, "LLM provider is unavailable")
-    })?;
+    let response = request
+        .timeout(UPSTREAM_TIMEOUT)
+        .send()
+        .await
+        .map_err(|error| {
+            tracing::warn!(timeout = error.is_timeout(), "LLM upstream request failed");
+            api_error(StatusCode::BAD_GATEWAY, "LLM provider is unavailable")
+        })?;
 
     let upstream_status = response.status();
     let content_type = response
@@ -119,20 +123,34 @@ pub async fn chat_completions(
         .unwrap_or("application/json")
         .to_string();
     let upstream_body = response.bytes().await.map_err(|_| {
-        api_error(StatusCode::BAD_GATEWAY, "LLM provider returned an unreadable body")
+        api_error(
+            StatusCode::BAD_GATEWAY,
+            "LLM provider returned an unreadable body",
+        )
     })?;
     if upstream_body.len() > MAX_RESPONSE_BYTES {
-        return Err(api_error(StatusCode::BAD_GATEWAY, "LLM provider response too large"));
+        return Err(api_error(
+            StatusCode::BAD_GATEWAY,
+            "LLM provider response too large",
+        ));
     }
     if upstream_status.is_client_error() || upstream_status.is_server_error() {
-        let preview: String = String::from_utf8_lossy(&upstream_body[..upstream_body.len().min(400)])
-            .into_owned();
-        tracing::warn!(status = upstream_status.as_u16(), "LLM upstream error: {preview}");
+        let preview: String =
+            String::from_utf8_lossy(&upstream_body[..upstream_body.len().min(400)]).into_owned();
+        tracing::warn!(
+            status = upstream_status.as_u16(),
+            "LLM upstream error: {preview}"
+        );
     }
 
     Ok(Response::builder()
         .status(upstream_status)
         .header(header::CONTENT_TYPE, content_type)
         .body(axum::body::Body::from(upstream_body))
-        .map_err(|_| api_error(StatusCode::INTERNAL_SERVER_ERROR, "response construction failed"))?)
+        .map_err(|_| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "response construction failed",
+            )
+        })?)
 }

@@ -942,13 +942,12 @@ fn filters_are_nip43_membership_only(filters: &[Filter]) -> bool {
 /// without ids/authors. Used by the anonymous P2P-signaling REQ bypass.
 fn filters_are_ephemeral_only(filters: &[Filter]) -> bool {
     !filters.is_empty()
-        && filters
-            .iter()
-            .all(|filter| match filter.kinds.as_ref() {
-                Some(kinds) => !kinds.is_empty()
-                    && kinds.iter().all(|kind| is_ephemeral(kind.as_u16() as u32)),
-                None => false,
-            })
+        && filters.iter().all(|filter| match filter.kinds.as_ref() {
+            Some(kinds) => {
+                !kinds.is_empty() && kinds.iter().all(|kind| is_ephemeral(kind.as_u16() as u32))
+            }
+            None => false,
+        })
         && filters
             .iter()
             .all(|filter| filter.ids.is_none() && filter.authors.is_none())

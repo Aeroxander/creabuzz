@@ -144,9 +144,7 @@ impl Db {
     /// counts. Used by the unauthenticated `GET /communities` discovery
     /// endpoint; never exposes signing keys, tokens, or operator state.
     #[datastore_span(name = "list_directory_communities", system = "postgresql")]
-    pub async fn list_directory_communities(
-        &self,
-    ) -> Result<Vec<DirectoryCommunityRecord>> {
+    pub async fn list_directory_communities(&self) -> Result<Vec<DirectoryCommunityRecord>> {
         let mut connection = crate::observability::acquire_writer(
             &self.pool,
             crate::observability::WriterOperation::TenantResolution,

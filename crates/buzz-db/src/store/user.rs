@@ -477,7 +477,6 @@ impl Db {
         Ok(())
     }
 
-
     /// Ensure a principal while materializing an authenticated NIP-OA
     /// authorization relationship.
     #[datastore_span(name = "ensure_user_for_authorization", system = "postgresql")]
