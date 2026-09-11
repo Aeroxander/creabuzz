@@ -103,3 +103,61 @@ export async function buildSiweLogin(
   const signature = await deps.personalSign(message, deps.address);
   return { message, signature, proof, address: deps.address, pubkey: npub };
 }
+
+/** A wallet↔npub binding recorded by a successful SIWE registration. */
+export interface WalletBinding {
+  /** Lowercase EVM address that signed the SIWE message. */
+  address: string;
+  /** npub (hex) the address is bound to. */
+  pubkey: string;
+  boundAt: number;
+}
+
+/**
+ * Parse a stored binding, or null when it is absent or malformed.
+ *
+ * Storage is user-writable and survives upgrades, so a bad value must read as
+ * "no binding" rather than throw while rendering the profile menu.
+ */
+export function parseWalletBinding(raw: string | null): WalletBinding | null {
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const { address, pubkey, boundAt } = value as Record<string, unknown>;
+  if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/.test(address)) {
+    return null;
+  }
+  if (typeof pubkey !== "string" || !/^[0-9a-f]{64}$/.test(pubkey)) return null;
+  return {
+    address,
+    pubkey,
+    boundAt: typeof boundAt === "number" ? boundAt : 0,
+  };
+}
+
+/**
+ * Nostr proof template for `POST /auth/siwe/revoke`.
+ *
+ * The relay checks the proof's `u` tag, its freshness, and that its content is
+ * the EVM address currently bound to the signing npub — the same shape as
+ * registration with the revoke endpoint named.
+ */
+export function revokeProofTemplate(address: string): {
+  kind: number;
+  tags: string[][];
+  content: string;
+} {
+  return {
+    kind: 27235,
+    tags: [
+      ["u", "/auth/siwe/revoke"],
+      ["method", "POST"],
+    ],
+    content: address,
+  };
+}

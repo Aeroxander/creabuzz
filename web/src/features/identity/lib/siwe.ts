@@ -17,8 +17,56 @@ import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import {
   buildSiweLogin,
   buildSiweMessage,
+  parseWalletBinding,
+  revokeProofTemplate,
   type SiweLoginChallenge,
+  type WalletBinding,
 } from "./siwe-login";
+
+/** Where the binding recorded by a successful registration is kept. */
+const BINDING_KEY = "buzz.siwe.binding";
+
+/** The wallet bound to this browser's npub, or null when none is recorded. */
+export function readWalletBinding(): WalletBinding | null {
+  try {
+    return parseWalletBinding(window.localStorage.getItem(BINDING_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function writeWalletBinding(binding: WalletBinding | null): void {
+  try {
+    if (binding === null) window.localStorage.removeItem(BINDING_KEY);
+    else window.localStorage.setItem(BINDING_KEY, JSON.stringify(binding));
+  } catch {
+    // Storage unavailable: the binding stays relay-side only.
+  }
+}
+
+/**
+ * Soft-revoke the recorded wallet binding.
+ *
+ * The relay requires a fresh Nostr proof signed by the bound npub whose content
+ * is the bound address, so the call fails loudly rather than revoking a
+ * different binding. On success the local record is cleared.
+ */
+export async function revokeWalletBinding(): Promise<void> {
+  const binding = readWalletBinding();
+  if (!binding)
+    throw new Error("No wallet binding is recorded in this browser");
+  const proof = await signAsUser(revokeProofTemplate(binding.address));
+  const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/revoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nostr_proof: proof }),
+  });
+  const json = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? `revoke failed (${res.status})`);
+  }
+  writeWalletBinding(null);
+}
 
 interface EthereumProvider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -105,6 +153,12 @@ export async function signInWithWallet(): Promise<{
   if (!res.ok) {
     throw new Error(json.error ?? `register failed (${res.status})`);
   }
+  // Remember the binding so the profile menu can show it and offer to unbind.
+  writeWalletBinding({
+    address: login.address,
+    pubkey: login.pubkey,
+    boundAt: Date.now(),
+  });
   return { address: login.address, pubkey: login.pubkey };
 }
 

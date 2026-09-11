@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSiweLogin, buildSiweMessage, siweDomain } from "./siwe-login.ts";
+import {
+  buildSiweLogin,
+  buildSiweMessage,
+  parseWalletBinding,
+  revokeProofTemplate,
+  siweDomain,
+} from "./siwe-login.ts";
 
 const STORED_IDENTITY_PUBKEY =
   "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111";
@@ -111,4 +117,50 @@ test("buildSiweMessage keeps the EIP-4361 layout", () => {
   assert.ok(lines[7].startsWith("Issued At: "));
   assert.equal(lines[8], "Resources:");
   assert.equal(lines[9], `- nostr:${PASSKEY_SIGNER_PUBKEY}`);
+});
+
+test("a stored wallet binding round-trips", () => {
+  const binding = {
+    address: `0x${"ab".repeat(20)}`,
+    pubkey: "cd".repeat(32),
+    boundAt: 1700000000000,
+  };
+  assert.deepEqual(parseWalletBinding(JSON.stringify(binding)), binding);
+});
+
+test("a malformed or hostile stored binding reads as none", () => {
+  // Storage is user-writable; rendering must not throw on any of these.
+  for (const raw of [
+    null,
+    "",
+    "not json",
+    "[]",
+    JSON.stringify({ address: "0x123", pubkey: "cd".repeat(32) }),
+    JSON.stringify({ address: `0x${"ab".repeat(20)}` }),
+    JSON.stringify({ address: `0x${"ab".repeat(20)}`, pubkey: "nope" }),
+    JSON.stringify({
+      address: `0x${"AB".repeat(20)}`,
+      pubkey: "cd".repeat(32),
+    }),
+  ]) {
+    assert.equal(parseWalletBinding(raw), null, `expected null for ${raw}`);
+  }
+});
+
+test("a binding missing its timestamp still parses", () => {
+  const parsed = parseWalletBinding(
+    JSON.stringify({
+      address: `0x${"ab".repeat(20)}`,
+      pubkey: "cd".repeat(32),
+    }),
+  );
+  assert.equal(parsed?.boundAt, 0);
+});
+
+test("the revoke proof names the revoke endpoint and the bound address", () => {
+  const address = `0x${"ab".repeat(20)}`;
+  const template = revokeProofTemplate(address);
+  assert.equal(template.kind, 27235);
+  assert.deepEqual(template.tags[0], ["u", "/auth/siwe/revoke"]);
+  assert.equal(template.content, address);
 });

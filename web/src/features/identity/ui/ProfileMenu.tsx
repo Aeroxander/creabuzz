@@ -26,6 +26,8 @@ import {
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
+import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
 import {
   setupPasskey,
@@ -38,7 +40,7 @@ import {
   removePasskeyIdentity,
   registerPasskeySigner,
 } from "../lib/passkey-identity";
-import { Fingerprint } from "lucide-react";
+import { Fingerprint, Wallet } from "lucide-react";
 
 const BACKED_UP_KEY = "buzz.identity.backedUp";
 
@@ -77,6 +79,10 @@ export function ProfileMenu() {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [walletBinding, setWalletBinding] = useState(() => readWalletBinding());
+  const [confirmUnbind, setConfirmUnbind] = useState(false);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
   const pubkey = isPasskeyActive()
     ? (activePasskeyPubkey() ?? existingUserPubkey() ?? "")
@@ -342,8 +348,54 @@ export function ProfileMenu() {
               Waiting for your passkey…
             </p>
           ) : null}
+
+          {walletBinding ? (
+            <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
+              <div
+                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-[11px] text-black/50 dark:bg-white/5 dark:text-white/50"
+                data-testid="wallet-binding"
+              >
+                <Wallet className="h-3 w-3" />
+                <span className="truncate">
+                  Wallet {walletBinding.address.slice(0, 6)}…
+                  {walletBinding.address.slice(-4)} bound
+                </span>
+              </div>
+              <MenuItem
+                icon={<Wallet className="h-3.5 w-3.5" />}
+                label={walletBusy ? "Unbinding…" : "Unbind wallet"}
+                onClick={() => setConfirmUnbind(true)}
+              />
+            </div>
+          ) : null}
+          {walletError ? (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+              {walletError}
+            </p>
+          ) : null}
         </div>
       ) : null}
+
+      <ConfirmDialog
+        confirmLabel="Unbind wallet"
+        description="The wallet stops being able to act for this identity, and its relay membership is removed. The binding is kept for audit and cannot be re-registered by this key."
+        onCancel={() => setConfirmUnbind(false)}
+        onConfirm={() => {
+          setConfirmUnbind(false);
+          setWalletBusy(true);
+          setWalletError(null);
+          void revokeWalletBinding()
+            .then(() => setWalletBinding(null))
+            .catch((error: unknown) =>
+              setWalletError(
+                error instanceof Error ? error.message : String(error),
+              ),
+            )
+            .finally(() => setWalletBusy(false));
+        }}
+        open={confirmUnbind}
+        title="Unbind this wallet?"
+      />
 
       {showBackup ? (
         <div

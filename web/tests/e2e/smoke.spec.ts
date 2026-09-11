@@ -813,3 +813,51 @@ test("the search shortcut hint is visible on desktop and hidden on a phone", asy
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("⌘K")).toBeHidden();
 });
+
+test("a bound wallet can be unbound, and the proof names the revoke endpoint", async ({
+  page,
+}) => {
+  const address = `0x${"ab".repeat(20)}`;
+  await page.addInitScript(
+    ([addr]) => {
+      window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
+      window.localStorage.setItem(
+        "buzz.siwe.binding",
+        JSON.stringify({ address: addr, pubkey: "b".repeat(64), boundAt: 1 }),
+      );
+    },
+    [address],
+  );
+  const bodies: unknown[] = [];
+  await page.route("**/auth/siwe/revoke", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true }),
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+
+  await page.getByTestId("user-chip").click();
+  await expect(page.getByTestId("wallet-binding")).toContainText("0xabab…abab");
+
+  await page.getByRole("button", { name: "Unbind wallet" }).click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-accept").click();
+
+  await expect(page.getByTestId("wallet-binding")).toBeHidden();
+  expect(bodies).toHaveLength(1);
+  const proof = (
+    bodies[0] as {
+      nostr_proof: { kind: number; content: string; tags: string[][] };
+    }
+  ).nostr_proof;
+  expect(proof.kind).toBe(27235);
+  expect(proof.content).toBe(address);
+  expect(proof.tags).toContainEqual(["u", "/auth/siwe/revoke"]);
+});
