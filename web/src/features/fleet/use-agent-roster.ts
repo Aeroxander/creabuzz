@@ -80,9 +80,13 @@ function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
 export function useAgentRoster(): {
   agents: AgentCapabilities[];
   loading: boolean;
+  /** Set when the relay read failed; the view shows a retry, not "no agents". */
+  loadError: unknown;
 } {
   const [agents, setAgents] = useState<Record<string, AgentCapabilities>>({});
   const [loading, setLoading] = useState(true);
+  /** Kept so the fleet view can report a failed read instead of "no agents". */
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   useEffect(() => {
     const wsUrl = relayWsUrl();
@@ -119,10 +123,15 @@ export function useAgentRoster(): {
           }
           return next;
         });
+        setLoadError(null);
         setLoading(false);
       })
-      .catch(() => {
-        if (!disposed) setLoading(false);
+      .catch((error: unknown) => {
+        console.warn("[fleet] roster load failed", error);
+        if (!disposed) {
+          setLoadError(error);
+          setLoading(false);
+        }
       });
 
     const unsubscribe = subscribeChannel(
@@ -161,5 +170,5 @@ export function useAgentRoster(): {
     [agents],
   );
 
-  return { agents: sorted, loading };
+  return { agents: sorted, loading, loadError };
 }

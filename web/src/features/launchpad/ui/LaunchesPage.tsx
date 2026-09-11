@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import {
   useCreateLaunch,
   useLaunches,
@@ -39,7 +40,7 @@ function followKey(author: string, id: string): string {
 }
 
 export function LaunchesPage() {
-  const { data, isLoading, error } = useLaunches();
+  const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
   const [filter, setFilter] = useState<Filter>("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -127,9 +128,13 @@ export function LaunchesPage() {
           Loading launches…
         </p>
       ) : error ? (
-        <p className="py-8 text-center text-sm">
-          Couldn&apos;t load launches. Check the relay connection.
-        </p>
+        <QueryError
+          description="The relay did not answer the launch query, so nothing can be listed."
+          message={errorMessage(error)}
+          onRetry={() => void refetch()}
+          testId="launchpad-load-error"
+          title="Couldn't load the launchpad"
+        />
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-black/15 px-5 py-12 text-center dark:border-white/15">
           <p className="text-sm text-black/60 dark:text-white/60">

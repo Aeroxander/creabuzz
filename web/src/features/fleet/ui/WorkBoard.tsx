@@ -28,6 +28,7 @@ import type { Channel } from "@/features/channels/use-channels";
 import { userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
@@ -115,6 +116,9 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   const {
     items,
     loading,
+    loadError,
+    degraded,
+    reload,
     createTask,
     requestApproval,
     approve,
@@ -260,6 +264,21 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
     </button>
   );
 
+  if (loadError && items.length === 0) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
+        <PageHeader title="Work" />
+        <QueryError
+          description="The relay did not answer the task and issue query, so this board has nothing to show."
+          message={errorMessage(loadError)}
+          onRetry={reload}
+          testId="work-load-error"
+          title="Couldn't load the work board"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 p-4">
       <PageHeader
@@ -272,6 +291,16 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
           </span>
         }
       />
+
+      {degraded ? (
+        <p
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300"
+          data-testid="work-degraded"
+        >
+          Status and approval history could not be loaded, so some items show
+          their default column. ({degraded})
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">
         {(["all", "mine", "open", "done"] as const).map((f) => (

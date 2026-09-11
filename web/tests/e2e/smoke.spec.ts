@@ -535,3 +535,171 @@ test("an unknown address shows the not-found view", async ({ page }) => {
     page.getByRole("link", { name: "All communities" }),
   ).toBeVisible();
 });
+
+/** Relay mock where only the channel query succeeds; everything else is refused. */
+async function mockPartialRelay(page: import("@playwright/test").Page) {
+  await mockCommunityDirectory(page);
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      if ((filter.kinds ?? []).includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+        ws.send(JSON.stringify(["EOSE", subId]));
+        return;
+      }
+      // What a rejected filter looks like on the wire.
+      ws.send(
+        JSON.stringify(["CLOSED", subId, "blocked: relay does not serve that"]),
+      );
+    });
+  });
+}
+
+test("the work board reports a refused query instead of an empty board", async ({
+  page,
+}) => {
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("work-toggle").click();
+  const panel = page.getByTestId("work-load-error");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("blocked: relay does not serve that");
+  await expect(page.getByTestId("work-load-error-retry")).toBeVisible();
+  await expect(page.getByText("0 items")).toBeHidden();
+});
+
+test("the fleet view reports a refused roster query", async ({ page }) => {
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("fleet-toggle").click();
+  await expect(page.getByTestId("fleet-load-error")).toBeVisible();
+});
+
+test("the launchpad directory reports a refused query and offers a retry", async ({
+  page,
+}) => {
+  await mockPartialRelay(page);
+  await page.goto("/launchpad");
+  const panel = page.getByTestId("launchpad-load-error");
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("launchpad-load-error-retry")).toBeVisible();
+  await expect(page.getByText("No launches yet")).toBeHidden();
+});
+
+test("the work board degrades to a notice when only secondary reads fail", async ({
+  page,
+}) => {
+  // Tasks and issues load; status history does not. The board must still show
+  // the items and say what is missing, rather than blanking or hiding it.
+  await mockCommunityDirectory(page);
+  await page.route("**/query", async (route) => {
+    await route.fulfill({ status: 500, body: "no status index" });
+  });
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", "0f0f0f0f-1111-2222-3333-444444444444"],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      } else if (kinds.includes(44011)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "task-1",
+              pubkey: "b".repeat(64),
+              created_at: 200,
+              kind: 44011,
+              tags: [
+                ["d", "task-1"],
+                ["title", "Ship the release"],
+                ["status", "open"],
+              ],
+              content: JSON.stringify({ title: "Ship the release" }),
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      // Status and approval filters are refused.
+      if (
+        kinds.includes(1630) ||
+        kinds.includes(1631) ||
+        kinds.includes(1632) ||
+        kinds.includes(46030)
+      ) {
+        ws.send(JSON.stringify(["CLOSED", subId, "blocked: no status index"]));
+        return;
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("work-toggle").click();
+
+  await expect(page.getByTestId("work-degraded")).toBeVisible();
+  await expect(page.getByTestId("work-load-error")).toBeHidden();
+  await expect(page.getByText("Ship the release")).toBeVisible();
+});

@@ -9,6 +9,7 @@ import { Button } from "@/shared/ui/button";
 import { useCommunities } from "../use-communities";
 import { useChannels } from "@/features/channels/use-channels";
 import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
 /**
@@ -29,21 +30,15 @@ function CommunityLoadState({
 }) {
   return (
     <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
-      <div
-        className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 text-center dark:border-white/10 dark:bg-white/5"
-        data-testid="community-load-error"
-      >
-        <h1 className="text-lg font-semibold text-black dark:text-white">
-          Couldn&apos;t load this community
-        </h1>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          {host} did not answer the channel query.
-        </p>
-        <p className="mt-2 break-words text-xs text-black/45 dark:text-white/45">
-          {message}
-        </p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <Button onClick={onRetry}>Try again</Button>
+      <div className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 dark:border-white/10 dark:bg-white/5">
+        <QueryError
+          description={`${host} did not answer the channel query.`}
+          message={message}
+          onRetry={onRetry}
+          testId="community-load-error"
+          title="Couldn't load this community"
+        />
+        <div className="flex justify-center">
           <Button asChild variant="outline">
             <Link to="/">All communities</Link>
           </Button>
@@ -91,11 +86,7 @@ export function CommunityHomePage() {
     return (
       <CommunityLoadState
         host={host}
-        message={
-          channels.error instanceof Error
-            ? channels.error.message
-            : String(channels.error)
-        }
+        message={errorMessage(channels.error)}
         onRetry={() => void channels.refetch()}
       />
     );

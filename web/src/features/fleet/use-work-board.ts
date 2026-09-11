@@ -14,6 +14,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { errorMessage } from "@/shared/ui/query-error";
+
 import {
   queryEvents,
   type NostrFilter,
@@ -140,6 +142,11 @@ export function useWorkBoard(channels?: { id: string }[]): {
   setStatus: (task: FleetTask, status: string) => Promise<void>;
   publishIssueStatus: (issue: WorkItem, target: string) => Promise<void>;
   setAssignee: (task: FleetTask, assignee: string | null) => Promise<void>;
+  /** Set when the relay read failed; the board shows a retry instead of "0 items". */
+  loadError: unknown;
+  /** Reason a secondary read failed, or null when everything loaded. */
+  degraded: string | null;
+  reload: () => void;
   updateTask: (
     task: FleetTask,
     patch: {
@@ -158,8 +165,14 @@ export function useWorkBoard(channels?: { id: string }[]): {
   const [tasks, setTasks] = useState<Record<string, WorkItem>>({});
   const [issues, setIssues] = useState<Record<string, WorkItem>>({});
   const [loading, setLoading] = useState(true);
+  /** Kept so the board can say a load failed instead of rendering "0 items". */
+  const [loadError, setLoadError] = useState<unknown>(null);
+  /** Secondary reads that failed: the board shows a note instead of hiding it. */
+  const [degraded, setDegraded] = useState<string | null>(null);
   const latestStatus = useRef(new Map<string, NostrEvent>());
   const loadStarted = useRef(false);
+  /** Bumped by `reload` to re-run the loader effect. */
+  const [reloadToken, setReloadToken] = useState(0);
 
   // Track the newest status event per issue; recompute the issue's status.
   const upsertIssueStatus = useCallback((event: NostrEvent) => {
@@ -213,6 +226,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
     });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reloadToken` is a restart key — bumping it must re-run this effect even though the body reads only refs and setters.
   useEffect(() => {
     const wsUrl = relayWsUrl();
     let disposed = false;
@@ -284,18 +298,33 @@ export function useWorkBoard(channels?: { id: string }[]): {
     );
 
     // --- one-shot history: tasks, issues, status events, approvals ---
+    // A new effect run (including a `reload`) loads once from scratch.
+    loadStarted.current = false;
     const load = async () => {
       if (loadStarted.current) return;
       loadStarted.current = true;
+      if (!disposed) {
+        setLoading(true);
+        setLoadError(null);
+      }
+      // The board's own content must not be faked: a refused task or issue
+      // query fails the load so the view can offer a retry. Status and approval
+      // reads are secondary — losing them degrades detail, not the item list —
+      // so they are recorded and surfaced rather than silently dropped.
+      let degraded: string | null = null;
+      const optional = (error: unknown) => {
+        degraded ??= errorMessage(error);
+        return [];
+      };
       try {
         const taskEvents = await queryEvents(wsUrl, {
           kinds: [KIND_AGENT_TASK],
           limit: 200,
-        }).catch(() => []);
+        });
         const issueEvents = await queryEvents(wsUrl, {
           kinds: [KIND_GIT_ISSUE],
           limit: 200,
-        }).catch(() => []);
+        });
         const { queryEventsHttp } = await import("@/shared/lib/http-query");
         const statusEvents = await queryEventsHttp([
           {
@@ -307,12 +336,13 @@ export function useWorkBoard(channels?: { id: string }[]): {
             ],
             limit: 400,
           },
-        ]).catch(() => []);
+        ]).catch(optional);
         const approvalEvents = await queryEvents(wsUrl, {
           kinds: [46030, 46031],
           limit: 400,
-        }).catch(() => []);
+        }).catch(optional);
         if (disposed) return;
+        setDegraded(degraded);
         const approverByTask = new Map<string, string>();
         for (const approval of approvalEvents) {
           const target = approval.tags.find((t) => t[0] === "e")?.[1];
@@ -391,10 +421,14 @@ export function useWorkBoard(channels?: { id: string }[]): {
           };
         }
         setIssues((prev) => ({ ...prev, ...issuesNext }));
+        if (!disposed) setLoadError(null);
         setLoading(false);
       } catch (err) {
         console.error("[workboard] load failed", err);
-        if (!disposed) setLoading(false);
+        if (!disposed) {
+          setLoadError(err);
+          setLoading(false);
+        }
       }
     };
     void load();
@@ -404,7 +438,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       for (const cleanup of cleanups) cleanup();
       issueUnsub();
     };
-  }, [upsertTask, upsertIssueStatus, channelIds]);
+  }, [upsertTask, upsertIssueStatus, channelIds, reloadToken]);
 
   const createTask = useCallback(
     async (input: {
@@ -578,6 +612,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
   return {
     items,
     loading,
+    loadError,
+    degraded,
+    reload: () => setReloadToken((token) => token + 1),
     createTask,
     requestApproval,
     approve,

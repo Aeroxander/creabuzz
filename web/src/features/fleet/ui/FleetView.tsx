@@ -28,6 +28,7 @@ import { useAgentTasks, type FleetTask } from "../use-agent-tasks";
 import { usageTotals, resetUsage } from "../agent-usage";
 
 import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import type { Channel } from "@/features/channels/use-channels";
 import { getBrowserAgent, type AgentLifecycleState } from "../browser-agent";
 import { getAgentPubkey } from "@/shared/lib/agent-identity";
@@ -188,7 +189,7 @@ function TaskCard({ task }: { task: FleetTask }) {
 }
 
 export function FleetView({ channels }: { channels: Channel[] }) {
-  const { agents, loading } = useAgentRoster();
+  const { agents, loading, loadError } = useAgentRoster();
   const { tasks, createTask } = useAgentTasks();
   const [taskTitle, setTaskTitle] = useState("");
   const [taskAssignee, setTaskAssignee] = useState("");
@@ -223,6 +224,20 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       setStarting(false);
     }
   };
+
+  if (loadError && agents.length === 0) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
+        <PageHeader title="Agents" />
+        <QueryError
+          description="The relay did not answer the agent roster query, so no agents can be listed."
+          message={errorMessage(loadError)}
+          testId="fleet-load-error"
+          title="Couldn't load agents"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-4 p-4">
