@@ -10,6 +10,7 @@ import {
   Save,
   Sparkles,
   Trash2,
+  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -47,7 +48,7 @@ export function WikiView() {
   const [publishedHere, setPublishedHere] = useState<Set<string>>(new Set());
 
   const published = pages.find((p) => p.slug === activeSlug) ?? null;
-  const { content, setContent, touched } = useLiveWikiDoc(
+  const { content, setContent, touched, peers } = useLiveWikiDoc(
     activeSlug,
     published?.content ?? "",
   );
@@ -286,6 +287,18 @@ export function WikiView() {
                     : "Preview"}
               </button>
             ))}
+            <span
+              className="flex items-center gap-1"
+              data-testid="wiki-editors"
+              title={
+                peers > 0
+                  ? `${peers} other ${peers === 1 ? "editor" : "editors"} connected.`
+                  : "Nobody else is connected. Live co-editing needs the relay to accept P2P signalling; without it, edits reach others when a page is saved."
+              }
+            >
+              <Users className="h-3 w-3" aria-hidden="true" />
+              {peers === 0 ? "Editing alone" : `${peers + 1} editing`}
+            </span>
             <span
               className="flex items-center gap-1"
               data-testid="wiki-save-state"

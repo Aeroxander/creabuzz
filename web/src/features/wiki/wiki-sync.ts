@@ -29,6 +29,7 @@ interface RoomHandle {
   action: WikiAction;
   raw: {
     onPeerJoin: ((id: string) => void) | null;
+    onPeerLeave: ((id: string) => void) | null;
     getPeers: () => Record<string, unknown>;
   };
   destroy: () => void;
@@ -81,11 +82,22 @@ export function useLiveWikiDoc(
   content: string;
   setContent: (value: string) => void;
   touched: boolean;
+  /** Live editing peers connected through the P2P room (0 when alone). */
+  peers: number;
 } {
   const docRef = useRef<Y.Doc | null>(null);
   const textRef = useRef<Y.Text | null>(null);
   const [content, setContentState] = useState(initialContent);
   const [touched, setTouched] = useState(false);
+  /**
+   * Connected editing peers, excluding this tab.
+   *
+   * Peer-to-peer editing needs the relay to accept the trystero signalling
+   * events (`BUZZ_P2P_SIGNALING`), so "editing alone" is the honest state on a
+   * relay that has not enabled them — and without surfacing it the feature
+   * looks broken rather than unavailable.
+   */
+  const [peers, setPeers] = useState(0);
   const seededRef = useRef(false);
   /**
    * The last value handed to the controlled editor. A local keystroke is a delta
@@ -145,10 +157,15 @@ export function useLiveWikiDoc(
     doc.on("update", onDocUpdate);
 
     if (room) {
+      const syncPeerCount = () =>
+        setPeers(Object.keys(room.raw.getPeers()).length);
       room.raw.onPeerJoin = () => {
         // A new peer only has its own doc; hand ours over so it converges.
         sendBuffer(Y.encodeStateAsUpdate(doc));
+        syncPeerCount();
       };
+      room.raw.onPeerLeave = syncPeerCount;
+      syncPeerCount();
       room.action.onMessage = (data) => {
         const bytes = toUint8(data);
         if (!bytes) return;
@@ -210,5 +227,5 @@ export function useLiveWikiDoc(
     [setRendered],
   );
 
-  return { content, setContent, touched };
+  return { content, setContent, touched, peers };
 }

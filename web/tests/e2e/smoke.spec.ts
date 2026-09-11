@@ -1381,3 +1381,22 @@ test.describe("keyboard and motion preferences", () => {
     expect(Number.parseFloat(durations?.transition ?? "1")).toBeLessThan(0.1);
   });
 });
+
+test("the wiki says when nobody else is connected", async ({ page }) => {
+  // Live co-editing needs the relay to accept P2P signalling. On a relay that
+  // does not, the honest state is "editing alone" with the reason in the title,
+  // rather than a silent no-op that looks like a broken feature.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill("solo-page");
+  await page.getByTestId("page-name-confirm").click();
+
+  const editors = page.getByTestId("wiki-editors");
+  await expect(editors).toBeVisible();
+  await expect(editors).toContainText("Editing alone");
+  await expect(editors).toHaveAttribute("title", /P2P signalling/);
+});
