@@ -1600,3 +1600,88 @@ test("a refused task query is reported on the agents view", async ({
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("blocked: no task index");
 });
+
+test("a launch can be bound to a discussion channel", async ({ page }) => {
+  // The wizard always published an empty `buzz-channel` list, so the record's
+  // community link could never be set from the web client.
+  const published: Array<{ kind: number; tags: string[][] }> = [];
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ communities: [] }),
+    });
+  });
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT") {
+        published.push(parsed[1]);
+        ws.send(JSON.stringify(["OK", parsed[1].id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      if ((filter.kinds ?? []).includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/launchpad");
+  await page
+    .getByRole("button", { name: /New launch/ })
+    .first()
+    .click();
+  await page.getByLabel("Launch id").fill("channel-bound");
+  await page.getByLabel("Name", { exact: true }).fill("Channel Bound DAO");
+
+  await page.getByTestId("launch-channel-general").click();
+  await expect(page.getByTestId("launch-channel-general")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const publish = page.getByRole("button", { name: "Publish launch" });
+  // The token name and symbol derive from the launch name, so publishing does
+  // not require filling the token section by hand.
+  await expect(publish).toBeEnabled();
+  await publish.scrollIntoViewIfNeeded();
+  await publish.click();
+
+  await expect
+    .poll(() => published.filter((e) => e.kind === 37001).length)
+    .toBeGreaterThan(0);
+  const record = published.find((e) => e.kind === 37001);
+  expect(record?.tags).toContainEqual(["buzz-channel", CHANNEL_ID]);
+});

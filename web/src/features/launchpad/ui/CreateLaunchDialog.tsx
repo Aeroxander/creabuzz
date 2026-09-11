@@ -11,7 +11,11 @@ import {
   suggestSymbol,
 } from "../models";
 import { getRpcEndpoint, isContractDeployed } from "../chain";
+import { useChannels } from "@/features/channels/use-channels";
 import { Modal } from "./Modal";
+
+/** The relay caps `buzz-channel` tags on a launch record. */
+const MAX_BOUND_CHANNELS = 8;
 
 function Field({
   id,
@@ -74,6 +78,17 @@ export function CreateLaunchDialog({
   const [admission, setAdmission] = useState<"curated" | "community">(
     initial?.admission ?? LAUNCH_DEFAULTS.admission,
   );
+  /**
+   * Discussion channels bound to the launch (`buzz-channel` tags).
+   *
+   * The record's community link is what ties a launch to the rooms where it is
+   * discussed; the wizard used to always publish an empty list, so a launch
+   * could never be bound to a channel from the web client.
+   */
+  const [boundChannels, setBoundChannels] = useState<string[]>(
+    initial?.channels ?? [],
+  );
+  const { data: channelList } = useChannels();
   const [tokenMode, setTokenMode] = useState<TokenMode>(
     initial?.token ? "import" : "mint",
   );
@@ -92,6 +107,7 @@ export function CreateLaunchDialog({
     setTickSpacing(LAUNCH_DEFAULTS.tickSpacing);
     setRequiredRaised(LAUNCH_DEFAULTS.requiredRaised);
     setAdmission(LAUNCH_DEFAULTS.admission);
+    setBoundChannels(initial?.channels ?? []);
     if (name.trim() !== "") {
       setTokenName(`${name.trim()} Token`);
       setSymbol((s) => s || suggestSymbol(name));
@@ -151,7 +167,7 @@ export function CreateLaunchDialog({
       token: tokenMode === "import" ? importAddress.trim() : "",
       treasury: treasury.trim(),
       admission,
-      channels: initial?.channels ?? [],
+      channels: boundChannels,
       tokenPlan:
         tokenMode === "mint"
           ? {
@@ -185,7 +201,28 @@ export function CreateLaunchDialog({
         <Field id="launch-name" label="Name">
           <Input
             id="launch-name"
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              // Keep the suggested token defaults in step with the name while
+              // the founder has not chosen their own. The fields used to stay
+              // empty — with the suggestion visible only as a placeholder — so
+              // "Publish launch" stayed disabled with no visible reason.
+              const previousTokenName = `${name} Token`;
+              const previousSymbol = suggestSymbol(name);
+              setTokenName((prev) =>
+                prev === "" || prev === previousTokenName
+                  ? next.trim() === ""
+                    ? ""
+                    : `${next.trim()} Token`
+                  : prev,
+              );
+              setSymbol((prev) =>
+                prev === "" || prev === previousSymbol
+                  ? suggestSymbol(next)
+                  : prev,
+              );
+              setName(next);
+            }}
             placeholder="Nebula DAO"
             value={name}
           />
@@ -414,6 +451,48 @@ export function CreateLaunchDialog({
             value={treasury}
           />
         </Field>
+        <fieldset>
+          <legend className="text-sm font-medium text-black dark:text-white">
+            Discussion channels
+          </legend>
+          <div
+            className="mt-1 flex flex-wrap gap-1.5"
+            data-testid="launch-channels"
+          >
+            {(channelList ?? []).map((channel) => {
+              const bound = boundChannels.includes(channel.id);
+              const atCap = boundChannels.length >= MAX_BOUND_CHANNELS;
+              return (
+                <button
+                  aria-pressed={bound}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium disabled:opacity-40 ${
+                    bound
+                      ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                      : "border-black/15 dark:border-white/15"
+                  }`}
+                  data-testid={`launch-channel-${channel.name}`}
+                  disabled={!bound && atCap}
+                  key={channel.id}
+                  onClick={() =>
+                    setBoundChannels((prev) =>
+                      prev.includes(channel.id)
+                        ? prev.filter((id) => id !== channel.id)
+                        : [...prev, channel.id],
+                    )
+                  }
+                  type="button"
+                >
+                  #{channel.name}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            {channelList && channelList.length > 0
+              ? `Up to ${MAX_BOUND_CHANNELS}. The launch is listed in the rooms where it is discussed.`
+              : "No channels in this community yet."}
+          </p>
+        </fieldset>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
       </div>
       <div className="mt-4 flex justify-end gap-2">
