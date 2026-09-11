@@ -253,8 +253,17 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
         </div>
         {progress.data?.source === "preview" ? (
           <p className="mt-2 text-xs text-black/50 dark:text-white/50">
-            Preview fixture — link an auction contract and set a chain RPC for
-            live values.
+            Preview fixture — development builds only, never live figures.
+          </p>
+        ) : null}
+        {progress.data?.source === "unavailable" ? (
+          <p
+            className="mt-2 text-xs text-black/50 dark:text-white/50"
+            data-testid="launch-progress-unavailable"
+          >
+            {progress.data.reason === "no auction contract linked"
+              ? "No auction contract is linked to this launch yet, so there is nothing to read from the chain."
+              : "The chain could not be read, so no figures are shown. Set a reachable RPC endpoint to see live values."}
           </p>
         ) : null}
       </Card>

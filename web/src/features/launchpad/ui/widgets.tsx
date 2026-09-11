@@ -36,23 +36,31 @@ export function useAuctionProgress(record: LaunchRecord | undefined) {
 
 export function ProgressBar({ record }: { record: LaunchRecord }) {
   const { data } = useAuctionProgress(record);
-  const pct = data ? progressPercent(data.raised, data.goal) : 0;
+  const measurable = data !== undefined && data.source !== "unavailable";
+  const pct = measurable ? progressPercent(data.raised, data.goal) : 0;
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-semibold tabular-nums">
-          {data ? `${pct.toFixed(1)}%` : "—"}
+          {measurable ? `${pct.toFixed(1)}%` : "—"}
         </span>
         {data ? (
           <span
             className="text-xs text-black/50 dark:text-white/50"
+            data-testid="launch-progress-source"
             title={
               data.source === "rpc"
                 ? "Live chain values."
-                : "Preview fixture — set a chain RPC for live values."
+                : data.source === "preview"
+                  ? "Preview fixture — development builds only."
+                  : `No chain data: ${data.reason ?? "unavailable"}.`
             }
           >
-            {data.source === "rpc" ? "Live" : "Preview data"}
+            {data.source === "rpc"
+              ? "Live"
+              : data.source === "preview"
+                ? "Preview data"
+                : "No chain data"}
           </span>
         ) : null}
       </div>
@@ -66,7 +74,9 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
       >
         <div
           className="h-full rounded-full bg-black dark:bg-white"
-          style={{ width: `${Math.min(100, Math.max(0, data ? pct : 8))}%` }}
+          style={{
+            width: `${Math.min(100, Math.max(0, measurable ? pct : 0))}%`,
+          }}
         />
       </div>
     </div>

@@ -75,3 +75,20 @@ test("detail shows overview and updates", async ({ page }) => {
   await page.getByRole("tab", { name: /Updates/ }).click();
   await expect(page.getByText("We shipped.")).toBeVisible();
 });
+
+test("a production build shows no fabricated funding figures", async ({
+  page,
+}) => {
+  // The preview fixture is development-only. This build (and CI) is a
+  // production build, so an unlinked or unreachable auction must report "no
+  // chain data" rather than a plausible raise percentage.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await expect(page.getByTestId("launch-progress-source")).toHaveText(
+    "No chain data",
+  );
+  await expect(page.getByTestId("launch-progress-unavailable")).toContainText(
+    "No auction contract is linked",
+  );
+  await expect(page.getByText("Preview data")).toBeHidden();
+});

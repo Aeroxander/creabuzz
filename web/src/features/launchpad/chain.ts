@@ -16,7 +16,25 @@ export interface AuctionProgress {
   graduated: boolean;
   ended: boolean;
   bidCount: number;
-  source: "preview" | "rpc";
+  /**
+   * `rpc` — read from the chain; `preview` — deterministic fixture, development
+   * builds only; `unavailable` — the chain could not be read, so no figures are
+   * reported at all.
+   */
+  source: "preview" | "rpc" | "unavailable";
+  /** Why the chain read failed, when `source` is `unavailable`. */
+  reason?: string;
+}
+
+/**
+ * Whether this build may show the deterministic preview fixture.
+ *
+ * Optional chaining keeps the module importable outside Vite (unit tests), and
+ * a production build never fabricates funding figures a user could mistake for
+ * real money.
+ */
+export function isDevBuild(): boolean {
+  return Boolean(import.meta.env?.DEV);
 }
 
 export function getRpcEndpoint(): string {
@@ -66,10 +84,26 @@ export async function previewProgress(
   };
 }
 
-function decodeU256(hex: string): bigint {
+/** Decode a 32-byte ABI word (`eth_call` return data). */
+export function decodeU256(hex: string): bigint {
   const body = hex.startsWith("0x") ? hex.slice(2) : hex;
   if (body.length !== 64 || !/^[0-9a-fA-F]+$/.test(body)) {
     throw new Error("expected 32-byte return");
+  }
+  return BigInt(`0x${body}`);
+}
+
+/**
+ * Decode a JSON-RPC quantity.
+ *
+ * Quantities (`eth_blockNumber`, log fields) are minimal hex — `0x1` is one
+ * byte — unlike `eth_call` return data, which is always a 32-byte word. Reading
+ * a block number with the word decoder rejected every real node's answer.
+ */
+export function decodeQuantity(hex: string): bigint {
+  const body = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (body.length === 0 || !/^[0-9a-fA-F]+$/.test(body)) {
+    throw new Error("expected hex quantity");
   }
   return BigInt(`0x${body}`);
 }
@@ -123,7 +157,7 @@ export async function liveProgress(
   }
   const graduated = decodeU256(graduatedRaw) !== 0n;
   const raised = decodeU256(raisedRaw);
-  const block = decodeU256(blockRaw);
+  const block = decodeQuantity(blockRaw);
   const claimBlock =
     record.claimBlock !== null ? BigInt(record.claimBlock) : null;
   let bidCount = 0;
@@ -162,18 +196,42 @@ export async function isContractDeployed(
   return typeof code === "string" && code !== "0x" && code.length > 2;
 }
 
-/** Live first when an auction is linked, preview otherwise. */
+/** No figures: the chain could not be read, and guessing money is not an option. */
+export function unavailableProgress(reason: string): AuctionProgress {
+  return {
+    raised: 0n,
+    goal: null,
+    graduated: false,
+    ended: false,
+    bidCount: 0,
+    source: "unavailable",
+    reason,
+  };
+}
+
+/**
+ * Live chain values when an auction contract is linked.
+ *
+ * A failed read yields `unavailable` — never the fixture — in a production
+ * build. The fixture stays available to development builds and to tests that
+ * opt in with `allowPreview`.
+ */
 export async function auctionProgress(
   record: LaunchRecord,
+  { allowPreview = isDevBuild() }: { allowPreview?: boolean } = {},
 ): Promise<AuctionProgress> {
   if (record.auction) {
     try {
       return await liveProgress(record, getRpcEndpoint());
-    } catch {
-      // Unreachable RPC or undeployed contract — fall through to preview.
+    } catch (error) {
+      if (allowPreview) return previewProgress(record);
+      return unavailableProgress(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
-  return previewProgress(record);
+  if (allowPreview) return previewProgress(record);
+  return unavailableProgress("no auction contract linked");
 }
 
 export function progressPercent(raised: bigint, goal: bigint | null): number {
