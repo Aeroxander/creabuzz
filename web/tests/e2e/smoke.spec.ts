@@ -1116,3 +1116,32 @@ test("the tab agent's key can be rotated and its storage is disclosed", async ({
     )
     .toBeNull();
 });
+
+test("the wiki page dialog takes focus and gives it back", async ({ page }) => {
+  // A UX guard, not a proof of the focus trap: this Chromium already contains
+  // tab focus for `role="dialog" aria-modal="true"`, so the trap's wrap cannot
+  // be observed here (verified by removing it and re-running). The trap still
+  // makes focus-on-open and restore explicit rather than incidental on engines
+  // that do not contain focus (Safari, webviews).
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("wiki-toggle").click();
+
+  const opener = page.getByTestId("wiki-new-page");
+  await opener.click();
+  const input = page.getByTestId("page-name-input");
+  await expect(input).toBeFocused();
+
+  // Tab still keeps the user inside the dialog.
+  await page.keyboard.press("Tab");
+  const inside = await page.evaluate(() =>
+    Boolean(document.activeElement?.closest("form[role='dialog']")),
+  );
+  expect(inside).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(input).toBeHidden();
+  await expect(opener).toBeFocused();
+});

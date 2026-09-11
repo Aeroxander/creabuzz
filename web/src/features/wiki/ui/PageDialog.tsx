@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { useFocusTrap } from "@/shared/ui/use-focus-trap";
+
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { MODAL_BACKDROP_BLUR_CLASS } from "@/shared/ui/modalBackdrop";
@@ -42,9 +44,12 @@ export function PageDialog({
   const [value, setValue] = useState(initialValue);
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const containerRef = useRef<HTMLFormElement | null>(null);
+
+  // Focus starts in the name field and Tab stays inside the dialog.
+  useFocusTrap(containerRef, { initialFocus: inputRef });
 
   useEffect(() => {
-    inputRef.current?.focus();
     inputRef.current?.select();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -75,6 +80,7 @@ export function PageDialog({
       <form
         aria-label={title}
         className={`relative w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl ${MODAL_CONTENT_MOTION_CLASS}`}
+        ref={containerRef}
         onSubmit={(e) => {
           e.preventDefault();
           if (invalid) return;
