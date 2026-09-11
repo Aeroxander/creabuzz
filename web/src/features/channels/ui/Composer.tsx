@@ -206,7 +206,7 @@ export function Composer({
                 />
                 <span className="truncate">{candidateName(c)}</span>
                 {c.agent ? (
-                  <span className="ml-auto text-[10px] text-black/60 dark:text-white/60">
+                  <span className="ml-auto text-2xs text-black/60 dark:text-white/60">
                     agent
                   </span>
                 ) : null}

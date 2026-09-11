@@ -65,7 +65,7 @@ export function NotificationBell({
           Notifications
         </span>
         {unread > 0 ? (
-          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-black px-1 text-[10px] font-semibold text-white dark:bg-white dark:text-black">
+          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-black px-1 text-2xs font-semibold text-white dark:bg-white dark:text-black">
             {unread > 99 ? "99+" : unread}
           </span>
         ) : null}
@@ -97,7 +97,7 @@ export function NotificationBell({
                     <span className="block truncate text-2xs text-black/60 dark:text-white/60">
                       {item.preview}
                     </span>
-                    <span className="block text-[10px] text-black/60 dark:text-white/60">
+                    <span className="block text-2xs text-black/60 dark:text-white/60">
                       {new Date(item.at).toLocaleString()}
                     </span>
                   </span>

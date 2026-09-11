@@ -72,7 +72,7 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
             {agent.name}
           </p>
           {me ? (
-            <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
+            <span className="rounded bg-black/5 px-1.5 py-0.5 text-2xs font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
               this tab
             </span>
           ) : null}
@@ -130,23 +130,19 @@ function UsageCard() {
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.calls}
           </p>
-          <p className="text-[10px] text-black/60 dark:text-white/60">calls</p>
+          <p className="text-2xs text-black/60 dark:text-white/60">calls</p>
         </div>
         <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.prompt.toLocaleString()}
           </p>
-          <p className="text-[10px] text-black/60 dark:text-white/60">
-            prompt tk
-          </p>
+          <p className="text-2xs text-black/60 dark:text-white/60">prompt tk</p>
         </div>
         <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.completion.toLocaleString()}
           </p>
-          <p className="text-[10px] text-black/60 dark:text-white/60">
-            output tk
-          </p>
+          <p className="text-2xs text-black/60 dark:text-white/60">output tk</p>
         </div>
       </div>
       <button
@@ -179,7 +175,7 @@ function TaskCard({ task }: { task: FleetTask }) {
         <p className="truncate text-sm font-medium text-black dark:text-white">
           {task.title}
         </p>
-        <p className="mt-0.5 truncate font-mono text-[10px] text-black/60 dark:text-white/60">
+        <p className="mt-0.5 truncate font-mono text-2xs text-black/60 dark:text-white/60">
           {task.id}
         </p>
       </div>

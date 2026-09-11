@@ -52,25 +52,19 @@ function AgentOrgCard({
             {agent.name}
           </p>
           {isMine ? (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            <Badge variant="secondary" className="px-1.5 py-0 text-2xs">
               this tab
             </Badge>
           ) : null}
         </div>
-        <p className="truncate font-mono text-[10px] text-black/60 dark:text-white/60">
+        <p className="truncate font-mono text-2xs text-black/60 dark:text-white/60">
           {truncatePubkey(agent.pubkey)}
         </p>
         <div className="mt-1.5 flex items-center gap-1.5">
-          <Badge
-            variant="outline"
-            className="px-1.5 py-0 text-[10px] capitalize"
-          >
+          <Badge variant="outline" className="px-1.5 py-0 text-2xs capitalize">
             {agent.runtype}
           </Badge>
-          <Badge
-            variant="outline"
-            className="px-1.5 py-0 text-[10px] capitalize"
-          >
+          <Badge variant="outline" className="px-1.5 py-0 text-2xs capitalize">
             {agent.status}
           </Badge>
           {editing ? (

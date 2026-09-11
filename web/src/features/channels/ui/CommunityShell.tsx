@@ -168,7 +168,7 @@ export function CommunityShell({
               <p className="truncate text-sm font-semibold text-black dark:text-white">
                 Creaton
               </p>
-              <p className="truncate text-[10px] text-black/60 dark:text-white/60">
+              <p className="truncate text-2xs text-black/60 dark:text-white/60">
                 {host}
               </p>
             </div>

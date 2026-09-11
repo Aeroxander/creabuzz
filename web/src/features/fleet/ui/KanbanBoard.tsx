@@ -138,14 +138,14 @@ function Card({
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {item.type === "task" ? (
           <span
-            className={`flex items-center gap-0.5 text-[10px] ${PRIORITY_STYLE[item.priority] ?? PRIORITY_STYLE.normal}`}
+            className={`flex items-center gap-0.5 text-2xs ${PRIORITY_STYLE[item.priority] ?? PRIORITY_STYLE.normal}`}
             title={`Priority: ${item.priority}`}
           >
             <Flag className="h-3 w-3" />
           </span>
         ) : null}
         {item.due ? (
-          <Badge variant="outline" className="px-1 py-0 text-[10px]">
+          <Badge variant="outline" className="px-1 py-0 text-2xs">
             {new Date(item.due * 1000).toLocaleDateString(undefined, {
               month: "short",
               day: "numeric",
@@ -153,16 +153,12 @@ function Card({
           </Badge>
         ) : null}
         {item.labels.slice(0, 2).map((label) => (
-          <Badge
-            key={label}
-            variant="secondary"
-            className="px-1 py-0 text-[10px]"
-          >
+          <Badge key={label} variant="secondary" className="px-1 py-0 text-2xs">
             {label}
           </Badge>
         ))}
         {item.type === "task" && item.approver ? (
-          <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+          <Badge variant="secondary" className="px-1 py-0 text-2xs">
             ✓ approved
           </Badge>
         ) : null}
@@ -175,12 +171,12 @@ function Card({
                 size="xs"
                 className="h-4 w-4"
               />
-              <span className="max-w-[7rem] truncate text-[10px] text-black/60 dark:text-white/60">
+              <span className="max-w-[7rem] truncate text-2xs text-black/60 dark:text-white/60">
                 {displayAssignee}
               </span>
             </>
           ) : (
-            <span className="text-[10px] text-black/60 dark:text-white/60">
+            <span className="text-2xs text-black/60 dark:text-white/60">
               unassigned
             </span>
           )}
@@ -247,7 +243,7 @@ export function KanbanBoard({
               <span className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
                 {col.label}
               </span>
-              <span className="text-[10px] text-black/60 dark:text-white/60">
+              <span className="text-2xs text-black/60 dark:text-white/60">
                 {columnItems.length}
               </span>
               <button
@@ -279,7 +275,7 @@ export function KanbanBoard({
                     setQuickAdd(null);
                     setDraft("");
                   }}
-                  className="rounded-full bg-black px-2 py-1 text-[10px] font-medium text-white dark:bg-white dark:text-black"
+                  className="rounded-full bg-black px-2 py-1 text-2xs font-medium text-white dark:bg-white dark:text-black"
                 >
                   Add
                 </button>

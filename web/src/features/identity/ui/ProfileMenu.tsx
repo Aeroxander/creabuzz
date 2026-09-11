@@ -204,7 +204,7 @@ export function ProfileMenu() {
           <span className="block truncate text-sm font-medium text-black dark:text-white">
             {displayName}
           </span>
-          <span className="block truncate font-mono text-[10px] text-black/60 dark:text-white/60">
+          <span className="block truncate font-mono text-2xs text-black/60 dark:text-white/60">
             {truncatePubkey(pubkey)}
           </span>
         </span>
@@ -232,7 +232,7 @@ export function ProfileMenu() {
               <p className="truncate text-sm font-semibold text-black dark:text-white">
                 {displayName}
               </p>
-              <p className="truncate font-mono text-[10px] text-black/60 dark:text-white/60">
+              <p className="truncate font-mono text-2xs text-black/60 dark:text-white/60">
                 {truncatePubkey(pubkey)}
               </p>
             </div>

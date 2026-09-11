@@ -23,6 +23,11 @@ export default {
       fontSize: {
         "2xs": "0.6875rem",
         "3xs": "0.5rem",
+        // Conversation text (see AGENTS.md): the desktop app's named message
+        // token. The web client renders one size (0.9375rem = 15px, which is
+        // what the timeline used as an arbitrary literal); the desktop
+        // Smaller/Default/Larger contract has no reader preference here yet.
+        message: "0.9375rem",
       },
       colors: {
         background: "hsl(var(--background))",

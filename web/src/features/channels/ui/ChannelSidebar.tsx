@@ -50,7 +50,7 @@ export function ChannelSidebar({
               <span className="truncate">{channel.name}</span>
               {channel.visibility === "private" && (
                 <span
-                  className="ml-auto shrink-0 text-[10px] text-black/60 uppercase dark:text-white/60"
+                  className="ml-auto shrink-0 text-2xs text-black/60 uppercase dark:text-white/60"
                   title="Private channel — join requires a member with admin rights to add you"
                 >
                   private

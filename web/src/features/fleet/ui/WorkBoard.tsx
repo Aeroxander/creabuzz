@@ -82,14 +82,11 @@ function WorkItemRow({
         <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-black/60 dark:text-white/60">
           <Badge
             variant={statusVariant(item.status)}
-            className="px-1.5 py-0 text-[10px]"
+            className="px-1.5 py-0 text-2xs"
           >
             {STATUS_LABEL[item.status] ?? item.status}
           </Badge>
-          <Badge
-            variant="outline"
-            className="px-1.5 py-0 text-[10px] capitalize"
-          >
+          <Badge variant="outline" className="px-1.5 py-0 text-2xs capitalize">
             {item.type}
           </Badge>
           <span className="truncate font-mono">
@@ -710,7 +707,7 @@ function RecentThread({ parentId }: { parentId: string }) {
               className="mt-0.5"
             />
             <div className="min-w-0">
-              <p className="truncate text-[10px] font-medium text-black/60 dark:text-white/60">
+              <p className="truncate text-2xs font-medium text-black/60 dark:text-white/60">
                 {truncatePubkey(row.author)}
               </p>
               <p className="whitespace-pre-wrap break-words text-xs text-black/80 dark:text-white/80">
@@ -875,7 +872,7 @@ function TaskHistory({ taskId }: { taskId: string }) {
   if (rows.length === 0) return null;
   return (
     <div className="border-t border-black/10 pt-1.5 dark:border-white/10">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
+      <p className="text-2xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
         History
       </p>
       <ol className="mt-1 space-y-0.5 text-2xs text-black/55 dark:text-white/55">
