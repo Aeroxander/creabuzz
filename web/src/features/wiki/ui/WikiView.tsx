@@ -25,7 +25,7 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 type Tab = "edit" | "graph";
 
 export function WikiView() {
-  const { pages, isLoading, savePage, deletePage, renamePage } =
+  const { pages, isLoading, savePage, deletePage, renamePage, readFreshPages } =
     useWikiPages(true);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("edit");
@@ -48,7 +48,7 @@ export function WikiView() {
   const [publishedHere, setPublishedHere] = useState<Set<string>>(new Set());
 
   const published = pages.find((p) => p.slug === activeSlug) ?? null;
-  const { content, setContent, touched, peers } = useLiveWikiDoc(
+  const { content, setContent, mergeRemoteSnapshot, peers } = useLiveWikiDoc(
     activeSlug,
     published?.content ?? "",
   );
@@ -98,11 +98,31 @@ export function WikiView() {
     return [draft, ...known];
   }, [pages, pageSearch, activeSlug, content]);
 
+  /**
+   * Publish the live document, folding in anything saved since we last looked.
+   *
+   * A snapshot is the whole page, so writing ours over a collaborator's would
+   * discard their work — the auto-save made that a routine data loss rather
+   * than a race. Reading the newest snapshot and merging before publishing
+   * makes the write a read-modify-write, and the merged text is what the editor
+   * shows afterwards.
+   */
+  const publishMerged = async () => {
+    if (!activeSlug) return;
+    const fresh = await readFreshPages().catch(() => null);
+    const latest = fresh?.find((page) => page.slug === activeSlug);
+    const merged =
+      latest && latest.content !== content
+        ? mergeRemoteSnapshot(latest.content).content
+        : content;
+    await savePage(activeSlug, merged);
+  };
+
   const save = async () => {
     if (!activeSlug) return;
     setSaving(true);
     try {
-      await savePage(activeSlug, content);
+      await publishMerged();
       setDirty(false);
       setPublishedHere((prev) => new Set(prev).add(activeSlug));
       toast.success("Page saved");
@@ -136,10 +156,13 @@ export function WikiView() {
   // converges via snapshots even without a P2P signaling path; manual Save is
   // still available. (True CRDT P2P stays wired in wiki-sync for relays that
   // accept Trystero signaling.)
+  // `publishMerged` is recreated per render; keep the dependency list on the
+  // values that decide whether a save is due.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see note above
   useEffect(() => {
     if (!activeSlug || !dirty) return;
     const timer = setTimeout(() => {
-      void savePage(activeSlug, content)
+      void publishMerged()
         .then(() => {
           setDirty(false);
           setPublishedHere((prev) => new Set(prev).add(activeSlug));
@@ -152,13 +175,15 @@ export function WikiView() {
     return () => clearTimeout(timer);
   }, [activeSlug, content, dirty, savePage, queryClient]);
 
-  // Pull in snapshots saved by other tabs only while the live doc is
-  // untouched — once we've typed or received P2P edits, the live doc is
-  // authoritative and must never be clobbered by a stale snapshot.
+  // Merge snapshots saved elsewhere (another tab, or another person on a relay
+  // without P2P signalling). This used to be skipped whenever this tab had
+  // typed anything, which meant an active editor never saw a collaborator's
+  // saved work at all; the snapshot now arrives as a delta merged into the live
+  // document, so both sets of edits survive.
   useEffect(() => {
-    if (!active || touched || content === active.content) return;
-    setContent(active.content);
-  }, [active, content, touched, setContent]);
+    if (!published) return;
+    mergeRemoteSnapshot(published.content);
+  }, [published, mergeRemoteSnapshot]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col lg:flex-row">

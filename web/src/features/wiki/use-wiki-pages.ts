@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -122,7 +122,7 @@ async function dropCachedPage(slug: string): Promise<void> {
 
 // ── relay source of truth ───────────────────────────────────────────────────
 
-async function fetchWikiPages(): Promise<WikiPage[]> {
+export async function fetchWikiPages(): Promise<WikiPage[]> {
   // Tombstones come back in the same query so a deleted page disappears here
   // as well as on every other client.
   const events = await queryEvents(relayWsUrl(), {
@@ -145,6 +145,7 @@ async function fetchWikiPages(): Promise<WikiPage[]> {
 
 /** Wiki page list: instant from the local cache, refreshed from the relay. */
 export function useWikiPages(enabled: boolean) {
+  const queryClient = useQueryClient();
   const [cached, setCached] = useState<WikiPage[]>([]);
   useEffect(() => {
     if (!enabled) return;
@@ -178,6 +179,17 @@ export function useWikiPages(enabled: boolean) {
     for (const page of relayQuery.data ?? []) bySlug.set(page.slug, page);
     return [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug));
   }, [cached, relayQuery.data]);
+
+  /** Fresh page set straight from the relay, bypassing the query cache. */
+  const readFreshPages = useCallback(
+    () =>
+      queryClient.fetchQuery({
+        queryKey: ["wiki-pages"],
+        queryFn: fetchWikiPages,
+        staleTime: 0,
+      }),
+    [queryClient],
+  );
 
   const savePage = useCallback(async (slug: string, content: string) => {
     const signed = await signAsUser({
@@ -237,6 +249,7 @@ export function useWikiPages(enabled: boolean) {
     savePage,
     deletePage,
     renamePage,
+    readFreshPages,
   };
 }
 

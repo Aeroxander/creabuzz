@@ -1400,3 +1400,141 @@ test("the wiki says when nobody else is connected", async ({ page }) => {
   await expect(editors).toContainText("Editing alone");
   await expect(editors).toHaveAttribute("title", /P2P signalling/);
 });
+
+test("two tabs converge on one page without P2P signalling", async ({
+  context,
+  page,
+}) => {
+  // The snapshot path is the only cross-tab mechanism on a relay without P2P
+  // signalling. A tab that had typed used to ignore every snapshot, so an
+  // active editor never saw a collaborator's saved work.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  const SLUG = "release-notes";
+  const PAGE_ID = `page-${SLUG}`;
+  /** Shared relay store: published wiki pages, replayed to every REQ. */
+  let stored: {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: number;
+    tags: string[][];
+    content: string;
+    sig: string;
+  } | null = null;
+
+  const installRelay = async (target: import("@playwright/test").Page) => {
+    await target.route("**/communities", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          communities: [
+            {
+              host: "alpha.example.com",
+              name: "Alpha",
+              description: "d",
+              icon: null,
+              member_count: 1,
+              archived: false,
+            },
+          ],
+        }),
+      });
+    });
+    await target.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+      ws.onMessage((message) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(String(message));
+        } catch {
+          return;
+        }
+        if (!Array.isArray(parsed)) return;
+        if (parsed[0] === "EVENT" || parsed[0] === "AUTH") {
+          const event = parsed[1];
+          if (parsed[0] === "EVENT" && event?.kind === 44001) {
+            stored = event;
+          }
+          ws.send(JSON.stringify(["OK", event.id, true, ""]));
+          return;
+        }
+        if (parsed[0] !== "REQ") return;
+        const [, subId, filter] = parsed as [
+          string,
+          string,
+          { kinds?: number[] },
+        ];
+        const kinds = filter.kinds ?? [];
+        if (kinds.includes(39000)) {
+          ws.send(
+            JSON.stringify([
+              "EVENT",
+              subId,
+              {
+                id: "chan-event-1",
+                pubkey: "b".repeat(64),
+                created_at: 100,
+                kind: 39000,
+                tags: [
+                  ["d", CHANNEL_ID],
+                  ["name", "general"],
+                ],
+                content: "",
+                sig: "sig",
+              },
+            ]),
+          );
+        }
+        if (kinds.includes(44001) && stored) {
+          ws.send(JSON.stringify(["EVENT", subId, stored]));
+        }
+        ws.send(JSON.stringify(["EOSE", subId]));
+      });
+    });
+  };
+
+  await installRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill(SLUG);
+  await page.getByTestId("page-name-confirm").click();
+  const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await editor.click();
+  await page.keyboard.type("First author");
+  await page.getByTestId("wiki-save").click();
+  await expect(page.getByText("Page saved")).toBeVisible();
+
+  // Second tab, same page, with its own unsaved edit.
+  const second = await context.newPage();
+  await second.setViewportSize({ width: 1280, height: 900 });
+  await installRelay(second);
+  await second.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await second.getByTestId("content-pane").waitFor();
+  await second.getByTestId("wiki-toggle").click();
+  await second.getByTestId(`wiki-page-${SLUG}`).click();
+  const secondEditor = second
+    .getByTestId("wiki-wysiwyg")
+    .locator(".ProseMirror");
+  await expect(secondEditor).toContainText("First author");
+  await secondEditor.click();
+  await second.keyboard.press("End");
+  await second.keyboard.type(" plus second");
+
+  // The first tab saves again; the second must keep its own text and gain the
+  // other author's, which is what the delta merge is for.
+  await editor.click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" (edited)");
+  await page.getByTestId("wiki-save").click();
+
+  // The second tab must be foregrounded: Chromium throttles background timers,
+  // which would stall its poll (in production the other editor is another tab
+  // on another machine, not throttled).
+  await second.bringToFront();
+  await expect(secondEditor).toContainText("(edited)", { timeout: 15_000 });
+  await expect(secondEditor).toContainText("plus second");
+  await second.close();
+});

@@ -16,7 +16,7 @@ import { joinRoom } from "trystero/nostr";
 
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { commitLocalEdit } from "./lib/text-edit";
+import { commitLocalEdit, type CommitResult } from "./lib/text-edit";
 
 const APP_ID = "buzz-wiki";
 
@@ -81,12 +81,26 @@ export function useLiveWikiDoc(
 ): {
   content: string;
   setContent: (value: string) => void;
+  /**
+   * Merge a snapshot saved elsewhere and return the merged text, so a save can
+   * publish the union instead of overwriting the other side.
+   */
+  mergeRemoteSnapshot: (snapshot: string) => {
+    result: CommitResult;
+    content: string;
+  };
   touched: boolean;
   /** Live editing peers connected through the P2P room (0 when alone). */
   peers: number;
 } {
   const docRef = useRef<Y.Doc | null>(null);
   const textRef = useRef<Y.Text | null>(null);
+  /**
+   * The snapshot the live document is known to be based on. Remote snapshots
+   * are merged as the delta from this base to the new one, so another editor's
+   * saved work interleaves with local edits instead of replacing them.
+   */
+  const snapshotBaseRef = useRef(initialContent);
   const [content, setContentState] = useState(initialContent);
   const [touched, setTouched] = useState(false);
   /**
@@ -117,6 +131,7 @@ export function useLiveWikiDoc(
     docRef.current = doc;
     const text = doc.getText("content");
     textRef.current = text;
+    snapshotBaseRef.current = initialContent;
     if (text.toString().length === 0 && initialContent.length > 0) {
       doc.transact(() => {
         text.insert(0, initialContent);
@@ -212,6 +227,35 @@ export function useLiveWikiDoc(
     };
   }, [slug, initialContent, setRendered]);
 
+  /**
+   * Merge a page snapshot published elsewhere (another tab, or another person
+   * on a relay without P2P signalling).
+   *
+   * Returns the merge result so callers can observe the unresolvable-overlap
+   * fallback. Applied as a delta from the previous snapshot, which is what
+   * makes two people editing different parts of a page converge without a P2P
+   * room.
+   */
+  const mergeRemoteSnapshot = useCallback(
+    (snapshot: string): { result: CommitResult; content: string } => {
+      const doc = docRef.current;
+      const text = textRef.current;
+      if (!doc || !text) return { result: "noop", content: snapshot };
+      if (snapshot === snapshotBaseRef.current) {
+        return { result: "noop", content: text.toString() };
+      }
+      let result: CommitResult = "noop";
+      doc.transact(() => {
+        result = commitLocalEdit(text, snapshotBaseRef.current, snapshot);
+      }, "remote");
+      snapshotBaseRef.current = snapshot;
+      const content = text.toString();
+      setRendered(content);
+      return { result, content };
+    },
+    [setRendered],
+  );
+
   const setContent = useCallback(
     (value: string) => {
       const doc = docRef.current;
@@ -227,5 +271,5 @@ export function useLiveWikiDoc(
     [setRendered],
   );
 
-  return { content, setContent, touched, peers };
+  return { content, setContent, mergeRemoteSnapshot, touched, peers };
 }
