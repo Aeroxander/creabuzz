@@ -82,6 +82,21 @@ test("community page shows metadata and join stores the relay URL", async ({
   page,
 }) => {
   await mockCommunityDirectory(page);
+  // An empty relay: the community exists but publishes no channels, so the
+  // public card is the correct state (a failed query is an error state).
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (Array.isArray(parsed) && parsed[0] === "REQ") {
+        ws.send(JSON.stringify(["EOSE", parsed[1]]));
+      }
+    });
+  });
   await page.goto("/c/alpha.example.com");
   await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
   await expect(page.getByText("3 members")).toBeVisible();
@@ -475,4 +490,20 @@ test("the landing Repositories button opens the repo browser", async ({
     page.getByRole("heading", { name: "This community is empty" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Communities" })).toBeHidden();
+});
+
+test("a channel query failure offers a retry instead of an empty community", async ({
+  page,
+}) => {
+  // No WebSocket mock: the channel query fails. The page must say so and allow
+  // a retry rather than presenting the join-an-empty-community card.
+  await mockCommunityDirectory(page);
+  await page.goto("/c/alpha.example.com");
+  const panel = page.getByTestId("community-load-error");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("alpha.example.com");
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Join in browser" }),
+  ).toBeHidden();
 });

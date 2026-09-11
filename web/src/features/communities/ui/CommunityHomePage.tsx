@@ -12,6 +12,48 @@ import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
 import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
 /**
+ * Community entry (`/c/<host>`).
+ *
+ * Loading and failure are distinct states, not empty ones: a channel query that
+ * fails must not be presented as "this community has no channels", because that
+ * sends the visitor to the join button instead of letting them retry.
+ */
+function CommunityLoadState({
+  host,
+  message,
+  onRetry,
+}: {
+  host: string;
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
+      <div
+        className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 text-center dark:border-white/10 dark:bg-white/5"
+        data-testid="community-load-error"
+      >
+        <h1 className="text-lg font-semibold text-black dark:text-white">
+          Couldn&apos;t load this community
+        </h1>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          {host} did not answer the channel query.
+        </p>
+        <p className="mt-2 break-words text-xs text-black/45 dark:text-white/45">
+          {message}
+        </p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <Button onClick={onRetry}>Try again</Button>
+          <Button asChild variant="outline">
+            <Link to="/">All communities</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Public page for one community (`/c/<host>`). Communities with open
  * channels open directly into the app shell (sidebar + search + timeline);
  * empty communities show their public card with join/connect CTAs.
@@ -35,7 +77,31 @@ export function CommunityHomePage() {
     window.location.reload();
   };
 
-  if (channels.isSuccess && channels.data && channels.data.length > 0) {
+  if (channels.isLoading) {
+    return (
+      <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <ChannelSidebarLoading />
+        </div>
+      </div>
+    );
+  }
+
+  if (channels.isError) {
+    return (
+      <CommunityLoadState
+        host={host}
+        message={
+          channels.error instanceof Error
+            ? channels.error.message
+            : String(channels.error)
+        }
+        onRetry={() => void channels.refetch()}
+      />
+    );
+  }
+
+  if (channels.data && channels.data.length > 0) {
     const initialChannelId =
       typeof search.channel === "string" ? search.channel : undefined;
     return (
@@ -111,8 +177,6 @@ export function CommunityHomePage() {
             Joining doesn't require an account here — Creaton creates a local
             identity only when you post or join privately.
           </p>
-
-          {channels.isLoading && <ChannelSidebarLoading />}
         </div>
       </div>
     </div>
