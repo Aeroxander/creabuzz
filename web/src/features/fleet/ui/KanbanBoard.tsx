@@ -298,7 +298,7 @@ export function KanbanBoard({
                 </div>
               ))}
               {columnItems.length === 0 ? (
-                <p className="px-1 py-3 text-center text-[11px] text-black/30 dark:text-white/30">
+                <p className="px-1 py-3 text-center text-2xs text-black/30 dark:text-white/30">
                   Drop tasks here
                 </p>
               ) : null}

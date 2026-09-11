@@ -90,7 +90,7 @@ export function OnboardingDialog({
             Sign in with wallet
           </button>
         ) : null}
-        <div className="mb-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mb-3 flex items-center gap-2 text-2xs text-muted-foreground">
           <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
           or with a backup key
           <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />

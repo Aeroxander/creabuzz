@@ -79,7 +79,7 @@ function AgentOrgCard({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Team name"
-                className="w-24 rounded-md border border-input bg-background px-1.5 py-0.5 text-[11px] outline-none"
+                className="w-24 rounded-md border border-input bg-background px-1.5 py-0.5 text-2xs outline-none"
                 data-testid={`team-input-${agent.id.slice(0, 6)}`}
               />
               <button
@@ -88,7 +88,7 @@ function AgentOrgCard({
                   onTeam(draft || null);
                   setEditing(false);
                 }}
-                className="rounded-md bg-black px-2 py-0.5 text-[11px] font-medium text-white dark:bg-white dark:text-black"
+                className="rounded-md bg-black px-2 py-0.5 text-2xs font-medium text-white dark:bg-white dark:text-black"
               >
                 Save
               </button>
@@ -97,7 +97,7 @@ function AgentOrgCard({
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-full border border-black/10 bg-background px-2 py-0.5 text-[11px] text-black/60 hover:bg-black/5 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/10"
+              className="rounded-full border border-black/10 bg-background px-2 py-0.5 text-2xs text-black/60 hover:bg-black/5 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/10"
               title={
                 isMine
                   ? "Set this tab agent's team"
@@ -183,7 +183,7 @@ export function OrgView() {
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
                   {team}
                 </h3>
-                <span className="text-[11px] text-black/40 dark:text-white/40">
+                <span className="text-2xs text-black/40 dark:text-white/40">
                   {members.length}
                 </span>
               </div>

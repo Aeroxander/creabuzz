@@ -76,7 +76,7 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
               this tab
             </span>
           ) : null}
-          <span className="ml-auto flex items-center gap-1 text-[11px] text-black/45 dark:text-white/45">
+          <span className="ml-auto flex items-center gap-1 text-2xs text-black/45 dark:text-white/45">
             {agent.alive ? (
               <Wifi className="h-3 w-3 text-emerald-500" />
             ) : (
@@ -85,7 +85,7 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
             {agent.alive ? "online" : "offline"}
           </span>
         </div>
-        <p className="mt-0.5 truncate font-mono text-[11px] text-black/45 dark:text-white/45">
+        <p className="mt-0.5 truncate font-mono text-2xs text-black/45 dark:text-white/45">
           {agent.pubkey}
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -152,7 +152,7 @@ function UsageCard() {
       <button
         type="button"
         onClick={() => resetUsage()}
-        className="mt-1.5 text-[11px] text-black/40 hover:text-black/70 dark:text-white/40 dark:hover:text-white/70"
+        className="mt-1.5 text-2xs text-black/40 hover:text-black/70 dark:text-white/40 dark:hover:text-white/70"
       >
         Reset ledger
       </button>

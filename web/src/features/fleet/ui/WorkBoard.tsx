@@ -79,7 +79,7 @@ function WorkItemRow({
         <span className="block truncate text-sm font-medium text-black dark:text-white">
           {item.title}
         </span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-black/45 dark:text-white/45">
+        <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-black/45 dark:text-white/45">
           <Badge
             variant={statusVariant(item.status)}
             className="px-1.5 py-0 text-[10px]"
@@ -509,7 +509,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                       <Badge variant="outline" className="capitalize">
                         {selected.type}
                       </Badge>
-                      <span className="text-[11px] text-black/45 dark:text-white/45">
+                      <span className="text-2xs text-black/45 dark:text-white/45">
                         by {truncatePubkey(selected.author)}
                       </span>
                     </div>
@@ -561,7 +561,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                         <ShieldX className="h-3.5 w-3.5" /> Reject
                       </button>
                       {selected.approver ? (
-                        <span className="text-[11px] text-black/45 dark:text-white/45">
+                        <span className="text-2xs text-black/45 dark:text-white/45">
                           resolved by {truncatePubkey(selected.approver)}
                         </span>
                       ) : null}
@@ -878,7 +878,7 @@ function TaskHistory({ taskId }: { taskId: string }) {
       <p className="text-[10px] font-semibold uppercase tracking-wide text-black/45 dark:text-white/45">
         History
       </p>
-      <ol className="mt-1 space-y-0.5 text-[11px] text-black/55 dark:text-white/55">
+      <ol className="mt-1 space-y-0.5 text-2xs text-black/55 dark:text-white/55">
         {rows.map((r) => (
           <li key={`${r.at}-${r.who.slice(0, 8)}`}>
             {new Date(r.at * 1000).toLocaleString()} —{" "}

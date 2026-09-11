@@ -214,7 +214,7 @@ export function ProfileMenu() {
       {open ? (
         <div className="absolute bottom-full left-0 z-40 mb-1 w-72 rounded-xl border border-black/10 bg-background p-3 shadow-xl dark:border-white/10">
           {!hasBackedUp() ? (
-            <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+            <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3 w-3 shrink-0" />
               Back up your key — it only exists in this browser.
             </p>
@@ -291,7 +291,7 @@ export function ProfileMenu() {
               />
               {passkeyActive ? (
                 <>
-                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-[11px] text-black/50 dark:bg-white/5 dark:text-white/50">
+                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/50 dark:bg-white/5 dark:text-white/50">
                     <Fingerprint className="h-3 w-3" />
                     {passkeyModeNow === "unlock"
                       ? "Passkey unlock (Touch ID) — key stays in browser"
@@ -352,7 +352,7 @@ export function ProfileMenu() {
           {walletBinding ? (
             <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
               <div
-                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-[11px] text-black/50 dark:bg-white/5 dark:text-white/50"
+                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/50 dark:bg-white/5 dark:text-white/50"
                 data-testid="wallet-binding"
               >
                 <Wallet className="h-3 w-3" />
@@ -410,7 +410,7 @@ export function ProfileMenu() {
               This hex nsec signs everything you do here. Store it somewhere
               safe; your identity can't be recovered without it.
             </p>
-            <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-[11px] break-all text-black/70 dark:bg-white/5 dark:text-white/70">
+            <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
               {revealKey ? nsec : nsec.slice(0, 12) + "…" + nsec.slice(-8)}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -547,7 +547,7 @@ function BackupImport({ onImported }: { onImported: () => void }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Paste the 64-char hex nsec"
-          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 font-mono text-[11px] outline-none focus:ring-1 focus:ring-ring"
+          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 font-mono text-2xs outline-none focus:ring-1 focus:ring-ring"
           data-testid="backup-import-input"
         />
         <button

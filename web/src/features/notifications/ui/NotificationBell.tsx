@@ -94,7 +94,7 @@ export function NotificationBell({
                     <span className="block truncate text-xs font-medium text-black dark:text-white">
                       {item.title}
                     </span>
-                    <span className="block truncate text-[11px] text-black/50 dark:text-white/50">
+                    <span className="block truncate text-2xs text-black/50 dark:text-white/50">
                       {item.preview}
                     </span>
                     <span className="block text-[10px] text-black/35 dark:text-white/35">
