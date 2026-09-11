@@ -931,3 +931,26 @@ test("a refused task write says so instead of failing silently", async ({
     page.getByText("blocked: writer denied", { exact: false }),
   ).toBeVisible();
 });
+
+test("heavy views are split out of the first-load bundle", async ({ page }) => {
+  // Measured at build time by the recipe in `scripts/`? No: assert the runtime
+  // consequence — opening a community must not fetch the wiki/fleet/index
+  // chunks, which is what keeps first load small.
+  const scripts: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "script") scripts.push(request.url());
+  });
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+
+  const loaded = scripts.join(" ");
+  expect(loaded).not.toContain("WikiView-");
+  expect(loaded).not.toContain("WorkBoard-");
+  expect(loaded).not.toContain("FleetView-");
+
+  // …and the wiki chunk arrives when the panel is opened.
+  await page.getByTestId("wiki-toggle").click();
+  await expect(page.getByTestId("wiki-page-list")).toBeVisible();
+  expect(scripts.join(" ")).toContain("WikiView-");
+});

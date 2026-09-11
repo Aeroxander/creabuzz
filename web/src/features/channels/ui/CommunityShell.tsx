@@ -9,19 +9,41 @@ import {
   Zap,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
-import { SearchResults } from "@/features/search/ui/SearchResults";
-import { WikiView } from "@/features/wiki/ui/WikiView";
-import { FleetView } from "@/features/fleet/ui/FleetView";
-import { OrgView } from "@/features/fleet/ui/OrgView";
-import { WorkBoard } from "@/features/fleet/ui/WorkBoard";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
+import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
+
+// Sidebar panels load on first use. The wiki alone pulls TipTap, Yjs and the
+// P2P transport; the fleet views pull the kanban and roster, and search pulls
+// the index client. None of it is needed to read a channel, which is what the
+// first load is for.
+const WikiView = lazy(() =>
+  import("@/features/wiki/ui/WikiView").then((m) => ({ default: m.WikiView })),
+);
+const FleetView = lazy(() =>
+  import("@/features/fleet/ui/FleetView").then((m) => ({
+    default: m.FleetView,
+  })),
+);
+const OrgView = lazy(() =>
+  import("@/features/fleet/ui/OrgView").then((m) => ({ default: m.OrgView })),
+);
+const WorkBoard = lazy(() =>
+  import("@/features/fleet/ui/WorkBoard").then((m) => ({
+    default: m.WorkBoard,
+  })),
+);
+const SearchResults = lazy(() =>
+  import("@/features/search/ui/SearchResults").then((m) => ({
+    default: m.SearchResults,
+  })),
+);
 
 /**
  * In-community shell: channel sidebar, full-text search across open
@@ -282,22 +304,38 @@ export function CommunityShell({
           </div>
           <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 min-w-0 flex-1 flex-col">
             {showingOrg ? (
-              <OrgView />
+              <Suspense fallback={<ViewLoadingFallback label="Loading org…" />}>
+                <OrgView />
+              </Suspense>
             ) : showingWork ? (
-              <WorkBoard channels={channels} />
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading the board…" />}
+              >
+                <WorkBoard channels={channels} />
+              </Suspense>
             ) : showingFleet ? (
-              <FleetView channels={channels} />
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading agents…" />}
+              >
+                <FleetView channels={channels} />
+              </Suspense>
             ) : showingWiki ? (
-              <WikiView />
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading the wiki…" />}
+              >
+                <WikiView />
+              </Suspense>
             ) : searching ? (
-              <SearchResults
-                term={searchTerm.trim()}
-                channels={channels}
-                onOpenChannel={(channelId) => {
-                  setSelectedId(channelId);
-                  setSearchTerm("");
-                }}
-              />
+              <Suspense fallback={<ViewLoadingFallback label="Searching…" />}>
+                <SearchResults
+                  term={searchTerm.trim()}
+                  channels={channels}
+                  onOpenChannel={(channelId) => {
+                    setSelectedId(channelId);
+                    setSearchTerm("");
+                  }}
+                />
+              </Suspense>
             ) : activeChannel ? (
               <ChannelTimeline
                 channel={activeChannel}

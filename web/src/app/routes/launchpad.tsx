@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LaunchesPage } from "@/features/launchpad/ui/LaunchesPage";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/launchpad")({
-  component: LaunchesPage,
+  component: lazyRouteComponent(
+    () => import("@/features/launchpad/ui/LaunchesPage"),
+    "LaunchesPage",
+  ),
 });

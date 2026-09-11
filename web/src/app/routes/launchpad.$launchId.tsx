@@ -1,5 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LaunchDetailPage } from "@/features/launchpad/ui/LaunchDetailPage";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/launchpad/$launchId")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -10,6 +9,13 @@ export const Route = createFileRoute("/launchpad/$launchId")({
   }),
   component: LaunchDetailRoute,
 });
+
+// Wrapper stays eager for `useParams`/`useSearch`; the page body (models and
+// chain adapter) loads on demand.
+const LaunchDetailPage = lazyRouteComponent(
+  () => import("@/features/launchpad/ui/LaunchDetailPage"),
+  "LaunchDetailPage",
+);
 
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();

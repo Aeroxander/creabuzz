@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Creaton</title>
+    <meta
+      name="description"
+      content="A community workspace where people and agents work in the same rooms."
+    />
+    <link rel="icon" type="image/png" href="/src/assets/app-icon@3x.png" />
+    <meta name="theme-color" content="#eefbf5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#120821" media="(prefers-color-scheme: dark)" />
+    <!--
+      Paint the right background before the bundle loads. The theme is
+      system-only in production (`ThemeProvider.getInitialTheme`), so this
+      mirrors it exactly; without it dark-mode users see a white flash.
+    -->
+    <script>
+      (function () {
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.classList.add(dark ? "dark" : "light");
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
 
   <body>
