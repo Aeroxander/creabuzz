@@ -1048,3 +1048,71 @@ test("a message can be copied, and its link opens and highlights it", async ({
     "true",
   );
 });
+
+test("the tab agent's key can be rotated and its storage is disclosed", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("buzz.agent.nsec", "ab".repeat(32));
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockCommunityDirectory(page);
+  // A permissive relay: the roster must load, or the fleet view shows its
+  // error panel instead (which is what `mockPartialRelay` would produce).
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      if ((filter.kinds ?? []).includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", "0f0f0f0f-1111-2222-3333-444444444444"],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("fleet-toggle").click();
+
+  // Agent stopped: the disclosure explains the key it will create on start.
+  await expect(page.getByTestId("agent-key-disclosure")).toContainText(
+    "creates a signing key for it in this browser",
+  );
+
+  await page.getByTestId("reset-agent-key").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-accept").click();
+
+  await expect(page.getByText("Agent key reset")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem("buzz.agent.nsec")),
+    )
+    .toBeNull();
+});

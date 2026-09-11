@@ -31,8 +31,13 @@ import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import type { Channel } from "@/features/channels/use-channels";
 import { getBrowserAgent, type AgentLifecycleState } from "../browser-agent";
-import { getAgentPubkey } from "@/shared/lib/agent-identity";
+import {
+  getAgentPubkey,
+  resetAgentIdentity,
+} from "@/shared/lib/agent-identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { toast } from "sonner";
 
 function RuntypeIcon({ runtype }: { runtype: AgentCapabilities["runtype"] }) {
   if (runtype === "browser") return <Globe className="h-3.5 w-3.5" />;
@@ -198,6 +203,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
   const [state, setState] = useState<AgentLifecycleState>("stopped");
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     const agent = getBrowserAgent();
@@ -293,6 +299,43 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       ) : null}
 
       {state === "running" ? <UsageCard /> : null}
+
+      {/* Trust model made explicit: the tab agent's key lives in this browser,
+          unlike a managed agent whose key stays on the relay host. */}
+      <p
+        className="text-xs text-black/45 dark:text-white/45"
+        data-testid="agent-key-disclosure"
+      >
+        {state === "running"
+          ? "This agent signs with a key stored in this browser's local storage. Reset it while the agent is stopped to retire the identity."
+          : "Running the tab agent creates a signing key for it in this browser. It is not shared with the relay."}
+      </p>
+
+      {state !== "running" ? (
+        <div>
+          <button
+            className="rounded-md border border-black/15 px-2.5 py-1.5 text-xs font-medium dark:border-white/15"
+            data-testid="reset-agent-key"
+            onClick={() => setConfirmReset(true)}
+            type="button"
+          >
+            Reset agent key
+          </button>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        confirmLabel="Reset agent key"
+        description="The tab agent gets a new identity. Anything attributed to the old one stays attributed to it, and the old key is removed from this browser."
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setConfirmReset(false);
+          resetAgentIdentity();
+          toast.success("Agent key reset");
+        }}
+        open={confirmReset}
+        title="Reset the tab agent's key?"
+      />
 
       <section className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
         <div className="flex items-center gap-2">
