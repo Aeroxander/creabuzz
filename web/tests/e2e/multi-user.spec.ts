@@ -683,3 +683,45 @@ test("an older page the relay drops is reported, not silently absent", async ({
     timeout: 15_000,
   });
 });
+
+test("a wiki save does not write blind when the relay read fails", async ({
+  page,
+}) => {
+  // The save is a read-modify-write of a whole-page snapshot. If the read fails
+  // and the write still goes out, the writer silently overwrites whatever a
+  // collaborator saved in the meantime.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "wiki-page-1",
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    kind: 44001,
+    tags: [["d", "shared-page"]],
+    content: "Original page body",
+    sig: "sig",
+  });
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-page-shared-page").click();
+  const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await expect(editor).toContainText("Original page body", { timeout: 15_000 });
+
+  // Now the relay stops answering wiki reads, as a flaky relay does.
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(44001) ?? false);
+  const before = relay.events.filter((event) => event.kind === 44001).length;
+
+  await editor.click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" plus a local edit");
+  // Past the auto-save debounce.
+  await page.waitForTimeout(6_000);
+
+  const after = relay.events.filter((event) => event.kind === 44001).length;
+  expect(after, "no blind write while the read is failing").toBe(before);
+  await expect(page.getByText(/Couldn't auto-save this page/)).toBeVisible({
+    timeout: 10_000,
+  });
+});

@@ -118,13 +118,29 @@ export function WikiView() {
    */
   const publishMerged = async () => {
     if (!activeSlug) return;
-    const fresh = await readFreshPages().catch(() => null);
-    const latest = fresh?.find((page) => page.slug === activeSlug);
-    const merged =
-      latest && latest.content !== content
-        ? mergeRemoteSnapshot(latest.content).content
-        : content;
-    await savePage(activeSlug, merged);
+    // A snapshot is the whole page, so publishing without knowing the newest
+    // version overwrites a collaborator's work. A failed read used to fall
+    // through to publishing anyway, which turned the read-modify-write into a
+    // blind write exactly when the relay was failing. Fail closed instead:
+    // auto-save retries on the next edit, a manual save reports the error.
+    const fresh = await readFreshPages();
+    const latest = fresh.find((page) => page.slug === activeSlug);
+    let text = content;
+    let overlap = false;
+    if (latest && latest.content !== content) {
+      const merged = mergeRemoteSnapshot(latest.content);
+      text = merged.content;
+      overlap = merged.result === "replaced";
+    }
+    await savePage(activeSlug, text);
+    if (overlap) {
+      // The merge had to drop a collaborator's version of the same characters.
+      // Silence here is how two people lose each other's paragraphs.
+      toast.warning("Overlapping edit", {
+        description:
+          "Someone changed this text while you were typing. Both versions could not be kept — yours was saved.",
+      });
+    }
   };
 
   const save = async () => {
@@ -177,8 +193,14 @@ export function WikiView() {
           setPublishedHere((prev) => new Set(prev).add(activeSlug));
           void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
+          // Still dirty, so the next edit retries; say so once rather than
+          // silently leaving the page unsaved.
           console.warn("[wiki] auto-save failed", error);
+          toast.error("Couldn't auto-save this page", {
+            description: errorMessage(error),
+            id: "wiki-autosave-failed",
+          });
         });
     }, 4000);
     return () => clearTimeout(timer);
