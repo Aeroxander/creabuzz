@@ -861,3 +861,73 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
   expect(proof.content).toBe(address);
   expect(proof.tags).toContainEqual(["u", "/auth/siwe/revoke"]);
 });
+
+test("a refused task write says so instead of failing silently", async ({
+  page,
+}) => {
+  // The board used to swallow these: a quick-add or a column move the relay
+  // refused left the user looking at an unchanged board.
+  await mockCommunityDirectory(page);
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT") {
+        ws.send(
+          JSON.stringify(["OK", parsed[1].id, false, "blocked: writer denied"]),
+        );
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      if ((filter.kinds ?? []).includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", "0f0f0f0f-1111-2222-3333-444444444444"],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("work-toggle").click();
+
+  await page.getByTestId("kanban-add-open").click();
+  await page.getByTestId("kanban-quick-input").fill("Silent failure");
+  // Scope to the quick-add row: every column header also has an "Add" button.
+  await page
+    .getByTestId("kanban-quick-input")
+    .locator("xpath=following-sibling::button[1]")
+    .click();
+
+  await expect(page.getByText("Couldn't create the task")).toBeVisible();
+  await expect(
+    page.getByText("blocked: writer denied", { exact: false }),
+  ).toBeVisible();
+});

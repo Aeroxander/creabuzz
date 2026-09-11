@@ -29,6 +29,7 @@ import { userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
@@ -110,6 +111,18 @@ function WorkItemRow({
       ) : null}
     </button>
   );
+}
+
+/**
+ * A failed board action must not look like it worked: a column move, an
+ * assignment or a task edit that the relay refused used to leave only a console
+ * line behind.
+ */
+function reportActionFailure(what: string) {
+  return (error: unknown) => {
+    console.error(`[work] ${what}`, error);
+    toast.error(what, { description: errorMessage(error) });
+  };
 }
 
 export function WorkBoard({ channels }: { channels: Channel[] }) {
@@ -420,28 +433,34 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
           onSetStatus={(item, status) => {
             if (item.type === "issue") {
               if (ISSUE_MOVE_TARGETS.includes(status)) {
-                void publishIssueStatus(item, status).catch((e) =>
-                  console.error("[work] issue status", e),
+                void publishIssueStatus(item, status).catch(
+                  reportActionFailure("Couldn't move this issue"),
                 );
               }
               return;
             }
-            void setStatus(asTask(item), status).catch((e) =>
-              console.error("[work] task status", e),
+            void setStatus(asTask(item), status).catch(
+              reportActionFailure("Couldn't move this task"),
             );
           }}
           onAssignSelf={(item) => {
             if (item.type === "task") {
-              void setTaskAssignee(asTask(item), myPubkey).catch(() => {});
+              void setTaskAssignee(asTask(item), myPubkey).catch(
+                reportActionFailure("Couldn't assign this task"),
+              );
             }
           }}
           onUnassign={(item) => {
             if (item.type === "task") {
-              void setTaskAssignee(asTask(item), null).catch(() => {});
+              void setTaskAssignee(asTask(item), null).catch(
+                reportActionFailure("Couldn't unassign this task"),
+              );
             }
           }}
           onQuickAdd={(_status, taskTitle) => {
-            void createTask({ title: taskTitle }).catch(() => {});
+            void createTask({ title: taskTitle }).catch(
+              reportActionFailure("Couldn't create the task"),
+            );
           }}
         />
       ) : (
@@ -505,7 +524,9 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                   <TaskEditors
                     item={selected}
                     onUpdate={(patch) =>
-                      void updateTask(asTask(selected), patch).catch(() => {})
+                      void updateTask(asTask(selected), patch).catch(
+                        reportActionFailure("Couldn't save the task"),
+                      )
                     }
                   />
                 ) : null}
@@ -656,7 +677,10 @@ function RecentThread({ parentId }: { parentId: string }) {
                 })),
             );
           })
-          .catch(() => {}),
+          .catch((error: unknown) => {
+            // Background refresh of the thread pane: log, do not interrupt.
+            console.warn("[work] thread history failed", error);
+          }),
       );
     load();
     // Live-ish: refresh while the pane is open so agent replies land.
@@ -838,7 +862,10 @@ function TaskHistory({ taskId }: { taskId: string }) {
               .sort((a, b) => a.at - b.at),
           );
         })
-        .catch(() => {}),
+        .catch((error: unknown) => {
+          // Approval history is a background read; log rather than interrupt.
+          console.warn("[work] approval history failed", error);
+        }),
     );
     return () => {
       disposed = true;
