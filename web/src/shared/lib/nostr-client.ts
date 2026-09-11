@@ -42,6 +42,10 @@ export function queryEvents(
     let settled = false;
     let reqSent = false;
     let authEventId: string | null = null;
+    let authAccepted = false;
+    /** One retry is allowed after authentication; a second refusal is real. */
+    let authRetryUsed = false;
+    let retryAfterAuth = false;
     let unauthenticatedReqTimer: ReturnType<typeof setTimeout> | null = null;
 
     const ws = new WebSocket(wsUrl);
@@ -66,12 +70,22 @@ export function queryEvents(
       }
     };
 
-    const sendReq = () => {
+    const sendReq = (force = false) => {
+      if (force) reqSent = false;
       if (!reqSent) {
         reqSent = true;
         ws.send(JSON.stringify(["REQ", subId, filter]));
       }
     };
+
+    /**
+     * A relay can reject a subscription that arrived before our NIP-42
+     * handshake finished — Buzz's relay does, with "restricted: p-gated events
+     * require #p matching your pubkey", because it compares the filter against
+     * the authenticated identity. That is not a refusal of the query: retry it
+     * once after authenticating, and treat a second refusal as final.
+     */
+    const isAuthRefusal = (reason: string) => /auth|restricted/i.test(reason);
 
     ws.addEventListener("open", () => {
       // Wait briefly for an AUTH challenge before sending REQ.
@@ -119,7 +133,10 @@ export function queryEvents(
 
       if (type === "OK" && data[1] === authEventId) {
         if (data[2] === true) {
-          sendReq();
+          authAccepted = true;
+          const owed = retryAfterAuth;
+          retryAfterAuth = false;
+          sendReq(owed);
         } else if (!settled) {
           settled = true;
           cleanup();
@@ -143,14 +160,21 @@ export function queryEvents(
           resolve(events);
         }
       } else if (type === "CLOSED" && data[1] === subId) {
-        // Subscription was rejected (e.g. auth failed).
+        // Subscription was rejected.
         if (!settled) {
-          settled = true;
-          cleanup();
           const reason =
             typeof data[2] === "string"
               ? data[2]
               : "subscription closed by relay";
+          if (isAuthRefusal(reason) && !authRetryUsed) {
+            // Sent before the handshake finished: re-issue it once we can.
+            authRetryUsed = true;
+            if (authAccepted) sendReq(true);
+            else retryAfterAuth = true;
+            return;
+          }
+          settled = true;
+          cleanup();
           reject(new Error(reason));
         }
       } else if (type === "NOTICE") {

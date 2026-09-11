@@ -54,16 +54,16 @@ test("the client loads from the relay without page errors", async ({
   expect(pageErrors, pageErrors.join(" | ")).toEqual([]);
 });
 
-test.fixme("a message is stored by the relay and survives a reload", async ({
+test("a message is stored by the relay and survives a reload", async ({
   page,
 }) => {
-  // Needs a channel that the relay itself recognises: channel metadata
-  // (kind 39000) is relay-authored — a client publishing it is rejected as
-  // "unknown event kind" — and a SQL-seeded channel did not get discovery
-  // events from `BUZZ_RECONCILE_CHANNELS` in this environment. Create the
-  // channel through the relay's own path (e.g. `buzz channels create`), then
-  // enable this: post a message, reload, and assert it is still there, which
-  // proves the relay accepted and stored it rather than the page echoing it.
+  // The dev relay rate-limits writes per identity, so a send issued in a burst
+  // can be accepted after this test's own reload window; hence the slow marker
+  // and the generous timeouts.
+  test.slow();
+  // The whole point of the real-relay run: the message must be in Postgres, not
+  // echoed by the page. A reload drops every client-side copy, so what is still
+  // on screen afterwards came from the relay.
   await page.addInitScript(
     ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
     [DEV_NSEC],
@@ -75,13 +75,26 @@ test.fixme("a message is stored by the relay and survives a reload", async ({
     .first()
     .click();
   await page.getByTestId("composer-input").fill(body);
+  // Let the controlled draft commit before submitting; the dev relay also
+  // rate-limits writes, so a send can be refused if tests post in a burst.
+  await expect(page.getByTestId("composer-send")).toBeEnabled();
   await page.getByTestId("composer-send").click();
-  await expect(page.getByText(body)).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.locator("[data-sonner-toast]").filter({ hasText: /couldn't send/i }),
+  ).toHaveCount(0);
+  // Assert on rendered text, not `getByText`: that engine also matches a
+  // textbox's value, so it would happily match the draft still sitting in the
+  // composer and pass without the relay ever storing anything.
+  await expect
+    .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
+    .toContain(body);
 
   await page.reload();
   await page
     .getByRole("button", { name: /general/ })
     .first()
     .click();
-  await expect(page.getByText(body)).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
+    .toContain(body);
 });

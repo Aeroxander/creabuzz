@@ -62,11 +62,26 @@ export interface MockRelayOptions {
    * policy instead of only its happy path.
    */
   closeImmediately?: boolean;
+  /**
+   * Require NIP-42 authentication and refuse any subscription that arrives
+   * first, the way Buzz's relay does (it compares p-gated filters against the
+   * authenticated identity).
+   */
+  requireAuth?: boolean;
+  /**
+   * With `requireAuth`, send the challenge this many milliseconds after the
+   * socket opens instead of on the first REQ. A value past the client's own
+   * "send the REQ anyway" window models the slow-relay case; the default (0)
+   * challenges on demand, which loses the race deterministically.
+   */
+  challengeDelayMs?: number;
 }
 
 export function createMockRelay({
   refuse,
   closeImmediately = false,
+  requireAuth = false,
+  challengeDelayMs = 0,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -81,6 +96,14 @@ export function createMockRelay({
     closeImmediately;
   /** When each live-subscription socket asked for its subscription. */
   const liveSubscriptionReqs: number[] = [];
+  /**
+   * Subscriptions refused before the handshake and then re-issued on the same
+   * socket once it authenticated — the client recovering from the race, which
+   * nothing else produces. Counted separately for the live pumps and for
+   * one-shot queries, because they are different code paths and either can
+   * mask the other.
+   */
+  const authRetries = { live: 0, query: 0 };
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
 
   const deliver = (event: StoredEvent) => {
@@ -116,6 +139,17 @@ export function createMockRelay({
 
       sockets.add(socket);
       subscriptions.set(socket, new Map());
+      let authenticated = false;
+      let challenged = false;
+      let refusedWhileUnauthenticated = false;
+      const sendChallenge = () => {
+        if (challenged) return;
+        challenged = true;
+        ws.send(JSON.stringify(["AUTH", "mock-challenge"]));
+      };
+      if (requireAuth && challengeDelayMs > 0) {
+        setTimeout(sendChallenge, challengeDelayMs);
+      }
       ws.onClose(() => sockets.delete(socket));
       ws.onMessage((message) => {
         let parsed: unknown;
@@ -147,6 +181,10 @@ export function createMockRelay({
         const [type] = parsed;
         if (type === "EVENT" || type === "AUTH") {
           const event = parsed[1] as StoredEvent;
+          if (type === "AUTH") {
+            // NIP-42: this mock accepts any signed auth event.
+            authenticated = true;
+          }
           if (type === "EVENT") {
             const reason = refuse?.(event);
             if (reason) {
@@ -165,7 +203,28 @@ export function createMockRelay({
           return;
         }
         if (type === "REQ") {
-          const [, subId, filter] = parsed as [string, string, Filter];
+          const [, subId] = parsed as [string, string, Filter];
+          const filter = parsed[2] as Filter;
+          if (authenticated && refusedWhileUnauthenticated) {
+            refusedWhileUnauthenticated = false;
+            if (subId.startsWith("live-")) authRetries.live += 1;
+            else authRetries.query += 1;
+          }
+          if (requireAuth && !authenticated) {
+            // Challenge on demand: this socket has not proven who it is, so the
+            // subscription is refused and the handshake starts now. A client
+            // that treats the refusal as final loses the query.
+            refusedWhileUnauthenticated = true;
+            sendChallenge();
+            ws.send(
+              JSON.stringify([
+                "CLOSED",
+                subId,
+                "restricted: p-gated events require #p matching your pubkey",
+              ]),
+            );
+            return;
+          }
           subscriptions.get(socket)?.set(subId, filter);
           for (const event of events) {
             if (matches(filter, event)) {
@@ -202,6 +261,10 @@ export function createMockRelay({
     events,
     /** Sockets the page has opened, across reconnects. */
     connectionsOpened: () => connectionsOpened,
+    /** Live-pump subscriptions re-issued after their socket authenticated. */
+    liveAuthRetries: () => authRetries.live,
+    /** One-shot query subscriptions re-issued after their socket authenticated. */
+    queryAuthRetries: () => authRetries.query,
     /** When live-subscription sockets issued their REQ (the reconnect rhythm). */
     liveSubscriptionReqs: () => [...liveSubscriptionReqs],
     /** Start hanging up on every socket that speaks (or on matching REQs). */

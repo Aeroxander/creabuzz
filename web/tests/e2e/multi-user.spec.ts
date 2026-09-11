@@ -556,3 +556,65 @@ test("an attachment over the limit is refused without an upload attempt", async 
   });
   expect(uploads, "no upload should have been started").toEqual([]);
 });
+
+test("a relay that answers only after NIP-42 still serves the channel history", async ({
+  page,
+}) => {
+  // Buzz's relay compares the filter against the authenticated identity, so a
+  // subscription that arrives before the AUTH handshake finishes is closed with
+  // "restricted: ...". The client used to treat that as final. The challenge is
+  // delayed past the client's own "send the REQ anyway" window to reproduce the
+  // race the relay loses under load.
+  const relay = createMockRelay({ requireAuth: true });
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "seed-1",
+    pubkey: "b".repeat(64),
+    created_at: 120,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Seeded before the race",
+    sig: "sig",
+  });
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await expect(page.getByText("Seeded before the race")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("timeline-load-error")).toHaveCount(0);
+  // The history query was refused before the handshake and re-issued on the
+  // same socket afterwards; without that the query is simply lost.
+  expect(relay.queryAuthRetries()).toBeGreaterThan(0);
+});
+
+test("a live subscription survives arriving before the AUTH handshake", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ requireAuth: true });
+  relay.seed(channelEvent());
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByTestId("composer-input")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // The live pump's own REQ is the one that raced the handshake. If it treated
+  // the refusal as final the subscription would be dead for the whole session,
+  // so a message published now would never arrive.
+  relay.deliver({
+    id: "live-after-auth",
+    pubkey: "b".repeat(64),
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Arrived after the handshake",
+    sig: "sig",
+  });
+  await expect(page.getByText("Arrived after the handshake")).toBeVisible({
+    timeout: 20_000,
+  });
+  expect(relay.queryAuthRetries()).toBeGreaterThan(0);
+});
