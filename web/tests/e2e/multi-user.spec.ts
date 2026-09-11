@@ -484,3 +484,24 @@ test("an accept-then-close relay backs off instead of looping once a second", as
   // would hold every gap at ~1s and fail this.
   expect(gaps[0]).toBeGreaterThan(3_000);
 });
+
+test("a relay that drops the history query reports a failure, not an empty channel", async ({
+  page,
+}) => {
+  // The one-shot client used to resolve whatever it had collected when the
+  // socket closed, so a relay that hangs up mid-query looked like a channel
+  // with no messages — an authoritative empty result for a failed read.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  // Drop only the timeline read: the rest of the page must still load, so the
+  // failure has to show up where the messages would have been.
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(9) ?? false);
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await expect(page.getByTestId("timeline-load-error")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/No messages yet/)).toHaveCount(0);
+});

@@ -167,10 +167,15 @@ export function queryEvents(
     });
 
     ws.addEventListener("close", () => {
+      // Without EOSE the relay never finished answering. Resolving here would
+      // hand the caller a partial list as an authoritative result — a dropped
+      // socket would read as "this channel is empty" — so a close is a failure.
       if (!settled) {
         settled = true;
         clearTimeout(timeout);
-        resolve(events);
+        reject(
+          new Error("Relay closed the connection before finishing the query."),
+        );
       }
     });
   });

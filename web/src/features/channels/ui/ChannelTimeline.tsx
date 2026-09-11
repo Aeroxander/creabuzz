@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 
 import type { Channel } from "../use-channels";
 import {
@@ -568,6 +569,16 @@ export function ChannelTimeline({
           setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 120);
         }}
       >
+        {messages.error && roots.length > 0 ? (
+          <p
+            className="mb-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+            data-testid="timeline-history-warning"
+            role="status"
+          >
+            Showing live messages only — the relay did not answer the history
+            query for this channel.
+          </p>
+        ) : null}
         {messages.isLoading ? (
           <div className="space-y-4 py-4">
             {["a", "b", "c", "d"].map((key) => (
@@ -577,6 +588,14 @@ export function ChannelTimeline({
               />
             ))}
           </div>
+        ) : roots.length === 0 && messages.error ? (
+          <QueryError
+            description={`The relay did not answer the history query for #${channel.name}, so this channel is not known to be empty.`}
+            message={errorMessage(messages.error)}
+            onRetry={messages.refetch}
+            testId="timeline-load-error"
+            title="Couldn't load messages"
+          />
         ) : roots.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <MessageSquare className="h-7 w-7 text-black/60 dark:text-white/60" />

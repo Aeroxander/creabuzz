@@ -129,6 +129,8 @@ export function useChannelMessages(channelId: string | null) {
     ...merged,
     isLoading: historyQuery.isLoading,
     error: historyQuery.error,
+    /** Retry the history query after a failure. */
+    refetch: historyQuery.refetch,
     /** `open` once the live socket is up; null before the first attempt. */
     liveStatus,
   };

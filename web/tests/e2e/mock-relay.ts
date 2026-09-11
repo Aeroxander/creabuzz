@@ -72,8 +72,13 @@ export function createMockRelay({
   const sockets = new Set<Socket>();
   let connectionsOpened = 0;
   const openedAt: number[] = [];
-  /** Flipped on by a test that wants to watch the reconnect policy. */
-  let closingSockets = closeImmediately;
+  /**
+   * Flipped on by a test that wants to watch the reconnect policy. A predicate
+   * narrows it to the subscriptions under test, so the rest of the page keeps
+   * loading.
+   */
+  let closingSockets: boolean | ((filter: Filter | undefined) => boolean) =
+    closeImmediately;
   /** When each live-subscription socket asked for its subscription. */
   const liveSubscriptionReqs: number[] = [];
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
@@ -129,7 +134,11 @@ export function createMockRelay({
           // socket so a test can count the reconnects that policy drives.
           liveSubscriptionReqs.push(Date.now());
         }
-        if (closingSockets && parsed[0] === "REQ") {
+        const dropRequest =
+          typeof closingSockets === "function"
+            ? closingSockets(parsed[2] as Filter | undefined)
+            : closingSockets;
+        if (dropRequest && parsed[0] === "REQ") {
           // Accept, let the client use the connection, then hang up: the client
           // must back off, not reconnect at the first step forever.
           ws.close();
@@ -195,8 +204,10 @@ export function createMockRelay({
     connectionsOpened: () => connectionsOpened,
     /** When live-subscription sockets issued their REQ (the reconnect rhythm). */
     liveSubscriptionReqs: () => [...liveSubscriptionReqs],
-    /** Start hanging up on every socket that speaks. */
-    setClosingSockets: (value: boolean) => {
+    /** Start hanging up on every socket that speaks (or on matching REQs). */
+    setClosingSockets: (
+      value: boolean | ((filter: Filter | undefined) => boolean),
+    ) => {
       closingSockets = value;
     },
     /** Timestamps of those opens, to read the reconnect rhythm. */
