@@ -270,3 +270,70 @@ test("launchpad create dialog fits", async ({ page }) => {
   await expectNoOverflow(page, "launchpad create");
   await shot(page, "18-mobile-launchpad-create");
 });
+
+test("wiki typing still lands in the document", async ({ page }) => {
+  // Guards the local-edit splice: the editor hands over a whole document on
+  // every keystroke, and only the changed range may be written to the shared
+  // Yjs text.
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        communities: [
+          {
+            host: "alpha.example.com",
+            name: "Alpha",
+            description: "d",
+            icon: null,
+            member_count: 3,
+            archived: false,
+          },
+        ],
+      }),
+    });
+  });
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      for (const kind of filter.kinds ?? []) {
+        const payload = BY_KIND[kind];
+        if (payload) ws.send(JSON.stringify(["EVENT", subId, payload]));
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("open-channel-list").click();
+  await page.getByTestId("wiki-toggle").click();
+  // New pages are named through a native prompt, which Playwright dismisses
+  // unless a handler accepts it.
+  page.once("dialog", (dialog) => void dialog.accept("release-notes"));
+  await page.getByTestId("wiki-new-page").click();
+
+  const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await editor.click();
+  await page.keyboard.type("Hello wiki");
+  await expect(editor).toContainText("Hello wiki");
+
+  await page.keyboard.press("End");
+  await page.keyboard.type(" and more");
+  await expect(editor).toContainText("Hello wiki and more");
+
+  await page.screenshot({
+    path: "test-results/responsive/19-mobile-wiki-typing.png",
+  });
+});

@@ -254,7 +254,10 @@ export function WikiView() {
                   data-testid="wiki-editor"
                 />
               ) : (
-                <div className="border-b border-black/10 dark:border-white/10">
+                <div
+                  className="border-b border-black/10 dark:border-white/10"
+                  data-testid="wiki-wysiwyg"
+                >
                   <WikiEditor
                     content={content}
                     onChange={(markdown) => {

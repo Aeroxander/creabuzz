@@ -16,6 +16,8 @@ import { joinRoom } from "trystero/nostr";
 
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
+import { commitLocalEdit } from "./lib/text-edit";
+
 const APP_ID = "buzz-wiki";
 
 interface WikiAction {
@@ -65,6 +67,12 @@ function toUint8(data: unknown): Uint8Array | null {
  *
  * Returns the live text content plus a setter that writes through to the
  * shared Y.Text (peers converge); the caller publishes to the relay on save.
+ *
+ * The setter splices only the range the user changed into the live text, so a
+ * peer editing another part of the page is not overwritten. A genuine overlap
+ * (both peers rewriting the same characters) is still last-writer-wins; a
+ * CRDT-aware editor binding (`y-prosemirror` through TipTap's collaboration
+ * extension) is the end state that removes even that case.
  */
 export function useLiveWikiDoc(
   slug: string | null,
@@ -79,6 +87,17 @@ export function useLiveWikiDoc(
   const [content, setContentState] = useState(initialContent);
   const [touched, setTouched] = useState(false);
   const seededRef = useRef(false);
+  /**
+   * The last value handed to the controlled editor. A local keystroke is a delta
+   * against this baseline, not against the live document, which peers keep
+   * writing to.
+   */
+  const renderedRef = useRef(initialContent);
+
+  const setRendered = useCallback((value: string) => {
+    renderedRef.current = value;
+    setContentState(value);
+  }, []);
 
   useEffect(() => {
     if (!slug) return;
@@ -131,12 +150,6 @@ export function useLiveWikiDoc(
         sendBuffer(Y.encodeStateAsUpdate(doc));
       };
       room.action.onMessage = (data) => {
-        console.log(
-          "[wiki-sync] RECEIVED",
-          data?.constructor?.name,
-          "bytes",
-          toUint8(data)?.length,
-        );
         const bytes = toUint8(data);
         if (!bytes) return;
         try {
@@ -144,7 +157,7 @@ export function useLiveWikiDoc(
         } catch (error) {
           console.warn("[wiki-sync] apply failed", error);
         }
-        setContentState(text.toString());
+        setRendered(text.toString());
         // Echo our state (throttled) so a peer that joined mid-edit converges
         // on everything we have.
         if (echoTimer == null) {
@@ -161,14 +174,14 @@ export function useLiveWikiDoc(
       if (!seededRef.current) {
         // Initial render from the seed/snapshot — not a user edit.
         seededRef.current = true;
-        setContentState(value);
+        setRendered(value);
         return;
       }
       setTouched(true);
-      setContentState(value);
+      setRendered(value);
     };
     text.observe(onTextChange);
-    setContentState(text.toString());
+    setRendered(text.toString());
     seededRef.current = true;
 
     return () => {
@@ -180,20 +193,22 @@ export function useLiveWikiDoc(
       doc.destroy();
       docRef.current = null;
     };
-  }, [slug, initialContent]);
+  }, [slug, initialContent, setRendered]);
 
-  const setContent = useCallback((value: string) => {
-    const doc = docRef.current;
-    const text = textRef.current;
-    if (!doc || !text) return;
-    doc.transact(() => {
-      const current = text.toString();
-      if (current === value) return;
-      text.delete(0, current.length);
-      if (value.length > 0) text.insert(0, value);
-    }, "local");
-    setContentState(value);
-  }, []);
+  const setContent = useCallback(
+    (value: string) => {
+      const doc = docRef.current;
+      const text = textRef.current;
+      if (!doc || !text) return;
+      // Splice only what the user changed, so a peer's concurrent edits to
+      // other parts of the page survive (see `lib/text-edit.ts`).
+      doc.transact(() => {
+        commitLocalEdit(text, renderedRef.current, value);
+      }, "local");
+      setRendered(value);
+    },
+    [setRendered],
+  );
 
   return { content, setContent, touched };
 }
