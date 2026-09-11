@@ -16,7 +16,12 @@
       users see a white flash. A separate file rather than an inline script keeps
       the policy below free of a script hash.
     -->
-    <script src="/theme-boot.js"></script>
+    <!--
+      Under `/assets/` because the relay serves only that prefix from the web
+      directory: a script at the dist root is answered with the SPA shell, so
+      the browser parses HTML as JavaScript and the bootstrap never runs.
+    -->
+    <script src="/assets/theme-boot.js"></script>
     <!--
       Document policy. `connect-src` stays open because a client may point at any
       relay or JSON-RPC endpoint; the value here is that no script from another

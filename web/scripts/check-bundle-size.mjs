@@ -48,6 +48,19 @@ for (const name of entry) {
   if (size > BUDGET_BYTES) failed = true;
 }
 
+// The relay serves only `/assets/*` from the web directory; anything else in
+// the dist root is answered with the SPA shell. A script placed there is served
+// as HTML and fails to execute in production while working under `vite preview`.
+const rootScripts = readdirSync(join(process.cwd(), "dist")).filter((name) =>
+  name.endsWith(".js"),
+);
+if (rootScripts.length > 0) {
+  console.error(
+    `Scripts in the dist root are not served by the relay (only /assets/* is): ${rootScripts.join(", ")}`,
+  );
+  failed = true;
+}
+
 const missing = LAZY_CHUNKS.filter(
   (prefix) => !files.some((name) => name.startsWith(`${prefix}-`)),
 );

@@ -17,7 +17,8 @@
     "test:e2e:smoke": "pnpm build && playwright test --project=smoke",
     "test": "node --experimental-strip-types --test \"src/**/*.test.mjs\"",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
-    "check:px-text": "node ./scripts/check-px-text.mjs"
+    "check:px-text": "node ./scripts/check-px-text.mjs",
+    "test:e2e:real": "playwright test --config=playwright.real-relay.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
