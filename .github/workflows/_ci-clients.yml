@@ -48,8 +48,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Web lint and format
         run: just web-check
+      - name: Web unit tests
+        run: just web-test
       - name: Web build
         run: just web-build
+      - name: Install Playwright browsers
+        run: cd web && pnpm exec playwright install chromium
+      - name: Install Playwright system dependencies
+        run: cd web && pnpm exec playwright install-deps chromium
+      - name: Web smoke tests
+        run: just web-e2e-smoke
       - name: Save pnpm store cache
         if: github.event_name == 'push'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5

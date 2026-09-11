@@ -454,6 +454,9 @@ test-unit:
     else
         ./scripts/run-tests.sh unit
     fi
+    # Web unit tests (node:test): pure client logic such as the SIWE binding
+    # rules, which no lane ran before. Needs web deps installed, no browser.
+    cd {{web_dir}} && pnpm test
 
 # Run integration tests only (starts services if needed)
 test-integration:
@@ -793,6 +796,10 @@ web-typecheck:
 # Build web frontend assets
 web-build:
     cd {{web_dir}} && pnpm build
+
+# Run web unit tests (node:test; no browser, no relay)
+web-test:
+    cd {{web_dir}} && pnpm test
 
 # Run web browser smoke tests
 web-e2e-smoke:
