@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
 
 test("home page loads with Creaton branding", async ({ page }) => {
@@ -1684,4 +1685,111 @@ test("a launch can be bound to a discussion channel", async ({ page }) => {
     .toBeGreaterThan(0);
   const record = published.find((e) => e.kind === 37001);
   expect(record?.tags).toContainEqual(["buzz-channel", CHANNEL_ID]);
+});
+
+test("editing a name keeps the rest of the profile", async ({ page }) => {
+  // Kind 0 is replaceable: publishing only the fields this screen edits used to
+  // delete the avatar, NIP-05 handle and anything else set elsewhere.
+  // The profile must be authored by the identity this tab derives from the
+  // seeded nsec, not by the nsec string itself.
+  const PUBKEY_IDENTITY = getPublicKey(
+    Uint8Array.from(
+      "1"
+        .repeat(64)
+        .match(/.{2}/g)!
+        .map((b) => Number.parseInt(b, 16)),
+    ),
+  );
+  const published: Array<{ kind: number; content: string }> = [];
+  await page.addInitScript(() => {
+    window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
+  });
+  await mockCommunityDirectory(page);
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT") {
+        published.push(parsed[1]);
+        ws.send(JSON.stringify(["OK", parsed[1].id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      if (kinds.includes(0)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "profile-1",
+              pubkey: PUBKEY_IDENTITY,
+              created_at: 100,
+              kind: 0,
+              tags: [],
+              content: JSON.stringify({
+                name: "Old Name",
+                picture: "https://example.com/avatar.png",
+                nip05: "old@example.com",
+                lud16: "old@walletofsatoshi.com",
+              }),
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("user-chip").click();
+  await page.getByRole("button", { name: "Edit profile" }).click();
+  await page.getByTestId("profile-name-input").fill("New Name");
+  await page.getByTestId("profile-save").click();
+
+  await expect
+    .poll(() => published.filter((e) => e.kind === 0).length)
+    .toBeGreaterThan(0);
+  const profile = JSON.parse(
+    published.filter((e) => e.kind === 0).at(-1)!.content,
+  ) as Record<string, unknown>;
+  expect(profile.name).toBe("New Name");
+  expect(profile.display_name).toBe("New Name");
+  expect(profile.picture).toBe("https://example.com/avatar.png");
+  expect(profile.nip05).toBe("old@example.com");
+  expect(profile.lud16).toBe("old@walletofsatoshi.com");
 });

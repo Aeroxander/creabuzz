@@ -121,7 +121,12 @@ export function ProfileMenu() {
     setSaving(true);
     setMenuError(null);
     try {
-      await publishProfile({ name: editName, about: editAbout || undefined });
+      // Hand over the current profile: kind 0 is replaceable, so anything the
+      // editor does not carry has to be merged back in.
+      await publishProfile(
+        { name: editName, about: editAbout || undefined },
+        profile as Record<string, unknown> | undefined,
+      );
       setEditName(null);
     } catch (e) {
       setMenuError(e instanceof Error ? e.message : "couldn't save");
