@@ -16,6 +16,14 @@ export default {
           "sans-serif",
         ],
       },
+      // Meta-text ramp (see AGENTS.md): the sub-`text-xs` sizes for timestamps,
+      // count badges and tracking labels. `text-2xs` and `text-3xs` were used
+      // by shared primitives but never defined here, so those elements silently
+      // inherited their parent's size. rem-based so they follow zoom.
+      fontSize: {
+        "2xs": "0.6875rem",
+        "3xs": "0.5rem",
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
