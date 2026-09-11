@@ -46,7 +46,9 @@ function RuntypeIcon({ runtype }: { runtype: AgentCapabilities["runtype"] }) {
 }
 
 function AgentCard({ agent }: { agent: AgentCapabilities }) {
-  const me = agent.id === getAgentPubkey();
+  // Author-based: an agent's `d` tag is chosen by whoever publishes it, so the
+  // id alone does not establish that this row is this tab's agent.
+  const me = agent.pubkey === getAgentPubkey();
   return (
     <div className="flex items-start gap-3 rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
       <div className="relative mt-0.5 shrink-0">

@@ -1,28 +1,34 @@
 /**
- * Live fleet roster.
- *
- * The roster is a subscription over kind:44010 capabilities events plus a
- * one-shot history query. Liveness is heartbeat recency: an agent whose
- * heartbeat is older than the window is rendered offline.
+ * Agent roster: capability announcements (kind 44010) from agents in this
+ * community, with liveness derived from their heartbeat.
  */
 
 import { useEffect, useMemo, useState } from "react";
 
 import {
   queryEvents,
-  type NostrFilter,
   type NostrEvent,
+  type NostrFilter,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
-import { KIND_AGENT_CAPABILITIES } from "@/shared/constants/kinds";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { KIND_AGENT_CAPABILITIES } from "@/shared/constants/kinds";
+
+import {
+  indexRoster,
+  parseAnnouncement,
+  rosterKey,
+  type RosterEntry,
+} from "./lib/index-roster";
 
 export type AgentRuntype = "browser" | "desktop" | "sandbox";
 export type AgentStatus = "available" | "busy" | "offline";
 
 export interface AgentCapabilities {
+  /** The `d` tag (an agent's stable id), or the author pubkey when absent. */
   id: string;
+  /** Author of the announcement — the identity that owns this entry. */
   pubkey: string;
   name: string;
   runtype: AgentRuntype;
@@ -36,44 +42,26 @@ export interface AgentCapabilities {
 
 const LIVENESS_WINDOW_MS = 180_000;
 
-function parseCapabilities(event: NostrEvent): AgentCapabilities | null {
-  const id = event.tags.find((t) => t[0] === "d")?.[1] ?? event.pubkey;
-  let body: {
-    name?: string;
-    runtype?: string;
-    status?: string;
-    tools?: string[];
-    team?: string;
-    heartbeat?: number;
-  } = {};
-  try {
-    body = JSON.parse(event.content) as typeof body;
-  } catch {
-    // malformed — still surface the agent with defaults
-  }
-  const runtype = (["browser", "desktop", "sandbox"] as const).includes(
-    body.runtype as AgentRuntype,
-  )
-    ? (body.runtype as AgentRuntype)
-    : "sandbox";
-  const status = (["available", "busy", "offline"] as const).includes(
-    body.status as AgentStatus,
-  )
-    ? (body.status as AgentStatus)
-    : "available";
-  // body.heartbeat is unix seconds (as published by agents); normalize to ms.
-  const heartbeatMs = (body.heartbeat ?? event.created_at) * 1000;
+const RUNTYPES: readonly string[] = ["browser", "desktop", "sandbox"];
+const STATUSES: readonly string[] = ["available", "busy", "offline"];
+
+/** Narrow parsed fields and derive liveness at read time. */
+function toCapabilities(entry: RosterEntry): AgentCapabilities {
   return {
-    id,
-    pubkey: event.pubkey,
-    name: body.name ?? truncatePubkey(event.pubkey),
-    runtype,
-    status,
-    tools: body.tools ?? [],
-    team: (body.team ?? "").trim() || null,
-    heartbeat: heartbeatMs,
-    updatedAt: event.created_at * 1000,
-    alive: Date.now() - heartbeatMs < LIVENESS_WINDOW_MS,
+    id: entry.id,
+    pubkey: entry.pubkey,
+    name: entry.name || truncatePubkey(entry.pubkey),
+    runtype: RUNTYPES.includes(entry.runtype)
+      ? (entry.runtype as AgentRuntype)
+      : "sandbox",
+    status: STATUSES.includes(entry.status)
+      ? (entry.status as AgentStatus)
+      : "available",
+    tools: entry.tools,
+    team: entry.team,
+    heartbeat: entry.heartbeat,
+    updatedAt: entry.updatedAt,
+    alive: Date.now() - entry.heartbeat < LIVENESS_WINDOW_MS,
   };
 }
 
@@ -91,7 +79,9 @@ export function useAgentRoster(): {
   useEffect(() => {
     const wsUrl = relayWsUrl();
     // Heartbeat rows flood history (one per agent per minute), so pull a wide
-    // window and keep newest-per-agent client-side.
+    // window and keep newest-per-identity client-side. Identities are
+    // author-qualified: keying on the `d` tag alone let one member's
+    // announcement take over another agent's directory entry.
     const filter: NostrFilter = {
       kinds: [KIND_AGENT_CAPABILITIES],
       limit: 1000,
@@ -99,12 +89,13 @@ export function useAgentRoster(): {
     let disposed = false;
 
     const upsert = (event: NostrEvent) => {
-      const parsed = parseCapabilities(event);
+      const parsed = parseAnnouncement(event);
       if (!parsed) return;
+      const key = rosterKey(parsed.pubkey, parsed.id);
       setAgents((prev) => {
-        const existing = prev[parsed.id];
+        const existing = prev[key];
         if (existing && existing.updatedAt >= parsed.updatedAt) return prev;
-        return { ...prev, [parsed.id]: parsed };
+        return { ...prev, [key]: toCapabilities(parsed) };
       });
     };
 
@@ -113,13 +104,10 @@ export function useAgentRoster(): {
         if (disposed) return;
         setAgents((prev) => {
           const next = { ...prev };
-          for (const event of events) {
-            const parsed = parseCapabilities(event);
-            if (!parsed) continue;
-            const existing = next[parsed.id];
-            if (!existing || existing.updatedAt < parsed.updatedAt) {
-              next[parsed.id] = parsed;
-            }
+          for (const [key, entry] of Object.entries(indexRoster(events))) {
+            const existing = next[key];
+            if (existing && existing.updatedAt >= entry.updatedAt) continue;
+            next[key] = toCapabilities(entry);
           }
           return next;
         });
@@ -140,15 +128,16 @@ export function useAgentRoster(): {
       { onEvent: (event) => upsert(event) },
     );
 
+    // Liveness decays with the heartbeat, so re-derive it on a timer.
     const livenessTimer = setInterval(() => {
       setAgents((prev) => {
         const now = Date.now();
         let changed = false;
         const next: Record<string, AgentCapabilities> = {};
-        for (const [id, agent] of Object.entries(prev)) {
+        for (const [key, agent] of Object.entries(prev)) {
           const alive = now - agent.heartbeat < LIVENESS_WINDOW_MS;
           if (alive !== agent.alive) changed = true;
-          next[id] = { ...agent, alive };
+          next[key] = { ...agent, alive };
         }
         return changed ? next : prev;
       });
