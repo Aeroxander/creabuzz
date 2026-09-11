@@ -6,21 +6,26 @@ import {
   CloudUpload,
   Download,
   FilePlus2,
+  Pencil,
   Save,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
 import { useLiveWikiDoc } from "../wiki-sync";
+import { PageDialog } from "./PageDialog";
 import { WikiEditor } from "./WikiEditor";
 import { WikiGraph } from "./WikiGraph";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 type Tab = "edit" | "graph";
 
 export function WikiView() {
-  const { pages, isLoading, savePage } = useWikiPages(true);
+  const { pages, isLoading, savePage, deletePage, renamePage } =
+    useWikiPages(true);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("edit");
   const [activeSlug, setActiveSlug] = useState<string | null>(
@@ -30,29 +35,61 @@ export function WikiView() {
   const [mode, setMode] = useState<EditMode>("wysiwyg");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [pageSearch, setPageSearch] = useState("");
+  /** Open naming dialog: `new` creates, otherwise it renames that page. */
+  const [dialog, setDialog] = useState<null | "new" | { rename: string }>(null);
+  const [pendingDelete, setPendingDelete] = useState<WikiPage | null>(null);
 
-  const active = pages.find((p) => p.slug === activeSlug) ?? null;
+  const published = pages.find((p) => p.slug === activeSlug) ?? null;
   const { content, setContent, touched } = useLiveWikiDoc(
     activeSlug,
-    active?.content ?? "",
+    published?.content ?? "",
   );
+  /** The page being edited, including one that exists only in this editor. */
+  const active: WikiPage | null =
+    published ??
+    (activeSlug
+      ? { slug: activeSlug, content, updatedAt: 0, draft: true }
+      : null);
 
   const selectPage = (page: WikiPage) => {
     setActiveSlug(page.slug);
     setMode("wysiwyg");
   };
 
-  const createPage = () => {
-    const slug = prompt("Page slug (e.g. company-profile):");
-    if (!slug || slug.trim().length === 0) return;
-    const normalized = slug.trim().toLowerCase().replace(/\s+/g, "-");
-    if (pages.some((p) => p.slug === normalized)) {
-      selectPage(pages.find((p) => p.slug === normalized)!);
-      return;
+  const createPage = (slug: string) => {
+    const existing = pages.find((p) => p.slug === slug);
+    if (existing) {
+      selectPage(existing);
+    } else {
+      setActiveSlug(slug);
+      setMode("wysiwyg");
     }
-    setActiveSlug(normalized);
-    setMode("wysiwyg");
+    setDialog(null);
   };
+
+  /**
+   * Pages to show in the list. A page created here exists only in the editor
+   * until it is published, so it is listed as a draft — otherwise "New page"
+   * appears to do nothing.
+   */
+  const visiblePages = useMemo(() => {
+    const term = pageSearch.trim().toLowerCase();
+    const matches = (slug: string) =>
+      term.length === 0 || slug.toLowerCase().includes(term);
+    const known = pages.filter((page) => matches(page.slug));
+    if (!activeSlug || pages.some((page) => page.slug === activeSlug)) {
+      return known;
+    }
+    if (!matches(activeSlug)) return known;
+    const draft: WikiPage = {
+      slug: activeSlug,
+      content,
+      updatedAt: 0,
+      draft: true,
+    };
+    return [draft, ...known];
+  }, [pages, pageSearch, activeSlug, content]);
 
   const save = async () => {
     if (!activeSlug) return;
@@ -127,7 +164,7 @@ export function WikiView() {
           </span>
           <button
             type="button"
-            onClick={createPage}
+            onClick={() => setDialog("new")}
             className="rounded p-1 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
             aria-label="New page"
             data-testid="wiki-new-page"
@@ -135,6 +172,18 @@ export function WikiView() {
             <FilePlus2 className="h-4 w-4" />
           </button>
         </div>
+        {pages.length > 3 ? (
+          <div className="px-2 pb-2">
+            <input
+              aria-label="Find a page"
+              className="w-full rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-black outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+              data-testid="wiki-page-search"
+              onChange={(e) => setPageSearch(e.target.value)}
+              placeholder="Find a page…"
+              value={pageSearch}
+            />
+          </div>
+        ) : null}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           {isLoading && pages.length === 0 ? (
             <div className="space-y-2 p-2">
@@ -145,12 +194,19 @@ export function WikiView() {
                 />
               ))}
             </div>
-          ) : pages.length === 0 ? (
+          ) : visiblePages.length === 0 && pageSearch.trim().length > 0 ? (
+            <p
+              className="px-2 py-3 text-xs text-black/45 dark:text-white/45"
+              data-testid="wiki-page-search-empty"
+            >
+              No page matches “{pageSearch.trim()}”.
+            </p>
+          ) : visiblePages.length === 0 ? (
             <p className="px-2 py-3 text-xs text-black/45 dark:text-white/45">
               No pages yet. Create the first one.
             </p>
           ) : (
-            pages.map((page) => (
+            visiblePages.map((page) => (
               <button
                 key={page.slug}
                 type="button"
@@ -164,6 +220,11 @@ export function WikiView() {
               >
                 <BookOpen className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{page.slug}</span>
+                {page.draft ? (
+                  <span className="ml-auto shrink-0 text-2xs text-amber-700 dark:text-amber-400">
+                    draft
+                  </span>
+                ) : null}
               </button>
             ))
           )}
@@ -171,7 +232,12 @@ export function WikiView() {
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-black/10 px-4 py-2 dark:border-white/10">
+        {/* One wrapping row: at 390px the old fixed row clipped "Source" off
+            the card, leaving that mode unreachable. */}
+        <div
+          className="flex flex-wrap items-center gap-2 border-b border-black/10 px-2 py-2 sm:px-4 dark:border-white/10"
+          data-testid="wiki-toolbar"
+        >
           <div className="flex items-center gap-1 rounded-md bg-black/5 p-1 dark:bg-white/10">
             {(["edit", "graph"] as const).map((t) => (
               <button
@@ -183,32 +249,16 @@ export function WikiView() {
                     ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
                     : "text-black/60 dark:text-white/60"
                 }`}
+                data-testid={`wiki-tab-${t}`}
               >
                 {t === "edit" ? "Edit" : "Graph"}
               </button>
             ))}
           </div>
-          <span className="truncate text-sm font-medium text-black/70 dark:text-white/70">
+          <span className="min-w-0 truncate text-sm font-medium text-black/70 dark:text-white/70">
             {activeSlug ?? "wiki"}
           </span>
-          <span className="ml-auto flex items-center gap-1.5 text-xs text-black/45 dark:text-white/45">
-            <button
-              type="button"
-              onClick={exportWiki}
-              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
-              aria-label="Export wiki as markdown"
-              data-testid="wiki-export"
-              title="Download all pages as one markdown file"
-            >
-              <Download className="h-3 w-3" /> Export
-            </button>
-            <CloudUpload className="h-3 w-3" /> auto-saves
-            {links.length > 0 && (
-              <span className="flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> {links.length} link
-                {links.length === 1 ? "" : "s"}
-              </span>
-            )}
+          <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-black/45 dark:text-white/45">
             {(["wysiwyg", "source", "preview"] as const).map((m) => (
               <button
                 key={m}
@@ -228,7 +278,74 @@ export function WikiView() {
                     : "Preview"}
               </button>
             ))}
-          </span>
+            <span
+              className="flex items-center gap-1"
+              data-testid="wiki-save-state"
+            >
+              <CloudUpload className="h-3 w-3" aria-hidden="true" />
+              {saving
+                ? "saving…"
+                : dirty || active?.draft
+                  ? "unsaved"
+                  : "saved"}
+            </span>
+            <button
+              type="button"
+              onClick={exportWiki}
+              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+              aria-label="Export wiki as markdown"
+              data-testid="wiki-export"
+              title="Download all pages as one markdown file"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
+            {links.length > 0 && (
+              <span className="hidden items-center gap-1 sm:flex">
+                <Sparkles className="h-3 w-3" /> {links.length} link
+                {links.length === 1 ? "" : "s"}
+              </span>
+            )}
+            {active ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDialog({ rename: active.slug })}
+                  key="rename"
+                  className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+                  data-testid="wiki-rename"
+                  title="Rename this page"
+                >
+                  <Pencil className="h-3 w-3" /> Rename
+                </button>
+                <button
+                  type="button"
+                  key="delete"
+                  onClick={() => setPendingDelete(active)}
+                  className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 text-red-700 dark:border-white/15 dark:text-red-400"
+                  data-testid="wiki-delete"
+                  title="Delete this page"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </>
+            ) : null}
+            {activeSlug ? (
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving || !dirty}
+                className="inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+                data-testid="wiki-save"
+                title={
+                  dirty
+                    ? "Publish this page to the relay"
+                    : "No unpublished changes"
+                }
+              >
+                <Save className="h-3 w-3" /> {saving ? "Saving…" : "Save"}
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {tab === "graph" ? (
@@ -268,17 +385,6 @@ export function WikiView() {
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end border-t border-black/10 px-4 py-2 dark:border-white/10">
-              <button
-                type="button"
-                onClick={() => void save()}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
-                data-testid="wiki-save"
-              >
-                <Save className="h-4 w-4" /> {saving ? "Saving…" : "Save page"}
-              </button>
-            </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
@@ -286,6 +392,85 @@ export function WikiView() {
           </div>
         )}
       </div>
+
+      {dialog ? (
+        <PageDialog
+          confirmLabel={dialog === "new" ? "Create page" : "Rename page"}
+          description={
+            dialog === "new"
+              ? "Pages are addressable by name, so the name is permanent until you rename the page."
+              : `Rename “${dialog.rename}”. The old name is deleted and its content moves to the new one.`
+          }
+          initialValue={dialog === "new" ? "" : dialog.rename}
+          onCancel={() => setDialog(null)}
+          onSubmit={(slug) => {
+            if (dialog === "new") {
+              createPage(slug);
+              return;
+            }
+            const page = pages.find((p) => p.slug === dialog.rename);
+            setDialog(null);
+            if (page?.slug === slug) return;
+            setActiveSlug(slug);
+            if (!page) {
+              // Never published, so there is nothing on the relay to move.
+              toast.success(`Renamed to ${slug}`);
+              return;
+            }
+            void renamePage(page, slug)
+              .then(() => {
+                toast.success(`Renamed to ${slug}`);
+                void queryClient.invalidateQueries({
+                  queryKey: ["wiki-pages"],
+                });
+              })
+              .catch((error) =>
+                toast.error("Couldn't rename page", {
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                }),
+              );
+          }}
+          takenSlugs={pages
+            .map((p) => p.slug)
+            .filter((slug) => slug !== (dialog === "new" ? "" : dialog.rename))}
+          title={dialog === "new" ? "New wiki page" : "Rename page"}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        confirmLabel="Delete page"
+        description={
+          pendingDelete
+            ? `“${pendingDelete.slug}” is removed for everyone in this community. Its content is not recoverable.`
+            : ""
+        }
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const page = pendingDelete;
+          setPendingDelete(null);
+          if (!page) return;
+          if (activeSlug === page.slug) setActiveSlug(null);
+          if (page.draft || !pages.some((p) => p.slug === page.slug)) {
+            // Local-only page: dropping the editor state is the whole delete.
+            toast.success(`Discarded ${page.slug}`);
+            return;
+          }
+          void deletePage(page)
+            .then(() => {
+              toast.success(`Deleted ${page.slug}`);
+              void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
+            })
+            .catch((error) =>
+              toast.error("Couldn't delete page", {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              }),
+            );
+        }}
+        open={pendingDelete !== null}
+        title="Delete this page?"
+      />
     </div>
   );
 }

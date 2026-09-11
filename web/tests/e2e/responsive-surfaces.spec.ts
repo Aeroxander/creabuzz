@@ -149,6 +149,34 @@ async function overflow(page: Page) {
   });
 }
 
+/** Controls that are clipped out of the viewport cannot be reached at all. */
+async function expectNoClippedControls(page: Page, container: string) {
+  const clipped = await page
+    .locator(`${container} button`)
+    .evaluateAll((nodes) =>
+      nodes
+        .map((node) => {
+          const rect = node.getBoundingClientRect();
+          return {
+            label: (node.getAttribute("aria-label") || node.textContent || "")
+              .trim()
+              .slice(0, 24),
+            right: Math.round(rect.right),
+            left: Math.round(rect.left),
+            width: Math.round(rect.width),
+          };
+        })
+        .filter(
+          (r) =>
+            r.width > 0 && (r.right > window.innerWidth + 1 || r.left < -1),
+        ),
+    );
+  expect(
+    clipped,
+    `controls clipped out of the viewport: ${JSON.stringify(clipped)}`,
+  ).toEqual([]);
+}
+
 async function expectNoOverflow(page: Page, surface: string) {
   const result = await overflow(page);
   expect(
@@ -319,10 +347,9 @@ test("wiki typing still lands in the document", async ({ page }) => {
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("open-channel-list").click();
   await page.getByTestId("wiki-toggle").click();
-  // New pages are named through a native prompt, which Playwright dismisses
-  // unless a handler accepts it.
-  page.once("dialog", (dialog) => void dialog.accept("release-notes"));
   await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill("release-notes");
+  await page.getByTestId("page-name-confirm").click();
 
   const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
   await editor.click();
@@ -336,4 +363,52 @@ test("wiki typing still lands in the document", async ({ page }) => {
   await page.screenshot({
     path: "test-results/responsive/19-mobile-wiki-typing.png",
   });
+});
+
+test("every wiki toolbar control stays reachable at 390px", async ({
+  page,
+}) => {
+  // Regression: the fixed toolbar row clipped "Source" off the card, so that
+  // mode could not be clicked at all.
+  await openCommunity(page);
+  await page.getByTestId("open-channel-list").click();
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill("release-notes");
+  await page.getByTestId("page-name-confirm").click();
+
+  await expectNoClippedControls(page, "[data-testid='wiki-toolbar']");
+  await expectNoOverflow(page, "wiki toolbar");
+  await shot(page, "20-mobile-wiki-toolbar");
+});
+
+test("wiki pages can be created, renamed and deleted", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openCommunity(page);
+  await page.getByTestId("wiki-toggle").click();
+
+  // Create through the dialog (was a blocking `window.prompt`).
+  await page.getByTestId("wiki-new-page").click();
+  await expect(page.getByTestId("page-name-hint")).toContainText(
+    "at least one letter",
+  );
+  await page.getByTestId("page-name-input").fill("Release Notes");
+  await expect(page.getByTestId("page-name-hint")).toContainText(
+    "release-notes",
+  );
+  await page.getByTestId("page-name-confirm").click();
+  await expect(page.getByTestId("wiki-page-release-notes")).toBeVisible();
+
+  // Rename: the old slug goes away, the new one appears.
+  await page.getByTestId("wiki-rename").click();
+  await page.getByTestId("page-name-input").fill("changelog");
+  await page.getByTestId("page-name-confirm").click();
+  await expect(page.getByTestId("wiki-page-changelog")).toBeVisible();
+  await expect(page.getByTestId("wiki-page-release-notes")).toBeHidden();
+
+  // Delete asks first, then hides the page.
+  await page.getByTestId("wiki-delete").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-accept").click();
+  await expect(page.getByTestId("wiki-page-changelog")).toBeHidden();
 });

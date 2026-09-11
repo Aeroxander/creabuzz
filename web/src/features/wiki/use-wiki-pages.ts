@@ -13,18 +13,23 @@ import { useQuery } from "@tanstack/react-query";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
+import { signAsUser, userPubkey } from "@/shared/lib/identity";
 
-const KIND_WIKI_PAGE = 44001;
+import {
+  buildPages,
+  KIND_DELETE,
+  KIND_WIKI_PAGE,
+  pageCoordinate,
+} from "./lib/page-index";
 
 export interface WikiPage {
   slug: string;
   content: string;
   updatedAt: number;
-}
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
+  /** Author of the winning snapshot; the delete tombstone must match it. */
+  authorPubkey?: string;
+  /** True for a page that only exists in this editor and is not published yet. */
+  draft?: boolean;
 }
 
 // ── local cache (op-sqlite / OPFS) ──────────────────────────────────────────
@@ -78,26 +83,31 @@ async function cachePage(page: WikiPage): Promise<void> {
   );
 }
 
+async function dropCachedPage(slug: string): Promise<void> {
+  const db = await openWikiDb();
+  if (!db) return;
+  await db.execute("DELETE FROM pages WHERE slug = ?", [slug]);
+}
+
 // ── relay source of truth ───────────────────────────────────────────────────
 
 async function fetchWikiPages(): Promise<WikiPage[]> {
+  // Tombstones come back in the same query so a deleted page disappears here
+  // as well as on every other client.
   const events = await queryEvents(relayWsUrl(), {
-    kinds: [KIND_WIKI_PAGE],
+    kinds: [KIND_WIKI_PAGE, KIND_DELETE],
     limit: 200,
   });
-  const latestBySlug = new Map<string, NostrEvent>();
-  for (const event of events) {
-    const slug = getTag(event, "d") ?? event.id;
-    const previous = latestBySlug.get(slug);
-    if (!previous || event.created_at > previous.created_at) {
-      latestBySlug.set(slug, event);
-    }
-  }
-  return [...latestBySlug.values()].map((event) => ({
-    slug: getTag(event, "d") ?? event.id,
-    content: typeof event.content === "string" ? event.content : "",
-    updatedAt: event.created_at,
-  }));
+  return buildPages(
+    events.map((event: NostrEvent) => ({
+      id: event.id,
+      pubkey: event.pubkey,
+      created_at: event.created_at,
+      kind: event.kind,
+      tags: event.tags as string[][],
+      content: event.content,
+    })),
+  );
 }
 
 // ── hooks ───────────────────────────────────────────────────────────────────
@@ -150,10 +160,49 @@ export function useWikiPages(enabled: boolean) {
       slug,
       content,
       updatedAt: Math.floor(Date.now() / 1000),
+      authorPubkey: signed.pubkey,
     });
   }, []);
 
-  return { pages, isLoading: relayQuery.isLoading, savePage };
+  /**
+   * Delete a page with a NIP-09 tombstone naming its addressable coordinate.
+   *
+   * The relay keeps the tombstone rather than the page, so every client hides
+   * the page without needing addressable-event delete semantics. Only the
+   * author's tombstone counts (`lib/page-index.ts`).
+   */
+  const deletePage = useCallback(async (page: WikiPage) => {
+    const author = page.authorPubkey ?? userPubkey();
+    const signed = await signAsUser({
+      kind: KIND_DELETE,
+      tags: [["a", pageCoordinate(author, page.slug)]],
+      content: "",
+    });
+    const result = await publishEvent(relayWsUrl(), signed, {
+      signAuth: signAsUser,
+    });
+    if (!result.accepted) {
+      throw new Error(result.message ?? "relay rejected the delete");
+    }
+    await dropCachedPage(page.slug);
+  }, []);
+
+  /** Rename by republishing under the new slug, then tombstoning the old one. */
+  const renamePage = useCallback(
+    async (page: WikiPage, nextSlug: string) => {
+      await savePage(nextSlug, page.content);
+      await deletePage({ ...page, slug: page.slug });
+    },
+    [deletePage, savePage],
+  );
+
+  return {
+    pages,
+    isLoading: relayQuery.isLoading,
+    savePage,
+    deletePage,
+    renamePage,
+  };
 }
 
 /** [[wikilinks]] and #tags mentioned in wiki content. */
