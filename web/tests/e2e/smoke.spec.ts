@@ -507,3 +507,31 @@ test("a channel query failure offers a retry instead of an empty community", asy
     page.getByRole("button", { name: "Join in browser" }),
   ).toBeHidden();
 });
+
+test("a malformed relay payload shows a recoverable error, not a blank page", async ({
+  page,
+}) => {
+  // Production relays can answer with an unexpected shape. Before the route
+  // error boundary existed this threw during render and left a blank window.
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ communities: "not-an-array" }),
+    });
+  });
+  await page.goto("/");
+  const boundary = page.getByTestId("route-error");
+  await expect(boundary).toBeVisible();
+  await expect(boundary).toContainText("Something went wrong");
+  await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+});
+
+test("an unknown address shows the not-found view", async ({ page }) => {
+  await page.goto("/definitely/not/a/route");
+  await expect(page.getByTestId("route-not-found")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "All communities" }),
+  ).toBeVisible();
+});

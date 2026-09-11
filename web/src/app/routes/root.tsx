@@ -1,7 +1,11 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 
+import { NotFoundView, RouteErrorView } from "../BoundaryViews";
+
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: RouteErrorView,
+  notFoundComponent: NotFoundView,
 });
 
 function RootLayout() {
