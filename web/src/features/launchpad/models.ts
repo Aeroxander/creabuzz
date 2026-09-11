@@ -1,11 +1,13 @@
 import type { NostrEvent } from "@/shared/lib/nostr-client";
+// Relative so this module can be exercised by `node --test` (see
+// models.test.mjs); the kind numbers are plain constants with no imports.
 import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
   KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
   KIND_LAUNCH_UPDATE,
-} from "@/shared/constants/kinds";
+} from "../../shared/constants/kinds.ts";
 
 export type LaunchStage =
   | "draft"
@@ -64,6 +66,8 @@ export interface LaunchRecord {
 export interface LaunchBid {
   id: string;
   launchId: string;
+  /** Author-qualified identity (`<pubkey>:<slug>`): two founders may share a slug. */
+  launchKey: string;
   author: string;
   createdAt: number;
   bucket: string;
@@ -75,6 +79,8 @@ export interface LaunchBid {
 export interface LaunchUpdate {
   id: string;
   launchId: string;
+  /** Author-qualified identity (`<pubkey>:<slug>`): two founders may share a slug. */
+  launchKey: string;
   author: string;
   createdAt: number;
   title: string;
@@ -87,6 +93,8 @@ export type ProposalKind = "plain" | "futarchy-budget" | "signal";
 export interface LaunchProposal {
   id: string;
   launchId: string;
+  /** Author-qualified identity (`<pubkey>:<slug>`): two founders may share a slug. */
+  launchKey: string;
   author: string;
   createdAt: number;
   proposalId: string | null;
@@ -99,6 +107,8 @@ export interface LaunchProposal {
 export interface LaunchReceipt {
   id: string;
   launchId: string;
+  /** Author-qualified identity (`<pubkey>:<slug>`): two founders may share a slug. */
+  launchKey: string;
   author: string;
   createdAt: number;
   table: string;
@@ -266,23 +276,36 @@ export function mintCommandForPlan(input: {
   ].join(" ");
 }
 
-function launchIdFrom(event: NostrEvent): string | null {
+/**
+ * Split a mirror's `a` tag into its author-qualified identity.
+ *
+ * NIP-LP requires exactly one canonical `37001:<hex-author>:<slug>`. The author
+ * is part of the identity: two founders may both publish a launch called
+ * "nebula", and a mirror must attach to the one that published it rather than
+ * to whichever came first.
+ */
+function launchRefFrom(
+  event: NostrEvent,
+): { launchId: string; launchKey: string } | null {
   const coord = tagValue(event, "a");
   if (!coord) return null;
   const parts = coord.split(":");
   if (parts.length < 3 || parts[0] !== String(KIND_LAUNCH_RECORD)) return null;
+  const author = parts[1];
   const id = parts.slice(2).join(":");
-  return id.length > 0 ? id : null;
+  if (author.length === 0 || id.length === 0) return null;
+  return { launchId: id, launchKey: `${author}:${id}` };
 }
 
 export function parseLaunchBid(event: NostrEvent): LaunchBid | null {
   if (event.kind !== KIND_LAUNCH_BID) return null;
-  const launchId = launchIdFrom(event);
-  if (!launchId) return null;
+  const ref = launchRefFrom(event);
+  if (!ref) return null;
   const body = contentObject(event);
   return {
     id: event.id,
-    launchId,
+    launchId: ref.launchId,
+    launchKey: ref.launchKey,
     author: event.pubkey,
     createdAt: event.created_at,
     bucket: tagValue(event, "m") ?? "",
@@ -294,12 +317,13 @@ export function parseLaunchBid(event: NostrEvent): LaunchBid | null {
 
 export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
   if (event.kind !== KIND_LAUNCH_UPDATE) return null;
-  const launchId = launchIdFrom(event);
-  if (!launchId) return null;
+  const ref = launchRefFrom(event);
+  if (!ref) return null;
   const body = contentObject(event);
   return {
     id: event.id,
-    launchId,
+    launchId: ref.launchId,
+    launchKey: ref.launchKey,
     author: event.pubkey,
     createdAt: event.created_at,
     title: typeof body.title === "string" ? body.title : "Update",
@@ -314,8 +338,8 @@ function isProposalKind(value: unknown): value is ProposalKind {
 
 export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
   if (event.kind !== KIND_LAUNCH_PROPOSAL) return null;
-  const launchId = launchIdFrom(event);
-  if (!launchId) return null;
+  const ref = launchRefFrom(event);
+  if (!ref) return null;
   const body = contentObject(event);
   const state =
     body.state === "passed" ||
@@ -325,7 +349,8 @@ export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
       : "open";
   return {
     id: event.id,
-    launchId,
+    launchId: ref.launchId,
+    launchKey: ref.launchKey,
     author: event.pubkey,
     createdAt: event.created_at,
     proposalId: str(body.proposalId),
@@ -338,12 +363,13 @@ export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
 
 export function parseLaunchReceipt(event: NostrEvent): LaunchReceipt | null {
   if (event.kind !== KIND_LAUNCH_RECEIPT) return null;
-  const launchId = launchIdFrom(event);
+  const ref = launchRefFrom(event);
   const tx = tagValue(event, "tx");
-  if (!launchId || !tx) return null;
+  if (!ref || !tx) return null;
   return {
     id: event.id,
-    launchId,
+    launchId: ref.launchId,
+    launchKey: ref.launchKey,
     author: event.pubkey,
     createdAt: event.created_at,
     table: tagValue(event, "kind") ?? "unknown",
@@ -394,18 +420,18 @@ export function buildLaunches(
       receipts: [],
     });
   }
-  const ownerOf = (launchId: string): Launch | undefined => {
-    for (const launch of launches.values()) {
-      if (launch.record.id === launchId) return launch;
-    }
-    return undefined;
-  };
-  for (const bid of bids) ownerOf(bid.launchId)?.bids.push(bid);
-  for (const update of updates) ownerOf(update.launchId)?.updates.push(update);
+  // One lookup per mirror, keyed by the author-qualified identity. Keying on
+  // the slug alone attached a mirror to whichever launch with that slug came
+  // first, so two founders using the same name saw each other's bids — and it
+  // scanned every launch for every mirror.
+  const ownerOf = (launchKey: string): Launch | undefined =>
+    launches.get(launchKey);
+  for (const bid of bids) ownerOf(bid.launchKey)?.bids.push(bid);
+  for (const update of updates) ownerOf(update.launchKey)?.updates.push(update);
   for (const proposal of proposals)
-    ownerOf(proposal.launchId)?.proposals.push(proposal);
+    ownerOf(proposal.launchKey)?.proposals.push(proposal);
   for (const receipt of receipts)
-    ownerOf(receipt.launchId)?.receipts.push(receipt);
+    ownerOf(receipt.launchKey)?.receipts.push(receipt);
   const out = [...launches.values()];
   for (const launch of out) {
     launch.updates.sort((a, b) => b.createdAt - a.createdAt);
