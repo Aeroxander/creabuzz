@@ -1145,3 +1145,59 @@ test("the wiki page dialog takes focus and gives it back", async ({ page }) => {
   await expect(input).toBeHidden();
   await expect(opener).toBeFocused();
 });
+
+test("a refused search offers a retry", async ({ page }) => {
+  await mockCommunityDirectory(page);
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", "0f0f0f0f-1111-2222-3333-444444444444"],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+        ws.send(JSON.stringify(["EOSE", subId]));
+        return;
+      }
+      ws.send(JSON.stringify(["CLOSED", subId, "blocked: no search index"]));
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("search-input").fill("release notes");
+
+  // Search runs over the HTTP bridge; against a static preview host that call
+  // fails, which is exactly the state this panel exists for.
+  const panel = page.getByTestId("search-error");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("Search failed");
+  await expect(page.getByTestId("search-error-retry")).toBeVisible();
+});

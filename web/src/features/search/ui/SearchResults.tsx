@@ -8,6 +8,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
+import { QueryError } from "@/shared/ui/query-error";
 
 export function SearchResults({
   term,
@@ -19,7 +20,7 @@ export function SearchResults({
   onOpenChannel: (channelId: string) => void;
 }) {
   const channelIds = channels.map((c) => c.id);
-  const { data, isLoading, error } = useSearch(term, channelIds);
+  const { data, isLoading, error, refetch } = useSearch(term, channelIds);
   const authors = [...new Set((data ?? []).map((e) => e.pubkey))];
   const { data: profiles } = useProfiles(authors);
   const profileByPubkey = new Map(
@@ -42,8 +43,14 @@ export function SearchResults({
 
   if (error) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-sm text-black/50 dark:text-white/50">
-        Search failed: {error.message}
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+        <QueryError
+          description="The relay did not answer the search query."
+          message={error.message}
+          onRetry={() => void refetch()}
+          testId="search-error"
+          title="Search failed"
+        />
       </div>
     );
   }
