@@ -24,6 +24,7 @@ export default defineConfig({
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",
         "**/a11y.spec.ts",
+        "**/multi-user.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
