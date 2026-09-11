@@ -158,12 +158,23 @@ const RUN_SANDBOX = "allow-scripts";
 
 function HtmlRunView({ doc }: { doc: string }) {
   return (
-    <iframe
-      title="Repository page (sandboxed)"
-      srcDoc={doc}
-      sandbox={RUN_SANDBOX}
-      className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
-    />
+    <div className="space-y-1.5">
+      <iframe
+        title="Repository page (sandboxed)"
+        srcDoc={doc}
+        sandbox={RUN_SANDBOX}
+        className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
+      />
+      <p
+        className="text-xs text-black/60 dark:text-white/60"
+        data-testid="repo-html-preview-note"
+      >
+        Sandboxed preview. The page's own scripts do not run here: the
+        document's Content-Security-Policy applies to this frame, and relaxing
+        it would also relax it for the app. Static content, styles and inlined
+        assets render.
+      </p>
+    </div>
   );
 }
 
