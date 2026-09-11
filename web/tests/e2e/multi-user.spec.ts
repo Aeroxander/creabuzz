@@ -505,3 +505,54 @@ test("a relay that drops the history query reports a failure, not an empty chann
   });
   await expect(page.getByText(/No messages yet/)).toHaveCount(0);
 });
+
+test("a wiki page query the relay drops is reported, not shown as no pages", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  // Wiki pages are an addressable event (kind 44001) plus tombstones.
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(44001) ?? false);
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("wiki-toggle").click();
+
+  await expect(page.getByTestId("wiki-load-error")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/No pages yet/)).toHaveCount(0);
+});
+
+test("an attachment over the limit is refused without an upload attempt", async ({
+  page,
+}) => {
+  // The upload path buffers and hashes the whole file before sending, so an
+  // oversized file must be refused up front — otherwise the reader pays the
+  // memory and the read time to be told by the relay.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  await relay.install(page);
+
+  const uploads: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/upload")) uploads.push(request.url());
+  });
+
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByTestId("composer-input")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // 11 MB animated GIF against the 10 MB GIF ceiling.
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "reaction.gif",
+    mimeType: "image/gif",
+    buffer: Buffer.alloc(11 * 1024 * 1024),
+  });
+
+  await expect(page.getByText(/over the 10 MB limit/)).toBeVisible({
+    timeout: 15_000,
+  });
+  expect(uploads, "no upload should have been started").toEqual([]);
+});

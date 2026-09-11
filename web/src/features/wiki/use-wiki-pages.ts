@@ -250,6 +250,9 @@ export function useWikiPages(enabled: boolean) {
     deletePage,
     renamePage,
     readFreshPages,
+    /** Why the relay page list is missing or stale, when it is. */
+    loadError: relayQuery.error,
+    refetchPages: relayQuery.refetch,
   };
 }
 

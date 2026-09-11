@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
 import { useLiveWikiDoc } from "../wiki-sync";
 import { PageDialog } from "./PageDialog";
@@ -25,8 +26,16 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 type Tab = "edit" | "graph";
 
 export function WikiView() {
-  const { pages, isLoading, savePage, deletePage, renamePage, readFreshPages } =
-    useWikiPages(true);
+  const {
+    pages,
+    isLoading,
+    savePage,
+    deletePage,
+    renamePage,
+    readFreshPages,
+    loadError,
+    refetchPages,
+  } = useWikiPages(true);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("edit");
   const [activeSlug, setActiveSlug] = useState<string | null>(
@@ -219,6 +228,15 @@ export function WikiView() {
           </div>
         ) : null}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+          {loadError && visiblePages.length > 0 ? (
+            <p
+              className="mx-2 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300"
+              data-testid="wiki-cache-warning"
+              role="status"
+            >
+              Showing saved pages — the relay did not answer.
+            </p>
+          ) : null}
           {isLoading && pages.length === 0 ? (
             <div className="space-y-2 p-2">
               {["a", "b", "c"].map((k) => (
@@ -235,6 +253,16 @@ export function WikiView() {
             >
               No page matches “{pageSearch.trim()}”.
             </p>
+          ) : visiblePages.length === 0 && loadError ? (
+            <div className="p-2">
+              <QueryError
+                description="The relay did not answer the wiki page query, so there is no known list of pages."
+                message={errorMessage(loadError)}
+                onRetry={() => void refetchPages()}
+                testId="wiki-load-error"
+                title="Couldn't load pages"
+              />
+            </div>
           ) : visiblePages.length === 0 ? (
             <p className="px-2 py-3 text-xs text-black/60 dark:text-white/60">
               No pages yet. Create the first one.

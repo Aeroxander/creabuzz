@@ -7,6 +7,7 @@
 
 import { signAsUser } from "@/shared/lib/identity";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { uploadSizeError } from "@/shared/lib/upload-limits";
 
 export interface BlobDescriptor {
   url: string;
@@ -24,6 +25,11 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
 }
 
 export async function uploadBlob(file: File): Promise<BlobDescriptor> {
+  // Refuse before reading the file: the body is buffered whole and hashed, so
+  // an oversized upload would cost the tab that memory and a full read before
+  // the relay rejected it anyway.
+  const tooBig = uploadSizeError(file);
+  if (tooBig) throw new Error(tooBig);
   const data = await file.arrayBuffer();
   const sha256 = await sha256Hex(data);
   const uploadUrl = `${relayHttpBaseUrl()}/upload`;
