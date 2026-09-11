@@ -52,16 +52,30 @@ const SearchResults = lazy(() =>
 export function CommunityShell({
   channels,
   initialChannelId,
+  initialMessageId,
   host,
 }: {
   channels: Channel[];
   initialChannelId?: string;
+  /** Message permalink target: scrolled to and highlighted, then released. */
+  initialMessageId?: string;
   host: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialChannelId ?? null,
   );
   const [searchTerm, setSearchTerm] = useState("");
+  const [highlightedMessage, setHighlightedMessage] = useState<string | null>(
+    () => initialMessageId ?? null,
+  );
+
+  // The highlight is a one-shot cue: drop it so the row does not stay lit for
+  // the rest of the session.
+  useEffect(() => {
+    if (!highlightedMessage) return;
+    const timer = setTimeout(() => setHighlightedMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightedMessage]);
   const [showingWiki, setShowingWiki] = useState(false);
   const [showingFleet, setShowingFleet] = useState(false);
   const [showingWork, setShowingWork] = useState(false);
@@ -339,6 +353,7 @@ export function CommunityShell({
             ) : activeChannel ? (
               <ChannelTimeline
                 channel={activeChannel}
+                highlightedId={highlightedMessage}
                 onShowFleet={() => {
                   setShowingWiki(false);
                   setShowingFleet(true);

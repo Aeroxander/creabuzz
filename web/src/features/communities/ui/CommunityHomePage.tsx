@@ -95,11 +95,14 @@ export function CommunityHomePage() {
   if (channels.data && channels.data.length > 0) {
     const initialChannelId =
       typeof search.channel === "string" ? search.channel : undefined;
+    const initialMessageId =
+      typeof search.message === "string" ? search.message : undefined;
     return (
       <div className="flex h-dvh min-h-0 w-full flex-1">
         <CommunityShell
           channels={channels.data}
           initialChannelId={initialChannelId}
+          initialMessageId={initialMessageId}
           host={host}
         />
       </div>

@@ -954,3 +954,97 @@ test("heavy views are split out of the first-load bundle", async ({ page }) => {
   await expect(page.getByTestId("wiki-page-list")).toBeVisible();
   expect(scripts.join(" ")).toContain("WikiView-");
 });
+
+test("a message can be copied, and its link opens and highlights it", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  void browserName;
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockCommunityDirectory(page);
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  const MESSAGE_ID = "e".repeat(64);
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      if (kinds.includes(9)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: MESSAGE_ID,
+              pubkey: "b".repeat(64),
+              created_at: 200,
+              kind: 9,
+              tags: [["h", CHANNEL_ID]],
+              content: "Copyable message body",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByText("Copyable message body")).toBeVisible();
+
+  const row = page.getByTestId("message-row").first();
+  await row.hover();
+  await row.getByTestId("copy-message").click();
+  await expect(page.getByText("Message copied")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "Copyable message body",
+  );
+
+  await row.hover();
+  await row.getByTestId("copy-message-link").click();
+  await expect(page.getByText("Link copied")).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toContain(`message=${MESSAGE_ID}`);
+  expect(link).toContain(`channel=${CHANNEL_ID}`);
+
+  // The link must actually work: open it and the row is anchored and marked.
+  await page.goto(link.replace(/^https?:\/\/[^/]+/, ""));
+  await expect(page.getByText("Copyable message body")).toBeVisible();
+  await expect(page.locator(`#message-${MESSAGE_ID}`)).toHaveAttribute(
+    "data-highlighted",
+    "true",
+  );
+});

@@ -1,7 +1,9 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Copy,
   Hash,
+  Link2,
   MessageSquare,
   Pencil,
   Reply,
@@ -107,6 +109,36 @@ function ReactionPills({ events }: { events: NostrEvent[] }) {
   );
 }
 
+/** Anchor id used by message permalinks. */
+export function messageAnchor(eventId: string): string {
+  return `message-${eventId}`;
+}
+
+/**
+ * Permalink for a message.
+ *
+ * The web client addresses a thread by channel with `?channel=`; the message id
+ * rides along so the target row can be scrolled to and highlighted.
+ */
+export function messagePermalink(eventId: string, channelId?: string): string {
+  const url = new URL(window.location.href);
+  url.search = "";
+  if (channelId) url.searchParams.set("channel", channelId);
+  url.searchParams.set("message", eventId);
+  return url.toString();
+}
+
+async function copyText(value: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(label);
+  } catch (error) {
+    toast.error("Couldn't copy", {
+      description: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function MessageRow({
   event,
   isReply,
@@ -119,9 +151,15 @@ function MessageRow({
   isDeleted,
   profile,
   agent,
+  highlighted,
+  channelId,
 }: {
   event: NostrEvent;
   isReply?: boolean;
+  /** Channel the message belongs to; makes the permalink open this thread. */
+  channelId: string;
+  /** True when this row is the target of a permalink. */
+  highlighted?: boolean;
   reactions: NostrEvent[];
   onReply?: (eventId: string) => void;
   onEdit?: (event: NostrEvent) => void;
@@ -164,8 +202,12 @@ function MessageRow({
 
   return (
     <div
-      className={`group flex gap-3 py-2 ${isReply ? "ml-8" : ""}`}
+      className={`group flex gap-3 py-2 transition-colors duration-500 ${isReply ? "ml-8" : ""} ${
+        highlighted ? "bg-amber-300/20" : ""
+      }`}
+      data-highlighted={highlighted ? "true" : undefined}
       data-testid="message-row"
+      id={messageAnchor(event.id)}
     >
       <div className="shrink-0">
         <UserAvatar
@@ -192,6 +234,33 @@ function MessageRow({
             })}
           </time>
           <span className="ml-auto flex items-center gap-2 text-xs text-black/40 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/40">
+            {!isDeleted && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void copyText(event.content, "Message copied")}
+                  className="flex items-center gap-1 hover:text-black/70 dark:hover:text-white/70"
+                  aria-label="Copy message text"
+                  data-testid="copy-message"
+                >
+                  <Copy className="h-3 w-3" /> Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void copyText(
+                      messagePermalink(event.id, channelId),
+                      "Link copied",
+                    )
+                  }
+                  className="flex items-center gap-1 hover:text-black/70 dark:hover:text-white/70"
+                  aria-label="Copy link to message"
+                  data-testid="copy-message-link"
+                >
+                  <Link2 className="h-3 w-3" /> Link
+                </button>
+              </>
+            )}
             {onReply && !isDeleted && (
               <button
                 type="button"
@@ -268,6 +337,8 @@ function ThreadTree({
   agentByPubkey,
   ownPubkey,
   overlays,
+  channelId,
+  highlightedId,
 }: {
   event: NostrEvent;
   messages: ChannelMessages;
@@ -280,6 +351,8 @@ function ThreadTree({
   agentByPubkey: Map<string, { name: string }>;
   ownPubkey: string;
   overlays: { edits: Map<string, string>; deleted: Set<string> };
+  channelId: string;
+  highlightedId?: string | null;
 }) {
   const children = messages.ordered.filter((e) => getTag(e, "e") === event.id);
   return (
@@ -296,6 +369,8 @@ function ThreadTree({
         isDeleted={overlays.deleted.has(event.id)}
         profile={profileByPubkey.get(event.pubkey)}
         agent={agentByPubkey.get(event.pubkey)}
+        channelId={channelId}
+        highlighted={event.id === highlightedId}
       />
       {children.map((child) => (
         <ThreadTree
@@ -311,6 +386,8 @@ function ThreadTree({
           agentByPubkey={agentByPubkey}
           ownPubkey={ownPubkey}
           overlays={overlays}
+          channelId={channelId}
+          highlightedId={highlightedId}
         />
       ))}
     </div>
@@ -321,12 +398,26 @@ export function ChannelTimeline({
   channel,
   onShowFleet,
   onShowWork,
+  highlightedId,
 }: {
   channel: Channel;
   onShowFleet?: () => void;
   onShowWork?: () => void;
+  /** Message id from a permalink: scrolled to and highlighted by the shell. */
+  highlightedId?: string | null;
 }) {
   const messages = useChannelMessages(channel.id);
+  // Bring a permalinked message into view once it has rendered — the history
+  // page may still be arriving, so re-run as the message set changes.
+  useEffect(() => {
+    if (!highlightedId) return;
+    // Scroll only once the target row is actually in the loaded history.
+    const loaded = messages.ordered.some((e) => e.id === highlightedId);
+    if (!loaded) return;
+    document
+      .getElementById(messageAnchor(highlightedId))
+      ?.scrollIntoView({ block: "center" });
+  }, [highlightedId, messages]);
   const reactionsByTarget = useReactionGroups(messages);
   const overlays = useMessageOverlays(messages);
   const authors = useMemo(
@@ -494,6 +585,8 @@ export function ChannelTimeline({
                 agentByPubkey={agentByPubkey}
                 ownPubkey={ownPubkey}
                 overlays={overlays}
+                channelId={channel.id}
+                highlightedId={highlightedId}
               />
             ))}
           </div>
