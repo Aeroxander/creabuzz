@@ -801,6 +801,10 @@ web-build:
 web-test:
     cd {{web_dir}} && pnpm test
 
+# Check the web first-load bundle stays inside its budget (needs a build)
+web-bundle-budget:
+    cd {{web_dir}} && pnpm check:bundle-size
+
 # Run web browser smoke tests
 web-e2e-smoke:
     cd {{web_dir}} && pnpm test:e2e:smoke

@@ -52,6 +52,8 @@ jobs:
         run: just web-test
       - name: Web build
         run: just web-build
+      - name: Web bundle budget
+        run: just web-bundle-budget
       - name: Install Playwright browsers
         run: cd web && pnpm exec playwright install chromium
       - name: Install Playwright system dependencies
