@@ -13,6 +13,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+
 import type { Channel } from "../use-channels";
 import {
   useChannelMessages,
@@ -439,6 +441,8 @@ export function ChannelTimeline({
   const [autoScroll, setAutoScroll] = useState(true);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  /** Message awaiting delete confirmation; the app's dialog, not `confirm()`. */
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const ownPubkey = userPubkey();
 
   const startEdit = (event: NostrEvent) => {
@@ -452,7 +456,6 @@ export function ChannelTimeline({
   };
 
   const deleteMessage = async (eventId: string) => {
-    if (!window.confirm("Delete this message?")) return;
     try {
       const signed = await signAsUser({
         kind: 5,
@@ -590,9 +593,7 @@ export function ChannelTimeline({
                 reactionsByTarget={reactionsByTarget}
                 onReply={(id) => setReplyTo(id)}
                 onEdit={(event) => startEdit(event)}
-                onDelete={(id) => {
-                  void deleteMessage(id);
-                }}
+                onDelete={(id) => setPendingDelete(id)}
                 depth={0}
                 profileByPubkey={profileByPubkey}
                 agentByPubkey={agentByPubkey}
@@ -619,6 +620,19 @@ export function ChannelTimeline({
         }}
         onCancelReply={() => setReplyTo(null)}
         onCancelEdit={() => setEditTarget(null)}
+      />
+
+      <ConfirmDialog
+        confirmLabel="Delete message"
+        description="The message is replaced with a deletion marker for everyone in this channel."
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void deleteMessage(target);
+        }}
+        open={pendingDelete !== null}
+        title="Delete this message?"
       />
     </div>
   );

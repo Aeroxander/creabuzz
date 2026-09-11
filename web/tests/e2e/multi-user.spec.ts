@@ -276,3 +276,35 @@ test("a page deleted by one client disappears for the other", async ({
   await first.close();
   await second.close();
 });
+
+test("a deleted message disappears for the other client", async ({
+  browser,
+}) => {
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("composer-input").fill("Delete me");
+  await author.getByTestId("composer-send").click();
+  await expect(reader.getByText("Delete me")).toBeVisible({ timeout: 15_000 });
+
+  const row = author.getByTestId("message-row").first();
+  await row.hover();
+  await row.getByTestId("delete-button").click();
+  await author.getByTestId("confirm-accept").click();
+
+  // The reader sees the deletion marker, not the original text.
+  await expect(reader.getByText("message deleted")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await first.close();
+  await second.close();
+});
