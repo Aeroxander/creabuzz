@@ -231,3 +231,48 @@ test("a client recovers after its connection drops", async ({ browser }) => {
   await first.close();
   await second.close();
 });
+
+test("a page deleted by one client disappears for the other", async ({
+  browser,
+}) => {
+  // Exercises the NIP-09 tombstone end to end: publish, then the other client's
+  // page list has to drop it without a reload.
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("wiki-toggle").click();
+  await author.getByTestId("wiki-new-page").click();
+  await author.getByTestId("page-name-input").fill("shared-page");
+  await author.getByTestId("page-name-confirm").click();
+  const editor = author.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await editor.click();
+  await author.keyboard.type("Content both clients should see");
+  await author.getByTestId("wiki-save").click();
+  await expect(author.getByText("Page saved")).toBeVisible();
+
+  // The reader sees the published page.
+  await reader.getByTestId("wiki-toggle").click();
+  await expect(reader.getByTestId("wiki-page-shared-page")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // The author deletes it; the tombstone must reach the reader.
+  await author.getByTestId("wiki-delete").click();
+  await author.getByTestId("confirm-accept").click();
+  await expect(author.getByText("Deleted shared-page")).toBeVisible();
+
+  await expect(reader.getByTestId("wiki-page-shared-page")).toBeHidden({
+    timeout: 20_000,
+  });
+
+  await first.close();
+  await second.close();
+});

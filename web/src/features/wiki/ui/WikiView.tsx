@@ -456,23 +456,27 @@ export function WikiView() {
               createPage(slug);
               return;
             }
-            const page = pages.find((p) => p.slug === dialog.rename);
+            const from = dialog.rename;
             setDialog(null);
-            if (page?.slug === slug) return;
+            if (from === slug) return;
             setActiveSlug(slug);
-            if (!page) {
-              // Never published, so there is nothing on the relay to move.
-              toast.success(`Renamed to ${slug}`);
-              return;
-            }
-            void renamePage(page, slug)
-              .then(() => {
+            // As with delete: ask the relay whether the old name is published,
+            // or a page saved moments ago would keep living under its old slug.
+            void readFreshPages()
+              .catch(() => null)
+              .then(async (fresh) => {
+                const published = fresh?.find((p) => p.slug === from);
+                if (!published) {
+                  toast.success(`Renamed to ${slug}`);
+                  return;
+                }
+                await renamePage(published, slug);
                 toast.success(`Renamed to ${slug}`);
                 void queryClient.invalidateQueries({
                   queryKey: ["wiki-pages"],
                 });
               })
-              .catch((error) =>
+              .catch((error: unknown) =>
                 toast.error("Couldn't rename page", {
                   description:
                     error instanceof Error ? error.message : String(error),
@@ -499,17 +503,23 @@ export function WikiView() {
           setPendingDelete(null);
           if (!page) return;
           if (activeSlug === page.slug) setActiveSlug(null);
-          if (page.draft || !pages.some((p) => p.slug === page.slug)) {
-            // Local-only page: dropping the editor state is the whole delete.
-            toast.success(`Discarded ${page.slug}`);
-            return;
-          }
-          void deletePage(page)
-            .then(() => {
+          // Whether the page exists on the relay is decided from the relay, not
+          // from this tab's list: a page created and saved moments ago is not in
+          // the cached list yet, and treating it as local-only left a published
+          // page live for everyone else.
+          void readFreshPages()
+            .catch(() => null)
+            .then(async (fresh) => {
+              const published = fresh?.find((p) => p.slug === page.slug);
+              if (!published) {
+                toast.success(`Discarded ${page.slug}`);
+                return;
+              }
+              await deletePage(published);
               toast.success(`Deleted ${page.slug}`);
               void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
             })
-            .catch((error) =>
+            .catch((error: unknown) =>
               toast.error("Couldn't delete page", {
                 description:
                   error instanceof Error ? error.message : String(error),
