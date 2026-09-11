@@ -780,3 +780,36 @@ test("a wiki page saves, reports success and stops showing a draft badge", async
   await expect(page.getByTestId("wiki-save-state")).toHaveText("saved");
   await expect(page.getByText("Couldn't save page")).toBeHidden();
 });
+
+test("Cmd+K focuses search, opening the slide-over on a phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+
+  const input = page.getByTestId("search-input");
+  await page.keyboard.press("Meta+k");
+
+  await expect(input).toBeFocused();
+  // The sidebar it lives in must slide on screen for that focus to be usable.
+  await expect
+    .poll(
+      async () =>
+        (await page.locator("#channel-sidebar").boundingBox())?.x ?? -1,
+    )
+    .toBeGreaterThanOrEqual(0);
+});
+
+test("the search shortcut hint is visible on desktop and hidden on a phone", async ({
+  page,
+}) => {
+  await mockPartialRelay(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await expect(page.getByText("⌘K")).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("⌘K")).toBeHidden();
+});

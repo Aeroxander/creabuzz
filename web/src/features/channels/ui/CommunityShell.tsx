@@ -9,7 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -50,6 +50,27 @@ export function CommunityShell({
    * no longer affects the layout.
    */
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Search shortcut, matching the desktop client. On narrow screens the field
+  // lives in the slide-over, so the shortcut opens it before focusing.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== "k"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setSidebarOpen(true);
+      const input = searchInputRef.current;
+      input?.focus();
+      input?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Escape closes the slide-over, matching every other dismissible surface.
   useEffect(() => {
@@ -140,6 +161,8 @@ export function CommunityShell({
             <div className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-white/5">
               <Search className="h-3.5 w-3.5 shrink-0 text-black/40 dark:text-white/40" />
               <input
+                aria-keyshortcuts="Control+K Meta+K"
+                ref={searchInputRef}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -150,6 +173,9 @@ export function CommunityShell({
                 className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40 dark:text-white dark:placeholder:text-white/40"
                 data-testid="search-input"
               />
+              <kbd className="hidden shrink-0 rounded border border-black/10 px-1 text-2xs font-medium text-black/40 lg:block dark:border-white/15 dark:text-white/40">
+                ⌘K
+              </kbd>
             </div>
           </div>
           <button
