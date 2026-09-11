@@ -725,3 +725,54 @@ test("a wiki save does not write blind when the relay read fails", async ({
     timeout: 10_000,
   });
 });
+
+test("a wiki delete the relay cannot confirm is not reported as done", async ({
+  page,
+}) => {
+  // Deleting reads the relay first (to learn whether the page is published at
+  // all). If that read fails, "Deleted" and "Discarded" are both claims about
+  // state nobody checked — and a page the reader believes is gone must not
+  // quietly stay live for everyone else.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "wiki-page-delete-1",
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    kind: 44001,
+    tags: [["d", "doomed-page"]],
+    content: "Page to delete",
+    sig: "sig",
+  });
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-page-doomed-page").click();
+  await expect(
+    page.getByTestId("wiki-wysiwyg").locator(".ProseMirror"),
+  ).toContainText("Page to delete", { timeout: 15_000 });
+
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(44001) ?? false);
+  /** Anything that would change that page on the relay: a rewrite or a tombstone. */
+  const pageWrites = () =>
+    relay.events.filter(
+      (event) =>
+        event.kind === 5 ||
+        (event.kind === 44001 &&
+          event.tags.some((tag) => tag[0] === "d" && tag[1] === "doomed-page")),
+    ).length;
+  const before = pageWrites();
+
+  await page.getByTestId("wiki-delete").click();
+  await page.getByRole("button", { name: "Delete page" }).click();
+
+  await expect(page.getByText(/the page was not deleted/)).toBeVisible({
+    timeout: 15_000,
+  });
+  expect(page.getByText("Deleted doomed-page")).toBeHidden();
+  expect(
+    pageWrites(),
+    "nothing may be published for a delete that was not confirmed",
+  ).toBe(before);
+});

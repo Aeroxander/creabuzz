@@ -512,26 +512,26 @@ export function WikiView() {
             setActiveSlug(slug);
             // As with delete: ask the relay whether the old name is published,
             // or a page saved moments ago would keep living under its old slug.
-            void readFreshPages()
-              .catch(() => null)
-              .then(async (fresh) => {
-                const published = fresh?.find((p) => p.slug === from);
-                if (!published) {
-                  toast.success(`Renamed to ${slug}`);
-                  return;
+            void (async () => {
+              try {
+                const fresh = await readFreshPages();
+                const published = fresh.find((p) => p.slug === from);
+                if (published) {
+                  await renamePage(published, slug);
+                  void queryClient.invalidateQueries({
+                    queryKey: ["wiki-pages"],
+                  });
                 }
-                await renamePage(published, slug);
                 toast.success(`Renamed to ${slug}`);
-                void queryClient.invalidateQueries({
-                  queryKey: ["wiki-pages"],
-                });
-              })
-              .catch((error: unknown) =>
+              } catch (error) {
+                // The read failed, so we do not know whether the old name is
+                // published. Claiming a rename here left the relay holding the
+                // old page while the tab showed the new one.
                 toast.error("Couldn't rename page", {
-                  description:
-                    error instanceof Error ? error.message : String(error),
-                }),
-              );
+                  description: `The relay did not answer, so nothing was renamed. ${errorMessage(error)}`,
+                });
+              }
+            })();
           }}
           takenSlugs={pages
             .map((p) => p.slug)
@@ -557,10 +557,10 @@ export function WikiView() {
           // from this tab's list: a page created and saved moments ago is not in
           // the cached list yet, and treating it as local-only left a published
           // page live for everyone else.
-          void readFreshPages()
-            .catch(() => null)
-            .then(async (fresh) => {
-              const published = fresh?.find((p) => p.slug === page.slug);
+          void (async () => {
+            try {
+              const fresh = await readFreshPages();
+              const published = fresh.find((p) => p.slug === page.slug);
               if (!published) {
                 toast.success(`Discarded ${page.slug}`);
                 return;
@@ -568,13 +568,14 @@ export function WikiView() {
               await deletePage(published);
               toast.success(`Deleted ${page.slug}`);
               void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
-            })
-            .catch((error: unknown) =>
+            } catch (error) {
+              // "Discarded" and "Deleted" both say the page is gone; a failed
+              // read tells us nothing about that, so say nothing was changed.
               toast.error("Couldn't delete page", {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              }),
-            );
+                description: `The relay did not answer, so the page was not deleted. ${errorMessage(error)}`,
+              });
+            }
+          })();
         }}
         open={pendingDelete !== null}
         title="Delete this page?"
