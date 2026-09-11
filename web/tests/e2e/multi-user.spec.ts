@@ -308,3 +308,46 @@ test("a deleted message disappears for the other client", async ({
   await first.close();
   await second.close();
 });
+
+test("the composer suggests people seen in the channel, not just agents", async ({
+  browser,
+}) => {
+  // `useMentionCandidates` ran its query inside a `useMemo` and discarded the
+  // result, so only roster agents ever appeared in the mention list.
+  const relay = createMockRelay();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const alice = "d".repeat(64);
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "alice-message",
+    pubkey: alice,
+    created_at: 150,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Hello from Alice",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "alice-profile",
+    pubkey: alice,
+    created_at: 140,
+    kind: 0,
+    tags: [],
+    content: JSON.stringify({ name: "alice", display_name: "Alice Example" }),
+    sig: "sig",
+  });
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByText("Hello from Alice")).toBeVisible();
+
+  const composer = page.getByTestId("composer-input");
+  await composer.click();
+  await composer.fill("@Ali");
+
+  const candidates = page.getByTestId("mention-option");
+  await expect(candidates.first()).toBeVisible({ timeout: 10_000 });
+  await expect(candidates.filter({ hasText: "Alice Example" })).toHaveCount(1);
+
+  await context.close();
+});

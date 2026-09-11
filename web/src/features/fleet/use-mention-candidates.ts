@@ -3,7 +3,7 @@
  * the channel (history authors resolved through kind-0 profiles).
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -28,18 +28,35 @@ export function useMentionCandidates(
 ): MentionCandidate[] {
   const { agents } = useAgentRoster();
 
-  const observed = useMemo(() => {
-    let pubkeys: string[] = [];
+  /**
+   * People who have spoken in this channel.
+   *
+   * This used to run inside a `useMemo` and assign the query result to a local
+   * variable, so it was discarded and re-derivation never happened — the
+   * mention list only ever offered roster agents, never a human teammate.
+   */
+  const [observed, setObserved] = useState<string[]>([]);
+  useEffect(() => {
+    if (!channelId) {
+      setObserved([]);
+      return;
+    }
+    let disposed = false;
     void queryEvents(relayWsUrl(), {
       kinds: TIMELINE_CONTENT_KINDS,
-      "#h": [channelId ?? ""],
+      "#h": [channelId],
       limit: 60,
     })
       .then((events: NostrEvent[]) => {
-        pubkeys = [...new Set(events.map((e) => e.pubkey))];
+        if (disposed) return;
+        setObserved([...new Set(events.map((e) => e.pubkey))]);
       })
-      .catch(() => {});
-    return pubkeys;
+      .catch((error: unknown) => {
+        console.warn("[mentions] channel authors unavailable", error);
+      });
+    return () => {
+      disposed = true;
+    };
   }, [channelId]);
 
   const me = userPubkey();
