@@ -1228,3 +1228,58 @@ test.describe("document shell", () => {
     expect(policy).not.toContain("script-src 'unsafe-inline'");
   });
 });
+
+test("a dropped live connection is shown instead of failing silently", async ({
+  page,
+}) => {
+  // The timeline used to stop updating with no indication at all when the relay
+  // dropped the live socket.
+  await mockCommunityDirectory(page);
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+      // The live timeline subscription is the one carrying message kinds.
+      if (kinds.includes(9)) ws.close();
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  const chip = page.getByTestId("live-status-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText(/Reconnecting|Connecting/);
+});

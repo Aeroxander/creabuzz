@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { subscribeChannel } from "./subscribe-channel";
+import { subscribeChannel, type SubscriptionStatus } from "./subscribe-channel";
 
 /**
  * Message kinds for the channel timeline (mirrors
@@ -57,6 +57,8 @@ export function useChannelMessages(channelId: string | null) {
   const [liveEvents, setLiveEvents] = useState<Map<string, NostrEvent>>(
     () => new Map(),
   );
+  /** Transport state of this channel's live subscription. */
+  const [liveStatus, setLiveStatus] = useState<SubscriptionStatus | null>(null);
   const enabled = channelId != null;
   const historyQuery = useQuery({
     queryKey: ["channel-history", channelId],
@@ -82,6 +84,7 @@ export function useChannelMessages(channelId: string | null) {
             return next;
           });
         },
+        onStatus: setLiveStatus,
       },
     );
     return unsubscribe;
@@ -126,6 +129,8 @@ export function useChannelMessages(channelId: string | null) {
     ...merged,
     isLoading: historyQuery.isLoading,
     error: historyQuery.error,
+    /** `open` once the live socket is up; null before the first attempt. */
+    liveStatus,
   };
 }
 

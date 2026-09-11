@@ -499,6 +499,19 @@ export function ChannelTimeline({
             — {channel.description}
           </span>
         )}
+        {messages.liveStatus && messages.liveStatus !== "open" ? (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-800 dark:text-amber-300"
+            data-testid="live-status-chip"
+            role="status"
+            title="Live updates from the relay have stopped; the client keeps retrying."
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+            {messages.liveStatus === "connecting"
+              ? "Connecting…"
+              : "Reconnecting…"}
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-2">
           {agentsOnline > 0 && (
             <span
