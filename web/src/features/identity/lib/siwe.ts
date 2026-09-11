@@ -1,16 +1,24 @@
 /**
  * Sign-In With Ethereum onboarding (SIWE, EIP-4361) — wallet -> npub binding.
  *
- * Flow: get single-use nonce -> build the SIWE message with
- * `Resources: nostr:<npub>` -> wallet `personal_sign` -> nostr proof event
- * signed by the device identity (kind 27235, content = EVM address) ->
- * `POST /auth/siwe/register` on the relay, which verifies both signatures,
- * binds npub<->wallet in evm_identities and makes the npub a member.
+ * Flow: get a single-use challenge -> sign the Nostr proof -> build the SIWE
+ * message around the proof's pubkey with `Resources: nostr:<npub>` -> wallet
+ * `personal_sign` -> `POST /auth/siwe/register`. The relay verifies both
+ * signatures, binds npub<->wallet in `evm_identities` and makes the npub a
+ * member.
+ *
+ * The message/ signature pair is assembled by [`buildSiweLogin`](./siwe-login.ts)
+ * so the binding rules stay unit-testable.
  */
 
 import { signAsUser } from "@/shared/lib/identity";
-import { userPubkey } from "@/shared/lib/identity";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+
+import {
+  buildSiweLogin,
+  buildSiweMessage,
+  type SiweLoginChallenge,
+} from "./siwe-login";
 
 interface EthereumProvider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -26,34 +34,16 @@ export function walletAvailable(): boolean {
   return typeof window !== "undefined" && window.ethereum != null;
 }
 
-async function getNonce(): Promise<string> {
+async function getChallenge(): Promise<SiweLoginChallenge> {
   const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/nonce`);
   if (!res.ok) throw new Error("couldn't start wallet sign-in");
-  const json = (await res.json()) as { nonce?: string };
+  const json = (await res.json()) as {
+    nonce?: string;
+    domain?: string;
+    chain_id?: number;
+  };
   if (!json.nonce) throw new Error("relay returned no nonce");
-  return json.nonce;
-}
-
-export function buildSiweMessage(input: {
-  domain: string;
-  address: string;
-  uri: string;
-  chainId: number;
-  nonce: string;
-  npub: string;
-}): string {
-  return [
-    `${input.domain} wants you to sign in with your Ethereum account:`,
-    input.address,
-    "",
-    `URI: ${input.uri}`,
-    "Version: 1",
-    `Chain ID: ${input.chainId}`,
-    `Nonce: ${input.nonce}`,
-    `Issued At: ${new Date().toISOString()}`,
-    "Resources:",
-    `- nostr:${input.npub}`,
-  ].join("\n");
+  return { nonce: json.nonce, domain: json.domain, chainId: json.chain_id };
 }
 
 async function personalSign(message: string, address: string): Promise<string> {
@@ -81,37 +71,41 @@ export async function signInWithWallet(): Promise<{
   pubkey: string;
 }> {
   const address = await getAccount();
-  const nonce = await getNonce();
-  const npub = userPubkey(); // ensure identity exists first
-  const message = buildSiweMessage({
-    domain: window.location.host,
-    address,
-    uri: window.location.origin,
-    chainId: 1,
-    nonce,
-    npub,
-  });
-  const signature = await personalSign(message, address);
+  const challenge = await getChallenge();
 
-  // Nostr proof: the device identity signs that it controls this npub and
-  // asserts the EVM address being bound.
-  const proof = await signAsUser({
-    kind: 27235,
-    tags: [
-      ["u", "/auth/siwe/register"],
-      ["method", "POST"],
-    ],
-    content: address,
+  const login = await buildSiweLogin(challenge, {
+    address,
+    origin: window.location.origin,
+    hostname: window.location.hostname,
+    // Nostr proof: the active signer declares control of this npub and asserts
+    // the EVM address being bound. Its pubkey is what the relay checks against
+    // the message, which is why the message is built from it.
+    signProof: () =>
+      signAsUser({
+        kind: 27235,
+        tags: [
+          ["u", "/auth/siwe/register"],
+          ["method", "POST"],
+        ],
+        content: address,
+      }),
+    personalSign,
   });
 
   const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, signature, nostr_proof: proof }),
+    body: JSON.stringify({
+      message: login.message,
+      signature: login.signature,
+      nostr_proof: login.proof,
+    }),
   });
   const json = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
     throw new Error(json.error ?? `register failed (${res.status})`);
   }
-  return { address, pubkey: npub };
+  return { address: login.address, pubkey: login.pubkey };
 }
+
+export { buildSiweMessage };

@@ -15,8 +15,9 @@
 //!   On success the npub becomes a relay member (`added_by = 'evm_siwe'`) and
 //!   the npub ↔ EVM binding is recorded in `evm_identities`.
 //!
-//! The whole module is feature-gated on `config.evm_auth` (BUZZ_EVM_AUTH);
-//! when disabled the routes are not registered.
+//! The whole module is feature-gated on `config.evm_auth` (BUZZ_EVM_AUTH).
+//! The routes are always registered; each handler returns 404
+//! `SIWE auth not enabled` while the feature is off.
 
 use std::sync::Arc;
 
@@ -87,14 +88,32 @@ pub struct SiweRevokeRequest {
 }
 
 /// `GET /auth/siwe/nonce` — issue a single-use nonce for a SIWE login.
+///
+/// The response also carries the `domain` and `chain_id` the relay will require
+/// inside the message, so a client builds the EIP-4361 payload from
+/// relay-supplied values instead of guessing from `window.location` (whose host
+/// carries a port that [`host_domain`] strips) or hardcoding mainnet.
 pub async fn issue_nonce(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    
-    if state.config.evm_auth.is_none() {
-        return Err(api_error(StatusCode::NOT_FOUND, "SIWE auth not enabled"));
-    }
-let mut conn = state
+    let evm_config = state
+        .config
+        .evm_auth
+        .as_ref()
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "SIWE auth not enabled"))?;
+
+    // Row zero: a nonce belongs to one community's host, exactly like the
+    // register call that consumes it — an unknown host fails closed.
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
+
+    let mut conn = state
         .redis_pool
         .get()
         .await
@@ -115,6 +134,8 @@ let mut conn = state
     Ok(Json(json!({
         "nonce": nonce,
         "expires_in_secs": NONCE_TTL_SECS,
+        "domain": host_domain(tenant.host()),
+        "chain_id": evm_config.chain_id,
     })))
 }
 
@@ -126,18 +147,17 @@ pub async fn register(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     // Row zero: bind the request to its community from the Host header,
     // failing closed — identical to the NIP-05 door.
-    
+
     if state.config.evm_auth.is_none() {
         return Err(api_error(StatusCode::NOT_FOUND, "SIWE auth not enabled"));
     }
-let raw_host = headers
+    let raw_host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let tenant =
-        crate::tenant::bind_community(&state.db, raw_host)
-            .await
-            .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
 
     let request: SiweRegisterRequest = serde_json::from_slice(&body).map_err(|e| {
         api_error(
@@ -345,18 +365,16 @@ pub async fn revoke(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    
     if state.config.evm_auth.is_none() {
         return Err(api_error(StatusCode::NOT_FOUND, "SIWE auth not enabled"));
     }
-let raw_host = headers
+    let raw_host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let tenant =
-        crate::tenant::bind_community(&state.db, raw_host)
-            .await
-            .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| api_error(StatusCode::NOT_FOUND, "unknown_host"))?;
 
     let request: SiweRevokeRequest = serde_json::from_slice(&body).map_err(|e| {
         api_error(
