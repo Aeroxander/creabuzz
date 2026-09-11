@@ -103,6 +103,10 @@ pub struct EvmAuthConfig {
     pub enforce_attestation: bool,
 }
 
+/// Relay-held credentials for the server-side LLM gateway.
+///
+/// The browser and sandbox agents call `POST /llm/chat/completions` with
+/// NIP-98 auth; the upstream URL and bearer key never leave the relay.
 #[derive(Clone)]
 pub struct LlmConfig {
     proxy_url: String,

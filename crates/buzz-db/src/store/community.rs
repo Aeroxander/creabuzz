@@ -182,6 +182,7 @@ impl Db {
             .collect())
     }
 
+    /// Whether the community is past soft-deletion and still serving traffic.
     pub async fn is_community_active(&self, community_id: CommunityId) -> Result<bool> {
         self.is_community_active_with_operation(
             community_id,
