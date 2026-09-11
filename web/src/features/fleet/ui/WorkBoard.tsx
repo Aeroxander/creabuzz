@@ -155,7 +155,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   const [replyError, setReplyError] = useState<string | null>(null);
 
   const myPubkey = userPubkey();
-  const selected = items.find((i) => i.id === selectedId) ?? null;
+  const selected = items.find((i) => i.key === selectedId) ?? null;
 
   const canReplyToThread =
     selected?.type === "task" && !!selected.scope && !!selected.parentEventId;
@@ -474,10 +474,10 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
             ) : (
               filtered.map((item) => (
                 <WorkItemRow
-                  key={item.id}
+                  key={item.key}
                   item={item}
-                  selected={selectedId === item.id}
-                  onSelect={() => setSelectedId(item.id)}
+                  selected={selectedId === item.key}
+                  onSelect={() => setSelectedId(item.key)}
                 />
               ))
             )}

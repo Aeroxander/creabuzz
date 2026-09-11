@@ -57,12 +57,12 @@ function Card({
       type="button"
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData("application/x-buzz-task", item.id);
+        e.dataTransfer.setData("application/x-buzz-task", item.key);
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={() => {}}
       className="group w-full cursor-grab rounded-lg border border-black/10 bg-white p-2.5 text-left shadow-xs active:cursor-grabbing dark:border-white/10 dark:bg-white/5"
-      data-testid={`kanban-card-${item.id.slice(0, 8)}`}
+      data-testid={`kanban-card-${item.key.slice(0, 8)}`}
     >
       <div className="flex items-start gap-1.5">
         {item.type === "task" ? (
@@ -78,7 +78,7 @@ function Card({
           onClick={() => setMenuOpen((v) => !v)}
           className="rounded p-0.5 text-black/60 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 dark:text-white/60 dark:hover:bg-white/10"
           aria-label={`Actions for ${item.title}`}
-          data-testid={`kanban-menu-${item.id.slice(0, 8)}`}
+          data-testid={`kanban-menu-${item.key.slice(0, 8)}`}
         >
           ⋯
         </button>
@@ -206,7 +206,7 @@ export function KanbanBoard({
 
   const dropped = (id: string | null, status: string) => {
     if (!id) return;
-    const item = items.find((i) => i.id === id);
+    const item = items.find((i) => i.key === id);
     if (!item || item.status === status) return;
     if (item.type === "issue" && !ISSUE_MOVE_TARGETS.includes(status)) return;
     onSetStatus(item, status);
@@ -283,7 +283,7 @@ export function KanbanBoard({
             ) : null}
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-2">
               {columnItems.map((item) => (
-                <div key={item.id}>
+                <div key={item.key}>
                   <Card
                     item={item}
                     onSetStatus={onSetStatus}

@@ -50,7 +50,10 @@ export type WorkItemType = "task" | "issue";
 
 export interface WorkItem {
   type: WorkItemType;
+  /** Raw `d` tag (tasks) or event id (issues): used when publishing. */
   id: string;
+  /** Author-qualified key for storage, React keys and drag payloads. */
+  key: string;
   title: string;
   description: string;
   status: string; // aligned vocabulary: open/assigned/in_progress/triage/needs_approval/done/closed/cancelled
@@ -196,7 +199,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
     const task = parseTask(event);
     if (!task) return;
     setTasks((prev) => {
-      const existing = prev[task.id];
+      const existing = prev[task.key];
       const needParent =
         existing && !existing.parentEventId && task.parentEventId;
       if (existing && existing.updatedAt >= task.updatedAt && !needParent) {
@@ -205,6 +208,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       const item: WorkItem = {
         type: "task",
         id: task.id,
+        key: task.key,
         title: task.title,
         description: task.description,
         status: task.status,
@@ -278,6 +282,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
             [event.id]: {
               type: "issue",
               id: event.id,
+              key: event.id,
               title: event.content.split("\n")[0].slice(0, 140) || "Issue",
               description: event.content,
               status: "open",
@@ -366,11 +371,12 @@ export function useWorkBoard(channels?: { id: string }[]): {
             const task = parseTask(event);
             if (!task) continue;
             if (task.parentEventId && !parent) parent = task.parentEventId;
-            const existing = tasksNext[task.id];
+            const existing = tasksNext[task.key];
             if (existing && existing.updatedAt >= task.updatedAt) continue;
-            tasksNext[task.id] = {
+            tasksNext[task.key] = {
               type: "task",
               id: task.id,
+              key: task.key,
               title: task.title,
               description: task.description,
               status: task.status,
@@ -405,6 +411,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
           issuesNext[issue.id] = {
             type: "issue",
             id: issue.id,
+            // Event ids are globally unique already.
+            key: issue.id,
             title: issue.content.split("\n")[0].slice(0, 140) || "Issue",
             description: issue.content,
             status,

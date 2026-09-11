@@ -701,7 +701,9 @@ test("the work board degrades to a notice when only secondary reads fail", async
 
   await expect(page.getByTestId("work-degraded")).toBeVisible();
   await expect(page.getByTestId("work-load-error")).toBeHidden();
-  await expect(page.getByText("Ship the release")).toBeVisible();
+  // The title appears in the card and in the detail pane; either proves the item
+  // survived while only secondary reads failed.
+  await expect(page.getByText("Ship the release").first()).toBeVisible();
 });
 
 test("a wiki page saves, reports success and stops showing a draft badge", async ({

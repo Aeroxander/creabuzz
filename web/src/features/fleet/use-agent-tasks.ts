@@ -31,7 +31,10 @@ export type TaskStatus =
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
 export interface FleetTask {
+  /** Raw `d` tag: the task's identity on the relay, used when publishing. */
   id: string;
+  /** Author-qualified key (`author:id`) for storing, keying and de-duplicating. */
+  key: string;
   title: string;
   description: string;
   status: TaskStatus;
@@ -74,6 +77,7 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     : "open";
   return {
     id,
+    key: `${event.pubkey}:${id}`,
     title: body.title ?? event.content.slice(0, 80),
     description: body.description ?? "",
     status,
@@ -121,11 +125,12 @@ export function useAgentTasks(): {
     const upsert = (event: NostrEvent) => {
       const parsed = parseTask(event);
       if (!parsed) return;
-      // Read-side LWW: keep the newest row per task id.
+      // Read-side LWW per author-qualified identity: the `d` tag alone is not
+      // unique (any member can reuse another author's task id).
       setTasks((prev) => {
-        const existing = prev[parsed.id];
+        const existing = prev[parsed.key];
         if (existing && existing.updatedAt >= parsed.updatedAt) return prev;
-        return { ...prev, [parsed.id]: parsed };
+        return { ...prev, [parsed.key]: parsed };
       });
     };
 
@@ -212,8 +217,8 @@ export function useAgentTasks(): {
 function upsertFrom(event: NostrEvent, into: Record<string, FleetTask>): void {
   const parsed = parseTask(event);
   if (!parsed) return;
-  const existing = into[parsed.id];
+  const existing = into[parsed.key];
   if (!existing || existing.updatedAt < parsed.updatedAt) {
-    into[parsed.id] = parsed;
+    into[parsed.key] = parsed;
   }
 }
