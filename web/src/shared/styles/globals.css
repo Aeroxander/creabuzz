@@ -137,3 +137,25 @@ body {
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.06);
   overflow: hidden;
 }
+
+/* Keyboard focus must always be visible (WCAG 2.4.7). Components that draw
+   their own ring keep it; this covers every other control, including the ones
+   added later. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Honour the reader's motion preference. The client animates spinners,
+   presence pulses, slide-overs and dialog entrances; all of it collapses to
+   near-instant when the OS asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

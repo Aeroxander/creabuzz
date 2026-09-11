@@ -1332,3 +1332,52 @@ test.describe("theme choice", () => {
     expect(classes).toContain("dark");
   });
 });
+
+test.describe("keyboard and motion preferences", () => {
+  test("a focused control is visibly outlined", async ({ page }) => {
+    // WCAG 2.4.7: axe does not check focus visibility, and only a handful of
+    // components drew their own ring.
+    await mockPartialRelay(page);
+    await page.goto("/c/alpha.example.com");
+    await page.getByTestId("content-pane").waitFor();
+    await page.keyboard.press("Tab");
+
+    const style = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el) return null;
+      const computed = getComputedStyle(el);
+      return {
+        tag: el.tagName,
+        style: computed.outlineStyle,
+        width: Number.parseFloat(computed.outlineWidth),
+      };
+    });
+    expect(style).not.toBeNull();
+    expect(style?.style).not.toBe("none");
+    expect(style?.width ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  test("reduced motion collapses the client's animations", async ({ page }) => {
+    // The animated slide-over only exists below `lg`.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mockPartialRelay(page);
+    await page.goto("/c/alpha.example.com");
+    await page.getByTestId("content-pane").waitFor();
+    await page.getByTestId("open-channel-list").click();
+
+    const durations = await page.evaluate(() => {
+      const panel = document.querySelector("#channel-sidebar");
+      if (!panel) return null;
+      const computed = getComputedStyle(panel);
+      return {
+        transition: computed.transitionDuration,
+        scrollBehavior: getComputedStyle(document.documentElement)
+          .scrollBehavior,
+      };
+    });
+    expect(durations).not.toBeNull();
+    // 0.01ms is the collapsed duration; anything larger means it still animates.
+    expect(Number.parseFloat(durations?.transition ?? "1")).toBeLessThan(0.1);
+  });
+});
