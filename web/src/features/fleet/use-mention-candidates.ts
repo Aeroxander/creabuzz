@@ -61,9 +61,6 @@ export function useMentionCandidates(
 
   const me = userPubkey();
   const { data: profiles } = useProfiles(observed.length ? observed : []);
-  const profileByName = new Map(
-    (profiles ?? []).map((p, i) => [observed[i], p] as const),
-  );
 
   return useMemo(() => {
     const result: MentionCandidate[] = [];
@@ -75,14 +72,13 @@ export function useMentionCandidates(
         result.push({ pubkey, name: "me", me: true });
         continue;
       }
-      const profile = profileByName.get(pubkey);
       result.push({
         pubkey,
-        name: profileDisplayName(profile, pubkey),
+        name: profileDisplayName(profiles?.[pubkey], pubkey),
       });
     }
     return result;
-  }, [agents, observed, profileByName, me]);
+  }, [agents, observed, profiles, me]);
 }
 
 export function candidateName(candidate: MentionCandidate): string {

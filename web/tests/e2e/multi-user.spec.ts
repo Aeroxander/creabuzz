@@ -392,3 +392,57 @@ test("a reply appears threaded for the other client", async ({ browser }) => {
   await first.close();
   await second.close();
 });
+
+test("an author without a profile does not borrow someone else's name", async ({
+  browser,
+}) => {
+  // Profiles used to be returned as an array and zipped to authors by index, so
+  // one author without metadata shifted every later author's name and avatar.
+  const relay = createMockRelay();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const alice = "a".repeat(64);
+  const bob = "b".repeat(64);
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "from-alice",
+    pubkey: alice,
+    created_at: 150,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Alice speaking without a profile",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "from-bob",
+    pubkey: bob,
+    created_at: 160,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Bob speaking with a profile",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "bob-profile",
+    pubkey: bob,
+    created_at: 140,
+    kind: 0,
+    tags: [],
+    content: JSON.stringify({ display_name: "Bob Example" }),
+    sig: "sig",
+  });
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  const aliceRow = page
+    .getByTestId("message-row")
+    .filter({ hasText: "Alice speaking" });
+  const bobRow = page
+    .getByTestId("message-row")
+    .filter({ hasText: "Bob speaking" });
+
+  await expect(bobRow).toContainText("Bob Example");
+  await expect(aliceRow).not.toContainText("Bob Example");
+
+  await context.close();
+});

@@ -429,9 +429,10 @@ export function ChannelTimeline({
   const { data: profiles } = useProfiles(authors);
   const { agents: rosterAgents } = useAgentRoster();
   const agentsOnline = rosterAgents.filter((a) => a.alive).length;
+  // Keyed by pubkey: an author without a profile must not shift the others.
   const profileByPubkey = useMemo(
-    () => new Map((profiles ?? []).map((p, i) => [authors[i], p])),
-    [profiles, authors],
+    () => new Map(Object.entries(profiles ?? {})),
+    [profiles],
   );
   const agentByPubkey = useMemo(
     () => new Map(rosterAgents.map((a) => [a.pubkey, { name: a.name }])),

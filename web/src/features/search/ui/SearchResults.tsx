@@ -23,9 +23,7 @@ export function SearchResults({
   const { data, isLoading, error, refetch } = useSearch(term, channelIds);
   const authors = [...new Set((data ?? []).map((e) => e.pubkey))];
   const { data: profiles } = useProfiles(authors);
-  const profileByPubkey = new Map(
-    (profiles ?? []).map((p, i) => [authors[i], p]),
-  );
+  const profileByPubkey = new Map(Object.entries(profiles ?? {}));
   const channelById = new Map(channels.map((c) => [c.id, c]));
 
   if (isLoading) {

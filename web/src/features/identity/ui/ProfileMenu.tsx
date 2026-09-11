@@ -90,7 +90,7 @@ export function ProfileMenu() {
     ? (activePasskeyPubkey() ?? existingUserPubkey() ?? "")
     : (existingUserPubkey() ?? "");
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
-  const profile = profiles?.[0];
+  const profile = pubkey ? profiles?.[pubkey] : undefined;
   const displayName = profileDisplayName(profile, pubkey);
 
   // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
