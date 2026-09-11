@@ -22,6 +22,7 @@ export default defineConfig({
         "**/smoke.spec.ts",
         "**/launchpad.spec.ts",
         "**/responsive.spec.ts",
+        "**/responsive-surfaces.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

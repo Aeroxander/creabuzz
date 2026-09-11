@@ -217,7 +217,7 @@ export function KanbanBoard({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-1">
+    <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto pb-1">
       {STATUS_COLUMNS.map((col) => {
         const columnItems = items.filter((i) => i.status === col.key);
         return (

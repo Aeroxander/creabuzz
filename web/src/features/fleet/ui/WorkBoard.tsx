@@ -261,7 +261,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-3 p-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 p-4">
       <PageHeader
         title="Work"
         action={
@@ -416,8 +416,8 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
           }}
         />
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-2">
-          <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto pr-1">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-2">
+          <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto pr-1">
             {loading && filtered.length === 0 ? (
               <p className="text-xs text-black/45 dark:text-white/45">
                 Loading…
@@ -438,7 +438,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
             )}
           </div>
 
-          <div className="flex min-h-0 flex-col overflow-y-auto rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
+          <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
             {selected ? (
               <>
                 <div className="flex items-start gap-2">

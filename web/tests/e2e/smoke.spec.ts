@@ -450,3 +450,29 @@ test("wrong relay shows connect form and stores the relay URL", async ({
     )
     .toBe("wss://relay.example.com");
 });
+
+test("the landing Repositories button opens the repo browser", async ({
+  page,
+}) => {
+  // Regression: /repos was a redirect back to `/`, so this button did nothing.
+  await mockCommunityDirectory(page);
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      ws.send(JSON.stringify(["EOSE", parsed[1]]));
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("link", { name: "Repositories" }).click();
+  await expect(page).toHaveURL(/\/repos$/);
+  await expect(
+    page.getByRole("heading", { name: "This community is empty" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Communities" })).toBeHidden();
+});

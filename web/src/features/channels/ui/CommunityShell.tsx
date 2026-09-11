@@ -235,7 +235,7 @@ export function CommunityShell({
         </div>
 
         <div
-          className="flex min-h-0 flex-1 flex-col"
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
           data-testid="content-pane"
         >
           <div className="flex items-center gap-2 border-b border-black/10 px-3 py-2 lg:hidden dark:border-white/10">
@@ -254,7 +254,7 @@ export function CommunityShell({
               {host}
             </span>
           </div>
-          <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 flex-1 flex-col">
+          <div className="buzz-content-card mb-2 mr-2 mt-1 flex min-h-0 min-w-0 flex-1 flex-col">
             {showingOrg ? (
               <OrgView />
             ) : showingWork ? (
