@@ -618,3 +618,68 @@ test("a live subscription survives arriving before the AUTH handshake", async ({
   });
   expect(relay.queryAuthRetries()).toBeGreaterThan(0);
 });
+
+function historyMessage(index: number) {
+  return {
+    id: `history-${index}`,
+    pubkey: "b".repeat(64),
+    created_at: 1_000 + index,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: `history message ${index}`,
+    sig: "sig",
+  };
+}
+
+test("older messages can be read past the first page", async ({ page }) => {
+  // The timeline only ever asked for the newest page, so everything older than
+  // it was unreachable no matter how far the reader scrolled.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  for (let index = 1; index <= 70; index += 1)
+    relay.seed(historyMessage(index));
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await expect(page.getByText("history message 70")).toBeVisible({
+    timeout: 15_000,
+  });
+  // Exact: "history message 5" also matches "history message 50".
+  await expect(
+    page.getByText("history message 5", { exact: true }),
+  ).toHaveCount(0);
+
+  await page.getByTestId("load-older-messages").click();
+  await expect(
+    page.getByText("history message 5", { exact: true }),
+  ).toBeVisible({
+    timeout: 15_000,
+  });
+  // The whole older page is now reachable, newest page included.
+  await expect(page.getByText("history message 70")).toBeVisible();
+  // Ten messages older than the first page is a short page: nothing more to ask for.
+  await expect(page.getByTestId("load-older-messages")).toHaveCount(0);
+});
+
+test("an older page the relay drops is reported, not silently absent", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  for (let index = 1; index <= 70; index += 1)
+    relay.seed(historyMessage(index));
+  // Drop only the backwards page: the first load must still succeed.
+  relay.setClosingSockets((filter) => typeof filter?.until === "number");
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByText("history message 70")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.getByTestId("load-older-messages").click();
+  await expect(page.getByTestId("older-messages-error")).toBeVisible({
+    timeout: 15_000,
+  });
+});

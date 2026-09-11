@@ -569,6 +569,40 @@ export function ChannelTimeline({
           setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 120);
         }}
       >
+        {roots.length > 0 &&
+        (messages.hasOlder || messages.loadingOlder || messages.olderError) ? (
+          <div className="flex flex-col items-center gap-1 py-2">
+            {messages.olderError ? (
+              <p
+                className="text-xs text-amber-700 dark:text-amber-300"
+                data-testid="older-messages-error"
+                role="alert"
+              >
+                Couldn't load older messages —{" "}
+                {errorMessage(messages.olderError)}.{" "}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => void messages.loadOlder()}
+                >
+                  Try again
+                </button>
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white/70"
+                data-testid="load-older-messages"
+                disabled={messages.loadingOlder}
+                onClick={() => void messages.loadOlder()}
+              >
+                {messages.loadingOlder
+                  ? "Loading older messages…"
+                  : "Load older messages"}
+              </button>
+            )}
+          </div>
+        ) : null}
         {messages.error && roots.length > 0 ? (
           <p
             className="mb-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"

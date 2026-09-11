@@ -38,6 +38,14 @@ function tagValue(event: StoredEvent, name: string): string[] {
 /** NIP-01 filter match, limited to what the client actually sends. */
 export function matches(filter: Filter, event: StoredEvent): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  // Time bounds matter for pagination: a history page asks for everything up to
+  // the oldest message it already has.
+  if (typeof filter.since === "number" && event.created_at < filter.since) {
+    return false;
+  }
+  if (typeof filter.until === "number" && event.created_at > filter.until) {
+    return false;
+  }
   for (const [key, value] of Object.entries(filter)) {
     if (!key.startsWith("#")) continue;
     const tagName = key.slice(1);
@@ -205,6 +213,12 @@ export function createMockRelay({
         if (type === "REQ") {
           const [, subId] = parsed as [string, string, Filter];
           const filter = parsed[2] as Filter;
+          /** Newest first, capped, the way a relay replays a filter. */
+          const replay = (candidate: Filter) =>
+            events
+              .filter((event) => matches(candidate, event))
+              .sort((a, b) => b.created_at - a.created_at)
+              .slice(0, candidate.limit ?? events.length);
           if (authenticated && refusedWhileUnauthenticated) {
             refusedWhileUnauthenticated = false;
             if (subId.startsWith("live-")) authRetries.live += 1;
@@ -226,10 +240,8 @@ export function createMockRelay({
             return;
           }
           subscriptions.get(socket)?.set(subId, filter);
-          for (const event of events) {
-            if (matches(filter, event)) {
-              ws.send(JSON.stringify(["EVENT", subId, event]));
-            }
+          for (const event of replay(filter)) {
+            ws.send(JSON.stringify(["EVENT", subId, event]));
           }
           ws.send(JSON.stringify(["EOSE", subId]));
         }
