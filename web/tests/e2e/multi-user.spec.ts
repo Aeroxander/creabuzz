@@ -351,3 +351,44 @@ test("the composer suggests people seen in the channel, not just agents", async 
 
   await context.close();
 });
+
+test("a reply appears threaded for the other client", async ({ browser }) => {
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("composer-input").fill("Root message");
+  await author.getByTestId("composer-send").click();
+  await expect(reader.getByText("Root message")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // The reader replies through the row's Reply action.
+  const row = reader.getByTestId("message-row").first();
+  await row.hover();
+  await row.getByTestId("reply-button").click();
+  await reader.getByTestId("composer-input").fill("Threaded reply");
+  await reader.getByTestId("composer-send").click();
+
+  // The author sees the reply, and it carries the root as its parent.
+  await expect(author.getByText("Threaded reply")).toBeVisible({
+    timeout: 15_000,
+  });
+  const rows = author.getByTestId("message-row");
+  await expect(rows).toHaveCount(2);
+  // The reply is indented, which is how the client renders a child row.
+  const indented = await rows
+    .nth(1)
+    .evaluate((el) => el.className.includes("ml-8"));
+  expect(indented).toBe(true);
+
+  await first.close();
+  await second.close();
+});
