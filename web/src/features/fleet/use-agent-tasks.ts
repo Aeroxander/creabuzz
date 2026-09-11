@@ -95,6 +95,8 @@ export function parseTask(event: NostrEvent): FleetTask | null {
 export function useAgentTasks(): {
   tasks: FleetTask[];
   loading: boolean;
+  /** Set when the read failed; the view reports it rather than showing none. */
+  loadError: unknown;
   createTask: (input: {
     title: string;
     description?: string;
@@ -108,6 +110,8 @@ export function useAgentTasks(): {
 } {
   const [tasks, setTasks] = useState<Record<string, FleetTask>>({});
   const [loading, setLoading] = useState(true);
+  /** Set when the task read failed, so the list can say so instead of "none". */
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   useEffect(() => {
     const wsUrl = relayWsUrl();
@@ -133,10 +137,15 @@ export function useAgentTasks(): {
           for (const event of events) upsertFrom(event, next);
           return next;
         });
+        setLoadError(null);
         setLoading(false);
       })
-      .catch(() => {
-        if (!disposed) setLoading(false);
+      .catch((error: unknown) => {
+        console.warn("[fleet] task list failed", error);
+        if (!disposed) {
+          setLoadError(error);
+          setLoading(false);
+        }
       });
 
     const unsubscribe = subscribeChannel(wsUrl, filter, {
@@ -197,7 +206,7 @@ export function useAgentTasks(): {
     [tasks],
   );
 
-  return { tasks: sorted, loading, createTask };
+  return { tasks: sorted, loading, loadError, createTask };
 }
 
 function upsertFrom(event: NostrEvent, into: Record<string, FleetTask>): void {

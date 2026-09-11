@@ -1538,3 +1538,63 @@ test("two tabs converge on one page without P2P signalling", async ({
   await expect(secondEditor).toContainText("plus second");
   await second.close();
 });
+
+test("a refused task query is reported on the agents view", async ({
+  page,
+}) => {
+  // The fleet task list turned a failed read into "no tasks". The roster must
+  // load so the view renders, while the task query is refused.
+  await mockCommunityDirectory(page);
+  const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(44011)) {
+        ws.send(JSON.stringify(["CLOSED", subId, "blocked: no task index"]));
+        return;
+      }
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("fleet-toggle").click();
+
+  const panel = page.getByTestId("fleet-tasks-load-error");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("blocked: no task index");
+});

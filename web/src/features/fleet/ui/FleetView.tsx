@@ -191,7 +191,7 @@ function TaskCard({ task }: { task: FleetTask }) {
 
 export function FleetView({ channels }: { channels: Channel[] }) {
   const { agents, loading, loadError } = useAgentRoster();
-  const { tasks, createTask } = useAgentTasks();
+  const { tasks, createTask, loadError: taskLoadError } = useAgentTasks();
   const [taskTitle, setTaskTitle] = useState("");
   const [taskAssignee, setTaskAssignee] = useState("");
   const [creating, setCreating] = useState(false);
@@ -343,6 +343,14 @@ export function FleetView({ channels }: { channels: Channel[] }) {
             {tasks.length}
           </span>
         </div>
+        {taskLoadError && tasks.length === 0 ? (
+          <QueryError
+            description="The relay did not answer the task query, so no tasks can be listed."
+            message={errorMessage(taskLoadError)}
+            testId="fleet-tasks-load-error"
+            title="Couldn't load tasks"
+          />
+        ) : null}
         <div className="mt-2 flex gap-2">
           <input
             value={taskTitle}
