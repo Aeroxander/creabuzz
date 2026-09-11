@@ -193,3 +193,41 @@ test("a task created by one client appears on the other's board", async ({
   await first.close();
   await second.close();
 });
+
+test("a client recovers after its connection drops", async ({ browser }) => {
+  const relay = createMockRelay();
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const author = await first.newPage();
+  const reader = await second.newPage();
+  relay.seed(channelEvent());
+  await relay.install(author);
+  await relay.install(reader);
+  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await author.getByTestId("composer-input").fill("Before the drop");
+  await author.getByTestId("composer-send").click();
+  await expect(reader.getByText("Before the drop")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // The relay goes away.
+  relay.dropConnections();
+  await expect(reader.getByTestId("live-status-chip")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // It comes back; the client must reconnect and resume live delivery.
+  await author.getByTestId("composer-input").fill("After the drop");
+  await author.getByTestId("composer-send").click();
+  await expect(reader.getByText("After the drop")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(reader.getByTestId("live-status-chip")).toBeHidden({
+    timeout: 15_000,
+  });
+
+  await first.close();
+  await second.close();
+});

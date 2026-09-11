@@ -28,6 +28,7 @@ interface Filter {
 
 interface Socket {
   send: (payload: string) => void;
+  close: () => void;
 }
 
 function tagValue(event: StoredEvent, name: string): string[] {
@@ -77,7 +78,10 @@ export function createMockRelay() {
       });
     });
     await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
-      const socket: Socket = { send: (payload) => ws.send(payload) };
+      const socket: Socket = {
+        send: (payload) => ws.send(payload),
+        close: () => ws.close(),
+      };
       sockets.add(socket);
       subscriptions.set(socket, new Map());
       ws.onClose(() => sockets.delete(socket));
@@ -116,10 +120,21 @@ export function createMockRelay() {
     });
   };
 
+  /** Drop every open socket, as a relay restart or a network blip would. */
+  const dropConnections = () => {
+    for (const socket of [...sockets]) {
+      try {
+        socket.close();
+      } catch {
+        // already gone
+      }
+    }
+  };
+
   /** Put an event in the store without notifying anyone (history seeding). */
   const seed = (event: StoredEvent) => {
     events.push(event);
   };
 
-  return { install, deliver, seed, events };
+  return { install, deliver, seed, dropConnections, events };
 }
