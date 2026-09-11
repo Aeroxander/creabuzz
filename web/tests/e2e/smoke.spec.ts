@@ -703,3 +703,80 @@ test("the work board degrades to a notice when only secondary reads fail", async
   await expect(page.getByTestId("work-load-error")).toBeHidden();
   await expect(page.getByText("Ship the release")).toBeVisible();
 });
+
+test("a wiki page saves, reports success and stops showing a draft badge", async ({
+  page,
+}) => {
+  // End-to-end save path: publish, toast, badge. The cache-optional behaviour
+  // is unit-tested in `features/wiki/lib/cache.test.mjs`; stubbing browser
+  // storage here did not actually reach that code path, so this test does not
+  // claim to cover it.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mockCommunityDirectory(page);
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT" || parsed[0] === "AUTH") {
+        // Accept every publish so the test exercises the save path.
+        ws.send(JSON.stringify(["OK", parsed[1].id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      if ((filter.kinds ?? []).includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", "0f0f0f0f-1111-2222-3333-444444444444"],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+  const warnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") warnings.push(message.text());
+  });
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("wiki-toggle").click();
+
+  await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill("offline-page");
+  await page.getByTestId("page-name-confirm").click();
+
+  const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await editor.click();
+  await page.keyboard.type("Saved without a cache");
+
+  const save = page.getByTestId("wiki-save");
+  await expect(save).toBeEnabled();
+  await save.click();
+
+  await expect(page.getByText("Page saved")).toBeVisible();
+  await expect(page.getByTestId("wiki-save-state")).toHaveText("saved");
+  await expect(page.getByText("Couldn't save page")).toBeHidden();
+});

@@ -15,6 +15,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 
+import { withCache } from "./lib/cache";
 import {
   buildPages,
   KIND_DELETE,
@@ -39,19 +40,36 @@ interface WikiDb {
   closeAsync(): Promise<void>;
 }
 
-let dbPromise: Promise<WikiDb> | null = null;
+let dbPromise: Promise<WikiDb | null> | null = null;
 
-function openWikiDb(): Promise<WikiDb> {
+/**
+ * Open the local cache, or resolve `null` when the browser cannot provide one.
+ *
+ * The cache needs OPFS, which some browsers and some deployments (missing
+ * cross-origin-isolation headers behind a proxy or CDN) do not provide. The
+ * cache is an optimisation — the relay is the source of truth — so a missing
+ * cache must never fail a read, and above all must never turn a publish that
+ * the relay accepted into a reported save failure.
+ */
+function openWikiDb(): Promise<WikiDb | null> {
   if (!dbPromise) {
-    dbPromise = import("@op-engineering/op-sqlite").then(({ openAsync }) =>
-      openAsync({ name: "buzz-wiki.db", location: "default" }).then((db) =>
-        db
-          .execute(
-            "CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, content TEXT, updated_at INTEGER)",
-          )
-          .then(() => db as unknown as WikiDb),
-      ),
-    );
+    dbPromise = import("@op-engineering/op-sqlite")
+      .then(({ openAsync }) =>
+        openAsync({ name: "buzz-wiki.db", location: "default" }).then((db) =>
+          db
+            .execute(
+              "CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, content TEXT, updated_at INTEGER)",
+            )
+            .then(() => db as unknown as WikiDb),
+        ),
+      )
+      .catch((error: unknown) => {
+        console.warn(
+          "[wiki] local cache unavailable; using the relay only",
+          error,
+        );
+        return null;
+      });
   }
   return dbPromise;
 }
@@ -63,30 +81,43 @@ interface CachedPageRow {
 }
 
 async function loadCachedPages(): Promise<WikiPage[]> {
-  const db = await openWikiDb();
-  const result = await db.execute(
-    "SELECT slug, content, updated_at FROM pages",
+  return withCache(
+    openWikiDb,
+    async (db) => {
+      const result = await db.execute(
+        "SELECT slug, content, updated_at FROM pages",
+      );
+      return (result.rows as unknown as CachedPageRow[]).map((row) => ({
+        slug: row.slug,
+        content: row.content,
+        updatedAt: row.updated_at,
+      }));
+    },
+    [],
   );
-  return (result.rows as unknown as CachedPageRow[]).map((row) => ({
-    slug: row.slug,
-    content: row.content,
-    updatedAt: row.updated_at,
-  }));
 }
 
 async function cachePage(page: WikiPage): Promise<void> {
-  const db = await openWikiDb();
-  if (!db) return;
-  await db.execute(
-    "INSERT OR REPLACE INTO pages (slug, content, updated_at) VALUES (?, ?, ?)",
-    [page.slug, page.content, page.updatedAt],
+  await withCache(
+    openWikiDb,
+    async (db) => {
+      await db.execute(
+        "INSERT OR REPLACE INTO pages (slug, content, updated_at) VALUES (?, ?, ?)",
+        [page.slug, page.content, page.updatedAt],
+      );
+    },
+    undefined,
   );
 }
 
 async function dropCachedPage(slug: string): Promise<void> {
-  const db = await openWikiDb();
-  if (!db) return;
-  await db.execute("DELETE FROM pages WHERE slug = ?", [slug]);
+  await withCache(
+    openWikiDb,
+    async (db) => {
+      await db.execute("DELETE FROM pages WHERE slug = ?", [slug]);
+    },
+    undefined,
+  );
 }
 
 // ── relay source of truth ───────────────────────────────────────────────────
@@ -117,7 +148,11 @@ export function useWikiPages(enabled: boolean) {
   const [cached, setCached] = useState<WikiPage[]>([]);
   useEffect(() => {
     if (!enabled) return;
-    void loadCachedPages().then((pages) => setCached(pages));
+    void loadCachedPages()
+      .then((pages) => setCached(pages))
+      .catch(() => {
+        // The cache is optional; `loadCachedPages` already degrades.
+      });
   }, [enabled]);
 
   const relayQuery = useQuery({

@@ -39,6 +39,12 @@ export function WikiView() {
   /** Open naming dialog: `new` creates, otherwise it renames that page. */
   const [dialog, setDialog] = useState<null | "new" | { rename: string }>(null);
   const [pendingDelete, setPendingDelete] = useState<WikiPage | null>(null);
+  /**
+   * Slugs published in this tab. The relay's page list refreshes on a poll, so
+   * until it does the page still looks unpublished — the badge would claim
+   * "not published" for a page the relay just accepted.
+   */
+  const [publishedHere, setPublishedHere] = useState<Set<string>>(new Set());
 
   const published = pages.find((p) => p.slug === activeSlug) ?? null;
   const { content, setContent, touched } = useLiveWikiDoc(
@@ -97,6 +103,7 @@ export function WikiView() {
     try {
       await savePage(activeSlug, content);
       setDirty(false);
+      setPublishedHere((prev) => new Set(prev).add(activeSlug));
       toast.success("Page saved");
     } catch (error) {
       console.error("[wiki]", error);
@@ -134,6 +141,7 @@ export function WikiView() {
       void savePage(activeSlug, content)
         .then(() => {
           setDirty(false);
+          setPublishedHere((prev) => new Set(prev).add(activeSlug));
           void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
         })
         .catch((error) => {
@@ -220,7 +228,7 @@ export function WikiView() {
               >
                 <BookOpen className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{page.slug}</span>
-                {page.draft ? (
+                {page.draft && !publishedHere.has(page.slug) ? (
                   <span className="ml-auto shrink-0 text-2xs text-amber-700 dark:text-amber-400">
                     draft
                   </span>
@@ -285,9 +293,11 @@ export function WikiView() {
               <CloudUpload className="h-3 w-3" aria-hidden="true" />
               {saving
                 ? "saving…"
-                : dirty || active?.draft
+                : dirty
                   ? "unsaved"
-                  : "saved"}
+                  : active?.draft && !publishedHere.has(active.slug)
+                    ? "not published"
+                    : "saved"}
             </span>
             <button
               type="button"
