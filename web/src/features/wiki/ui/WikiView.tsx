@@ -173,7 +173,7 @@ export function WikiView() {
           <button
             type="button"
             onClick={() => setDialog("new")}
-            className="rounded p-1 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+            className="rounded p-1 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
             aria-label="New page"
             data-testid="wiki-new-page"
           >
@@ -184,7 +184,7 @@ export function WikiView() {
           <div className="px-2 pb-2">
             <input
               aria-label="Find a page"
-              className="w-full rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-black outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+              className="w-full rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-black outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
               data-testid="wiki-page-search"
               onChange={(e) => setPageSearch(e.target.value)}
               placeholder="Find a page…"
@@ -204,13 +204,13 @@ export function WikiView() {
             </div>
           ) : visiblePages.length === 0 && pageSearch.trim().length > 0 ? (
             <p
-              className="px-2 py-3 text-xs text-black/45 dark:text-white/45"
+              className="px-2 py-3 text-xs text-black/60 dark:text-white/60"
               data-testid="wiki-page-search-empty"
             >
               No page matches “{pageSearch.trim()}”.
             </p>
           ) : visiblePages.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-black/45 dark:text-white/45">
+            <p className="px-2 py-3 text-xs text-black/60 dark:text-white/60">
               No pages yet. Create the first one.
             </p>
           ) : (
@@ -266,7 +266,7 @@ export function WikiView() {
           <span className="min-w-0 truncate text-sm font-medium text-black/70 dark:text-white/70">
             {activeSlug ?? "wiki"}
           </span>
-          <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-black/45 dark:text-white/45">
+          <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
             {(["wysiwyg", "source", "preview"] as const).map((m) => (
               <button
                 key={m}
@@ -397,7 +397,7 @@ export function WikiView() {
             </div>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
             Select a page or create one.
           </div>
         )}

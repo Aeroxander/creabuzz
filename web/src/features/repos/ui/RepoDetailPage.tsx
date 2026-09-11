@@ -53,7 +53,7 @@ function CopyableUrl({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+        className="shrink-0 text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
         aria-label="Copy clone URL"
       >
         {copied ? (
@@ -141,7 +141,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "code"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Code
@@ -152,7 +152,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "commits"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Commits
@@ -251,7 +251,7 @@ export function RepoDetailPage() {
         <div className="min-w-0 flex-1">
           <BackToRepositories />
           <div className="mt-12 text-center">
-            <BookMarked className="mx-auto h-10 w-10 text-black/50 dark:text-white/50" />
+            <BookMarked className="mx-auto h-10 w-10 text-black/60 dark:text-white/60" />
             <h1 className="mt-4 text-xl font-semibold text-black dark:text-white">
               Repository not found
             </h1>
@@ -281,7 +281,7 @@ export function RepoDetailPage() {
         {/* Header */}
         <div className="mt-6">
           <div className="flex items-center gap-3">
-            <BookMarked className="h-6 w-6 shrink-0 text-black/50 dark:text-white/50" />
+            <BookMarked className="h-6 w-6 shrink-0 text-black/60 dark:text-white/60" />
             <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-white">
               {repo.name}
             </h1>
@@ -297,7 +297,7 @@ export function RepoDetailPage() {
               {repo.description}
             </p>
           )}
-          <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-2 text-xs text-black/60 dark:text-white/60">
             Updated {relativeTime(repo.createdAt)}
           </p>
         </div>

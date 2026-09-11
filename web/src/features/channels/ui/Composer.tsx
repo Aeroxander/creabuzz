@@ -165,7 +165,7 @@ export function Composer({
       className="border-t border-black/10 px-4 py-3 dark:border-white/10"
     >
       {replyTo && (
-        <div className="mb-2 flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
+        <div className="mb-2 flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
           <span>Replying to a message</span>
           <button
             type="button"
@@ -177,7 +177,7 @@ export function Composer({
         </div>
       )}
       {isEditing && (
-        <div className="mb-2 flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
+        <div className="mb-2 flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
           <span>Editing your message</span>
           <button
             type="button"
@@ -206,7 +206,7 @@ export function Composer({
                 />
                 <span className="truncate">{candidateName(c)}</span>
                 {c.agent ? (
-                  <span className="ml-auto text-[10px] text-black/40 dark:text-white/40">
+                  <span className="ml-auto text-[10px] text-black/60 dark:text-white/60">
                     agent
                   </span>
                 ) : null}
@@ -226,14 +226,14 @@ export function Composer({
           }}
           rows={2}
           placeholder={`Message #${channelName ?? channelId.slice(0, 8)}…`}
-          className="w-full resize-none border-0 bg-transparent p-0 text-sm text-black placeholder:text-black/40 focus:outline-hidden focus:ring-0 dark:text-white dark:placeholder:text-white/40"
+          className="w-full resize-none border-0 bg-transparent p-0 text-sm text-black placeholder:text-black/60 focus:outline-hidden focus:ring-0 dark:text-white dark:placeholder:text-white/40"
           data-testid="composer-input"
         />
         <div className="mt-1 flex items-center gap-0.5">
           <button
             type="button"
             onClick={insertMention}
-            className="rounded-md p-1.5 text-black/45 hover:bg-black/5 hover:text-black dark:text-white/45 dark:hover:bg-white/10 dark:hover:text-white"
+            className="rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
             aria-label="Mention someone"
             title="Mention someone"
           >
@@ -243,7 +243,7 @@ export function Composer({
             type="button"
             disabled={uploading || sending || isEditing}
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-md p-1.5 text-black/45 hover:bg-black/5 hover:text-black disabled:opacity-40 dark:text-white/45 dark:hover:bg-white/10 dark:hover:text-white"
+            className="rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black disabled:opacity-40 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
             aria-label="Attach file"
             data-testid="attach-button"
             title={uploading ? "Uploading…" : "Attach a file"}
@@ -260,7 +260,7 @@ export function Composer({
             }}
           />
           {identityError && (
-            <span className="ml-1 text-xs text-black/40 dark:text-white/40">
+            <span className="ml-1 text-xs text-black/60 dark:text-white/60">
               sign in to post
             </span>
           )}

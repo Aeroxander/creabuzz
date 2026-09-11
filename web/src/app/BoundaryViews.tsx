@@ -30,7 +30,7 @@ export function RouteErrorView({
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This view stopped responding to its data. Reloading usually clears it.
         </p>
-        <p className="mt-2 break-words text-xs text-black/45 dark:text-white/45">
+        <p className="mt-2 break-words text-xs text-black/60 dark:text-white/60">
           {message}
         </p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">

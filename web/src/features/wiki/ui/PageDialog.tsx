@@ -113,7 +113,7 @@ export function PageDialog({
           data-testid="page-name-input"
         />
         <p
-          className={`mt-1.5 text-xs ${invalid ? "text-amber-700 dark:text-amber-400" : "text-black/45 dark:text-white/45"}`}
+          className={`mt-1.5 text-xs ${invalid ? "text-amber-700 dark:text-amber-400" : "text-black/60 dark:text-white/60"}`}
           data-testid="page-name-hint"
         >
           {message}

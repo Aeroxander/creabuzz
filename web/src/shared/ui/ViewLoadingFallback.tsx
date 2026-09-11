@@ -8,7 +8,7 @@ export function ViewLoadingFallback({
 }) {
   return (
     <div
-      className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-black/45 dark:text-white/45"
+      className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-black/60 dark:text-white/60"
       data-testid="view-loading"
     >
       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

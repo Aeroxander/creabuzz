@@ -242,7 +242,7 @@ class BrowserAgent {
     }
   }
 
-  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}\s*:`, "i");
+  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}s*:`, "i");
 
   private async onMention(event: NostrEvent) {
     if (event.pubkey === getAgentPubkey()) return;

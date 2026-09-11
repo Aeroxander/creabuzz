@@ -38,7 +38,7 @@ export function RepoRefsSection({
                   </Badge>
                 )}
               </div>
-              <span className="text-black/30 dark:text-white/30">&middot;</span>
+              <span className="text-black/60 dark:text-white/60">&middot;</span>
             </>
           )}
           <span className="flex items-center gap-1">
@@ -46,7 +46,7 @@ export function RepoRefsSection({
             {refs.branches.length}{" "}
             {refs.branches.length === 1 ? "branch" : "branches"}
           </span>
-          <span className="text-black/30 dark:text-white/30">&middot;</span>
+          <span className="text-black/60 dark:text-white/60">&middot;</span>
           <span className="flex items-center gap-1">
             <Tag className="h-4 w-4" />
             {refs.tags.length} {refs.tags.length === 1 ? "tag" : "tags"}

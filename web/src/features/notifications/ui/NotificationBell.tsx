@@ -60,7 +60,7 @@ export function NotificationBell({
         className="relative flex w-full items-center gap-2 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-white/5"
         aria-label="Notifications"
       >
-        <Bell className="h-3.5 w-3.5 shrink-0 text-black/40 dark:text-white/40" />
+        <Bell className="h-3.5 w-3.5 shrink-0 text-black/60 dark:text-white/60" />
         <span className="min-w-0 flex-1 truncate text-left text-sm text-black/70 dark:text-white/70">
           Notifications
         </span>
@@ -74,7 +74,7 @@ export function NotificationBell({
       {open ? (
         <div className="absolute left-3 right-3 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-black/10 bg-background p-2 shadow-xl dark:border-white/10">
           {items.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-black/45 dark:text-white/45">
+            <p className="px-2 py-4 text-center text-xs text-black/60 dark:text-white/60">
               Nothing new.
             </p>
           ) : (
@@ -88,16 +88,16 @@ export function NotificationBell({
                   className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-black/5 dark:hover:bg-white/10"
                 >
                   <span className="mt-0.5 shrink-0">
-                    <Icon className="h-3.5 w-3.5 text-black/45 dark:text-white/45" />
+                    <Icon className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium text-black dark:text-white">
                       {item.title}
                     </span>
-                    <span className="block truncate text-2xs text-black/50 dark:text-white/50">
+                    <span className="block truncate text-2xs text-black/60 dark:text-white/60">
                       {item.preview}
                     </span>
-                    <span className="block text-[10px] text-black/35 dark:text-white/35">
+                    <span className="block text-[10px] text-black/60 dark:text-white/60">
                       {new Date(item.at).toLocaleString()}
                     </span>
                   </span>

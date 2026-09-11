@@ -136,10 +136,10 @@ export function CommunityHomePage() {
               <h1 className="truncate text-2xl font-semibold text-black dark:text-white">
                 {hostName}
               </h1>
-              <p className="truncate text-sm text-black/50 dark:text-white/50">
+              <p className="truncate text-sm text-black/60 dark:text-white/60">
                 {host}
               </p>
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-black/50 dark:text-white/50">
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-black/60 dark:text-white/60">
                 <Users className="h-4 w-4" />
                 {memberCount} member{memberCount === 1 ? "" : "s"}
               </p>
@@ -167,7 +167,7 @@ export function CommunityHomePage() {
             </Button>
           </div>
 
-          <p className="mt-4 text-xs text-black/45 dark:text-white/45">
+          <p className="mt-4 text-xs text-black/60 dark:text-white/60">
             Joining doesn't require an account here — Creaton creates a local
             identity only when you post or join privately.
           </p>

@@ -34,7 +34,7 @@ function Field({
       </label>
       <div className="mt-1">{children}</div>
       {hint ? (
-        <p className="mt-1 text-xs text-black/50 dark:text-white/50">{hint}</p>
+        <p className="mt-1 text-xs text-black/60 dark:text-white/60">{hint}</p>
       ) : null}
     </div>
   );
@@ -224,7 +224,7 @@ export function CreateLaunchDialog({
           </div>
           {tokenMode === "mint" ? (
             <div className="mt-2 flex flex-col gap-3">
-              <p className="text-xs text-black/50 dark:text-white/50">
+              <p className="text-xs text-black/60 dark:text-white/60">
                 No addresses needed. Minting deploys a reserve-backed apptoken
                 and is a separate step after publishing.
               </p>

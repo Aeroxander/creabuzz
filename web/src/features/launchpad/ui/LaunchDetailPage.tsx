@@ -254,13 +254,13 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           <ProgressBar record={record} />
         </div>
         {progress.data?.source === "preview" ? (
-          <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-2 text-xs text-black/60 dark:text-white/60">
             Preview fixture — development builds only, never live figures.
           </p>
         ) : null}
         {progress.data?.source === "unavailable" ? (
           <p
-            className="mt-2 text-xs text-black/50 dark:text-white/50"
+            className="mt-2 text-xs text-black/60 dark:text-white/60"
             data-testid="launch-progress-unavailable"
           >
             {progress.data.reason === "no auction contract linked"
@@ -322,7 +322,7 @@ function UpdatesTab({ launch }: { launch: TabLaunch }) {
         <li key={u.id}>
           <Card className="p-4">
             <h3 className="text-sm font-semibold">{u.title}</h3>
-            <p className="mt-0.5 text-xs tabular-nums text-black/50 dark:text-white/50">
+            <p className="mt-0.5 text-xs tabular-nums text-black/60 dark:text-white/60">
               {new Date(u.createdAt * 1000).toLocaleString()}
             </p>
             <p className="mt-2 whitespace-pre-wrap text-sm">{u.body}</p>
@@ -350,7 +350,7 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
       {launch.proposals.map((p) => (
         <li key={p.id}>
           <Card className="p-4">
-            <span className="text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+            <span className="text-xs font-medium uppercase tracking-wide text-black/60 dark:text-white/60">
               {p.kind === "futarchy-budget" ? "Futarchy · budget" : p.kind} ·{" "}
               {p.state}
             </span>

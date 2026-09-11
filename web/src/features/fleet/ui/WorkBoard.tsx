@@ -71,15 +71,15 @@ function WorkItemRow({
       }`}
     >
       {item.type === "task" ? (
-        <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-black/40 dark:text-white/40" />
+        <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
       ) : (
-        <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-black/40 dark:text-white/40" />
+        <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-black dark:text-white">
           {item.title}
         </span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-black/45 dark:text-white/45">
+        <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-black/60 dark:text-white/60">
           <Badge
             variant={statusVariant(item.status)}
             className="px-1.5 py-0 text-[10px]"
@@ -297,7 +297,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
       <PageHeader
         title="Work"
         action={
-          <span className="text-xs text-black/45 dark:text-white/45">
+          <span className="text-xs text-black/60 dark:text-white/60">
             {items.length} items ·{" "}
             {items.filter((i) => i.type === "task").length} tasks ·{" "}
             {items.filter((i) => i.type === "issue").length} issues
@@ -351,7 +351,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="New task…"
-          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
           data-testid="work-create-input"
         />
         <select
@@ -467,11 +467,11 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-2">
           <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto pr-1">
             {loading && filtered.length === 0 ? (
-              <p className="text-xs text-black/45 dark:text-white/45">
+              <p className="text-xs text-black/60 dark:text-white/60">
                 Loading…
               </p>
             ) : filtered.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/50 dark:border-white/15 dark:text-white/50">
+              <p className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60">
                 No work items match.
               </p>
             ) : (
@@ -491,9 +491,9 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
               <>
                 <div className="flex items-start gap-2">
                   {selected.type === "task" ? (
-                    <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-black/40 dark:text-white/40" />
+                    <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
                   ) : (
-                    <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-black/40 dark:text-white/40" />
+                    <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
                   )}
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-black dark:text-white">
@@ -509,7 +509,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                       <Badge variant="outline" className="capitalize">
                         {selected.type}
                       </Badge>
-                      <span className="text-2xs text-black/45 dark:text-white/45">
+                      <span className="text-2xs text-black/60 dark:text-white/60">
                         by {truncatePubkey(selected.author)}
                       </span>
                     </div>
@@ -561,7 +561,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                         <ShieldX className="h-3.5 w-3.5" /> Reject
                       </button>
                       {selected.approver ? (
-                        <span className="text-2xs text-black/45 dark:text-white/45">
+                        <span className="text-2xs text-black/60 dark:text-white/60">
                           resolved by {truncatePubkey(selected.approver)}
                         </span>
                       ) : null}
@@ -591,13 +591,13 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                   )}
 
                 <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/10">
-                  <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+                  <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
                     <ListChecks className="h-3 w-3" /> Thread
                   </h4>
                   {selected.parentEventId ? (
                     <RecentThread parentId={selected.parentEventId} />
                   ) : (
-                    <p className="text-xs text-black/40 dark:text-white/40">
+                    <p className="text-xs text-black/60 dark:text-white/60">
                       No linked thread
                       {selected.type === "issue"
                         ? " (issues live in Projects)"
@@ -614,7 +614,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                       onChange={(e) => setReply(e.target.value)}
                       rows={2}
                       placeholder={"Ask @buzz-tab in this thread…"}
-                      className="min-w-0 flex-1 resize-none rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+                      className="min-w-0 flex-1 resize-none rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
                       data-testid="thread-reply-input"
                     />
                     <button
@@ -638,7 +638,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center text-center">
                 <X className="mb-2 h-6 w-6 text-black/20 dark:text-white/20" />
-                <p className="text-sm text-black/50 dark:text-white/50">
+                <p className="text-sm text-black/60 dark:text-white/60">
                   Select a work item to see its thread and actions.
                 </p>
               </div>
@@ -694,7 +694,7 @@ function RecentThread({ parentId }: { parentId: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       {rows.length === 0 ? (
-        <p className="text-xs text-black/40 dark:text-white/40">
+        <p className="text-xs text-black/60 dark:text-white/60">
           Loading thread…
         </p>
       ) : (
@@ -710,7 +710,7 @@ function RecentThread({ parentId }: { parentId: string }) {
               className="mt-0.5"
             />
             <div className="min-w-0">
-              <p className="truncate text-[10px] font-medium text-black/45 dark:text-white/45">
+              <p className="truncate text-[10px] font-medium text-black/60 dark:text-white/60">
                 {truncatePubkey(row.author)}
               </p>
               <p className="whitespace-pre-wrap break-words text-xs text-black/80 dark:text-white/80">
@@ -875,7 +875,7 @@ function TaskHistory({ taskId }: { taskId: string }) {
   if (rows.length === 0) return null;
   return (
     <div className="border-t border-black/10 pt-1.5 dark:border-white/10">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-black/45 dark:text-white/45">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
         History
       </p>
       <ol className="mt-1 space-y-0.5 text-2xs text-black/55 dark:text-white/55">

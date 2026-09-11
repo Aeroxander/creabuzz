@@ -40,7 +40,7 @@ export function OrgSidebar({ repos }: { repos: Repo[] }) {
             ))}
           </div>
           {overflowCount > 0 && (
-            <span className="mt-2 block text-xs text-black/50 dark:text-white/50">
+            <span className="mt-2 block text-xs text-black/60 dark:text-white/60">
               {uniquePubkeys.length} people
             </span>
           )}

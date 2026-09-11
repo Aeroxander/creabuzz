@@ -40,7 +40,7 @@ function SearchEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-        <GitBranch className="h-7 w-7 text-black/50 dark:text-white/50" />
+        <GitBranch className="h-7 w-7 text-black/60 dark:text-white/60" />
       </div>
       <h2 className="mt-4 text-lg font-semibold text-black dark:text-white">
         No matching repositories
@@ -119,7 +119,7 @@ function CommunityConnectionError({ message }: { message: string }) {
         <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
           {message}
         </p>
-        <p className="mt-4 max-w-md text-xs leading-relaxed text-black/50 dark:text-white/50">
+        <p className="mt-4 max-w-md text-xs leading-relaxed text-black/60 dark:text-white/60">
           The web app is trying to reach{" "}
           <code className="rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">
             {currentRelay}
@@ -139,7 +139,7 @@ function CommunityConnectionError({ message }: { message: string }) {
             placeholder="wss://relay.example.com"
             value={relayInput}
             onChange={(e) => setRelayInput(e.target.value)}
-            className="border-black/10 bg-white text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+            className="border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
           />
           <div className="flex gap-2">
             <Button type="submit" className="flex-1">
@@ -262,7 +262,7 @@ export function ReposPage() {
             placeholder="Find a repository..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
           />
           <select
             value={sort}

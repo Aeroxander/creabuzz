@@ -1,0 +1,149 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Accessibility gate.
+ *
+ * Runs axe on the main surfaces and fails on `serious` and `critical`
+ * violations, which are the ones a keyboard or screen-reader user cannot work
+ * around. `moderate` and `minor` findings are reported by the tool but not
+ * gated here, so this stays a signal rather than noise.
+ */
+
+const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
+
+async function mockRelay(page: Page) {
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        communities: [
+          {
+            host: "alpha.example.com",
+            name: "Alpha",
+            description: "A test community.",
+            icon: null,
+            member_count: 3,
+            archived: false,
+          },
+        ],
+      }),
+    });
+  });
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      const kinds = filter.kinds ?? [];
+      if (kinds.includes(39000)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "chan-event-1",
+              pubkey: "b".repeat(64),
+              created_at: 100,
+              kind: 39000,
+              tags: [
+                ["d", CHANNEL_ID],
+                ["name", "general"],
+              ],
+              content: "",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      if (kinds.includes(9)) {
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "e".repeat(64),
+              pubkey: "b".repeat(64),
+              created_at: 200,
+              kind: 9,
+              tags: [["h", CHANNEL_ID]],
+              content: "A message with a [[wikilink]] and #tag",
+              sig: "sig",
+            },
+          ]),
+        );
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+}
+
+async function expectAccessible(page: Page, surface: string) {
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(
+    blocking.map((v) => ({
+      id: v.id,
+      impact: v.impact,
+      help: v.help,
+      targets: v.nodes.slice(0, 3).map((n) => n.target.join(" ")),
+    })),
+    `${surface}: serious/critical accessibility violations`,
+  ).toEqual([]);
+}
+
+test.use({ viewport: { width: 1280, height: 900 } });
+
+test("the discovery landing is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Communities" }),
+  ).toBeVisible();
+  await expectAccessible(page, "landing");
+});
+
+test("the channel shell and timeline are accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByText("A message with a")).toBeVisible();
+  await expectAccessible(page, "channel");
+});
+
+test("the wiki is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("wiki-toggle").click();
+  await expect(page.getByTestId("wiki-page-list")).toBeVisible();
+  await expectAccessible(page, "wiki");
+});
+
+test("the launchpad is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/launchpad");
+  await expect(page.getByRole("heading", { name: "Launchpad" })).toBeVisible();
+  await expectAccessible(page, "launchpad");
+});
+
+test("the agents view is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("fleet-toggle").click();
+  await expect(page.getByTestId("browser-agent-toggle")).toBeVisible();
+  await expectAccessible(page, "fleet");
+});

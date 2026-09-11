@@ -202,7 +202,7 @@ export function ProfileMenu() {
           <span className="block truncate text-sm font-medium text-black dark:text-white">
             {displayName}
           </span>
-          <span className="block truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+          <span className="block truncate font-mono text-[10px] text-black/60 dark:text-white/60">
             {truncatePubkey(pubkey)}
           </span>
         </span>
@@ -230,7 +230,7 @@ export function ProfileMenu() {
               <p className="truncate text-sm font-semibold text-black dark:text-white">
                 {displayName}
               </p>
-              <p className="truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+              <p className="truncate font-mono text-[10px] text-black/60 dark:text-white/60">
                 {truncatePubkey(pubkey)}
               </p>
             </div>
@@ -291,7 +291,7 @@ export function ProfileMenu() {
               />
               {passkeyActive ? (
                 <>
-                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/50 dark:bg-white/5 dark:text-white/50">
+                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60">
                     <Fingerprint className="h-3 w-3" />
                     {passkeyModeNow === "unlock"
                       ? "Passkey unlock (Touch ID) — key stays in browser"
@@ -344,7 +344,7 @@ export function ProfileMenu() {
             </p>
           ) : null}
           {passkeyBusy ? (
-            <p className="mt-1 text-xs text-black/45 dark:text-white/45">
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
               Waiting for your passkey…
             </p>
           ) : null}
@@ -352,7 +352,7 @@ export function ProfileMenu() {
           {walletBinding ? (
             <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
               <div
-                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/50 dark:bg-white/5 dark:text-white/50"
+                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
                 data-testid="wallet-binding"
               >
                 <Wallet className="h-3 w-3" />

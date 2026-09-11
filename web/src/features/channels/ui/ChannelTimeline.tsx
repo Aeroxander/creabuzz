@@ -222,10 +222,10 @@ function MessageRow({
             {agent?.name ?? profileDisplayName(profile, event.pubkey)}
           </span>
           {agent ? (
-            <Bot className="h-3 w-3 self-center text-black/40 dark:text-white/40" />
+            <Bot className="h-3 w-3 self-center text-black/60 dark:text-white/60" />
           ) : null}
           <time
-            className="text-xs text-black/40 dark:text-white/40"
+            className="text-xs text-black/60 dark:text-white/60"
             title={new Date(event.created_at * 1000).toLocaleString()}
           >
             {new Date(event.created_at * 1000).toLocaleTimeString([], {
@@ -233,7 +233,7 @@ function MessageRow({
               minute: "2-digit",
             })}
           </time>
-          <span className="ml-auto flex items-center gap-2 text-xs text-black/40 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/40">
+          <span className="ml-auto flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/60">
             {!isDeleted && (
               <>
                 <button
@@ -297,7 +297,7 @@ function MessageRow({
           </span>
         </div>
         {isDeleted ? (
-          <p className="mt-0.5 text-sm italic text-black/40 dark:text-white/40">
+          <p className="mt-0.5 text-sm italic text-black/60 dark:text-white/60">
             message deleted
           </p>
         ) : (
@@ -306,7 +306,7 @@ function MessageRow({
           </div>
         )}
         {reactions.length > 0 && <ReactionPills events={reactions} />}
-        <div className="mt-1 flex items-center gap-2 text-xs text-black/45 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/45">
+        <div className="mt-1 flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/60">
           <Smile className="h-3.5 w-3.5" />
           {QUICK_REACTIONS.map((emoji) => (
             <button
@@ -490,12 +490,12 @@ export function ChannelTimeline({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
-        <Hash className="h-4 w-4 text-black/50 dark:text-white/50" />
+        <Hash className="h-4 w-4 text-black/60 dark:text-white/60" />
         <h2 className="text-sm font-semibold text-black dark:text-white">
           {channel.name}
         </h2>
         {channel.description && (
-          <span className="truncate text-xs text-black/45 dark:text-white/45">
+          <span className="truncate text-xs text-black/60 dark:text-white/60">
             — {channel.description}
           </span>
         )}
@@ -562,8 +562,8 @@ export function ChannelTimeline({
           </div>
         ) : roots.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <MessageSquare className="h-7 w-7 text-black/30 dark:text-white/30" />
-            <p className="mt-2 text-sm text-black/50 dark:text-white/50">
+            <MessageSquare className="h-7 w-7 text-black/60 dark:text-white/60" />
+            <p className="mt-2 text-sm text-black/60 dark:text-white/60">
               No messages yet in {channel.name}.
             </p>
           </div>

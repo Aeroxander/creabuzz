@@ -19,7 +19,7 @@ function TreeRow({
         className="flex items-center gap-2 border-b border-black/10 px-3 py-2 text-sm text-black/60 last:border-b-0 dark:border-white/10 dark:text-white/60"
         aria-disabled="true"
       >
-        <Folder className="h-4 w-4 shrink-0 text-black/50 dark:text-white/50" />
+        <Folder className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
         <span className="font-medium">{entry.name}</span>
       </div>
     );
@@ -32,7 +32,7 @@ function TreeRow({
       search={preview ? { preview: "repositories" } : undefined}
       className="flex items-center gap-2 border-b border-black/10 px-3 py-2 text-sm text-black last:border-b-0 hover:bg-black/5 dark:border-white/10 dark:text-white dark:hover:bg-white/5"
     >
-      <File className="h-4 w-4 shrink-0 text-black/50 dark:text-white/50" />
+      <File className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
       <span>{entry.name}</span>
     </Link>
   );

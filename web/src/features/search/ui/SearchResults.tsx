@@ -58,8 +58,8 @@ export function SearchResults({
   if (!data || data.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-8 text-center">
-        <SearchX className="h-7 w-7 text-black/30 dark:text-white/30" />
-        <p className="mt-2 text-sm text-black/50 dark:text-white/50">
+        <SearchX className="h-7 w-7 text-black/60 dark:text-white/60" />
+        <p className="mt-2 text-sm text-black/60 dark:text-white/60">
           No results for “{term}”.
         </p>
       </div>
@@ -68,7 +68,7 @@ export function SearchResults({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4">
-      <p className="mb-2 text-xs text-black/45 dark:text-white/45">
+      <p className="mb-2 text-xs text-black/60 dark:text-white/60">
         {data.length} result{data.length === 1 ? "" : "s"} for “{term}”
       </p>
       <div className="divide-y divide-black/5 dark:divide-white/5">
@@ -83,7 +83,7 @@ export function SearchResults({
               className="block w-full py-2 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
               data-testid="search-result"
             >
-              <div className="flex items-baseline gap-2 text-xs text-black/45 dark:text-white/45">
+              <div className="flex items-baseline gap-2 text-xs text-black/60 dark:text-white/60">
                 <span className="font-medium text-black/70 dark:text-white/70">
                   {channel ? `#${channel.name}` : "message"}
                 </span>

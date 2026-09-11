@@ -57,7 +57,7 @@ function AgentOrgCard({
             </Badge>
           ) : null}
         </div>
-        <p className="truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+        <p className="truncate font-mono text-[10px] text-black/60 dark:text-white/60">
           {truncatePubkey(agent.pubkey)}
         </p>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -145,7 +145,7 @@ export function OrgView() {
       <PageHeader
         title="Org"
         action={
-          <span className="text-xs text-black/45 dark:text-white/45">
+          <span className="text-xs text-black/60 dark:text-white/60">
             {agents.length} agents · {online} online · {groups.length} teams
           </span>
         }
@@ -153,7 +153,7 @@ export function OrgView() {
 
       {TEAM_SUGGESTIONS.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-black/45 dark:text-white/45">
+          <span className="text-xs text-black/60 dark:text-white/60">
             Suggest a team for this tab agent:
           </span>
           {TEAM_SUGGESTIONS.map((t) => (
@@ -172,18 +172,18 @@ export function OrgView() {
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
         {loading && agents.length === 0 ? (
-          <p className="text-xs text-black/45 dark:text-white/45">
+          <p className="text-xs text-black/60 dark:text-white/60">
             Loading roster…
           </p>
         ) : (
           groups.map(([team, members]) => (
             <section key={team}>
               <div className="mb-1.5 flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-black/40 dark:text-white/40" />
+                <Users className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
                   {team}
                 </h3>
-                <span className="text-2xs text-black/40 dark:text-white/40">
+                <span className="text-2xs text-black/60 dark:text-white/60">
                   {members.length}
                 </span>
               </div>

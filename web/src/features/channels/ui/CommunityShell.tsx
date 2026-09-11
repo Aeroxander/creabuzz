@@ -168,13 +168,13 @@ export function CommunityShell({
               <p className="truncate text-sm font-semibold text-black dark:text-white">
                 Creaton
               </p>
-              <p className="truncate text-[10px] text-black/45 dark:text-white/45">
+              <p className="truncate text-[10px] text-black/60 dark:text-white/60">
                 {host}
               </p>
             </div>
             <Link
               to="/"
-              className="ml-auto shrink-0 rounded-md p-1.5 text-black/40 hover:bg-black/5 hover:text-black dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white"
+              className="ml-auto shrink-0 rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
               aria-label="Back to all communities"
               title="All communities"
             >
@@ -195,7 +195,7 @@ export function CommunityShell({
           />
           <div className="px-3 pb-2 pt-3">
             <div className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-white/5">
-              <Search className="h-3.5 w-3.5 shrink-0 text-black/40 dark:text-white/40" />
+              <Search className="h-3.5 w-3.5 shrink-0 text-black/60 dark:text-white/60" />
               <input
                 aria-keyshortcuts="Control+K Meta+K"
                 ref={searchInputRef}
@@ -206,10 +206,10 @@ export function CommunityShell({
                   if (e.target.value.trim().length >= 2) setSidebarOpen(false);
                 }}
                 placeholder="Search messages…"
-                className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40 dark:text-white dark:placeholder:text-white/40"
+                className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/60 dark:text-white dark:placeholder:text-white/40"
                 data-testid="search-input"
               />
-              <kbd className="hidden shrink-0 rounded border border-black/10 px-1 text-2xs font-medium text-black/40 lg:block dark:border-white/15 dark:text-white/40">
+              <kbd className="hidden shrink-0 rounded border border-black/10 px-1 text-2xs font-medium text-black/60 lg:block dark:border-white/15 dark:text-white/60">
                 ⌘K
               </kbd>
             </div>
@@ -366,7 +366,7 @@ export function CommunityShell({
                 }}
               />
             ) : (
-              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/45 dark:text-white/45">
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
                 Select a channel to start reading.
               </div>
             )}

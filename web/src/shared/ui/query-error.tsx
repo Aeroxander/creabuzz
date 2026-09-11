@@ -32,7 +32,7 @@ export function QueryError({
         {description}
       </p>
       {message ? (
-        <p className="max-w-md break-words text-xs text-black/45 dark:text-white/45">
+        <p className="max-w-md break-words text-xs text-black/60 dark:text-white/60">
           {message}
         </p>
       ) : null}

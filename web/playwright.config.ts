@@ -23,6 +23,7 @@ export default defineConfig({
         "**/launchpad.spec.ts",
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",
+        "**/a11y.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -118,7 +118,7 @@ export function LaunchesPage() {
             {f === "all" ? "All" : f === "mine" ? "Mine" : "Following"}
           </button>
         ))}
-        <span className="ml-auto text-xs text-black/50 dark:text-white/50">
+        <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           {launches.length} launches
         </span>
       </div>
@@ -184,7 +184,7 @@ export function LaunchesPage() {
                         "rounded-lg p-1.5",
                         isFollowed
                           ? "text-amber-500"
-                          : "text-black/50 hover:bg-black/5 dark:text-white/50",
+                          : "text-black/60 hover:bg-black/5 dark:text-white/60",
                       )}
                       type="button"
                     >
@@ -196,7 +196,7 @@ export function LaunchesPage() {
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <StageBadge stage={effectiveStage(launch)} />
-                    <span className="text-xs text-black/50 dark:text-white/50">
+                    <span className="text-xs text-black/60 dark:text-white/60">
                       {launch.updates.length} updates · {launch.bids.length}{" "}
                       bids
                     </span>

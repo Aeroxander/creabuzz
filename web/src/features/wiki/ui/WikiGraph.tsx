@@ -38,7 +38,7 @@ export function WikiGraph({ pages }: { pages: WikiPage[] }) {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
-      <p className="mb-2 text-xs text-black/45 dark:text-white/45">
+      <p className="mb-2 text-xs text-black/60 dark:text-white/60">
         {nodes.size} nodes · {edges.size} links · from [[wiki links]] and #tags
       </p>
       <svg

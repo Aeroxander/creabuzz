@@ -60,7 +60,7 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
           className={`absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white dark:border-white/10 ${
             agent.alive
               ? "bg-emerald-500 text-white"
-              : "bg-black/20 text-black/40 dark:bg-white/20 dark:text-white/40"
+              : "bg-black/20 text-black/60 dark:bg-white/20 dark:text-white/60"
           }`}
         >
           <RuntypeIcon runtype={agent.runtype} />
@@ -76,16 +76,16 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
               this tab
             </span>
           ) : null}
-          <span className="ml-auto flex items-center gap-1 text-2xs text-black/45 dark:text-white/45">
+          <span className="ml-auto flex items-center gap-1 text-2xs text-black/60 dark:text-white/60">
             {agent.alive ? (
               <Wifi className="h-3 w-3 text-emerald-500" />
             ) : (
-              <WifiOff className="h-3 w-3 text-black/30 dark:text-white/30" />
+              <WifiOff className="h-3 w-3 text-black/60 dark:text-white/60" />
             )}
             {agent.alive ? "online" : "offline"}
           </span>
         </div>
-        <p className="mt-0.5 truncate font-mono text-2xs text-black/45 dark:text-white/45">
+        <p className="mt-0.5 truncate font-mono text-2xs text-black/60 dark:text-white/60">
           {agent.pubkey}
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -117,11 +117,11 @@ function UsageCard() {
       data-testid="usage-card"
     >
       <div className="flex items-center gap-2">
-        <Gauge className="h-3.5 w-3.5 text-black/50 dark:text-white/50" />
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+        <Gauge className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
           This tab agent · usage
         </h3>
-        <span className="ml-auto text-xs text-black/40 dark:text-white/40">
+        <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           ~${totals.est.toFixed(3)}
         </span>
       </div>
@@ -130,13 +130,13 @@ function UsageCard() {
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.calls}
           </p>
-          <p className="text-[10px] text-black/45 dark:text-white/45">calls</p>
+          <p className="text-[10px] text-black/60 dark:text-white/60">calls</p>
         </div>
         <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.prompt.toLocaleString()}
           </p>
-          <p className="text-[10px] text-black/45 dark:text-white/45">
+          <p className="text-[10px] text-black/60 dark:text-white/60">
             prompt tk
           </p>
         </div>
@@ -144,7 +144,7 @@ function UsageCard() {
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.completion.toLocaleString()}
           </p>
-          <p className="text-[10px] text-black/45 dark:text-white/45">
+          <p className="text-[10px] text-black/60 dark:text-white/60">
             output tk
           </p>
         </div>
@@ -152,7 +152,7 @@ function UsageCard() {
       <button
         type="button"
         onClick={() => resetUsage()}
-        className="mt-1.5 text-2xs text-black/40 hover:text-black/70 dark:text-white/40 dark:hover:text-white/70"
+        className="mt-1.5 text-2xs text-black/60 hover:text-black/70 dark:text-white/60 dark:hover:text-white/70"
       >
         Reset ledger
       </button>
@@ -179,7 +179,7 @@ function TaskCard({ task }: { task: FleetTask }) {
         <p className="truncate text-sm font-medium text-black dark:text-white">
           {task.title}
         </p>
-        <p className="mt-0.5 truncate font-mono text-[10px] text-black/45 dark:text-white/45">
+        <p className="mt-0.5 truncate font-mono text-[10px] text-black/60 dark:text-white/60">
           {task.id}
         </p>
       </div>
@@ -251,7 +251,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         title="Agents"
         action={
           <div className="flex items-center gap-3">
-            <span className="text-xs text-black/45 dark:text-white/45">
+            <span className="text-xs text-black/60 dark:text-white/60">
               {agents.filter((a) => a.alive).length} online · {agents.length}{" "}
               total
             </span>
@@ -303,7 +303,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       {/* Trust model made explicit: the tab agent's key lives in this browser,
           unlike a managed agent whose key stays on the relay host. */}
       <p
-        className="text-xs text-black/45 dark:text-white/45"
+        className="text-xs text-black/60 dark:text-white/60"
         data-testid="agent-key-disclosure"
       >
         {state === "running"
@@ -339,11 +339,11 @@ export function FleetView({ channels }: { channels: Channel[] }) {
 
       <section className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
         <div className="flex items-center gap-2">
-          <ListChecks className="h-3.5 w-3.5 text-black/50 dark:text-white/50" />
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+          <ListChecks className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
             Tasks
           </h3>
-          <span className="ml-auto text-xs text-black/40 dark:text-white/40">
+          <span className="ml-auto text-xs text-black/60 dark:text-white/60">
             {tasks.length}
           </span>
         </div>
@@ -352,10 +352,11 @@ export function FleetView({ channels }: { channels: Channel[] }) {
             value={taskTitle}
             onChange={(e) => setTaskTitle(e.target.value)}
             placeholder="Assign a task…"
-            className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/40 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+            className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
             data-testid="task-title-input"
           />
           <select
+            aria-label="Assign the task to"
             value={taskAssignee}
             onChange={(e) => setTaskAssignee(e.target.value)}
             className="w-32 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
@@ -408,12 +409,12 @@ export function FleetView({ channels }: { channels: Channel[] }) {
 
       <div className="grid min-h-0 flex-1 auto-rows-min gap-2 overflow-y-auto">
         {loading && agents.length === 0 ? (
-          <p className="text-xs text-black/45 dark:text-white/45">
+          <p className="text-xs text-black/60 dark:text-white/60">
             Loading roster…
           </p>
         ) : agents.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/50 dark:border-white/15 dark:text-white/50">
-            <Bot className="mx-auto mb-2 h-8 w-8 text-black/30 dark:text-white/30" />
+          <div className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60">
+            <Bot className="mx-auto mb-2 h-8 w-8 text-black/60 dark:text-white/60" />
             No agents have announced yet. Run the tab agent (or a sandbox agent)
             to join the fleet.
           </div>

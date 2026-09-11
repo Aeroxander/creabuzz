@@ -37,7 +37,7 @@ function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
           <h3 className="truncate text-base font-semibold text-black dark:text-white">
             {hostName}
           </h3>
-          <p className="truncate text-xs text-black/50 dark:text-white/50">
+          <p className="truncate text-xs text-black/60 dark:text-white/60">
             {entry.host}
           </p>
         </div>
@@ -45,7 +45,7 @@ function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
       <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
         {entry.description}
       </p>
-      <p className="mt-auto flex items-center gap-1.5 text-xs text-black/50 dark:text-white/50">
+      <p className="mt-auto flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
         <Users className="h-3.5 w-3.5" />
         {entry.member_count} member{entry.member_count === 1 ? "" : "s"}
       </p>
@@ -92,7 +92,7 @@ function AddCommunityForm() {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="relay.example.com"
-        className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+        className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
         data-testid="add-community-input"
       />
       <Button
@@ -149,7 +149,7 @@ export function CommunityDirectoryPage() {
       ) : data && data.communities.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-            <Compass className="h-7 w-7 text-black/50 dark:text-white/50" />
+            <Compass className="h-7 w-7 text-black/60 dark:text-white/60" />
           </div>
           <h2 className="mt-4 text-lg font-semibold text-black dark:text-white">
             No communities on this relay yet

@@ -25,7 +25,7 @@ export const STATUS_COLUMNS = [
 ] as const;
 
 const PRIORITY_STYLE: Record<string, string> = {
-  low: "text-black/45 dark:text-white/45",
+  low: "text-black/60 dark:text-white/60",
   normal: "text-black/55 dark:text-white/55",
   high: "text-amber-600 dark:text-amber-400",
   urgent: "text-red-600 dark:text-red-400",
@@ -66,9 +66,9 @@ function Card({
     >
       <div className="flex items-start gap-1.5">
         {item.type === "task" ? (
-          <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-black/35 dark:text-white/35" />
+          <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-black/60 dark:text-white/60" />
         ) : (
-          <GitPullRequest className="mt-0.5 h-3.5 w-3.5 shrink-0 text-black/35 dark:text-white/35" />
+          <GitPullRequest className="mt-0.5 h-3.5 w-3.5 shrink-0 text-black/60 dark:text-white/60" />
         )}
         <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-black dark:text-white">
           {item.title}
@@ -76,7 +76,7 @@ function Card({
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          className="rounded p-0.5 text-black/30 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 dark:text-white/40 dark:hover:bg-white/10"
+          className="rounded p-0.5 text-black/60 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 dark:text-white/60 dark:hover:bg-white/10"
           aria-label={`Actions for ${item.title}`}
           data-testid={`kanban-menu-${item.id.slice(0, 8)}`}
         >
@@ -175,12 +175,12 @@ function Card({
                 size="xs"
                 className="h-4 w-4"
               />
-              <span className="max-w-[7rem] truncate text-[10px] text-black/50 dark:text-white/50">
+              <span className="max-w-[7rem] truncate text-[10px] text-black/60 dark:text-white/60">
                 {displayAssignee}
               </span>
             </>
           ) : (
-            <span className="text-[10px] text-black/35 dark:text-white/35">
+            <span className="text-[10px] text-black/60 dark:text-white/60">
               unassigned
             </span>
           )}
@@ -247,7 +247,7 @@ export function KanbanBoard({
               <span className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
                 {col.label}
               </span>
-              <span className="text-[10px] text-black/40 dark:text-white/40">
+              <span className="text-[10px] text-black/60 dark:text-white/60">
                 {columnItems.length}
               </span>
               <button
@@ -256,7 +256,7 @@ export function KanbanBoard({
                   setQuickAdd(col.key);
                   setDraft("");
                 }}
-                className="ml-auto rounded p-0.5 text-black/35 hover:bg-black/5 dark:text-white/40 dark:hover:bg-white/10"
+                className="ml-auto rounded p-0.5 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
                 aria-label={`Add to ${col.label}`}
                 data-testid={`kanban-add-${col.key}`}
               >
@@ -298,7 +298,7 @@ export function KanbanBoard({
                 </div>
               ))}
               {columnItems.length === 0 ? (
-                <p className="px-1 py-3 text-center text-2xs text-black/30 dark:text-white/30">
+                <p className="px-1 py-3 text-center text-2xs text-black/60 dark:text-white/60">
                   Drop tasks here
                 </p>
               ) : null}

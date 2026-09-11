@@ -46,7 +46,7 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
         </span>
         {data ? (
           <span
-            className="text-xs text-black/50 dark:text-white/50"
+            className="text-xs text-black/60 dark:text-white/60"
             data-testid="launch-progress-source"
             title={
               data.source === "rpc"

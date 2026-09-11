@@ -18,7 +18,7 @@ export function RepoListItem({
     <div className="py-6 text-black dark:text-white">
       {/* Row 1: Name + badge */}
       <div className="flex items-center gap-2">
-        <BookMarked className="h-4 w-4 shrink-0 text-black/50 dark:text-white/50" />
+        <BookMarked className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
         <Link
           to="/repos/$repoId"
           params={{ repoId: repo.id }}
@@ -43,7 +43,7 @@ export function RepoListItem({
       )}
 
       {/* Row 3: Metadata */}
-      <div className="mt-2 flex items-center gap-4 text-xs text-black/50 dark:text-white/50">
+      <div className="mt-2 flex items-center gap-4 text-xs text-black/60 dark:text-white/60">
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="cursor-default font-mono">

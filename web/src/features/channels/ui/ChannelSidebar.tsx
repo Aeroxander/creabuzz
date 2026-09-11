@@ -23,7 +23,7 @@ export function ChannelSidebar({
       >
         <Users className="h-4 w-4" /> Channels
         <ChevronDown
-          className={`ml-auto h-3.5 w-3.5 text-black/40 transition-transform dark:text-white/40 ${
+          className={`ml-auto h-3.5 w-3.5 text-black/60 transition-transform dark:text-white/60 ${
             collapsed ? "-rotate-90" : ""
           }`}
         />
@@ -50,7 +50,7 @@ export function ChannelSidebar({
               <span className="truncate">{channel.name}</span>
               {channel.visibility === "private" && (
                 <span
-                  className="ml-auto shrink-0 text-[10px] text-black/40 uppercase dark:text-white/40"
+                  className="ml-auto shrink-0 text-[10px] text-black/60 uppercase dark:text-white/60"
                   title="Private channel — join requires a member with admin rights to add you"
                 >
                   private
@@ -60,7 +60,7 @@ export function ChannelSidebar({
           ))}
         </nav>
       )}
-      <p className="border-t border-black/10 px-4 py-2 text-xs text-black/40 dark:border-white/10 dark:text-white/40">
+      <p className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
         {channels.length} channel{channels.length === 1 ? "" : "s"}
       </p>
     </aside>
@@ -70,7 +70,7 @@ export function ChannelSidebar({
 export function ChannelSidebarLoading() {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-black/10 bg-[#F8F8F8] px-4 py-4 dark:border-white/10 dark:bg-[#1B1B1B]">
-      <LoaderCircle className="h-4 w-4 animate-spin text-black/40 dark:text-white/40" />
+      <LoaderCircle className="h-4 w-4 animate-spin text-black/60 dark:text-white/60" />
     </aside>
   );
 }
