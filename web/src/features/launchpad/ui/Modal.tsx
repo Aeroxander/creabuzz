@@ -21,9 +21,8 @@ export function Modal({
 
   // Backdrop dismiss is mouse-only by design; keyboard users get Escape
   // (effect above) plus the dialog's own tab order.
-  // biome-ignore lint/a11y/noStaticElementInteractions: dismiss layer only
-  // biome-ignore lint/a11y/useKeyWithClickEvents: Escape handled in effect
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: dismiss layer only
     <div
       className={`fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/20 p-4 dark:bg-black/50 ${MODAL_BACKDROP_BLUR_CLASS}`}
       onClick={onClose}
