@@ -61,9 +61,20 @@ class BrowserAgent {
     return this.state;
   }
 
-  /** Set the community channels the agent listens to for mentions. */
+  /**
+   * Set the community channels the agent listens to for mentions.
+   *
+   * A running agent rebinds its subscriptions: callers set the channels as
+   * they load, and channels that were still empty at `start()` would otherwise
+   * leave the agent deaf until it was stopped and started again.
+   */
   setChannels(channelIds: string[]): void {
+    const changed =
+      channelIds.length !== this.channelIds.length ||
+      channelIds.some((id, index) => id !== this.channelIds[index]);
     this.channelIds = channelIds;
+    if (!changed || this.state !== "running") return;
+    this.bindSubscriptions();
   }
 
   /** Team label announced in capabilities (persisted per browser). */
@@ -105,58 +116,7 @@ class BrowserAgent {
           // transient publish failures are fine; the next beat retries
         });
       }, HEARTBEAT_MS);
-      if (this.channelIds.length > 0) {
-        // One socket per channel (same shape as the timeline's live pump —
-        // multi-value "#h" filters are not matched by the relay).
-        const liveSince = Math.floor(Date.now() / 1000) - 5;
-        const unsubs = this.channelIds.map((channelId) =>
-          subscribeChannel(
-            relayWsUrl(),
-            {
-              kinds: TIMELINE_CONTENT_KINDS,
-              "#h": [channelId],
-              since: liveSince,
-            } satisfies NostrFilter,
-            {
-              onEvent: (event) => void this.onMention(event),
-            },
-          ),
-        );
-        this.unsubscribeMentions = () => {
-          for (const unsubscribe of unsubs) unsubscribe();
-        };
-        // Tasks are channel-scoped when captured (they carry the channel tag),
-        // but community-global when created from the board without one. The
-        // relay's scoping invariant walls global subs off from channel events
-        // and vice versa, so we subscribe to both planes and route by the
-        // assignee tag ourselves.
-        const unsubTasks = this.channelIds.map((channelId) =>
-          subscribeChannel(
-            relayWsUrl(),
-            {
-              kinds: [KIND_AGENT_TASK],
-              "#h": [channelId],
-            } satisfies NostrFilter,
-            { onEvent: (event) => void this.onTaskAssigned(event) },
-          ),
-        );
-        unsubTasks.push(
-          subscribeChannel(
-            relayWsUrl(),
-            { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
-            { onEvent: (event) => void this.onTaskAssigned(event) },
-          ),
-        );
-        this.unsubscribeTasks = () => {
-          for (const unsubscribe of unsubTasks) unsubscribe();
-        };
-        // Wiki copilot: answer "@buzz-tab:" inside wiki page content in-place.
-        this.unsubscribeWiki = subscribeChannel(
-          relayWsUrl(),
-          { kinds: [KIND_WIKI_PAGE], since: liveSince } satisfies NostrFilter,
-          { onEvent: (event) => void this.onWikiEdit(event) },
-        );
-      }
+      this.bindSubscriptions();
       this.setState("running");
     } catch (error) {
       console.error("[browser-agent] start failed", error);
@@ -165,16 +125,77 @@ class BrowserAgent {
     }
   }
 
-  stop(): void {
-    if (this.state === "stopped") return;
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = null;
+  /** (Re)bind the live mention, task, and wiki subscriptions. */
+  private bindSubscriptions(): void {
+    this.unbindSubscriptions();
+    if (this.channelIds.length > 0) {
+      // One socket per channel (same shape as the timeline's live pump —
+      // multi-value "#h" filters are not matched by the relay).
+      const liveSince = Math.floor(Date.now() / 1000) - 5;
+      const unsubs = this.channelIds.map((channelId) =>
+        subscribeChannel(
+          relayWsUrl(),
+          {
+            kinds: TIMELINE_CONTENT_KINDS,
+            "#h": [channelId],
+            since: liveSince,
+          } satisfies NostrFilter,
+          {
+            onEvent: (event) => void this.onMention(event),
+          },
+        ),
+      );
+      this.unsubscribeMentions = () => {
+        for (const unsubscribe of unsubs) unsubscribe();
+      };
+      // Tasks are channel-scoped when captured (they carry the channel tag),
+      // but community-global when created from the board without one. The
+      // relay's scoping invariant walls global subs off from channel events
+      // and vice versa, so we subscribe to both planes and route by the
+      // assignee tag ourselves.
+      const unsubTasks = this.channelIds.map((channelId) =>
+        subscribeChannel(
+          relayWsUrl(),
+          {
+            kinds: [KIND_AGENT_TASK],
+            "#h": [channelId],
+          } satisfies NostrFilter,
+          { onEvent: (event) => void this.onTaskAssigned(event) },
+        ),
+      );
+      unsubTasks.push(
+        subscribeChannel(
+          relayWsUrl(),
+          { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
+          { onEvent: (event) => void this.onTaskAssigned(event) },
+        ),
+      );
+      this.unsubscribeTasks = () => {
+        for (const unsubscribe of unsubTasks) unsubscribe();
+      };
+      // Wiki copilot: answer "@buzz-tab:" inside wiki page content in-place.
+      this.unsubscribeWiki = subscribeChannel(
+        relayWsUrl(),
+        { kinds: [KIND_WIKI_PAGE], since: liveSince } satisfies NostrFilter,
+        { onEvent: (event) => void this.onWikiEdit(event) },
+      );
+    }
+  }
+
+  private unbindSubscriptions(): void {
     this.unsubscribeMentions?.();
     this.unsubscribeMentions = null;
     this.unsubscribeTasks?.();
     this.unsubscribeTasks = null;
     this.unsubscribeWiki?.();
     this.unsubscribeWiki = null;
+  }
+
+  stop(): void {
+    if (this.state === "stopped") return;
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    this.unbindSubscriptions();
     void this.announce("offline").catch(() => {
       // best-effort offline beacon
     });
@@ -242,7 +263,13 @@ class BrowserAgent {
     }
   }
 
-  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}s*:`, "i");
+  /**
+   * "@buzz-tab: <instruction>" delegates work. The escape matters: inside a
+   * template literal the two-character sequence backslash-s is not an escape,
+   * so the unescaped form matched zero or more literal "s" characters instead
+   * of whitespace between the name and the colon.
+   */
+  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}\\s*:`, "i");
 
   private async onMention(event: NostrEvent) {
     if (event.pubkey === getAgentPubkey()) return;
@@ -289,11 +316,28 @@ class BrowserAgent {
     }
   }
 
+  /**
+   * Ids of task rows already handled. Bounded: the agent lives as long as the
+   * tab does and the relay replays rows on every resubscribe, so an unbounded
+   * set is a slow leak in a long-lived session.
+   */
   private processedTaskRows = new Set<string>();
+  private processedTaskOrder: string[] = [];
+  private static readonly PROCESSED_TASK_LIMIT = 500;
+
+  private rememberTaskRow(id: string): boolean {
+    if (this.processedTaskRows.has(id)) return false;
+    this.processedTaskRows.add(id);
+    this.processedTaskOrder.push(id);
+    while (this.processedTaskOrder.length > BrowserAgent.PROCESSED_TASK_LIMIT) {
+      const oldest = this.processedTaskOrder.shift();
+      if (oldest) this.processedTaskRows.delete(oldest);
+    }
+    return true;
+  }
 
   private async onTaskAssigned(event: NostrEvent) {
-    if (this.processedTaskRows.has(event.id)) return;
-    this.processedTaskRows.add(event.id);
+    if (!this.rememberTaskRow(event.id)) return;
     const task = parseTask(event);
     if (!task) return;
     if (task.assignee !== getAgentPubkey()) return;
@@ -304,13 +348,24 @@ class BrowserAgent {
       return;
     }
     const channelId = task.channelId;
-    await this.publishTaskUpdate(
-      task.id,
-      "in_progress",
-      task.title,
-      channelId,
-      task.parentEventId ?? undefined,
-    );
+    try {
+      await this.publishTaskUpdate(
+        task.id,
+        "in_progress",
+        task.title,
+        channelId,
+        task.parentEventId ?? undefined,
+      );
+    } catch (error) {
+      // Keep the board and the channel consistent: no "done" claim for a task
+      // whose status rows the relay refuses.
+      await this.postTurn(
+        channelId ?? undefined,
+        `⚠️ Task failed: ${error instanceof Error ? error.message : "unknown"}`,
+        task.parentEventId ?? undefined,
+      );
+      return;
+    }
     if (channelId) {
       await this.postTurn(
         channelId,
@@ -367,7 +422,6 @@ class BrowserAgent {
         `You are ${AGENT_NAME}, a browser-hosted wiki copilot. A user asked you inside this wiki page. Answer concisely; the answer is appended to the page.`,
         `Wiki page "${slug}":\n\n${event.content.slice(0, 3000)}\n\nInstruction: ${instruction}`,
       );
-      if (!this.TASK_PATTERN.test(event.content)) return; // user already edited past the ask
       const updated = `${event.content}\n\n---\n> ✍️ ${AGENT_NAME}\n\n${answer.slice(0, 2000)}`;
       const signed = await signAsAgent({
         kind: KIND_WIKI_PAGE,
@@ -501,7 +555,9 @@ class BrowserAgent {
       signAuth: signAsAgent,
     });
     if (!result.accepted) {
-      console.warn("[browser-agent] task update rejected", result.message);
+      // The board never saw this status. Report the failure instead of letting
+      // the caller claim the task progressed.
+      throw new Error(result.message ?? "task update rejected");
     }
   }
 

@@ -49,7 +49,16 @@ export function matches(filter: Filter, event: StoredEvent): boolean {
   return true;
 }
 
-export function createMockRelay() {
+export interface MockRelayOptions {
+  /**
+   * Refuse a write the way a relay does — return a reason to reject the event,
+   * or `null` to accept it. Lets a test cover the path where the relay refuses
+   * a client's writes instead of only the happy path.
+   */
+  refuse?: (event: StoredEvent) => string | null;
+}
+
+export function createMockRelay({ refuse }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
@@ -97,6 +106,13 @@ export function createMockRelay() {
         if (type === "EVENT" || type === "AUTH") {
           const event = parsed[1] as StoredEvent;
           if (type === "EVENT") {
+            const reason = refuse?.(event);
+            if (reason) {
+              // Rejected writes are not stored and not fanned out: a client
+              // that ignores the OK must not look like it succeeded.
+              ws.send(JSON.stringify(["OK", event.id, false, reason]));
+              return;
+            }
             events.push(event);
             // Fan out after acknowledging, as a relay would.
             ws.send(JSON.stringify(["OK", event.id, true, ""]));

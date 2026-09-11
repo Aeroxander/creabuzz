@@ -16,6 +16,7 @@ import { joinRoom } from "trystero/nostr";
 
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
+import { applyPeerUpdate } from "./lib/sync-loop";
 import { commitLocalEdit, type CommitResult } from "./lib/text-edit";
 
 const APP_ID = "buzz-wiki";
@@ -184,10 +185,18 @@ export function useLiveWikiDoc(
       room.action.onMessage = (data) => {
         const bytes = toUint8(data);
         if (!bytes) return;
+        let advanced = false;
         try {
-          Y.applyUpdate(doc, bytes, "remote");
+          advanced = applyPeerUpdate(doc, bytes);
         } catch (error) {
           console.warn("[wiki-sync] apply failed", error);
+          return;
+        }
+        if (!advanced) {
+          // Already had it. Echoing here would be answered by the peer's own
+          // echo, and the two peers would keep trading full-state messages for
+          // as long as the room lives.
+          return;
         }
         setRendered(text.toString());
         // Echo our state (throttled) so a peer that joined mid-edit converges
