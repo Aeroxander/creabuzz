@@ -1201,3 +1201,30 @@ test("a refused search offers a retry", async ({ page }) => {
   await expect(panel).toContainText("Search failed");
   await expect(page.getByTestId("search-error-retry")).toBeVisible();
 });
+
+test.describe("document shell", () => {
+  test.use({ colorScheme: "dark" });
+
+  test("the theme is applied before the app bundle runs", async ({ page }) => {
+    // Abort the bundle: whatever sets the theme must be independent of it, or
+    // dark-mode users see a white flash while React boots.
+    await page.route(/\/assets\/index-.*\.js$/, (route) => route.abort());
+    await page.goto("/");
+    const classes = await page.evaluate(
+      () => document.documentElement.className,
+    );
+    expect(classes).toContain("dark");
+  });
+
+  test("the document carries a content security policy", async ({ page }) => {
+    await page.goto("/");
+    const policy = await page
+      .locator('meta[http-equiv="Content-Security-Policy"]')
+      .getAttribute("content");
+    expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain("base-uri 'self'");
+    expect(policy).toContain("script-src 'self'");
+    // No script from another origin may run, which is the point of the policy.
+    expect(policy).not.toContain("script-src 'unsafe-inline'");
+  });
+});
