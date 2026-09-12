@@ -9,6 +9,7 @@ import {
   Reply,
   Smile,
   Trash2,
+  ListChecks,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -206,7 +207,7 @@ function MessageRow({
 
   return (
     <div
-      className={`group flex gap-3 py-2 transition-colors duration-500 ${isReply ? "ml-8" : ""} ${
+      className={`group flex gap-3 rounded-2xl px-2 py-conversation-row transition-colors ${isReply ? "ml-8" : "hover:bg-muted/50"} ${
         highlighted ? "bg-amber-300/20" : ""
       }`}
       data-highlighted={highlighted ? "true" : undefined}
@@ -217,19 +218,19 @@ function MessageRow({
         <UserAvatar
           avatarUrl={profile?.picture ?? null}
           displayName={agent?.name ?? profileDisplayName(profile, event.pubkey)}
-          size="sm"
+          size="md"
         />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-black/70 dark:text-white/70">
+          <span className="font-semibold leading-message-author text-foreground">
             {agent?.name ?? profileDisplayName(profile, event.pubkey)}
           </span>
           {agent ? (
             <Bot className="h-3 w-3 self-center text-black/60 dark:text-white/60" />
           ) : null}
           <time
-            className="text-xs text-black/60 dark:text-white/60"
+            className="text-message-timestamp font-normal text-muted-foreground tabular-nums"
             title={new Date(event.created_at * 1000).toLocaleString()}
           >
             {new Date(event.created_at * 1000).toLocaleTimeString([], {
@@ -536,36 +537,56 @@ export function ChannelTimeline({
           <button
             type="button"
             onClick={() => onShowWork?.()}
-            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            data-testid="channel-new-work"
           >
+            <ListChecks className="h-3.5 w-3.5" />
             New work
-          </button>
-          <button
-            type="button"
-            onClick={() => onShowFleet?.()}
-            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
-          >
-            Add an agent here.
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const url = window.location.href;
-              if (navigator.clipboard) {
-                void navigator.clipboard
-                  .writeText(url)
-                  .then(() => toast.success("Invite link copied"))
-                  .catch(() => toast.error("Couldn't copy invite link"));
-              } else {
-                toast.error("Couldn't copy invite link");
-              }
-            }}
-            className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 shadow-xs hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"
-          >
-            Invite members.
           </button>
         </span>
       </header>
+
+      {/*
+        Two invitation cards under the header, the desktop's treatment: they are
+        the two things a new channel needs, and as buttons in the header row they
+        read as chrome rather than as the next step.
+      */}
+      <div className="flex gap-2 px-4 pb-1">
+        <button
+          type="button"
+          onClick={() => onShowFleet?.()}
+          className="flex flex-1 flex-col items-start rounded-lg border border-border/70 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50"
+          data-testid="channel-add-agent"
+        >
+          <span className="text-xs font-semibold text-foreground">
+            Add agent
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Add an agent here.
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const url = window.location.href;
+            if (navigator.clipboard) {
+              void navigator.clipboard
+                .writeText(url)
+                .then(() => toast.success("Invite link copied"))
+                .catch(() => toast.error("Couldn't copy invite link"));
+            } else {
+              toast.error("Couldn't copy invite link");
+            }
+          }}
+          className="flex flex-1 flex-col items-start rounded-lg border border-border/70 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50"
+          data-testid="channel-add-people"
+        >
+          <span className="text-xs font-semibold text-foreground">
+            Add people
+          </span>
+          <span className="text-xs text-muted-foreground">Invite members.</span>
+        </button>
+      </div>
 
       <div
         className="min-h-0 flex-1 overflow-y-auto px-4 py-2"
@@ -643,7 +664,7 @@ export function ChannelTimeline({
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-black/5 dark:divide-white/5">
+          <div className="space-y-conversation-list">
             {roots.map((root) => (
               <ThreadTree
                 key={root.id}

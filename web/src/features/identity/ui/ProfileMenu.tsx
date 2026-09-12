@@ -27,6 +27,10 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
 import { useTheme } from "@/shared/theme/ThemeProvider";
+import {
+  useTypography,
+  type FontSize,
+} from "@/shared/theme/TypographyProvider";
 import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
@@ -80,6 +84,7 @@ export function ProfileMenu() {
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
+  const { fontSize, density, setFontSize, setDensity } = useTypography();
   const [walletBinding, setWalletBinding] = useState(() => readWalletBinding());
   const [confirmUnbind, setConfirmUnbind] = useState(false);
   const [walletBusy, setWalletBusy] = useState(false);
@@ -313,6 +318,52 @@ export function ProfileMenu() {
                       data-testid={`theme-${option}`}
                       key={option}
                       onClick={() => setTheme(option)}
+                      type="button"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+                  Text size
+                </p>
+                <div
+                  className="mt-1 flex items-center gap-1"
+                  data-testid="font-size-control"
+                >
+                  {(["smaller", "default", "larger"] as const).map((option) => (
+                    <button
+                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                        fontSize === option
+                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                          : "border-black/15 dark:border-white/15"
+                      }`}
+                      data-testid={`font-size-${option}`}
+                      key={option}
+                      onClick={() => setFontSize(option as FontSize)}
+                      type="button"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+                  Conversation density
+                </p>
+                <div
+                  className="mt-1 flex items-center gap-1"
+                  data-testid="density-control"
+                >
+                  {(["comfortable", "compact"] as const).map((option) => (
+                    <button
+                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                        density === option
+                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                          : "border-black/15 dark:border-white/15"
+                      }`}
+                      data-testid={`density-${option}`}
+                      key={option}
+                      onClick={() => setDensity(option)}
                       type="button"
                     >
                       {option}

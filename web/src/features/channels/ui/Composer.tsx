@@ -278,7 +278,7 @@ export function Composer({
             <button
               type="submit"
               disabled={sending || draft.trim().length === 0}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-white disabled:opacity-30 dark:bg-white dark:text-black"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:opacity-30"
               aria-label="Send message"
               data-testid="composer-send"
               title="Send message"

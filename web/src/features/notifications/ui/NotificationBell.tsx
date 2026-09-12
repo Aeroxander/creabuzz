@@ -57,15 +57,15 @@ export function NotificationBell({
       <button
         type="button"
         onClick={openPanel}
-        className="relative flex w-full items-center gap-2 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-white/5"
+        className="relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         aria-label="Notifications"
       >
-        <Bell className="h-3.5 w-3.5 shrink-0 text-black/60 dark:text-white/60" />
-        <span className="min-w-0 flex-1 truncate text-left text-sm text-black/70 dark:text-white/70">
+        <Bell className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left text-sm">
           Notifications
         </span>
         {unread > 0 ? (
-          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-black px-1 text-2xs font-semibold text-white dark:bg-white dark:text-black">
+          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold text-primary-foreground">
             {unread > 99 ? "99+" : unread}
           </span>
         ) : null}
