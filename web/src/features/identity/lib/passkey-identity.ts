@@ -246,10 +246,21 @@ export function passkeyStoredPubkey(): string | null {
 /** Register our signer override (keeps identity.ts dependency-free). */
 export function registerPasskeySigner(): void {
   void import("@/shared/lib/nostr-signer").then(
-    ({ setUserSignerOverride, setUserPubkeyOverride }) => {
+    ({
+      setUserPubkeyOverride,
+      setUserSignerOverride,
+      setUserSigningBlockedReason,
+    }) => {
       // The derived key is who the reader is, so `userPubkey()` must report it:
       // filters and own-message checks compare against that value.
       setUserPubkeyOverride(passkeyStoredPubkey);
+      // Before this session unlocked the credential, signing has to fail: the
+      // fall-through would create a second durable identity.
+      setUserSigningBlockedReason(() =>
+        loadStored() && !isPasskeyActive()
+          ? "Unlock your passkey before this browser can sign."
+          : null,
+      );
       setUserSignerOverride(async (template) => {
         const sk = passkeySecretKey();
         if (!sk) {

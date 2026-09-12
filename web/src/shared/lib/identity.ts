@@ -17,6 +17,7 @@ import {
   hasNip07Provider,
   getUserPubkeyOverride,
   getUserSignerOverride,
+  getUserSigningBlockedReason,
   type UnsignedNostrEvent,
   type SignedNostrEvent,
 } from "@/shared/lib/nostr-signer";
@@ -45,6 +46,11 @@ export async function signAsUser(
       return signed;
     }
   }
+  // A registered passkey is who this reader is. Signing as something else —
+  // including the key the next line would create — is how the app ends up
+  // filtering by one identity and posting as another.
+  const blocked = getUserSigningBlockedReason();
+  if (blocked) throw new Error(blocked);
   const nsec = getOrCreateIdentity();
   const secretKey = nsecToBytes(nsec);
   const signed = finalizeEvent(unsigned, secretKey);

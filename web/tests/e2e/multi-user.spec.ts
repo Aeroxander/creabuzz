@@ -826,3 +826,41 @@ test("a mention reaches the bell when the relay enforces its p-gate", async ({
     timeout: 30_000,
   });
 });
+
+test("a locked passkey identity does not mint a second key", async ({
+  page,
+}) => {
+  // Identity precedence ends with "create a key if there is none". For a reader
+  // whose identity is a passkey, falling through that path mints a second,
+  // durable identity and signs with it, so reads and writes would belong to
+  // different people. A stored-but-locked passkey must fail instead.
+  const relay = createMockRelay({ requireAuth: true, enforcePGate: true });
+  relay.seed(channelEvent());
+
+  await page.addInitScript(() => {
+    // A registered passkey, none of it unlocked this session (the fields are
+    // public: credential id, salt, pubkey — the key lives in memory only).
+    window.localStorage.setItem("buzz.passkey.credentialId", "cred-1");
+    window.localStorage.setItem("buzz.passkey.salt", "c2FsdA");
+    window.localStorage.setItem("buzz.passkey.pubkey", "e".repeat(64));
+    window.localStorage.setItem("buzz.passkey.mode", "prf");
+    window.localStorage.removeItem("buzz.identity.nsec");
+  });
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await page.waitForTimeout(4_000);
+  const stored = await page.evaluate(() =>
+    window.localStorage.getItem("buzz.identity.nsec"),
+  );
+  expect(
+    stored,
+    "no second identity may be created for a passkey reader",
+  ).toBeNull();
+
+  // Signing is refused while the passkey is locked, and the refusal is shown —
+  // the shell must not come up as an identity the reader does not own.
+  await expect(page.getByRole("alert").first()).toBeVisible({
+    timeout: 20_000,
+  });
+});

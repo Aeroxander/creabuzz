@@ -78,6 +78,28 @@ export function getUserPubkeyOverride(): (() => string | null) | null {
   return userPubkeyOverride;
 }
 
+/**
+ * Optional reason why signing must fail instead of falling through.
+ *
+ * The identity precedence is passkey, then a NIP-07 extension, then the stored
+ * nsec — and the last step *creates* a key when none exists. That is right for a
+ * first-time reader, and wrong for someone whose identity is a passkey that is
+ * not unlocked this session: falling through mints a second, durable identity
+ * and signs with it, so the app would be a different person depending on when
+ * the query ran. Registered by the passkey module.
+ */
+let userSigningBlockedReason: (() => string | null) | null = null;
+
+export function setUserSigningBlockedReason(
+  fn: (() => string | null) | null,
+): void {
+  userSigningBlockedReason = fn;
+}
+
+export function getUserSigningBlockedReason(): string | null {
+  return userSigningBlockedReason?.() ?? null;
+}
+
 function getEphemeralSecretKey(): Uint8Array {
   if (!ephemeralSecretKey) {
     ephemeralSecretKey = generateSecretKey();
