@@ -776,3 +776,53 @@ test("a wiki delete the relay cannot confirm is not reported as done", async ({
     "nothing may be published for a delete that was not confirmed",
   ).toBe(before);
 });
+
+test("a mention reaches the bell when the relay enforces its p-gate", async ({
+  page,
+}) => {
+  // The relay authorizes a p-gated read against the *authenticated* pubkey, and
+  // every filter here is built from the durable identity. A client that
+  // authenticates as anything else — a page-lifetime key — gets its mention
+  // query refused while the connection still looks healthy: the bell just never
+  // rings.
+  const relay = createMockRelay({ requireAuth: true, enforcePGate: true });
+  relay.seed(channelEvent());
+  // The relay compares `#p` against the pubkey that signed the handshake, so the
+  // filter has to name the identity the app actually holds.
+  const meNsec = "dd".repeat(32);
+  const me = getPublicKey(
+    Uint8Array.from(meNsec.match(/.{2}/g) ?? [], (byte) =>
+      Number.parseInt(byte, 16),
+    ),
+  );
+
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [meNsec],
+  );
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByTestId("composer-input")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  relay.deliver({
+    id: "mention-1",
+    pubkey: "b".repeat(64),
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 9,
+    tags: [
+      ["h", CHANNEL_ID],
+      ["p", me],
+    ],
+    content: "hey @you",
+    sig: "sig",
+  });
+
+  // `requireAuth` challenges on demand, so the poll's first attempt is refused
+  // and must be retried after the handshake — and the retry has to be signed by
+  // the identity the filter names, or the gate refuses it again.
+  await expect(page.getByTestId("notifications-bell")).toContainText(/[1-9]/, {
+    timeout: 30_000,
+  });
+});

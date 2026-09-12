@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { publishAs } from "./publish.mjs";
 
 /**
  * The client against a real relay: real NIP-42 auth, real ingest, real
@@ -18,6 +23,31 @@ const DEV_NSEC =
 const COMMUNITY = process.env.BUZZ_REAL_RELAY_HOST ?? "localhost:3199";
 
 test.use({ viewport: { width: 1280, height: 900 } });
+
+interface Fixture {
+  relay: string;
+  channelName: string;
+  ownerPubkey: string;
+  ownerNsec: string;
+  mentionNsec: string;
+  mentionPubkey: string;
+}
+
+/**
+ * The fixture `seed.mjs` writes. Tests that need a second identity skip with
+ * instructions rather than failing when the file is missing, so the rest of the
+ * suite still runs on a minimal setup.
+ */
+function fixtureOrSkip(): Fixture {
+  const path = join(dirname(fileURLToPath(import.meta.url)), ".fixture.json");
+  if (!existsSync(path)) {
+    test.skip(
+      true,
+      "run `node tests/e2e-real/seed.mjs` to write .fixture.json (see README.md)",
+    );
+  }
+  return JSON.parse(readFileSync(path, "utf8")) as Fixture;
+}
 
 test("the relay serves the client's scripts from /assets", async ({
   request,
@@ -97,4 +127,99 @@ test("a message is stored by the relay and survives a reload", async ({
   await expect
     .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
     .toContain(body);
+});
+
+test("a wiki page is stored by the relay and is still there after a reload", async ({
+  page,
+}) => {
+  // The wiki's local cache uses SQLite-WASM over OPFS, which the relay only
+  // enables for a cross-origin-isolated document (COOP/COEP headers). This is
+  // the only place that combination is exercised, and the page must survive
+  // without any local cache anyway: the relay is the source of truth.
+  test.slow();
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [DEV_NSEC],
+  );
+  const slug = `verify-${Date.now().toString(36)}`;
+  const body = `Wiki body written against a real relay ${slug}`;
+
+  await page.goto(`/c/${COMMUNITY}`);
+  await page.getByTestId("wiki-toggle").click();
+  await page.getByTestId("wiki-new-page").click();
+  await page.getByTestId("page-name-input").fill(slug);
+  await page.getByTestId("page-name-confirm").click();
+
+  const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await editor.click();
+  await page.keyboard.type(body);
+  await page.getByTestId("wiki-save").click();
+  await expect(page.getByText("Page saved")).toBeVisible({ timeout: 20_000 });
+
+  await page.reload();
+  await page.getByTestId("wiki-toggle").click();
+  await expect(page.getByTestId(`wiki-page-${slug}`)).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByTestId(`wiki-page-${slug}`).click();
+  await expect(
+    page
+      .getByTestId("wiki-wysiwyg")
+      .locator(".ProseMirror")
+      .filter({ hasText: body }),
+  ).toBeVisible({ timeout: 20_000 });
+});
+
+test("a mention from another person raises the bell for the mentioned identity", async ({
+  page,
+}) => {
+  // Two things meet here that only a real relay can test: the relay authorizes
+  // a p-gated read against the authenticated identity (a subscription sent
+  // before the NIP-42 handshake is refused, which is why the clients retry),
+  // and `#p` filters are not fanned out, so the bell can only learn about the
+  // mention by polling.
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [fixture.mentionNsec],
+  );
+
+  await page.goto(`/c/${COMMUNITY}`);
+  await page
+    .getByRole("button", { name: new RegExp(fixture.channelName) })
+    .first()
+    .click();
+  await expect(page.getByTestId("composer-input")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Kind 9 is channel-scoped on this relay (it requires an `h` tag), so the
+  // mention goes into the channel this tab actually opened.
+  const channelId = await page.evaluate(() =>
+    new URL(window.location.href).searchParams.get("channel"),
+  );
+  expect(channelId, "the app exposes the open channel in the URL").toBeTruthy();
+
+  const marker = `mention check ${Date.now()}`;
+  const result = await publishAs(
+    fixture.ownerNsec,
+    {
+      kind: 9,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ["h", String(channelId)],
+        ["p", fixture.mentionPubkey],
+      ],
+      content: `@${fixture.mentionPubkey.slice(0, 8)} ${marker}`,
+    },
+    fixture.relay,
+  );
+  expect(result.accepted, result.reason).toBe(true);
+
+  // The bell polls, so this arrives without a reload. Assert the marker, not
+  // just a badge: this identity is reused between runs, so a count > 0 can come
+  // from an older mention.
+  await page.getByTestId("notifications-bell").click();
+  await expect(page.getByText(marker)).toBeVisible({ timeout: 40_000 });
 });

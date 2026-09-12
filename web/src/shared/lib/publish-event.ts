@@ -8,10 +8,8 @@
 
 import { makeAuthEvent } from "nostr-tools/nip42";
 
-import {
-  signNostrEvent,
-  type SignedNostrEvent,
-} from "@/shared/lib/nostr-signer";
+import { signForRelay } from "@/shared/lib/relay-auth";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 
 const PUBLISH_TIMEOUT_MS = 12_000;
 
@@ -35,7 +33,9 @@ export function publishEvent(
   event: SignedNostrEvent,
   options: PublishOptions = {},
 ): Promise<PublishResult> {
-  const signAuth = options.signAuth ?? signNostrEvent;
+  // Authenticate as the identity the app presents (see `relay-auth`): the relay
+  // authorizes p-gated writes and per-identity rate limits against it.
+  const signAuth = options.signAuth ?? signForRelay;
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let settled = false;

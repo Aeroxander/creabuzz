@@ -3,7 +3,7 @@
  * HTTP requests to the relay (used by isomorphic-git for smart HTTP transport).
  */
 
-import { signNostrEvent } from "./nostr-signer";
+import { signForRelay } from "./relay-auth";
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -33,7 +33,7 @@ export async function makeNip98AuthHeader(
     tags.push(["payload", await sha256Hex(options.body)]);
     tags.push(["nonce", crypto.randomUUID()]);
   }
-  const event = await signNostrEvent(
+  const event = await signForRelay(
     {
       kind: 27235,
       tags,

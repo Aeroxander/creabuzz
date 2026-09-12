@@ -13,10 +13,8 @@
 
 import { makeAuthEvent } from "nostr-tools/nip42";
 
-import {
-  signNostrEvent,
-  type SignedNostrEvent,
-} from "@/shared/lib/nostr-signer";
+import { signForRelay } from "@/shared/lib/relay-auth";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import type { NostrFilter } from "@/shared/lib/nostr-client";
 
 import { ReconnectBackoff, type SubscriptionStatus } from "./lib/reconnect";
@@ -97,7 +95,7 @@ export function subscribeChannel(
         if (type === "AUTH" && typeof data[1] === "string") {
           clearTimeout(unauthTimer);
           const template = makeAuthEvent(wsUrl, String(data[1]));
-          void signNostrEvent(template).then((signed) => {
+          void signForRelay(template).then((signed) => {
             if (closed) return;
             socket?.send(JSON.stringify(["AUTH", signed]));
           });

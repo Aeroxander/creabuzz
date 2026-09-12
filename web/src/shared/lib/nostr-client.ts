@@ -6,10 +6,8 @@
  */
 
 import { makeAuthEvent } from "nostr-tools/nip42";
-import {
-  type SignedNostrEvent,
-  signNostrEvent,
-} from "@/shared/lib/nostr-signer";
+import { signForRelay } from "@/shared/lib/relay-auth";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 
 export interface NostrFilter {
   ids?: string[];
@@ -113,7 +111,7 @@ export function queryEvents(
         const challenge = data[1];
         const template = makeAuthEvent(wsUrl, challenge);
         try {
-          const signed = await signNostrEvent(template);
+          const signed = await signForRelay(template);
           if (settled) return;
           authEventId = signed.id;
           ws.send(JSON.stringify(["AUTH", signed]));

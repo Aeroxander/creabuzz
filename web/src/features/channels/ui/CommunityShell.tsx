@@ -9,6 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Channel } from "../use-channels";
@@ -118,10 +119,30 @@ export function CommunityShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen]);
 
+  // Tied to this route so a search-only update keeps the type of its schema.
+  const navigate = useNavigate({ from: "/c/$host" });
+
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
     [channels, selectedId],
   );
+
+  /**
+   * Select a channel and keep the URL in step.
+   *
+   * The deep link already *reads* `?channel=`, so a channel the reader picked
+   * belongs in the address bar too: that is what makes it linkable and
+   * bookmarkable, and what lets anything else — a test, a bug report, a
+   * teammate — name the channel that is on screen. `replace` keeps channel
+   * hopping out of the history stack.
+   */
+  const selectChannel = (channelId: string) => {
+    setSelectedId(channelId);
+    void navigate({
+      search: (previous) => ({ ...previous, channel: channelId }),
+      replace: true,
+    });
+  };
 
   const searching = searchTerm.trim().length >= 2;
 
@@ -183,7 +204,7 @@ export function CommunityShell({
           </div>
           <NotificationBell
             onOpenChannel={(channelId) => {
-              setSelectedId(channelId);
+              selectChannel(channelId);
               setSearchTerm("");
               setShowingWiki(false);
               setShowingFleet(false);
@@ -282,7 +303,7 @@ export function CommunityShell({
             channels={channels}
             selectedId={activeChannel?.id ?? null}
             onSelect={(id) => {
-              setSelectedId(id);
+              selectChannel(id);
               setSearchTerm("");
               setShowingWiki(false);
               setShowingFleet(false);
@@ -345,7 +366,7 @@ export function CommunityShell({
                   term={searchTerm.trim()}
                   channels={channels}
                   onOpenChannel={(channelId) => {
-                    setSelectedId(channelId);
+                    selectChannel(channelId);
                     setSearchTerm("");
                   }}
                 />

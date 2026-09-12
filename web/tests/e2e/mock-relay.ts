@@ -35,6 +35,26 @@ function tagValue(event: StoredEvent, name: string): string[] {
   return event.tags.filter((tag) => tag[0] === name).map((tag) => tag[1]);
 }
 
+/** The relay's p-gated kinds: reading them needs `#p` equal to your pubkey. */
+const P_GATED_KINDS = [44100, 44101, 1059, 44200];
+
+/**
+ * Whether the relay would refuse this filter: it names a p-gated kind, and its
+ * `#p` values are not exactly the authenticated pubkey.
+ */
+function pGateRefuses(filter: Filter, authedPubkey: string | null): boolean {
+  const kinds = filter.kinds ?? [];
+  const canMatchPGated =
+    kinds.length === 0 || kinds.some((kind) => P_GATED_KINDS.includes(kind));
+  if (!canMatchPGated) return false;
+  const p = filter["#p"];
+  const wanted = Array.isArray(p) ? (p as string[]) : [];
+  if (wanted.length === 0) return true;
+  return !(
+    authedPubkey !== null && wanted.every((value) => value === authedPubkey)
+  );
+}
+
 /** NIP-01 filter match, limited to what the client actually sends. */
 export function matches(filter: Filter, event: StoredEvent): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
@@ -83,6 +103,13 @@ export interface MockRelayOptions {
    * challenges on demand, which loses the race deterministically.
    */
   challengeDelayMs?: number;
+  /**
+   * Enforce the relay's p-gate: a filter naming a p-gated kind must have every
+   * `#p` value equal the authenticated pubkey. Buzz's relay does this, which is
+   * how a client that authenticates as one identity and filters by another
+   * silently loses every mention.
+   */
+  enforcePGate?: boolean;
 }
 
 export function createMockRelay({
@@ -90,6 +117,7 @@ export function createMockRelay({
   closeImmediately = false,
   requireAuth = false,
   challengeDelayMs = 0,
+  enforcePGate = false,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -148,6 +176,7 @@ export function createMockRelay({
       sockets.add(socket);
       subscriptions.set(socket, new Map());
       let authenticated = false;
+      let authedPubkey: string | null = null;
       let challenged = false;
       let refusedWhileUnauthenticated = false;
       const sendChallenge = () => {
@@ -190,8 +219,13 @@ export function createMockRelay({
         if (type === "EVENT" || type === "AUTH") {
           const event = parsed[1] as StoredEvent;
           if (type === "AUTH") {
-            // NIP-42: this mock accepts any signed auth event.
+            // NIP-42: this mock accepts any signed auth event, but remembers
+            // who signed it, because that is what the gate compares against.
             authenticated = true;
+            authedPubkey =
+              typeof (event as { pubkey?: string }).pubkey === "string"
+                ? ((event as { pubkey?: string }).pubkey as string)
+                : null;
           }
           if (type === "EVENT") {
             const reason = refuse?.(event);
@@ -230,6 +264,16 @@ export function createMockRelay({
             // that treats the refusal as final loses the query.
             refusedWhileUnauthenticated = true;
             sendChallenge();
+            ws.send(
+              JSON.stringify([
+                "CLOSED",
+                subId,
+                "restricted: p-gated events require #p matching your pubkey",
+              ]),
+            );
+            return;
+          }
+          if (enforcePGate && pGateRefuses(filter, authedPubkey)) {
             ws.send(
               JSON.stringify([
                 "CLOSED",
