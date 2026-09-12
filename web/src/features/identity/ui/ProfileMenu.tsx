@@ -32,7 +32,6 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
 import {
   setupPasskey,
-  activePasskeyPubkey,
   signInPasskeyIdentity,
   hasPasskeyIdentity,
   isPasskeyActive,
@@ -86,9 +85,9 @@ export function ProfileMenu() {
   const [walletBusy, setWalletBusy] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
 
-  const pubkey = isPasskeyActive()
-    ? (activePasskeyPubkey() ?? existingUserPubkey() ?? "")
-    : (existingUserPubkey() ?? "");
+  // `existingUserPubkey` reports the passkey identity when one is registered, so
+  // this no longer has to prefer it by hand and drift from the filters.
+  const pubkey = existingUserPubkey() ?? "";
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const profile = pubkey ? profiles?.[pubkey] : undefined;
   const displayName = profileDisplayName(profile, pubkey);

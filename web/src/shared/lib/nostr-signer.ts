@@ -57,6 +57,27 @@ export function getUserSignerOverride(): typeof userSignerOverride {
   return userSignerOverride;
 }
 
+/**
+ * Optional pubkey override: who the app *is*, when that is not the stored nsec.
+ *
+ * A passkey identity derived from the credential (PRF mode) is a different key
+ * from anything in `buzz.identity.nsec`, and it is the one signatures carry. Any
+ * accessor that answers "who am I" — the `#p` filters, "is this my message", the
+ * board's "mine" — must answer with the same key, or the app filters by one
+ * identity while signing as another (the relay's p-gate then refuses those
+ * reads). Registered by the passkey module so this file keeps no dependency on
+ * it.
+ */
+let userPubkeyOverride: (() => string | null) | null = null;
+
+export function setUserPubkeyOverride(fn: (() => string | null) | null): void {
+  userPubkeyOverride = fn;
+}
+
+export function getUserPubkeyOverride(): (() => string | null) | null {
+  return userPubkeyOverride;
+}
+
 function getEphemeralSecretKey(): Uint8Array {
   if (!ephemeralSecretKey) {
     ephemeralSecretKey = generateSecretKey();

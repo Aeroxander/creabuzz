@@ -233,17 +233,32 @@ export function exportPasskeyNsec(): string | null {
   }
 }
 
+/**
+ * The passkey identity's pubkey as stored on this browser, or null.
+ *
+ * Available before this session unlocks the credential, so "who am I" answers
+ * consistently and nothing mints a second identity in the meantime.
+ */
+export function passkeyStoredPubkey(): string | null {
+  return loadStored()?.pubkey ?? null;
+}
+
 /** Register our signer override (keeps identity.ts dependency-free). */
 export function registerPasskeySigner(): void {
-  void import("@/shared/lib/nostr-signer").then(({ setUserSignerOverride }) => {
-    setUserSignerOverride(async (template) => {
-      const sk = passkeySecretKey();
-      if (!sk) {
-        // Not signed in via passkey this session — fall through to defaults.
-        return null;
-      }
-      const { finalizeEvent } = await import("nostr-tools/pure");
-      return finalizeEvent({ ...template }, sk);
-    });
-  });
+  void import("@/shared/lib/nostr-signer").then(
+    ({ setUserSignerOverride, setUserPubkeyOverride }) => {
+      // The derived key is who the reader is, so `userPubkey()` must report it:
+      // filters and own-message checks compare against that value.
+      setUserPubkeyOverride(passkeyStoredPubkey);
+      setUserSignerOverride(async (template) => {
+        const sk = passkeySecretKey();
+        if (!sk) {
+          // Not signed in via passkey this session — fall through to defaults.
+          return null;
+        }
+        const { finalizeEvent } = await import("nostr-tools/pure");
+        return finalizeEvent({ ...template }, sk);
+      });
+    },
+  );
 }

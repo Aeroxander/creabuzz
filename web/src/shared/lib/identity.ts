@@ -15,6 +15,7 @@ import {
 
 import {
   hasNip07Provider,
+  getUserPubkeyOverride,
   getUserSignerOverride,
   type UnsignedNostrEvent,
   type SignedNostrEvent,
@@ -50,13 +51,27 @@ export async function signAsUser(
   return signed;
 }
 
-/** Public key of the durable identity (creating it if needed). */
+/**
+ * Public key of the identity the app presents.
+ *
+ * A passkey identity wins over the stored nsec: it is what signatures carry, so
+ * it is also what filters, own-message checks and "assigned to me" must compare
+ * against. Without this the app asked the relay for `#p` of one identity while
+ * authenticating and signing as another, and every p-gated read came back
+ * refused.
+ */
 export function userPubkey(): string {
+  const override = getUserPubkeyOverride()?.() ?? null;
+  if (override) return override;
   return getPublicKey(nsecToBytes(getOrCreateIdentity()));
 }
 
 /** Current pubkey WITHOUT creating an identity (null when none stored). */
 export function existingUserPubkey(): string | null {
+  // The passkey identity counts even before it is unlocked this session: it is
+  // who the reader is, and treating it as absent mints a second, stray nsec.
+  const override = getUserPubkeyOverride()?.() ?? null;
+  if (override) return override;
   try {
     const existing = window.localStorage.getItem("buzz.identity.nsec");
     if (existing && existing.length === 64) {
