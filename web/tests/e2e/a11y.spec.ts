@@ -222,6 +222,35 @@ test("the wiki is accessible", async ({ page }) => {
   await expectAccessible(page, "wiki");
 });
 
+test("the invite landing is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.route("**/api/join-policy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ policy: null }),
+    });
+  });
+  await page.goto("/invite/demo-code");
+  // A link when the relay publishes no join policy, a button when it does.
+  await expect(page.getByText("Accept invite in Creaton").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "invite");
+});
+
+test("the repository browser is accessible", async ({ page }) => {
+  // Reached through the directory rather than directly, so the page gets
+  // whatever state the relay gave it — including the failure state it shows
+  // when the read does not answer.
+  await mockRelay(page);
+  await page.goto("/repos");
+  await expect(page.getByRole("heading").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "repositories");
+});
+
 test("the launchpad is accessible", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/launchpad");
@@ -261,7 +290,8 @@ test("search results are accessible", async ({ page }) => {
         {
           id: "e".repeat(64),
           pubkey: "b".repeat(64),
-          created_at: 200,
+          // Two hours old, so the result's age can be asserted rather than assumed.
+          created_at: Math.floor(Date.now() / 1000) - 2 * 60 * 60,
           kind: 9,
           tags: [["h", CHANNEL_ID]],
           content: "A message with a [[wikilink]] and #tag",
@@ -277,6 +307,11 @@ test("search results are accessible", async ({ page }) => {
   await expect(page.getByTestId("search-result").first()).toBeVisible({
     timeout: 20_000,
   });
+  // The age, not "just now": the result passed milliseconds where the formatter
+  // takes seconds, which rendered every hit as brand new.
+  await expect(page.getByTestId("search-result").first()).toContainText(
+    "2 hours ago",
+  );
   await expectAccessible(page, "search");
 });
 

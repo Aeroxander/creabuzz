@@ -93,7 +93,10 @@ export function SearchResults({
                 </span>
                 <span>{truncatePubkey(event.pubkey)}</span>
                 <span className="ml-auto">
-                  {relativeTime(event.created_at * 1000)}
+                  {/* `relativeTime` takes seconds, like every other call site:
+                      a millisecond value reads as a timestamp far in the future
+                      and renders as "just now" for every result. */}
+                  {relativeTime(event.created_at)}
                 </span>
               </div>
               <p className="mt-0.5 line-clamp-2 text-sm text-black/80 dark:text-white/80">
