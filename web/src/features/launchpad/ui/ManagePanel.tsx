@@ -62,7 +62,7 @@ function TokenMintPanel({
         chainId: launch.record.chainId ?? "11155111",
         currency: launch.record.currency ?? "",
         floorPrice: launch.record.floorPrice ?? "",
-        tickSpacing: "",
+        tickSpacing: launch.record.tickSpacing ?? "",
         requiredRaised: launch.record.requiredRaised ?? "",
         auction: launch.record.auction ?? "",
         token: address.trim(),
@@ -168,9 +168,20 @@ export function ManagePanel({
   const save = useCreateLaunch();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Destructive stage change: confirmed inline, like the delete below. */
+  const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
   if (!launch) return null;
   const { record } = launch;
 
+  /**
+   * The record as an edit input.
+   *
+   * Every field the record holds has to survive here, or an action that only
+   * means to change one of them erases the rest: `tickSpacing` was reset to ""
+   * and `tokenPlan` was dropped on *every* save, so terms the founder had set
+   * disappeared and the mint handoff vanished for good (the Mint panel is gated
+   * on `tokenPlan`, so it could never come back).
+   */
   const toInput = (
     overrides: Partial<CreateLaunchInput> = {},
   ): CreateLaunchInput => ({
@@ -181,13 +192,14 @@ export function ManagePanel({
     chainId: record.chainId ?? "11155111",
     currency: record.currency ?? "",
     floorPrice: record.floorPrice ?? "",
-    tickSpacing: "",
+    tickSpacing: record.tickSpacing ?? "",
     requiredRaised: record.requiredRaised ?? "",
     auction: record.auction ?? "",
     token: record.token ?? "",
     treasury: record.treasury ?? "",
     admission: record.admission,
     channels: record.channels,
+    ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
     ...overrides,
   });
 
@@ -201,8 +213,18 @@ export function ManagePanel({
     }
   };
 
-  const order = ["draft", "review", "live", "funding", "graduated", "failed"];
-  const next = order[order.indexOf(record.stage) + 1];
+  /**
+   * Forward stages only, and never out of a terminal one.
+   *
+   * `failed` is not the step after `graduated`; the list was a single ordered
+   * array, so a graduated launch offered "Advance to failed" with no
+   * confirmation and no way back.
+   */
+  const order = ["draft", "review", "live", "funding", "graduated"] as const;
+  const terminal = record.stage === "graduated" || record.stage === "failed";
+  const next = terminal
+    ? undefined
+    : order[order.indexOf(record.stage as (typeof order)[number]) + 1];
 
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-4">
@@ -212,6 +234,31 @@ export function ManagePanel({
           Stage: {record.stage} · {record.admission} track · chain{" "}
           {record.chainId ?? "undeployed"}
         </p>
+        {confirmRegress === "failed" ? (
+          <div className="mt-2 flex flex-wrap gap-2" role="alert">
+            <span className="text-xs text-red-700 dark:text-red-400">
+              Marking the launch failed is permanent from here.
+            </span>
+            <Button
+              disabled={save.isPending}
+              onClick={() => {
+                setConfirmRegress(null);
+                void handleSave(toInput({ stage: "failed" }));
+              }}
+              size="sm"
+              variant="destructive"
+            >
+              Confirm failure
+            </Button>
+            <Button
+              onClick={() => setConfirmRegress(null)}
+              size="sm"
+              variant="outline"
+            >
+              Keep as is
+            </Button>
+          </div>
+        ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
           <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
             Edit terms
@@ -228,6 +275,16 @@ export function ManagePanel({
               variant="outline"
             >
               Advance to {next}
+            </Button>
+          ) : null}
+          {record.stage !== "failed" ? (
+            <Button
+              disabled={save.isPending}
+              onClick={() => setConfirmRegress("failed")}
+              size="sm"
+              variant="ghost"
+            >
+              Mark as failed
             </Button>
           ) : null}
         </div>

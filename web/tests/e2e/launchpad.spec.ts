@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
+import { getPublicKey } from "nostr-tools/pure";
 
-const FOUNDER = "a".repeat(64);
+/**
+ * The founder is a real identity this time: the Manage tab is founder-only, so a
+ * made-up pubkey meant it never rendered. The seed is the fixed test key.
+ */
+const FOUNDER_NSEC = "22".repeat(32);
+const FOUNDER = getPublicKey(
+  Uint8Array.from(FOUNDER_NSEC.match(/.{2}/g) ?? [], (byte) =>
+    Number.parseInt(byte, 16),
+  ),
+);
 
 function record() {
   return {
@@ -15,7 +25,21 @@ function record() {
       ["admission", "curated"],
       ["chain", "11155111"],
     ],
-    content: JSON.stringify({ pitch: "To the stars.", stage: "live" }),
+    content: JSON.stringify({
+      pitch: "To the stars.",
+      stage: "live",
+      // A deployable price grid: the form validates these against the auction
+      // contract, so a fixture with half of them leaves Save disabled.
+      floorPrice: "792281625140000",
+      tickSpacing: "79228162514",
+      requiredRaised: "299999999998",
+      tokenPlan: {
+        mode: "mint",
+        name: "Nebula Token",
+        symbol: "NBL",
+        supply: "200000000",
+      },
+    }),
     sig: "sig",
   };
 }
@@ -32,6 +56,10 @@ function update() {
   };
 }
 
+/** Events the page published, so a test can assert what a save wrote. */
+const published: Array<{ kind: number; content: string; tags: string[][] }> =
+  [];
+
 async function mockRelay(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
@@ -41,7 +69,24 @@ async function mockRelay(page: import("@playwright/test").Page) {
       } catch {
         return;
       }
-      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT") {
+        // Acknowledge writes, as a relay does: without an OK the publish path
+        // waits for its timeout, so a save test would prove nothing.
+        const event = parsed[1] as {
+          id: string;
+          content: string;
+          tags: string[][];
+        };
+        published.push({
+          kind: Number((event as { kind?: number }).kind ?? 0),
+          content: String(event.content ?? ""),
+          tags: event.tags ?? [],
+        });
+        ws.send(JSON.stringify(["OK", event.id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
       const [, subId, filter] = parsed as [
         string,
         string,
@@ -59,6 +104,10 @@ async function mockRelay(page: import("@playwright/test").Page) {
 
 test.beforeEach(async ({ page }) => {
   await mockRelay(page);
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [FOUNDER_NSEC],
+  );
   await page.goto("/launchpad");
 });
 
@@ -142,4 +191,42 @@ test("recommended terms fill in deployable numbers", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
+});
+
+test("editing the terms keeps the token plan and the price grid", async ({
+  page,
+}) => {
+  // "Edit terms" reset `tickSpacing` to "" and dropped `tokenPlan` on every save,
+  // so terms the founder had set disappeared — and because the Mint panel is
+  // gated on `tokenPlan`, it could never come back. The mint fields were also
+  // never seeded from the record, which left "Save changes" disabled with no
+  // explanation the moment the dialog opened.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("tab", { name: /Manage/ }).click();
+
+  published.length = 0;
+  await page.getByRole("button", { name: "Edit terms" }).click();
+  // The mint fields are seeded, so the dialog is saveable without retyping them.
+  await expect(page.getByLabel("Token name")).toHaveValue("Nebula Token");
+  await expect(
+    page.getByRole("button", { name: /Save changes/ }),
+  ).toBeEnabled();
+
+  await page.getByRole("button", { name: /Save changes/ }).click();
+  await expect(page.getByText("Launch updated.")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  const saved = published[published.length - 1];
+  expect(saved, "a launch record must have been published").toBeTruthy();
+  const content = JSON.parse(saved.content);
+  expect(
+    content.tokenPlan,
+    "the mint handoff must survive an edit",
+  ).toBeTruthy();
+  expect(
+    content.tickSpacing,
+    "the price grid must survive an edit",
+  ).toBeTruthy();
 });

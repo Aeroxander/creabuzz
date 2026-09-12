@@ -40,6 +40,8 @@ export interface LaunchRecord {
   stage: LaunchStage;
   currency: string | null;
   floorPrice: string | null;
+  /** Price granularity, in Q96. Published as a tag; must round-trip. */
+  tickSpacing: string | null;
   requiredRaised: string | null;
   startBlock: number | null;
   endBlock: number | null;
@@ -183,6 +185,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
     currency: str(body.currency),
     floorPrice: str(body.floorPrice),
+    tickSpacing: str(body.tickSpacing),
     requiredRaised: str(body.requiredRaised),
     startBlock: int(body.startBlock),
     endBlock: int(body.endBlock),

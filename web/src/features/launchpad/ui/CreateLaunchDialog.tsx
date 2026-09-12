@@ -97,9 +97,16 @@ export function CreateLaunchDialog({
   const [tokenMode, setTokenMode] = useState<TokenMode>(
     initial?.token ? "import" : "mint",
   );
-  const [tokenName, setTokenName] = useState("");
-  const [symbol, setSymbol] = useState("");
-  const [supply, setSupply] = useState<string>(LAUNCH_DEFAULTS.supply);
+  // Seeded from the record: an existing launch already holds its token plan, and
+  // leaving these empty made "Save changes" render disabled with no reason the
+  // moment a founder opened Edit terms.
+  const [tokenName, setTokenName] = useState(
+    () => initial?.tokenPlan?.name ?? "",
+  );
+  const [symbol, setSymbol] = useState(() => initial?.tokenPlan?.symbol ?? "");
+  const [supply, setSupply] = useState<string>(
+    () => initial?.tokenPlan?.supply ?? LAUNCH_DEFAULTS.supply,
+  );
   const [importAddress, setImportAddress] = useState(initial?.token ?? "");
   const [verifyState, setVerifyState] = useState<
     "idle" | "checking" | "ok" | "missing" | "error"
