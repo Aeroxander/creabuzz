@@ -226,12 +226,25 @@ function parseTokenPlan(value: unknown): LaunchRecord["tokenPlan"] {
   };
 }
 
+/**
+ * The terms a new launch starts from.
+ *
+ * These are the values `standardLaunchPreset` produces for a 10M valuation over
+ * a billion tokens: a fifth of the supply sold at a floor of about a cent, a
+ * tick grid 1bp of it, and a 300k graduation threshold (15% of the tranche's
+ * floor value). The rest of the supply is the founder's to allocate to team,
+ * treasury, liquidity and milestone unlocks. The previous defaults (`floorPrice
+ * 1000000`, `tickSpacing 100`) could not be deployed at all — the floor is below
+ * the contract's `MIN_FLOOR_PRICE` of 2^32+1 and 100 does not divide it, so the
+ * auction constructor would have reverted. See `lib/launch-params.ts`, which
+ * checks every one of these rules before a founder writes the terms.
+ */
 export const LAUNCH_DEFAULTS = {
   chainId: "11155111",
-  floorPrice: "1000000",
-  tickSpacing: "100",
-  requiredRaised: "1000000000",
-  supply: "1000000",
+  floorPrice: "792281625140000",
+  tickSpacing: "79228162514",
+  requiredRaised: "299999999998",
+  supply: "200000000",
   admission: "curated",
 } as const;
 

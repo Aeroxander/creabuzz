@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildLaunches, launchCoordinate } from "./models.ts";
+import { LAUNCH_DEFAULTS, buildLaunches, launchCoordinate } from "./models.ts";
+import { hasBlockingIssue, validateLaunchParams } from "./lib/launch-params.ts";
 
 const ALICE = "a".repeat(64);
 const BOB = "b".repeat(64);
@@ -113,4 +114,29 @@ test("a mirror whose coordinate is malformed is ignored", () => {
   };
   const launches = buildLaunches([record(ALICE, "nebula"), bad]);
   assert.equal(launches[0].bids.length, 0);
+});
+
+test("the defaults a new launch starts from are deployable", () => {
+  // They were not: floor 1e6 is below the contract's MIN_FLOOR_PRICE and 100 does
+  // not divide it, so the auction constructor would have reverted after the
+  // founder had written the terms.
+  const issues = validateLaunchParams({
+    supply: BigInt(LAUNCH_DEFAULTS.supply) * 10n ** 18n,
+    floorPrice: BigInt(LAUNCH_DEFAULTS.floorPrice),
+    tickSpacing: BigInt(LAUNCH_DEFAULTS.tickSpacing),
+    requiredCurrencyRaised: BigInt(LAUNCH_DEFAULTS.requiredRaised),
+    // Schedule fields are not part of the form; the price grid is what shipped
+    // broken, so that is what this pins.
+    startBlock: 0n,
+    endBlock: 0n,
+    claimBlock: 0n,
+    steps: [],
+  }).filter(
+    (issue) =>
+      issue.field !== "steps" &&
+      issue.field !== "endBlock" &&
+      issue.field !== "claimBlock",
+  );
+  assert.deepEqual(issues, []);
+  assert.equal(hasBlockingIssue(issues), false);
 });

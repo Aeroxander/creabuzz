@@ -92,3 +92,54 @@ test("a production build shows no fabricated funding figures", async ({
   );
   await expect(page.getByText("Preview data")).toBeHidden();
 });
+
+test("the create form refuses parameters the auction contract would reject", async ({
+  page,
+}) => {
+  // The constructor's reverts happen after the founder has written the terms, so
+  // the form has to catch them. The defaults this app shipped could not be
+  // deployed at all: floor 1e6 is below the contract's minimum.
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  // Name and slug first: the form is invalid without them, which would make the
+  // enabled/disabled assertion below prove nothing.
+  await page.getByLabel("Launch id").fill("nebula-two");
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Two");
+
+  await expect(page.getByTestId("launch-param-issues")).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeEnabled();
+
+  // A floor below MIN_FLOOR_PRICE, on top of a spacing that does not divide it.
+  await page.getByLabel("Floor price").fill("1000000");
+  await page.getByLabel("Tick spacing").fill("100");
+  const issues = page.getByTestId("launch-param-issues");
+  await expect(issues).toBeVisible();
+  await expect(issues).toContainText("floorPrice");
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeDisabled();
+});
+
+test("recommended terms fill in deployable numbers", async ({ page }) => {
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByLabel("Launch id").fill("nebula-three");
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Three");
+  await page.getByLabel("Floor price").fill("1000000");
+  await page.getByTestId("launch-recommended-terms").click();
+
+  await expect(page.getByTestId("launch-param-issues")).toBeHidden();
+  const floor = await page.getByLabel("Floor price").inputValue();
+  const spacing = await page.getByLabel("Tick spacing").inputValue();
+  // On the grid and above the contract minimum, without the reader checking by
+  // hand: the two numbers the contract is strictest about.
+  expect(BigInt(floor)).toBeGreaterThanOrEqual((1n << 32n) + 1n);
+  expect(BigInt(floor) % BigInt(spacing)).toBe(0n);
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeEnabled();
+});

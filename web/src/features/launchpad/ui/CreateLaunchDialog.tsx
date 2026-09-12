@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -10,6 +10,11 @@ import {
   LAUNCH_DEFAULTS,
   suggestSymbol,
 } from "../models";
+import {
+  hasBlockingIssue,
+  standardLaunchPreset,
+  validateLaunchParams,
+} from "../lib/launch-params";
 import { getRpcEndpoint, isContractDeployed } from "../chain";
 import { useChannels } from "@/features/channels/use-channels";
 import { Modal } from "./Modal";
@@ -121,11 +126,62 @@ export function CreateLaunchDialog({
         isWholeTokenSupply(supply)
       : isEvmAddress(importAddress);
 
+  /**
+   * What the auction contract would reject, checked before the terms are
+   * written. A launch is a one-shot deployment: the constructor reverting is
+   * discovered far too late to be useful, and the defaults this form shipped
+   * with could not be deployed at all.
+   */
+  const paramIssues = useMemo(() => {
+    const asBig = (value: string) => {
+      try {
+        return value.trim() === "" ? 0n : BigInt(value.trim());
+      } catch {
+        return 0n;
+      }
+    };
+    return validateLaunchParams({
+      supply: asBig(supply) * 10n ** 18n,
+      floorPrice: asBig(floorPrice),
+      tickSpacing: asBig(tickSpacing),
+      requiredCurrencyRaised: asBig(requiredRaised),
+      // The schedule is built when the sale deploys, not in this form.
+      startBlock: 0n,
+      endBlock: 0n,
+      claimBlock: 0n,
+      steps: [],
+    }).filter(
+      (issue) =>
+        issue.field !== "steps" &&
+        issue.field !== "endBlock" &&
+        issue.field !== "claimBlock",
+    );
+  }, [supply, floorPrice, tickSpacing, requiredRaised]);
+
+  const paramBlocked = hasBlockingIssue(paramIssues);
+
   const valid =
     isLaunchSlug(id) &&
     name.trim().length > 0 &&
     (chainId.trim() === "" || /^\d+$/.test(chainId.trim())) &&
-    tokenValid;
+    tokenValid &&
+    !paramBlocked;
+
+  /**
+   * Fill in the shape a project normally wants: a fifth of the supply at a cent
+   * per token for a 10M valuation, graduating if it raises 15% of the sale's
+   * floor value. Nothing is locked in — the fields stay editable.
+   */
+  const applyRecommendedTerms = () => {
+    const preset = standardLaunchPreset({
+      startBlock: 0n,
+      totalSupply: 10n ** 18n * 1_000_000_000n,
+    });
+    setFloorPrice(preset.floorPrice.toString());
+    setTickSpacing(preset.tickSpacing.toString());
+    setRequiredRaised(preset.requiredCurrencyRaised.toString());
+    setSupply(Number(preset.supply / 10n ** 18n).toString());
+  };
 
   const verifyImport = async () => {
     if (!isEvmAddress(importAddress)) {
@@ -494,8 +550,37 @@ export function CreateLaunchDialog({
           </p>
         </fieldset>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {paramIssues.length > 0 ? (
+          <ul
+            className="mt-2 space-y-0.5 text-xs"
+            data-testid="launch-param-issues"
+          >
+            {paramIssues.map((issue) => (
+              <li
+                className={
+                  issue.severity === "error"
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-amber-700 dark:text-amber-300"
+                }
+                key={`${issue.field}-${issue.message}`}
+              >
+                {issue.severity === "error" ? "✗ " : "! "}
+                {issue.field}: {issue.message}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       <div className="mt-4 flex justify-end gap-2">
+        <Button
+          data-testid="launch-recommended-terms"
+          onClick={applyRecommendedTerms}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Recommended terms
+        </Button>
         <Button onClick={quickStart} size="sm" type="button" variant="ghost">
           Quick start defaults
         </Button>
