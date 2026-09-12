@@ -48,6 +48,14 @@ function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
       <p className="mt-auto flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
         <Users className="h-3.5 w-3.5" />
         {entry.member_count} member{entry.member_count === 1 ? "" : "s"}
+        {entry.archived ? (
+          <span
+            className="ml-auto rounded-full bg-black/10 px-2 py-0.5 text-2xs font-medium uppercase dark:bg-white/15"
+            data-testid={`community-archived-${entry.host}`}
+          >
+            Archived
+          </span>
+        ) : null}
       </p>
     </Link>
   );

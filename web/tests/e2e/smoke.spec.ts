@@ -26,6 +26,13 @@ const directoryFixture = {
       member_count: 11,
       archived: false,
     },
+    {
+      host: "retired.example.com",
+      name: "Retired",
+      description: "No longer served.",
+      member_count: 4,
+      archived: true,
+    },
   ],
 };
 
@@ -49,6 +56,11 @@ test("home page shows the community directory from the relay", async ({
   ).toBeVisible();
   await expect(page.getByText("alpha.example.com")).toBeVisible();
   await expect(page.getByText("11 members")).toBeVisible();
+  // An archived community is distinguishable: clicking it will not work, and
+  // saying so beats a card that looks like the others.
+  await expect(
+    page.getByTestId("community-archived-retired.example.com"),
+  ).toBeVisible();
 });
 
 test("empty directory shows the discovery empty state", async ({ page }) => {

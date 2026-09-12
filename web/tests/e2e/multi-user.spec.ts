@@ -904,3 +904,37 @@ test("a community with more channels than one page can be paged", async ({
   // A short page ends the walk: no button left to press.
   await expect(page.getByTestId("load-more-channels")).toHaveCount(0);
 });
+
+test("an archived community explains why its channels do not load", async ({
+  page,
+}) => {
+  // Archived communities keep their directory entry but their channel reads
+  // fail. Without the explanation the reader sees a relay error for a community
+  // that simply no longer serves channels.
+  const relay = createMockRelay();
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(39000) ?? false);
+  await relay.install(page);
+  await page.route("**/communities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        communities: [
+          {
+            host: "retired.example.com",
+            name: "Retired",
+            description: "No longer served.",
+            icon: null,
+            member_count: 4,
+            archived: true,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto(`/c/retired.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByText(/This community is archived/)).toBeVisible({
+    timeout: 20_000,
+  });
+});

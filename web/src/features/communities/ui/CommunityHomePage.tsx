@@ -86,7 +86,13 @@ export function CommunityHomePage() {
     return (
       <CommunityLoadState
         host={host}
-        message={errorMessage(channels.error)}
+        message={
+          // An archived community fails its reads by design; saying so turns a
+          // mysterious error into an explanation.
+          entry?.archived
+            ? `This community is archived, so its channels are no longer served. ${errorMessage(channels.error)}`
+            : errorMessage(channels.error)
+        }
         onRetry={() => void channels.refetch()}
       />
     );

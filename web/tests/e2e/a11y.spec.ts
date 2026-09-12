@@ -12,7 +12,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
 
-async function mockRelay(page: Page) {
+async function mockRelay(page: Page, options?: { failReads?: boolean }) {
   await page.route("**/communities", async (route) => {
     await route.fulfill({
       status: 200,
@@ -32,6 +32,9 @@ async function mockRelay(page: Page) {
     });
   });
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    // Challenge like the relay does, so an authenticated client does not read a
+    // refusal as "you were not authenticated yet" and retry.
+    ws.send(JSON.stringify(["AUTH", "challenge"]));
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -39,13 +42,29 @@ async function mockRelay(page: Page) {
       } catch {
         return;
       }
-      if (!Array.isArray(parsed) || parsed[0] !== "REQ") return;
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "AUTH") {
+        ws.send(JSON.stringify(["OK", parsed[1].id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
       const [, subId, filter] = parsed as [
         string,
         string,
         { kinds?: number[] },
       ];
       const kinds = filter.kinds ?? [];
+      if (options?.failReads && !kinds.includes(39000)) {
+        // The failure states are part of the UI; axe has to see them too.
+        ws.send(
+          JSON.stringify([
+            "CLOSED",
+            subId,
+            "blocked: the relay refused this read",
+          ]),
+        );
+        return;
+      }
       if (kinds.includes(39000)) {
         ws.send(
           JSON.stringify([
@@ -123,6 +142,21 @@ test("the channel shell and timeline are accessible", async ({ page }) => {
   await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   await expect(page.getByText("A message with a")).toBeVisible();
   await expectAccessible(page, "channel");
+});
+
+test("a failed read is accessible", async ({ page }) => {
+  await mockRelay(page, { failReads: true });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await expect(page.getByTestId("timeline-load-error")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "channel (read failed)");
+
+  await page.getByTestId("wiki-toggle").click();
+  await expect(page.getByTestId("wiki-load-error")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "wiki (read failed)");
 });
 
 test("the wiki is accessible", async ({ page }) => {
