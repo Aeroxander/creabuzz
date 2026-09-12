@@ -304,3 +304,70 @@ test("an edit and a delete survive a reload on the real relay", async ({
     .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
     .not.toContain(edited);
 });
+
+test("two people editing one wiki page converge through the real relay", async ({
+  browser,
+}) => {
+  // The wiki's cross-client path is a whole-page snapshot saved to the relay and
+  // polled back every few seconds. The mocked suite covers the merge logic; this
+  // is where it meets a real relay, real NIP-42 auth for a second identity, and
+  // the polling interval.
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const slug = `shared-${Date.now().toString(36)}`;
+  const mine = `written by the owner ${slug}`;
+  const theirs = `and by the second reader ${slug}`;
+
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const owner = await first.newPage();
+  const reader = await second.newPage();
+  await owner.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [fixture.ownerNsec],
+  );
+  await reader.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [fixture.mentionNsec],
+  );
+
+  for (const page of [owner, reader]) {
+    await page.goto(`/c/${COMMUNITY}`);
+    await page.getByTestId("wiki-toggle").click();
+  }
+
+  // The owner creates the page and saves a first version.
+  await owner.getByTestId("wiki-new-page").click();
+  await owner.getByTestId("page-name-input").fill(slug);
+  await owner.getByTestId("page-name-confirm").click();
+  const ownerEditor = owner.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
+  await ownerEditor.click();
+  await owner.keyboard.type(mine);
+  await owner.getByTestId("wiki-save").click();
+  await expect(owner.getByText("Page saved")).toBeVisible({ timeout: 20_000 });
+
+  // The other client sees the page appear (its list polls the relay).
+  const readerPage = reader.getByTestId(`wiki-page-${slug}`);
+  await expect(readerPage).toBeVisible({ timeout: 30_000 });
+  await readerPage.click();
+  const readerEditor = reader
+    .getByTestId("wiki-wysiwyg")
+    .locator(".ProseMirror");
+  await expect(readerEditor).toContainText(mine, { timeout: 30_000 });
+
+  // The reader appends to the same page and saves.
+  await readerEditor.click();
+  await reader.keyboard.press("End");
+  await reader.keyboard.type(` ${theirs}`);
+  await reader.getByTestId("wiki-save").click();
+  await expect(reader.getByText("Page saved")).toBeVisible({ timeout: 20_000 });
+
+  // Both versions survive: the save is a read-modify-write.
+  await expect(readerEditor).toContainText(mine, { timeout: 30_000 });
+  await expect(readerEditor).toContainText(theirs, { timeout: 30_000 });
+  await expect(ownerEditor).toContainText(theirs, { timeout: 45_000 });
+  await expect(ownerEditor).toContainText(mine, { timeout: 30_000 });
+
+  await first.close();
+  await second.close();
+});

@@ -112,3 +112,47 @@ test("quantities decode as minimal hex, words require 32 bytes", () => {
   assert.equal(decodeU256(`0x${word(7n)}`), 7n);
   assert.throws(() => decodeU256("0x10"), /32-byte/);
 });
+
+test("a failed log query leaves the bid count unknown, not zero", async () => {
+  // The rest of the read succeeded, so the live figures are reported — but the
+  // bid count is a figure nobody measured. Reporting 0 there would sit next to
+  // real numbers and look like one of them.
+  const restore = stubFetch((method) => {
+    if (method === "eth_getLogs") throw new Error("query timed out");
+    if (method === "eth_blockNumber") return "0x10";
+    return `0x${word(1n)}`;
+  });
+  try {
+    const progress = await auctionProgress(RECORD, { allowPreview: false });
+    assert.equal(progress.source, "rpc");
+    assert.equal(progress.bidCount, null);
+  } finally {
+    restore();
+  }
+});
+
+test("a log query that answers reports the bids it saw", async () => {
+  const restore = stubFetch((method) => {
+    if (method === "eth_getLogs") return [{}, {}, {}];
+    if (method === "eth_blockNumber") return "0x10";
+    return `0x${word(1n)}`;
+  });
+  try {
+    const progress = await auctionProgress(RECORD, { allowPreview: false });
+    assert.equal(progress.bidCount, 3);
+  } finally {
+    restore();
+  }
+});
+
+test("a chain that answered none of the read reports no figures at all", async () => {
+  const restore = stubFetch(() => {
+    throw new Error("connection refused");
+  });
+  try {
+    const progress = await auctionProgress(RECORD, { allowPreview: false });
+    assert.equal(progress.bidCount, null);
+  } finally {
+    restore();
+  }
+});

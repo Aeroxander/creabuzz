@@ -15,7 +15,12 @@ export interface AuctionProgress {
   goal: bigint | null;
   graduated: boolean;
   ended: boolean;
-  bidCount: number;
+  /**
+   * Bid events seen on chain, or `null` when the log query itself failed.
+   * `0` means the chain answered and no bid was submitted: reporting a failed
+   * read as zero invents a figure the chain never gave.
+   */
+  bidCount: number | null;
   /**
    * `rpc` — read from the chain; `preview` — deterministic fixture, development
    * builds only; `unavailable` — the chain could not be read, so no figures are
@@ -160,7 +165,7 @@ export async function liveProgress(
   const block = decodeQuantity(blockRaw);
   const claimBlock =
     record.claimBlock !== null ? BigInt(record.claimBlock) : null;
-  let bidCount = 0;
+  let bidCount: number | null = null;
   try {
     const logs = (await rpc(endpoint, "eth_getLogs", [
       {
@@ -170,9 +175,12 @@ export async function liveProgress(
         toBlock: "latest",
       },
     ])) as unknown[];
-    bidCount = Array.isArray(logs) ? logs.length : 0;
+    // An answer from the chain: zero bids is a fact here, not a guess.
+    if (Array.isArray(logs)) bidCount = logs.length;
   } catch {
-    bidCount = 0;
+    // Leave it unknown; the rest of the read succeeded, so the caller still
+    // gets live figures for everything the chain did answer.
+    bidCount = null;
   }
   return {
     raised,
@@ -203,7 +211,7 @@ export function unavailableProgress(reason: string): AuctionProgress {
     goal: null,
     graduated: false,
     ended: false,
-    bidCount: 0,
+    bidCount: null,
     source: "unavailable",
     reason,
   };
