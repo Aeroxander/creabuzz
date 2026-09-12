@@ -938,3 +938,86 @@ test("an archived community explains why its channels do not load", async ({
     timeout: 20_000,
   });
 });
+
+test("reactions and edits do not appear as threaded replies", async ({
+  page,
+}) => {
+  // The thread tree renders every event whose `e` tag names the parent, and a
+  // reaction, an edit and a deletion all carry that tag. They are overlays on
+  // the message they target — a reaction pill, replaced text, a deletion
+  // marker — not replies.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  const message = "message-1";
+  relay.seed({
+    id: message,
+    pubkey: "b".repeat(64),
+    created_at: 150,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "The one message",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "reaction-1",
+    pubkey: "c".repeat(64),
+    created_at: 160,
+    kind: 7,
+    tags: [
+      ["h", CHANNEL_ID],
+      ["e", message],
+    ],
+    content: "👍",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "edit-1",
+    pubkey: "b".repeat(64),
+    created_at: 170,
+    kind: 40003,
+    tags: [
+      ["h", CHANNEL_ID],
+      ["e", message],
+    ],
+    content: "The edited message",
+    sig: "sig",
+  });
+
+  // A second message, and a deletion tombstone for it.
+  relay.seed({
+    id: "message-2",
+    pubkey: "b".repeat(64),
+    created_at: 180,
+    kind: 9,
+    tags: [["h", CHANNEL_ID]],
+    content: "Doomed message",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "deletion-1",
+    pubkey: "b".repeat(64),
+    created_at: 190,
+    kind: 5,
+    tags: [
+      ["h", CHANNEL_ID],
+      ["e", "message-2"],
+    ],
+    content: "",
+    sig: "sig",
+  });
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await expect(page.getByText("The edited message")).toBeVisible({
+    timeout: 15_000,
+  });
+  // Two messages — one edited, one deleted — and no extra rows for the
+  // reaction, the edit, or the tombstone.
+  await expect(page.getByTestId("message-row")).toHaveCount(2);
+  await expect(page.getByText("Doomed message")).toHaveCount(0);
+  // The pill, not the quick-react button: the row contains both.
+  await expect(
+    page.getByTestId("message-row").first().getByText("👍 1"),
+  ).toBeVisible();
+});

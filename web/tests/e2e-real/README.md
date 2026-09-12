@@ -20,6 +20,7 @@ cargo build -p buzz-relay
 DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz_web_verify \
 BUZZ_AUTO_MIGRATE=true BUZZ_BIND_ADDR=0.0.0.0:3199 BUZZ_RELAY_URL=ws://localhost:3199 \
 BUZZ_HEALTH_PORT=8181 BUZZ_METRICS_PORT=9199 BUZZ_WEB_DIR=./web/dist BUZZ_WEB_SPA=full \
+BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN=600 BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC=200 \
 ./target/debug/buzz-relay
 
 # 4. Seed the community host and relay membership (fail-closed host binding).
@@ -34,9 +35,15 @@ node web/tests/e2e-real/create-channel.mjs general
 pnpm -C web test:e2e:real
 ```
 
-The dev relay rate-limits writes per identity (channel creation and messages),
-so a burst of sends can be accepted late; the round-trip test is marked slow for
-that reason.
+The relay rate-limits writes per identity (defaults: 60 messages a minute, 10
+websocket events a second). A suite that posts several messages in a few seconds
+can be refused outright, so the fixture raises those limits above; the tests also
+tolerate a refusal, waiting for the window to pass rather than reporting a
+product bug.
+
+Channel creation has its own limit: a re-run of `create-channel.mjs` right after
+a previous one is refused with `rate-limited: quota exceeded; retry in 28s`, which
+is why that script treats "already exists" as success and reports anything else.
 
 The relay serves NIP-11 JSON at `/` unless the request asks for HTML, which a
 browser does — a plain `curl /` is not the app.

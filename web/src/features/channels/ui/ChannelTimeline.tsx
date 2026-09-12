@@ -18,6 +18,7 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 
 import type { Channel } from "../use-channels";
 import {
+  isOverlayKind,
   useChannelMessages,
   type ChannelMessages,
 } from "../use-channel-messages";
@@ -357,7 +358,11 @@ function ThreadTree({
   channelId: string;
   highlightedId?: string | null;
 }) {
-  const children = messages.ordered.filter((e) => getTag(e, "e") === event.id);
+  // Overlay kinds carry an `e` tag too, but they are not replies: they are
+  // rendered on the message they target (pill, replaced text, deletion marker).
+  const children = messages.ordered.filter(
+    (e) => getTag(e, "e") === event.id && !isOverlayKind(e.kind),
+  );
   return (
     <div>
       <MessageRow

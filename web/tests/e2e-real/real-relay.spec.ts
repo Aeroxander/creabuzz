@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,34 @@ const DEV_NSEC =
 const COMMUNITY = process.env.BUZZ_REAL_RELAY_HOST ?? "localhost:3199";
 
 test.use({ viewport: { width: 1280, height: 900 } });
+
+/**
+ * Send a message, waiting out the relay's per-identity write rate limit.
+ *
+ * The dev relay refuses bursts, so a suite that posts several messages in a few
+ * seconds can have one refused outright. The composer only clears when the relay
+ * accepted the write, which is the signal this waits for.
+ */
+async function sendMessage(page: Page, text: string) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.getByTestId("composer-input").fill(text);
+    await expect(page.getByTestId("composer-send")).toBeEnabled();
+    await page.getByTestId("composer-send").click();
+    try {
+      await expect(page.getByTestId("composer-input")).toHaveValue("", {
+        timeout: 10_000,
+      });
+      return;
+    } catch {
+      const refused = page
+        .locator("[data-sonner-toast]")
+        .filter({ hasText: /couldn't send/i });
+      await expect(refused).toBeVisible({ timeout: 10_000 });
+      await page.waitForTimeout(20_000);
+    }
+  }
+  throw new Error(`the relay refused "${text}" four times`);
+}
 
 interface Fixture {
   relay: string;
@@ -104,14 +132,7 @@ test("a message is stored by the relay and survives a reload", async ({
     .getByRole("button", { name: /general/ })
     .first()
     .click();
-  await page.getByTestId("composer-input").fill(body);
-  // Let the controlled draft commit before submitting; the dev relay also
-  // rate-limits writes, so a send can be refused if tests post in a burst.
-  await expect(page.getByTestId("composer-send")).toBeEnabled();
-  await page.getByTestId("composer-send").click();
-  await expect(
-    page.locator("[data-sonner-toast]").filter({ hasText: /couldn't send/i }),
-  ).toHaveCount(0);
+  await sendMessage(page, body);
   // Assert on rendered text, not `getByText`: that engine also matches a
   // textbox's value, so it would happily match the draft still sitting in the
   // composer and pass without the relay ever storing anything.
@@ -222,4 +243,64 @@ test("a mention from another person raises the bell for the mentioned identity",
   // from an older mention.
   await page.getByTestId("notifications-bell").click();
   await expect(page.getByText(marker)).toBeVisible({ timeout: 40_000 });
+});
+
+test("an edit and a delete survive a reload on the real relay", async ({
+  page,
+}) => {
+  // The mock relay replays what the client stored; it does not model the
+  // relay's own storage rules for edits (kind 40003 overlays) and deletions
+  // (kind 5 tombstones). This is where those meet the real thing.
+  test.slow();
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [DEV_NSEC],
+  );
+
+  const open = Date.now();
+  const original = `edit target ${open}`;
+  const edited = `edited ${open}`;
+
+  await page.goto(`/c/${COMMUNITY}`);
+  await page
+    .getByRole("button", { name: /general/ })
+    .first()
+    .click();
+  await sendMessage(page, original);
+  await expect
+    .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
+    .toContain(original);
+
+  // Rows are located by their own text: the first row is the relay's
+  // channel-created event, and an edited row no longer matches its old text.
+  const rowWith = (text: string) =>
+    page.getByTestId("message-row").filter({ hasText: text });
+
+  await rowWith(original).hover();
+  await rowWith(original).getByTestId("edit-button").click();
+  await page.getByTestId("composer-input").fill(edited);
+  await page.getByTestId("composer-send").click();
+  await expect
+    .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
+    .toContain(edited);
+
+  // Then delete it, and reload: the tombstone has to come back from the relay.
+  await rowWith(edited).hover();
+  await rowWith(edited).getByTestId("delete-button").click();
+  await page.getByRole("button", { name: "Delete message" }).click();
+  await expect(page.getByText("Message deleted")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.reload();
+  await page
+    .getByRole("button", { name: /general/ })
+    .first()
+    .click();
+  await expect(page.getByTestId("content-pane")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() => page.locator("body").innerText(), { timeout: 30_000 })
+    .not.toContain(edited);
 });
