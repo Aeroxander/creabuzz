@@ -192,6 +192,37 @@ export async function liveProgress(
   };
 }
 
+/**
+ * ERC-20 balance of an address, read through `balanceOf`.
+ *
+ * The treasury panel needs one number the chain can actually answer today:
+ * `requiredCurrencyRaised` and the issuance schedule have no on-chain getter, but
+ * a token balance does. Returns null when the read fails, so the panel can say
+ * "not readable" instead of showing zero.
+ */
+export async function erc20BalanceOf(
+  endpoint: string,
+  token: string,
+  holder: string,
+): Promise<bigint | null> {
+  if (
+    !/^0x[0-9a-fA-F]{40}$/.test(token) ||
+    !/^0x[0-9a-fA-F]{40}$/.test(holder)
+  ) {
+    return null;
+  }
+  const data = `0x70a08231${holder.slice(2).toLowerCase().padStart(64, "0")}`;
+  try {
+    const result = (await rpc(endpoint, "eth_call", [
+      { to: token, data },
+      "latest",
+    ])) as unknown;
+    return typeof result === "string" ? decodeU256(result) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** True when address holds contract code. Throws on RPC failure. */
 export async function isContractDeployed(
   endpoint: string,

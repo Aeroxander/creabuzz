@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { isEvmAddress, mintCommandForPlan, type Launch } from "../models";
+import { toAtomic } from "../lib/amounts";
+import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
 import { getRpcEndpoint, isContractDeployed } from "../chain";
 import {
   useCreateLaunch,
@@ -226,8 +228,89 @@ export function ManagePanel({
     ? undefined
     : order[order.indexOf(record.stage as (typeof order)[number]) + 1];
 
+  /**
+   * What is set and what is still missing.
+   *
+   * A founder publishing terms cannot see which of them the chain will need, so
+   * the gaps that block a deployment are listed here rather than discovered by a
+   * reverting constructor.
+   */
+  const readiness: Array<{ label: string; ok: boolean; hint: string }> = [
+    {
+      label: "Sale parameters",
+      ok: !hasBlockingIssue(
+        validateLaunchParams({
+          supply: (toAtomic(record.tokenPlan?.supply) ?? 0n) * 10n ** 18n,
+          floorPrice: toAtomic(record.floorPrice) ?? 0n,
+          tickSpacing: toAtomic(record.tickSpacing) ?? 0n,
+          requiredCurrencyRaised: toAtomic(record.requiredRaised) ?? 0n,
+          startBlock: 0n,
+          endBlock: 0n,
+          claimBlock: 0n,
+          steps: [],
+        }).filter(
+          (issue) =>
+            issue.field !== "steps" &&
+            issue.field !== "endBlock" &&
+            issue.field !== "claimBlock",
+        ),
+      ),
+      hint: "Floor price on the tick grid, above the contract minimum.",
+    },
+    {
+      label: "Token",
+      ok: Boolean(record.token || record.tokenPlan),
+      hint: "Mint the token or link a deployed address.",
+    },
+    {
+      label: "Auction contract",
+      ok: Boolean(record.auction),
+      hint: "Deploy the auction and link it, so bids have somewhere to go.",
+    },
+    {
+      label: "Treasury",
+      ok: Boolean(record.treasury),
+      hint: "Where the raise and the retained supply are held.",
+    },
+    {
+      label: "Discussion channel",
+      ok: record.channels.length > 0,
+      hint: "Bind the channel where the launch is discussed.",
+    },
+  ];
+  const open = readiness.filter((item) => !item.ok).length;
+
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-4">
+      <Card className="p-4" data-testid="launch-readiness">
+        <h2 className="text-base font-semibold">Launch readiness</h2>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          {open === 0
+            ? "Everything the chain needs is set."
+            : `${open} step${open === 1 ? "" : "s"} still open before this can deploy.`}
+        </p>
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {readiness.map((item) => (
+            <li className="flex items-start gap-2 text-sm" key={item.label}>
+              <span
+                aria-hidden="true"
+                className={item.ok ? "text-emerald-600" : "text-amber-600"}
+              >
+                {item.ok ? "✓" : "•"}
+              </span>
+              <span>
+                <span className="font-medium">{item.label}</span>
+                <span className="sr-only">{item.ok ? ": set" : ": open"}</span>
+                {!item.ok ? (
+                  <span className="block text-xs text-black/60 dark:text-white/60">
+                    {item.hint}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Card>
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">

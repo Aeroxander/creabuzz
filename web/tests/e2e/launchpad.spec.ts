@@ -230,3 +230,44 @@ test("editing the terms keeps the token plan and the price grid", async ({
     "the price grid must survive an edit",
   ).toBeTruthy();
 });
+
+test("the raise terms are money a buyer can read", async ({ page }) => {
+  // Every figure used to be raw atomic units: `1000000000 / 1000000000` is not
+  // something anyone can act on, and the settle-either-way terms were absent.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+
+  await expect(page.getByText("Graduation threshold")).toBeVisible();
+  await expect(page.getByText("300,000 USDC")).toBeVisible();
+  await expect(page.getByText("None set", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("$0.01 per token")).toBeVisible();
+
+  // The two outcomes, before the money moves.
+  const settlement = page.getByTestId("launch-settlement-terms");
+  await expect(settlement).toContainText("If the threshold is met");
+  await expect(settlement).toContainText("If the threshold is missed");
+  await expect(settlement).toContainText("refundable in full");
+});
+
+test("the founder sees what is still missing before deploying", async ({
+  page,
+}) => {
+  // The gaps that block a deployment were only discoverable by a reverting
+  // constructor. The fixture has terms and a token plan but no auction, treasury
+  // or channel.
+  await page.getByText("Nebula DAO").click();
+  await page.getByRole("tab", { name: /Manage/ }).click();
+
+  const readiness = page.getByTestId("launch-readiness");
+  await expect(readiness).toBeVisible({ timeout: 15_000 });
+  await expect(readiness).toContainText("3 steps still open");
+  await expect(readiness).toContainText("Sale parameters");
+  await expect(readiness).toContainText("Auction contract");
+  await expect(readiness).toContainText(
+    "link it, so bids have somewhere to go",
+  );
+
+  // The sale parameters are valid, so that line carries no hint.
+  const parameters = readiness.locator("li", { hasText: "Sale parameters" });
+  await expect(parameters).not.toContainText("Floor price on the tick grid");
+});
