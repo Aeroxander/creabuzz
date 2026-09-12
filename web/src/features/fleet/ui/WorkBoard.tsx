@@ -161,7 +161,11 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
     selected?.type === "task" && !!selected.scope && !!selected.parentEventId;
 
   const sendThreadReply = () => {
-    if (!selected || !canReplyToThread || reply.trim().length === 0) return;
+    // Bind the two ids the reply depends on rather than asserting them later:
+    // the assertion would outlive the guard if the selection changed.
+    const scope = selected?.scope;
+    const parentEventId = selected?.parentEventId;
+    if (!scope || !parentEventId || reply.trim().length === 0) return;
     setSendingReply(true);
     setReplyError(null);
     void (async () => {
@@ -169,8 +173,8 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
         const signed = await signAsUser({
           kind: 9,
           tags: [
-            ["h", selected.scope!],
-            ["e", selected.parentEventId!],
+            ["h", scope],
+            ["e", parentEventId],
           ],
           content: reply.trim(),
         });

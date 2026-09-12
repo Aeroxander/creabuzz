@@ -1426,7 +1426,6 @@ test("two tabs converge on one page without P2P signalling", async ({
   await page.setViewportSize({ width: 1280, height: 900 });
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
   const SLUG = "release-notes";
-  const PAGE_ID = `page-${SLUG}`;
   /** Shared relay store: published wiki pages, replayed to every REQ. */
   let stored: {
     id: string;

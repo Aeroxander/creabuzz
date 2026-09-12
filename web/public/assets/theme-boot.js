@@ -7,11 +7,11 @@
  * without a script hash. Storage key and semantics must stay in step with
  * `src/shared/theme/ThemeProvider.tsx`.
  */
-(function () {
+(() => {
   var stored = null;
   try {
     stored = window.localStorage.getItem("buzz.theme");
-  } catch (error) {
+  } catch {
     stored = null;
   }
   var dark =

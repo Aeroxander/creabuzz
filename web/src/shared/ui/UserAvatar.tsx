@@ -14,14 +14,20 @@ const sizeClasses: Record<UserAvatarSize, string> = {
   md: "h-9 w-9 text-xs",
 };
 
+/**
+ * Fallback discs for readers with no picture. The darker steps are deliberate:
+ * the 400/500 shades with white text fall under the 4.5:1 contrast floor at the
+ * `text-3xs` size these are rendered at (axe flags them as serious), and a name
+ * chip nobody can read is worse than a duller one.
+ */
 const fallbackColorClasses = [
-  "bg-blue-500 text-white",
-  "bg-emerald-500 text-white",
-  "bg-amber-400 text-amber-950",
-  "bg-rose-500 text-white",
-  "bg-cyan-400 text-cyan-950",
-  "bg-violet-500 text-white",
-  "bg-orange-500 text-white",
+  "bg-blue-700 text-white",
+  "bg-emerald-700 text-white",
+  "bg-amber-700 text-white",
+  "bg-rose-700 text-white",
+  "bg-cyan-700 text-white",
+  "bg-violet-700 text-white",
+  "bg-orange-700 text-white",
 ] as const;
 
 function fallbackColorClass(displayName: string) {

@@ -85,6 +85,32 @@ async function mockRelay(page: Page, options?: { failReads?: boolean }) {
           ]),
         );
       }
+      if (kinds.includes(44011)) {
+        // A task, so the board renders cards rather than only its empty state.
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "f".repeat(64),
+              pubkey: "b".repeat(64),
+              created_at: 210,
+              kind: 44011,
+              tags: [
+                ["d", "task-1"],
+                ["h", CHANNEL_ID],
+                ["p", "b".repeat(64)],
+              ],
+              content: JSON.stringify({
+                title: "Ship the work board",
+                description: "With a description",
+                status: "open",
+              }),
+              sig: "sig",
+            },
+          ]),
+        );
+      }
       if (kinds.includes(9)) {
         ws.send(
           JSON.stringify([
@@ -172,6 +198,17 @@ test("the launchpad is accessible", async ({ page }) => {
   await page.goto("/launchpad");
   await expect(page.getByRole("heading", { name: "Launchpad" })).toBeVisible();
   await expectAccessible(page, "launchpad");
+});
+
+test("the work board is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("work-toggle").click();
+  // Scoped: the board renders the title on a card and in the list beside it.
+  await expect(page.getByText("Ship the work board").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "work board");
 });
 
 test("the agents view is accessible", async ({ page }) => {

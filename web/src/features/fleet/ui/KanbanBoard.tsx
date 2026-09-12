@@ -53,8 +53,15 @@ function Card({
     : "Unassigned";
 
   return (
-    <button
-      type="button"
+    // A div, not a button: the card is a drag container with no click action of
+    // its own, and as a button it wrapped the actions menu, the assignee
+    // controls and the move buttons — nested interactive controls, which axe
+    // reports as serious and which takes those controls away from the keyboard.
+    // A drag source is not a keyboard interaction, and the rule's remedy — a
+    // button role — is exactly what nests the controls axe flags, so the card
+    // stays a plain container and everything actionable inside is a real button.
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-only container, no click or key handler.
+    <div
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("application/x-buzz-task", item.key);
@@ -182,7 +189,7 @@ function Card({
           )}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
 
