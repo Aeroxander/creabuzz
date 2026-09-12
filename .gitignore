@@ -75,3 +75,6 @@ deploy/charts/*/charts/*.tgz
 
 # Local Redis dump (written at the repo root when a dev Redis runs from here)
 dump.rdb
+
+# Real-relay fixture written by web/tests/e2e-real/seed.mjs
+web/tests/e2e-real/.fixture.json
