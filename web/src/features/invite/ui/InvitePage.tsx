@@ -6,7 +6,10 @@ import {
   detectBuzzDownloadPlatform,
   resolveBuzzDownloadUrlForPlatform,
 } from "@/shared/lib/buzz-download";
+import { hasStoredIdentity } from "@/shared/lib/identity";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
+
+import { hasPasskeyIdentity } from "@/features/identity/lib/passkey-identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import * as React from "react";
@@ -132,7 +135,11 @@ export function InvitePage({ code }: { code: string }) {
     }
   };
 
-  const browserSigningAvailable = hasNip07Provider();
+  // Any identity that survives a reload can claim: the stored nsec this app
+  // creates for a browser reader, a passkey, or an extension. Gating on the
+  // extension alone hid the button from browser users entirely.
+  const browserSigningAvailable =
+    hasNip07Provider() || hasStoredIdentity() || hasPasskeyIdentity();
   const disabled =
     policy === undefined ||
     opening ||

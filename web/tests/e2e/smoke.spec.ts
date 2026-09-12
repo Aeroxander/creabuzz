@@ -1805,3 +1805,64 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
   expect(profile.nip05).toBe("old@example.com");
   expect(profile.lud16).toBe("old@walletofsatoshi.com");
 });
+
+test("invite can enroll the identity this app creates, without an extension", async ({
+  page,
+}) => {
+  // The invite page used to offer "Join in browser" only when a NIP-07
+  // extension was present, so a reader using the identity this app creates for
+  // them had no way to join at all — the landing page was a dead end.
+  const nsec = "dd".repeat(32);
+  const pubkey = getPublicKey(
+    Uint8Array.from(nsec.match(/.{2}/g) ?? [], (byte) =>
+      Number.parseInt(byte, 16),
+    ),
+  );
+  await page.addInitScript(
+    ([key]) => window.localStorage.setItem("buzz.identity.nsec", key),
+    [nsec],
+  );
+  await page.route("**/api/join-policy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ policy: null }),
+    });
+  });
+
+  let claimPubkey: string | null = null;
+  await page.route("**/api/invites/claim", async (route) => {
+    const request = route.request();
+    const authorization = request.headers().authorization ?? "";
+    const event = JSON.parse(
+      Buffer.from(authorization.slice("Nostr ".length), "base64").toString(
+        "utf8",
+      ),
+    ) as { pubkey: string; tags: string[][] };
+    claimPubkey = event.pubkey;
+    // The body must be covered, exactly as the relay requires.
+    expect(event.tags).toContainEqual([
+      "payload",
+      createHash("sha256")
+        .update(request.postData() ?? "")
+        .digest("hex"),
+    ]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "joined",
+        community_id: "community-id",
+        host: "127.0.0.1",
+        role: "member",
+      }),
+    });
+  });
+
+  await page.goto("/invite/durable-code");
+  await page.getByRole("button", { name: "Join in browser" }).click();
+  await expect(page).toHaveURL("/");
+  expect(claimPubkey, "the claim is signed by this browser's identity").toBe(
+    pubkey,
+  );
+});

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { mintInvite } from "./invite.mjs";
 import { publishAs } from "./publish.mjs";
 
 /**
@@ -370,4 +371,60 @@ test("two people editing one wiki page converge through the real relay", async (
 
   await first.close();
   await second.close();
+});
+
+test("an invite minted by an owner enrolls a durable identity, once", async ({
+  browser,
+}) => {
+  // The invite path grants relay membership. Until now nothing exercised it
+  // against a real relay: the mocked suites stub the HTTP endpoint, so the
+  // NIP-98 signing, the mint, the claim and the membership it grants were all
+  // unverified. A single-use invite makes the claim observable: if the first
+  // claim were not recorded, the second would succeed.
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const invite = await mintInvite({
+    nsec: fixture.ownerNsec,
+    baseUrl: `http://${COMMUNITY}`,
+    body: JSON.stringify({ max_uses: 1 }),
+  });
+  expect(invite.url, JSON.stringify(invite)).toContain("/invite/");
+  const invitePath = invite.url.replace(`http://${COMMUNITY}`, "");
+
+  /** A fresh identity, with no extension: what this app creates for a reader. */
+  const freshNsec = () =>
+    `${Date.now().toString(16).padStart(8, "0")}${"ab".repeat(28)}`.slice(
+      0,
+      64,
+    );
+
+  const joiner = await browser.newContext();
+  const joinerPage = await joiner.newPage();
+  await joinerPage.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [freshNsec()],
+  );
+  await joinerPage.goto(invitePath);
+  // The button must be offered at all: it used to require a browser extension,
+  // which left browser readers with no way to join.
+  const join = joinerPage.getByRole("button", { name: "Join in browser" });
+  await expect(join).toBeVisible({ timeout: 20_000 });
+  await join.click();
+  await expect(joinerPage).toHaveURL("/", { timeout: 30_000 });
+
+  // A second identity, same code: the relay must have spent the single use.
+  const latecomer = await browser.newContext();
+  const latecomerPage = await latecomer.newPage();
+  await latecomerPage.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [freshNsec()],
+  );
+  await latecomerPage.goto(invitePath);
+  await latecomerPage.getByRole("button", { name: "Join in browser" }).click();
+  await expect(latecomerPage.getByText(/reached its use limit/i)).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await joiner.close();
+  await latecomer.close();
 });

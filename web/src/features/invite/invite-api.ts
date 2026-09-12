@@ -21,7 +21,10 @@ export async function claimInviteInBrowser(
   });
   const authorization = await makeNip98AuthHeader(url, "POST", {
     body,
-    requireNip07: true,
+    // Membership is bound to the signing key, so it has to survive a reload —
+    // but that is the whole requirement. Demanding a browser extension locked
+    // out everyone using the identity this app creates for them.
+    requireDurable: true,
   });
   const response = await fetch(url, {
     method: "POST",

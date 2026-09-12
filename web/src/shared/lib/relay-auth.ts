@@ -15,6 +15,7 @@
 
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 import {
+  hasNip07Provider,
   signNostrEvent,
   type SignedNostrEvent,
   type UnsignedNostrEvent,
@@ -22,12 +23,25 @@ import {
 
 export async function signForRelay(
   template: Omit<UnsignedNostrEvent, "created_at"> & { created_at?: number },
-  options?: { requireNip07?: boolean },
+  options?: { requireNip07?: boolean; requireDurable?: boolean },
 ): Promise<SignedNostrEvent> {
   // Callers that require a browser extension mean it: their flows bind durable
-  // state (relay membership) to that extension's key.
+  // state to that extension's key.
   if (options?.requireNip07) {
     return signNostrEvent(template, { requireNip07: true });
+  }
+  // Flows that create durable server-side state (relay membership, an invite
+  // claim) must not be signed by the page-lifetime key: a reload would orphan
+  // the row. Any identity that survives a reload will do — the stored nsec this
+  // app creates for a browser user, a passkey, or an extension. Requiring the
+  // extension specifically locked out browser readers.
+  if (options?.requireDurable) {
+    const durable = existingUserPubkey() !== null || hasNip07Provider();
+    if (!durable) {
+      throw new Error(
+        "Joining needs an identity that survives a reload. Create your identity here, or install a NIP-07 extension.",
+      );
+    }
   }
   // `existingUserPubkey` does not create anything: browsing without an identity
   // must not leave a key behind.
