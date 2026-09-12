@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { normalizeSlug } from "../lib/slug";
+
 import { useFocusTrap } from "@/shared/ui/use-focus-trap";
 
 import { Button } from "@/shared/ui/button";
@@ -8,14 +10,6 @@ import { MODAL_BACKDROP_BLUR_CLASS } from "@/shared/ui/modalBackdrop";
 import { MODAL_CONTENT_MOTION_CLASS } from "@/shared/ui/modalMotion";
 
 /** Turn free text into a page slug: lowercase, hyphen-separated, url-safe. */
-export function normalizeSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-}
 
 /**
  * Ask for a wiki page name.

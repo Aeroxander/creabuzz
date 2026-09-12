@@ -109,6 +109,11 @@ export function CommunityHomePage() {
           channels={channels.channels}
           initialChannelId={initialChannelId}
           initialMessageId={initialMessageId}
+          initialView={
+            search.view && search.view !== "channels" ? search.view : undefined
+          }
+          initialPage={search.page}
+          initialWorkId={search.work}
           host={host}
           hasMoreChannels={channels.hasMoreChannels}
           loadingMoreChannels={channels.loadingMore}

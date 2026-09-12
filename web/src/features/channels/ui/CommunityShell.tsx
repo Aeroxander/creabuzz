@@ -54,6 +54,9 @@ export function CommunityShell({
   channels,
   initialChannelId,
   initialMessageId,
+  initialView,
+  initialPage,
+  initialWorkId,
   host,
   hasMoreChannels = false,
   loadingMoreChannels = false,
@@ -64,6 +67,12 @@ export function CommunityShell({
   initialChannelId?: string;
   /** Message permalink target: scrolled to and highlighted, then released. */
   initialMessageId?: string;
+  /** Surface from the URL: `wiki`, `work`, `org`, `fleet`, or channels. */
+  initialView?: "wiki" | "work" | "org" | "fleet";
+  /** Wiki page slug from the URL. */
+  initialPage?: string;
+  /** Work-item id from the URL. */
+  initialWorkId?: string;
   host: string;
   /** Paging for a community with more channels than one relay page. */
   hasMoreChannels?: boolean;
@@ -86,10 +95,12 @@ export function CommunityShell({
     const timer = setTimeout(() => setHighlightedMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [highlightedMessage]);
-  const [showingWiki, setShowingWiki] = useState(false);
-  const [showingFleet, setShowingFleet] = useState(false);
-  const [showingWork, setShowingWork] = useState(false);
-  const [showingOrg, setShowingOrg] = useState(false);
+  // The surface comes from the URL, so a knowledge object can be linked to and
+  // a reload returns to the same place.
+  const [showingWiki, setShowingWiki] = useState(initialView === "wiki");
+  const [showingFleet, setShowingFleet] = useState(initialView === "fleet");
+  const [showingWork, setShowingWork] = useState(initialView === "work");
+  const [showingOrg, setShowingOrg] = useState(initialView === "org");
   /**
    * Slide-over channel list. Below `lg` the panel is off-canvas, so this is the
    * only way to reach it; at `lg` and up it is a static column and this state
@@ -167,10 +178,37 @@ export function CommunityShell({
           : view === "work"
             ? showingWork
             : showingOrg;
-    setShowingWiki(view === "wiki" && !active);
-    setShowingFleet(view === "fleet" && !active);
-    setShowingWork(view === "work" && !active);
-    setShowingOrg(view === "org" && !active);
+    const next = !active;
+    setShowingWiki(view === "wiki" && next);
+    setShowingFleet(view === "fleet" && next);
+    setShowingWork(view === "work" && next);
+    setShowingOrg(view === "org" && next);
+    writeView(next ? view : undefined);
+  };
+
+  /**
+   * Keep the URL in step with the surface. `replace` so toggling panels does not
+   * fill the history stack, and `page`/`work` are dropped when leaving their
+   * surface so a stale slug never rides along.
+   */
+  const writeView = (view?: "wiki" | "work" | "org" | "fleet") => {
+    void navigate({
+      search: (previous) => ({
+        ...previous,
+        view,
+        page: view === "wiki" ? previous.page : undefined,
+        work: view === "work" ? previous.work : undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  /** Wiki page selection, mirrored into the URL for linking. */
+  const selectWikiPage = (slug: string) => {
+    void navigate({
+      search: (previous) => ({ ...previous, view: "wiki", page: slug }),
+      replace: true,
+    });
   };
 
   return (
@@ -364,7 +402,20 @@ export function CommunityShell({
               <Suspense
                 fallback={<ViewLoadingFallback label="Loading the board…" />}
               >
-                <WorkBoard channels={channels} />
+                <WorkBoard
+                  channels={channels}
+                  initialItemId={initialWorkId}
+                  onSelectItem={(id) => {
+                    void navigate({
+                      search: (previous) => ({
+                        ...previous,
+                        view: "work",
+                        work: id ?? undefined,
+                      }),
+                      replace: true,
+                    });
+                  }}
+                />
               </Suspense>
             ) : showingFleet ? (
               <Suspense
@@ -376,11 +427,28 @@ export function CommunityShell({
               <Suspense
                 fallback={<ViewLoadingFallback label="Loading the wiki…" />}
               >
-                <WikiView />
+                <WikiView
+                  initialSlug={initialPage}
+                  onSlugChange={selectWikiPage}
+                />
               </Suspense>
             ) : searching ? (
               <Suspense fallback={<ViewLoadingFallback label="Searching…" />}>
                 <SearchResults
+                  onOpenKnowledge={({ view, id }) => {
+                    setView(view);
+                    if (view === "wiki" && id) selectWikiPage(id);
+                    if (view === "work" && id) {
+                      void navigate({
+                        search: (previous) => ({
+                          ...previous,
+                          view: "work",
+                          work: id,
+                        }),
+                        replace: true,
+                      });
+                    }
+                  }}
                   term={searchTerm.trim()}
                   channels={channels}
                   onOpenChannel={(channelId) => {

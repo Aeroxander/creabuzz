@@ -10,6 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { normalizeSlug } from "./lib/slug";
+
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -256,14 +258,22 @@ export function useWikiPages(enabled: boolean) {
   };
 }
 
-/** [[wikilinks]] and #tags mentioned in wiki content. */
+/**
+ * `[[wikilinks]]` and `#tags` mentioned in wiki content.
+ *
+ * A wikilink is a page name written by hand, so it has to be normalised exactly
+ * the way the page dialog normalises a slug: `[[Release Notes!]]` used to become
+ * `release-notes!` here while the page's slug was `release-notes`, so the link
+ * never resolved and the backlinks panel would have missed it too.
+ */
 export function extractLinks(content: string): string[] {
   const links: string[] = [];
   const wikiLink = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g;
   while (true) {
     const match = wikiLink.exec(content);
     if (!match) break;
-    links.push(match[1].trim().replace(/\s+/g, "-").toLowerCase());
+    const slug = normalizeSlug(match[1]);
+    if (slug.length > 0) links.push(slug);
   }
   const tag = /(^|\s)#([a-zA-Z0-9_-]{2,40})/g;
   while (true) {

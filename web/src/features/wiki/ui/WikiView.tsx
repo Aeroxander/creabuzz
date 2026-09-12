@@ -11,6 +11,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  Link2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -25,7 +26,15 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 type Tab = "edit" | "graph";
 
-export function WikiView() {
+export function WikiView({
+  initialSlug,
+  onSlugChange,
+}: {
+  /** Page from the URL, so a page can be linked to and a reload returns to it. */
+  initialSlug?: string;
+  /** Reports the page now open, so the caller can put it in the URL. */
+  onSlugChange?: (slug: string) => void;
+} = {}) {
   const {
     pages,
     isLoading,
@@ -39,7 +48,7 @@ export function WikiView() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("edit");
   const [activeSlug, setActiveSlug] = useState<string | null>(
-    () => pages[0]?.slug ?? null,
+    () => initialSlug ?? pages[0]?.slug ?? null,
   );
   type EditMode = "wysiwyg" | "source" | "preview";
   const [mode, setMode] = useState<EditMode>("wysiwyg");
@@ -68,9 +77,15 @@ export function WikiView() {
       ? { slug: activeSlug, content, updatedAt: 0, draft: true }
       : null);
 
-  const selectPage = (page: WikiPage) => {
-    setActiveSlug(page.slug);
+  /** Open a page: local state plus the URL, so the page is linkable. */
+  const openPage = (slug: string) => {
+    setActiveSlug(slug);
     setMode("wysiwyg");
+    onSlugChange?.(slug);
+  };
+
+  const selectPage = (page: WikiPage) => {
+    openPage(page.slug);
   };
 
   const createPage = (slug: string) => {
@@ -78,8 +93,7 @@ export function WikiView() {
     if (existing) {
       selectPage(existing);
     } else {
-      setActiveSlug(slug);
-      setMode("wysiwyg");
+      openPage(slug);
     }
     setDialog(null);
   };
@@ -162,6 +176,29 @@ export function WikiView() {
   };
 
   const links = useMemo(() => extractLinks(content), [content]);
+
+  /**
+   * Copy a link to the page that is open.
+   *
+   * The URL carries `view=wiki&page=<slug>`, so the link opens the same page in
+   * the same surface for whoever follows it. Before this, a page had no address
+   * at all: a decision could not be linked to.
+   */
+  const copyPageLink = () => {
+    const slug = activeSlug;
+    if (!slug) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "wiki");
+    url.searchParams.set("page", slug);
+    if (navigator.clipboard) {
+      void navigator.clipboard
+        .writeText(url.toString())
+        .then(() => toast.success("Page link copied"))
+        .catch(() => toast.error("Couldn't copy the page link"));
+    } else {
+      toast.error("Couldn't copy the page link");
+    }
+  };
 
   const exportWiki = () => {
     const header = `# Buzz Wiki Export\n\nExported ${new Date().toISOString()} — ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
@@ -389,6 +426,15 @@ export function WikiView() {
             </span>
             <button
               type="button"
+              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+              data-testid="wiki-copy-link"
+              onClick={copyPageLink}
+              title="Copy a link to this page"
+            >
+              <Link2 className="h-3 w-3" /> Copy link
+            </button>
+            <button
+              type="button"
               onClick={exportWiki}
               className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
               aria-label="Export wiki as markdown"
@@ -509,7 +555,7 @@ export function WikiView() {
             const from = dialog.rename;
             setDialog(null);
             if (from === slug) return;
-            setActiveSlug(slug);
+            openPage(slug);
             // As with delete: ask the relay whether the old name is published,
             // or a page saved moments ago would keep living under its old slug.
             void (async () => {

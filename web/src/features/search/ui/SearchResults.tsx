@@ -10,14 +10,36 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { QueryError } from "@/shared/ui/query-error";
 
+/** What a hit is, and where opening it goes. */
+function hitTarget(event: { kind: number; tags: string[][] }): {
+  label: string;
+  view?: "wiki" | "work";
+  id?: string;
+} {
+  if (event.kind === 44001) {
+    const slug = event.tags.find((t) => t[0] === "d")?.[1];
+    // A wiki page has no channel: without this, its hit was unopenable.
+    return slug
+      ? { label: "wiki page", view: "wiki", id: slug }
+      : { label: "wiki page" };
+  }
+  if (event.kind === 44011 || event.kind === 1621) {
+    return { label: event.kind === 1621 ? "issue" : "task", view: "work" };
+  }
+  return { label: "message" };
+}
+
 export function SearchResults({
   term,
   channels,
   onOpenChannel,
+  onOpenKnowledge,
 }: {
   term: string;
   channels: Channel[];
   onOpenChannel: (channelId: string) => void;
+  /** Open a wiki page or the work board from a hit. */
+  onOpenKnowledge?: (target: { view: "wiki" | "work"; id?: string }) => void;
 }) {
   const channelIds = channels.map((c) => c.id);
   const { data, isLoading, error, refetch } = useSearch(term, channelIds);
@@ -73,17 +95,25 @@ export function SearchResults({
         {data.map((event) => {
           const channelId = eventChannelId(event);
           const channel = channelId ? channelById.get(channelId) : undefined;
+          const target = hitTarget(event);
+          const open = () => {
+            if (target.view) {
+              onOpenKnowledge?.({ view: target.view, id: target.id });
+              return;
+            }
+            if (channelId) onOpenChannel(channelId);
+          };
           return (
             <button
               key={event.id}
               type="button"
-              onClick={() => channelId && onOpenChannel(channelId)}
+              onClick={open}
               className="block w-full py-2 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
               data-testid="search-result"
             >
               <div className="flex items-baseline gap-2 text-xs text-black/60 dark:text-white/60">
                 <span className="font-medium text-black/70 dark:text-white/70">
-                  {channel ? `#${channel.name}` : "message"}
+                  {channel ? `#${channel.name}` : target.label}
                 </span>
                 <span>
                   {profileDisplayName(

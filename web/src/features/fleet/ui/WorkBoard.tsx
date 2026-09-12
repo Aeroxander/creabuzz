@@ -122,7 +122,17 @@ function reportActionFailure(what: string) {
   };
 }
 
-export function WorkBoard({ channels }: { channels: Channel[] }) {
+export function WorkBoard({
+  channels,
+  initialItemId,
+  onSelectItem,
+}: {
+  channels: Channel[];
+  /** Work item from the URL, so a task can be linked to. */
+  initialItemId?: string;
+  /** Reports the selected item, for the URL. */
+  onSelectItem?: (id: string | null) => void;
+}) {
   const {
     items,
     loading,
@@ -142,7 +152,15 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
   const [view, setView] = useState<"list" | "board">("board");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => initialItemId ?? null,
+  );
+
+  /** Selection is addressable: the detail pane can be linked to. */
+  const selectItem = (id: string | null) => {
+    setSelectedId(id);
+    onSelectItem?.(id);
+  };
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [due, setDue] = useState("");
   const [title, setTitle] = useState("");
@@ -481,7 +499,7 @@ export function WorkBoard({ channels }: { channels: Channel[] }) {
                   key={item.key}
                   item={item}
                   selected={selectedId === item.key}
-                  onSelect={() => setSelectedId(item.key)}
+                  onSelect={() => selectItem(item.key)}
                 />
               ))
             )}

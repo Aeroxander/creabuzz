@@ -1021,3 +1021,121 @@ test("reactions and edits do not appear as threaded replies", async ({
     page.getByTestId("message-row").first().getByText("👍 1"),
   ).toBeVisible();
 });
+
+test("a wiki page has an address that survives a reload", async ({ page }) => {
+  // Knowledge objects had no address at all: a decision on a page could not be
+  // linked to, and a reload dropped the surface back to the channel.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "wiki-page-1",
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    kind: 44001,
+    tags: [["d", "release-plan"]],
+    content: "The release plan",
+    sig: "sig",
+  });
+
+  await relay.install(page);
+  // Read the clipboard rather than trusting the toast: it proves the copied URL
+  // carries both parameters.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(`/c/alpha.example.com?view=wiki&page=release-plan`);
+
+  // The URL selects the page, not just the wiki surface.
+  await expect(page.getByTestId("wiki-page-release-plan")).toHaveAttribute(
+    "class",
+    /bg-black\/10/,
+    { timeout: 20_000 },
+  );
+
+  // Reloading keeps both the surface and the page.
+  await page.reload();
+  await expect(
+    page.getByTestId("wiki-wysiwyg").locator(".ProseMirror"),
+  ).toContainText("The release plan", { timeout: 20_000 });
+
+  // And the page offers its own link, which carries both parameters.
+  await page.getByTestId("wiki-copy-link").click();
+  await expect(page.getByText("Page link copied")).toBeVisible({
+    timeout: 10_000,
+  });
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("view=wiki");
+  expect(copied).toContain("page=release-plan");
+});
+
+test("search covers wiki pages and a hit opens the page", async ({ page }) => {
+  // Search only ever queried channel-scoped conversation, so a decision written
+  // on a wiki page was invisible to Cmd+K. Wiki pages are community-global, so
+  // they need their own (channel-less) filter.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  relay.seed({
+    id: "wiki-page-search-1",
+    pubkey: "b".repeat(64),
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 44001,
+    tags: [["d", "treasury-policy"]],
+    content: "The treasury policy: allowances and a wind-down path.",
+    sig: "sig",
+  });
+  await relay.install(page);
+
+  const filters: unknown[] = [];
+  await page.route("**/query", async (route) => {
+    const body = JSON.parse(route.request().postData() ?? "[]");
+    filters.push(body);
+    // Only the channel-less filter can legitimately return a wiki page: reply to
+    // it, and leave the channel-scoped one empty.
+    const wikiOnly = (Array.isArray(body) ? body : []).filter(
+      (filter: { kinds?: number[] }) => filter.kinds?.includes(44001),
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        wikiOnly.length > 0
+          ? [
+              {
+                id: "wiki-page-search-1",
+                pubkey: "b".repeat(64),
+                created_at: Math.floor(Date.now() / 1000),
+                kind: 44001,
+                tags: [["d", "treasury-policy"]],
+                content:
+                  "The treasury policy: allowances and a wind-down path.",
+                sig: "sig",
+              },
+            ]
+          : [],
+      ),
+    });
+  });
+
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("search-input").fill("treasury");
+  await page.keyboard.press("Enter");
+
+  const hit = page.getByTestId("search-result").first();
+  await expect(hit).toBeVisible({ timeout: 20_000 });
+  await expect(hit).toContainText("wiki page");
+  await expect(hit).toContainText("treasury policy");
+
+  // Two filters were sent: the channel-scoped one and the knowledge one.
+  expect(
+    filters.some((batch) =>
+      (Array.isArray(batch) ? batch : []).some(
+        (filter: { kinds?: number[]; "#h"?: string[] }) =>
+          filter.kinds?.includes(44001) && filter["#h"] === undefined,
+      ),
+    ),
+    "search must ask for community-global knowledge as well as channel chat",
+  ).toBe(true);
+
+  // Following the hit lands on the page itself.
+  await hit.click();
+  await expect(page).toHaveURL(/view=wiki/);
+  await expect(page).toHaveURL(/page=treasury-policy/);
+});
