@@ -85,6 +85,31 @@ async function mockRelay(page: Page, options?: { failReads?: boolean }) {
           ]),
         );
       }
+      if (kinds.includes(44010)) {
+        // A roster row, so the agents and org views render content.
+        ws.send(
+          JSON.stringify([
+            "EVENT",
+            subId,
+            {
+              id: "a".repeat(64),
+              pubkey: "1".repeat(64),
+              created_at: 205,
+              kind: 44010,
+              tags: [["d", "1".repeat(64)]],
+              content: JSON.stringify({
+                name: "buzz-tab",
+                runtype: "browser",
+                status: "available",
+                tools: ["chat"],
+                team: "Platform",
+                heartbeat: 205,
+              }),
+              sig: "sig",
+            },
+          ]),
+        );
+      }
       if (kinds.includes(44011)) {
         // A task, so the board renders cards rather than only its empty state.
         ws.send(
@@ -147,6 +172,10 @@ async function expectAccessible(page: Page, surface: string) {
       impact: v.impact,
       help: v.help,
       targets: v.nodes.slice(0, 3).map((n) => n.target.join(" ")),
+      // The element itself and the measured reason: a bare selector sends the
+      // next reader hunting through the DOM for what axe actually objected to.
+      html: v.nodes.slice(0, 2).map((n) => n.html.slice(0, 200)),
+      why: v.nodes[0]?.failureSummary?.replace(/\s+/g, " ").slice(0, 300),
     })),
     `${surface}: serious/critical accessibility violations`,
   ).toEqual([]);
@@ -209,6 +238,46 @@ test("the work board is accessible", async ({ page }) => {
     timeout: 20_000,
   });
   await expectAccessible(page, "work board");
+});
+
+test("the org view is accessible", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("org-toggle").click();
+  await expect(page.getByText("buzz-tab").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "org");
+});
+
+test("search results are accessible", async ({ page }) => {
+  await mockRelay(page);
+  // Search goes through the HTTP bridge (NIP-50), not the socket.
+  await page.route("**/query", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "e".repeat(64),
+          pubkey: "b".repeat(64),
+          created_at: 200,
+          kind: 9,
+          tags: [["h", CHANNEL_ID]],
+          content: "A message with a [[wikilink]] and #tag",
+          sig: "sig",
+        },
+      ]),
+    });
+  });
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.getByTestId("search-input").fill("wikilink");
+  await page.keyboard.press("Enter");
+  // Results, not the channel view again: the seeded message matches.
+  await expect(page.getByTestId("search-result").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "search");
 });
 
 test("the agents view is accessible", async ({ page }) => {

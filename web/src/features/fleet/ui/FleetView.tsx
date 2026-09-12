@@ -56,7 +56,10 @@ function AgentCard({ agent }: { agent: AgentCapabilities }) {
           avatarUrl={null}
           displayName={agent.name}
           size="md"
-          className={agent.alive ? "" : "opacity-50"}
+          // Offline reads as desaturated, not transparent: half opacity halves
+          // the contrast of the initials underneath, which axe flags as
+          // serious (a name you cannot read is not a status).
+          className={agent.alive ? "" : "grayscale"}
         />
         <span
           className={`absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white dark:border-white/10 ${
