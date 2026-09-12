@@ -1,6 +1,9 @@
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 // Relative so this module can be exercised by `node --test` (see
 // models.test.mjs); the kind numbers are plain constants with no imports.
+// Extension included on purpose: this module is driven by `models.test.mjs`
+// under `node --test`, which does not resolve extensionless specifiers.
+import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
 import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
@@ -57,6 +60,8 @@ export interface LaunchRecord {
   token: string | null;
   treasury: string | null;
   admission: "curated" | "community";
+  /** How the supply is split. Absent on older records: the standard split. */
+  allocation: SupplyAllocation;
   tokenPlan: {
     mode: "mint";
     name: string;
@@ -204,6 +209,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     treasury: tagValue(event, "treasury"),
     admission:
       tagValue(event, "admission") === "community" ? "community" : "curated",
+    allocation: parseAllocation(contentObject(event).allocation),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
+import type { SupplyAllocation } from "./lib/allocation";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -133,6 +134,7 @@ export interface CreateLaunchInput {
   admission: "curated" | "community";
   channels: string[];
   tokenPlan?: TokenPlan;
+  allocation?: SupplyAllocation;
 }
 
 export function useCreateLaunch() {
@@ -160,6 +162,7 @@ export function useCreateLaunch() {
       if (input.tickSpacing) content.tickSpacing = input.tickSpacing;
       if (input.requiredRaised) content.requiredRaised = input.requiredRaised;
       if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
+      if (input.allocation) content.allocation = input.allocation;
       return publishMirror({ kind: KIND_LAUNCH_RECORD, tags, content });
     },
     onSuccess: () => {

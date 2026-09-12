@@ -38,6 +38,12 @@ import { erc20BalanceOf, getRpcEndpoint, setRpcEndpoint } from "../chain";
 import { useAuctionProgress, ProgressBar, StageBadge } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
+import { floorPricePerToken } from "../lib/launch-params";
+import {
+  ALLOCATION_LABELS,
+  impliedFdv,
+  tokensForBudget,
+} from "../lib/allocation";
 import {
   SETTLEMENT_TERMS,
   toAtomic,
@@ -379,6 +385,78 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
             )}
           </div>
         ) : null}
+      </Card>
+      {/*
+        The buyer's numbers. A launch page that shows only the sale price hides
+        what the rest of the supply implies, which is the figure a bidder actually
+        weighs.
+      */}
+      <Card className="p-4" data-testid="launch-tokenomics">
+        <h2 className="text-base font-semibold">Token and supply</h2>
+        {(() => {
+          const pricePerToken = record.floorPrice
+            ? floorPricePerToken(toAtomic(record.floorPrice) ?? 0n)
+            : null;
+          // The record carries the sale tranche in *whole* tokens (the wizard's
+          // field says so); only the Q96 price is in smallest units.
+          const saleTokens = toAtomic(record.tokenPlan?.supply);
+          const saleShare = record.allocation.sale;
+          // The record carries the tranche that is sold, not the total supply;
+          // the allocation's sale share is what turns one into the other.
+          const totalSupply =
+            saleTokens !== null && saleShare > 0
+              ? (saleTokens * 100n) / BigInt(saleShare)
+              : null;
+          const fdv =
+            pricePerToken !== null && totalSupply !== null
+              ? impliedFdv(pricePerToken, totalSupply)
+              : null;
+          const perThousand = tokensForBudget(1_000_000_000n, pricePerToken);
+          return (
+            <>
+              <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+                {ALLOCATION_LABELS.map(({ key, label }) => {
+                  const share = record.allocation[key];
+                  const tokens =
+                    totalSupply !== null
+                      ? (totalSupply * BigInt(Math.round(share))) / 100n
+                      : null;
+                  return (
+                    <div
+                      key={key}
+                      className="flex justify-between gap-2 py-1.5"
+                    >
+                      <dt className="text-black/60 dark:text-white/60">
+                        {label}
+                      </dt>
+                      <dd className="tabular-nums">
+                        {share}%
+                        {tokens !== null
+                          ? ` · ${formatAtomic(tokens, 0)} tokens`
+                          : ""}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+              <p className="mt-2 text-sm">
+                <span className="text-black/60 dark:text-white/60">
+                  Valuation at the floor
+                </span>{" "}
+                <span className="font-medium tabular-nums">
+                  {fdv !== null ? formatMoney(fdv) : "—"}
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+                {perThousand !== null
+                  ? `$1,000 buys about ${formatAtomic(perThousand, 0)} tokens at the floor price — less if the sale clears higher.`
+                  : "Link a floor price and a token plan to see what a budget buys."}{" "}
+                The sale clears at one uniform price; you pay that, not your
+                maximum.
+              </p>
+            </>
+          );
+        })()}
       </Card>
       {/*
         What a bidder is agreeing to. The two outcomes decide whether money comes

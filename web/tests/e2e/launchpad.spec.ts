@@ -271,3 +271,50 @@ test("the founder sees what is still missing before deploying", async ({
   const parameters = readiness.locator("li", { hasText: "Sale parameters" });
   await expect(parameters).not.toContainText("Floor price on the tick grid");
 });
+
+test("the buyer sees what the rest of the supply implies", async ({ page }) => {
+  // A launch page that only shows the sale price hides the figure that decides
+  // whether the sale is worth bidding on.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+
+  const tokenomics = page.getByTestId("launch-tokenomics");
+  await expect(tokenomics).toBeVisible({ timeout: 15_000 });
+  // 200M tokens sold is 20% of a billion; at a cent each that is a 10M valuation.
+  await expect(tokenomics).toContainText("Sale");
+  await expect(tokenomics).toContainText("20%");
+  // Whole tokens, not a fraction of one.
+  await expect(tokenomics).toContainText("200,000,000 tokens");
+  // The snapped floor is a hair under a cent, so the valuation is a hair under
+  // 10M: the point is that it is shown at all, as money.
+  await expect(tokenomics).toContainText(/9,999,000|10,000,000/);
+  await expect(tokenomics).toContainText("Valuation at the floor");
+  await expect(tokenomics).toContainText("$1,000 buys about");
+  await expect(tokenomics).toContainText("you pay that, not your maximum");
+});
+
+test("an allocation that does not add up blocks the launch", async ({
+  page,
+}) => {
+  // 105% allocated is a token someone cannot have.
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Four");
+  await page.getByLabel("Launch id").fill("nebula-four");
+
+  const sale = page.getByTestId("launch-allocation-sale");
+  await sale.fill("30");
+  await expect(page.getByTestId("launch-allocation-issue")).toContainText(
+    "110%",
+  );
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeDisabled();
+
+  await page.getByTestId("launch-allocation-standard").click();
+  await expect(page.getByTestId("launch-allocation-issue")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeEnabled();
+});

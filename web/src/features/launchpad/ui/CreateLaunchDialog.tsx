@@ -11,6 +11,12 @@ import {
   suggestSymbol,
 } from "../models";
 import {
+  ALLOCATION_LABELS,
+  STANDARD_ALLOCATION,
+  allocationIssue,
+  type SupplyAllocation,
+} from "../lib/allocation";
+import {
   hasBlockingIssue,
   standardLaunchPreset,
   validateLaunchParams,
@@ -90,6 +96,10 @@ export function CreateLaunchDialog({
    * discussed; the wizard used to always publish an empty list, so a launch
    * could never be bound to a channel from the web client.
    */
+  const [allocation, setAllocation] = useState<SupplyAllocation>(
+    () => initial?.allocation ?? { ...STANDARD_ALLOCATION },
+  );
+  const allocationMessage = allocationIssue(allocation);
   const [boundChannels, setBoundChannels] = useState<string[]>(
     initial?.channels ?? [],
   );
@@ -172,7 +182,8 @@ export function CreateLaunchDialog({
     name.trim().length > 0 &&
     (chainId.trim() === "" || /^\d+$/.test(chainId.trim())) &&
     tokenValid &&
-    !paramBlocked;
+    !paramBlocked &&
+    allocationMessage === null;
 
   /**
    * Fill in the shape a project normally wants: a fifth of the supply at a cent
@@ -231,6 +242,7 @@ export function CreateLaunchDialog({
       treasury: treasury.trim(),
       admission,
       channels: boundChannels,
+      allocation,
       tokenPlan:
         tokenMode === "mint"
           ? {
@@ -451,6 +463,60 @@ export function CreateLaunchDialog({
               value={currency}
             />
           </Field>
+          <div
+            className="rounded-lg border border-black/10 p-3 dark:border-white/10"
+            data-testid="launch-allocation"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">Supply allocation</p>
+              <Button
+                data-testid="launch-allocation-standard"
+                onClick={() => setAllocation({ ...STANDARD_ALLOCATION })}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Standard split
+              </Button>
+            </div>
+            <p className="mt-0.5 text-xs text-black/60 dark:text-white/60">
+              The part that is not sold decides what the sold part is worth.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {ALLOCATION_LABELS.map(({ key, label, hint }) => (
+                <label className="flex flex-col gap-0.5 text-xs" key={key}>
+                  <span className="font-medium">{label} %</span>
+                  <input
+                    className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-sm tabular-nums dark:border-white/15"
+                    data-testid={`launch-allocation-${key}`}
+                    inputMode="numeric"
+                    min={0}
+                    max={100}
+                    onChange={(event) =>
+                      setAllocation((previous) => ({
+                        ...previous,
+                        [key]:
+                          Number(event.target.value.replace(/\D/g, "")) || 0,
+                      }))
+                    }
+                    type="number"
+                    value={allocation[key]}
+                  />
+                  <span className="text-black/60 dark:text-white/60">
+                    {hint}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {allocationMessage ? (
+              <p
+                className="mt-2 text-xs text-red-600 dark:text-red-400"
+                data-testid="launch-allocation-issue"
+              >
+                {allocationMessage}
+              </p>
+            ) : null}
+          </div>
           <Field
             id="launch-floor"
             label="Floor price"
