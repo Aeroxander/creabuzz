@@ -1,16 +1,27 @@
 import { ChevronDown, Hash, LoaderCircle, Lock, Users } from "lucide-react";
 import { useState } from "react";
 
+import { errorMessage } from "@/shared/ui/query-error";
+
 import type { Channel } from "../use-channels";
 
 export function ChannelSidebar({
   channels,
   selectedId,
   onSelect,
+  hasMore = false,
+  loadingMore = false,
+  moreError = null,
+  onLoadMore,
 }: {
   channels: Channel[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** A community can have more channels than one relay page. */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  moreError?: unknown;
+  onLoadMore?: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -58,6 +69,39 @@ export function ChannelSidebar({
               )}
             </button>
           ))}
+
+          {hasMore || loadingMore || moreError != null ? (
+            <div className="px-2 py-2">
+              {moreError != null ? (
+                <p
+                  className="text-xs text-amber-700 dark:text-amber-300"
+                  data-testid="channels-more-error"
+                  role="alert"
+                >
+                  Couldn't load more channels — {errorMessage(moreError)}.{" "}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={onLoadMore}
+                  >
+                    Try again
+                  </button>
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white/70"
+                  data-testid="load-more-channels"
+                  disabled={loadingMore}
+                  onClick={onLoadMore}
+                >
+                  {loadingMore
+                    ? "Loading more channels…"
+                    : "Load more channels"}
+                </button>
+              )}
+            </div>
+          ) : null}
         </nav>
       )}
       <p className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">

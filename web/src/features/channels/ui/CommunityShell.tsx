@@ -55,12 +55,21 @@ export function CommunityShell({
   initialChannelId,
   initialMessageId,
   host,
+  hasMoreChannels = false,
+  loadingMoreChannels = false,
+  moreChannelsError = null,
+  onLoadMoreChannels,
 }: {
   channels: Channel[];
   initialChannelId?: string;
   /** Message permalink target: scrolled to and highlighted, then released. */
   initialMessageId?: string;
   host: string;
+  /** Paging for a community with more channels than one relay page. */
+  hasMoreChannels?: boolean;
+  loadingMoreChannels?: boolean;
+  moreChannelsError?: unknown;
+  onLoadMoreChannels?: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialChannelId ?? null,
@@ -301,6 +310,15 @@ export function CommunityShell({
           </button>
           <ChannelSidebar
             channels={channels}
+            hasMore={
+              onLoadMoreChannels != null &&
+              (hasMoreChannels ||
+                loadingMoreChannels ||
+                moreChannelsError != null)
+            }
+            loadingMore={loadingMoreChannels}
+            moreError={moreChannelsError}
+            onLoadMore={onLoadMoreChannels}
             selectedId={activeChannel?.id ?? null}
             onSelect={(id) => {
               selectChannel(id);

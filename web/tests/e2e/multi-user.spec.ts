@@ -864,3 +864,43 @@ test("a locked passkey identity does not mint a second key", async ({
     timeout: 20_000,
   });
 });
+
+test("a community with more channels than one page can be paged", async ({
+  page,
+}) => {
+  // The sidebar asked for one page of channel metadata and had no way to ask
+  // for more, so every channel past the first 200 was unreachable — invisible,
+  // with nothing on screen saying so.
+  const relay = createMockRelay();
+  relay.seed(channelEvent());
+  for (let index = 1; index <= 210; index += 1) {
+    relay.seed({
+      id: `channel-meta-${index}`,
+      pubkey: "b".repeat(64),
+      created_at: 2_000 + index,
+      kind: 39000,
+      tags: [
+        ["d", `chan-${String(index).padStart(3, "0")}`],
+        ["name", `room-${String(index).padStart(3, "0")}`],
+      ],
+      content: "",
+      sig: "sig",
+    });
+  }
+
+  await relay.install(page);
+  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+
+  await expect(page.getByTestId("channel-room-210")).toBeVisible({
+    timeout: 15_000,
+  });
+  // The oldest ten are past the first page.
+  await expect(page.getByTestId("channel-room-001")).toHaveCount(0);
+
+  await page.getByTestId("load-more-channels").click();
+  await expect(page.getByTestId("channel-room-001")).toBeVisible({
+    timeout: 15_000,
+  });
+  // A short page ends the walk: no button left to press.
+  await expect(page.getByTestId("load-more-channels")).toHaveCount(0);
+});

@@ -92,7 +92,7 @@ export function CommunityHomePage() {
     );
   }
 
-  if (channels.data && channels.data.length > 0) {
+  if (channels.channels.length > 0) {
     const initialChannelId =
       typeof search.channel === "string" ? search.channel : undefined;
     const initialMessageId =
@@ -100,10 +100,14 @@ export function CommunityHomePage() {
     return (
       <div className="flex h-dvh min-h-0 w-full flex-1">
         <CommunityShell
-          channels={channels.data}
+          channels={channels.channels}
           initialChannelId={initialChannelId}
           initialMessageId={initialMessageId}
           host={host}
+          hasMoreChannels={channels.hasMoreChannels}
+          loadingMoreChannels={channels.loadingMore}
+          moreChannelsError={channels.moreError}
+          onLoadMoreChannels={() => void channels.loadMoreChannels()}
         />
       </div>
     );
