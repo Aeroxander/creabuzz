@@ -15,6 +15,18 @@ interface IContinuousClearingAuction {
     function isGraduated() external view returns (bool);
     function currencyRaised() external view returns (uint256);
     function lbpInitializationParams() external view returns (LBPInitializationParams memory);
+    /// @notice The currency bid in (address(0) = native).
+    function currency() external view returns (address);
+    /// @notice The token the sale distributes.
+    function token() external view returns (address);
+    /// @notice Recipient allowed to call `sweepCurrency` after the auction ends.
+    function fundsRecipient() external view returns (address);
+    /// @notice Recipient allowed to call `sweepUnsoldTokens` after the auction ends.
+    function tokensRecipient() external view returns (address);
+    /// @notice Push the net raised currency to `fundsRecipient` (recipient only).
+    function sweepCurrency() external;
+    /// @notice Push unsold tokens to `tokensRecipient` (recipient only).
+    function sweepUnsoldTokens() external;
 }
 
 /// @notice Downstream strategy consumed by a graduated auction. The canonical

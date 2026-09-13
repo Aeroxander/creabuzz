@@ -331,6 +331,21 @@ export function ManagePanel({
           ))}
         </ul>
       </Card>
+      <Card className="p-4" data-testid="launch-graduation">
+        <h2 className="text-base font-semibold">Graduation</h2>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          At graduation the executes-and-moves contract (set as the auction's
+          funds and tokens recipient at deploy) sweeps the raise, forwards the
+          treasury share, escrows the reserve for the TokenMaster floor, and
+          returns unsold tokens. Apptoken rails, not a v4 pool.
+        </p>
+        <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+          The reserve releases only to the recorded pool by treasury action; if
+          the pool never lands, the treasury can withdraw the stuck reserve. The
+          chain is the ledger — this panel states the mechanism; the contract
+          moves the money.
+        </p>
+      </Card>
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">

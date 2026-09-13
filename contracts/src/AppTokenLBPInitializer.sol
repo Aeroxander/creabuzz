@@ -8,6 +8,11 @@ import {IContinuousClearingAuction, ILBPInitializer} from "./CCA.sol";
 /// `lbpInitializationParams` and routes value into apptoken rails instead of
 /// a Uniswap v4 pool.
 ///
+/// Superseded by `GraduationExecutor` (same directory) for launches that want
+/// the money to actually move: the executor IS the sweep recipient and pulls,
+/// splits, and forwards the proceeds atomically. Keep this accounting-only
+/// contract for reference/history; do not deploy it for new launches.
+///
 /// Phase 1 (this contract): permissioned accounting + events. Anyone calls
 /// `graduate(auction)`; the call pulls the auction's final clearing price,
 /// tokens sold, and net currency raised, verifies graduation, and splits the

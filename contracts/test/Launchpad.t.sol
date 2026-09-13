@@ -8,9 +8,31 @@ import {AuctionLauncher} from "../src/AuctionLauncher.sol";
 import {AppTokenLBPInitializer} from "../src/AppTokenLBPInitializer.sol";
 import {IContinuousClearingAuction} from "../src/CCA.sol";
 
+contract MockERC20 {
+    mapping(address => uint256) public balanceOf;
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "insufficient");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
 contract MockAuction is IContinuousClearingAuction {
     bool public graduated;
     LBPInitializationParams public params;
+    MockERC20 public currencyToken;
+    MockERC20 public saleToken;
+    address public override fundsRecipient;
+    address public override tokensRecipient;
+
+    constructor() {
+        currencyToken = new MockERC20();
+        saleToken = new MockERC20();
+    }
 
     function setGraduated(bool g) external {
         graduated = g;
@@ -20,12 +42,40 @@ contract MockAuction is IContinuousClearingAuction {
         params = LBPInitializationParams(price, sold, raised);
     }
 
+    function setRecipients(address funds_, address tokens_) external {
+        fundsRecipient = funds_;
+        tokensRecipient = tokens_;
+    }
+
+    function fund(uint256 currency_, uint256 tokens_) external {
+        currencyToken.mint(address(this), currency_);
+        saleToken.mint(address(this), tokens_);
+    }
+
     function isGraduated() external view override returns (bool) {
         return graduated;
     }
 
     function currencyRaised() external view override returns (uint256) {
         return params.currencyRaised;
+    }
+
+    function currency() external view override returns (address) {
+        return address(currencyToken);
+    }
+
+    function token() external view override returns (address) {
+        return address(saleToken);
+    }
+
+    function sweepCurrency() external override {
+        require(msg.sender == fundsRecipient, "not funds recipient");
+        currencyToken.transfer(fundsRecipient, currencyToken.balanceOf(address(this)));
+    }
+
+    function sweepUnsoldTokens() external override {
+        require(msg.sender == tokensRecipient, "not tokens recipient");
+        saleToken.transfer(tokensRecipient, saleToken.balanceOf(address(this)));
     }
 
     function lbpInitializationParams() external view override returns (LBPInitializationParams memory) {

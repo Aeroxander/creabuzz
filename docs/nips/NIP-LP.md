@@ -192,3 +192,23 @@ side. The workspace data the root was computed from stays private; the root
 proves the computation, never exposes the source. Malformed roots (wrong
 length, missing program) are refused by clients rather than shown as
 authoritative.
+
+
+## Graduation execution (apptoken rails)
+
+Decision (§7.2, 2026-09-13): the launch graduates into **apptoken rails**,
+not a Uniswap v4 pool. `contracts/src/GraduationExecutor.sol` is deployed as
+the auction's `fundsRecipient` AND `tokensRecipient` at launch (the CCA's
+sweeps are recipient-only), so one call atomically:
+
+1. `sweepCurrency()` — net raised currency into the executor (protocol fee
+   already taken by the immutable fee controller),
+2. `sweepUnsoldTokens()` — remaining supply back,
+3. split by `reserveBps`: reserve → escrow for the TokenMaster floor,
+   remainder → treasury; unsold tokens → treasury,
+4. emit `GraduationExecuted` (mirrored as a 47005 `sweep` receipt).
+
+The reserve releases once, treasury-only, to the recorded pool
+(`releaseReserve`, mirrored as 47005 `lock`); if the pool never lands the
+treasury can `withdrawStuckReserve`. The accounting-only
+`AppTokenLBPInitializer` is superseded — do not deploy it for new launches.
