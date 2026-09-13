@@ -6,6 +6,7 @@ import {
   buildLaunches,
   hasFounderCommitments,
   launchCoordinate,
+  parseScoreRoot,
 } from "./models.ts";
 import { hasBlockingIssue, validateLaunchParams } from "./lib/launch-params.ts";
 
@@ -195,4 +196,48 @@ test("founder commitments round-trip and gate the live stage", () => {
   assert.equal(bare.longPitch, null);
   assert.equal(bare.updateCadence, null);
   assert.deepEqual(bare.ipList, []);
+});
+
+test("a score root parses and malformed roots are refused", () => {
+  const KEY = "a".repeat(64);
+  const good = {
+    id: "s1",
+    pubkey: KEY,
+    created_at: 300,
+    kind: 37006,
+    tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
+    content: JSON.stringify({
+      program: "trustgraphs.output.nostr-member.v1",
+      root: "0x" + "11".repeat(32),
+      epoch: "12",
+      anchorBlock: 500,
+      indexerUrl: "https://idx.example.com",
+    }),
+    sig: "sig",
+  };
+  const parsed = parseScoreRoot(good);
+  assert.equal(parsed.program, "trustgraphs.output.nostr-member.v1");
+  assert.equal(parsed.root, "0x" + "11".repeat(32));
+  assert.equal(parsed.epoch, "12");
+  assert.equal(parsed.anchorBlock, 500);
+  assert.equal(parsed.indexerUrl, "https://idx.example.com");
+
+  // A short root is not a Merkle root: refuse rather than claim authority.
+  assert.equal(
+    parseScoreRoot({
+      ...good,
+      id: "s2",
+      content: JSON.stringify({ program: "p", root: "0xdead", epoch: "1" }),
+    }),
+    null,
+  );
+  // Right kind but no program: refused.
+  assert.equal(
+    parseScoreRoot({
+      ...good,
+      id: "s3",
+      content: JSON.stringify({ root: "0x" + "11".repeat(32), epoch: "1" }),
+    }),
+    null,
+  );
 });

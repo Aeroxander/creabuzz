@@ -11,14 +11,17 @@ import {
   type KIND_LAUNCH_PROPOSAL,
   type KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
+  KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
   type KIND_LAUNCH_UPDATE,
   LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
 import {
   buildLaunches,
   launchCoordinate,
+  parseScoreRoot,
   type Launch,
   type LaunchStage,
+  type ScoreRoot,
 } from "./models";
 
 export const launchesQueryKey = ["launchpad", "launches"];
@@ -64,6 +67,32 @@ export function useLaunches() {
     queryKey: launchesQueryKey,
     queryFn: fetchLaunches,
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+const scoreRootsQueryKey = ["launchpad", "score-roots"];
+
+/**
+ * The community's latest trustgraph score roots (kind 37006).
+ *
+ * An operator publishes the proven Merkle root per epoch; clients verify
+ * individual score claims against it (`lib/trust-score.ts`). Fetching them is
+ * a plain Nostr query — no trustgraphs deployment required for the read side.
+ */
+export async function fetchScoreRoots(): Promise<ScoreRoot[]> {
+  const events = await queryEvents(relayWsUrl(), {
+    kinds: [LAUNCHPAD_SCORE_ROOT_KIND],
+    limit: 50,
+  });
+  return events.map(parseScoreRoot).filter((r): r is ScoreRoot => r !== null);
+}
+
+export function useScoreRoots() {
+  return useQuery({
+    queryKey: scoreRootsQueryKey,
+    queryFn: fetchScoreRoots,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 }

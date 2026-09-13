@@ -10,6 +10,7 @@ import {
   KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
   KIND_LAUNCH_UPDATE,
+  KIND_SCORE_ROOT,
 } from "../../shared/constants/kinds.ts";
 
 export type LaunchStage =
@@ -496,4 +497,44 @@ export function hasFounderCommitments(record: LaunchRecord): boolean {
     Boolean(record.budget) &&
     Boolean(record.updateCadence)
   );
+}
+
+export interface ScoreRoot {
+  id: string;
+  author: string;
+  createdAt: number;
+  program: string;
+  root: string;
+  epoch: string;
+  indexerUrl: string | null;
+  anchorBlock: number | null;
+}
+
+/**
+ * Parse a score-root record (kind 37006, d = program:epoch).
+ *
+ * A trustgraph operator publishes the proven Merkle root of a community's
+ * scores each epoch; clients verify individual score claims against it with
+ * `lib/trust-score.ts` (no prover needed). Malformed records are refused
+ * rather than shown as authoritative.
+ */
+export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
+  if (event.kind !== KIND_SCORE_ROOT) return null;
+  const id = tagValue(event, "d");
+  if (!id) return null;
+  const body = contentObject(event);
+  const program = str(body.program);
+  const root = str(body.root);
+  const epoch = str(body.epoch);
+  if (!program || !root || !/^0x[0-9a-fA-F]{64}$/.test(root)) return null;
+  return {
+    id,
+    author: event.pubkey,
+    createdAt: event.created_at,
+    program,
+    root,
+    epoch: epoch || id,
+    indexerUrl: str(body.indexerUrl),
+    anchorBlock: int(body.anchorBlock),
+  };
 }

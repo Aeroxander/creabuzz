@@ -35,6 +35,7 @@ function formatMoney(value: string | bigint | null | undefined): string {
   });
 }
 import { erc20BalanceOf, getRpcEndpoint, setRpcEndpoint } from "../chain";
+import { useScoreRoots } from "../use-launches";
 import { useAuctionProgress, ProgressBar, StageBadge } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
@@ -512,7 +513,60 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           </ul>
         )}
       </Card>
+      <ScoreRootsCard />
     </div>
+  );
+}
+
+/**
+ * The community's proven score roots (kind 37006), read as plain Nostr data.
+ *
+ * Shows the latest epoch's root, its program, and the indexer that serves
+ * proofs. It does not claim a score for any member here — verification of an
+ * individual claim happens against a specific leaf+proof
+ * (`lib/trust-score.ts`), surfaced where a score is claimed.
+ */
+function ScoreRootsCard() {
+  const roots = useScoreRoots();
+  const latest = roots.data?.[0] ?? null;
+  if (!latest) return null;
+  return (
+    <Card className="p-4" data-testid="launch-score-roots">
+      <h2 className="text-base font-semibold">Community scores</h2>
+      <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+        <div className="flex justify-between gap-2 py-1.5">
+          <dt className="text-black/60 dark:text-white/60">Program</dt>
+          <dd className="tabular-nums">{latest.program}</dd>
+        </div>
+        <div className="flex justify-between gap-2 py-1.5">
+          <dt className="text-black/60 dark:text-white/60">Epoch</dt>
+          <dd className="tabular-nums">{latest.epoch}</dd>
+        </div>
+        <div className="flex justify-between gap-2 py-1.5">
+          <dt className="text-black/60 dark:text-white/60">Root</dt>
+          <dd className="font-mono text-xs tabular-nums">
+            {latest.root.slice(0, 18)}…
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+        Scores are proven against this root; a claimed score on a profile is
+        only shown as proven when its Merkle proof verifies client-side.
+        {latest.anchorBlock !== null
+          ? ` Anchored at block ${latest.anchorBlock}.`
+          : ""}
+      </p>
+      {latest.indexerUrl ? (
+        <a
+          className="mt-1 inline-block text-xs text-primary underline"
+          href={latest.indexerUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Proofs and score file
+        </a>
+      ) : null}
+    </Card>
   );
 }
 

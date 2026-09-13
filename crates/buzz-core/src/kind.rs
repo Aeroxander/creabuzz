@@ -671,6 +671,10 @@ pub const KIND_LAUNCH_UPDATE: u32 = 47003;
 pub const KIND_LAUNCH_PROPOSAL: u32 = 47004;
 /// NIP-LP: chain-state receipt mirror (regular). Advisory.
 pub const KIND_LAUNCH_RECEIPT: u32 = 47005;
+/// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
+/// Published by a scoring operator with its Merkle root and proof pointer;
+/// clients verify individual score claims against the root without a prover.
+pub const KIND_SCORE_ROOT: u32 = 37006;
 
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
@@ -810,6 +814,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_LAUNCH_UPDATE,
     KIND_LAUNCH_PROPOSAL,
     KIND_LAUNCH_RECEIPT,
+    KIND_SCORE_ROOT,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -910,6 +915,7 @@ const _: () = assert!(is_parameterized_replaceable(KIND_EVENT_REMINDER)); // 303
 const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 30622 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT)); // 30621 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD)); // 37001 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_SCORE_ROOT)); // 37006 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

@@ -48,8 +48,9 @@ semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
 | `47003` | Launch update | regular, `a` = launch coordinate | founder key | signed update: title + markdown body + links |
 | `47004` | Proposal record | regular, `a` = launch coordinate | founder/member | proposal: onchain id if any, plain vs futarchy, issue link, state |
 | `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
+| `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
 
-Kinds `37002`–`37009` and `47006`–`47009` are reserved for future launchpad use.
+Kinds `37002`–`37009` (except `37006`) and `47006`–`47009` are reserved for future launchpad use.
 
 ## `37001`: the launch record
 
@@ -179,3 +180,15 @@ This NIP does not define the auction mechanism, token standard, vesting
 locks, or governance rules — those live in the contract layer. It does not
 grant the launch signer any authority over linked projects, repositories,
 or channels. It does not define nested launches.
+
+### `37006`: score-root record
+
+An operator publishes the proven Merkle root of a community's scores once per
+epoch: `{program, root, epoch, indexerUrl?, anchorBlock?}`. The `root` is the
+same root `TrustGatedHook` consumes for gate gating; clients verify an
+individual score claim against it with a sorted-pair Merkle proof and the
+leaf `keccak256(abi.encode(member, score))` — no prover needed on the read
+side. The workspace data the root was computed from stays private; the root
+proves the computation, never exposes the source. Malformed roots (wrong
+length, missing program) are refused by clients rather than shown as
+authoritative.

@@ -316,6 +316,9 @@ importers:
       '@isomorphic-git/lightning-fs':
         specifier: ^4.6.2
         version: 4.6.3
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
       '@op-engineering/op-sqlite':
         specifier: ^18.1.4
         version: 18.1.4(@sqlite.org/sqlite-wasm@3.53.0-build1)(react-native@0.87.1(@babel/core@7.29.0)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)

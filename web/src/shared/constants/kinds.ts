@@ -19,6 +19,8 @@ export const KIND_LAUNCH_UPDATE = 47003;
 export const KIND_LAUNCH_PROPOSAL = 47004;
 /** NIP-LP: chain-state receipt mirror. */
 export const KIND_LAUNCH_RECEIPT = 47005;
+/** NIP-LP (reserved): trustgraph score root published by an operator. */
+export const KIND_SCORE_ROOT = 37006;
 /** All NIP-LP event kinds. */
 export const LAUNCHPAD_EVENT_KINDS = [
   KIND_LAUNCH_RECORD,
@@ -26,4 +28,5 @@ export const LAUNCHPAD_EVENT_KINDS = [
   KIND_LAUNCH_UPDATE,
   KIND_LAUNCH_PROPOSAL,
   KIND_LAUNCH_RECEIPT,
+  KIND_SCORE_ROOT,
 ] as const;

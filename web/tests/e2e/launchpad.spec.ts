@@ -34,12 +34,31 @@ function record(auction?: string) {
       floorPrice: "792281625140000",
       tickSpacing: "79228162514",
       requiredRaised: "299999999998",
+      budget: "50000000000",
       tokenPlan: {
         mode: "mint",
         name: "Nebula Token",
         symbol: "NBL",
         supply: "200000000",
       },
+    }),
+    sig: "sig",
+  };
+}
+
+function scoreRoot() {
+  return {
+    id: "score-root-1",
+    pubkey: FOUNDER,
+    created_at: 300,
+    kind: 37006,
+    tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
+    content: JSON.stringify({
+      program: "trustgraphs.output.nostr-member.v1",
+      root: "0x" + "11".repeat(32),
+      epoch: "12",
+      anchorBlock: 500,
+      indexerUrl: "https://idx.example.com",
     }),
     sig: "sig",
   };
@@ -101,6 +120,9 @@ async function mockRelay(page: import("@playwright/test").Page) {
         ws.send(JSON.stringify(["EVENT", subId, record(servedAuction)]));
       if (kinds.includes(47003))
         ws.send(JSON.stringify(["EVENT", subId, update()]));
+      if (kinds.includes(37006)) {
+        ws.send(JSON.stringify(["EVENT", subId, scoreRoot()]));
+      }
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
@@ -264,7 +286,7 @@ test("the founder sees what is still missing before deploying", async ({
 
   const readiness = page.getByTestId("launch-readiness");
   await expect(readiness).toBeVisible({ timeout: 15_000 });
-  await expect(readiness).toContainText("3 steps still open");
+  await expect(readiness).toContainText("4 steps still open");
   await expect(readiness).toContainText("Sale parameters");
   await expect(readiness).toContainText("Auction contract");
   await expect(readiness).toContainText(
@@ -375,4 +397,109 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
         content: expect.stringContaining("0x" + "ab".repeat(32)),
       }),
     );
+});
+
+test("the monthly budget is a visible commitment", async ({ page }) => {
+  // A budget on the record is priced by investors at bid time: it must be on
+  // the treasury plan as a commitment, labelled as such.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("tab", { name: /Treasury/ }).click();
+  await expect(page.getByTestId("launch-treasury-plan")).toContainText(
+    "Monthly budget",
+  );
+  // 50,000,000,000 base units at 6 decimals = 50,000 USDC.
+  await expect(page.getByTestId("launch-treasury-plan")).toContainText(
+    "50,000 USDC",
+  );
+});
+
+test("an oversized monthly budget warns but never blocks", async ({ page }) => {
+  // MetaDAO's discipline: monthly budget above a sixth of the threshold is a
+  // drain risk. It is a warning — the founder keeps their freedom.
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Five");
+  await page.getByLabel("Launch id").fill("nebula-five");
+  await page.getByTestId("launch-budget").fill("1000000000000");
+  await expect(page.getByTestId("launch-param-issues")).toContainText(
+    "Monthly budget",
+  );
+  // Warned, not blocked: publish stays enabled.
+  await expect(
+    page.getByRole("button", { name: /Publish launch/ }),
+  ).toBeEnabled();
+});
+
+test("founder commitments appear on the readiness list", async ({ page }) => {
+  // The fixture record has no long pitch, no cadence, no bound channel: the
+  // readiness list must say so, because numeric validity alone does not
+  // qualify a founder.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("tab", { name: /Manage/ }).click();
+  const readiness = page.getByTestId("launch-readiness");
+  await expect(readiness).toBeVisible({ timeout: 15_000 });
+  await expect(readiness).toContainText("Founder commitments");
+  const commitments = readiness.locator("li", {
+    hasText: "Founder commitments",
+  });
+  await expect(commitments).not.toContainText("✓");
+});
+
+test("a founder can commit the longer story on create", async ({ page }) => {
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Six");
+  await page.getByLabel("Launch id").fill("nebula-six");
+  await page
+    .getByTestId("launch-long-pitch")
+    .fill(
+      "Built the relay core; three researchers; the thesis fails if usage stalls.",
+    );
+  await page
+    .getByTestId("launch-ip-list")
+    .fill("https://github.com/example/repo\nhttps://docs.example.com/");
+  await page.getByTestId("launch-update-cadence").fill("monthly with KPIs");
+  // Publish carries the commitments. Scope to this launch: `published` is
+  // shared across the file, so an earlier test's 37001 is still in it.
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect
+    .poll(() =>
+      published.find(
+        (e) =>
+          e.kind === 37001 &&
+          e.tags.some(([k, v]) => k === "d" && v === "nebula-six"),
+      ),
+    )
+    .toEqual(
+      expect.objectContaining({
+        content: expect.stringContaining("the thesis fails if usage stalls"),
+      }),
+    );
+});
+
+test("a published score root is shown as a community data plane", async ({
+  page,
+}) => {
+  // The card proves the client reads score roots as plain Nostr data and
+  // renders the provenance honestly — program, epoch, anchored block. It does
+  // not claim a member's score (that needs a leaf proof, surfaced elsewhere).
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await expect(page.getByTestId("launch-score-roots")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("launch-score-roots")).toContainText(
+    "trustgraphs.output.nostr-member.v1",
+  );
+  await expect(page.getByTestId("launch-score-roots")).toContainText("12");
+  await expect(page.getByTestId("launch-score-roots")).toContainText(
+    "Anchored at block 500",
+  );
+  await expect(page.getByTestId("launch-score-roots")).toContainText(
+    "Scores are proven against this root",
+  );
 });

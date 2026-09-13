@@ -22,7 +22,7 @@ use buzz_core::kind::{
     KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
     KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
     KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
-    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_SCORE_ROOT, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
     KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
     KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
@@ -535,6 +535,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // same model as forum posts. Real authorization (money, membership)
         // lives onchain; the relay only validates envelopes.
         KIND_LAUNCH_RECORD
+        | KIND_SCORE_ROOT
         | KIND_LAUNCH_BID
         | KIND_LAUNCH_UPDATE
         | KIND_LAUNCH_PROPOSAL
@@ -689,6 +690,7 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // the record and stack-scoped via `a` tags for mirrors. The
             // `buzz-channel` tag is a metadata reference, not routing.
             | KIND_LAUNCH_RECORD
+            | KIND_SCORE_ROOT
             | KIND_LAUNCH_BID
             | KIND_LAUNCH_UPDATE
             | KIND_LAUNCH_PROPOSAL
@@ -5575,6 +5577,7 @@ mod postgres_tests {
         let dummy = make_dummy_event();
         for kind in [
             KIND_LAUNCH_RECORD,
+            KIND_SCORE_ROOT,
             KIND_LAUNCH_BID,
             KIND_LAUNCH_UPDATE,
             KIND_LAUNCH_PROPOSAL,
@@ -5594,6 +5597,7 @@ mod postgres_tests {
         // mirrors are stack-scoped via `a` tags.
         for kind in [
             KIND_LAUNCH_RECORD,
+            KIND_SCORE_ROOT,
             KIND_LAUNCH_BID,
             KIND_LAUNCH_UPDATE,
             KIND_LAUNCH_PROPOSAL,
@@ -5611,6 +5615,7 @@ mod postgres_tests {
     fn launchpad_record_is_parameterized_replaceable() {
         // Owner-only editing comes free from NIP-33 addressing.
         assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD));
+        assert!(is_parameterized_replaceable(KIND_SCORE_ROOT));
         for kind in [
             KIND_LAUNCH_BID,
             KIND_LAUNCH_UPDATE,
@@ -5630,6 +5635,28 @@ mod postgres_tests {
 
     fn launch_coord() -> String {
         format!("37001:{}:nebula", "a".repeat(64))
+    }
+
+    #[test]
+    fn score_root_is_scoped_like_a_launch_record_and_global() {
+        // A trustgraph operator publishes the proven root of a community's
+        // scores (kind 37006); clients verify claims against it. For the
+        // record to flow through the relay it needs the same scope as the
+        // other launchpad kinds and must never be channel-scoped.
+        let dummy = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_SCORE_ROOT, &dummy).unwrap(),
+            Scope::MessagesWrite,
+            "kind 37006 should require MessagesWrite scope"
+        );
+        assert!(
+            is_global_only_kind(KIND_SCORE_ROOT),
+            "kind 37006 should be global-only"
+        );
+        assert!(
+            !requires_h_channel_scope(KIND_SCORE_ROOT),
+            "kind 37006 must not require an h-tag channel scope"
+        );
     }
 
     #[test]
