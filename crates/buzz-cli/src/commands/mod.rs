@@ -7,6 +7,7 @@ pub mod feed;
 pub mod gifs;
 pub mod issues;
 pub mod launchpad;
+pub mod launchpad_compose;
 pub mod mem;
 pub mod messages;
 pub mod moderation;

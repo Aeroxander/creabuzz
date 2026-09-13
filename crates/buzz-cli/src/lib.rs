@@ -1405,6 +1405,45 @@ pub enum LaunchpadCmd {
         #[arg(long, name = "i-know-what-i-am-doing", default_value_t = false)]
         i_know_what_i_am_doing: bool,
     },
+    /// Compose an unsigned bid transaction (submitBid + Permit2 approve)
+    #[command(name = "compose-bid")]
+    ComposeBid {
+        /// Launch id (slug)
+        id: String,
+        /// Auction contract (0x address)
+        #[arg(long)]
+        auction: String,
+        /// Raise currency (0x address; omitted for native coin)
+        #[arg(long)]
+        currency: Option<String>,
+        /// Bid budget in smallest currency units
+        #[arg(long)]
+        budget: String,
+        /// Max price in smallest currency units per token (Q96 *before* snap)
+        #[arg(long, name = "max-price")]
+        max_price: String,
+        /// Tick spacing as the auction configures it (Q96)
+        #[arg(long, name = "tick-spacing")]
+        tick_spacing: String,
+        /// Current clearing price (Q96); pass --skip-clearing to compose blind
+        #[arg(long, name = "clearing-price")]
+        clearing_price: Option<String>,
+        /// Keep the max price even if it is below the clearing price
+        #[arg(long)]
+        skip_clearing: bool,
+        /// Launch floor price (Q96) — the previous-tick hint
+        #[arg(long, name = "floor-price")]
+        floor_price: String,
+        /// Chain id in the tx envelope (metadata only, no signing)
+        #[arg(long, name = "chain-id", default_value = "11155111")]
+        chain_id: String,
+        /// Bidder address (0x address; tokens/refunds settle there)
+        #[arg(long, default_value = "0x1111111111111111111111111111111111111111")]
+        owner: String,
+        /// Permit2 approve deadline as unix seconds (default +1h)
+        #[arg(long)]
+        deadline: Option<u64>,
+    },
     /// Mirror an onchain bid into the launch feed (advisory)
     #[command(name = "record-bid")]
     RecordBid {
@@ -2607,6 +2646,7 @@ mod tests {
         assert_eq!(
             names(&cmd, "launchpad"),
             vec![
+                "compose-bid",
                 "curate",
                 "delete",
                 "list",
@@ -2646,7 +2686,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 9),
+            ("launchpad", 10),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

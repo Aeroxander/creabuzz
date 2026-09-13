@@ -546,6 +546,33 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             )
             .await
         }
+        LaunchpadCmd::ComposeBid {
+            id,
+            auction,
+            currency,
+            budget,
+            max_price,
+            tick_spacing,
+            clearing_price,
+            skip_clearing,
+            floor_price,
+            chain_id,
+            owner,
+            deadline,
+        } => cmd_compose_bid(
+            &id,
+            &auction,
+            currency.as_deref(),
+            &budget,
+            &max_price,
+            &tick_spacing,
+            clearing_price.as_deref(),
+            skip_clearing,
+            &floor_price,
+            &chain_id,
+            &owner,
+            deadline,
+        ),
         LaunchpadCmd::RecordBid {
             id,
             author,
@@ -626,4 +653,88 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             .await
         }
     }
+}
+
+
+/// Compose an unsigned bid: Permit2 approve (ERC-20 currency) then submitBid.
+/// Prints a JSON envelope a wallet or `cast send` can sign — the CLI never
+/// signs or moves money ("machines compose, humans sign").
+fn cmd_compose_bid(
+    _id: &str,
+    auction: &str,
+    currency: Option<&str>,
+    budget: &str,
+    max_price: &str,
+    tick_spacing: &str,
+    clearing_price: Option<&str>,
+    skip_clearing: bool,
+    floor_price: &str,
+    chain_id: &str,
+    owner: &str,
+    deadline: Option<u64>,
+) -> Result<(), CliError> {
+    use crate::commands::launchpad_compose::{
+        encode_permit2_approve, encode_submit_bid, snap_max_price_to_tick, validate_bid,
+        PERMIT2_ADDRESS, TxCall,
+    };
+    use num_bigint::BigUint;
+
+    let to_big = |s: &str| -> Result<BigUint, CliError> {
+        BigUint::parse_bytes(s.trim().as_bytes(), 10)
+            .ok_or_else(|| CliError::Usage(format!("not a decimal integer: {s:?}")))
+    };
+    validate_0x_address(auction, "auction")?;
+    validate_0x_address(owner, "owner")?;
+    let desired = to_big(max_price)?;
+    let spacing = to_big(tick_spacing)?;
+    let snapped = snap_max_price_to_tick(&desired, &spacing);
+    let clearing = clearing_price.map(to_big).transpose()?.unwrap_or_default();
+    if !skip_clearing {
+        if let Err(msg) = validate_bid(&snapped, &spacing, &clearing) {
+            return Err(CliError::Usage(msg));
+        }
+    }
+    let amount = to_big(budget)?;
+    let floor = to_big(floor_price)?;
+    let bid_data = encode_submit_bid(&snapped, &amount, owner, Some(&floor), "0x")
+        .map_err(CliError::Other)?;
+
+    let mut calls: Vec<TxCall> = Vec::new();
+    if let Some(currency_addr) = currency {
+        validate_0x_address(currency_addr, "currency")?;
+        let exp = deadline.unwrap_or_else(|| {
+            (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0))
+                + 3600
+        });
+        let approve = encode_permit2_approve(currency_addr, auction, &amount, exp)
+            .map_err(CliError::Other)?;
+        calls.push(TxCall {
+            to: PERMIT2_ADDRESS.to_string(),
+            data: approve,
+        });
+    }
+    calls.push(TxCall {
+        to: auction.to_string(),
+        data: bid_data,
+    });
+
+    let envelope = serde_json::json!({
+        "compose": "buzz launchpad compose-bid",
+        "chainId": chain_id,
+        "note": "unsigned — sign with a wallet or `cast send`",
+        "maxPriceQ96": format!("{snapped}"),
+        "amount": format!("{amount}"),
+        "calls": calls.into_iter().map(|c| serde_json::json!({
+            "to": c.to,
+            "value": "0x0",
+            "data": c.data,
+        })).collect::<Vec<_>>(),
+    });
+    let json = serde_json::to_string_pretty(&envelope)
+        .map_err(|e| CliError::Other(format!("failed to serialize: {e}")))?;
+    println!("{json}");
+    Ok(())
 }
