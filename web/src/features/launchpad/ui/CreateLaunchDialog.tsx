@@ -84,6 +84,7 @@ export function CreateLaunchDialog({
   const [requiredRaised, setRequiredRaised] = useState<string>(
     initial?.requiredRaised ?? LAUNCH_DEFAULTS.requiredRaised,
   );
+  const [budget, setBudget] = useState<string>(initial?.budget ?? "");
   const [auction, setAuction] = useState(initial?.auction ?? "");
   const [treasury, setTreasury] = useState(initial?.treasury ?? "");
   const [admission, setAdmission] = useState<"curated" | "community">(
@@ -128,6 +129,7 @@ export function CreateLaunchDialog({
     setFloorPrice(LAUNCH_DEFAULTS.floorPrice);
     setTickSpacing(LAUNCH_DEFAULTS.tickSpacing);
     setRequiredRaised(LAUNCH_DEFAULTS.requiredRaised);
+    setBudget("");
     setAdmission(LAUNCH_DEFAULTS.admission);
     setBoundChannels(initial?.channels ?? []);
     if (name.trim() !== "") {
@@ -162,6 +164,7 @@ export function CreateLaunchDialog({
       floorPrice: asBig(floorPrice),
       tickSpacing: asBig(tickSpacing),
       requiredCurrencyRaised: asBig(requiredRaised),
+      budget: asBig(budget),
       // The schedule is built when the sale deploys, not in this form.
       startBlock: 0n,
       endBlock: 0n,
@@ -173,7 +176,7 @@ export function CreateLaunchDialog({
         issue.field !== "endBlock" &&
         issue.field !== "claimBlock",
     );
-  }, [supply, floorPrice, tickSpacing, requiredRaised]);
+  }, [budget, supply, floorPrice, tickSpacing, requiredRaised]);
 
   const paramBlocked = hasBlockingIssue(paramIssues);
 
@@ -541,6 +544,20 @@ export function CreateLaunchDialog({
               onChange={(e) => setRequiredRaised(e.target.value)}
               placeholder="1000000000"
               value={requiredRaised}
+            />
+          </Field>
+          <Field
+            id="launch-budget"
+            label="Monthly budget"
+            hint="Operating budget; above a sixth of the threshold this warns."
+          >
+            <Input
+              id="launch-budget"
+              data-testid="launch-budget"
+              onChange={(e) => setBudget(e.target.value)}
+              placeholder="0"
+              value={budget}
+              type="number"
             />
           </Field>
           <Field

@@ -46,6 +46,8 @@ export interface LaunchRecord {
   /** Price granularity, in Q96. Published as a tag; must round-trip. */
   tickSpacing: string | null;
   requiredRaised: string | null;
+  /** Monthly operating budget, currency base units. Investors price this. */
+  budget: string | null;
   startBlock: number | null;
   endBlock: number | null;
   claimBlock: number | null;
@@ -192,6 +194,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     floorPrice: str(body.floorPrice),
     tickSpacing: str(body.tickSpacing),
     requiredRaised: str(body.requiredRaised),
+    budget: str(body.budget),
     startBlock: int(body.startBlock),
     endBlock: int(body.endBlock),
     claimBlock: int(body.claimBlock),

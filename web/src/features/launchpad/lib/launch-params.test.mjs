@@ -251,3 +251,38 @@ test("the preset keeps the rest of the supply in mind", () => {
   assert.ok(preset.requiredCurrencyRaised > 0n);
   assert.ok(preset.requiredCurrencyRaised < preset.floorRaise);
 });
+
+test("a monthly budget above a sixth of the threshold warns", () => {
+  const base = valid();
+  // Cap: budget * 6 == threshold passes with no warning.
+  const atCap = validateLaunchParams({
+    ...base,
+    budget: base.requiredCurrencyRaised / 6n,
+  });
+  assert.deepEqual(
+    atCap.filter((i) => i.field === "budget"),
+    [],
+  );
+  // Above the cap: warned, but never a blocker (it is a discipline hint).
+  const over = validateLaunchParams({
+    ...base,
+    budget: base.requiredCurrencyRaised / 6n + 1n,
+  });
+  const budgetIssue = over.find((i) => i.field === "budget");
+  assert.ok(budgetIssue, "oversized budget must be reported");
+  assert.equal(budgetIssue.severity, "warning");
+  assert.ok(!hasBlockingIssue(over), "a warning must not block the launch");
+  // No threshold and no budget: nothing to say.
+  assert.deepEqual(
+    validateLaunchParams({ ...base, budget: null }).filter(
+      (i) => i.field === "budget",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateLaunchParams({ ...base, budget: 0n }).filter(
+      (i) => i.field === "budget",
+    ),
+    [],
+  );
+});

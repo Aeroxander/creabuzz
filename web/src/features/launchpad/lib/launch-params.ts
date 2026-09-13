@@ -64,6 +64,8 @@ export interface LaunchParamInput {
   floorPrice: bigint;
   tickSpacing: bigint;
   requiredCurrencyRaised: bigint;
+  /** Monthly operating budget, currency base units; null = not committed. */
+  budget?: bigint | null;
   startBlock: bigint;
   endBlock: bigint;
   claimBlock: bigint;
@@ -135,6 +137,22 @@ export function validateLaunchParams(
     );
   }
 
+  // MetaDAO's discipline: a monthly budget above 1/6th of the minimum raise
+  // means the treasury can be drained faster than the raise can refill it.
+  // 1/6th of the min raise is the most a twelve-month runway would cost, so a
+  // founder at the cap has a year's runway committed before anything else.
+  if (
+    input.budget != null &&
+    input.budget > 0n &&
+    input.requiredCurrencyRaised > 0n
+  ) {
+    if (input.budget * 6n > input.requiredCurrencyRaised) {
+      warn(
+        "budget",
+        "Monthly budget — above a sixth of the graduation threshold; at the cap the auction refills the treasury every six months.",
+      );
+    }
+  }
   if (input.startBlock >= input.endBlock) {
     error("endBlock", "The auction must end after it starts.");
   }

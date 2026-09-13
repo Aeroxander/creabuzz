@@ -655,6 +655,9 @@ function TreasuryTab({ launch }: { launch: TabLaunch }) {
               "Graduation threshold",
               record.requiredRaised ? formatMoney(record.requiredRaised) : "—",
             ],
+            ...(record.budget
+              ? [["Monthly budget", formatMoney(record.budget)] as const]
+              : []),
             [
               "Treasury",
               record.treasury ? truncatePubkey(record.treasury) : "Not set",

@@ -140,3 +140,14 @@ test("the defaults a new launch starts from are deployable", () => {
   assert.deepEqual(issues, []);
   assert.equal(hasBlockingIssue(issues), false);
 });
+
+test("a record round-trips the monthly budget", () => {
+  const KEY = "a".repeat(64);
+  const withBudget = buildLaunches([
+    record(KEY, "nebula", 100, { budget: "5000000000" }),
+  ])[0];
+  assert.equal(withBudget.record.budget, "5000000000");
+  // Absent budget stays null — no fabricated figure.
+  const bare = buildLaunches([record(KEY, "other", 101)])[0];
+  assert.equal(bare.record.budget, null);
+});

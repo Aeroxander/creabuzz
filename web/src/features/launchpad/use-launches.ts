@@ -128,6 +128,7 @@ export interface CreateLaunchInput {
   floorPrice: string;
   tickSpacing: string;
   requiredRaised: string;
+  budget?: string;
   auction: string;
   token: string;
   treasury: string;
@@ -161,6 +162,7 @@ export function useCreateLaunch() {
       if (input.floorPrice) content.floorPrice = input.floorPrice;
       if (input.tickSpacing) content.tickSpacing = input.tickSpacing;
       if (input.requiredRaised) content.requiredRaised = input.requiredRaised;
+      if (input.budget) content.budget = input.budget;
       if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
       if (input.allocation) content.allocation = input.allocation;
       return publishMirror({ kind: KIND_LAUNCH_RECORD, tags, content });

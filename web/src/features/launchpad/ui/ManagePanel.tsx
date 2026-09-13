@@ -244,6 +244,7 @@ export function ManagePanel({
           floorPrice: toAtomic(record.floorPrice) ?? 0n,
           tickSpacing: toAtomic(record.tickSpacing) ?? 0n,
           requiredCurrencyRaised: toAtomic(record.requiredRaised) ?? 0n,
+          budget: toAtomic(record.budget) ?? 0n,
           startBlock: 0n,
           endBlock: 0n,
           claimBlock: 0n,

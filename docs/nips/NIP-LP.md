@@ -86,6 +86,7 @@ Content is JSON:
   "tickSpacing": "100",
   "requiredRaised": "50000000000",
   "graduationThreshold": "50000000000",
+  "budget": "4166666666",
   "startBlock": 12345678,
   "endBlock": 12395678,
   "claimBlock": 12400678,
@@ -94,6 +95,12 @@ Content is JSON:
   "docs": ["<blossom-or-https-url>"]
 }
 ```
+
+`budget` (optional) is the monthly operating budget in currency smallest
+units, a commitment investors price at bid time: a budget above a sixth of the
+graduation threshold is displayed as a warning by clients (the treasury could
+be refilled only about every six months at the cap). It is a commitment, not a
+chain-enforced number.
 
 `paramsHash` commits to the full offchain auction configuration (steps,
 buckets, caps, gating) so clients can detect silent edits. `stage` is a
