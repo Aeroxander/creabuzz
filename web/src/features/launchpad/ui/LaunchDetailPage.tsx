@@ -5,11 +5,16 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
-import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
+import {
+  KIND_LAUNCH_BID,
+  KIND_LAUNCH_PROPOSAL,
+  KIND_LAUNCH_UPDATE,
+} from "@/shared/constants/kinds";
 import {
   useDeleteLaunch,
   useIsFounder,
@@ -213,7 +218,23 @@ export function LaunchDetailPage({
       {tab === "overview" ? <OverviewTab launch={launch} /> : null}
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
       {tab === "proposals" ? <ProposalsTab launch={launch} /> : null}
-      {tab === "treasury" ? <TreasuryTab launch={launch} /> : null}
+      {tab === "treasury" ? (
+        <TreasuryTab
+          launch={launch}
+          onProposeReturn={(title) => {
+            void mirror.mutateAsync({
+              kind: KIND_LAUNCH_PROPOSAL,
+              author: launch.record.author,
+              launchId: launch.record.id,
+              content: {
+                kind: "return-capital",
+                title,
+                state: "open",
+              },
+            });
+          }}
+        />
+      ) : null}
       {tab === "manage" && isFounder ? (
         <ManagePanel
           launchId={launch.record.id}
@@ -651,9 +672,17 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
   );
 }
 
-function TreasuryTab({ launch }: { launch: TabLaunch }) {
+function TreasuryTab({
+  launch,
+  onProposeReturn,
+}: {
+  launch: TabLaunch;
+  onProposeReturn: (title: string) => void;
+}) {
   const streams = launch.receipts.filter((r) => r.table === "stream");
   const { record } = launch;
+  const [returnTitle, setReturnTitle] = useState("");
+  const [proposed, setProposed] = useState(false);
   const [balance, setBalance] = useState<{
     state: "idle" | "loading" | "done";
     value: bigint | null;
@@ -774,6 +803,39 @@ function TreasuryTab({ launch }: { launch: TabLaunch }) {
             ))}
           </ul>
         )}
+      </Card>
+
+      <Card className="p-4" data-testid="treasury-return">
+        <h2 className="text-base font-semibold">Exit</h2>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          The credible threat of taking money back is what disciplines a
+          treasury. Anyone can raise a proposal to return capital — before
+          graduation this is a signal on Nostr (the onchain refund path is the
+          auction contract itself); after graduation it is a real DAO decision.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <Input
+            data-testid="return-title"
+            onChange={(e) => setReturnTitle(e.target.value)}
+            placeholder="e.g. Return the remaining treasury pro-rata"
+            value={returnTitle}
+          />
+          <Button
+            data-testid="propose-return"
+            disabled={proposed || returnTitle.trim() === ""}
+            onClick={() => {
+              onProposeReturn(
+                returnTitle.trim() || "Return the remaining treasury pro-rata",
+              );
+              setProposed(true);
+            }}
+            size="sm"
+            variant="outline"
+            type="button"
+          >
+            {proposed ? "Proposed" : "Propose capital return"}
+          </Button>
+        </div>
       </Card>
     </div>
   );

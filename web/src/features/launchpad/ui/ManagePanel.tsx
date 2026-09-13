@@ -177,6 +177,8 @@ export function ManagePanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
   /** Destructive stage change: confirmed inline, like the delete below. */
   const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
+  /** Open the editor seeded for a relaunch (fresh stage, cleared chain links). */
+  const [relaunchSeed, setRelaunchSeed] = useState(false);
   if (!launch) return null;
   const { record } = launch;
 
@@ -207,8 +209,22 @@ export function ManagePanel({
     admission: record.admission,
     channels: record.channels,
     ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
+    ...(record.vesting ? { vesting: record.vesting } : {}),
     ...overrides,
   });
+
+  /**
+   * Relaunch a failed launch: republish the SAME record id (`d`) with a fresh
+   * stage and cleared chain links. The community and discussion history keep
+   * their identity; the new auction is a new deploy.
+   */
+  const handleRelaunch = () => {
+    // Open the editor seeded from the record but reset to a fresh start:
+    // stage back to draft, and the chain links cleared so the founder links
+    // the new deployment rather than reusing a dead one.
+    setRelaunchSeed(true);
+    setEditOpen(true);
+  };
 
   const handleSave = async (input: CreateLaunchInput) => {
     try {
@@ -406,7 +422,17 @@ export function ManagePanel({
             >
               Mark as failed
             </Button>
-          ) : null}
+          ) : (
+            <Button
+              data-testid="launch-relaunch"
+              disabled={save.isPending}
+              onClick={() => handleRelaunch()}
+              size="sm"
+              variant="outline"
+            >
+              Relaunch this launch
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -455,10 +481,28 @@ export function ManagePanel({
 
       {editOpen ? (
         <CreateLaunchDialog
-          initial={toInput()}
+          initial={
+            relaunchSeed
+              ? {
+                  ...toInput(),
+                  stage: "draft",
+                  auction: "",
+                  token: "",
+                  treasury: "",
+                }
+              : toInput()
+          }
+          relaunchNote={
+            relaunchSeed
+              ? "This republishes the same launch record — the community and history stay. Link a new auction when it deploys."
+              : undefined
+          }
           isCreating={save.isPending}
           onCreate={handleSave}
-          onClose={() => setEditOpen(false)}
+          onClose={() => {
+            setEditOpen(false);
+            setRelaunchSeed(false);
+          }}
         />
       ) : null}
     </div>

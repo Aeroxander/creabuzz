@@ -5,6 +5,7 @@ import {
   STANDARD_ALLOCATION,
   allocationIssue,
   impliedFdv,
+  minimumLiquidityPercent,
   parseAllocation,
   tokensForBudget,
   totalAllocation,
@@ -73,4 +74,31 @@ test("a budget becomes a token count at a given price", () => {
   assert.equal(tokensForBudget(100_000_000n, 10_000n), 10_000n);
   assert.equal(tokensForBudget(100_000_000n, null), null);
   assert.equal(tokensForBudget(100_000_000n, 0n), null);
+});
+
+test("minimumLiquidityPercent is the supply-converted raise rule", () => {
+  // MetaDAO seeds liquidity with 20% of the *raise*; converted to percent of
+  // supply (20% sale), that is exactly 4% of supply. The standard wizard
+  // allocation (15%) is comfortably above it.
+  const input = { salePercent: 20, raiseShareBps: 2000 };
+  assert.equal(minimumLiquidityPercent(input), 4);
+  // The conversion property: liquidity/sale% * (raise share) is exact.
+  // (15 / 20) * 20% = 15% of the raise at the floor — matches the doc claim.
+  assert.equal(
+    minimumLiquidityPercent({ salePercent: 50, raiseShareBps: 1000 }),
+    5,
+  );
+  assert.equal(
+    minimumLiquidityPercent({ salePercent: 20, raiseShareBps: 5000 }),
+    10,
+  );
+  // No sale or no raise share: no rule.
+  assert.equal(
+    minimumLiquidityPercent({ salePercent: 0, raiseShareBps: 2000 }),
+    null,
+  );
+  assert.equal(
+    minimumLiquidityPercent({ salePercent: 20, raiseShareBps: 0 }),
+    null,
+  );
 });

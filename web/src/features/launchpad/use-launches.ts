@@ -3,6 +3,7 @@ import { useMemo } from "react";
 
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
 import type { SupplyAllocation } from "./lib/allocation";
+import type { VestingConfig } from "./models";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -168,6 +169,7 @@ export interface CreateLaunchInput {
   channels: string[];
   tokenPlan?: TokenPlan;
   allocation?: SupplyAllocation;
+  vesting?: VestingConfig;
 }
 
 export function useCreateLaunch() {
@@ -201,6 +203,7 @@ export function useCreateLaunch() {
       if (input.budget) content.budget = input.budget;
       if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
       if (input.allocation) content.allocation = input.allocation;
+      if (input.vesting) content.vesting = input.vesting;
       return publishMirror({ kind: KIND_LAUNCH_RECORD, tags, content });
     },
     onSuccess: () => {

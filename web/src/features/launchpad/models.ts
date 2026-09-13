@@ -71,6 +71,12 @@ export interface LaunchRecord {
   admission: "curated" | "community";
   /** How the supply is split. Absent on older records: the standard split. */
   allocation: SupplyAllocation;
+  /**
+   * Performance-package vesting: tranches unlock at price multiples of the
+   * raise price (MetaDAO's 2x..32x ladder). Record only; the onchain enforcer
+   * is deferred (plan §7.4 — verifier milestones primary, TWAP backstop).
+   */
+  vesting: VestingConfig | null;
   tokenPlan: {
     mode: "mint";
     name: string;
@@ -223,6 +229,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     admission:
       tagValue(event, "admission") === "community" ? "community" : "curated",
     allocation: parseAllocation(contentObject(event).allocation),
+    vesting: parseVesting(contentObject(event).vesting),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }
@@ -368,7 +375,12 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
 }
 
 function isProposalKind(value: unknown): value is ProposalKind {
-  return value === "plain" || value === "futarchy-budget" || value === "signal";
+  return (
+    value === "plain" ||
+    value === "futarchy-budget" ||
+    value === "signal" ||
+    value === "return-capital"
+  );
 }
 
 export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
@@ -536,5 +548,47 @@ export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
     epoch: epoch || id,
     indexerUrl: str(body.indexerUrl),
     anchorBlock: int(body.anchorBlock),
+  };
+}
+
+export interface VestingTranche {
+  /** Unlocks when the token price reaches this multiple of the floor. */
+  multiple: number;
+  /** Tranche size in percent of the unlocked pool (sums to 100). */
+  percent: number;
+}
+
+export interface VestingConfig {
+  /** Blocks before the first tranche can unlock. */
+  cliffBlocks: number;
+  /** Price-multiple tranches, ascending. */
+  tranches: VestingTranche[];
+  /** TWAP window used to observe the price (blocks). */
+  twapWindow: number | null;
+}
+
+export function parseVesting(value: unknown): VestingConfig | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const v = value as Record<string, unknown>;
+  if (typeof v.cliffBlocks !== "number" || !Array.isArray(v.tranches)) {
+    return null;
+  }
+  const tranches: VestingTranche[] = [];
+  for (const raw of v.tranches) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+      return null;
+    const t = raw as Record<string, unknown>;
+    if (typeof t.multiple !== "number" || typeof t.percent !== "number") {
+      return null;
+    }
+    tranches.push({ multiple: t.multiple, percent: t.percent });
+  }
+  if (tranches.length === 0) return null;
+  return {
+    cliffBlocks: v.cliffBlocks,
+    tranches,
+    twapWindow: typeof v.twapWindow === "number" ? v.twapWindow : null,
   };
 }

@@ -14,8 +14,14 @@ import {
   ALLOCATION_LABELS,
   STANDARD_ALLOCATION,
   allocationIssue,
+  minimumLiquidityPercent,
   type SupplyAllocation,
 } from "../lib/allocation";
+import {
+  DEFAULT_PERFORMANCE_TRANCHES,
+  validateVesting,
+} from "../lib/vesting-params";
+import type { VestingConfig } from "../models";
 import {
   hasBlockingIssue,
   standardLaunchPreset,
@@ -62,11 +68,14 @@ export function CreateLaunchDialog({
   onCreate,
   onClose,
   initial,
+  relaunchNote,
 }: {
   isCreating: boolean;
   onCreate: (input: CreateLaunchInput) => Promise<void>;
   onClose: () => void;
   initial?: Partial<CreateLaunchInput>;
+  /** Shown as an info banner — e.g. "this republishes the same record". */
+  relaunchNote?: string;
 }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
@@ -106,6 +115,16 @@ export function CreateLaunchDialog({
     () => initial?.allocation ?? { ...STANDARD_ALLOCATION },
   );
   const allocationMessage = allocationIssue(allocation);
+  const [vesting, setVesting] = useState<VestingConfig | null>(() =>
+    initial?.vesting
+      ? { ...initial.vesting, tranches: [...initial.vesting.tranches] }
+      : {
+          cliffBlocks: 3_110_400,
+          tranches: DEFAULT_PERFORMANCE_TRANCHES.map((t) => ({ ...t })),
+          twapWindow: null,
+        },
+  );
+  const vestingIssues = validateVesting(vesting);
   const [boundChannels, setBoundChannels] = useState<string[]>(
     initial?.channels ?? [],
   );
@@ -257,6 +276,7 @@ export function CreateLaunchDialog({
       admission,
       channels: boundChannels,
       allocation,
+      vesting: vestingIssues.length === 0 ? (vesting ?? undefined) : undefined,
       tokenPlan:
         tokenMode === "mint"
           ? {
@@ -274,6 +294,14 @@ export function CreateLaunchDialog({
       <h2 className="text-lg font-semibold text-black dark:text-white">
         {initial ? "Edit launch" : "New launch"}
       </h2>
+      {relaunchNote ? (
+        <p
+          className="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200"
+          data-testid="launch-relaunch-note"
+        >
+          {relaunchNote}
+        </p>
+      ) : null}
       <div className="mt-3 flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
         <Field
           id="launch-id"
@@ -571,6 +599,111 @@ export function CreateLaunchDialog({
                 data-testid="launch-allocation-issue"
               >
                 {allocationMessage}
+              </p>
+            ) : null}
+            {(() => {
+              const minLiquidity = minimumLiquidityPercent({
+                salePercent: allocation.sale,
+                raiseShareBps: 2000,
+              });
+              if (minLiquidity === null) return null;
+              const thin = allocation.liquidity < minLiquidity;
+              return (
+                <p
+                  className={`mt-1 text-xs ${
+                    thin
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-black/50 dark:text-white/50"
+                  }`}
+                  data-testid="launch-lp-minimum"
+                >
+                  {thin
+                    ? `This seeds the pool with under ${minLiquidity}% of supply — it covers less than 20% of the floor raise, so day-one liquidity will be thin.`
+                    : `A pool at ${allocation.liquidity}% of supply covers ${Math.round(
+                        (allocation.liquidity / allocation.sale) * 20,
+                      )}% of the floor raise at the floor price.`}
+                </p>
+              );
+            })()}
+          </div>
+
+          <div
+            className="rounded-lg border border-black/10 p-3 dark:border-white/10"
+            data-testid="launch-vesting"
+          >
+            <p className="text-sm font-medium">Performance vesting</p>
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+              Tranches unlock at price multiples of the raise price (the MetaDAO
+              2x…32x ladder by default). Record-level now; the onchain enforcer
+              comes with verifier milestones.
+            </p>
+            <label
+              className="mt-2 block text-sm text-black/60 dark:text-white/60"
+              htmlFor="launch-cliff"
+            >
+              Cliff (blocks)
+            </label>
+            <Input
+              id="launch-cliff"
+              data-testid="launch-cliff"
+              className="mt-1"
+              onChange={(e) =>
+                setVesting((prev) =>
+                  prev
+                    ? { ...prev, cliffBlocks: Number(e.target.value) || 0 }
+                    : prev,
+                )
+              }
+              type="number"
+              value={vesting?.cliffBlocks ?? 0}
+            />
+            <label
+              className="mt-2 block text-sm text-black/60 dark:text-white/60"
+              htmlFor="launch-tranches"
+            >
+              Tranches (multiple:percent, one per line)
+            </label>
+            <textarea
+              id="launch-tranches"
+              data-testid="launch-tranches"
+              className="mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+              onChange={(e) => {
+                const parsed: Array<{ multiple: number; percent: number }> = [];
+                for (const line of e.target.value.split("\n")) {
+                  const m = line.match(/^(\d+):(\d+)$/);
+                  if (m)
+                    parsed.push({
+                      multiple: Number(m[1]),
+                      percent: Number(m[2]),
+                    });
+                }
+                setVesting((prev) =>
+                  parsed.length > 0
+                    ? {
+                        ...(prev ?? {
+                          cliffBlocks: 0,
+                          tranches: [],
+                          twapWindow: null,
+                        }),
+                        tranches: parsed,
+                      }
+                    : prev,
+                );
+              }}
+              placeholder={"2:20\n4:20\n8:20\n16:20\n32:20"}
+              rows={4}
+              value={
+                vesting?.tranches
+                  .map((t) => `${t.multiple}:${t.percent}`)
+                  .join("\n") ?? ""
+              }
+            />
+            {vestingIssues.length > 0 ? (
+              <p
+                className="mt-2 text-xs text-red-600 dark:text-red-400"
+                data-testid="launch-vesting-issue"
+              >
+                {vestingIssues[0].message}
               </p>
             ) : null}
           </div>

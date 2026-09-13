@@ -212,3 +212,23 @@ The reserve releases once, treasury-only, to the recorded pool
 (`releaseReserve`, mirrored as 47005 `lock`); if the pool never lands the
 treasury can `withdrawStuckReserve`. The accounting-only
 `AppTokenLBPInitializer` is superseded — do not deploy it for new launches.
+
+
+## Relaunch, exit, and vesting (A3 / B4 / B5, 2026-09-13)
+
+- **Relaunch keeps the record id.** A failed launch is republished under the
+  same `d` with `stage` reset and chain links cleared: the community and its
+  history stay (the paper's "problems outlive teams" on the record layer).
+  The refund for the failed raise is the auction contract itself.
+- **Exit proposal.** A `47004` proposal with `kind: "return-capital"` is the
+  visible exit path: a signal on Nostr before graduation (the onchain refund
+  is the auction's `exitBid`), a real DAO decision after.
+- **Performance vesting.** `vesting` on the record: `{cliffBlocks, tranches:
+  [{multiple, percent}], twapWindow?}` — tranches unlock at price multiples of
+  the raise price (MetaDAO's 2x..32x ladder default; ascending, summing to
+  100). The onchain enforcer is deferred (plan §7.4: verifier milestones
+  primary, TWAP backstop). Clients refuse to publish a config that sums wrong
+  or descends.
+- The liquidity minimum is a wizard *policy*, never a record/chain field: the
+  wizard converts "20% of the raise" into supply percent (`liquidity >= sale%
+  * 2000/10000`) and warns when the pool would be thin.

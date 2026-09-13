@@ -125,3 +125,26 @@ export function tokensForBudget(
   }
   return budget / pricePerToken;
 }
+
+/**
+ * The minimum liquidity allocation so the day-one pool covers `raiseShareBps`
+ * of the floor raise.
+ *
+ * MetaDAO seeds liquidity with 20% of the *raise*; our wizard allocates
+ * percent of *supply*. The conversion is exact and supply-only (the plan's
+ * "do not copy the number blindly" note): a pool holding `L%` of supply at
+ * the floor is worth `L / sale%` of the raise, so covering `share/10000` of
+ * the raise needs `liquidity >= sale% * share/10000` percent of supply.
+ * For the standard shape (20% sale, 20% of the raise) that is 4%.
+ *
+ * A policy default, warning-grade — not a contract rule.
+ */
+export function minimumLiquidityPercent(input: {
+  salePercent: number;
+  raiseShareBps: number;
+}): number | null {
+  const { salePercent, raiseShareBps } = input;
+  if (salePercent <= 0 || raiseShareBps <= 0) return null;
+  const min = (salePercent * raiseShareBps) / 10_000;
+  return min <= 0 ? null : min;
+}

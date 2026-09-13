@@ -6,6 +6,7 @@ import {
   buildLaunches,
   hasFounderCommitments,
   launchCoordinate,
+  parseLaunchProposal,
   parseScoreRoot,
 } from "./models.ts";
 import { hasBlockingIssue, validateLaunchParams } from "./lib/launch-params.ts";
@@ -240,4 +241,27 @@ test("a score root parses and malformed roots are refused", () => {
     }),
     null,
   );
+});
+
+test("a return-capital proposal parses with its kind", () => {
+  const KEY = "a".repeat(64);
+  const launches = buildLaunches([record(KEY, "nebula", 100)]);
+  const coord = `37001:${KEY}:nebula`;
+  const prop = {
+    id: "prop-1",
+    pubkey: "b".repeat(64),
+    created_at: 150,
+    kind: 47004,
+    tags: [["a", coord]],
+    content: JSON.stringify({
+      kind: "return-capital",
+      title: "Return the remaining treasury pro-rata",
+      state: "open",
+    }),
+    sig: "sig",
+  };
+  const parsed = parseLaunchProposal(prop);
+  assert.equal(parsed.kind, "return-capital");
+  assert.equal(parsed.title, "Return the remaining treasury pro-rata");
+  assert.equal(parsed.state, "open");
 });

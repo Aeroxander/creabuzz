@@ -28,7 +28,7 @@ function record(auction?: string) {
     ],
     content: JSON.stringify({
       pitch: "To the stars.",
-      stage: "live",
+      stage: servedStage,
       // A deployable price grid: the form validates these against the auction
       // contract, so a fixture with half of them leaves Save disabled.
       floorPrice: "792281625140000",
@@ -82,6 +82,8 @@ const published: Array<{ kind: number; content: string; tags: string[][] }> =
 
 /** Auction address served to the directory; empty = no auction linked. */
 let servedAuction = "";
+/** Stage served for the fixture record (defaults to the wizard's live). */
+let servedStage = "live";
 
 async function mockRelay(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
@@ -502,4 +504,129 @@ test("a published score root is shown as a community data plane", async ({
   await expect(page.getByTestId("launch-score-roots")).toContainText(
     "Scores are proven against this root",
   );
+});
+
+test("a failed launch can be relaunched under the same record", async ({
+  page,
+}) => {
+  // A failed raise keeps its identity: the founder republishes the same `d`
+  // with a fresh stage and cleared chain links, so the community and its
+  // history stay. This is the paper's "problems outlive teams" made real on
+  // the record layer.
+  servedStage = "failed";
+  try {
+    await page.getByText("Nebula DAO").click();
+    await expect(page).toHaveURL(/\/launchpad\/nebula/);
+    await page.getByRole("tab", { name: /Manage/ }).click();
+    const relaunch = page.getByTestId("launch-relaunch");
+    await expect(relaunch).toBeVisible({ timeout: 15_000 });
+    await relaunch.click();
+    // The dialog explains the record identity is preserved.
+    await expect(page.getByTestId("launch-relaunch-note")).toContainText(
+      "same launch record",
+    );
+    // In edit mode the button says "Save changes"; publishing reissues the
+    // record with stage draft and the auction link cleared.
+    await page.getByRole("button", { name: /Save changes/ }).click();
+    await expect
+      .poll(() =>
+        // The file shares `published` across tests — an earlier test already
+        // republished nebula, so scan from the newest event.
+        [...published]
+          .reverse()
+          .find(
+            (e) =>
+              e.kind === 37001 &&
+              e.tags.some(([k, v]) => k === "d" && v === "nebula"),
+          ),
+      )
+      .toEqual(
+        expect.objectContaining({
+          content: expect.stringContaining('"stage":"draft"'),
+        }),
+      );
+  } finally {
+    servedStage = "live";
+  }
+});
+
+test("the exit path is a one-click proposal on the treasury", async ({
+  page,
+}) => {
+  // The credible threat of taking money back disciplines the treasury. The
+  // treasury tab must surface it as a real action, not marketing copy.
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("tab", { name: /Treasury/ }).click();
+  const exit = page.getByTestId("treasury-return");
+  await expect(exit).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("propose-return")).toBeDisabled();
+  await page
+    .getByTestId("return-title")
+    .fill("Return the remaining treasury pro-rata");
+  await page.getByTestId("propose-return").click();
+  await expect
+    .poll(() => published.find((e) => e.kind === 47004))
+    .toEqual(
+      expect.objectContaining({
+        content: expect.stringContaining("return-capital"),
+      }),
+    );
+});
+
+test("performance vesting is validated and published", async ({ page }) => {
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Seven");
+  await page.getByLabel("Launch id").fill("nebula-seven");
+  // A tranche at 1x warns (raise price is not performance); descending plus a
+  // bad sum blocks.
+  const vesting = page.getByTestId("launch-vesting");
+  await expect(vesting).toBeVisible();
+  await page.getByTestId("launch-tranches").fill("4:50\n2:50");
+  await expect(page.getByTestId("launch-vesting-issue")).toContainText(
+    "ascending",
+  );
+  // A valid ladder publishes with the record.
+  await page
+    .getByTestId("launch-tranches")
+    .fill("2:20\n4:20\n8:20\n16:20\n32:20");
+  await expect(page.getByTestId("launch-vesting-issue")).toBeHidden();
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect
+    .poll(() =>
+      published.find(
+        (e) =>
+          e.kind === 37001 &&
+          e.tags.some(([k, v]) => k === "d" && v === "nebula-seven"),
+      ),
+    )
+    .toEqual(
+      expect.objectContaining({
+        content: expect.stringContaining('"tranches"'),
+      }),
+    );
+});
+
+test("the liquidity minimum is shown before a thin pool ships", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Eight");
+  await page.getByLabel("Launch id").fill("nebula-eight");
+  // Standard allocation: 20% sale, 15% liquidity = 15% of the raise at the
+  // floor, above the 4% minimum for a 20%-of-raise pool.
+  await expect(page.getByTestId("launch-lp-minimum")).toContainText(
+    "15% of the floor raise",
+  );
+  // Crank liquidity down to 2%: the hint flips to a warning.
+  const liquidityInput = page
+    .getByTestId("launch-allocation")
+    .locator('input[type="number"]')
+    .nth(3);
+  await liquidityInput.fill("2");
+  await expect(page.getByTestId("launch-lp-minimum")).toContainText("thin");
 });
