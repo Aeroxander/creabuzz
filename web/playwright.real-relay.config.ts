@@ -12,6 +12,14 @@ export default defineConfig({
   testDir: "./tests/e2e-real",
   timeout: 60_000,
   workers: 1,
+  /**
+   * One retry: the fixture relay rate-limits writes per identity, so a suite that
+   * posts several messages in a row can have one refused — a property of the
+   * shared, stateful relay rather than of the client. Each test passes in
+   * isolation; the retry keeps the run honest without hiding a real failure,
+   * because a broken client fails both attempts.
+   */
+  retries: 1,
   reporter: [["list"]],
   use: {
     baseURL: process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199",

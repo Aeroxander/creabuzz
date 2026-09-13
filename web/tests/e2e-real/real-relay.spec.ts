@@ -47,7 +47,12 @@ async function sendMessage(page: Page, text: string) {
         .locator("[data-sonner-toast]")
         .filter({ hasText: /couldn't send/i });
       await expect(refused).toBeVisible({ timeout: 10_000 });
-      await page.waitForTimeout(20_000);
+      // The relay says how long its window is ("quota exceeded; retry in 28s");
+      // waiting that long beats guessing, and it is what makes this suite behave
+      // when several tests write within the same minute.
+      const text = await refused.innerText().catch(() => "");
+      const stated = Number(text.match(/retry in (\d+)s/i)?.[1] ?? 0);
+      await page.waitForTimeout(stated > 0 ? (stated + 2) * 1000 : 20_000);
     }
   }
   throw new Error(`the relay refused "${text}" four times`);
@@ -179,9 +184,10 @@ test("a wiki page is stored by the relay and is still there after a reload", asy
   await expect(page.getByText("Page saved")).toBeVisible({ timeout: 20_000 });
 
   await page.reload();
-  await page.getByTestId("wiki-toggle").click();
+  // The URL carries `view=wiki`, so the reload restores the surface by itself:
+  // clicking the toggle here would close it again.
   await expect(page.getByTestId(`wiki-page-${slug}`)).toBeVisible({
-    timeout: 20_000,
+    timeout: 30_000,
   });
   await page.getByTestId(`wiki-page-${slug}`).click();
   await expect(
