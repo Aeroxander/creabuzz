@@ -4,6 +4,7 @@ import type { LaunchRecord } from "./models";
 // (contracts/test/PinnedInterfaces.t.sol).
 export const SELECTOR_IS_GRADUATED = "0x9e5f2602";
 export const SELECTOR_CURRENCY_RAISED = "0x998ba4fc";
+export const SELECTOR_CLEARING_PRICE = "0x32a0f2d7";
 export const TOPIC_BID_SUBMITTED =
   "0x650baad5cd8ca09b8f580be220fa04ce2ba905a041f764b6a3fe2c848eb70540";
 
@@ -190,6 +191,30 @@ export async function liveProgress(
     bidCount,
     source: "rpc",
   };
+}
+
+/**
+ * The auction's current clearing price (Q96), read through `clearingPrice()`.
+ *
+ * Read on demand for the bid composer: a bid must be above the clearing price
+ * (`BidMustBeAboveClearingPrice`) and on the tick grid. Returns null when the
+ * read fails (no linked auction, bad RPC) so the caller can still let the
+ * contract enforce the rule rather than inventing a price to validate against.
+ */
+export async function clearingPrice(
+  endpoint: string,
+  auctionAddress: string,
+): Promise<bigint | null> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(auctionAddress)) return null;
+  try {
+    const result = (await rpc(endpoint, "eth_call", [
+      { to: auctionAddress, data: SELECTOR_CLEARING_PRICE },
+      "latest",
+    ])) as unknown;
+    return typeof result === "string" ? decodeU256(result) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

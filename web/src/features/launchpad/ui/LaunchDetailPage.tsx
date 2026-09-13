@@ -237,6 +237,8 @@ export function LaunchDetailPage({
         <RecordBidDialog
           isPublishing={mirror.isPending}
           launchName={launch.record.name}
+          record={launch.record}
+          rpcEndpoint={getRpcEndpoint()}
           onClose={() => setBidOpen(false)}
           onPublish={recordBid}
         />

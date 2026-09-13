@@ -87,7 +87,8 @@ export function validateBid(
   context: {
     tickSpacingQ96: bigint;
     clearingPriceQ96: bigint;
-    supply: bigint;
+    /** Auction `TOTAL_SUPPLY`; `null` when the record does not carry it. */
+    supply: bigint | null;
   },
 ): BidIssue[] {
   const issues: BidIssue[] = [];
@@ -98,13 +99,15 @@ export function validateBid(
       message: "The bid needs a budget greater than zero.",
     });
   }
-  const ceiling = maxBidPrice(context.supply);
-  if (plan.maxPriceQ96 > ceiling) {
-    issues.push({
-      field: "maxPrice",
-      severity: "error",
-      message: `This max price is above the supply's ceiling (${ceiling}); the contract would revert InvalidBidPriceTooHigh.`,
-    });
+  if (context.supply !== null) {
+    const ceiling = maxBidPrice(context.supply);
+    if (plan.maxPriceQ96 > ceiling) {
+      issues.push({
+        field: "maxPrice",
+        severity: "error",
+        message: `This max price is above the supply's ceiling (${ceiling}); the contract would revert InvalidBidPriceTooHigh.`,
+      });
+    }
   }
   if (
     context.tickSpacingQ96 > 0n &&

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  SELECTOR_CLEARING_PRICE,
   auctionProgress,
+  clearingPrice,
   decodeQuantity,
   decodeU256,
   isDevBuild,
@@ -152,6 +154,34 @@ test("a chain that answered none of the read reports no figures at all", async (
   try {
     const progress = await auctionProgress(RECORD, { allowPreview: false });
     assert.equal(progress.bidCount, null);
+  } finally {
+    restore();
+  }
+});
+
+// — clearingPrice (bid composer) —
+
+test("clearingPrice reads the pinned selector and returns Q96", async () => {
+  const restore = stubFetch((method, params) => {
+    assert.equal(method, "eth_call");
+    assert.equal(params[0].to, "0x1111111111111111111111111111111111111111");
+    assert.equal(params[0].data, SELECTOR_CLEARING_PRICE);
+    return `0x${word(12345n)}`;
+  });
+  try {
+    assert.equal(await clearingPrice("http://rpc", RECORD.auction), 12345n);
+  } finally {
+    restore();
+  }
+});
+
+test("clearingPrice returns null on a failed or malformed read", async () => {
+  const restore = stubFetch(() => {
+    throw new Error("connection refused");
+  });
+  try {
+    assert.equal(await clearingPrice("http://rpc", RECORD.auction), null);
+    assert.equal(await clearingPrice("http://rpc", "not-an-address"), null);
   } finally {
     restore();
   }

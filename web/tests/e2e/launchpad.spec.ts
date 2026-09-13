@@ -12,7 +12,7 @@ const FOUNDER = getPublicKey(
   ),
 );
 
-function record() {
+function record(auction?: string) {
   return {
     id: "record-1",
     pubkey: FOUNDER,
@@ -24,6 +24,7 @@ function record() {
       ["t", "dao-launchpad"],
       ["admission", "curated"],
       ["chain", "11155111"],
+      ...(auction ? [["auction", auction]] : []),
     ],
     content: JSON.stringify({
       pitch: "To the stars.",
@@ -60,6 +61,9 @@ function update() {
 const published: Array<{ kind: number; content: string; tags: string[][] }> =
   [];
 
+/** Auction address served to the directory; empty = no auction linked. */
+let servedAuction = "";
+
 async function mockRelay(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
@@ -94,7 +98,7 @@ async function mockRelay(page: import("@playwright/test").Page) {
       ];
       const kinds: number[] = filter.kinds ?? [];
       if (kinds.includes(37001))
-        ws.send(JSON.stringify(["EVENT", subId, record()]));
+        ws.send(JSON.stringify(["EVENT", subId, record(servedAuction)]));
       if (kinds.includes(47003))
         ws.send(JSON.stringify(["EVENT", subId, update()]));
       ws.send(JSON.stringify(["EOSE", subId]));
@@ -317,4 +321,58 @@ test("an allocation that does not add up blocks the launch", async ({
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
+});
+
+test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
+  // A linked auction makes the dialog a real bid composer: no auction, no send.
+  servedAuction = "0x5555555555555555555555555555555555555555";
+  // Fake wallet: eth_requestAccounts returns an account; eth_sendTransaction
+  // returns a deterministic hash. The app must treat the hash as authoritative
+  // for the mirror, and must NOT mirror before a hash exists.
+  // beforeEach already navigated, and init scripts only run at the next
+  // navigation: register the wallet here, then reload so it is present when
+  // the dialog reads `window.ethereum`.
+  await page.addInitScript(() => {
+    const hash = "0x" + "ab".repeat(32);
+    Object.defineProperty(window, "ethereum", {
+      configurable: true,
+      value: {
+        request: async ({ method }) => {
+          if (method === "eth_requestAccounts") {
+            return ["0x1111111111111111111111111111111111111111"];
+          }
+          if (method === "eth_sendTransaction") {
+            return hash;
+          }
+          throw new Error(`unexpected wallet method ${method}`);
+        },
+      },
+    });
+  });
+  await page.reload();
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("button", { name: "Back this launch" }).click();
+
+  // The mirror is disabled until a tx hash exists.
+  await expect(page.getByTestId("bid-record")).toBeDisabled();
+  await page.getByTestId("bid-budget").fill("1000000");
+  await page.getByTestId("bid-max-price").fill("1000000000000000000000000");
+
+  // The send button is enabled for a valid composed bid on a linked auction.
+  await expect(page.getByTestId("bid-send")).toBeEnabled();
+  await page.getByTestId("bid-send").click();
+  await expect(page.getByTestId("bid-tx")).toHaveValue("0x" + "ab".repeat(32));
+
+  // Mirror publishes the 47002 with the wallet hash — a mirror with no tx
+  // would claim a bid that never landed.
+  await page.getByTestId("bid-record").click();
+  await expect
+    .poll(() => published.find((e) => e.kind === 47002))
+    .toEqual(
+      expect.objectContaining({
+        kind: 47002,
+        content: expect.stringContaining("0x" + "ab".repeat(32)),
+      }),
+    );
 });
