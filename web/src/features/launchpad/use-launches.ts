@@ -122,6 +122,9 @@ export interface CreateLaunchInput {
   id: string;
   name: string;
   pitch: string;
+  longPitch?: string;
+  ipList?: string[];
+  updateCadence?: string;
   stage: LaunchStage;
   chainId: string;
   currency: string;
@@ -158,6 +161,10 @@ export function useCreateLaunch() {
         pitch: input.pitch,
         stage: input.stage,
       };
+      if (input.longPitch) content.longPitch = input.longPitch;
+      if (input.ipList && input.ipList.length > 0)
+        content.ipList = input.ipList;
+      if (input.updateCadence) content.updateCadence = input.updateCadence;
       if (input.currency) content.currency = input.currency;
       if (input.floorPrice) content.floorPrice = input.floorPrice;
       if (input.tickSpacing) content.tickSpacing = input.tickSpacing;

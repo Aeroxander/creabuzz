@@ -40,6 +40,12 @@ export interface LaunchRecord {
   createdAt: number;
   name: string;
   pitch: string;
+  /** The fuller story investors weigh: what exists, why now, what failure looks like. */
+  longPitch: string | null;
+  /** Key assets the team commits to the project (IP list: URLs / NIP-MP coords). */
+  ipList: string[];
+  /** Committed update cadence for investors ("monthly" etc.). */
+  updateCadence: string | null;
   stage: LaunchStage;
   currency: string | null;
   floorPrice: string | null;
@@ -189,6 +195,9 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     createdAt: event.created_at,
     name,
     pitch: typeof body.pitch === "string" ? body.pitch : "",
+    longPitch: str(body.longPitch),
+    ipList: strs(body.ipList),
+    updateCadence: str(body.updateCadence),
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
     currency: str(body.currency),
     floorPrice: str(body.floorPrice),
@@ -472,4 +481,19 @@ export function effectiveStage(launch: Launch): LaunchStage {
   if (tables.has("summon") || tables.has("graduate")) return "graduated";
   if (tables.has("refund-open") || tables.has("failed")) return "failed";
   return launch.record.stage;
+}
+
+/**
+ * The founder commitments a launch needs before it leaves `review` for `live`.
+ *
+ * Numeric terms make a deployable auction; these make an investor able to
+ * judge the person running it. Pure so `models.test.mjs` can pin the rule.
+ */
+export function hasFounderCommitments(record: LaunchRecord): boolean {
+  return (
+    Boolean(record.longPitch) &&
+    record.channels.length >= 1 &&
+    Boolean(record.budget) &&
+    Boolean(record.updateCadence)
+  );
 }

@@ -71,6 +71,11 @@ export function CreateLaunchDialog({
   const [id, setId] = useState(initial?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [pitch, setPitch] = useState(initial?.pitch ?? "");
+  const [longPitch, setLongPitch] = useState(initial?.longPitch ?? "");
+  const [ipList, setIpList] = useState(initial?.ipList?.join("\n") ?? "");
+  const [updateCadence, setUpdateCadence] = useState(
+    initial?.updateCadence ?? "",
+  );
   const [chainId, setChainId] = useState<string>(
     initial?.chainId ?? LAUNCH_DEFAULTS.chainId,
   );
@@ -234,6 +239,12 @@ export function CreateLaunchDialog({
       id: id.trim(),
       name: name.trim(),
       pitch: pitch.trim(),
+      longPitch: longPitch.trim() || undefined,
+      ipList: ipList
+        .split("\n")
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0),
+      updateCadence: updateCadence.trim() || undefined,
       stage: initial?.stage ?? "draft",
       chainId: chainId.trim(),
       currency: currency.trim(),
@@ -313,6 +324,49 @@ export function CreateLaunchDialog({
             placeholder="What problem gets solved, and why now?"
             rows={3}
             value={pitch}
+          />
+        </Field>
+        <Field
+          id="launch-long-pitch"
+          label="The longer story"
+          hint="What exists today, why now, and what failure looks like. The record only goes live once this is committed."
+        >
+          <textarea
+            id="launch-long-pitch"
+            data-testid="launch-long-pitch"
+            className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+            onChange={(e) => setLongPitch(e.target.value)}
+            placeholder="What is already built, who is on the team, what you will build next — and what would show the thesis is wrong."
+            rows={4}
+            value={longPitch}
+          />
+        </Field>
+        <Field
+          id="launch-ip-list"
+          label="Committed assets"
+          hint="One URL or NIP-MP coordinate per line — repos, docs, social accounts, domains."
+        >
+          <textarea
+            id="launch-ip-list"
+            data-testid="launch-ip-list"
+            className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+            onChange={(e) => setIpList(e.target.value)}
+            placeholder={"https://github.com/…\nhttps://docs.example.com/…"}
+            rows={3}
+            value={ipList}
+          />
+        </Field>
+        <Field
+          id="launch-update-cadence"
+          label="Update cadence"
+          hint='What you commit to telling investors, e.g. "monthly with KPIs".'
+        >
+          <Input
+            id="launch-update-cadence"
+            data-testid="launch-update-cadence"
+            onChange={(e) => setUpdateCadence(e.target.value)}
+            placeholder="monthly with KPIs"
+            value={updateCadence}
           />
         </Field>
 

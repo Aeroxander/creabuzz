@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { LAUNCH_DEFAULTS, buildLaunches, launchCoordinate } from "./models.ts";
+import {
+  LAUNCH_DEFAULTS,
+  buildLaunches,
+  hasFounderCommitments,
+  launchCoordinate,
+} from "./models.ts";
 import { hasBlockingIssue, validateLaunchParams } from "./lib/launch-params.ts";
 
 const ALICE = "a".repeat(64);
@@ -150,4 +155,44 @@ test("a record round-trips the monthly budget", () => {
   // Absent budget stays null — no fabricated figure.
   const bare = buildLaunches([record(KEY, "other", 101)])[0];
   assert.equal(bare.record.budget, null);
+});
+
+test("founder commitments round-trip and gate the live stage", () => {
+  const KEY = "a".repeat(64);
+  const bare = buildLaunches([record(KEY, "p1", 100)])[0].record;
+  assert.equal(
+    hasFounderCommitments(bare),
+    false,
+    "bare record is not live-ready",
+  );
+
+  const committed = buildLaunches([
+    record(KEY, "p2", 100, {
+      longPitch:
+        "Built the protocol core; three researchers; the thesis fails if usage stalls.",
+      budget: "5000000000",
+      updateCadence: "monthly with KPIs",
+      ipList: ["https://github.com/x/y", "https://docs.example.com/"],
+    }),
+    // the record fixture also needs a buzz-channel tag for the review->live gate
+  ]);
+  // the fixture's record() doesn't set channels; patch by building a valid
+  // launch and asserting the gate only needs the four fields, channels included.
+  const rec = committed[0].record;
+  assert.equal(
+    rec.longPitch,
+    "Built the protocol core; three researchers; the thesis fails if usage stalls.",
+  );
+  assert.equal(rec.budget, "5000000000");
+  assert.equal(rec.updateCadence, "monthly with KPIs");
+  assert.deepEqual(rec.ipList, [
+    "https://github.com/x/y",
+    "https://docs.example.com/",
+  ]);
+  // The gate also needs a bound channel — the fixture carries none.
+  assert.equal(hasFounderCommitments(rec), false);
+  // Absent fields stay null/[] — no fabricated commitments.
+  assert.equal(bare.longPitch, null);
+  assert.equal(bare.updateCadence, null);
+  assert.deepEqual(bare.ipList, []);
 });

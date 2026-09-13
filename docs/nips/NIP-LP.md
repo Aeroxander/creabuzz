@@ -79,6 +79,10 @@ Content is JSON:
 
 ```json
 {
+  "longPitch": "What exists today, why now, what failure looks like.",
+  "ipList": ["https://github.com/…", "naddr1…"],
+  "updateCadence": "monthly with KPIs",
+
   "pitch": "One-paragraph pitch.",
   "stage": "draft | review | live | funding | graduated | failed",
   "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -101,6 +105,13 @@ units, a commitment investors price at bid time: a budget above a sixth of the
 graduation threshold is displayed as a warning by clients (the treasury could
 be refilled only about every six months at the cap). It is a commitment, not a
 chain-enforced number.
+
+`longPitch` (optional), `ipList` (optional, URLs or NIP-MP `a` coordinates)
+and `updateCadence` (optional) are the founder commitments. Clients gate the
+`review` → `live` stage on them: numeric terms make a deployable auction;
+these make an investor able to judge the person running it. A launch cannot
+leave `review` without a long pitch, a bound `buzz-channel`, a committed
+`budget`, and an update cadence.
 
 `paramsHash` commits to the full offchain auction configuration (steps,
 buckets, caps, gating) so clients can detect silent edits. `stage` is a

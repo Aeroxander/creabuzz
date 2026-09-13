@@ -3,7 +3,12 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { isEvmAddress, mintCommandForPlan, type Launch } from "../models";
+import {
+  hasFounderCommitments,
+  isEvmAddress,
+  mintCommandForPlan,
+  type Launch,
+} from "../models";
 import { toAtomic } from "../lib/amounts";
 import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
 import { getRpcEndpoint, isContractDeployed } from "../chain";
@@ -229,6 +234,15 @@ export function ManagePanel({
     : order[order.indexOf(record.stage as (typeof order)[number]) + 1];
 
   /**
+   * Founder commitments the record must carry before the launch leaves
+   * `review` for `live`: a real story, a bound discussion channel, and a
+   * committed budget. Numeric validity makes a deployable auction; these make
+   * an investor able to judge the person running it (the MetaDAO funnel
+   * lesson: qualification is the product).
+   */
+  const founderReady = hasFounderCommitments(record);
+
+  /**
    * What is set and what is still missing.
    *
    * A founder publishing terms cannot see which of them the chain will need, so
@@ -277,6 +291,11 @@ export function ManagePanel({
       label: "Discussion channel",
       ok: record.channels.length > 0,
       hint: "Bind the channel where the launch is discussed.",
+    },
+    {
+      label: "Founder commitments",
+      ok: founderReady,
+      hint: "The long pitch, an update cadence, and a bound channel let investors judge the team, not just the numbers.",
     },
   ];
   const open = readiness.filter((item) => !item.ok).length;
@@ -349,7 +368,7 @@ export function ManagePanel({
           </Button>
           {next ? (
             <Button
-              disabled={save.isPending}
+              disabled={save.isPending || (next === "live" && !founderReady)}
               onClick={() =>
                 void handleSave(
                   toInput({ stage: next as CreateLaunchInput["stage"] }),
@@ -358,7 +377,9 @@ export function ManagePanel({
               size="sm"
               variant="outline"
             >
-              Advance to {next}
+              {next === "live" && !founderReady
+                ? "Add founder commitments first"
+                : `Advance to ${next}`}
             </Button>
           ) : null}
           {record.stage !== "failed" ? (
