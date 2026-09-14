@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { SANDBOX_ID } from "../lib/sandbox";
 import { Link } from "@tanstack/react-router";
-import { Plus, Rocket, Star } from "lucide-react";
+import { ArrowRight, Plus, Rocket, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -153,71 +154,91 @@ export function LaunchesPage() {
           ) : null}
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {visible.map((launch) => {
-            const key = followKey(launch.record.author, launch.record.id);
-            const isFollowed = followed.has(key);
-            return (
-              <li key={key}>
-                <Card className="flex h-full flex-col p-4">
-                  <div className="flex items-start gap-2">
-                    <Link
-                      to="/launchpad/$launchId"
-                      params={{ launchId: launch.record.id }}
-                      search={{ author: launch.record.author }}
-                      className="min-w-0 flex-1"
-                    >
-                      <span className="block truncate text-base font-semibold hover:underline">
-                        {launch.record.name}
-                      </span>
-                      {launch.record.agent ? (
-                        <span
-                          className="ml-1 inline-block rounded-full bg-violet-500/15 px-1.5 py-0.5 align-middle text-2xs font-medium text-violet-700 dark:text-violet-300"
-                          data-testid="launch-agent-badge"
-                          title={`Run by agent ${launch.record.agent.slice(0, 8)}…`}
-                        >
-                          Agent-run
+        <>
+          <Link
+            className="mb-4 flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 transition-colors hover:bg-violet-500/10"
+            to="/launchpad/$launchId"
+            params={{ launchId: SANDBOX_ID }}
+            search={{ author: undefined }}
+            data-testid="sandbox-entry"
+          >
+            <span>
+              <span className="block text-sm font-semibold">
+                Try the sandbox
+              </span>
+              <span className="block text-xs text-black/60 dark:text-white/60">
+                Walk a full simulated raise — terms, price discovery, graduation
+                — without a chain or a relay. Clearly badged, never real money.
+              </span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0" />
+          </Link>
+          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {visible.map((launch) => {
+              const key = followKey(launch.record.author, launch.record.id);
+              const isFollowed = followed.has(key);
+              return (
+                <li key={key}>
+                  <Card className="flex h-full flex-col p-4">
+                    <div className="flex items-start gap-2">
+                      <Link
+                        to="/launchpad/$launchId"
+                        params={{ launchId: launch.record.id }}
+                        search={{ author: launch.record.author }}
+                        className="min-w-0 flex-1"
+                      >
+                        <span className="block truncate text-base font-semibold hover:underline">
+                          {launch.record.name}
                         </span>
-                      ) : null}
-                      <span className="mt-0.5 line-clamp-2 block text-sm text-black/60 dark:text-white/60">
-                        {launch.record.pitch || "No pitch yet."}
+                        {launch.record.agent ? (
+                          <span
+                            className="ml-1 inline-block rounded-full bg-violet-500/15 px-1.5 py-0.5 align-middle text-2xs font-medium text-violet-700 dark:text-violet-300"
+                            data-testid="launch-agent-badge"
+                            title={`Run by agent ${launch.record.agent.slice(0, 8)}…`}
+                          >
+                            Agent-run
+                          </span>
+                        ) : null}
+                        <span className="mt-0.5 line-clamp-2 block text-sm text-black/60 dark:text-white/60">
+                          {launch.record.pitch || "No pitch yet."}
+                        </span>
+                      </Link>
+                      <button
+                        aria-label={
+                          isFollowed ? "Unfollow launch" : "Follow launch"
+                        }
+                        aria-pressed={isFollowed}
+                        onClick={() => toggleFollow(launch)}
+                        className={cn(
+                          "rounded-lg p-1.5",
+                          isFollowed
+                            ? "text-amber-500"
+                            : "text-black/60 hover:bg-black/5 dark:text-white/60",
+                        )}
+                        type="button"
+                      >
+                        <Star
+                          className="h-4 w-4"
+                          fill={isFollowed ? "currentColor" : "none"}
+                        />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <StageBadge stage={effectiveStage(launch)} />
+                      <span className="text-xs text-black/60 dark:text-white/60">
+                        {launch.updates.length} updates · {launch.bids.length}{" "}
+                        bids
                       </span>
-                    </Link>
-                    <button
-                      aria-label={
-                        isFollowed ? "Unfollow launch" : "Follow launch"
-                      }
-                      aria-pressed={isFollowed}
-                      onClick={() => toggleFollow(launch)}
-                      className={cn(
-                        "rounded-lg p-1.5",
-                        isFollowed
-                          ? "text-amber-500"
-                          : "text-black/60 hover:bg-black/5 dark:text-white/60",
-                      )}
-                      type="button"
-                    >
-                      <Star
-                        className="h-4 w-4"
-                        fill={isFollowed ? "currentColor" : "none"}
-                      />
-                    </button>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <StageBadge stage={effectiveStage(launch)} />
-                    <span className="text-xs text-black/60 dark:text-white/60">
-                      {launch.updates.length} updates · {launch.bids.length}{" "}
-                      bids
-                    </span>
-                  </div>
-                  <div className="mt-2">
-                    <ProgressBar record={launch.record} />
-                  </div>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
+                    </div>
+                    <div className="mt-2">
+                      <ProgressBar record={launch.record} />
+                    </div>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       {createOpen ? (

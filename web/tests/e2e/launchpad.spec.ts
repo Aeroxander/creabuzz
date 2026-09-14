@@ -770,3 +770,25 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
       }),
     );
 });
+
+test("the sandbox walks a full raise, clearly badged as simulated", async ({
+  page,
+}) => {
+  // The launchpad has no real content; the sandbox makes the flow visible —
+  // and it must say it is simulated, not present fake chain data as live.
+  await expect(page.getByTestId("sandbox-entry")).toBeVisible();
+  await page.getByTestId("sandbox-entry").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula-sandbox/);
+  // Terms render from the deterministic record.
+  await expect(page.getByText("Nebula Sandbox")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText("Raise terms")).toBeVisible();
+  // The raise is alive and honest: Simulated, never "No chain data".
+  await expect(page.getByTestId("launch-progress-source")).toHaveText(
+    "Simulated",
+  );
+  await expect(page.getByText("Proven commitments")).toBeVisible();
+  // No fabricated chain addresses.
+  await expect(page.getByText("Auction contract")).toBeVisible();
+});

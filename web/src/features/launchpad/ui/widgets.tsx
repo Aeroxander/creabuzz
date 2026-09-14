@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { Badge } from "@/shared/ui/badge";
-import { auctionProgress, progressPercent } from "../chain";
+import {
+  auctionProgress,
+  progressPercent,
+  type AuctionProgress,
+} from "../chain";
+import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { effectiveStage } from "../models";
 
@@ -19,16 +24,22 @@ export function StageBadge({ stage }: { stage: LaunchStage }) {
 }
 
 export function useAuctionProgress(record: LaunchRecord | undefined) {
-  return useQuery({
+  return useQuery<AuctionProgress>({
     queryKey: [
       "launchpad",
       "auction",
       record?.author,
       record?.id,
       record?.auction,
+      record?.id === SANDBOX_ID ? "simulated" : undefined,
     ],
-    queryFn: () => auctionProgress(record as LaunchRecord),
+    queryFn: () =>
+      record?.id === SANDBOX_ID
+        ? sandboxProgress()
+        : auctionProgress(record as LaunchRecord),
     enabled: record !== undefined,
+    // The sandbox advances on its own clock; refetch so the raise visibly moves.
+    refetchInterval: record?.id === SANDBOX_ID ? 2000 : undefined,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -60,7 +71,9 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
               ? "Live"
               : data.source === "preview"
                 ? "Preview data"
-                : "No chain data"}
+                : data.source === "simulated"
+                  ? "Simulated"
+                  : "No chain data"}
           </span>
         ) : null}
       </div>

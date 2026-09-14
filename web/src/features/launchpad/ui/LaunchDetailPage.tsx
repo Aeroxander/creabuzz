@@ -55,6 +55,7 @@ import {
   impliedFdv,
   tokensForBudget,
 } from "../lib/allocation";
+import { sandboxRecord } from "../lib/sandbox";
 import {
   SETTLEMENT_TERMS,
   toAtomic,
@@ -72,11 +73,23 @@ type Tab = "overview" | "updates" | "proposals" | "treasury" | "manage";
 export function LaunchDetailPage({
   launchId,
   author,
+  sandbox,
 }: {
   launchId: string;
   author: string | undefined;
+  /** Render the deterministic sandbox launch instead of a relay launch. */
+  sandbox?: boolean;
 }) {
-  const { launch, isLoading } = useLaunch(launchId, author);
+  const { launch: realLaunch, isLoading } = useLaunch(launchId, author);
+  const launch = sandbox
+    ? {
+        record: sandboxRecord(),
+        bids: [],
+        updates: [],
+        proposals: [],
+        receipts: [],
+      }
+    : realLaunch;
   const isFounder = useIsFounder(launch);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();

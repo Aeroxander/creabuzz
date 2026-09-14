@@ -24,10 +24,11 @@ export interface AuctionProgress {
   bidCount: number | null;
   /**
    * `rpc` — read from the chain; `preview` — deterministic fixture, development
-   * builds only; `unavailable` — the chain could not be read, so no figures are
-   * reported at all.
+   * builds only; `simulated` — the sandbox launch's synthetic raise;
+   * `unavailable` — the chain could not be read, so no figures are reported at
+   * all.
    */
-  source: "preview" | "rpc" | "unavailable";
+  source: "preview" | "rpc" | "simulated" | "unavailable";
   /** Why the chain read failed, when `source` is `unavailable`. */
   reason?: string;
 }

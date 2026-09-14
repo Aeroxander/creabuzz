@@ -20,5 +20,8 @@ const LaunchDetailPage = lazyRouteComponent(
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
   const { author } = Route.useSearch();
-  return <LaunchDetailPage launchId={launchId} author={author} />;
+  const sandbox = launchId === "nebula-sandbox";
+  return (
+    <LaunchDetailPage launchId={launchId} author={author} sandbox={sandbox} />
+  );
 }
