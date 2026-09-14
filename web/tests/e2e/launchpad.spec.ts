@@ -722,3 +722,51 @@ test("the trust page states each commitment and its real proof state", async ({
   await expect(auctionRow).toContainText(/unreadable|not set/);
   await expect(auctionRow).not.toContainText("deployed");
 });
+
+test("milestone claims and verdicts mirror to the feed with a closed vocabulary", async ({
+  page,
+}) => {
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await page.getByRole("tab", { name: /Manage/ }).click();
+  const panel = page.getByTestId("launch-milestones");
+  await expect(panel).toBeVisible({ timeout: 15_000 });
+  // Bad evidence hash is refused before mirroring.
+  await page.getByTestId("claim-id").fill("milestone-1");
+  await page.getByTestId("evidence-hash").fill("not-hex");
+  await page.getByTestId("record-claim").click();
+  await expect(
+    page.getByText("Evidence hash must be 64 hex characters"),
+  ).toBeVisible();
+  // A valid claim mirrors with kind=claim.
+  await page.getByTestId("evidence-hash").fill("ab".repeat(32));
+  await page.getByTestId("record-claim").click();
+  await expect
+    .poll(() =>
+      published.find(
+        (e) =>
+          e.kind === 47005 &&
+          String(e.tags.find(([k]) => k === "kind")?.[1]) === "claim",
+      ),
+    )
+    .toEqual(
+      expect.objectContaining({
+        content: expect.stringContaining('"table":"claim"'),
+      }),
+    );
+  // A verdict mirrors with kind=verdict.
+  await page.getByTestId("verdict-approve").click();
+  await expect
+    .poll(() =>
+      published.find(
+        (e) =>
+          e.kind === 47005 &&
+          String(e.tags.find(([k]) => k === "kind")?.[1]) === "verdict",
+      ),
+    )
+    .toEqual(
+      expect.objectContaining({
+        content: expect.stringContaining('"approve":true'),
+      }),
+    );
+});

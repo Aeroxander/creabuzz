@@ -15,8 +15,10 @@ import { getRpcEndpoint, isContractDeployed } from "../chain";
 import {
   useCreateLaunch,
   useLaunch,
+  usePublishMirror,
   type CreateLaunchInput,
 } from "../use-launches";
+import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { Input } from "@/shared/ui/input";
 
@@ -173,8 +175,12 @@ export function ManagePanel({
 }) {
   const { launch } = useLaunch(launchId, author);
   const save = useCreateLaunch();
+  const mirror = usePublishMirror();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [claimId, setClaimId] = useState("");
+  const [evidenceHash, setEvidenceHash] = useState("");
+  const [milestoneError, setMilestoneError] = useState<string | null>(null);
   /** Destructive stage change: confirmed inline, like the delete below. */
   const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
   /** Open the editor seeded for a relaunch (fresh stage, cleared chain links). */
@@ -218,6 +224,56 @@ export function ManagePanel({
    * stage and cleared chain links. The community and discussion history keep
    * their identity; the new auction is a new deploy.
    */
+  const recordClaim = async () => {
+    setMilestoneError(null);
+    if (!/^[0-9a-fA-F]{64}$/.test(evidenceHash.trim())) {
+      setMilestoneError("Evidence hash must be 64 hex characters.");
+      return;
+    }
+    try {
+      await mirror.mutateAsync({
+        kind: KIND_LAUNCH_RECEIPT,
+        author: record.author,
+        launchId: record.id,
+        extraTags: [
+          ["kind", "claim"],
+          ["claim", claimId.trim()],
+          ["evidence", evidenceHash.trim().toLowerCase()],
+        ],
+        content: {
+          table: "claim",
+          claim: claimId.trim(),
+          evidenceHash: evidenceHash.trim().toLowerCase(),
+        },
+      });
+    } catch (err) {
+      setMilestoneError(
+        err instanceof Error ? err.message : "Failed to record the claim.",
+      );
+    }
+  };
+
+  const recordVerdict = async (approve: boolean) => {
+    setMilestoneError(null);
+    try {
+      await mirror.mutateAsync({
+        kind: KIND_LAUNCH_RECEIPT,
+        author: record.author,
+        launchId: record.id,
+        extraTags: [["kind", "verdict"]],
+        content: {
+          table: "verdict",
+          claim: claimId.trim(),
+          approve,
+        },
+      });
+    } catch (err) {
+      setMilestoneError(
+        err instanceof Error ? err.message : "Failed to record the verdict.",
+      );
+    }
+  };
+
   const handleRelaunch = () => {
     // Open the editor seeded from the record but reset to a fresh start:
     // stage back to draft, and the chain links cleared so the founder links
@@ -361,6 +417,75 @@ export function ManagePanel({
           chain is the ledger — this panel states the mechanism; the contract
           moves the money.
         </p>
+      </Card>
+
+      <Card className="p-4" data-testid="launch-milestones">
+        <h2 className="text-base font-semibold">Milestone attestation</h2>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          A milestone claim is staked and settled onchain by the verifier set;
+          this panel mirrors the claim and your verdict onto the feed (47005,
+          advisory). The chain is the ledger.
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          <label className="text-sm font-medium" htmlFor="claim-id">
+            Claim id
+          </label>
+          <Input
+            id="claim-id"
+            data-testid="claim-id"
+            onChange={(e) => setClaimId(e.target.value)}
+            placeholder="milestone-1"
+            value={claimId}
+          />
+          <label className="text-sm font-medium" htmlFor="evidence-hash">
+            Evidence hash
+          </label>
+          <Input
+            id="evidence-hash"
+            data-testid="evidence-hash"
+            onChange={(e) => setEvidenceHash(e.target.value)}
+            placeholder="64 hex chars of the canonical claim"
+            value={evidenceHash}
+          />
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button
+              data-testid="record-claim"
+              disabled={
+                claimId.trim() === "" ||
+                evidenceHash.trim() === "" ||
+                mirror.isPending
+              }
+              onClick={() => void recordClaim()}
+              size="sm"
+              type="button"
+            >
+              Record claim
+            </Button>
+            <Button
+              data-testid="verdict-approve"
+              disabled={claimId.trim() === "" || mirror.isPending}
+              onClick={() => void recordVerdict(true)}
+              size="sm"
+              variant="outline"
+              type="button"
+            >
+              Verdict: approve
+            </Button>
+            <Button
+              data-testid="verdict-reject"
+              disabled={claimId.trim() === "" || mirror.isPending}
+              onClick={() => void recordVerdict(false)}
+              size="sm"
+              variant="outline"
+              type="button"
+            >
+              Verdict: reject
+            </Button>
+          </div>
+          {milestoneError ? (
+            <p className="text-sm text-red-600">{milestoneError}</p>
+          ) : null}
+        </div>
       </Card>
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms</h2>
