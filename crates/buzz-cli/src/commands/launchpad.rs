@@ -548,6 +548,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
         }
         LaunchpadCmd::ComposeBid {
             id,
+            as_agent,
             auction,
             currency,
             budget,
@@ -560,6 +561,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             owner,
             deadline,
         } => cmd_compose_bid(
+            as_agent,
             &id,
             &auction,
             currency.as_deref(),
@@ -660,6 +662,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
 /// Prints a JSON envelope a wallet or `cast send` can sign — the CLI never
 /// signs or moves money ("machines compose, humans sign").
 fn cmd_compose_bid(
+    as_agent: bool,
     _id: &str,
     auction: &str,
     currency: Option<&str>,
@@ -721,7 +724,7 @@ fn cmd_compose_bid(
         data: bid_data,
     });
 
-    let envelope = serde_json::json!({
+    let mut envelope = serde_json::json!({
         "compose": "buzz launchpad compose-bid",
         "chainId": chain_id,
         "note": "unsigned — sign with a wallet or `cast send`",
@@ -733,6 +736,12 @@ fn cmd_compose_bid(
             "data": c.data,
         })).collect::<Vec<_>>(),
     });
+    if as_agent {
+        envelope
+            .as_object_mut()
+            .expect("envelope is an object")
+            .insert("agent".into(), serde_json::json!({"auth": "BUZZ_AUTH_TAG"}));
+    }
     let json = serde_json::to_string_pretty(&envelope)
         .map_err(|e| CliError::Other(format!("failed to serialize: {e}")))?;
     println!("{json}");

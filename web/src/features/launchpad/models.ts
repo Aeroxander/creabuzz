@@ -64,6 +64,12 @@ export interface LaunchRecord {
   channels: string[];
   projects: string[];
   team: Array<{ pubkey: string; role: string }>;
+  /**
+   * Agent pubkey when the launch is agent-authored (`agent` tag, NIP-OA
+   * provenance optional). Agents are first-class participants; the badge is
+   * how an investor sees one.
+   */
+  agent: string | null;
   chainId: string | null;
   auction: string | null;
   token: string | null;
@@ -219,6 +225,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     docs: strs(body.docs),
     channels: tagValues(event, "buzz-channel"),
     projects: tagValues(event, "a"),
+    agent: tagValue(event, "agent"),
     team: event.tags
       .filter((t) => t[0] === "team" && t.length >= 3)
       .map((t) => ({ pubkey: t[1], role: t[2] })),

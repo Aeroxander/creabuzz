@@ -170,6 +170,15 @@ export function LaunchesPage() {
                       <span className="block truncate text-base font-semibold hover:underline">
                         {launch.record.name}
                       </span>
+                      {launch.record.agent ? (
+                        <span
+                          className="ml-1 inline-block rounded-full bg-violet-500/15 px-1.5 py-0.5 align-middle text-2xs font-medium text-violet-700 dark:text-violet-300"
+                          data-testid="launch-agent-badge"
+                          title={`Run by agent ${launch.record.agent.slice(0, 8)}…`}
+                        >
+                          Agent-run
+                        </span>
+                      ) : null}
                       <span className="mt-0.5 line-clamp-2 block text-sm text-black/60 dark:text-white/60">
                         {launch.record.pitch || "No pitch yet."}
                       </span>

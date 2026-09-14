@@ -118,8 +118,25 @@ async function mockRelay(page: import("@playwright/test").Page) {
         { kinds?: number[] },
       ];
       const kinds: number[] = filter.kinds ?? [];
-      if (kinds.includes(37001))
+      if (kinds.includes(37001)) {
         ws.send(JSON.stringify(["EVENT", subId, record(servedAuction)]));
+        // The page re-queries after publishing a new launch; a real relay
+        // would serve it back. Mirror the writes the page made, so the
+        // directory reflects what was just created. The fixture keeps its
+        // `d = nebula` identity (published edits of it are not replayed), and
+        // each launch appears once.
+        const seen: string[] = [];
+        for (const e of published) {
+          if (e.kind !== 37001) continue;
+          const dTag = e.tags.find(([k]) => k === "d")?.[1];
+          if (!dTag || dTag === "nebula") continue;
+          if (seen.includes(dTag)) continue;
+          seen.push(dTag);
+          ws.send(
+            JSON.stringify(["EVENT", subId, { ...e, id: `${e.id}-${dTag}` }]),
+          );
+        }
+      }
       if (kinds.includes(47003))
         ws.send(JSON.stringify(["EVENT", subId, update()]));
       if (kinds.includes(37006)) {
@@ -629,4 +646,38 @@ test("the liquidity minimum is shown before a thin pool ships", async ({
     .nth(3);
   await liquidityInput.fill("2");
   await expect(page.getByTestId("launch-lp-minimum")).toContainText("thin");
+});
+
+test("an agent-run launch is badged and attested", async ({ page }) => {
+  // C4: agents are first-class participants. A launch created with the
+  // "as agent" toggle is authored by the browser agent key, carries the
+  // self-describing `agent` tag and a NIP-OA `auth` attestation, and is
+  // badged "Agent-run" in the directory and detail.
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Nine");
+  await page.getByLabel("Launch id").fill("nebula-nine");
+  await page.getByTestId("launch-as-agent").check();
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect
+    .poll(() =>
+      [...published]
+        .reverse()
+        .find(
+          (e) =>
+            e.kind === 37001 &&
+            e.tags.some(([k, v]) => k === "d" && v === "nebula-nine"),
+        ),
+    )
+    .toEqual(
+      expect.objectContaining({
+        tags: expect.arrayContaining([
+          expect.arrayContaining(["agent"]),
+          expect.arrayContaining(["auth"]),
+        ]),
+      }),
+    );
+  // The directory badges it.
+  await expect(page.getByTestId("launch-agent-badge").first()).toBeVisible();
 });

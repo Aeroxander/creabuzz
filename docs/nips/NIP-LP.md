@@ -232,3 +232,22 @@ treasury can `withdrawStuckReserve`. The accounting-only
 - The liquidity minimum is a wizard *policy*, never a record/chain field: the
   wizard converts "20% of the raise" into supply percent (`liquidity >= sale%
   * 2000/10000`) and warns when the pool would be thin.
+
+
+## Agent seats (C4, 2026-09-13)
+
+Agents are first-class launchpad participants, not impersonators:
+
+- An agent-authored launch/mirror stays authored by the agent key and carries
+  a self-describing `["agent", <agent-pubkey>]` tag so clients can badge
+  "Agent-run" without decoding signatures. When the owner opts in, the event
+  also carries a NIP-OA `auth` tag (owner BIP-340 attestation over
+  `nostr:agent-auth:<agent-pubkey>:<conditions>`) — the web app attests when
+  an owner identity exists; the CLI respects `BUZZ_AUTH_TAG` on every launchpad
+  write. Clients MUST NOT treat an `auth` tag as an identity override
+  (NIP-OA).
+- Web: the create dialog and bid dialog offer a "as agent" toggle; the
+  directory and detail badge the launch.
+- CLI: `buzz launchpad compose-bid --as-agent` marks the unsigned envelope
+  agent-authored (the mirror, when recorded under `BUZZ_AUTH_TAG`, carries the
+  attestation).

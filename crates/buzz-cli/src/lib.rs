@@ -1410,6 +1410,11 @@ pub enum LaunchpadCmd {
     ComposeBid {
         /// Launch id (slug)
         id: String,
+        /// Author the envelope as an agent (sets the agent marker; the
+        /// mirror, when recorded, carries NIP-OA attestation from
+        /// BUZZ_AUTH_TAG)
+        #[arg(long)]
+        as_agent: bool,
         /// Auction contract (0x address)
         #[arg(long)]
         auction: String,

@@ -128,6 +128,7 @@ export function CreateLaunchDialog({
   const [boundChannels, setBoundChannels] = useState<string[]>(
     initial?.channels ?? [],
   );
+  const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
   const [tokenMode, setTokenMode] = useState<TokenMode>(
     initial?.token ? "import" : "mint",
@@ -155,6 +156,7 @@ export function CreateLaunchDialog({
     setRequiredRaised(LAUNCH_DEFAULTS.requiredRaised);
     setBudget("");
     setAdmission(LAUNCH_DEFAULTS.admission);
+    setAsAgent(false);
     setBoundChannels(initial?.channels ?? []);
     if (name.trim() !== "") {
       setTokenName(`${name.trim()} Token`);
@@ -255,6 +257,7 @@ export function CreateLaunchDialog({
     }
     setError(null);
     void onCreate({
+      asAgent,
       id: id.trim(),
       name: name.trim(),
       pitch: pitch.trim(),
@@ -869,6 +872,16 @@ export function CreateLaunchDialog({
               : "Publish launch"}
         </Button>
       </div>
+      <label className="mt-3 flex items-center gap-2 text-sm text-black/60 dark:text-white/60">
+        <input
+          checked={asAgent}
+          data-testid="launch-as-agent"
+          onChange={(e) => setAsAgent(e.target.checked)}
+          type="checkbox"
+        />
+        Create this launch as an agent — authored by the browser agent key,
+        attested to you (NIP-OA) and badged "Agent-run".
+      </label>
     </Modal>
   );
 }

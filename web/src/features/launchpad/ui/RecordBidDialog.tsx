@@ -22,6 +22,7 @@ interface BidInput {
   budget: string;
   maxPrice: string;
   tx: string;
+  asAgent?: boolean;
 }
 
 /**
@@ -51,6 +52,7 @@ export function RecordBidDialog({
   onClose: () => void;
   onPublish: (input: BidInput) => Promise<void>;
 }) {
+  const [asAgent, setAsAgent] = useState(false);
   const [bucket, setBucket] = useState("bucket-0");
   const [budget, setBudget] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -224,6 +226,7 @@ export function RecordBidDialog({
       budget: budget.trim(),
       maxPrice: maxPrice.trim(),
       tx: tx.trim(),
+      asAgent,
     });
   };
 
@@ -325,6 +328,15 @@ export function RecordBidDialog({
           />
         </div>
       </div>
+      <label className="mt-3 flex items-center gap-2 text-sm text-black/60 dark:text-white/60">
+        <input
+          checked={asAgent}
+          data-testid="bid-as-agent"
+          onChange={(e) => setAsAgent(e.target.checked)}
+          type="checkbox"
+        />
+        Record this bid as an agent (NIP-OA attested).
+      </label>
       <div className="mt-4 flex justify-end gap-2">
         <Button
           data-testid="bid-send"

@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { getAgentPubkey } from "@/shared/lib/agent-identity";
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
+import { signLaunchpadEventAsAgent } from "./lib/agent-launchpad";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import type { SupplyAllocation } from "./lib/allocation";
 import type { VestingConfig } from "./models";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
@@ -122,16 +125,33 @@ export function useIsFounder(launch: Launch | undefined): boolean {
   return Boolean(launch && pubkey && launch.record.author === pubkey);
 }
 
-async function publishMirror(input: {
-  kind: number;
-  tags: string[][];
-  content: Record<string, unknown>;
-}): Promise<NostrEvent> {
-  const signed = await signAsUser({
-    kind: input.kind,
-    tags: input.tags,
-    content: JSON.stringify(input.content),
-  });
+async function publishMirror(
+  input: {
+    kind: number;
+    tags: string[][];
+    content: Record<string, unknown>;
+  },
+  auth?: {
+    signEvent: (template: {
+      kind: number;
+      tags: string[][];
+      content: string;
+    }) => Promise<SignedNostrEvent | null>;
+    pubkey: string;
+  },
+): Promise<NostrEvent> {
+  const signed = auth
+    ? await auth.signEvent({
+        kind: input.kind,
+        tags: input.tags,
+        content: JSON.stringify(input.content),
+      })
+    : await signAsUser({
+        kind: input.kind,
+        tags: input.tags,
+        content: JSON.stringify(input.content),
+      });
+  if (!signed) throw new Error("signing failed");
   const result = await publishEvent(relayWsUrl(), signed, {
     signAuth: signAsUser,
   });
@@ -149,6 +169,8 @@ export interface TokenPlan {
 }
 
 export interface CreateLaunchInput {
+  /** Publish as the browser agent (NIP-OA attested when possible). */
+  asAgent?: boolean;
   id: string;
   name: string;
   pitch: string;
@@ -175,7 +197,7 @@ export interface CreateLaunchInput {
 export function useCreateLaunch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateLaunchInput) => {
+    mutationFn: async (input: CreateLaunchInput) => {
       const tags: string[][] = [
         ["d", input.id],
         ["name", input.name],
@@ -204,6 +226,18 @@ export function useCreateLaunch() {
       if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
       if (input.allocation) content.allocation = input.allocation;
       if (input.vesting) content.vesting = input.vesting;
+      if (input.asAgent) {
+        return publishMirror(
+          { kind: KIND_LAUNCH_RECORD, tags, content },
+          {
+            signEvent: (t) =>
+              signLaunchpadEventAsAgent(t, {
+                conditions: `kind=${KIND_LAUNCH_RECORD}`,
+              }),
+            pubkey: getAgentPubkey(),
+          },
+        );
+      }
       return publishMirror({ kind: KIND_LAUNCH_RECORD, tags, content });
     },
     onSuccess: () => {
@@ -215,7 +249,7 @@ export function useCreateLaunch() {
 export function usePublishMirror() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       kind:
         | typeof KIND_LAUNCH_BID
         | typeof KIND_LAUNCH_UPDATE
@@ -225,6 +259,7 @@ export function usePublishMirror() {
       launchId: string;
       bucket?: string;
       extraTags?: string[][];
+      asAgent?: boolean;
       content: Record<string, unknown>;
     }) => {
       const tags: string[][] = [
@@ -234,6 +269,18 @@ export function usePublishMirror() {
         tags.push(["m", input.bucket]);
       }
       if (input.extraTags) tags.push(...input.extraTags);
+      if (input.asAgent) {
+        return publishMirror(
+          { kind: input.kind, tags, content: input.content },
+          {
+            signEvent: (t) =>
+              signLaunchpadEventAsAgent(t, {
+                conditions: `kind=${input.kind}`,
+              }),
+            pubkey: getAgentPubkey(),
+          },
+        );
+      }
       return publishMirror({ kind: input.kind, tags, content: input.content });
     },
     onSuccess: () => {
