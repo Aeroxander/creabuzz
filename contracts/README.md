@@ -16,6 +16,12 @@ surface that wraps upstream primitives:
 - `src/AppTokenLBPInitializer.sol` — graduation handoff: pulls final clearing
   price / tokens sold / net raised, splits reserve (TokenMaster floor) vs
   treasury, records pool addresses once the apptoken deployment lands.
+- `src/GraduationExecutor.sol` — apptoken graduation that actually moves the
+  money (sweep + split + escrow + release; supersedes the initializer).
+- `src/VerifierSet.sol` + `src/ClaimStake.sol` — C5 attestation tier: verifier
+  panels with quorum and slashing, contributor stakes-to-claim with escrow
+  that releases only on quorum attestation (the paper's "expert panels"
+  tier; unlock is attestation, never a price TWAP).
 
 Pinned: CCA (factory v2.1.0), majeur, TokenMaster v1.0.1,
 Transfer Validator, creator-token-standards, OpenZeppelin.

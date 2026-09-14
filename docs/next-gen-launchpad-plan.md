@@ -337,7 +337,7 @@ are flagged; everything else is fixture/anvil-fork testable.
 - **B6. LP minimum policy (G7m).** Wizard default reserve ≥ 20% of net raise
   (percent-of-supply conversion, not a blind copy). Test: unit block.
 
-### Phase C — Reputation + agents (T1–T3, C1, C4)
+### Phase C — Reputation + agents (T1–T3, C1, C4, C5 contracts)
 - **C1. Nostr-score data plane (T1).** Kind 37006 score-root record;
   operator CLI/poller publishes roots; TS Merkle verifier matching
   `TrustGatedHook` layout; profile/launch-card score rendering with stale-
@@ -348,12 +348,14 @@ are flagged; everything else is fixture/anvil-fork testable.
 - **C4. Agent seats (C4/G7).** `buzz launchpad bid/claim/verify --as-agent`
   with NIP-OA provenance, agent-run badge in UI, escrow address-agnostic.
   Test: e2e agent-key bid mirror + fork agent-key bid tx.
-- **C5. Verifier set + ClaimStake + attestation (C1).** Contracts
-  (`VerifierSet`, `ClaimStakeEscrow`), 47005 vocabulary
-  (`milestone-claimed/milestone-attested/milestone-slashed/stream-cancelled`,
-  reserved 47006–47009), evidence composer + verdict UI, `buzz launchpad
-  claim/verify`. Test: forge — escrow moves only on quorum attestation; spam
-  claim slashed; stream frozen on failed attestation.
+- **C5. Verifier set + ClaimStake + attestation (C1).** Contracts DONE
+  (99d7d0fe7-next): `VerifierSet` (accept/remove/setQuorum/attest/hasQuorum/
+  slash/addStake) + `ClaimStake` (submitClaim pulls stake into escrow,
+  settle on approval/objection quorum, payout once, freeze; unlock is
+  attestation — never a TWAP, per the truncated-oracle note). 5 forge tests,
+  falsifiable. Remaining: 47005 vocabulary
+  (`milestone-claimed/milestone-attested/milestone-slashed/stream-cancelled`),
+  evidence composer + verdict UI, `buzz launchpad claim/verify`.
 - **C6. Stream cancellation contract (C2).** Streams module or `StreamRegistry`
   wrapper; invariant tests (stream-only-on-attestation, revoke-on-non).
 - **C7. Participation ledger (C6/idea 7) or kill PT.** Decision §7.3 first.
