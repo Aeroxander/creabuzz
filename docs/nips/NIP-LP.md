@@ -251,3 +251,15 @@ Agents are first-class launchpad participants, not impersonators:
 - CLI: `buzz launchpad compose-bid --as-agent` marks the unsigned envelope
   agent-authored (the mirror, when recorded under `BUZZ_AUTH_TAG`, carries the
   attestation).
+
+
+## Decisions applicable to this NIP (2026-09-13)
+
+- Agents publish launchpad records/mirrors under their own key with NIP-OA
+  attestation (C4). They never sign onchain value movement — an agent is
+  publish-only by policy.
+- The "participation token" concept is retired: the instruments with defined
+  claims (sale tokens, Moloch shares/loot, apptoken rails) are the answer to
+  the paper's undefined record-of-participation. No 47006 ledger.
+- Each project owns its legal posture; the NIP adds no admission restriction
+  beyond what the launch's own hooks configure.

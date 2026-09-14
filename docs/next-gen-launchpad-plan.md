@@ -395,6 +395,41 @@ are flagged; everything else is fixture/anvil-fork testable.
 
 ---
 
+
+---
+
+## 7.5 Resolutions (2026-09-13, principal)
+
+- **§7.2 Graduation destination: APPToken rails (locked).** `GraduationExecutor`
+  (commit 99d7d0fe7) ships the handoff; no v4 pool.
+- **§7.6 Compliance/jurisdiction: OUT OF SCOPE — project-owned.** Each project
+  that raises is responsible for its own legal posture; creabuzz is a
+  coordination + infrastructure layer. No host-level admission restriction,
+  no entity-as-a-service. (The plan's trust-page copy keeps being honest: a
+  binding decision is onchain, the team can walk away.)
+- **§7.9 Strategic backer tier: NONE for v1.** AllowlistHook gives priority
+  within a bucket; a separate guaranteed tranche is a disclosure burden and a
+  trust smell in a permissionless system.
+- **§7.5 Agent onchain authority: PUBLISH-ONLY for now (C4).** Agents author
+  records/mirrors with NIP-OA attestation and compose unsigned txs (A1), but
+  never sign money. Future: account-abstraction / session-key limits on an
+  ERC-4337-style wallet would give capped agent signing — guardrails' shape
+  (per-key spend limits, expiry, single-purpose sessions) is a later design,
+  and session keys are exactly the right primitive to revisit it with.
+- **§7.4 Vesting unlock source: VERIFIER-ATTESTED MILESTONES PRIMARY, TWAP
+  BACKSTOP — and the backstop is deferred.** The TWAP concern is real on both
+  rails: Uniswap v4's truncated-oracle attack
+  (Hacken, "Uniswap v4 Truncated Oracle") shows a price-milestone oracle can
+  be manipulated around truncation; our apptoken LBAMM floor is the same
+  self-referential surface (the price a milestone reads is gated by the same
+  vesting). So B5's record + wizard validation ship now; the onchain enforcer
+  rides C5's verifier set; a TWAP backstop is not built until the pool has
+  volume that makes it safe.
+- **§7.3 PT language: KILL THE TERM (doc fix).** Edit the contradiction (see
+  §4.1): we replaced an instrument with an undefined claim by instruments
+  with defined claims. No 47006 ledger for now; revisit only if conviction
+  weights (P6) become a real mechanism.
+
 ## 8. Where the reports disagree (read before deciding)
 
 - **Futarchy**: Umia = board of directors (everything); MetaDAO = the only
