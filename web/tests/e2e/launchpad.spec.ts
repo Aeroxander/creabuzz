@@ -35,6 +35,17 @@ function record(auction?: string) {
       tickSpacing: "79228162514",
       requiredRaised: "299999999998",
       budget: "50000000000",
+      vesting: {
+        cliffBlocks: 3110400,
+        tranches: [
+          { multiple: 2, percent: 20 },
+          { multiple: 4, percent: 20 },
+          { multiple: 8, percent: 20 },
+          { multiple: 16, percent: 20 },
+          { multiple: 32, percent: 20 },
+        ],
+        twapWindow: null,
+      },
       tokenPlan: {
         mode: "mint",
         name: "Nebula Token",
@@ -680,4 +691,34 @@ test("an agent-run launch is badged and attested", async ({ page }) => {
     );
   // The directory badges it.
   await expect(page.getByTestId("launch-agent-badge").first()).toBeVisible();
+});
+
+test("the trust page states each commitment and its real proof state", async ({
+  page,
+}) => {
+  // The record is a promise; the chain is the ledger. Each address is checked
+  // for deployed code, and an unreadable check must say so — never render a
+  // fabricated "verified". Served auction is set explicitly so this test is
+  // self-contained (not dependent on an earlier test's side effect).
+  servedAuction = "0x5555555555555555555555555555555555555555";
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  const card = page.getByTestId("launch-commitments");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toContainText("Proven commitments");
+  // Token/treasury are not linked in the fixture: those rows say so.
+  await expect(card).toContainText("Token contract");
+  await expect(card).toContainText("not set");
+  // Record-borne commitments report what the record actually carries.
+  await expect(card).toContainText("Monthly budget");
+  await expect(card).toContainText("Vesting package");
+  await expect(card).toContainText("5 tranches from 2x");
+  // The point of the card: a check that cannot be made never renders as a
+  // pass. With no reachable RPC the auction row must be an honest failure
+  // state, not "deployed".
+  const auctionRow = card
+    .locator("div", { hasText: "Auction contract" })
+    .last();
+  await expect(auctionRow).toContainText(/unreadable|not set/);
+  await expect(auctionRow).not.toContainText("deployed");
 });

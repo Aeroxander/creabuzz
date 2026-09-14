@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -39,7 +39,12 @@ function formatMoney(value: string | bigint | null | undefined): string {
     maxFractionDigits: 2,
   });
 }
-import { erc20BalanceOf, getRpcEndpoint, setRpcEndpoint } from "../chain";
+import {
+  erc20BalanceOf,
+  getRpcEndpoint,
+  isContractDeployed,
+  setRpcEndpoint,
+} from "../chain";
 import { useScoreRoots } from "../use-launches";
 import { useAuctionProgress, ProgressBar, StageBadge } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
@@ -545,8 +550,120 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           </ul>
         )}
       </Card>
+      <ProvenCommitmentsCard launch={launch} />
       <ScoreRootsCard />
     </div>
+  );
+}
+
+/**
+ * Every commitment the record makes, next to what currently proves it.
+ *
+ * The record is a signed promise; the chain is the ledger. This card is the
+ * honest bridge: each address commitment is checked for deployed code over
+ * RPC, and each non-address commitment states plainly that it lives on the
+ * record. A missing or unreadable proof is said out loud — never rendered as
+ * if it were verified, and never as a fabricated figure.
+ */
+function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
+  const { record } = launch;
+  const [chainState, setChainState] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let alive = true;
+    const endpoint = getRpcEndpoint();
+    const targets: Array<[string, string | null]> = [
+      ["auction", record.auction],
+      ["token", record.token],
+      ["treasury", record.treasury],
+    ];
+    void (async () => {
+      for (const [label, address] of targets) {
+        if (!address) {
+          if (alive) setChainState((s) => ({ ...s, [label]: "not set" }));
+          continue;
+        }
+        try {
+          const deployed = await isContractDeployed(endpoint, address);
+          if (alive) {
+            setChainState((s) => ({
+              ...s,
+              [label]: deployed ? "deployed" : "no code at this address",
+            }));
+          }
+        } catch {
+          if (alive) {
+            setChainState((s) => ({ ...s, [label]: "unreadable" }));
+          }
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [record.auction, record.token, record.treasury]);
+
+  const commitments: Array<[string, string]> = [
+    ["Auction contract", chainState.auction ?? "checking…"],
+    ["Token contract", chainState.token ?? "checking…"],
+    ["Treasury contract", chainState.treasury ?? "checking…"],
+    ["Monthly budget", record.budget ? formatMoney(record.budget) : "not set"],
+    [
+      "Vesting package",
+      record.vesting
+        ? `${record.vesting.tranches.length} tranches from ${record.vesting.tranches[0].multiple}x`
+        : "not set",
+    ],
+    [
+      "Bound channels",
+      record.channels.length > 0
+        ? `${record.channels.length} bound`
+        : "none bound",
+    ],
+    [
+      "Team keys",
+      record.team.length > 0 ? `${record.team.length} listed` : "author only",
+    ],
+    [
+      "Committed assets",
+      record.ipList.length > 0
+        ? `${record.ipList.length} listed`
+        : "none listed",
+    ],
+    [
+      "Parameter hash",
+      record.paramsHash ? `${record.paramsHash.slice(0, 14)}…` : "not set",
+    ],
+  ];
+
+  return (
+    <Card className="p-4" data-testid="launch-commitments">
+      <h2 className="text-base font-semibold">Proven commitments</h2>
+      <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+        The record is a signed promise; the chain is the ledger. Addresses are
+        checked for deployed code over your RPC endpoint — anything unreadable
+        says so rather than showing a check.
+      </p>
+      <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+        {commitments.map(([label, state]) => (
+          <div key={label} className="flex justify-between gap-2 py-1.5">
+            <dt className="text-black/60 dark:text-white/60">{label}</dt>
+            <dd
+              className={
+                state === "deployed"
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : state === "unreadable" ||
+                      state === "no code at this address"
+                    ? "text-amber-700 dark:text-amber-300"
+                    : "text-black/60 dark:text-white/60"
+              }
+            >
+              {state}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
   );
 }
 
