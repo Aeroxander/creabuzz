@@ -263,3 +263,21 @@ Agents are first-class launchpad participants, not impersonators:
   the paper's undefined record-of-participation. No 47006 ledger.
 - Each project owns its legal posture; the NIP adds no admission restriction
   beyond what the launch's own hooks configure.
+
+
+## Milestone attestation receipts (C5, 2026-09-13)
+
+Mirrors of the verifier/claim contracts use 47005 with a `kind` tag:
+
+- `kind=claim`, tag `claim=<id>` + `evidence=<64-hex>` — a contributor's
+  milestone claim, bound to its evidence by hash (ClaimStake).
+- `kind=verdict`, tag `claim=<id>` + approved/rejected in content — a
+  verifier's attestation mirror (VerifierSet). The `verdict` word is
+  `approve|reject`; clients and the CLI refuse anything else so the
+  vocabulary stays closed.
+- `kind=milestone-slashed` / `stream-cancelled` remain available for the
+  slash/freeze paths as the chain reports them (advisory; the chain is
+  authoritative).
+
+CLI: `buzz launchpad record-claim` and `buzz launchpad record-verdict`
+validate the vocabulary and the evidence-hash shape before mirroring.

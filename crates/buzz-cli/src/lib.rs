@@ -1512,6 +1512,30 @@ pub enum LaunchpadCmd {
         #[arg(long)]
         tx: String,
     },
+    /// Record a milestone claim (47005, table = claim)
+    #[command(name = "record-claim")]
+    RecordClaim {
+        /// Launch id (slug)
+        id: String,
+        /// Milestone claim id (any stable hex/slug; must match onchain claimId)
+        #[arg(long, name = "claim-id")]
+        claim_id: String,
+        /// Evidence hash binding the claim to its content (Nostr/Blossom)
+        #[arg(long, name = "evidence-hash")]
+        evidence_hash: String,
+    },
+    /// Record a verifier verdict on a claim (47005, table = verdict)
+    #[command(name = "record-verdict")]
+    RecordVerdict {
+        /// Launch id (slug)
+        id: String,
+        /// Milestone claim id
+        #[arg(long, name = "claim-id")]
+        claim_id: String,
+        /// approve | reject
+        #[arg(long)]
+        verdict: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2658,8 +2682,10 @@ mod tests {
                 "mint-token",
                 "post-update",
                 "record-bid",
+                "record-claim",
                 "record-proposal",
                 "record-receipt",
+                "record-verdict",
                 "show"
             ]
         );
@@ -2691,7 +2717,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 10),
+            ("launchpad", 12),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

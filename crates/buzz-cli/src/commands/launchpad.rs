@@ -637,6 +637,20 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             )
             .await
         }
+        LaunchpadCmd::RecordClaim {
+            id,
+            claim_id,
+            evidence_hash,
+        } => {
+            cmd_claim(client, &id, &claim_id, &evidence_hash).await
+        }
+        LaunchpadCmd::RecordVerdict {
+            id,
+            claim_id,
+            verdict,
+        } => {
+            cmd_verdict(client, &id, &claim_id, &verdict).await
+        }
         LaunchpadCmd::RecordReceipt { id, table, tx } => {
             let owner = client.keys().public_key().to_hex();
             let tx_tag = Tag::parse(["tx", tx.as_str()])
@@ -746,4 +760,65 @@ fn cmd_compose_bid(
         .map_err(|e| CliError::Other(format!("failed to serialize: {e}")))?;
     println!("{json}");
     Ok(())
+}
+
+
+/// Record a milestone claim (47005, table=claim): the Nostr side of the
+/// ClaimStake evidence hash. Mirrors are advisory; the chain escrow is the
+/// authority.
+async fn cmd_claim(client: &BuzzClient, id: &str, claim_id: &str, evidence_hash: &str) -> Result<(), CliError> {
+    validate_launch_id(id)?;
+    if evidence_hash.len() != 64 || !evidence_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CliError::Usage(
+            "evidence-hash must be 64 hex chars (a sha256 of the canonical claim)".into(),
+        ));
+    }
+    let owner = client.keys().public_key().to_hex();
+    let claim_tag = Tag::parse(["claim", claim_id])
+        .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?;
+    let kind_tag = Tag::parse(["kind", "claim"])
+        .map_err(|e| CliError::Other(format!("bad kind tag: {e}")))?;
+    let evidence_tag = Tag::parse(["evidence", evidence_hash])
+        .map_err(|e| CliError::Other(format!("bad evidence tag: {e}")))?;
+    cmd_mirror(
+        client,
+        KIND_LAUNCH_RECEIPT,
+        "claim mirror",
+        &owner,
+        id,
+        vec![claim_tag, kind_tag, evidence_tag],
+        serde_json::json!({ "table": "claim", "claim": claim_id, "evidenceHash": evidence_hash }),
+    )
+    .await
+}
+
+/// Record a verifier verdict (47005, table=verdict): the Nostr side of a
+/// VerifierSet attestation. The verdict word must be approve|reject so the
+/// vocabulary stays closed; the onchain attestation is the authority.
+async fn cmd_verdict(client: &BuzzClient, id: &str, claim_id: &str, verdict: &str) -> Result<(), CliError> {
+    validate_launch_id(id)?;
+    let approved = match verdict {
+        "approve" => true,
+        "reject" => false,
+        other => {
+            return Err(CliError::Usage(format!(
+                "verdict must be approve|reject (got {other:?})"
+            )))
+        }
+    };
+    let owner = client.keys().public_key().to_hex();
+    let claim_tag = Tag::parse(["claim", claim_id])
+        .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?;
+    let kind_tag = Tag::parse(["kind", "verdict"])
+        .map_err(|e| CliError::Other(format!("bad kind tag: {e}")))?;
+    cmd_mirror(
+        client,
+        KIND_LAUNCH_RECEIPT,
+        "verdict mirror",
+        &owner,
+        id,
+        vec![claim_tag, kind_tag],
+        serde_json::json!({ "table": "verdict", "claim": claim_id, "approve": approved }),
+    )
+    .await
 }
