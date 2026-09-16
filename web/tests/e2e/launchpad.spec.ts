@@ -733,6 +733,10 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
   await page.getByRole("tab", { name: /Manage/ }).click();
+  await page
+    .getByTestId("launch-advanced-milestones")
+    .locator("summary")
+    .click();
   const panel = page.getByTestId("launch-milestones");
   await expect(panel).toBeVisible({ timeout: 15_000 });
   // Bad evidence hash is refused before mirroring.

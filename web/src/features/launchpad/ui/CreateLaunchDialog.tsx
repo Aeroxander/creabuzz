@@ -920,7 +920,7 @@ export function CreateLaunchDialog({
           type="checkbox"
         />
         Create this launch as an agent — authored by the browser agent key,
-        attested to you (NIP-OA) and badged "Agent-run".
+        attested to you and badged "Agent-run".
       </label>
     </Modal>
   );

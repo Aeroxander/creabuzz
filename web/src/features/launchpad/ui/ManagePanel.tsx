@@ -406,10 +406,9 @@ export function ManagePanel({
       <Card className="p-4" data-testid="launch-graduation">
         <h2 className="text-base font-semibold">Graduation</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          At graduation the executes-and-moves contract (set as the auction's
-          funds and tokens recipient at deploy) sweeps the raise, forwards the
-          treasury share, escrows the reserve for the TokenMaster floor, and
-          returns unsold tokens. Apptoken rails, not a v4 pool.
+          At graduation the executor contract — set as the auction's funds and
+          tokens recipient at deploy — sweeps the raise, pays the treasury
+          share, locks the liquidity reserve, and returns unsold tokens.
         </p>
         <p className="mt-2 text-xs text-black/60 dark:text-white/60">
           The reserve releases only to the recorded pool by treasury action; if
@@ -419,74 +418,85 @@ export function ManagePanel({
         </p>
       </Card>
 
-      <Card className="p-4" data-testid="launch-milestones">
-        <h2 className="text-base font-semibold">Milestone attestation</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          A milestone claim is staked and settled onchain by the verifier set;
-          this panel mirrors the claim and your verdict onto the feed (47005,
-          advisory). The chain is the ledger.
-        </p>
-        <div className="mt-3 flex flex-col gap-2">
-          <label className="text-sm font-medium" htmlFor="claim-id">
-            Claim id
-          </label>
-          <Input
-            id="claim-id"
-            data-testid="claim-id"
-            onChange={(e) => setClaimId(e.target.value)}
-            placeholder="milestone-1"
-            value={claimId}
-          />
-          <label className="text-sm font-medium" htmlFor="evidence-hash">
-            Evidence hash
-          </label>
-          <Input
-            id="evidence-hash"
-            data-testid="evidence-hash"
-            onChange={(e) => setEvidenceHash(e.target.value)}
-            placeholder="64 hex chars of the canonical claim"
-            value={evidenceHash}
-          />
-          <div className="mt-1 flex flex-wrap gap-2">
-            <Button
-              data-testid="record-claim"
-              disabled={
-                claimId.trim() === "" ||
-                evidenceHash.trim() === "" ||
-                mirror.isPending
-              }
-              onClick={() => void recordClaim()}
-              size="sm"
-              type="button"
-            >
-              Record claim
-            </Button>
-            <Button
-              data-testid="verdict-approve"
-              disabled={claimId.trim() === "" || mirror.isPending}
-              onClick={() => void recordVerdict(true)}
-              size="sm"
-              variant="outline"
-              type="button"
-            >
-              Verdict: approve
-            </Button>
-            <Button
-              data-testid="verdict-reject"
-              disabled={claimId.trim() === "" || mirror.isPending}
-              onClick={() => void recordVerdict(false)}
-              size="sm"
-              variant="outline"
-              type="button"
-            >
-              Verdict: reject
-            </Button>
+      <details
+        className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+        data-testid="launch-advanced-milestones"
+      >
+        <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+          Milestone attestation
+          <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+            post-graduation — staked claims settled onchain
+          </span>
+        </summary>
+        <div className="mt-3" data-testid="launch-milestones">
+          <h2 className="text-base font-semibold">Milestone attestation</h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            A milestone claim is staked and settled onchain by the verifier set;
+            this panel mirrors the claim and your verdict onto the feed (47005,
+            advisory). The chain is the ledger.
+          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            <label className="text-sm font-medium" htmlFor="claim-id">
+              Claim id
+            </label>
+            <Input
+              id="claim-id"
+              data-testid="claim-id"
+              onChange={(e) => setClaimId(e.target.value)}
+              placeholder="milestone-1"
+              value={claimId}
+            />
+            <label className="text-sm font-medium" htmlFor="evidence-hash">
+              Evidence hash
+            </label>
+            <Input
+              id="evidence-hash"
+              data-testid="evidence-hash"
+              onChange={(e) => setEvidenceHash(e.target.value)}
+              placeholder="64 hex chars of the canonical claim"
+              value={evidenceHash}
+            />
+            <div className="mt-1 flex flex-wrap gap-2">
+              <Button
+                data-testid="record-claim"
+                disabled={
+                  claimId.trim() === "" ||
+                  evidenceHash.trim() === "" ||
+                  mirror.isPending
+                }
+                onClick={() => void recordClaim()}
+                size="sm"
+                type="button"
+              >
+                Record claim
+              </Button>
+              <Button
+                data-testid="verdict-approve"
+                disabled={claimId.trim() === "" || mirror.isPending}
+                onClick={() => void recordVerdict(true)}
+                size="sm"
+                variant="outline"
+                type="button"
+              >
+                Verdict: approve
+              </Button>
+              <Button
+                data-testid="verdict-reject"
+                disabled={claimId.trim() === "" || mirror.isPending}
+                onClick={() => void recordVerdict(false)}
+                size="sm"
+                variant="outline"
+                type="button"
+              >
+                Verdict: reject
+              </Button>
+            </div>
+            {milestoneError ? (
+              <p className="text-sm text-red-600">{milestoneError}</p>
+            ) : null}
           </div>
-          {milestoneError ? (
-            <p className="text-sm text-red-600">{milestoneError}</p>
-          ) : null}
         </div>
-      </Card>
+      </details>
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">

@@ -167,8 +167,7 @@ export function LaunchesPage() {
                 Try the sandbox
               </span>
               <span className="block text-xs text-black/60 dark:text-white/60">
-                Walk a full simulated raise — terms, price discovery, graduation
-                — without a chain or a relay. Clearly badged, never real money.
+                A full simulated raise, end to end — no chain, no real money.
               </span>
             </span>
             <ArrowRight className="h-4 w-4 shrink-0" />
