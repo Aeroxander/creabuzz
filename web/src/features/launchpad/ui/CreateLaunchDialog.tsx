@@ -357,49 +357,63 @@ export function CreateLaunchDialog({
             value={pitch}
           />
         </Field>
-        <Field
-          id="launch-long-pitch"
-          label="The longer story"
-          hint="What exists today, why now, and what failure looks like. The record only goes live once this is committed."
+        <details
+          className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+          data-testid="launch-advanced-founder"
+          {...(initial ? { open: true } : {})}
         >
-          <textarea
-            id="launch-long-pitch"
-            data-testid="launch-long-pitch"
-            className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
-            onChange={(e) => setLongPitch(e.target.value)}
-            placeholder="What is already built, who is on the team, what you will build next — and what would show the thesis is wrong."
-            rows={4}
-            value={longPitch}
-          />
-        </Field>
-        <Field
-          id="launch-ip-list"
-          label="Committed assets"
-          hint="One URL or NIP-MP coordinate per line — repos, docs, social accounts, domains."
-        >
-          <textarea
-            id="launch-ip-list"
-            data-testid="launch-ip-list"
-            className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
-            onChange={(e) => setIpList(e.target.value)}
-            placeholder={"https://github.com/…\nhttps://docs.example.com/…"}
-            rows={3}
-            value={ipList}
-          />
-        </Field>
-        <Field
-          id="launch-update-cadence"
-          label="Update cadence"
-          hint='What you commit to telling investors, e.g. "monthly with KPIs".'
-        >
-          <Input
-            id="launch-update-cadence"
-            data-testid="launch-update-cadence"
-            onChange={(e) => setUpdateCadence(e.target.value)}
-            placeholder="monthly with KPIs"
-            value={updateCadence}
-          />
-        </Field>
+          <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+            Founder commitments
+            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+              required before the launch goes live
+            </span>
+          </summary>
+          <div className="mt-3 flex flex-col gap-3">
+            <Field
+              id="launch-long-pitch"
+              label="The longer story"
+              hint="What exists today, why now, and what failure looks like. The record only goes live once this is committed."
+            >
+              <textarea
+                id="launch-long-pitch"
+                data-testid="launch-long-pitch"
+                className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+                onChange={(e) => setLongPitch(e.target.value)}
+                placeholder="What is already built, who is on the team, what you will build next — and what would show the thesis is wrong."
+                rows={4}
+                value={longPitch}
+              />
+            </Field>
+            <Field
+              id="launch-ip-list"
+              label="Committed assets"
+              hint="One URL or NIP-MP coordinate per line — repos, docs, social accounts, domains."
+            >
+              <textarea
+                id="launch-ip-list"
+                data-testid="launch-ip-list"
+                className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+                onChange={(e) => setIpList(e.target.value)}
+                placeholder={"https://github.com/…\nhttps://docs.example.com/…"}
+                rows={3}
+                value={ipList}
+              />
+            </Field>
+            <Field
+              id="launch-update-cadence"
+              label="Update cadence"
+              hint='What you commit to telling investors, e.g. "monthly with KPIs".'
+            >
+              <Input
+                id="launch-update-cadence"
+                data-testid="launch-update-cadence"
+                onChange={(e) => setUpdateCadence(e.target.value)}
+                placeholder="monthly with KPIs"
+                value={updateCadence}
+              />
+            </Field>
+          </div>
+        </details>
 
         <div className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15">
           <div className="flex items-center justify-between">
@@ -428,7 +442,7 @@ export function CreateLaunchDialog({
                 No addresses needed. Minting deploys a reserve-backed apptoken
                 and is a separate step after publishing.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-3">
                 <Field id="launch-token-name" label="Token name">
                   <Input
                     id="launch-token-name"
@@ -509,7 +523,7 @@ export function CreateLaunchDialog({
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <Field id="launch-chain" label="Chain id" hint="11155111 = Sepolia.">
             <Input
               id="launch-chain"
@@ -538,7 +552,7 @@ export function CreateLaunchDialog({
             </div>
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <Field
             id="launch-currency"
             label="Raise currency"
@@ -630,86 +644,98 @@ export function CreateLaunchDialog({
             })()}
           </div>
 
-          <div
-            className="rounded-lg border border-black/10 p-3 dark:border-white/10"
-            data-testid="launch-vesting"
+          <details
+            className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+            data-testid="launch-advanced-vesting"
+            {...(initial ? { open: true } : {})}
           >
-            <p className="text-sm font-medium">Performance vesting</p>
-            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              Tranches unlock at price multiples of the raise price (the MetaDAO
-              2x…32x ladder by default). Record-level now; the onchain enforcer
-              comes with verifier milestones.
-            </p>
-            <label
-              className="mt-2 block text-sm text-black/60 dark:text-white/60"
-              htmlFor="launch-cliff"
-            >
-              Cliff (blocks)
-            </label>
-            <Input
-              id="launch-cliff"
-              data-testid="launch-cliff"
-              className="mt-1"
-              onChange={(e) =>
-                setVesting((prev) =>
-                  prev
-                    ? { ...prev, cliffBlocks: Number(e.target.value) || 0 }
-                    : prev,
-                )
-              }
-              type="number"
-              value={vesting?.cliffBlocks ?? 0}
-            />
-            <label
-              className="mt-2 block text-sm text-black/60 dark:text-white/60"
-              htmlFor="launch-tranches"
-            >
-              Tranches (multiple:percent, one per line)
-            </label>
-            <textarea
-              id="launch-tranches"
-              data-testid="launch-tranches"
-              className="mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
-              onChange={(e) => {
-                const parsed: Array<{ multiple: number; percent: number }> = [];
-                for (const line of e.target.value.split("\n")) {
-                  const m = line.match(/^(\d+):(\d+)$/);
-                  if (m)
-                    parsed.push({
-                      multiple: Number(m[1]),
-                      percent: Number(m[2]),
-                    });
-                }
-                setVesting((prev) =>
-                  parsed.length > 0
-                    ? {
-                        ...(prev ?? {
-                          cliffBlocks: 0,
-                          tranches: [],
-                          twapWindow: null,
-                        }),
-                        tranches: parsed,
-                      }
-                    : prev,
-                );
-              }}
-              placeholder={"2:20\n4:20\n8:20\n16:20\n32:20"}
-              rows={4}
-              value={
-                vesting?.tranches
-                  .map((t) => `${t.multiple}:${t.percent}`)
-                  .join("\n") ?? ""
-              }
-            />
-            {vestingIssues.length > 0 ? (
-              <p
-                className="mt-2 text-xs text-red-600 dark:text-red-400"
-                data-testid="launch-vesting-issue"
+            <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+              Performance vesting (optional)
+            </summary>
+            <div className="mt-3">
+              <div
+                className="rounded-lg border border-black/10 p-3 dark:border-white/10"
+                data-testid="launch-vesting"
               >
-                {vestingIssues[0].message}
-              </p>
-            ) : null}
-          </div>
+                <p className="text-sm font-medium">Performance vesting</p>
+                <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+                  Tranches unlock at price multiples of the raise price (the
+                  MetaDAO 2x…32x ladder by default). Record-level now; the
+                  onchain enforcer comes with verifier milestones.
+                </p>
+                <label
+                  className="mt-2 block text-sm text-black/60 dark:text-white/60"
+                  htmlFor="launch-cliff"
+                >
+                  Cliff (blocks)
+                </label>
+                <Input
+                  id="launch-cliff"
+                  data-testid="launch-cliff"
+                  className="mt-1"
+                  onChange={(e) =>
+                    setVesting((prev) =>
+                      prev
+                        ? { ...prev, cliffBlocks: Number(e.target.value) || 0 }
+                        : prev,
+                    )
+                  }
+                  type="number"
+                  value={vesting?.cliffBlocks ?? 0}
+                />
+                <label
+                  className="mt-2 block text-sm text-black/60 dark:text-white/60"
+                  htmlFor="launch-tranches"
+                >
+                  Tranches (multiple:percent, one per line)
+                </label>
+                <textarea
+                  id="launch-tranches"
+                  data-testid="launch-tranches"
+                  className="mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+                  onChange={(e) => {
+                    const parsed: Array<{ multiple: number; percent: number }> =
+                      [];
+                    for (const line of e.target.value.split("\n")) {
+                      const m = line.match(/^(\d+):(\d+)$/);
+                      if (m)
+                        parsed.push({
+                          multiple: Number(m[1]),
+                          percent: Number(m[2]),
+                        });
+                    }
+                    setVesting((prev) =>
+                      parsed.length > 0
+                        ? {
+                            ...(prev ?? {
+                              cliffBlocks: 0,
+                              tranches: [],
+                              twapWindow: null,
+                            }),
+                            tranches: parsed,
+                          }
+                        : prev,
+                    );
+                  }}
+                  placeholder={"2:20\n4:20\n8:20\n16:20\n32:20"}
+                  rows={4}
+                  value={
+                    vesting?.tranches
+                      .map((t) => `${t.multiple}:${t.percent}`)
+                      .join("\n") ?? ""
+                  }
+                />
+                {vestingIssues.length > 0 ? (
+                  <p
+                    className="mt-2 text-xs text-red-600 dark:text-red-400"
+                    data-testid="launch-vesting-issue"
+                  >
+                    {vestingIssues[0].message}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </details>
           <Field
             id="launch-floor"
             label="Floor price"
@@ -723,7 +749,7 @@ export function CreateLaunchDialog({
             />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <Field
             id="launch-threshold"
             label="Graduation threshold"
@@ -736,57 +762,71 @@ export function CreateLaunchDialog({
               value={requiredRaised}
             />
           </Field>
-          <Field
-            id="launch-budget"
-            label="Monthly budget"
-            hint="Operating budget; above a sixth of the threshold this warns."
-          >
-            <Input
-              id="launch-budget"
-              data-testid="launch-budget"
-              onChange={(e) => setBudget(e.target.value)}
-              placeholder="0"
-              value={budget}
-              type="number"
-            />
-          </Field>
-          <Field
-            id="launch-tick"
-            label="Tick spacing"
-            hint="Price granularity."
-          >
-            <Input
-              id="launch-tick"
-              onChange={(e) => setTickSpacing(e.target.value)}
-              placeholder="100"
-              value={tickSpacing}
-            />
-          </Field>
         </div>
-        <Field
-          id="launch-auction"
-          label="Auction contract"
-          hint="Optional now — link it when the sale deploys."
+        <details
+          className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+          data-testid="launch-advanced-sale"
+          {...(initial ? { open: true } : {})}
         >
-          <Input
-            id="launch-auction"
-            onChange={(e) => setAuction(e.target.value)}
-            placeholder="0x…"
-            value={auction}
-          />
-        </Field>
-        <Field
-          id="launch-treasury"
-          label="Treasury"
-          hint="Receives the minted supply. Optional now."
-        >
-          <Input
-            id="launch-treasury"
-            onChange={(e) => setTreasury(e.target.value)}
-            placeholder="0x…"
-            value={treasury}
-          />
-        </Field>
+          <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+            Sale &amp; treasury details
+            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+              defaults are fine to start
+            </span>
+          </summary>
+          <div className="mt-3 flex flex-col gap-3">
+            <Field
+              id="launch-budget"
+              label="Monthly budget"
+              hint="Operating budget; above a sixth of the threshold this warns."
+            >
+              <Input
+                id="launch-budget"
+                data-testid="launch-budget"
+                onChange={(e) => setBudget(e.target.value)}
+                placeholder="0"
+                value={budget}
+                type="number"
+              />
+            </Field>
+            <Field
+              id="launch-tick"
+              label="Tick spacing"
+              hint="Price granularity."
+            >
+              <Input
+                id="launch-tick"
+                onChange={(e) => setTickSpacing(e.target.value)}
+                placeholder="100"
+                value={tickSpacing}
+              />
+            </Field>
+            <Field
+              id="launch-auction"
+              label="Auction contract"
+              hint="Optional now — link it when the sale deploys."
+            >
+              <Input
+                id="launch-auction"
+                onChange={(e) => setAuction(e.target.value)}
+                placeholder="0x…"
+                value={auction}
+              />
+            </Field>
+            <Field
+              id="launch-treasury"
+              label="Treasury"
+              hint="Receives the minted supply. Optional now."
+            >
+              <Input
+                id="launch-treasury"
+                onChange={(e) => setTreasury(e.target.value)}
+                placeholder="0x…"
+                value={treasury}
+              />
+            </Field>
+          </div>
+        </details>
         <fieldset>
           <legend className="text-sm font-medium text-black dark:text-white">
             Discussion channels

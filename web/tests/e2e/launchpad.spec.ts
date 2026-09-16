@@ -218,6 +218,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   ).toBeEnabled();
 
   // A floor below MIN_FLOOR_PRICE, on top of a spacing that does not divide it.
+  await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByLabel("Floor price").fill("1000000");
   await page.getByLabel("Tick spacing").fill("100");
   const issues = page.getByTestId("launch-param-issues");
@@ -452,6 +453,7 @@ test("an oversized monthly budget warns but never blocks", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Five");
   await page.getByLabel("Launch id").fill("nebula-five");
+  await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByTestId("launch-budget").fill("1000000000000");
   await expect(page.getByTestId("launch-param-issues")).toContainText(
     "Monthly budget",
@@ -484,6 +486,7 @@ test("a founder can commit the longer story on create", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Six");
   await page.getByLabel("Launch id").fill("nebula-six");
+  await page.getByTestId("launch-advanced-founder").locator("summary").click();
   await page
     .getByTestId("launch-long-pitch")
     .fill(
@@ -610,6 +613,7 @@ test("performance vesting is validated and published", async ({ page }) => {
   await page.getByLabel("Launch id").fill("nebula-seven");
   // A tranche at 1x warns (raise price is not performance); descending plus a
   // bad sum blocks.
+  await page.getByTestId("launch-advanced-vesting").locator("summary").click();
   const vesting = page.getByTestId("launch-vesting");
   await expect(vesting).toBeVisible();
   await page.getByTestId("launch-tranches").fill("4:50\n2:50");
