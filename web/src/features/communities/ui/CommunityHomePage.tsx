@@ -10,6 +10,7 @@ import { useCommunities } from "../use-communities";
 import { useChannels } from "@/features/channels/use-channels";
 import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { desktopConnectDeepLink } from "@/shared/lib/desktop-deep-link";
 import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
 /**
@@ -65,7 +66,7 @@ export function CommunityHomePage() {
   const memberCount = entry?.member_count ?? 0;
 
   const wsUrl = normalizeRelayWsUrl(host);
-  const deepLink = `buzz://connect?relay=${encodeURIComponent(wsUrl)}`;
+  const deepLink = desktopConnectDeepLink(wsUrl);
 
   const joinInBrowser = () => {
     setStoredRelayWsUrl(wsUrl);

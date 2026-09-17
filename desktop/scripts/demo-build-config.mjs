@@ -12,7 +12,7 @@ const MAX_DEMO_NAME_LENGTH = MAX_DEMO_SLUG_LENGTH - DEMO_BUILD_ID_SUFFIX_LENGTH;
 export const productionBuildIdentity = Object.freeze({
   productName: "Buzz",
   identifier: PRODUCTION_IDENTIFIER,
-  deepLinkScheme: "buzz",
+  deepLinkScheme: "creaton",
   keyringService: "buzz-desktop",
   nestName: ".buzz",
   cliName: "buzz",

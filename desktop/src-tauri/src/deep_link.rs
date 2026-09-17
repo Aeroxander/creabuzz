@@ -598,11 +598,14 @@ fn parse_nostr_bind_deep_link(url: &Url) -> Result<NostrBindDeepLinkPayload, Str
     })
 }
 
-/// Handle an incoming `buzz://` deep link URL.
+/// Handle an incoming deep link URL for this build's scheme (`creaton` for
+/// production builds, `buzz-demo-<slug>` for demo builds — see
+/// `build_identity::deep_link_scheme`).
 ///
 /// Currently supports:
-/// - `buzz://connect?relay=<ws(s)://...>` — emits `deep-link-connect` to the frontend
-/// - `buzz://repo|project|pr|issue?…` — emits `deep-link-entity` to the frontend
+/// - `<scheme>://connect?relay=<ws(s)://...>` — emits `deep-link-connect` to the frontend
+/// - `<scheme>://repo|project|pr|issue?…` — emits `deep-link-entity` to the frontend
+///   (canonicalized to `buzz://`, the in-app entity-link format the frontend consumes)
 pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
     let url = match Url::parse(url_str) {
         Ok(u) => u,
