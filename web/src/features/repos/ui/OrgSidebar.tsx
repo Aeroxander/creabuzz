@@ -3,7 +3,7 @@ import { useMemo } from "react";
 
 import type { Repo } from "../use-repos";
 import { ConnectButton } from "./ConnectButton";
-import { PubkeyAvatar } from "./PubkeyAvatar";
+import { PeopleAvatars } from "./PeopleAvatars";
 
 const MAX_AVATARS = 20;
 
@@ -35,9 +35,7 @@ export function OrgSidebar({ repos }: { repos: Repo[] }) {
             People
           </h3>
           <div className="flex flex-wrap gap-2">
-            {visiblePubkeys.map((pk) => (
-              <PubkeyAvatar key={pk} pubkey={pk} />
-            ))}
+            <PeopleAvatars pubkeys={visiblePubkeys} />
           </div>
           {overflowCount > 0 && (
             <span className="mt-2 block text-xs text-black/60 dark:text-white/60">

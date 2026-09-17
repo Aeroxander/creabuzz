@@ -4,14 +4,16 @@ import { Link } from "@tanstack/react-router";
 import { Badge } from "@/shared/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { relativeTime } from "@/shared/lib/relative-time";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import type { Repo } from "../use-repos";
 
 export function RepoListItem({
   repo,
+  ownerName,
   preview = false,
 }: {
   repo: Repo;
+  /** The owner's username, resolved once for the whole list by the caller. */
+  ownerName: string;
   preview?: boolean;
 }) {
   return (
@@ -46,11 +48,15 @@ export function RepoListItem({
       <div className="mt-2 flex items-center gap-4 text-xs text-black/60 dark:text-white/60">
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="cursor-default font-mono">
-              {truncatePubkey(repo.owner)}
-            </span>
+            <span className="cursor-default">{ownerName}</span>
           </TooltipTrigger>
-          <TooltipContent>{repo.owner}</TooltipContent>
+          <TooltipContent>
+            {/* The name says who owns this; the full hex stays next to it. */}
+            <div className="flex flex-col">
+              <span className="text-xs font-medium">{ownerName}</span>
+              <span className="font-mono text-xs">{repo.owner}</span>
+            </div>
+          </TooltipContent>
         </Tooltip>
         <span>Updated {relativeTime(repo.createdAt)}</span>
       </div>

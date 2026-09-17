@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Star } from "lucide-react";
 import { toast } from "sonner";
 
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -67,6 +68,7 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { ManagePanel } from "./ManagePanel";
+import { LaunchContractsCard } from "./LaunchContractsCard";
 
 type Tab = "overview" | "updates" | "proposals" | "treasury" | "manage";
 
@@ -528,41 +530,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           ))}
         </dl>
       </Card>
-      <Card className="p-4">
-        <h2 className="text-base font-semibold">Contracts</h2>
-        {[
-          ["Auction", record.auction],
-          ["Token", record.token],
-          ["Treasury", record.treasury],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="flex items-center justify-between gap-2 py-1.5 text-sm"
-          >
-            <span className="text-black/60 dark:text-white/60">{label}</span>
-            <span className="truncate font-mono text-xs">{value ?? "—"}</span>
-          </div>
-        ))}
-        <h2 className="mt-4 text-base font-semibold">Team</h2>
-        {record.team.length === 0 ? (
-          <p className="mt-1 font-mono text-xs text-black/60 dark:text-white/60">
-            {truncatePubkey(record.author)}
-          </p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1">
-            {record.team.map((m) => (
-              <li key={m.pubkey} className="flex items-center gap-2 text-sm">
-                <span className="font-mono text-xs text-black/60 dark:text-white/60">
-                  {truncatePubkey(m.pubkey)}
-                </span>
-                <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs uppercase dark:bg-white/10">
-                  {m.role}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <LaunchContractsCard record={record} />
       <ProvenCommitmentsCard launch={launch} />
       <ScoreRootsCard />
     </div>
@@ -758,6 +726,14 @@ function UpdatesTab({ launch }: { launch: TabLaunch }) {
 }
 
 function ProposalsTab({ launch }: { launch: TabLaunch }) {
+  // One batched lookup for every proposer this tab renders, rather than a query
+  // per proposal row.
+  const proposers = useMemo(
+    () => [...new Set(launch.proposals.map((p) => p.author))],
+    [launch.proposals],
+  );
+  const userNames = useUserNames(proposers);
+
   if (launch.proposals.length === 0) {
     return (
       <div className="text-sm text-black/60 dark:text-white/60">
@@ -797,8 +773,7 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
             </div>
             <h3 className="mt-1 text-sm font-semibold">{p.title}</h3>
             <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              Proposed by {truncatePubkey(p.author)} ·{" "}
-              {relativeTime(p.createdAt)}
+              Proposed by {userNames(p.author)} · {relativeTime(p.createdAt)}
               {p.issue ? ` · discussed in issue ${p.issue.slice(0, 8)}` : ""}
             </p>
             <p className="mt-1 text-xs text-black/60 dark:text-white/60">

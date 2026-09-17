@@ -7,7 +7,7 @@
  * through the relay's LLM gateway.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bot,
   Cpu,
@@ -35,7 +35,7 @@ import {
   getAgentPubkey,
   resetAgentIdentity,
 } from "@/shared/lib/agent-identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { toast } from "sonner";
 
@@ -206,6 +206,12 @@ export function FleetView({ channels }: { channels: Channel[] }) {
   const [starting, setStarting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
+  // The tab agent is a person like any other fleet member: resolve its own
+  // pubkey through the same batched profile read before naming it.
+  const tabAgentPubkey = getAgentPubkey();
+  const tabAgentPubkeys = useMemo(() => [tabAgentPubkey], [tabAgentPubkey]);
+  const userName = useUserNames(tabAgentPubkeys);
+
   useEffect(() => {
     const agent = getBrowserAgent();
     agent.setEvents({ onStateChange: setState });
@@ -290,8 +296,8 @@ export function FleetView({ channels }: { channels: Channel[] }) {
 
       {state === "running" ? (
         <p className="rounded-md border border-black/10 bg-white px-3 py-2 text-xs text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
-          This tab's agent is <strong>online</strong> (
-          {truncatePubkey(getAgentPubkey())}). Mention{" "}
+          This tab's agent is <strong>online</strong> as{" "}
+          <strong>{userName(tabAgentPubkey)}</strong>. Mention{" "}
           <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
             @buzz-tab
           </code>{" "}

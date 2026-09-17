@@ -11,6 +11,7 @@ import {
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { mockRepos } from "../mock-repos";
 import { useRepos } from "../use-repos";
 import { ConnectButton } from "./ConnectButton";
@@ -182,6 +183,14 @@ export function ReposPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
 
+  // Every owner label in the list comes from one batched lookup; a hook per row
+  // would be one profile query per repository.
+  const ownerPubkeys = useMemo(
+    () => [...new Set((repos ?? []).map((repo) => repo.owner))],
+    [repos],
+  );
+  const ownerNames = useUserNames(ownerPubkeys);
+
   useEffect(() => {
     if (error) {
       toast.error("Failed to load repositories", {
@@ -280,7 +289,12 @@ export function ReposPage() {
         {filteredRepos.length > 0 ? (
           <div className="divide-y divide-black/10 dark:divide-white/10">
             {filteredRepos.map((repo) => (
-              <RepoListItem key={repo.id} repo={repo} preview={showMockRepos} />
+              <RepoListItem
+                key={repo.id}
+                repo={repo}
+                ownerName={ownerNames(repo.owner)}
+                preview={showMockRepos}
+              />
             ))}
           </div>
         ) : (

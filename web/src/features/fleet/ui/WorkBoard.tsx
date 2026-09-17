@@ -5,7 +5,7 @@
  * pill filters, UserAvatar identities, status badges.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Check,
   CircleDot,
@@ -23,15 +23,16 @@ import { signAsUser } from "@/shared/lib/identity";
 import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
 import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
+import { RecentThread, TaskHistory } from "./WorkBoardThread";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import type { TaskPriority } from "../use-agent-tasks";
 import type { Channel } from "@/features/channels/use-channels";
 import { userPubkey } from "@/shared/lib/identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
-import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -55,10 +56,12 @@ function WorkItemRow({
   item,
   selected,
   onSelect,
+  userName,
 }: {
   item: WorkItem;
   selected: boolean;
   onSelect: () => void;
+  userName: (pubkey: string) => string;
 }) {
   return (
     <button
@@ -93,7 +96,7 @@ function WorkItemRow({
             {item.scopeLabel === "repo" && item.scope
               ? `repo ${item.scope.slice(0, 12)}`
               : item.assignee
-                ? truncatePubkey(item.assignee)
+                ? userName(item.assignee)
                 : "unassigned"}
           </span>
         </span>
@@ -101,7 +104,7 @@ function WorkItemRow({
       {item.assignee ? (
         <UserAvatar
           avatarUrl={null}
-          displayName={item.assignee}
+          displayName={userName(item.assignee)}
           size="xs"
           className="shrink-0"
         />
@@ -233,6 +236,19 @@ export function WorkBoard({
       return true;
     });
   }, [items, filter, typeFilter, myPubkey]);
+
+  // Every person this surface labels — the assignees on the board plus the
+  // author and approver of the open item — in one batched kind-0 read.
+  const personPubkeys = useMemo(() => {
+    const pubkeys = new Set<string>();
+    for (const item of filtered) {
+      if (item.assignee) pubkeys.add(item.assignee);
+    }
+    if (selected?.author) pubkeys.add(selected.author);
+    if (selected?.approver) pubkeys.add(selected.approver);
+    return [...pubkeys];
+  }, [filtered, selected]);
+  const userName = useUserNames(personPubkeys);
 
   const submit = () => {
     if (title.trim().length === 0) return;
@@ -500,6 +516,7 @@ export function WorkBoard({
                   item={item}
                   selected={selectedId === item.key}
                   onSelect={() => selectItem(item.key)}
+                  userName={userName}
                 />
               ))
             )}
@@ -529,7 +546,7 @@ export function WorkBoard({
                         {selected.type}
                       </Badge>
                       <span className="text-2xs text-black/60 dark:text-white/60">
-                        by {truncatePubkey(selected.author)}
+                        by {userName(selected.author)}
                       </span>
                     </div>
                   </div>
@@ -581,7 +598,7 @@ export function WorkBoard({
                       </button>
                       {selected.approver ? (
                         <span className="text-2xs text-black/60 dark:text-white/60">
-                          resolved by {truncatePubkey(selected.approver)}
+                          resolved by {userName(selected.approver)}
                         </span>
                       ) : null}
                     </div>
@@ -664,80 +681,6 @@ export function WorkBoard({
             )}
           </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-function RecentThread({ parentId }: { parentId: string }) {
-  const [rows, setRows] = useState<
-    { author: string; content: string; created: number }[]
-  >([]);
-  useEffect(() => {
-    let disposed = false;
-    const load = () =>
-      void import("@/shared/lib/http-query").then(({ queryEventsHttp }) =>
-        queryEventsHttp([
-          {
-            kinds: [9, 40002, 44011],
-            "#e": [parentId],
-            limit: 50,
-          },
-        ])
-          .then((events) => {
-            if (disposed) return;
-            setRows(
-              events
-                .sort((a, b) => a.created_at - b.created_at)
-                .map((e) => ({
-                  author: e.pubkey,
-                  content: e.content.slice(0, 400),
-                  created: e.created_at,
-                })),
-            );
-          })
-          .catch((error: unknown) => {
-            // Background refresh of the thread pane: log, do not interrupt.
-            console.warn("[work] thread history failed", error);
-          }),
-      );
-    load();
-    // Live-ish: refresh while the pane is open so agent replies land.
-    const timer = setInterval(load, 3000);
-    return () => {
-      disposed = true;
-      clearInterval(timer);
-    };
-  }, [parentId]);
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {rows.length === 0 ? (
-        <p className="text-xs text-black/60 dark:text-white/60">
-          Loading thread…
-        </p>
-      ) : (
-        rows.map((row) => (
-          <div
-            key={row.author + "-" + row.created}
-            className="flex items-start gap-2 rounded-md bg-black/[0.03] p-2 dark:bg-white/5"
-          >
-            <UserAvatar
-              avatarUrl={null}
-              displayName={row.author}
-              size="xs"
-              className="mt-0.5"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-2xs font-medium text-black/60 dark:text-white/60">
-                {truncatePubkey(row.author)}
-              </p>
-              <p className="whitespace-pre-wrap break-words text-xs text-black/80 dark:text-white/80">
-                {row.content}
-              </p>
-            </div>
-          </div>
-        ))
       )}
     </div>
   );
@@ -844,68 +787,6 @@ function TaskEditors({
         </button>
       </div>
       <TaskHistory taskId={item.id} />
-    </div>
-  );
-}
-
-/** Status-change history from the task's event rows. */
-function TaskHistory({ taskId }: { taskId: string }) {
-  const [rows, setRows] = useState<
-    { status: string; at: number; who: string }[]
-  >([]);
-  useEffect(() => {
-    let disposed = false;
-    void import("@/shared/lib/http-query").then(({ queryEventsHttp }) =>
-      queryEventsHttp([{ kinds: [44011], "#d": [taskId], limit: 100 }])
-        .then((events) => {
-          if (disposed) return;
-          setRows(
-            events
-              .map((e) => {
-                try {
-                  const body = JSON.parse(e.content) as {
-                    status?: string;
-                  };
-                  return {
-                    status: body.status ?? "",
-                    at: e.created_at,
-                    who: e.pubkey,
-                  };
-                } catch {
-                  return null;
-                }
-              })
-              .filter(
-                (r): r is { status: string; at: number; who: string } => !!r,
-              )
-              .sort((a, b) => a.at - b.at),
-          );
-        })
-        .catch((error: unknown) => {
-          // Approval history is a background read; log rather than interrupt.
-          console.warn("[work] approval history failed", error);
-        }),
-    );
-    return () => {
-      disposed = true;
-    };
-  }, [taskId]);
-
-  if (rows.length === 0) return null;
-  return (
-    <div className="border-t border-black/10 pt-1.5 dark:border-white/10">
-      <p className="text-2xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
-        History
-      </p>
-      <ol className="mt-1 space-y-0.5 text-2xs text-black/55 dark:text-white/55">
-        {rows.map((r) => (
-          <li key={`${r.at}-${r.who.slice(0, 8)}`}>
-            {new Date(r.at * 1000).toLocaleString()} —{" "}
-            <span className="font-medium capitalize">{r.status}</span> ·{" "}
-            {truncatePubkey(r.who)}
-          </li>
-        ))}
-      </ol>
     </div>
   );
 }

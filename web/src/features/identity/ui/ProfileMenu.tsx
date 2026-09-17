@@ -21,7 +21,8 @@ import {
 } from "@/shared/lib/identity";
 import {
   useProfiles,
-  profileDisplayName,
+  resolveUserName,
+  resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -95,7 +96,11 @@ export function ProfileMenu() {
   const pubkey = existingUserPubkey() ?? "";
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const profile = pubkey ? profiles?.[pubkey] : undefined;
-  const displayName = profileDisplayName(profile, pubkey);
+  const displayName = resolveUserName(profile, pubkey);
+  // The community username when this identity has claimed one; the recognisable
+  // pubkey otherwise. The full pubkey stays available as a tooltip so the
+  // username never hides the identity that actually signs.
+  const secondaryName = resolveUserSecondaryName(profile, pubkey);
 
   // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
   // mock). Unlock mode is left to the PasskeyUnlockGate overlay instead.
@@ -213,8 +218,12 @@ export function ProfileMenu() {
           <span className="block truncate text-sm font-medium text-black dark:text-white">
             {displayName}
           </span>
-          <span className="block truncate font-mono text-2xs text-black/60 dark:text-white/60">
-            {truncatePubkey(pubkey)}
+          <span
+            className="block truncate font-mono text-2xs text-black/60 dark:text-white/60"
+            data-testid="user-chip-username"
+            title={pubkey}
+          >
+            {secondaryName}
           </span>
         </span>
         {!hasBackedUp() ? (
@@ -241,8 +250,12 @@ export function ProfileMenu() {
               <p className="truncate text-sm font-semibold text-black dark:text-white">
                 {displayName}
               </p>
-              <p className="truncate font-mono text-2xs text-black/60 dark:text-white/60">
-                {truncatePubkey(pubkey)}
+              <p
+                className="truncate font-mono text-2xs text-black/60 dark:text-white/60"
+                data-testid="profile-menu-username"
+                title={pubkey}
+              >
+                {secondaryName}
               </p>
             </div>
           </div>

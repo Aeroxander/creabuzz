@@ -3,10 +3,10 @@ import { SearchX } from "lucide-react";
 import type { Channel } from "@/features/channels/use-channels";
 import { eventChannelId, eventText, useSearch } from "../use-search";
 import {
-  profileDisplayName,
+  resolveUserName,
+  resolveUserSecondaryName,
   useProfiles,
 } from "@/features/profiles/use-profiles";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { QueryError } from "@/shared/ui/query-error";
 
@@ -116,12 +116,17 @@ export function SearchResults({
                   {channel ? `#${channel.name}` : target.label}
                 </span>
                 <span>
-                  {profileDisplayName(
+                  {resolveUserName(
                     profileByPubkey.get(event.pubkey),
                     event.pubkey,
                   )}
                 </span>
-                <span>{truncatePubkey(event.pubkey)}</span>
+                <span>
+                  {resolveUserSecondaryName(
+                    profileByPubkey.get(event.pubkey),
+                    event.pubkey,
+                  )}
+                </span>
                 <span className="ml-auto">
                   {/* `relativeTime` takes seconds, like every other call site:
                       a millisecond value reads as a timestamp far in the future

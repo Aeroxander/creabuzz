@@ -2,14 +2,14 @@
  * Kanban board — work moved through status columns by drag or menu.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CircleDot, Flag, GitPullRequest, Plus } from "lucide-react";
 
 import type { WorkItem } from "../use-work-board";
 import type { AgentCapabilities } from "../use-agent-roster";
 import { useAgentRoster } from "../use-agent-roster";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { userPubkey } from "@/shared/lib/identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -37,19 +37,24 @@ function Card({
   onAssignSelf,
   onUnassign,
   agents,
+  userName,
 }: {
   item: WorkItem;
   onSetStatus: (item: WorkItem, status: string) => void;
   onAssignSelf: (item: WorkItem) => void;
   onUnassign: (item: WorkItem) => void;
   agents: AgentCapabilities[];
+  userName: (pubkey: string) => string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const me = userPubkey();
   const agent = agents.find((a) => a.pubkey === item.assignee);
   const isMine = item.assignee === me;
+  // A roster agent chooses its own name, so that name outranks any profile the
+  // community holds for the same pubkey. Everyone else is a person: username,
+  // then the truncated pubkey for someone who has no kind-0 profile at all.
   const displayAssignee = item.assignee
-    ? (agent?.name ?? (isMine ? "Me" : truncatePubkey(item.assignee)))
+    ? (agent?.name ?? (isMine ? "Me" : userName(item.assignee)))
     : "Unassigned";
 
   return (
@@ -211,6 +216,17 @@ export function KanbanBoard({
   const [draft, setDraft] = useState("");
   const [overCol, setOverCol] = useState<string | null>(null);
 
+  // Every assignee on the board in one batched kind-0 read, so a column of
+  // cards costs one profile query rather than one per card.
+  const assigneePubkeys = useMemo(() => {
+    const pubkeys = new Set<string>();
+    for (const item of items) {
+      if (item.assignee) pubkeys.add(item.assignee);
+    }
+    return [...pubkeys];
+  }, [items]);
+  const userName = useUserNames(assigneePubkeys);
+
   const dropped = (id: string | null, status: string) => {
     if (!id) return;
     const item = items.find((i) => i.key === id);
@@ -297,6 +313,7 @@ export function KanbanBoard({
                     onAssignSelf={onAssignSelf}
                     onUnassign={onUnassign}
                     agents={agents}
+                    userName={userName}
                   />
                 </div>
               ))}

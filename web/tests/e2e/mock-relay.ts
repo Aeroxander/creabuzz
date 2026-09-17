@@ -58,6 +58,14 @@ function pGateRefuses(filter: Filter, authedPubkey: string | null): boolean {
 /** NIP-01 filter match, limited to what the client actually sends. */
 export function matches(filter: Filter, event: StoredEvent): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  // Authors: profile reads ask for kind-0 events by author. Ignoring the field
+  // lets a one-author query be answered from another author's event — or, since
+  // `replay` slices to `limit`, from nothing at all — so a username test would
+  // pass or fail for reasons that have nothing to do with the app.
+  if (Array.isArray(filter.authors)) {
+    const wanted = filter.authors as string[];
+    if (wanted.length > 0 && !wanted.includes(event.pubkey)) return false;
+  }
   // Time bounds matter for pagination: a history page asks for everything up to
   // the oldest message it already has.
   if (typeof filter.since === "number" && event.created_at < filter.since) {

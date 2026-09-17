@@ -28,6 +28,7 @@ export default defineConfig({
         "**/multi-user.spec.ts",
         "**/browser-agent.spec.ts",
         "**/screenshots.spec.ts",
+        "**/usernames.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

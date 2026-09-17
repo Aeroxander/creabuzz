@@ -28,7 +28,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import {
-  profileDisplayName,
+  resolveUserName,
   useProfiles,
   type Profile,
 } from "@/features/profiles/use-profiles";
@@ -217,14 +217,14 @@ function MessageRow({
       <div className="shrink-0">
         <UserAvatar
           avatarUrl={profile?.picture ?? null}
-          displayName={agent?.name ?? profileDisplayName(profile, event.pubkey)}
+          displayName={agent?.name ?? resolveUserName(profile, event.pubkey)}
           size="md"
         />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-semibold leading-message-author text-foreground">
-            {agent?.name ?? profileDisplayName(profile, event.pubkey)}
+            {agent?.name ?? resolveUserName(profile, event.pubkey)}
           </span>
           {agent ? (
             <Bot className="h-3 w-3 self-center text-black/60 dark:text-white/60" />

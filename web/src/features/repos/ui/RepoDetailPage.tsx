@@ -7,7 +7,7 @@ import {
   MessageSquare,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -25,7 +25,7 @@ import {
 import type { CommitInfo, ReadmeResult, TreeEntry } from "../git-client";
 import { useGitTree, useGitLog, useGitReadme } from "../use-git-browse";
 import { ConnectButton } from "./ConnectButton";
-import { PubkeyAvatar } from "./PubkeyAvatar";
+import { PeopleAvatars } from "./PeopleAvatars";
 import { RepoRefsSection } from "./RepoRefsSection";
 import { RepoTreeSection } from "./RepoTreeSection";
 import { RepoCommitsSection } from "./RepoCommitsSection";
@@ -243,6 +243,13 @@ export function RepoDetailPage() {
     }
   }, [error]);
 
+  // The people row: the owner first, then the contributors, as one list — the
+  // row resolves every name in a single batched profile query.
+  const people = useMemo(
+    () => (repo ? [...new Set([repo.owner, ...repo.contributors])] : []),
+    [repo],
+  );
+
   if (isLoading) return <DetailSkeleton />;
 
   if (!repo) {
@@ -409,12 +416,7 @@ export function RepoDetailPage() {
               People
             </h3>
             <div className="flex flex-wrap gap-2">
-              <PubkeyAvatar pubkey={repo.owner} />
-              {repo.contributors
-                .filter((c) => c !== repo.owner)
-                .map((c) => (
-                  <PubkeyAvatar key={c} pubkey={c} />
-                ))}
+              <PeopleAvatars pubkeys={people} />
             </div>
           </div>
         </div>

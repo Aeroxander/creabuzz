@@ -3,17 +3,17 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 /** Simple hash of a hex pubkey to a hue value (0-360). */
 function pubkeyToHue(hex: string): number {
   let hash = 0;
-  for (let i = 0; i < hex.length; i++) {
-    hash = (hash * 31 + hex.charCodeAt(i)) | 0;
-  }
+  for (const char of hex) hash = (hash * 31 + char.charCodeAt(0)) | 0;
   return Math.abs(hash) % 360;
 }
 
 export function PubkeyAvatar({
   pubkey,
+  name,
   size = "md",
 }: {
   pubkey: string;
+  name: string;
   size?: "sm" | "md";
 }) {
   const hue = pubkeyToHue(pubkey);
@@ -30,7 +30,12 @@ export function PubkeyAvatar({
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <span className="font-mono text-xs">{pubkey}</span>
+        {/* The name says who this is; the full hex stays next to it, because a
+            name is a recognition aid and two people can share one. */}
+        <div className="flex flex-col">
+          <span className="text-xs font-medium">{name}</span>
+          <span className="font-mono text-xs">{pubkey}</span>
+        </div>
       </TooltipContent>
     </Tooltip>
   );

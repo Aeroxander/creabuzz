@@ -7,8 +7,8 @@ import { Users } from "lucide-react";
 
 import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
 import { getBrowserAgent } from "../browser-agent";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { getAgentPubkey } from "@/shared/lib/agent-identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -24,9 +24,11 @@ const TEAM_SUGGESTIONS = [
 function AgentOrgCard({
   agent,
   onTeam,
+  userName,
 }: {
   agent: AgentCapabilities;
   onTeam: (team: string | null) => void;
+  userName: (pubkey: string) => string;
 }) {
   const isMine = agent.id === getAgentPubkey();
   const [editing, setEditing] = useState(false);
@@ -60,8 +62,14 @@ function AgentOrgCard({
             </Badge>
           ) : null}
         </div>
-        <p className="truncate font-mono text-2xs text-black/60 dark:text-white/60">
-          {truncatePubkey(agent.pubkey)}
+        {/* The identity line carries identity, never a repeat of the roster
+            name above: a username when the community knows this pubkey, the
+            truncated pubkey otherwise, with the full key on hover. */}
+        <p
+          className="truncate font-mono text-2xs text-black/60 dark:text-white/60"
+          title={agent.pubkey}
+        >
+          {userName(agent.pubkey)}
         </p>
         <div className="mt-1.5 flex items-center gap-1.5">
           <Badge variant="outline" className="px-1.5 py-0 text-2xs capitalize">
@@ -129,6 +137,10 @@ export function OrgView() {
     );
   }, [agents]);
 
+  // One batched kind-0 read for every roster pubkey on the page.
+  const rosterPubkeys = useMemo(() => agents.map((a) => a.pubkey), [agents]);
+  const userName = useUserNames(rosterPubkeys);
+
   const online = agents.filter((a) => a.alive).length;
 
   const setTeam = (agent: AgentCapabilities, team: string | null) => {
@@ -190,6 +202,7 @@ export function OrgView() {
                     key={agent.id}
                     agent={agent}
                     onTeam={(t) => setTeam(agent, t)}
+                    userName={userName}
                   />
                 ))}
               </div>
