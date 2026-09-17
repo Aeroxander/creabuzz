@@ -46,11 +46,8 @@ fn encode_address(a: &str) -> Result<String, String> {
 /// `keccak256(abi.encode(address, uint256))` — the leaf the CCA hooks use.
 /// ABI encoding: both fields left-padded to 32 bytes, concatenated.
 pub fn trustgraph_leaf(member: &str, score: u64) -> Result<Vec<u8>, String> {
-    let member_big = BigUint::parse_bytes(
-        member.trim().trim_start_matches("0x").as_bytes(),
-        16,
-    )
-    .ok_or_else(|| format!("cannot parse member: {member:?}"))?;
+    let member_big = BigUint::parse_bytes(member.trim().trim_start_matches("0x").as_bytes(), 16)
+        .ok_or_else(|| format!("cannot parse member: {member:?}"))?;
     let mut buf = Vec::with_capacity(64);
     buf.extend_from_slice(&pad32(&member_big).into_bytes());
     buf.extend_from_slice(&pad32(&BigUint::from(score)).into_bytes());
@@ -78,7 +75,10 @@ pub fn encode_submit_bid(
     prev_tick_price_q96: Option<&BigUint>,
     hook_data: &str,
 ) -> Result<String, String> {
-    let hook = hook_data.trim().trim_start_matches("0x").to_ascii_lowercase();
+    let hook = hook_data
+        .trim()
+        .trim_start_matches("0x")
+        .to_ascii_lowercase();
     if !hook.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(format!("hookData must be hex: {hook_data:?}"));
     }
@@ -115,7 +115,12 @@ pub fn encode_claim_tokens(bid_id: u64) -> String {
 
 /// ABI-encode `approve(address,address,uint160,uint48)` on Permit2 — the
 /// allowance a USDC bid needs before `submitBid`.
-pub fn encode_permit2_approve(token: &str, spender: &str, amount: &BigUint, deadline: u64) -> Result<String, String> {
+pub fn encode_permit2_approve(
+    token: &str,
+    spender: &str,
+    amount: &BigUint,
+    deadline: u64,
+) -> Result<String, String> {
     Ok(format!(
         "0x{SELECTOR_PERMIT2_APPROVE}{}{}{}{}",
         encode_address(token)?,
@@ -177,8 +182,14 @@ mod tests {
 
     #[test]
     fn exit_and_claim_selectors() {
-        assert_eq!(encode_exit_bid(42), "0x8e4deb17000000000000000000000000000000000000000000000000000000000000002a");
-        assert_eq!(encode_claim_tokens(7), "0x46e04a2f0000000000000000000000000000000000000000000000000000000000000007");
+        assert_eq!(
+            encode_exit_bid(42),
+            "0x8e4deb17000000000000000000000000000000000000000000000000000000000000002a"
+        );
+        assert_eq!(
+            encode_claim_tokens(7),
+            "0x46e04a2f0000000000000000000000000000000000000000000000000000000000000007"
+        );
     }
 
     #[test]
@@ -191,9 +202,24 @@ mod tests {
 
     #[test]
     fn validate_rejects_off_grid_and_sub_clearing() {
-        assert!(validate_bid(&big("1050").unwrap(), &big("100").unwrap(), &big("900").unwrap()).is_err());
-        assert!(validate_bid(&big("900").unwrap(), &big("100").unwrap(), &big("900").unwrap()).is_err());
-        assert!(validate_bid(&big("1100").unwrap(), &big("100").unwrap(), &big("900").unwrap()).is_ok());
+        assert!(validate_bid(
+            &big("1050").unwrap(),
+            &big("100").unwrap(),
+            &big("900").unwrap()
+        )
+        .is_err());
+        assert!(validate_bid(
+            &big("900").unwrap(),
+            &big("100").unwrap(),
+            &big("900").unwrap()
+        )
+        .is_err());
+        assert!(validate_bid(
+            &big("1100").unwrap(),
+            &big("100").unwrap(),
+            &big("900").unwrap()
+        )
+        .is_ok());
     }
 
     #[test]
