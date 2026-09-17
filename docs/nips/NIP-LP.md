@@ -279,5 +279,7 @@ Mirrors of the verifier/claim contracts use 47005 with a `kind` tag:
   slash/freeze paths as the chain reports them (advisory; the chain is
   authoritative).
 
-CLI: `buzz launchpad record-claim` and `buzz launchpad record-verdict`
-validate the vocabulary and the evidence-hash shape before mirroring.
+Both mirrors carry the `tx` tag: every `47005` names the chain transaction
+that settled it, and the relay refuses a receipt without one. CLI:
+`buzz launchpad record-claim` and `buzz launchpad record-verdict` validate the
+vocabulary, the evidence-hash shape, and the tx hash before mirroring.

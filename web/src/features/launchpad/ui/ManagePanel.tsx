@@ -11,6 +11,13 @@ import {
 } from "../models";
 import { toAtomic } from "../lib/amounts";
 import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
+import {
+  EVIDENCE_HASH_RE,
+  TX_HASH_HINT,
+  claimReceiptParts,
+  isTxHash,
+  verdictReceiptParts,
+} from "../lib/milestone-receipt";
 import { getRpcEndpoint, isContractDeployed } from "../chain";
 import {
   useCreateLaunch,
@@ -180,6 +187,7 @@ export function ManagePanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [claimId, setClaimId] = useState("");
   const [evidenceHash, setEvidenceHash] = useState("");
+  const [txHash, setTxHash] = useState("");
   const [milestoneError, setMilestoneError] = useState<string | null>(null);
   /** Destructive stage change: confirmed inline, like the delete below. */
   const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
@@ -226,8 +234,12 @@ export function ManagePanel({
    */
   const recordClaim = async () => {
     setMilestoneError(null);
-    if (!/^[0-9a-fA-F]{64}$/.test(evidenceHash.trim())) {
+    if (!EVIDENCE_HASH_RE.test(evidenceHash.trim())) {
       setMilestoneError("Evidence hash must be 64 hex characters.");
+      return;
+    }
+    if (!isTxHash(txHash)) {
+      setMilestoneError(TX_HASH_HINT);
       return;
     }
     try {
@@ -235,16 +247,11 @@ export function ManagePanel({
         kind: KIND_LAUNCH_RECEIPT,
         author: record.author,
         launchId: record.id,
-        extraTags: [
-          ["kind", "claim"],
-          ["claim", claimId.trim()],
-          ["evidence", evidenceHash.trim().toLowerCase()],
-        ],
-        content: {
-          table: "claim",
-          claim: claimId.trim(),
+        ...claimReceiptParts({
+          claimId: claimId.trim(),
           evidenceHash: evidenceHash.trim().toLowerCase(),
-        },
+          tx: txHash.trim(),
+        }),
       });
     } catch (err) {
       setMilestoneError(
@@ -255,17 +262,20 @@ export function ManagePanel({
 
   const recordVerdict = async (approve: boolean) => {
     setMilestoneError(null);
+    if (!isTxHash(txHash)) {
+      setMilestoneError(TX_HASH_HINT);
+      return;
+    }
     try {
       await mirror.mutateAsync({
         kind: KIND_LAUNCH_RECEIPT,
         author: record.author,
         launchId: record.id,
-        extraTags: [["kind", "verdict"]],
-        content: {
-          table: "verdict",
-          claim: claimId.trim(),
-          approve,
-        },
+        ...verdictReceiptParts({
+          claimId: claimId.trim(),
+          verdict: approve ? "approve" : "reject",
+          tx: txHash.trim(),
+        }),
       });
     } catch (err) {
       setMilestoneError(
@@ -433,7 +443,8 @@ export function ManagePanel({
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
             A milestone claim is staked and settled onchain by the verifier set;
             this panel mirrors the claim and your verdict onto the feed (47005,
-            advisory). The chain is the ledger.
+            advisory). Every mirror names the tx that settled it — the relay
+            refuses a receipt without one. The chain is the ledger.
           </p>
           <div className="mt-3 flex flex-col gap-2">
             <label className="text-sm font-medium" htmlFor="claim-id">
@@ -456,12 +467,23 @@ export function ManagePanel({
               placeholder="64 hex chars of the canonical claim"
               value={evidenceHash}
             />
+            <label className="text-sm font-medium" htmlFor="milestone-tx">
+              Settlement tx hash
+            </label>
+            <Input
+              id="milestone-tx"
+              data-testid="milestone-tx"
+              onChange={(e) => setTxHash(e.target.value)}
+              placeholder="0x + 64 hex chars of the onchain tx"
+              value={txHash}
+            />
             <div className="mt-1 flex flex-wrap gap-2">
               <Button
                 data-testid="record-claim"
                 disabled={
                   claimId.trim() === "" ||
-                  evidenceHash.trim() === "" ||
+                  !EVIDENCE_HASH_RE.test(evidenceHash.trim()) ||
+                  !isTxHash(txHash) ||
                   mirror.isPending
                 }
                 onClick={() => void recordClaim()}
@@ -472,7 +494,9 @@ export function ManagePanel({
               </Button>
               <Button
                 data-testid="verdict-approve"
-                disabled={claimId.trim() === "" || mirror.isPending}
+                disabled={
+                  claimId.trim() === "" || !isTxHash(txHash) || mirror.isPending
+                }
                 onClick={() => void recordVerdict(true)}
                 size="sm"
                 variant="outline"
@@ -482,7 +506,9 @@ export function ManagePanel({
               </Button>
               <Button
                 data-testid="verdict-reject"
-                disabled={claimId.trim() === "" || mirror.isPending}
+                disabled={
+                  claimId.trim() === "" || !isTxHash(txHash) || mirror.isPending
+                }
                 onClick={() => void recordVerdict(false)}
                 size="sm"
                 variant="outline"

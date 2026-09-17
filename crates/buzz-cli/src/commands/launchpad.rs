@@ -641,16 +641,14 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             id,
             claim_id,
             evidence_hash,
-        } => {
-            cmd_claim(client, &id, &claim_id, &evidence_hash).await
-        }
+            tx,
+        } => cmd_claim(client, &id, &claim_id, &evidence_hash, &tx).await,
         LaunchpadCmd::RecordVerdict {
             id,
             claim_id,
             verdict,
-        } => {
-            cmd_verdict(client, &id, &claim_id, &verdict).await
-        }
+            tx,
+        } => cmd_verdict(client, &id, &claim_id, &verdict, &tx).await,
         LaunchpadCmd::RecordReceipt { id, table, tx } => {
             let owner = client.keys().public_key().to_hex();
             let tx_tag = Tag::parse(["tx", tx.as_str()])
@@ -671,7 +669,6 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
     }
 }
 
-
 /// Compose an unsigned bid: Permit2 approve (ERC-20 currency) then submitBid.
 /// Prints a JSON envelope a wallet or `cast send` can sign — the CLI never
 /// signs or moves money ("machines compose, humans sign").
@@ -691,8 +688,8 @@ fn cmd_compose_bid(
     deadline: Option<u64>,
 ) -> Result<(), CliError> {
     use crate::commands::launchpad_compose::{
-        encode_permit2_approve, encode_submit_bid, snap_max_price_to_tick, validate_bid,
-        PERMIT2_ADDRESS, TxCall,
+        encode_permit2_approve, encode_submit_bid, snap_max_price_to_tick, validate_bid, TxCall,
+        PERMIT2_ADDRESS,
     };
     use num_bigint::BigUint;
 
@@ -713,8 +710,8 @@ fn cmd_compose_bid(
     }
     let amount = to_big(budget)?;
     let floor = to_big(floor_price)?;
-    let bid_data = encode_submit_bid(&snapped, &amount, owner, Some(&floor), "0x")
-        .map_err(CliError::Other)?;
+    let bid_data =
+        encode_submit_bid(&snapped, &amount, owner, Some(&floor), "0x").map_err(CliError::Other)?;
 
     let mut calls: Vec<TxCall> = Vec::new();
     if let Some(currency_addr) = currency {
@@ -762,41 +759,54 @@ fn cmd_compose_bid(
     Ok(())
 }
 
+/// The `tx` tag every 47005 receipt must carry.
+///
+/// A receipt without it is refused by the relay
+/// (`crates/buzz-relay/src/handlers/ingest.rs`, `validate_launch_mirror_envelope`)
+/// and dropped by the web feed parser, so a claim or verdict mirrored without
+/// one reached nobody. Validated before signing so a bad hash fails here.
+fn receipt_tx_tag(tx: &str) -> Result<Tag, CliError> {
+    if tx.len() != 66 || !tx.starts_with("0x") || !tx[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CliError::Usage(
+            "tx must be a 0x-prefixed 32-byte tx hash (0x + 64 hex chars)".into(),
+        ));
+    }
+    Tag::parse(["tx", tx]).map_err(|e| CliError::Other(format!("bad tx tag: {e}")))
+}
 
-/// Record a milestone claim (47005, table=claim): the Nostr side of the
-/// ClaimStake evidence hash. Mirrors are advisory; the chain escrow is the
-/// authority.
-async fn cmd_claim(client: &BuzzClient, id: &str, claim_id: &str, evidence_hash: &str) -> Result<(), CliError> {
-    validate_launch_id(id)?;
+/// Tags and content of a milestone claim receipt (47005, `kind=claim`).
+fn claim_receipt_parts(
+    claim_id: &str,
+    evidence_hash: &str,
+    tx: &str,
+) -> Result<(Vec<Tag>, serde_json::Value), CliError> {
     if evidence_hash.len() != 64 || !evidence_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(CliError::Usage(
             "evidence-hash must be 64 hex chars (a sha256 of the canonical claim)".into(),
         ));
     }
-    let owner = client.keys().public_key().to_hex();
+    let kind_tag =
+        Tag::parse(["kind", "claim"]).map_err(|e| CliError::Other(format!("bad kind tag: {e}")))?;
     let claim_tag = Tag::parse(["claim", claim_id])
         .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?;
-    let kind_tag = Tag::parse(["kind", "claim"])
-        .map_err(|e| CliError::Other(format!("bad kind tag: {e}")))?;
     let evidence_tag = Tag::parse(["evidence", evidence_hash])
         .map_err(|e| CliError::Other(format!("bad evidence tag: {e}")))?;
-    cmd_mirror(
-        client,
-        KIND_LAUNCH_RECEIPT,
-        "claim mirror",
-        &owner,
-        id,
-        vec![claim_tag, kind_tag, evidence_tag],
+    Ok((
+        vec![kind_tag, claim_tag, evidence_tag, receipt_tx_tag(tx)?],
         serde_json::json!({ "table": "claim", "claim": claim_id, "evidenceHash": evidence_hash }),
-    )
-    .await
+    ))
 }
 
-/// Record a verifier verdict (47005, table=verdict): the Nostr side of a
-/// VerifierSet attestation. The verdict word must be approve|reject so the
-/// vocabulary stays closed; the onchain attestation is the authority.
-async fn cmd_verdict(client: &BuzzClient, id: &str, claim_id: &str, verdict: &str) -> Result<(), CliError> {
-    validate_launch_id(id)?;
+/// Tags and content of a verifier verdict receipt (47005, `kind=verdict`).
+///
+/// The content carries the verdict *word*, not a boolean: NIP-LP fixes the
+/// vocabulary at `approve|reject` so no reader has to guess which spelling of
+/// "no" this client meant.
+fn verdict_receipt_parts(
+    claim_id: &str,
+    verdict: &str,
+    tx: &str,
+) -> Result<(Vec<Tag>, serde_json::Value), CliError> {
     let approved = match verdict {
         "approve" => true,
         "reject" => false,
@@ -806,19 +816,130 @@ async fn cmd_verdict(client: &BuzzClient, id: &str, claim_id: &str, verdict: &st
             )))
         }
     };
-    let owner = client.keys().public_key().to_hex();
-    let claim_tag = Tag::parse(["claim", claim_id])
-        .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?;
     let kind_tag = Tag::parse(["kind", "verdict"])
         .map_err(|e| CliError::Other(format!("bad kind tag: {e}")))?;
+    let claim_tag = Tag::parse(["claim", claim_id])
+        .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?;
+    Ok((
+        vec![kind_tag, claim_tag, receipt_tx_tag(tx)?],
+        serde_json::json!({ "table": "verdict", "claim": claim_id, "verdict": if approved { "approve" } else { "reject" } }),
+    ))
+}
+
+/// Record a milestone claim (47005, table=claim): the Nostr side of the
+/// ClaimStake evidence hash. Mirrors are advisory; the chain escrow is the
+/// authority.
+async fn cmd_claim(
+    client: &BuzzClient,
+    id: &str,
+    claim_id: &str,
+    evidence_hash: &str,
+    tx: &str,
+) -> Result<(), CliError> {
+    validate_launch_id(id)?;
+    let (tags, content) = claim_receipt_parts(claim_id, evidence_hash, tx)?;
+    let owner = client.keys().public_key().to_hex();
+    cmd_mirror(
+        client,
+        KIND_LAUNCH_RECEIPT,
+        "claim mirror",
+        &owner,
+        id,
+        tags,
+        content,
+    )
+    .await
+}
+
+/// Record a verifier verdict (47005, table=verdict): the Nostr side of a
+/// VerifierSet attestation. The verdict word must be approve|reject so the
+/// vocabulary stays closed; the onchain attestation is the authority.
+async fn cmd_verdict(
+    client: &BuzzClient,
+    id: &str,
+    claim_id: &str,
+    verdict: &str,
+    tx: &str,
+) -> Result<(), CliError> {
+    validate_launch_id(id)?;
+    let (tags, content) = verdict_receipt_parts(claim_id, verdict, tx)?;
+    let owner = client.keys().public_key().to_hex();
     cmd_mirror(
         client,
         KIND_LAUNCH_RECEIPT,
         "verdict mirror",
         &owner,
         id,
-        vec![claim_tag, kind_tag],
-        serde_json::json!({ "table": "verdict", "claim": claim_id, "approve": approved }),
+        tags,
+        content,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TX: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const EVIDENCE: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+    fn tag_pairs(tags: &[Tag]) -> Vec<Vec<String>> {
+        tags.iter()
+            .map(|t| t.as_slice().iter().map(|s| s.to_string()).collect())
+            .collect()
+    }
+
+    /// The relay refuses a 47005 without exactly one well-formed `tx` tag
+    /// (`validate_launch_mirror_envelope`), and the web parser drops such a
+    /// receipt, so a producer that omits it reaches nobody.
+    #[test]
+    fn claim_receipt_carries_the_tx_tag_the_relay_requires() {
+        let (tags, content) = claim_receipt_parts("milestone-1", EVIDENCE, TX).expect("parts");
+        let pairs = tag_pairs(&tags);
+        let tx_tags: Vec<_> = pairs.iter().filter(|p| p[0] == "tx").collect();
+        assert_eq!(tx_tags.len(), 1, "exactly one tx tag, got {pairs:?}");
+        assert_eq!(tx_tags[0], &vec!["tx".to_string(), TX.to_string()]);
+        assert!(pairs.contains(&vec!["kind".into(), "claim".into()]));
+        assert!(pairs.contains(&vec!["claim".into(), "milestone-1".into()]));
+        assert!(pairs.contains(&vec!["evidence".into(), EVIDENCE.into()]));
+        assert_eq!(content["table"], "claim");
+    }
+
+    #[test]
+    fn verdict_receipt_states_the_word_and_carries_the_tx_tag() {
+        let (tags, content) = verdict_receipt_parts("milestone-1", "reject", TX).expect("parts");
+        assert_eq!(content["verdict"], "reject");
+        assert!(tag_pairs(&tags).contains(&vec!["tx".into(), TX.into()]));
+        let (_, approved) = verdict_receipt_parts("milestone-1", "approve", TX).expect("parts");
+        assert_eq!(approved["verdict"], "approve");
+    }
+
+    #[test]
+    fn a_malformed_tx_hash_is_refused_before_signing() {
+        let bad = [
+            String::new(),
+            "0x".to_string(),
+            "0x1234".to_string(),
+            "1".repeat(64),
+            format!("0x{}", "zz".repeat(32)),
+        ];
+        for value in &bad {
+            let err = claim_receipt_parts("milestone-1", EVIDENCE, value).unwrap_err();
+            assert!(
+                matches!(err, CliError::Usage(_)),
+                "{value:?} must fail as usage"
+            );
+            let err = verdict_receipt_parts("milestone-1", "approve", value).unwrap_err();
+            assert!(
+                matches!(err, CliError::Usage(_)),
+                "{value:?} must fail as usage"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_verdict_word_is_refused() {
+        let err = verdict_receipt_parts("milestone-1", "maybe", TX).unwrap_err();
+        assert!(matches!(err, CliError::Usage(_)));
+    }
 }

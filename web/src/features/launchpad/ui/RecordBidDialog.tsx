@@ -13,9 +13,8 @@ import {
   type BidPlan,
 } from "../lib/bid-tx";
 import { toAtomic } from "../lib/amounts";
+import { TX_HASH_RE } from "../lib/milestone-receipt";
 import type { LaunchRecord } from "../models";
-
-const TX_RE = /^0x[0-9a-fA-F]{64}$/;
 
 interface BidInput {
   bucket: string;
@@ -198,7 +197,7 @@ export function RecordBidDialog({
         })) as string;
         lastHash = hash;
       }
-      if (!TX_RE.test(lastHash))
+      if (!TX_HASH_RE.test(lastHash))
         throw new Error("The wallet returned an invalid hash.");
       setTx(lastHash);
     } catch (err) {
@@ -210,7 +209,7 @@ export function RecordBidDialog({
 
   const submit = () => {
     if (isPublishing) return;
-    if (tx.trim() !== "" && !TX_RE.test(tx.trim())) {
+    if (tx.trim() !== "" && !TX_HASH_RE.test(tx.trim())) {
       setError("Transaction hash must be 0x + 64 hex characters.");
       return;
     }

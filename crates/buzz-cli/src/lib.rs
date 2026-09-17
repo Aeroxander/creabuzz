@@ -1523,6 +1523,9 @@ pub enum LaunchpadCmd {
         /// Evidence hash binding the claim to its content (Nostr/Blossom)
         #[arg(long, name = "evidence-hash")]
         evidence_hash: String,
+        /// Tx hash of the onchain claim that settled this milestone (0x + 64 hex)
+        #[arg(long)]
+        tx: String,
     },
     /// Record a verifier verdict on a claim (47005, table = verdict)
     #[command(name = "record-verdict")]
@@ -1535,6 +1538,9 @@ pub enum LaunchpadCmd {
         /// approve | reject
         #[arg(long)]
         verdict: String,
+        /// Tx hash of the onchain attestation (0x + 64 hex)
+        #[arg(long)]
+        tx: String,
     },
 }
 
