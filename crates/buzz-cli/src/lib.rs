@@ -246,6 +246,9 @@ enum Cmd {
     /// Community moderation — reports queue, bans, timeouts, audit trail
     #[command(subcommand)]
     Moderation(ModerationCmd),
+    /// Community org graph — roles, grants, and budgets (NIP-ORG)
+    #[command(subcommand)]
+    Org(OrgCmd),
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -2253,6 +2256,203 @@ pub enum ModerationCmd {
     },
 }
 
+/// Community org graph commands — NIP-ORG kinds:37010–37013.
+#[derive(Subcommand)]
+pub enum OrgCmd {
+    /// Manage org nodes (roles, teams, agent seats)
+    #[command(subcommand)]
+    Node(OrgNodeCmd),
+    /// Manage org grants (delegated authority)
+    #[command(subcommand)]
+    Grant(OrgGrantCmd),
+    /// Manage org budgets (autonomy bounds)
+    #[command(subcommand)]
+    Budget(OrgBudgetCmd),
+
+    /// Manage contribution records (action verification + credit)
+    #[command(subcommand)]
+    Contribution(OrgContributionCmd),
+}
+
+/// Org contribution record subcommands — kind:37013.
+#[derive(Subcommand)]
+pub enum OrgContributionCmd {
+    /// Record a contribution action with its multi-dimensional profile
+    Create {
+        /// Action id (slug): `[a-z0-9._-]{1,64}`
+        #[arg(long)]
+        id: String,
+        /// Description of the contribution action
+        #[arg(long)]
+        action: String,
+        /// Dimension in `key:value` format (repeatable)
+        #[arg(long = "dim")]
+        dim: Vec<String>,
+        /// Evidence event id (repeatable)
+        #[arg(long = "evidence")]
+        evidence: Vec<String>,
+        /// Informed-by reference (contribution record d-tag, repeatable)
+        #[arg(long = "informed-by")]
+        informed_by: Vec<String>,
+        /// Human work fraction (0.0–1.0, default 1.0)
+        #[arg(long, default_value = "1.0")]
+        human: f64,
+        /// AI work fraction (0.0–1.0, default 0.0)
+        #[arg(long, default_value = "0.0")]
+        ai: f64,
+    },
+    /// Get a contribution record by action id
+    Get {
+        /// Action id (slug)
+        #[arg(long)]
+        id: String,
+    },
+    /// List recent contribution records
+    List {
+        /// Max events to return (default 100)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+/// Org node subcommands — kind:37010.
+#[derive(Subcommand)]
+pub enum OrgNodeCmd {
+    /// Create a new org node (role, team, or agent seat)
+    Create {
+        /// Node id (slug): `[a-z0-9._-]{1,64}`
+        #[arg(long)]
+        id: String,
+        /// Human-readable name for this role/team
+        #[arg(long)]
+        name: String,
+        /// Node kind: role | team | agent-seat
+        #[arg(long, default_value = "role")]
+        kind: String,
+        /// Parent node id (omit for root)
+        #[arg(long)]
+        parent: Option<String>,
+        /// Human holder pubkey(s) (64-char hex, repeatable)
+        #[arg(long = "holder")]
+        holder: Vec<String>,
+        /// Agent holder pubkey(s) (64-char hex, repeatable)
+        #[arg(long = "agent-seat")]
+        agent_seat: Vec<String>,
+    },
+    /// Get an org node by id
+    Get {
+        /// Node id
+        #[arg(long)]
+        id: String,
+        /// Author pubkey (hex) — default to your own key
+        #[arg(long)]
+        author: Option<String>,
+    },
+    /// List all org nodes
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Delete your own org node (NIP-09 tombstone)
+    Delete {
+        /// Node id
+        #[arg(long)]
+        id: String,
+    },
+}
+
+/// Org grant subcommands — kind:37011.
+#[derive(Subcommand)]
+pub enum OrgGrantCmd {
+    /// Create a new grant (delegated authority)
+    Create {
+        /// Grant id (slug)
+        #[arg(long)]
+        id: String,
+        /// Grantee pubkey (64-char hex) — human or agent
+        #[arg(long)]
+        grantee: String,
+        /// Org node `d` tag the issuer acts through
+        #[arg(long)]
+        via: String,
+        /// Scoped capability verb(s) (repeatable): e.g. "read:#leadership", "task:create", "spend:100000"
+        #[arg(long = "verb")]
+        verb: Vec<String>,
+        /// Parent grant id (omit for root grants from standing)
+        #[arg(long)]
+        parent_grant: Option<String>,
+        /// Expiry unix timestamp (omit for no expiry)
+        #[arg(long)]
+        expires: Option<u64>,
+    },
+    /// Revoke a grant
+    Revoke {
+        /// Grant id
+        #[arg(long)]
+        id: String,
+    },
+    /// Get a grant by id
+    Get {
+        /// Grant id
+        #[arg(long)]
+        id: String,
+    },
+    /// List all grants
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+/// Org budget subcommands — kind:37012.
+#[derive(Subcommand)]
+pub enum OrgBudgetCmd {
+    /// Create a new budget bound
+    Create {
+        /// Budget subject id (slug)
+        #[arg(long)]
+        id: String,
+        /// Subject: agent pubkey | org node d | grant id
+        #[arg(long)]
+        subject: String,
+        /// Budget window: epoch | day | week | month
+        #[arg(long, default_value = "epoch")]
+        window: String,
+        /// Spend cap in smallest currency unit (e.g. usd-cents)
+        #[arg(long)]
+        spend: Option<u64>,
+        /// Maximum autonomous runs per window
+        #[arg(long)]
+        runs: Option<u32>,
+        /// Maximum tasks that can be created per window
+        #[arg(long)]
+        task_create: Option<u32>,
+        /// Maximum tasks that can be approved per window
+        #[arg(long)]
+        task_approve: Option<u32>,
+    },
+    /// Get a budget by id
+    Get {
+        /// Budget subject id
+        #[arg(long)]
+        id: String,
+    },
+    /// List all budgets
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Delete your own budget (NIP-09 tombstone)
+    Delete {
+        /// Budget subject id
+        #[arg(long)]
+        id: String,
+    },
+}
+
 /// Normalize hand-authored `BUZZ_AUTH_TAG` input to strict JSON.
 ///
 /// `.env` files and shell exports sometimes carry the tag in the unquoted
@@ -2360,6 +2560,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
+        Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
     }
 }
@@ -2502,6 +2703,7 @@ mod tests {
             "messages",
             "moderation",
             "notes",
+            "org",
             "pack",
             "patches",
             "pr",

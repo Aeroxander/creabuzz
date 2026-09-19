@@ -7,6 +7,10 @@
 //! (`contracts/test/BidCalldata.t.sol`) binds the same bytes. The contract is
 //! the authority — this module never signs, never moves money.
 
+// Selectors and encoders are kept in lockstep with the web composer and the
+// vendored CCA contract even where the CLI flow does not call them yet.
+#![allow(dead_code)]
+
 use num_bigint::BigUint;
 use num_traits::Zero;
 
@@ -149,10 +153,8 @@ pub fn validate_bid(
     tick_spacing_q96: &BigUint,
     clearing_price_q96: &BigUint,
 ) -> Result<(), String> {
-    if !tick_spacing_q96.is_zero() {
-        if !(max_price_q96 % tick_spacing_q96).is_zero() {
-            return Err("max price is not on the tick grid (TickPriceNotAtBoundary)".into());
-        }
+    if !tick_spacing_q96.is_zero() && !(max_price_q96 % tick_spacing_q96).is_zero() {
+        return Err("max price is not on the tick grid (TickPriceNotAtBoundary)".into());
     }
     if max_price_q96 <= clearing_price_q96 {
         return Err("max price must be above the current clearing price".into());

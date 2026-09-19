@@ -554,6 +554,30 @@ pub const KIND_AGENT_TURN_METRIC: u32 = 44200;
 /// heartbeat recency, so agents refresh this event periodically.
 pub const KIND_AGENT_CAPABILITIES: u32 = 44010;
 
+/// Statuses a kind:44011 coordination task may carry.
+///
+/// Shared by the Buzz clients, the fleet worker and the bridges so a task row
+/// written by one surface is readable by every other. `44011` is not a NIP-33
+/// addressable kind, so a reader takes the newest row per `d` tag (read-side
+/// last-write-wins) and the status vocabulary is what makes that meaningful.
+pub const TASK_STATUSES: [&str; 6] = [
+    "open",
+    "assigned",
+    "in_progress",
+    "needs_approval",
+    "done",
+    "cancelled",
+];
+
+/// Status used when a source status is missing or unrecognised.
+pub const DEFAULT_TASK_STATUS: &str = "open";
+
+/// Priorities a kind:44011 coordination task may carry.
+pub const TASK_PRIORITIES: [&str; 4] = ["low", "normal", "high", "urgent"];
+
+/// Priority used when a source priority is missing or unrecognised.
+pub const DEFAULT_TASK_PRIORITY: &str = "normal";
+
 /// Fleet: a coordination task (addressable).
 ///
 /// Addressed by `d` = task id. Content is JSON:
@@ -675,6 +699,30 @@ pub const KIND_LAUNCH_RECEIPT: u32 = 47005;
 /// Published by a scoring operator with its Merkle root and proof pointer;
 /// clients verify individual score claims against the root without a prover.
 pub const KIND_SCORE_ROOT: u32 = 37006;
+
+/// NIP-ORG: org node — a role or team in a community's org chart
+/// (parameterized replaceable, d = node id). Community-level and
+/// global-only: addressed by `(pubkey, kind, d)` with no routing tag — a
+/// stray `h` never channel-scopes it. Roles are seats humans and agents
+/// hold; `parent` links form the hierarchy. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_NODE: u32 = 37010;
+/// NIP-ORG: org grant — a signed, scoped, revocable delegation of authority
+/// (parameterized replaceable, d = grant id). Community-level and
+/// global-only, no routing tag. Chains attenuate: each link conveys a
+/// subset of its parent. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_GRANT: u32 = 37011;
+/// NIP-ORG: budget — a bound on an agent's or delegated scope's autonomous
+/// action (parameterized replaceable, d = subject id). Community-level and
+/// global-only, no routing tag. Bounds autonomy, never a human's own
+/// actions. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_BUDGET: u32 = 37012;
+
+/// NIP-ORG: contribution record — a verified action with a multi-dimensional
+/// profile, evidence, human-vs-AI attribution, and `informed-by` chain for
+/// credit settlement (parameterized replaceable, d = action id).
+/// Community-level and global-only, no routing tag. See
+/// `docs/nips/NIP-ORG.md`.
+pub const KIND_CONTRIBUTION_RECORD: u32 = 37013;
 
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
@@ -815,6 +863,10 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_LAUNCH_PROPOSAL,
     KIND_LAUNCH_RECEIPT,
     KIND_SCORE_ROOT,
+    KIND_ORG_NODE,
+    KIND_ORG_GRANT,
+    KIND_ORG_BUDGET,
+    KIND_CONTRIBUTION_RECORD,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -916,6 +968,10 @@ const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 3062
 const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT)); // 30621 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD)); // 37001 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_SCORE_ROOT)); // 37006 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_NODE)); // 37010 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_GRANT)); // 37011 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_BUDGET)); // 37012 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_CONTRIBUTION_RECORD)); // 37013 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

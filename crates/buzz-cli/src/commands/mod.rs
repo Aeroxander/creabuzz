@@ -12,6 +12,7 @@ pub mod mem;
 pub mod messages;
 pub mod moderation;
 pub mod notes;
+pub mod org;
 pub mod pack;
 pub mod patches;
 pub mod pr;

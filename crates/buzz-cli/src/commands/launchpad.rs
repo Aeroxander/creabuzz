@@ -363,6 +363,7 @@ async fn cmd_mirror(
 /// Dev-local chain writes (default: Anvil at localhost:8545 with its default
 /// key). Refuses known public networks unless `--i-know-what-i-am-doing` is
 /// passed. The local protocol set comes from the apptoken-dev environment.
+#[allow(clippy::too_many_arguments)]
 async fn cmd_mint_token(
     client: &BuzzClient,
     name: &str,
@@ -672,6 +673,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
 /// Compose an unsigned bid: Permit2 approve (ERC-20 currency) then submitBid.
 /// Prints a JSON envelope a wallet or `cast send` can sign — the CLI never
 /// signs or moves money ("machines compose, humans sign").
+#[allow(clippy::too_many_arguments)]
 fn cmd_compose_bid(
     as_agent: bool,
     _id: &str,

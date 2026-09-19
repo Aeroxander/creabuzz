@@ -2347,6 +2347,882 @@ pub fn build_delete_addressable(
     Ok(EventBuilder::new(Kind::Custom(KIND_DELETION as u16), "").tags(tags))
 }
 
+// ─── NIP-ORG: Community org graph (kinds:37010–37012) ─────────────────────
+//
+//  Public surface:
+//  • `validate_org_envelope`  — Layer A protocol validator (mirrors relay ingest)
+//  • `OrgNodeContent`        — parsed org node content body
+//  • `OrgGrantContent`       — parsed org grant content body
+//  • `OrgBudgetContent`      — parsed org budget content body
+//  • `build_org_node`        — build a kind:37010 event
+//  • `build_org_grant`       — build a kind:37011 event
+//  • `build_org_budget`      — build a kind:37012 event
+
+use buzz_core::kind::{KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
+
+/// Maximum byte length of an org `d` tag value (matches relay constant).
+pub const ORG_D_MAX_LEN: usize = 64;
+/// Maximum character count of an org `name` tag value.
+pub const ORG_NAME_MAX_LEN: usize = 128;
+/// Maximum byte length of org event content.
+pub const ORG_CONTENT_MAX_LEN: usize = 16384;
+/// Maximum number of `seat` tags per org event.
+pub const ORG_SEAT_CAP: usize = 256;
+
+/// The kind of an org node in the org hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgNodeKind {
+    /// A named role (e.g. "CTO", "Verifier").
+    Role,
+    /// A team or working group.
+    Team,
+    /// An agent's seat in the org.
+    AgentSeat,
+}
+
+impl std::fmt::Display for OrgNodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Role => write!(f, "role"),
+            Self::Team => write!(f, "team"),
+            Self::AgentSeat => write!(f, "agent-seat"),
+        }
+    }
+}
+
+impl std::str::FromStr for OrgNodeKind {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "role" => Ok(Self::Role),
+            "team" => Ok(Self::Team),
+            "agent-seat" => Ok(Self::AgentSeat),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown org node kind: {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Scope declared by an org node — which verbs this node may delegate.
+///
+/// Serialized with camelCase keys per NIP-ORG (`readBelow`, `assignBelow`,
+/// `canGrant`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgScope {
+    /// Whether this node can read channels below it.
+    #[serde(default)]
+    pub read_below: bool,
+    /// Whether this node can assign tasks to subordinates.
+    #[serde(default)]
+    pub assign_below: bool,
+    /// Verbs this node may delegate (e.g. `["read", "task", "spend:100000"]`).
+    #[serde(default)]
+    pub can_grant: Vec<String>,
+}
+
+/// UI metadata for rendering an org node.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OrgNodeUi {
+    /// Color hex string (e.g. `"#ff0000"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Icon identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Short human-readable blurb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blurb: Option<String>,
+}
+
+/// Content body of a kind:37010 org node event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`agentSeats`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgNodeContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Human-readable name for this role/team.
+    pub name: String,
+    /// The kind of org node.
+    #[serde(rename = "kind")]
+    pub node_kind: OrgNodeKind,
+    /// `d` tag of the parent node in the hierarchy (omit for root).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Human seat holders (64-char hex pubkeys).
+    #[serde(default)]
+    pub holders: Vec<String>,
+    /// Agent seat holders (NIP-OA keys, 64-char hex).
+    #[serde(default)]
+    pub agent_seats: Vec<String>,
+    /// Delegation scope for this node.
+    #[serde(default)]
+    pub scope: OrgScope,
+    /// UI rendering hints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<OrgNodeUi>,
+}
+
+/// Content body of a kind:37011 org grant event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`parentGrant`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgGrantContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// 64-char hex pubkey of the issuer (who holds the authority being delegated).
+    pub issuer: String,
+    /// 64-char hex pubkey of the grantee (human or agent receiving authority).
+    pub grantee: String,
+    /// `d` tag of the org node the issuer acts through.
+    pub via: String,
+    /// Scoped capability verbs (e.g. `["read:#leadership", "task:create", "spend:100000"]`).
+    pub verbs: Vec<String>,
+    /// `d` tag of the parent grant (omit for root grants from standing).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_grant: Option<String>,
+    /// Unix timestamp when this grant expires (omit for no expiry).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires: Option<u64>,
+    /// Whether this grant has been revoked (default false).
+    #[serde(default)]
+    pub revoked: bool,
+}
+
+/// Spend limit within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SpendLimit {
+    /// Amount in the specified unit.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`).
+    #[serde(default = "default_spend_unit")]
+    pub unit: String,
+}
+
+fn default_spend_unit() -> String {
+    "usd-cents".to_string()
+}
+
+/// Task limits within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskLimits {
+    /// Maximum tasks that can be created in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create: Option<u32>,
+    /// Maximum tasks that can be approved in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approve: Option<u32>,
+}
+
+/// How the budget window resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetWindow {
+    /// Resets each governance epoch.
+    Epoch,
+    /// Daily reset.
+    Day,
+    /// Weekly reset.
+    Week,
+    /// Monthly reset.
+    Month,
+}
+
+impl std::fmt::Display for BudgetWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Epoch => write!(f, "epoch"),
+            Self::Day => write!(f, "day"),
+            Self::Week => write!(f, "week"),
+            Self::Month => write!(f, "month"),
+        }
+    }
+}
+
+impl std::str::FromStr for BudgetWindow {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "epoch" => Ok(Self::Epoch),
+            "day" => Ok(Self::Day),
+            "week" => Ok(Self::Week),
+            "month" => Ok(Self::Month),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown budget window: {other:?} (expected \"epoch\", \"day\", \"week\", or \"month\")"
+            ))),
+        }
+    }
+}
+
+/// What happens when a budget limit is exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnExceed {
+    /// Route the action into workflow approval (46010–46012).
+    RequireApproval,
+}
+
+/// Limits within a budget record.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BudgetLimits {
+    /// Spend cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spend: Option<SpendLimit>,
+    /// Maximum autonomous runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runs: Option<u32>,
+    /// Task creation/approval caps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<TaskLimits>,
+}
+
+/// Content body of a kind:37012 budget event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`onExceed`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgBudgetContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// What this budget bounds: an agent pubkey, an org node `d`, or a grant id.
+    pub subject: String,
+    /// Budget window.
+    pub window: BudgetWindow,
+    /// Limits within the window.
+    pub limits: BudgetLimits,
+    /// What happens when limits are exceeded.
+    pub on_exceed: OnExceed,
+}
+
+fn is_lower_hex_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// **Layer A**: Validate a NIP-ORG event envelope (37010–37012).
+/// Mirrors relay's `validate_org_envelope` in `buzz-relay/src/handlers/ingest.rs`.
+pub fn validate_org_envelope(tags: &[Tag], content: &str) -> Result<(), SdkError> {
+    let d_tags: Vec<&Tag> = tags.iter().filter(|t| tag_name(t) == Some("d")).collect();
+    match d_tags.len() {
+        0 => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+        1 => {}
+        _ => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+    }
+    let d_val = tag_value(d_tags[0]).unwrap_or("");
+    if d_val.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG 'd' tag must not be empty".into(),
+        ));
+    }
+    if d_val.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG 'd' tag exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let mut seat_count = 0usize;
+    let mut name_count = 0usize;
+    for t in tags {
+        let parts = t.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "seat" => {
+                seat_count += 1;
+                if !is_lower_hex_pubkey(value) {
+                    return Err(SdkError::InvalidInput(
+                        "NIP-ORG 'seat' tag must hold a lowercase 64-hex pubkey".into(),
+                    ));
+                }
+            }
+            "grantee" if !is_lower_hex_pubkey(value) => {
+                return Err(SdkError::InvalidInput(
+                    "NIP-ORG 'grantee' tag must hold a lowercase 64-hex pubkey".into(),
+                ));
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > ORG_NAME_MAX_LEN {
+                    return Err(SdkError::InvalidInput(format!(
+                        "NIP-ORG 'name' tag too long (max {ORG_NAME_MAX_LEN} chars)"
+                    )));
+                }
+            }
+            _ => {}
+        }
+    }
+    if seat_count > ORG_SEAT_CAP {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG event must have at most {ORG_SEAT_CAP} 'seat' tags (got {seat_count})"
+        )));
+    }
+    if name_count > 1 {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG event must have at most one 'name' tag".into(),
+        ));
+    }
+
+    if content.len() > ORG_CONTENT_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG content too long (max {ORG_CONTENT_MAX_LEN} bytes)"
+        )));
+    }
+    match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(SdkError::InvalidInput(
+            "NIP-ORG content must be a JSON object".into(),
+        )),
+    }
+}
+
+/// Build a kind:37010 org node event.
+pub fn build_org_node(node_id: &str, content: &OrgNodeContent) -> Result<EventBuilder, SdkError> {
+    if node_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'node_id' must not be empty".into(),
+        ));
+    }
+    if node_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org node 'node_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.name.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'name' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", node_id])?);
+    tags.push(tag(&["name", &content.name])?);
+
+    for holder in &content.holders {
+        let pk = check_pubkey_hex(holder, "seat holder")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+    for agent in &content.agent_seats {
+        let pk = check_pubkey_hex(agent, "agent seat")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org node content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_NODE as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37011 org grant event.
+pub fn build_org_grant(
+    grant_id: &str,
+    content: &OrgGrantContent,
+) -> Result<EventBuilder, SdkError> {
+    if grant_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org grant 'grant_id' must not be empty".into(),
+        ));
+    }
+    if grant_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org grant 'grant_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let grantee_pk = check_pubkey_hex(&content.grantee, "grantee")?;
+    let _issuer_pk = check_pubkey_hex(&content.issuer, "issuer")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", grant_id])?, tag(&["grantee", &grantee_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org grant content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_GRANT as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37012 org budget event.
+pub fn build_org_budget(
+    subject_id: &str,
+    content: &OrgBudgetContent,
+) -> Result<EventBuilder, SdkError> {
+    if subject_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org budget 'subject_id' must not be empty".into(),
+        ));
+    }
+    if subject_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org budget 'subject_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let tags: Vec<Tag> = vec![tag(&["d", subject_id])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org budget content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_BUDGET as u16), &content_json).tags(tags))
+}
+
+// ─── NIP-ORG: Contribution records (kind:37013) ──────────────────────────
+//
+//  Evidence-gated contribution profiles attached to org-graph seats.
+//  Fills the gap: "no language for what someone contributed" (NIP-ORG draft).
+//  Record shape from ResonantDAO §2.2 Appendix A.3.
+
+use buzz_core::kind::KIND_CONTRIBUTION_RECORD;
+
+/// Maximum byte length of a contribution record `d` tag value.
+pub const CONTRIBUTION_D_MAX_LEN: usize = 64;
+
+/// Human-vs-AI work attribution for a contribution.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HumanVsAi {
+    /// Fraction of work done by humans (0.0–1.0).
+    #[serde(default)]
+    pub human: f64,
+    /// Fraction of work done by AI (0.0–1.0).
+    #[serde(default)]
+    pub ai: f64,
+}
+
+/// Review status of a contribution record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewStatus {
+    /// Claim submitted, awaiting verification.
+    Pending,
+    /// Verified by the verifier panel.
+    Accepted,
+    /// Rejected by the verifier panel.
+    Rejected,
+    /// Under appeal.
+    Appealed,
+}
+
+impl std::fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Accepted => write!(f, "accepted"),
+            Self::Rejected => write!(f, "rejected"),
+            Self::Appealed => write!(f, "appealed"),
+        }
+    }
+}
+
+impl std::str::FromStr for ReviewStatus {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "appealed" => Ok(Self::Appealed),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown review status: {other:?}"
+            ))),
+        }
+    }
+}
+
+/// An entry in the appeal history of a contribution record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AppealEntry {
+    /// Appeal status at the time of the entry.
+    pub status: String,
+    /// Unix timestamp of the appeal.
+    pub at: u64,
+}
+
+/// Content body of a kind:37013 contribution record event.
+///
+/// Record shape from ResonantDAO §2.2 Appendix A.3, adapted for Nostr events.
+/// Serialized with camelCase keys, matching the other NIP-ORG content bodies
+/// (`humanVsAi`, `informedBy`, `classifierVersion`, `reviewStatus`,
+/// `appealHistory`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionRecordContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Description of the contribution action.
+    pub action: String,
+    /// Multi-dimensional contribution profile (plain names: build, teach, care, research, etc.).
+    #[serde(default)]
+    pub dimensions: std::collections::HashMap<String, f64>,
+    /// Outcome: verified effect, net of harm.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<ContributionOutcome>,
+    /// Evidence links (event ids, imeta urls).
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    /// Human-vs-AI work attribution.
+    #[serde(default)]
+    pub human_vs_ai: HumanVsAi,
+    /// `informed-by` references for chain settlement (contribution record d-tags, task ids).
+    #[serde(default)]
+    pub informed_by: Vec<String>,
+    /// Classifier version used to compute the profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub classifier_version: Option<String>,
+    /// Review status of the contribution.
+    pub review_status: ReviewStatus,
+    /// Appeal history.
+    #[serde(default)]
+    pub appeal_history: Vec<AppealEntry>,
+}
+
+/// Outcome of a contribution action.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContributionOutcome {
+    /// Verified positive effect description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+    /// Verified harm description (if any). A damaging result cannot pay gross.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harm: Option<String>,
+}
+
+/// Build a kind:37013 contribution record event.
+///
+/// Tags are:
+/// - `d`: `action_id`
+/// - `p`: contributor pubkey (from content.author if set, else signer)
+/// - `h`: community tag (optional, set by caller)
+/// - `e`: each evidence link
+/// - `a`: each informed-by reference (contribution record coordinates)
+pub fn build_contribution_record(
+    action_id: &str,
+    content: &ContributionRecordContent,
+) -> Result<EventBuilder, SdkError> {
+    if action_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action_id' must not be empty".into(),
+        ));
+    }
+    if action_id.len() > CONTRIBUTION_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "contribution record 'action_id' exceeds {CONTRIBUTION_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.action.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", action_id])?);
+
+    for evidence in &content.evidence {
+        tags.push(tag(&["e", evidence])?);
+    }
+
+    for informed_by in &content.informed_by {
+        tags.push(tag(&["a", informed_by])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize contribution record content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_CONTRIBUTION_RECORD as u16), &content_json).tags(tags))
+}
+
+// ── Grant-chain verification ───────────────────────────────────────────────
+//
+// Implements NIP-ORG §Client behavior: "Before attributing an action to
+// delegated authority, a client MUST verify the grant chain locally
+// (attenuation + root standing)."
+
+/// A resolved org node fetched from the relay.
+#[derive(Debug, Clone)]
+pub struct ResolvedOrgNode {
+    /// The node's `d` tag.
+    pub d: String,
+    /// Seat holders (human pubkeys).
+    pub holders: Vec<String>,
+    /// Agent seat holders.
+    pub agent_seats: Vec<String>,
+    /// Delegation scope.
+    pub scope: OrgScope,
+}
+
+/// A resolved grant fetched from the relay.
+#[derive(Debug, Clone)]
+pub struct ResolvedGrant {
+    /// The grant's `d` tag.
+    pub d: String,
+    /// Issuer pubkey.
+    pub issuer: String,
+    /// Grantee pubkey.
+    pub grantee: String,
+    /// Org node `d` the issuer acts through.
+    pub via: String,
+    /// Scoped capability verbs.
+    pub verbs: Vec<String>,
+    /// Parent grant `d` (if any).
+    pub parent_grant: Option<String>,
+    /// Unix timestamp after which this grant is no longer valid
+    /// (`None` = no expiry).
+    pub expires: Option<u64>,
+    /// Whether this grant has been revoked.
+    pub revoked: bool,
+}
+
+/// Error type for grant chain verification.
+#[derive(Debug, thiserror::Error)]
+pub enum GrantChainError {
+    /// The grant has been revoked.
+    #[error("grant {0} has been revoked")]
+    Revoked(String),
+
+    /// The grant references a parent grant that was not found.
+    #[error("parent grant {0} not found")]
+    ParentGrantNotFound(String),
+
+    /// The grant references an org node that was not found.
+    #[error("org node {0} not found")]
+    NodeNotFound(String),
+
+    /// The grant's issuer does not hold a seat in the referenced org node.
+    #[error("issuer {0} is not seated in node {1}")]
+    IssuerNotSeated(String, String),
+
+    /// The grant's verbs are not a subset of the parent's verbs (attenuation violated).
+    #[error("verb {0} is not entailed by parent grant verbs")]
+    AttenuationViolation(String),
+
+    /// The root grant's issuer does not have standing (no matching canGrant).
+    #[error("root grant {0} issuer lacks standing (canGrant does not cover {1})")]
+    RootLacksStanding(String, String),
+
+    /// A circular grant chain was detected.
+    #[error("circular grant chain detected at grant {0}")]
+    CircularChain(String),
+
+    /// The grant's `expires` timestamp (unix seconds) is in the past.
+    #[error("grant {0} expired at {1}")]
+    Expired(String, u64),
+}
+
+/// Verify a grant chain from a grant up to its root.
+///
+/// Walks the `parentGrant` links, verifying at each step:
+/// 1. The grant is not revoked.
+/// 2. The grant is not expired: a link whose `expires` (unix seconds) is at
+///    or before `now` fails the whole chain.
+/// 3. The issuer holds a seat in the referenced org node.
+/// 4. Every verb in the child is entailed by some verb in the parent (attenuation).
+/// 5. The root grant's issuer has standing (canGrant entails the verbs,
+///    comparing name and argument, not just the name).
+///
+/// `now` is the current unix time in seconds (pass `Utc::now().timestamp()`
+/// as u64); it is a parameter so verification is deterministic and testable.
+/// `grants` and `nodes` are maps from `d` tag to resolved records. The caller
+/// is responsible for fetching these from the relay.
+pub fn verify_grant_chain(
+    grant_d: &str,
+    now: u64,
+    grants: &std::collections::HashMap<String, ResolvedGrant>,
+    nodes: &std::collections::HashMap<String, ResolvedOrgNode>,
+) -> Result<(), GrantChainError> {
+    let mut visited = std::collections::HashSet::new();
+    let mut current_d = grant_d.to_string();
+
+    loop {
+        if !visited.insert(current_d.clone()) {
+            return Err(GrantChainError::CircularChain(current_d));
+        }
+
+        let grant = grants
+            .get(&current_d)
+            .ok_or_else(|| GrantChainError::ParentGrantNotFound(current_d.clone()))?;
+
+        if grant.revoked {
+            return Err(GrantChainError::Revoked(current_d));
+        }
+
+        // A grant is valid only strictly before its expiry.
+        if let Some(expires) = grant.expires {
+            if now >= expires {
+                return Err(GrantChainError::Expired(current_d, expires));
+            }
+        }
+
+        // Check issuer is seated in the referenced node.
+        let node = nodes
+            .get(&grant.via)
+            .ok_or_else(|| GrantChainError::NodeNotFound(grant.via.clone()))?;
+
+        let issuer_seated =
+            node.holders.contains(&grant.issuer) || node.agent_seats.contains(&grant.issuer);
+        if !issuer_seated {
+            return Err(GrantChainError::IssuerNotSeated(
+                grant.issuer.clone(),
+                grant.via.clone(),
+            ));
+        }
+
+        match &grant.parent_grant {
+            Some(parent_d) => {
+                // Attenuation check: every verb here must be entailed by some parent verb.
+                let parent = grants
+                    .get(parent_d)
+                    .ok_or_else(|| GrantChainError::ParentGrantNotFound(parent_d.clone()))?;
+
+                for verb in &grant.verbs {
+                    if !parent.verbs.iter().any(|pv| verb_entailed_by(verb, pv)) {
+                        return Err(GrantChainError::AttenuationViolation(verb.clone()));
+                    }
+                }
+
+                // Also check that parent's issuer is seated in its node.
+                let parent_node = nodes
+                    .get(&parent.via)
+                    .ok_or_else(|| GrantChainError::NodeNotFound(parent.via.clone()))?;
+                let parent_issuer_seated = parent_node.holders.contains(&parent.issuer)
+                    || parent_node.agent_seats.contains(&parent.issuer);
+                if !parent_issuer_seated {
+                    return Err(GrantChainError::IssuerNotSeated(
+                        parent.issuer.clone(),
+                        parent.via.clone(),
+                    ));
+                }
+
+                current_d = parent_d.clone();
+            }
+            None => {
+                // Root grant: the issuer's node `canGrant` must entail every
+                // verb — same name AND argument containment, via the same
+                // entailment function used for chain attenuation. A bare
+                // name match is not enough: `spend:999999` does not pass
+                // under `canGrant` `spend:100000`.
+                for verb in &grant.verbs {
+                    if !node
+                        .scope
+                        .can_grant
+                        .iter()
+                        .any(|cg| verb_entailed_by(verb, cg))
+                    {
+                        return Err(GrantChainError::RootLacksStanding(current_d, verb.clone()));
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Channel-scope containment for NIP-ORG verbs.
+///
+/// A channel argument is a `#`-prefixed, `:`-separated path (`#leadership`,
+/// `#eng:frontend`). `child` is contained by `parent` when the parent's
+/// path segments are a prefix of the child's: `#eng:frontend` is contained
+/// by `#eng`, and `#eng` is contained by `#eng`. Substring prefixes do not
+/// count — `#l` is NOT contained by `#leadership`, because `#l` names a
+/// different channel than the one the parent's scope covers.
+fn channel_contained_by(child: &str, parent: &str) -> bool {
+    let child_segs = channel_segments(child);
+    let parent_segs = channel_segments(parent);
+    !parent_segs.is_empty()
+        && child_segs.len() >= parent_segs.len()
+        && child_segs[..parent_segs.len()] == parent_segs[..]
+}
+
+/// Split a channel argument into its `:`-separated path segments,
+/// stripping the leading `#` and ignoring empty segments.
+fn channel_segments(channel: &str) -> Vec<&str> {
+    channel
+        .strip_prefix('#')
+        .unwrap_or(channel)
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Check if `child` verb is entailed by `parent` verb (NIP-ORG attenuation).
+///
+/// Entailment means: same name, and the child's argument is no broader than
+/// the parent's:
+///
+/// - No argument on the parent means the parent's scope is unbounded, so any
+///   child argument is entailed (`read:#eng` under `read`).
+/// - An argument on the child with none on the parent is a widening and is
+///   rejected (`read` — read everything — is broader than
+///   `read:#leadership`).
+/// - Channel scopes use path containment (see [`channel_contained_by`]):
+///   `#eng:frontend` is contained by `#eng`; `#l` is not contained by
+///   `#leadership`.
+/// - Numeric arguments (spend ceilings) compare as `child ≤ parent`
+///   (`spend:50000` under `spend:100000`).
+/// - Anything else must match exactly.
+fn verb_entailed_by(child: &str, parent: &str) -> bool {
+    let (child_name, child_arg) = split_verb(child);
+    let (parent_name, parent_arg) = split_verb(parent);
+
+    if child_name != parent_name {
+        return false;
+    }
+
+    match (child_arg, parent_arg) {
+        (None, None) => true,
+        // Parent is unbounded → any child argument is a subset.
+        (Some(_), None) => true,
+        // Child is unbounded, parent is scoped → widening.
+        (None, Some(_)) => false,
+        (Some(child_arg), Some(parent_arg)) => {
+            if child_arg.starts_with('#') && parent_arg.starts_with('#') {
+                channel_contained_by(child_arg, parent_arg)
+            } else if let (Ok(child_num), Ok(parent_num)) =
+                (child_arg.parse::<u64>(), parent_arg.parse::<u64>())
+            {
+                child_num <= parent_num
+            } else {
+                // Generic: exact match.
+                child_arg == parent_arg
+            }
+        }
+    }
+}
+
+/// Split a verb into name and optional argument.
+/// `"read:#leadership"` → `("read", Some("#leadership"))`
+/// `"task:create"` → `("task", Some("create"))`
+/// `"read"` → `("read", None)`
+fn split_verb(verb: &str) -> (&str, Option<&str>) {
+    match verb.find(':') {
+        Some(pos) => (&verb[..pos], Some(&verb[pos + 1..])),
+        None => (verb, None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4969,5 +5845,842 @@ mod tests {
 
         assert_eq!(accept_count, 11, "expected 11 accept cases");
         assert_eq!(reject_count, 20, "expected 20 reject cases");
+    }
+
+    // ── NIP-ORG: org node, grant, budget builders ─────────────────────────
+
+    fn sample_node_content() -> OrgNodeContent {
+        OrgNodeContent {
+            v: 1,
+            name: "CTO".into(),
+            node_kind: OrgNodeKind::Role,
+            parent: None,
+            holders: vec!["a".repeat(64)],
+            agent_seats: vec![],
+            scope: OrgScope::default(),
+            ui: None,
+        }
+    }
+
+    fn sample_grant_content() -> OrgGrantContent {
+        OrgGrantContent {
+            v: 1,
+            issuer: "a".repeat(64),
+            grantee: "b".repeat(64),
+            via: "cto".into(),
+            verbs: vec!["read:#leadership".into(), "task:create".into()],
+            parent_grant: None,
+            expires: None,
+            revoked: false,
+        }
+    }
+
+    fn sample_budget_content() -> OrgBudgetContent {
+        OrgBudgetContent {
+            v: 1,
+            subject: "b".repeat(64),
+            window: BudgetWindow::Epoch,
+            limits: BudgetLimits {
+                spend: Some(SpendLimit {
+                    amount: 100000,
+                    unit: "usd-cents".into(),
+                }),
+                runs: Some(50),
+                tasks: Some(TaskLimits {
+                    create: Some(20),
+                    approve: Some(0),
+                }),
+            },
+            on_exceed: OnExceed::RequireApproval,
+        }
+    }
+
+    #[test]
+    fn org_node_builds_valid_event() {
+        let content = sample_node_content();
+        let builder = build_org_node("cto", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_NODE as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "cto"]));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["name", "CTO"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "seat"));
+        // Content must parse back.
+        let parsed: OrgNodeContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.name, "CTO");
+    }
+
+    #[test]
+    fn org_grant_builds_valid_event() {
+        let content = sample_grant_content();
+        let builder = build_org_grant("grant-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_GRANT as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "grant-1"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "grantee"));
+        let parsed: OrgGrantContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.via, "cto");
+        assert_eq!(parsed.verbs.len(), 2);
+    }
+
+    #[test]
+    fn org_budget_builds_valid_event() {
+        let content = sample_budget_content();
+        let builder = build_org_budget("agent-budget", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_BUDGET as u16));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["d", "agent-budget"]));
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.window, BudgetWindow::Epoch);
+        assert_eq!(parsed.limits.runs, Some(50));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_id() {
+        let content = sample_node_content();
+        let err = build_org_node("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_overlong_id() {
+        let content = sample_node_content();
+        let err = build_org_node(&"a".repeat(65), &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_name() {
+        let mut content = sample_node_content();
+        content.name = "".into();
+        let err = build_org_node("cto", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_grant_rejects_bad_grantee() {
+        let mut content = sample_grant_content();
+        content.grantee = "not-a-pubkey".into();
+        let err = build_org_grant("g1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_duplicate_d() {
+        // Manually construct tags with two 'd' tags.
+        let tags = vec![tag(&["d", "x"]).unwrap(), tag(&["d", "y"]).unwrap()];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_bad_seat_pubkey() {
+        let tags = vec![
+            tag(&["d", "x"]).unwrap(),
+            tag(&["seat", "not-hex"]).unwrap(),
+        ];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_json_content() {
+        let tags = vec![tag(&["d", "x"]).unwrap()];
+        let err = validate_org_envelope(&tags, "not json").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_budget_window_from_str() {
+        assert!(matches!(
+            "epoch".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Epoch)
+        ));
+        assert!(matches!(
+            "day".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Day)
+        ));
+        assert!(matches!(
+            "week".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Week)
+        ));
+        assert!(matches!(
+            "month".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Month)
+        ));
+        assert!("invalid".parse::<BudgetWindow>().is_err());
+    }
+
+    #[test]
+    fn org_node_kind_from_str() {
+        assert!(matches!(
+            "role".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Role)
+        ));
+        assert!(matches!(
+            "team".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Team)
+        ));
+        assert!(matches!(
+            "agent-seat".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::AgentSeat)
+        ));
+        assert!("invalid".parse::<OrgNodeKind>().is_err());
+    }
+
+    // ── Grant chain verification tests ────────────────────────────────────
+
+    /// Fixed "current time" (unix seconds) for chain-verification tests.
+    const TEST_NOW: u64 = 1_700_000_000;
+
+    fn make_node(d: &str, holders: Vec<&str>, can_grant: Vec<&str>) -> ResolvedOrgNode {
+        ResolvedOrgNode {
+            d: d.to_string(),
+            holders: holders.into_iter().map(String::from).collect(),
+            agent_seats: vec![],
+            scope: OrgScope {
+                read_below: true,
+                assign_below: true,
+                can_grant: can_grant.into_iter().map(String::from).collect(),
+            },
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_grant(
+        d: &str,
+        issuer: &str,
+        grantee: &str,
+        via: &str,
+        verbs: Vec<&str>,
+        parent_grant: Option<&str>,
+        revoked: bool,
+        expires: Option<u64>,
+    ) -> ResolvedGrant {
+        ResolvedGrant {
+            d: d.to_string(),
+            issuer: issuer.to_string(),
+            grantee: grantee.to_string(),
+            via: via.to_string(),
+            verbs: verbs.into_iter().map(String::from).collect(),
+            parent_grant: parent_grant.map(String::from),
+            expires,
+            revoked,
+        }
+    }
+
+    #[test]
+    fn grant_chain_valid_root() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk], vec!["read", "task"]),
+        );
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                None,
+                false,
+                None,
+            ),
+        );
+
+        assert!(verify_grant_chain("g1", TEST_NOW, &grants, &nodes).is_ok());
+    }
+
+    #[test]
+    fn grant_chain_valid_2_level() {
+        let pk_a = "a".repeat(64);
+        let pk_b = "b".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk_a], vec!["read", "task", "spend"]),
+        );
+        nodes.insert("eng".into(), make_node("eng", vec![&pk_b], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        // Root grant: pk_a → pk_b via cto, with spend:100000
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk_a,
+                &pk_b,
+                "cto",
+                vec!["spend:100000"],
+                None,
+                false,
+                None,
+            ),
+        );
+        // Child grant: pk_b → pk_c via eng, with spend:50000 (attenuated)
+        grants.insert(
+            "g2".into(),
+            make_grant(
+                "g2",
+                &pk_b,
+                "c".repeat(64).as_str(),
+                "eng",
+                vec!["spend:50000"],
+                Some("g1"),
+                false,
+                None,
+            ),
+        );
+
+        assert!(verify_grant_chain("g2", TEST_NOW, &grants, &nodes).is_ok());
+    }
+
+    #[test]
+    fn grant_chain_rejected_revoked() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert("cto".into(), make_node("cto", vec![&pk], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                None,
+                true,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g1", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::Revoked(_)));
+    }
+
+    #[test]
+    fn grant_chain_rejected_issuer_not_seated() {
+        let pk_a = "a".repeat(64);
+        let pk_x = "x".repeat(64); // not seated
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert("cto".into(), make_node("cto", vec![&pk_a], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk_x,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                None,
+                false,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g1", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::IssuerNotSeated(_, _)));
+    }
+
+    #[test]
+    fn grant_chain_rejected_attenuation_violation() {
+        let pk_a = "a".repeat(64);
+        let pk_b = "b".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk_a], vec!["read", "task"]),
+        );
+        nodes.insert("eng".into(), make_node("eng", vec![&pk_b], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        // Root: spend:100000
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk_a,
+                &pk_b,
+                "cto",
+                vec!["spend:100000"],
+                None,
+                false,
+                None,
+            ),
+        );
+        // Child: spend:200000 (wider than parent → violation)
+        grants.insert(
+            "g2".into(),
+            make_grant(
+                "g2",
+                &pk_b,
+                "c".repeat(64).as_str(),
+                "eng",
+                vec!["spend:200000"],
+                Some("g1"),
+                false,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g2", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::AttenuationViolation(_)));
+    }
+
+    #[test]
+    fn grant_chain_rejected_root_lacks_standing() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        // Node has no canGrant for "spend"
+        nodes.insert("cto".into(), make_node("cto", vec![&pk], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["spend:100000"],
+                None,
+                false,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g1", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::RootLacksStanding(_, _)));
+    }
+
+    #[test]
+    fn grant_chain_rejected_circular() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert("cto".into(), make_node("cto", vec![&pk], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                Some("g2"),
+                false,
+                None,
+            ),
+        );
+        grants.insert(
+            "g2".into(),
+            make_grant(
+                "g2",
+                &pk,
+                "c".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                Some("g1"),
+                false,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g1", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::CircularChain(_)));
+    }
+
+    #[test]
+    fn verb_entailment_basic() {
+        // Same verb, no args → entailed.
+        assert!(verb_entailed_by("read", "read"));
+        // Parent unbounded → any child argument is a subset.
+        assert!(verb_entailed_by("read:#leadership", "read"));
+        // Child unbounded, parent scoped → widening, rejected.
+        assert!(!verb_entailed_by("read", "read:#leadership"));
+        // Spend: child ≤ parent.
+        assert!(verb_entailed_by("spend:50000", "spend:100000"));
+        assert!(!verb_entailed_by("spend:200000", "spend:100000"));
+        // Different names → not entailed.
+        assert!(!verb_entailed_by("task:create", "read"));
+        // Channel scope: exact match or child contained by parent.
+        assert!(verb_entailed_by("read:#eng", "read:#eng"));
+        assert!(verb_entailed_by("read:#eng:frontend", "read:#eng"));
+        // Different channels → not entailed (conservative).
+        assert!(!verb_entailed_by("read:#eng", "read:#leadership"));
+        // Substring prefixes are NOT containment: #l names a different
+        // channel than #leadership.
+        assert!(!verb_entailed_by("read:#l", "read:#leadership"));
+    }
+
+    #[test]
+    fn grant_chain_rejects_channel_widening() {
+        let pk_a = "a".repeat(64);
+        let pk_b = "b".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk_a], vec!["read:#leadership"]),
+        );
+        nodes.insert("eng".into(), make_node("eng", vec![&pk_b], vec![]));
+
+        let mut grants = std::collections::HashMap::new();
+        // Root: read:#leadership
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk_a,
+                &pk_b,
+                "cto",
+                vec!["read:#leadership"],
+                None,
+                false,
+                None,
+            ),
+        );
+        // Child: read:#l — a substring prefix, not a contained sub-channel.
+        grants.insert(
+            "g2".into(),
+            make_grant(
+                "g2",
+                &pk_b,
+                "c".repeat(64).as_str(),
+                "eng",
+                vec!["read:#l"],
+                Some("g1"),
+                false,
+                None,
+            ),
+        );
+
+        let err = verify_grant_chain("g2", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::AttenuationViolation(_)));
+    }
+
+    #[test]
+    fn grant_chain_accepts_channel_containment() {
+        let pk_a = "a".repeat(64);
+        let pk_b = "b".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk_a], vec!["read:#eng"]),
+        );
+        nodes.insert("eng".into(), make_node("eng", vec![&pk_b], vec![]));
+
+        let mut grants = std::collections::HashMap::new();
+        // Root: read:#eng
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk_a,
+                &pk_b,
+                "cto",
+                vec!["read:#eng"],
+                None,
+                false,
+                None,
+            ),
+        );
+        // Child: read:#eng:frontend — contained by #eng.
+        grants.insert(
+            "g2".into(),
+            make_grant(
+                "g2",
+                &pk_b,
+                "c".repeat(64).as_str(),
+                "eng",
+                vec!["read:#eng:frontend"],
+                Some("g1"),
+                false,
+                None,
+            ),
+        );
+
+        assert!(verify_grant_chain("g2", TEST_NOW, &grants, &nodes).is_ok());
+    }
+
+    #[test]
+    fn grant_chain_root_standing_compares_spend_argument() {
+        let pk = "a".repeat(64);
+        let mut nodes_over = std::collections::HashMap::new();
+        nodes_over.insert(
+            "cto".into(),
+            make_node("cto", vec![&pk], vec!["spend:100000"]),
+        );
+        let mut grants_over = std::collections::HashMap::new();
+        grants_over.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["spend:999999"],
+                None,
+                false,
+                None,
+            ),
+        );
+        // Name matches but the ceiling is above the node's canGrant amount.
+        let err = verify_grant_chain("g1", TEST_NOW, &grants_over, &nodes_over).unwrap_err();
+        assert!(matches!(err, GrantChainError::RootLacksStanding(_, _)));
+
+        // A spend within the node's ceiling has standing.
+        let mut grants_under = std::collections::HashMap::new();
+        grants_under.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["spend:50000"],
+                None,
+                false,
+                None,
+            ),
+        );
+        assert!(verify_grant_chain("g1", TEST_NOW, &grants_under, &nodes_over).is_ok());
+    }
+
+    #[test]
+    fn grant_chain_rejects_expired_grant() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert("cto".into(), make_node("cto", vec![&pk], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                None,
+                false,
+                Some(TEST_NOW - 1),
+            ),
+        );
+
+        let err = verify_grant_chain("g1", TEST_NOW, &grants, &nodes).unwrap_err();
+        assert!(matches!(err, GrantChainError::Expired(_, _)));
+    }
+
+    #[test]
+    fn grant_chain_accepts_non_expired_grant() {
+        let pk = "a".repeat(64);
+        let mut nodes = std::collections::HashMap::new();
+        nodes.insert("cto".into(), make_node("cto", vec![&pk], vec!["read"]));
+
+        let mut grants = std::collections::HashMap::new();
+        grants.insert(
+            "g1".into(),
+            make_grant(
+                "g1",
+                &pk,
+                "b".repeat(64).as_str(),
+                "cto",
+                vec!["read"],
+                None,
+                false,
+                Some(TEST_NOW + 1),
+            ),
+        );
+
+        assert!(verify_grant_chain("g1", TEST_NOW, &grants, &nodes).is_ok());
+    }
+
+    #[test]
+    fn org_content_serializes_camel_case_keys() {
+        let node = sample_node_content();
+        let json = serde_json::to_value(&node).unwrap();
+        assert!(json.get("agentSeats").is_some());
+        assert!(json.get("agent_seats").is_none());
+
+        let scope = serde_json::to_value(OrgScope {
+            read_below: true,
+            assign_below: false,
+            can_grant: vec!["spend:100000".into()],
+        })
+        .unwrap();
+        assert_eq!(scope.get("readBelow"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            scope.get("assignBelow"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert!(scope.get("canGrant").is_some());
+        assert!(scope.get("can_grant").is_none());
+
+        // parentGrant is present when set (skip_serializing_if omits None).
+        let child_grant = OrgGrantContent {
+            parent_grant: Some("root-grant".into()),
+            ..sample_grant_content()
+        };
+        let json = serde_json::to_value(&child_grant).unwrap();
+        assert_eq!(
+            json.get("parentGrant"),
+            Some(&serde_json::Value::String("root-grant".into()))
+        );
+        assert!(json.get("parent_grant").is_none());
+        let json = serde_json::to_value(sample_grant_content()).unwrap();
+        assert!(json.get("parentGrant").is_none());
+
+        // Contribution record (37013) follows the same camelCase contract.
+        let record = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi {
+                human: 1.0,
+                ai: 0.0,
+            },
+            informed_by: vec!["a".into()],
+            classifier_version: Some("v1".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![AppealEntry {
+                status: "pending".into(),
+                at: 1,
+            }],
+        };
+        let json = serde_json::to_value(&record).unwrap();
+        assert!(json.get("humanVsAi").is_some());
+        assert!(json.get("informedBy").is_some());
+        assert_eq!(
+            json.get("classifierVersion"),
+            Some(&serde_json::Value::String("v1".into()))
+        );
+        assert_eq!(
+            json.get("reviewStatus"),
+            Some(&serde_json::Value::String("pending".into()))
+        );
+        assert!(json.get("appealHistory").is_some());
+        assert!(json.get("human_vs_ai").is_none());
+        assert!(json.get("review_status").is_none());
+
+        let budget = sample_budget_content();
+        let json = serde_json::to_value(&budget).unwrap();
+        assert_eq!(
+            json.get("onExceed"),
+            Some(&serde_json::Value::String("require-approval".into()))
+        );
+        assert!(json.get("on_exceed").is_none());
+    }
+
+    // ── Contribution record (37013) tests ──────────────────────────────────
+
+    #[test]
+    fn contribution_record_builds_valid_event() {
+        let mut dims = std::collections::HashMap::new();
+        dims.insert("build".into(), 0.8);
+        dims.insert("teach".into(), 0.3);
+
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "Implemented NIP-ORG SDK builders".into(),
+            dimensions: dims,
+            outcome: Some(ContributionOutcome {
+                effect: Some("SDK compiles and passes 326 tests".into()),
+                harm: None,
+            }),
+            evidence: vec!["event-id-1".into()],
+            human_vs_ai: HumanVsAi {
+                human: 0.7,
+                ai: 0.3,
+            },
+            informed_by: vec![],
+            classifier_version: Some("2026-Q3".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+
+        let builder = build_contribution_record("action-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_CONTRIBUTION_RECORD as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "action-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["e", "event-id-1"]));
+
+        let parsed: ContributionRecordContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.action, "Implemented NIP-ORG SDK builders");
+        assert_eq!(parsed.dimensions.get("build"), Some(&0.8));
+        assert_eq!(parsed.human_vs_ai.human, 0.7);
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_id() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_action() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("action-1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn review_status_from_str() {
+        assert!(matches!(
+            "pending".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Pending)
+        ));
+        assert!(matches!(
+            "accepted".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Accepted)
+        ));
+        assert!(matches!(
+            "rejected".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Rejected)
+        ));
+        assert!(matches!(
+            "appealed".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Appealed)
+        ));
+        assert!("invalid".parse::<ReviewStatus>().is_err());
     }
 }
