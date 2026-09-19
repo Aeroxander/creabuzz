@@ -21,6 +21,21 @@ export const KIND_LAUNCH_PROPOSAL = 47004;
 export const KIND_LAUNCH_RECEIPT = 47005;
 /** NIP-LP (reserved): trustgraph score root published by an operator. */
 export const KIND_SCORE_ROOT = 37006;
+/** NIP-ORG: org node — a role/team seat in the community org chart (addressable, d = node id, h = community). */
+export const KIND_ORG_NODE = 37010;
+/** NIP-ORG: org grant — a scoped, revocable delegation of authority (addressable, d = grant id, h = community). */
+export const KIND_ORG_GRANT = 37011;
+/** NIP-ORG: budget — a bound on agent/delegated autonomy (addressable, d = subject id, h = community). */
+export const KIND_ORG_BUDGET = 37012;
+/** NIP-ORG: contribution record — verified action with multi-dimensional profile (addressable, d = action id, h = community). */
+export const KIND_CONTRIBUTION_RECORD = 37013;
+/** All NIP-ORG event kinds. */
+export const ORG_EVENT_KINDS = [
+  KIND_ORG_NODE,
+  KIND_ORG_GRANT,
+  KIND_ORG_BUDGET,
+  KIND_CONTRIBUTION_RECORD,
+] as const;
 /** All NIP-LP event kinds. */
 export const LAUNCHPAD_EVENT_KINDS = [
   KIND_LAUNCH_RECORD,

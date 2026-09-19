@@ -29,6 +29,7 @@ export default defineConfig({
         "**/browser-agent.spec.ts",
         "**/screenshots.spec.ts",
         "**/usernames.spec.ts",
+        "**/org-chart.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
