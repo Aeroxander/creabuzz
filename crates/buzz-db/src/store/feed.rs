@@ -1,9 +1,13 @@
 //! Feed-specific DB queries for the Home Feed feature.
 //!
-//! Aggregates three categories of data:
+//! Aggregates four categories of data:
 //! - **Mentions**: Events where the user's pubkey appears in a `p` tag.
 //! - **Needs Action**: Approval requests (kind 46010) and reminders (kind 40007) tagged to the user.
 //! - **Activity**: Recent events from channels the user can access.
+//! - **Agent Activity**: Agent-plane events (fleet capabilities/tasks, job
+//!   lifecycle, workflow lifecycle) in accessible channels, plus the
+//!   requester's own turn metrics (kind 44200, p-gated). See
+//!   `docs/agent-activity-sharing.md`.
 //!
 //! ## Performance characteristics
 //!
@@ -35,10 +39,12 @@ use sqlx::{PgPool, QueryBuilder};
 use uuid::Uuid;
 
 use buzz_core::kind::{
-    KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_GIT_ISSUE, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
+    KIND_AGENT_CAPABILITIES, KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_FORUM_COMMENT,
+    KIND_FORUM_POST, KIND_GIT_ISSUE, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
     KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
     KIND_JOB_PROGRESS, KIND_JOB_REQUEST, KIND_JOB_RESULT, KIND_STREAM_MESSAGE,
     KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEXT_NOTE, KIND_WORKFLOW_APPROVAL_REQUESTED,
+    KIND_WORKFLOW_COMPLETED, KIND_WORKFLOW_FAILED, KIND_WORKFLOW_TRIGGERED,
 };
 use buzz_core::{CommunityId, StoredEvent};
 
@@ -316,6 +322,111 @@ pub(crate) async fn query_activity_on(
     collect_stored_events(rows)
 }
 
+/// Build the agent-activity query: agent-plane kinds in visible channels,
+/// UNION ALL with the requester's own turn metrics (kind 44200, p-gated).
+///
+/// The two arms are disjoint by kind, so `UNION ALL` is exact (no dedup
+/// needed) and the single `ORDER BY created_at DESC LIMIT` applies across
+/// both. Agent-plane kinds are agent-authored by construction (fleet
+/// capabilities/tasks, job lifecycle, workflow lifecycle only — step noise
+/// excluded, mirroring `build_activity_query`). Turn metrics are
+/// global-only (no channel), so the second arm carries no channel filter —
+/// its privacy boundary is the `p`-tag containment on the requester.
+fn build_agent_activity_query(
+    community: CommunityId,
+    pubkey_bytes: &[u8],
+    accessible_channel_ids: &[Uuid],
+    since: Option<DateTime<Utc>>,
+    limit: i64,
+) -> QueryBuilder<sqlx::Postgres> {
+    let limit = limit.min(FEED_MAX_LIMIT);
+    let pubkey_hex = hex::encode(pubkey_bytes);
+    let containment = serde_json::json!([["p", pubkey_hex]]);
+
+    // Arm 1: agent-plane kinds in visible channels.
+    let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(format!(
+        "SELECT {EVENT_COLS_UNALIASED} FROM events WHERE community_id = "
+    ));
+    qb.push_bind(*community.as_uuid());
+    qb.push(" AND deleted_at IS NULL");
+    qb.push(format!(
+        " AND kind IN ({KIND_AGENT_CAPABILITIES}, {KIND_AGENT_TASK}, \
+         {KIND_JOB_REQUEST}, {KIND_JOB_PROGRESS}, {KIND_JOB_RESULT}, \
+         {KIND_WORKFLOW_TRIGGERED}, {KIND_WORKFLOW_COMPLETED}, {KIND_WORKFLOW_FAILED})"
+    ));
+    push_visible_channel_filter(&mut qb, "channel_id", accessible_channel_ids);
+    if let Some(s) = since {
+        qb.push(" AND created_at >= ").push_bind(s);
+    }
+
+    // Arm 2: the requester's own turn metrics (global, p-gated).
+    qb.push(format!(
+        " UNION ALL SELECT {EVENT_COLS_UNALIASED} FROM events WHERE community_id = "
+    ));
+    qb.push_bind(*community.as_uuid());
+    qb.push(" AND deleted_at IS NULL");
+    qb.push(format!(" AND kind = {KIND_AGENT_TURN_METRIC}"));
+    qb.push(" AND tags @> ").push_bind(containment);
+    if let Some(s) = since {
+        qb.push(" AND created_at >= ").push_bind(s);
+    }
+
+    qb.push(" ORDER BY created_at DESC LIMIT ").push_bind(limit);
+    qb
+}
+
+/// Find agent-plane activity: fleet/job/workflow lifecycle in accessible
+/// channels plus the requester's own turn metrics.
+///
+/// **Performance**: indexed `kind` + `channel_id` columns on arm 1; arm 2
+/// scans only kind-44200 rows (one per completed turn) with a JSONB
+/// containment pushdown served by the tags GIN index — no full-table scan.
+/// `limit` is capped at [`FEED_MAX_LIMIT`] regardless of the value passed
+/// by the caller.
+pub async fn query_agent_activity(
+    pool: &PgPool,
+    community: CommunityId,
+    pubkey_bytes: &[u8],
+    accessible_channel_ids: &[Uuid],
+    since: Option<DateTime<Utc>>,
+    limit: i64,
+) -> Result<Vec<StoredEvent>> {
+    let mut conn = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::SubscriptionHistory,
+    )
+    .await?;
+    query_agent_activity_on(
+        &mut conn,
+        community,
+        pubkey_bytes,
+        accessible_channel_ids,
+        since,
+        limit,
+    )
+    .await
+}
+
+/// [`query_agent_activity`] on a specific session — see [`query_mentions_on`].
+pub(crate) async fn query_agent_activity_on(
+    conn: &mut sqlx::PgConnection,
+    community: CommunityId,
+    pubkey_bytes: &[u8],
+    accessible_channel_ids: &[Uuid],
+    since: Option<DateTime<Utc>>,
+    limit: i64,
+) -> Result<Vec<StoredEvent>> {
+    let mut qb = build_agent_activity_query(
+        community,
+        pubkey_bytes,
+        accessible_channel_ids,
+        since,
+        limit,
+    );
+    let rows = qb.build().fetch_all(&mut *conn).await?;
+    collect_stored_events(rows)
+}
+
 // -- Db API -------------------------------------------------------------------
 
 impl Db {
@@ -556,6 +667,93 @@ impl Db {
                 crate::feed::query_activity(
                     &self.pool,
                     community,
+                    accessible_channel_ids,
+                    since,
+                    limit,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Find agent-plane activity for the requester: fleet/job/workflow
+    /// lifecycle in accessible channels plus their own turn metrics.
+    #[datastore_span(name = "query_feed_agent_activity", system = "postgresql")]
+    pub async fn query_feed_agent_activity(
+        &self,
+        community: CommunityId,
+        pubkey_bytes: &[u8],
+        accessible_channel_ids: &[Uuid],
+        since: Option<DateTime<Utc>>,
+        limit: i64,
+    ) -> Result<Vec<StoredEvent>> {
+        crate::feed::query_agent_activity(
+            &self.pool,
+            community,
+            pubkey_bytes,
+            accessible_channel_ids,
+            since,
+            limit,
+        )
+        .await
+    }
+
+    /// [`Db::query_feed_agent_activity`] with replica routing — BOUNDED arm
+    /// only; see [`Db::query_feed_mentions_routed`] for why the covered arm
+    /// is structurally unavailable to feed queries.
+    #[datastore_span(name = "query_feed_agent_activity_routed", system = "postgresql")]
+    pub async fn query_feed_agent_activity_routed(
+        &self,
+        path: &'static str,
+        community: CommunityId,
+        pubkey_bytes: &[u8],
+        accessible_channel_ids: &[Uuid],
+        since: Option<DateTime<Utc>>,
+        limit: i64,
+    ) -> Result<Vec<StoredEvent>> {
+        match self
+            .route_read(
+                path,
+                RoutePredicate::Bounded,
+                crate::observability::ReaderOperation::SubscriptionHistory,
+            )
+            .await
+        {
+            RouteDecision::Replica(mut tx, _entry, reason) => {
+                match crate::feed::query_agent_activity_on(
+                    &mut tx,
+                    community,
+                    pubkey_bytes,
+                    accessible_channel_ids,
+                    since,
+                    limit,
+                )
+                .await
+                {
+                    Ok(events) => {
+                        Self::record_route(path, "replica", reason);
+                        Ok(events)
+                    }
+                    Err(e) => {
+                        tracing::warn!(path, "replica read failed; re-running on writer: {e}");
+                        Self::record_route(path, "writer", "replica_error");
+                        crate::feed::query_agent_activity(
+                            &self.pool,
+                            community,
+                            pubkey_bytes,
+                            accessible_channel_ids,
+                            since,
+                            limit,
+                        )
+                        .await
+                    }
+                }
+            }
+            RouteDecision::Writer => {
+                crate::feed::query_agent_activity(
+                    &self.pool,
+                    community,
+                    pubkey_bytes,
                     accessible_channel_ids,
                     since,
                     limit,
@@ -1199,6 +1397,213 @@ mod postgres_tests {
         assert_eq!(
             indexed as usize, mention_count,
             "every p-tag must land in event_mentions"
+        );
+    }
+
+    // -- agent_activity regressions (docs/agent-activity-sharing.md) --------
+
+    fn requester_keys() -> (Keys, String, Vec<u8>) {
+        let keys = Keys::generate();
+        let hex = keys.public_key().to_hex();
+        let bytes = hex::decode(&hex).expect("hex pubkey");
+        (keys, hex, bytes)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn query_agent_activity_returns_agent_plane_not_chatter() {
+        let pool = setup_pool().await;
+        let community = CommunityId::from_uuid(make_test_community(&pool).await);
+        let channel = insert_test_channel(&pool, community).await;
+        let (_keys, _hex, bytes) = requester_keys();
+
+        let chatter = store_feed_event(
+            &pool,
+            community,
+            KIND_STREAM_MESSAGE,
+            "human chatter",
+            Some(channel),
+            vec![],
+        )
+        .await;
+        let caps = store_feed_event(
+            &pool,
+            community,
+            KIND_AGENT_CAPABILITIES,
+            "agent caps",
+            Some(channel),
+            vec![],
+        )
+        .await;
+        let task = store_feed_event(
+            &pool,
+            community,
+            KIND_AGENT_TASK,
+            "agent task",
+            Some(channel),
+            vec![],
+        )
+        .await;
+        let job = store_feed_event(
+            &pool,
+            community,
+            KIND_JOB_REQUEST,
+            "job request",
+            Some(channel),
+            vec![],
+        )
+        .await;
+        let workflow = store_feed_event(
+            &pool,
+            community,
+            KIND_WORKFLOW_TRIGGERED,
+            "workflow triggered",
+            Some(channel),
+            vec![],
+        )
+        .await;
+
+        let rows = query_agent_activity(&pool, community, &bytes, &[channel], None, 10)
+            .await
+            .expect("query agent_activity");
+
+        for expected in [&caps, &task, &job, &workflow] {
+            assert!(
+                rows.iter().any(|row| row.event.id == expected.id),
+                "agent-plane row missing from agent_activity"
+            );
+        }
+        assert!(
+            rows.iter().all(|row| row.event.id != chatter.id),
+            "human chatter must not appear in agent_activity"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn query_agent_activity_is_scoped_across_communities() {
+        let pool = setup_pool().await;
+        let community_a = CommunityId::from_uuid(make_test_community(&pool).await);
+        let community_b = CommunityId::from_uuid(make_test_community(&pool).await);
+        let channel_a = insert_test_channel(&pool, community_a).await;
+        let channel_b = insert_test_channel(&pool, community_b).await;
+        let (_keys, _hex, bytes) = requester_keys();
+
+        let event_a = store_feed_event(
+            &pool,
+            community_a,
+            KIND_AGENT_TASK,
+            "community-a task",
+            Some(channel_a),
+            vec![],
+        )
+        .await;
+        let event_b = store_feed_event(
+            &pool,
+            community_b,
+            KIND_AGENT_TASK,
+            "community-b task",
+            Some(channel_b),
+            vec![],
+        )
+        .await;
+
+        let rows = query_agent_activity(
+            &pool,
+            community_a,
+            &bytes,
+            &[channel_a, channel_b],
+            None,
+            10,
+        )
+        .await
+        .expect("query agent_activity");
+
+        assert!(rows.iter().any(|row| row.event.id == event_a.id));
+        assert!(
+            rows.iter().all(|row| row.event.id != event_b.id),
+            "community B agent row must not appear in community A feed"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn query_agent_activity_gates_turn_metrics_to_owner() {
+        let pool = setup_pool().await;
+        let community = CommunityId::from_uuid(make_test_community(&pool).await);
+        let (_owner_keys, owner_hex, owner_bytes) = requester_keys();
+        let (_other_keys, _other_hex, other_bytes) = requester_keys();
+
+        // Turn metrics are global-only (no channel) with a `p` tag for the owner.
+        let metric = store_feed_event(
+            &pool,
+            community,
+            KIND_AGENT_TURN_METRIC,
+            "turn metric",
+            None,
+            vec![Tag::parse(["p", owner_hex.as_str()]).unwrap()],
+        )
+        .await;
+
+        let owner_rows = query_agent_activity(&pool, community, &owner_bytes, &[], None, 10)
+            .await
+            .expect("owner query agent_activity");
+        assert!(
+            owner_rows.iter().any(|row| row.event.id == metric.id),
+            "owner must see their own turn metrics"
+        );
+
+        let other_rows = query_agent_activity(&pool, community, &other_bytes, &[], None, 10)
+            .await
+            .expect("non-owner query agent_activity");
+        assert!(
+            other_rows.iter().all(|row| row.event.id != metric.id),
+            "another owner's turn metrics must not leak via agent_activity"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn query_agent_activity_empty_channels_means_global_only_and_limit_applies() {
+        let pool = setup_pool().await;
+        let community = CommunityId::from_uuid(make_test_community(&pool).await);
+        let channel = insert_test_channel(&pool, community).await;
+        let (_keys, _hex, bytes) = requester_keys();
+
+        let global = store_feed_event(
+            &pool,
+            community,
+            KIND_AGENT_TASK,
+            "global task",
+            None,
+            vec![],
+        )
+        .await;
+        let scoped = store_feed_event(
+            &pool,
+            community,
+            KIND_AGENT_TASK,
+            "channel task",
+            Some(channel),
+            vec![],
+        )
+        .await;
+
+        let global_only = query_agent_activity(&pool, community, &bytes, &[], None, 10)
+            .await
+            .expect("global-only agent_activity");
+        assert!(global_only.iter().any(|row| row.event.id == global.id));
+        assert!(
+            global_only.iter().all(|row| row.event.id != scoped.id),
+            "empty accessible channels must not mean all tenant channels"
+        );
+
+        let limited = query_agent_activity(&pool, community, &bytes, &[channel], None, 1)
+            .await
+            .expect("limited agent_activity");
+        assert!(
+            limited.len() <= 1,
+            "caller limit must bound agent_activity rows"
         );
     }
 }

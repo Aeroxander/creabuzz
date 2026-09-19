@@ -1224,11 +1224,12 @@ async fn query_events_authed(
         let mut seen = std::collections::HashSet::new();
         let mut feed_count = 0i64;
         for feed_type in &feed_types {
-            let canonical = if feed_type == "agent_activity" {
-                "activity"
-            } else {
-                feed_type.as_str()
-            };
+            // `agent_activity` is a real feed (agent-plane kinds in visible
+            // channels + the requester's own turn metrics) — see
+            // `docs/agent-activity-sharing.md`. It is NOT an alias of
+            // `activity`: dedup below is by event id, and each type keeps
+            // its own allowlist.
+            let canonical = feed_type.as_str();
             if !seen_types.insert(canonical) {
                 continue;
             }
@@ -1272,6 +1273,18 @@ async fn query_events_authed(
                     )
                     .await
                     .map_err(|e| internal_error(&format!("feed activity error: {e}")))?,
+                "agent_activity" => state
+                    .db
+                    .query_feed_agent_activity_routed(
+                        "bridge_feed",
+                        tenant.community(),
+                        &pubkey_bytes,
+                        &accessible_channels,
+                        since,
+                        remaining,
+                    )
+                    .await
+                    .map_err(|e| internal_error(&format!("feed agent_activity error: {e}")))?,
                 _ => continue,
             };
             for se in type_events {
