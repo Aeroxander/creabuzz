@@ -702,7 +702,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 44);
+        assert_eq!(migrations.len(), 47);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -1287,6 +1287,17 @@ mod postgres_tests {
             desired_schema.contains("'rate_limit_violations'\n    ]::TEXT[])"),
             "schema.sql exclusion list must match the pre-0041 body after ledger removal"
         );
+
+        // NIP-ORG budget enforcement (0047): windowed consumption counters and
+        // durable require-approval rows, written before the best-effort
+        // kind:46010 notification.
+        assert_eq!(migrations[44].version, 45);
+        assert_eq!(migrations[45].version, 46);
+        assert_eq!(migrations[46].version, 47);
+        let budget_enforcement = migrations[46].sql.as_str();
+        assert!(budget_enforcement.contains("CREATE TABLE budget_consumption"));
+        assert!(budget_enforcement.contains("CREATE TABLE budget_approvals"));
+        assert!(budget_enforcement.contains("idx_budget_approvals_one_pending"));
     }
 
     #[test]

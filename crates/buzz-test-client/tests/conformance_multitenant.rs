@@ -1939,11 +1939,207 @@ mod workflows {
     #[tokio::test]
     #[ignore]
     async fn approval_token_is_community_confined() {
-        pending_lane(
-            "WF-08 (approval minting)",
-            "an approval token minted under A cannot be satisfied by a grant on host B — \
-             blocked until the executor approval gate (WF-08) mints pending approvals over \
-             the wire; the get_approval_by_stored_hash(community, hash) fence is already landed",
+        /// Define a workflow from caller-supplied YAML (approval-gate probe).
+        async fn define_workflow_with_yaml(
+            http_base: &str,
+            keys: &Keys,
+            channel_id: &str,
+            name: &str,
+            yaml: &str,
+        ) -> String {
+            let event = EventBuilder::new(Kind::Custom(KIND_WORKFLOW_DEF), yaml)
+                .tags(vec![
+                    Tag::parse(["h", channel_id]).unwrap(),
+                    Tag::parse(["name", name]).unwrap(),
+                ])
+                .sign_with_keys(keys)
+                .unwrap();
+            let body = submit_event(http_base, keys, event).await;
+            assert!(
+                body["accepted"].as_bool().unwrap_or(false),
+                "workflow def not accepted against {http_base}: {body}"
+            );
+            let msg = body["message"].as_str().unwrap_or_default();
+            let json_part = msg.strip_prefix("response:").unwrap_or_else(|| {
+                panic!("workflow def OK message missing `response:` prefix: {msg:?}")
+            });
+            let resp: serde_json::Value = serde_json::from_str(json_part)
+                .unwrap_or_else(|e| panic!("parse workflow def response: {e}"));
+            resp["workflow_id"]
+                .as_str()
+                .unwrap_or_else(|| panic!("def response missing workflow_id: {resp}"))
+                .to_string()
+        }
+
+        async fn authed_get(http_base: &str, keys: &Keys, path: &str) -> serde_json::Value {
+            let client = reqwest::Client::new();
+            let resp = client
+                .get(format!("{http_base}{path}"))
+                .header("X-Pubkey", keys.public_key().to_hex())
+                .send()
+                .await
+                .unwrap_or_else(|e| panic!("GET {path} from {http_base} failed: {e}"));
+            let status = resp.status();
+            let body = resp.text().await.expect("read GET body");
+            assert!(
+                status.is_success(),
+                "GET {path} from {http_base} returned HTTP {status}: {body}"
+            );
+            serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("parse GET {path} JSON: {e} (body: {body})"))
+        }
+
+        /// Submit a signed event tolerating HTTP 400 rejections: returns the
+        /// normalized `{accepted, message}` body. Unlike `submit_event` (which
+        /// asserts 2xx), this lets the test *assert on* a rejection instead of
+        /// aborting inside the helper — aborting would prove nothing.
+        async fn submit_lenient(
+            http_base: &str,
+            keys: &Keys,
+            event: nostr::Event,
+        ) -> serde_json::Value {
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("{http_base}/events"))
+                .header("X-Pubkey", keys.public_key().to_hex())
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_string(&event).expect("serialize event"))
+                .send()
+                .await
+                .unwrap_or_else(|e| panic!("POST /events to {http_base} failed: {e}"));
+            let status = resp.status();
+            let body = resp.text().await.expect("read /events body");
+            let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_else(|e| {
+                panic!("parse /events JSON from {http_base}: {e} (body: {body})")
+            });
+            if status.is_success() {
+                return parsed;
+            }
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                return serde_json::json!({
+                    "accepted": false,
+                    "message": parsed["error"].as_str().unwrap_or_default(),
+                });
+            }
+            panic!("POST /events to {http_base} returned HTTP {status}: {body}");
+        }
+
+        /// Grant (kind:46030) an approval by token hash. Returns the
+        /// normalized `{accepted, message}` body.
+        async fn grant_approval(
+            http_base: &str,
+            keys: &Keys,
+            token_hash_hex: &str,
+        ) -> serde_json::Value {
+            const KIND_APPROVAL_GRANT: u16 = 46030;
+            let event = EventBuilder::new(Kind::Custom(KIND_APPROVAL_GRANT), "conformance grant")
+                .tags(vec![Tag::parse(["d", token_hash_hex]).unwrap()])
+                .sign_with_keys(keys)
+                .unwrap();
+            submit_lenient(http_base, keys, event).await
+        }
+
+        let http_a = to_http(&url_a());
+        let http_b = to_http(&url_b());
+        let keys = Keys::generate();
+        let approver_hex = keys.public_key().to_hex();
+
+        // (1) Same channel UUID in both communities; K owner-member each side.
+        let shared_uuid = uuid::Uuid::new_v4();
+        let chan_a = create_open_channel(&http_a, &keys, shared_uuid).await;
+        let chan_b = create_open_channel(&http_b, &keys, shared_uuid).await;
+        assert_eq!(chan_a, chan_b);
+
+        // (2) Approval-gate workflow under A. `from` is K's own pubkey so K
+        // can satisfy the approver-spec check on the positive control; the
+        // cross-community grant must fail *before* that check, at lookup.
+        let yaml = format!(
+            "name: wfconf-approval\n\
+             trigger:\n\
+             \x20 on: webhook\n\
+             steps:\n\
+             \x20 - id: gate\n\
+             \x20   action: request_approval\n\
+             \x20   from: {approver_hex}\n\
+             \x20   message: Proceed?\n"
+        );
+        let workflow_id =
+            define_workflow_with_yaml(&http_a, &keys, &chan_a, "wfconf-approval", &yaml).await;
+
+        // (3) Trigger under A — accepted; the run suspends asynchronously,
+        // so poll for the run row, then for its pending approval.
+        let t_resp = trigger_workflow(&http_a, &keys, &workflow_id).await;
+        assert_eq!(
+            t_resp["accepted"].as_bool(),
+            Some(true),
+            "host A rejected its own trigger: {t_resp}"
+        );
+        let run_id = {
+            let mut found = None;
+            for _ in 0..60 {
+                let runs =
+                    authed_get(&http_a, &keys, &format!("/workflows/{workflow_id}/runs")).await;
+                if let Some(id) = runs["runs"]
+                    .as_array()
+                    .and_then(|rows| rows.first())
+                    .and_then(|row| row["id"].as_str())
+                {
+                    found = Some(id.to_string());
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            found.expect("timed out waiting for the suspended run row")
+        };
+        let token_hash = {
+            let mut found = None;
+            for _ in 0..60 {
+                let approvals = authed_get(
+                    &http_a,
+                    &keys,
+                    &format!("/workflows/{workflow_id}/runs/{run_id}/approvals"),
+                )
+                .await;
+                if let Some(hash) = approvals["approvals"].as_array().and_then(|rows| {
+                    rows.iter().find_map(|row| {
+                        (row["status"].as_str() == Some("pending"))
+                            .then(|| row["approval_ref"].as_str().map(str::to_string))
+                            .flatten()
+                    })
+                }) {
+                    found = Some(hash);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            found.expect("timed out waiting for the pending approval")
+        };
+
+        // (4) Grant on host B with A's token hash — must fail closed with the
+        // generic not-found (no enumeration oracle for A's approvals).
+        let b_resp = grant_approval(&http_b, &keys, &token_hash).await;
+        assert_eq!(
+            b_resp["accepted"].as_bool(),
+            Some(false),
+            "host B accepted a grant for an A-community approval — cross-community \
+             approval leak. response: {b_resp}"
+        );
+        assert!(
+            b_resp["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("approval not found"),
+            "host B rejection must be the generic `approval not found` (no \
+             enumeration oracle); got: {b_resp:?}"
+        );
+
+        // (5) Mirror positive: grant on host A — must succeed, proving the
+        // approval is live and the B rejection is confinement, not death.
+        let a_resp = grant_approval(&http_a, &keys, &token_hash).await;
+        assert_eq!(
+            a_resp["accepted"].as_bool(),
+            Some(true),
+            "host A rejected its own approval grant: {a_resp}"
         );
     }
 }

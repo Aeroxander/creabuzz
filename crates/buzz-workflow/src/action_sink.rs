@@ -74,4 +74,35 @@ pub trait ActionSink: Send + Sync {
         author_pubkey: &str,
         reply_to: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>>;
+
+    /// Publish a workflow approval request (kind:46010) for a suspended run.
+    ///
+    /// Called after the approval row is durably persisted: emission is a
+    /// notification, persistence is the contract. If emission fails, the run
+    /// stays `WaitingApproval` with a pending approval row — the durable
+    /// retry record — and the caller must surface the failure rather than
+    /// rolling the suspension back.
+    ///
+    /// - `community_id` / `channel_id`: same scoping contract as
+    ///   [`ActionSink::send_message`] — the event belongs to the run's
+    ///   community, `h`-tagged to the channel so membership gates reads.
+    /// - `token_hash_hex`: hex-encoded SHA-256 of the approval token UUID
+    ///   (`d` tag — the same value grant/deny look up).
+    /// - `approver_spec` / `message`: rendered from the stored step
+    ///   definition (`from`, `message`); trigger-controlled text must never
+    ///   reach authority-bearing tags (same rule as `authored_text` above —
+    ///   here the whole payload is definition-rendered, never raw trigger).
+    /// - `author_pubkey`: hex-encoded pubkey of the workflow owner (`p`
+    ///   attribution tag; the relay keypair signs the event).
+    ///
+    /// Returns the event ID hex string on success.
+    fn emit_approval_request(
+        &self,
+        community_id: CommunityId,
+        channel_id: &str,
+        token_hash_hex: &str,
+        approver_spec: &str,
+        message: &str,
+        author_pubkey: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>>;
 }

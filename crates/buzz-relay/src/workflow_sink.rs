@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
-use buzz_core::kind::KIND_STREAM_MESSAGE;
+use buzz_core::kind::{KIND_STREAM_MESSAGE, KIND_WORKFLOW_APPROVAL_REQUESTED};
 use buzz_core::tenant::CommunityId;
 use buzz_workflow::action_sink::{ActionSink, ActionSinkError};
 use chrono::Utc;
@@ -468,6 +468,171 @@ impl ActionSink for RelayActionSink {
                         owned.root_event_id.clone(),
                     );
                 }
+            }
+
+            Ok(event_id_hex)
+        })
+    }
+
+    fn emit_approval_request(
+        &self,
+        community_id: CommunityId,
+        channel_id: &str,
+        token_hash_hex: &str,
+        approver_spec: &str,
+        message: &str,
+        author_pubkey: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>> {
+        let channel_id = channel_id.to_owned();
+        let token_hash_hex = token_hash_hex.to_owned();
+        let approver_spec = approver_spec.to_owned();
+        let message = message.to_owned();
+        let author_pubkey = author_pubkey.to_owned();
+
+        Box::pin(async move {
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Same community contract as send_message: the run's community,
+            // never re-derived. Fail closed if unmapped.
+            let host = state
+                .db
+                .lookup_community_host(community_id)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?
+                .ok_or_else(|| {
+                    ActionSinkError::Database(format!(
+                        "workflow run community {community_id} is not mapped to a host"
+                    ))
+                })?;
+            let tenant = buzz_core::tenant::TenantContext::resolved(community_id, host);
+
+            // Channel must exist and not be archived — an approval nobody can
+            // read is worse than no notification (it hides the recovery path).
+            let channel_uuid = Uuid::parse_str(&channel_id)
+                .map_err(|e| ActionSinkError::InvalidInput(format!("invalid UUID: {e}")))?;
+            let channel_id_canonical = channel_uuid.to_string();
+            let channel = state
+                .db
+                .get_channel_for_event_write(tenant.community(), channel_uuid)
+                .await
+                .map_err(|e| match &e {
+                    buzz_db::DbError::ChannelNotFound(_) | buzz_db::DbError::NotFound(_) => {
+                        ActionSinkError::ChannelNotFound(channel_id_canonical.clone())
+                    }
+                    _ => ActionSinkError::Database(e.to_string()),
+                })?;
+            if channel.archived_at.is_some() {
+                return Err(ActionSinkError::ChannelArchived(
+                    channel_id_canonical.clone(),
+                ));
+            }
+
+            let author_pubkey = nostr::PublicKey::from_hex(&author_pubkey).map_err(|e| {
+                ActionSinkError::InvalidInput(format!("invalid author pubkey: {e}"))
+            })?;
+            let author_pubkey_bytes = author_pubkey.to_bytes().to_vec();
+            let author_pubkey_hex = author_pubkey.to_hex();
+            let is_member = state
+                .is_member_cached(tenant.community(), channel_uuid, &author_pubkey_bytes)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            if !is_member && channel.visibility != "open" {
+                return Err(ActionSinkError::InvalidInput(
+                    "workflow owner does not have access to destination channel".into(),
+                ));
+            }
+
+            if token_hash_hex.trim().is_empty() {
+                return Err(ActionSinkError::InvalidInput(
+                    "approval token hash must not be empty".into(),
+                ));
+            }
+
+            // Content is definition-rendered (from/message templates), never
+            // raw trigger text. An empty message falls back rather than
+            // failing — suspension is already persisted; emission is best
+            // effort and must not fail on cosmetic input.
+            let text = if message.trim().is_empty() {
+                format!("Approval requested (from {approver_spec})")
+            } else {
+                message
+            };
+
+            // kind:46010 tags: `h` scopes to the channel (membership-gated
+            // reads), `d` carries the token hash (the value grant/deny look
+            // up), `p` attributes the workflow owner, `buzz:workflow`
+            // excludes the event from re-triggering workflows.
+            let tags = vec![
+                Tag::parse(["h", &channel_id_canonical])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("h tag: {e}")))?,
+                Tag::parse(["d", &token_hash_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("d tag: {e}")))?,
+                Tag::parse(["p", &author_pubkey_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("p tag: {e}")))?,
+                Tag::parse(["buzz:workflow", "true"])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("workflow tag: {e}")))?,
+                Tag::parse(["buzz:workflow-owner", &author_pubkey_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("workflow owner tag: {e}")))?,
+            ];
+
+            let kind = Kind::from(KIND_WORKFLOW_APPROVAL_REQUESTED as u16);
+            let event = EventBuilder::new(kind, &text)
+                .tags(tags)
+                .sign_with_keys(&state.relay_keypair)
+                .map_err(|e| ActionSinkError::EventBuild(format!("signing: {e}")))?;
+
+            let event_id_hex = event.id.to_hex();
+            let event_id_bytes = event.id.as_bytes().to_vec();
+            let kind_u32 = KIND_WORKFLOW_APPROVAL_REQUESTED;
+
+            let event_created_at = {
+                let ts = event.created_at.as_secs() as i64;
+                chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now)
+            };
+
+            info!(
+                event_id = %event_id_hex,
+                channel_id = %channel_id_canonical,
+                author = %author_pubkey,
+                "Workflow approval requested: emitting kind 46010 event"
+            );
+
+            let thread_meta = Some(buzz_db::event::ThreadMetadataParams {
+                event_id: &event_id_bytes,
+                event_created_at,
+                channel_id: channel_uuid,
+                parent_event_id: None,
+                parent_event_created_at: None,
+                root_event_id: None,
+                root_event_created_at: None,
+                depth: 0,
+                broadcast: false,
+            });
+
+            let (stored_event, was_inserted) = state
+                .db
+                .insert_event_with_thread_metadata(
+                    tenant.community(),
+                    &event,
+                    Some(channel_uuid),
+                    thread_meta,
+                )
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+
+            if was_inserted {
+                let _ = dispatch_persistent_event(
+                    &tenant,
+                    &state,
+                    &stored_event,
+                    kind_u32,
+                    &author_pubkey_hex,
+                    None,
+                )
+                .await;
             }
 
             Ok(event_id_hex)

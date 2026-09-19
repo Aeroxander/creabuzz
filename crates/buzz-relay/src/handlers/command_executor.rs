@@ -1037,12 +1037,29 @@ async fn handle_approval_grant(
     let token_hash = hex::decode(&token_hash_hex)
         .map_err(|_| IngestError::Rejected("invalid: bad approval token hash hex".into()))?;
 
-    // 2. Look up the approval record
-    let approval = state
+    // 2. Look up the approval record. A token that belongs to a NIP-ORG
+    //    budget approval (the kind:46010 request recorded by
+    //    `budget_enforcement`) resolves through the same command surface —
+    //    see `resolve_budget_approval_command`.
+    let approval = match state
         .db
         .get_approval_by_stored_hash(tenant.community(), &token_hash)
         .await
-        .map_err(|_| IngestError::Rejected("invalid: approval not found".into()))?;
+    {
+        Ok(approval) => approval,
+        Err(DbError::NotFound(_)) => {
+            return resolve_budget_approval_command(
+                &state.db,
+                tenant,
+                event,
+                &self_bytes,
+                &token_hash,
+                buzz_db::budget::BudgetApprovalDecision::Granted,
+            )
+            .await;
+        }
+        Err(_) => return Err(IngestError::Rejected("invalid: approval not found".into())),
+    };
 
     // 3. Validate approval is pending and not expired
     if approval.status != ApprovalStatus::Pending {
@@ -1148,12 +1165,29 @@ async fn handle_approval_deny(
     let token_hash = hex::decode(&token_hash_hex)
         .map_err(|_| IngestError::Rejected("invalid: bad approval token hash hex".into()))?;
 
-    // 2. Look up the approval record
-    let approval = state
+    // 2. Look up the approval record. A token that belongs to a NIP-ORG
+    //    budget approval (the kind:46010 request recorded by
+    //    `budget_enforcement`) resolves through the same command surface —
+    //    see `resolve_budget_approval_command`.
+    let approval = match state
         .db
         .get_approval_by_stored_hash(tenant.community(), &token_hash)
         .await
-        .map_err(|_| IngestError::Rejected("invalid: approval not found".into()))?;
+    {
+        Ok(approval) => approval,
+        Err(DbError::NotFound(_)) => {
+            return resolve_budget_approval_command(
+                &state.db,
+                tenant,
+                event,
+                &self_bytes,
+                &token_hash,
+                buzz_db::budget::BudgetApprovalDecision::Denied,
+            )
+            .await;
+        }
+        Err(_) => return Err(IngestError::Rejected("invalid: approval not found".into())),
+    };
 
     // 3. Validate approval is pending and not expired
     if approval.status != ApprovalStatus::Pending {
@@ -1269,6 +1303,140 @@ async fn handle_approval_deny(
     })
 }
 
+/// Resolve a NIP-ORG budget approval (the kind:46010 request recorded by
+/// `budget_enforcement`) through the same approval command surface as
+/// workflow approvals: same command kinds (46030/46031), same `d`/`e`
+/// token reference, same persist-then-resolve transaction shape, and the
+/// same audit trail (the persisted command event IS the audit record — no
+/// separate audit write).
+///
+/// Grant semantics: forgive the overrun once. The pending row becomes
+/// `granted` (approver + `granted_at` recorded); consumption counters are
+/// never rolled back — the grant raises the budget's effective limit by
+/// exactly one unit (see `budget_enforcement::effective_limit`), so the
+/// subject may act again until the counter reaches the limit once more,
+/// and the next overrun then raises a fresh request.
+///
+/// Deny semantics: the row becomes `denied` (`denied_at` recorded); no
+/// tolerance is recorded and the subject stays at or over the limit. The
+/// partial unique index binds only `pending` rows, so the next overrun in
+/// the same window inserts a fresh pending request with a fresh token.
+///
+/// Expiry semantics: a pending row past `expires_at` is rejected exactly
+/// like an expired workflow approval and is never resolved as if fresh.
+/// It is not dead state either: the next overrun refreshes the same
+/// pending row (new `expires_at`, same stored token) via
+/// `create_budget_approval`, keeping the request actionable.
+///
+/// Authorization: budget approval rows carry no per-request approver
+/// spec, so the authority is the community relay owner — the same role
+/// that may publish a budget for any subject. The budgeted subject is
+/// deliberately excluded: self-approval would let an agent void an
+/// owner-imposed cap.
+async fn resolve_budget_approval_command(
+    db: &buzz_db::Db,
+    tenant: &TenantContext,
+    event: &Event,
+    approver: &[u8],
+    token_hash: &[u8],
+    decision: buzz_db::budget::BudgetApprovalDecision,
+) -> Result<IngestResult, IngestError> {
+    let approval = db
+        .get_budget_approval_by_stored_hash(tenant.community(), token_hash)
+        .await
+        .map_err(|_| IngestError::Rejected("invalid: approval not found".into()))?;
+
+    if approval.status != "pending" {
+        return Err(IngestError::Rejected(format!(
+            "invalid: approval already {}",
+            approval.status
+        )));
+    }
+    if Utc::now() > approval.expires_at {
+        return Err(IngestError::Rejected(
+            "invalid: approval token has expired".into(),
+        ));
+    }
+
+    check_budget_approver(db, tenant, &hex::encode(approver)).await?;
+
+    // Persist the command event — returns open transaction.
+    let tx = match persist_command_event(db, tenant, event, None).await? {
+        PersistResult::Duplicate => {
+            return Ok(IngestResult {
+                event_id: event.id.to_hex(),
+                accepted: true,
+                message: "duplicate: already processed".into(),
+            });
+        }
+        PersistResult::Inserted(tx) => tx,
+    };
+
+    // TOCTOU-guarded resolution: only a still-pending row is updated, so
+    // of two concurrent resolutions exactly one wins.
+    let note = if event.content.is_empty() {
+        None
+    } else {
+        Some(event.content.as_str())
+    };
+
+    let updated = db
+        .resolve_budget_approval(
+            tenant.community(),
+            token_hash,
+            decision,
+            Some(approver),
+            note,
+        )
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db resolve_budget_approval: {e}")))?;
+
+    if !updated {
+        return Err(IngestError::Rejected(
+            "invalid: approval already acted on (race)".into(),
+        ));
+    }
+
+    // Finalize the idempotency record after the budget resolution succeeds.
+    tx.commit()
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: commit transaction: {e}")))?;
+
+    Ok(IngestResult {
+        event_id: event.id.to_hex(),
+        accepted: true,
+        message: format!(
+            "response:{}",
+            serde_json::json!({
+                "status": decision.as_str(),
+                "subject": approval.subject,
+                "counterType": approval.counter_type,
+            })
+        ),
+    })
+}
+
+/// Budget approval authority: only a community relay owner may grant or
+/// deny a budget approval request (see [`resolve_budget_approval_command`]
+/// for why the subject itself is excluded).
+async fn check_budget_approver(
+    db: &buzz_db::Db,
+    tenant: &TenantContext,
+    approver_hex: &str,
+) -> Result<(), IngestError> {
+    let is_owner = db
+        .get_relay_member(tenant.community(), approver_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking approver: {e}")))?
+        .is_some_and(|m| m.role == "owner");
+    if is_owner {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(
+        "forbidden: only a community owner may resolve a budget approval".into(),
+    ))
+}
+
 /// Resume a suspended workflow run after an approval gate has been granted.
 async fn resume_workflow_after_approval(
     engine: Arc<buzz_workflow::WorkflowEngine>,
@@ -1361,8 +1529,23 @@ async fn resume_workflow_after_approval(
         Some(initial_outputs),
     )
     .await;
+    // Nested approval gates suspend again through the same choke point —
+    // a resumed run that hits a second gate persists a new approval row
+    // rather than failing.
     engine
-        .finalize_run(community_id, run_id, result, existing_trace)
+        .finish_execution(
+            buzz_workflow::Suspension {
+                community_id,
+                workflow_id,
+                channel_id: workflow.channel_id,
+                author_pubkey: &workflow.owner_pubkey,
+                run_id,
+                def: &def,
+                trigger_ctx: &trigger_ctx,
+                existing_trace,
+            },
+            result,
+        )
         .await;
 }
 
@@ -1633,5 +1816,434 @@ mod postgres_tests {
             IngestError::Rejected(ref message)
                 if message == "invalid: bad expected workflow revision"
         ));
+    }
+
+    /// WF-08 grant→resume: a granted approval resumes its suspended run to
+    /// completion through the production resume path. Binds
+    /// `resume_workflow_after_approval` (not a test helper): removing the
+    /// grant-gated resume leaves the run `WaitingApproval` and fails this.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn approval_grant_resumes_suspended_run_to_completed() {
+        use buzz_db::workflow::{ApprovalStatus, RunStatus};
+        use buzz_workflow::{WorkflowConfig, WorkflowEngine};
+
+        let (db, tenant) = persistence_test_context().await;
+        let community = tenant.community();
+        let owner = Keys::generate();
+        let owner_bytes = owner.public_key().to_bytes().to_vec();
+        // workflows.owner_pubkey references users — ensure the row first.
+        db.ensure_user(community, &owner_bytes)
+            .await
+            .expect("ensure owner user");
+
+        let (def, _) = WorkflowEngine::parse_yaml(concat!(
+            "name: wf08-resume\n",
+            "trigger:\n  on: webhook\n",
+            "steps:\n",
+            "  - id: gate\n",
+            "    action: request_approval\n",
+            "    from: '@owner'\n",
+            "    message: Proceed?\n",
+        ))
+        .expect("parse approval def");
+        let def_json = serde_json::to_value(&def).expect("def json");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                None,
+                &owner_bytes,
+                "wf08-resume",
+                &def_json.to_string(),
+                &[9u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+
+        // Suspend through the engine (channel-less: persistence only, no
+        // 46010 emission — approvals stay actionable via get_run_approvals).
+        let token = Uuid::new_v4().to_string();
+        let suspended = buzz_workflow::ExecutionResult {
+            approval_token: Some(token.clone()),
+            step_index: 0,
+            step_outputs: Default::default(),
+            trace: vec![],
+        };
+        let ctx = buzz_workflow::executor::TriggerContext::default();
+        engine
+            .suspend_run(
+                buzz_workflow::Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: None,
+                    author_pubkey: &owner_bytes,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &ctx,
+                    existing_trace: None,
+                },
+                suspended,
+            )
+            .await
+            .expect("suspend run");
+
+        // Grant through the same TOCTOU-guarded update the ingest path uses.
+        assert!(
+            db.update_approval(
+                community,
+                &token,
+                ApprovalStatus::Granted,
+                Some(&owner_bytes),
+                None
+            )
+            .await
+            .expect("grant approval"),
+            "first grant must win the pending row"
+        );
+        assert!(
+            !db.update_approval(
+                community,
+                &token,
+                ApprovalStatus::Granted,
+                Some(&owner_bytes),
+                None
+            )
+            .await
+            .expect("second grant"),
+            "second grant must lose the pending row (TOCTOU guard)"
+        );
+
+        // Resume through the production path (step_index 0 + 1).
+        resume_workflow_after_approval(engine, db.clone(), community, run_id, workflow_id, 1).await;
+
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("fetch run");
+        assert_eq!(
+            run.status,
+            RunStatus::Completed,
+            "granted run must complete after resume"
+        );
+        let approvals = db
+            .get_run_approvals(community, workflow_id, run_id)
+            .await
+            .expect("fetch approvals");
+        assert_eq!(approvals.len(), 1);
+        assert_eq!(approvals[0].status, ApprovalStatus::Granted);
+    }
+
+    // -- NIP-ORG budget approval resolution through the real command path --
+
+    const BUDGET_AGENT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    async fn budget_approval_fixture(
+        db: &buzz_db::Db,
+        tenant: &TenantContext,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> [u8; 32] {
+        let token_hash = [0x42u8; 32];
+        let stored = db
+            .create_budget_approval(
+                tenant.community(),
+                buzz_db::budget::CreateBudgetApprovalParams {
+                    subject: BUDGET_AGENT,
+                    counter_type: "runs",
+                    window_start: Utc::now(),
+                    limit_value: 2,
+                    budget_event_id: Some("evt-ce"),
+                    token_hash: &token_hash,
+                    expires_at,
+                },
+            )
+            .await
+            .expect("create budget approval");
+        assert_eq!(stored, token_hash);
+        token_hash
+    }
+
+    fn approval_command_event(keys: &Keys, kind: u32, token_hash: &[u8], content: &str) -> Event {
+        EventBuilder::new(Kind::Custom(kind as u16), content)
+            .tag(Tag::parse(["d", &hex::encode(token_hash)]).expect("d tag"))
+            .sign_with_keys(keys)
+            .expect("sign approval command event")
+    }
+
+    /// Grant through the production resolution surface
+    /// (`resolve_budget_approval_command`, the branch
+    /// `handle_approval_grant` takes for kind:46010 budget tokens):
+    /// pending row becomes granted with the approver recorded, and a
+    /// second grant through the same path is rejected without touching
+    /// the resolved row.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn budget_grant_resolves_pending_row_through_command_path() {
+        let (db, tenant) = persistence_test_context().await;
+        let owner = Keys::generate();
+        let owner_bytes = owner.public_key().to_bytes().to_vec();
+        db.ensure_user(tenant.community(), &owner_bytes)
+            .await
+            .expect("ensure owner user");
+        db.add_relay_member(
+            tenant.community(),
+            &owner.public_key().to_hex(),
+            "owner",
+            None,
+        )
+        .await
+        .expect("add relay owner");
+
+        let token_hash =
+            budget_approval_fixture(&db, &tenant, Utc::now() + chrono::Duration::seconds(3600))
+                .await;
+
+        let event = approval_command_event(&owner, KIND_APPROVAL_GRANT, &token_hash, "granted");
+        let result = resolve_budget_approval_command(
+            &db,
+            &tenant,
+            &event,
+            &owner_bytes,
+            &token_hash,
+            buzz_db::budget::BudgetApprovalDecision::Granted,
+        )
+        .await
+        .expect("budget grant through command path");
+        assert!(result.accepted);
+        assert!(
+            result.message.contains("granted"),
+            "got: {}",
+            result.message
+        );
+
+        let record = db
+            .get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+            .await
+            .expect("fetch granted row");
+        assert_eq!(record.status, "granted");
+        assert_eq!(record.approver.as_deref(), Some(&owner_bytes[..]));
+        assert!(record.granted_at.is_some());
+        assert!(record.denied_at.is_none());
+
+        // A second grant through the same path loses the resolved row.
+        let replay =
+            approval_command_event(&owner, KIND_APPROVAL_GRANT, &token_hash, "granted again");
+        let err = resolve_budget_approval_command(
+            &db,
+            &tenant,
+            &replay,
+            &owner_bytes,
+            &token_hash,
+            buzz_db::budget::BudgetApprovalDecision::Granted,
+        )
+        .await
+        .err()
+        .expect("second grant must be rejected");
+        assert!(
+            matches!(err, IngestError::Rejected(ref m) if m.contains("already granted")),
+            "got: {err:?}"
+        );
+        assert_eq!(
+            db.get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+                .await
+                .expect("refetch")
+                .status,
+            "granted",
+            "rejected re-grant must not mutate the row"
+        );
+    }
+
+    /// Deny through the production resolution surface: the row becomes
+    /// denied (denied_at, note from the command content), and a fresh
+    /// overrun after the denial inserts a NEW pending row — the partial
+    /// unique index binds only pending rows.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn budget_deny_resolves_then_re_overrun_creates_fresh_pending_row() {
+        let (db, tenant) = persistence_test_context().await;
+        let owner = Keys::generate();
+        let owner_bytes = owner.public_key().to_bytes().to_vec();
+        db.ensure_user(tenant.community(), &owner_bytes)
+            .await
+            .expect("ensure owner user");
+        db.add_relay_member(
+            tenant.community(),
+            &owner.public_key().to_hex(),
+            "owner",
+            None,
+        )
+        .await
+        .expect("add relay owner");
+
+        let token_hash =
+            budget_approval_fixture(&db, &tenant, Utc::now() + chrono::Duration::seconds(3600))
+                .await;
+
+        let event = approval_command_event(
+            &owner,
+            KIND_APPROVAL_DENY,
+            &token_hash,
+            "over budget, denied",
+        );
+        let result = resolve_budget_approval_command(
+            &db,
+            &tenant,
+            &event,
+            &owner_bytes,
+            &token_hash,
+            buzz_db::budget::BudgetApprovalDecision::Denied,
+        )
+        .await
+        .expect("budget deny through command path");
+        assert!(result.accepted);
+
+        let denied = db
+            .get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+            .await
+            .expect("fetch denied row");
+        assert_eq!(denied.status, "denied");
+        assert!(denied.denied_at.is_some());
+        assert!(denied.granted_at.is_none());
+        assert_eq!(denied.note.as_deref(), Some("over budget, denied"));
+
+        // Re-overrun after denial: the production row-write mints a fresh
+        // pending row (new token), never resurrects the denied one.
+        let fresh_hash = [0x43u8; 32];
+        let stored = db
+            .create_budget_approval(
+                tenant.community(),
+                buzz_db::budget::CreateBudgetApprovalParams {
+                    subject: BUDGET_AGENT,
+                    counter_type: "runs",
+                    window_start: Utc::now(),
+                    limit_value: 2,
+                    budget_event_id: Some("evt-ce"),
+                    token_hash: &fresh_hash,
+                    expires_at: Utc::now() + chrono::Duration::seconds(3600),
+                },
+            )
+            .await
+            .expect("re-overrun after denial");
+        assert_eq!(stored, fresh_hash, "fresh overrun mints a fresh token");
+        assert_eq!(
+            db.get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+                .await
+                .expect("fetch old row")
+                .status,
+            "denied"
+        );
+        assert_eq!(
+            db.get_budget_approval_by_stored_hash(tenant.community(), &fresh_hash)
+                .await
+                .expect("fetch fresh row")
+                .status,
+            "pending"
+        );
+    }
+
+    /// An expired pending row is never resolved as if fresh: the command
+    /// path rejects it and the row stays pending (a later overrun
+    /// refreshes it instead — see the resolution doc comment).
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn expired_pending_budget_approval_is_not_resolved() {
+        let (db, tenant) = persistence_test_context().await;
+        let owner = Keys::generate();
+        let owner_bytes = owner.public_key().to_bytes().to_vec();
+        db.ensure_user(tenant.community(), &owner_bytes)
+            .await
+            .expect("ensure owner user");
+        db.add_relay_member(
+            tenant.community(),
+            &owner.public_key().to_hex(),
+            "owner",
+            None,
+        )
+        .await
+        .expect("add relay owner");
+
+        let token_hash =
+            budget_approval_fixture(&db, &tenant, Utc::now() - chrono::Duration::seconds(60)).await;
+
+        let event = approval_command_event(&owner, KIND_APPROVAL_GRANT, &token_hash, "late grant");
+        let err = resolve_budget_approval_command(
+            &db,
+            &tenant,
+            &event,
+            &owner_bytes,
+            &token_hash,
+            buzz_db::budget::BudgetApprovalDecision::Granted,
+        )
+        .await
+        .err()
+        .expect("expired pending row must not resolve");
+        assert!(
+            matches!(err, IngestError::Rejected(ref m) if m.contains("expired")),
+            "got: {err:?}"
+        );
+        assert_eq!(
+            db.get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+                .await
+                .expect("fetch row")
+                .status,
+            "pending",
+            "expired row stays pending for the refresh-on-overrun path"
+        );
+    }
+
+    /// Only a community relay owner may resolve a budget approval; a plain
+    /// member is rejected and the row stays pending. (The budgeted subject
+    /// is excluded too — self-approval would void an owner-imposed cap.)
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn non_owner_cannot_resolve_budget_approval() {
+        let (db, tenant) = persistence_test_context().await;
+        let member = Keys::generate();
+        let member_bytes = member.public_key().to_bytes().to_vec();
+        db.ensure_user(tenant.community(), &member_bytes)
+            .await
+            .expect("ensure member user");
+        db.add_relay_member(
+            tenant.community(),
+            &member.public_key().to_hex(),
+            "member",
+            None,
+        )
+        .await
+        .expect("add relay member");
+
+        let token_hash =
+            budget_approval_fixture(&db, &tenant, Utc::now() + chrono::Duration::seconds(3600))
+                .await;
+
+        let event =
+            approval_command_event(&member, KIND_APPROVAL_GRANT, &token_hash, "self-service");
+        let err = resolve_budget_approval_command(
+            &db,
+            &tenant,
+            &event,
+            &member_bytes,
+            &token_hash,
+            buzz_db::budget::BudgetApprovalDecision::Granted,
+        )
+        .await
+        .err()
+        .expect("non-owner must be rejected");
+        assert!(
+            matches!(err, IngestError::Rejected(ref m) if m.contains("only a community owner")),
+            "got: {err:?}"
+        );
+        assert_eq!(
+            db.get_budget_approval_by_stored_hash(tenant.community(), &token_hash)
+                .await
+                .expect("fetch row")
+                .status,
+            "pending"
+        );
     }
 }

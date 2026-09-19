@@ -8,6 +8,8 @@ pub mod allowlist;
 pub mod api_token;
 /// Relay-scoped archived identity persistence (NIP-IA).
 pub mod archived_identities;
+/// NIP-ORG budget enforcement — windowed consumption counters.
+pub mod budget;
 /// Channel lifecycle and metadata persistence.
 pub mod channel;
 /// Channel membership and roster persistence.

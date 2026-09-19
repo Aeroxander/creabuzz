@@ -14,24 +14,25 @@ use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
     KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH,
-    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION,
-    KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
-    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
-    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
-    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
-    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
-    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
-    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
-    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
-    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
-    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
-    KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_SCORE_ROOT,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
+    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST,
+    KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
+    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT,
+    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
+    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
+    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
+    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
+    KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT,
+    KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM, KIND_MANAGED_AGENT,
+    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN,
+    KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
+    KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT,
+    KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST,
+    KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
+    KIND_ORG_NODE, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT,
+    KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
+    KIND_SCORE_ROOT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
     KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
     KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
     KIND_USER_STATUS, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
@@ -541,6 +542,11 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_LAUNCH_UPDATE
         | KIND_LAUNCH_PROPOSAL
         | KIND_LAUNCH_RECEIPT => Ok(Scope::MessagesWrite),
+        // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
+        // (same model as forum posts). Structural authorization (grant chains,
+        // budget limits) is layered on top; the relay validates envelopes and
+        // scopes them to their community via the `h` tag.
+        KIND_ORG_NODE | KIND_ORG_GRANT | KIND_ORG_BUDGET | KIND_CONTRIBUTION_RECORD => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -696,6 +702,15 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_LAUNCH_UPDATE
             | KIND_LAUNCH_PROPOSAL
             | KIND_LAUNCH_RECEIPT
+            // NIP-ORG: the org graph is a community-level object, addressed by
+            // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
+            // record (37001). One org belongs to the whole community, not to a
+            // channel, so a stray `h` tag must never channel-scope its nodes,
+            // grants, or budgets.
+            | KIND_ORG_NODE
+            | KIND_ORG_GRANT
+            | KIND_ORG_BUDGET
+            | KIND_CONTRIBUTION_RECORD
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -1571,6 +1586,90 @@ const LAUNCH_NAME_MAX_LEN: usize = 256;
 /// Launch content is JSON; bound well above any honest record so a junk
 /// payload cannot win NIP-33 replacement against a valid head.
 const LAUNCH_CONTENT_MAX_LEN: usize = 65536;
+
+// NIP-ORG caps: org nodes/grants/budgets are small, community-level records.
+const ORG_CONTENT_MAX_LEN: usize = 16384;
+const ORG_SEAT_TAG_CAP: usize = 256;
+const ORG_NAME_MAX_LEN: usize = 128;
+
+/// Validate a lowercase-64-hex pubkey string (a NIP-ORG seat / grantee tag).
+fn is_lower_hex_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// Validate the shared envelope of a NIP-ORG event (37010–37012).
+///
+/// All three are parameterized-replaceable, **community-level** records (the
+/// same shape as a project `30621` or a launch record `37001`): exactly one
+/// bounded `d` (node/grant/subject id) and a JSON-object content body.
+/// `seat`/`grantee` tags, when present, must hold a lowercase 64-hex pubkey,
+/// and the `seat` list is capped. Malformed org records must not pollute the
+/// org chart, so the envelope is checked at ingest.
+///
+/// Deliberately absent: any authority. A node asserts a seat; a grant asserts
+/// a delegation. Neither is a permission the relay acts on here — chain
+/// verification is layered on top, and a stray `h` tag never channel-scopes
+/// these (see [`is_global_only_kind`]).
+fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let d = single_bounded_d_tag(event, label)?;
+    if d.len() > 64 {
+        return Err(format!("{label} `d` tag too long (max 64 chars)"));
+    }
+
+    let mut seat_count = 0usize;
+    let mut name_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "seat" => {
+                seat_count += 1;
+                if !is_lower_hex_pubkey(value) {
+                    return Err(format!(
+                        "{label} `seat` tag must hold a lowercase 64-hex pubkey"
+                    ));
+                }
+            }
+            "grantee" if !is_lower_hex_pubkey(value) => {
+                return Err(format!(
+                    "{label} `grantee` tag must hold a lowercase 64-hex pubkey"
+                ));
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > ORG_NAME_MAX_LEN {
+                    return Err(format!(
+                        "{label} `name` tag too long (max {ORG_NAME_MAX_LEN} chars)"
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    if seat_count > ORG_SEAT_TAG_CAP {
+        return Err(format!(
+            "{label} must have at most {ORG_SEAT_TAG_CAP} `seat` tags (got {seat_count})"
+        ));
+    }
+    if name_count > 1 {
+        return Err(format!("{label} must have at most one `name` tag"));
+    }
+    if event.content.len() > ORG_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{label} content too long (max {ORG_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
+}
 
 /// Validate the envelope of a kind:37001 NIP-LP launch record.
 ///
@@ -3015,6 +3114,43 @@ async fn ingest_event_inner(
                     .into(),
             ));
         }
+
+        // NIP-ORG budget enforcement: check run limits for this agent and
+        // consume one run. The counter write is a same-call durable write
+        // whose failure fails the ingest; see
+        // `budget_enforcement::enforce_run_budget` for the atomicity note.
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_run_budget(state, tenant, &agent_hex).await?;
+    }
+
+    // NIP-ORG budget enforcement for agent tasks (kind:44011): every task
+    // row an agent publishes consumes one `tasks.create` unit against each
+    // budget whose `content.subject` names this agent. The counter write is
+    // a same-call durable write whose failure fails the ingest — same
+    // `enforce_counter` path as the runs gate above, so window derivation,
+    // subject binding, and exceed behavior (hard reject vs durable
+    // budget_approvals row + best-effort kind:46010) cannot diverge.
+    //
+    // Kind:44011 is not addressable — a status update is a new row — so
+    // status churn also consumes the counter. That over-counts, which is
+    // the fail-closed direction: an agent is budget-limited sooner, never
+    // later.
+    //
+    // TODO(budget): the `tasks.approve` counter is not enforced anywhere.
+    // An agent's approval action is not observable at this ingest seam:
+    // kind:46011/46012 (`KIND_WORKFLOW_APPROVAL_GRANTED`/`DENIED`) are not
+    // in `required_scope_for_kind`, so client-authored copies are rejected
+    // as unknown kinds before this code runs. The only agent-reachable
+    // approval action flows through the command path
+    // (`KIND_APPROVAL_GRANT` 46030 → `command_executor::handle_approval_grant`),
+    // which is outside the ingest gate and outside this change's scope —
+    // and grant/deny consumption for `budget_approvals` rows is itself
+    // still unwired (see migrations/0047_budget_consumption.sql). Enforce
+    // `task_approve` where budget approval grants are actually consumed.
+    if kind_u32 == KIND_AGENT_TASK {
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, "task_create")
+            .await?;
     }
 
     if kind_u32 == KIND_EVENT_REMINDER {
@@ -3039,6 +3175,29 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_LAUNCH_RECORD {
         validate_launch_record_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_ORG_NODE {
+        validate_org_envelope(&event, "org node event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_ORG_GRANT {
+        validate_org_envelope(&event, "org grant event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_ORG_BUDGET {
+        validate_org_envelope(&event, "org budget event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Budget-specific content contract (camelCase keys, `window` enum)
+        // and the publication rule: subject agent itself or community owner.
+        super::budget_enforcement::validate_budget_publication(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_CONTRIBUTION_RECORD {
+        validate_org_envelope(&event, "contribution record event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -5658,6 +5817,129 @@ mod postgres_tests {
             !requires_h_channel_scope(KIND_SCORE_ROOT),
             "kind 37006 must not require an h-tag channel scope"
         );
+    }
+
+    // ---- NIP-ORG org graph (37010–37012) ----
+
+    fn make_org_event(kind: u32, tags: &[&[&str]]) -> Event {
+        make_event_with_tags(kind, "{\"v\":1}", tags)
+    }
+
+    #[test]
+    fn org_envelope_accepts_valid_node() {
+        let seat = "c".repeat(64);
+        let ev = make_org_event(
+            KIND_ORG_NODE,
+            &[&["d", "cto"], &["name", "CTO"], &["seat", seat.as_str()]],
+        );
+        assert!(validate_org_envelope(&ev, "org node event").is_ok());
+    }
+
+    #[test]
+    fn org_kinds_are_parameterized_replaceable() {
+        // Owner-editable addressing comes free from NIP-33 (d-tag replacement).
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+        ] {
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be parameterized-replaceable"
+            );
+        }
+    }
+
+    #[test]
+    fn org_kinds_are_global_member_writes() {
+        // The org graph is a community-level object: ordinary member writes
+        // that are global-only (addressed by pubkey/kind/d, like a project or
+        // a launch record). Structural authorization is layered on top, not
+        // baked into the write scope, and a stray `h` must not channel-scope
+        // the org.
+        let dummy = make_dummy_event();
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} should require MessagesWrite scope"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must be global-only (one org per community)"
+            );
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h-tag channel scope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_accepts_stray_h_tag() {
+        // `h` is not part of the org envelope. One or several stray `h` tags are
+        // accepted and never channel-scope the event (is_global_only_kind strips
+        // routing), exactly as for projects and launch records — the org belongs
+        // to the whole community, so an `h` tag is never routing.
+        let one = make_org_event(
+            KIND_ORG_NODE,
+            &[&["d", "cto"], &["h", "not-a-routing-directive"]],
+        );
+        assert!(validate_org_envelope(&one, "org node event").is_ok());
+        let two = make_org_event(KIND_ORG_NODE, &[&["d", "cto"], &["h", "a"], &["h", "b"]]);
+        assert!(validate_org_envelope(&two, "org node event").is_ok());
+    }
+
+    #[test]
+    fn org_envelope_accepts_all_three_kinds() {
+        // The validator is shared across node, grant, and budget.
+        for (kind, label) in [
+            (KIND_ORG_NODE, "org node event"),
+            (KIND_ORG_GRANT, "org grant event"),
+            (KIND_ORG_BUDGET, "org budget event"),
+        ] {
+            let grantee = "d".repeat(64);
+            let ev = make_org_event(kind, &[&["d", "x"], &["grantee", &grantee]]);
+            assert!(
+                validate_org_envelope(&ev, label).is_ok(),
+                "kind {kind} should accept a valid envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_rejects_missing_d() {
+        let ev = make_org_event(KIND_ORG_NODE, &[&["name", "CTO"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_hex_seat() {
+        let ev = make_org_event(KIND_ORG_NODE, &[&["d", "cto"], &["seat", "not-a-pubkey"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("`seat` tag"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_uppercase_grantee() {
+        let upper = "AB".repeat(32);
+        let ev = make_org_event(KIND_ORG_GRANT, &[&["d", "g1"], &["grantee", &upper]]);
+        let err = validate_org_envelope(&ev, "org grant event").unwrap_err();
+        assert!(err.contains("`grantee` tag"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_object_content() {
+        let ev = make_event_with_tags(KIND_ORG_NODE, "not json", &[&["d", "cto"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
     }
 
     #[test]
