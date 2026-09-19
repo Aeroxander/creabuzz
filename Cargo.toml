@@ -33,6 +33,8 @@ members = [
     "crates/buzz-datastore-tracing",
     "crates/buzz-evm-auth",
     "crates/buzz-fleet-worker",
+    "crates/buzz-paperclip",
+    "crates/buzz-community-mcp",
     "examples/countdown-bot",
 ]
 exclude = ["desktop/src-tauri"]

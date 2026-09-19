@@ -1000,6 +1000,8 @@ dependencies = [
  "hex",
  "infer",
  "nostr 0.44.7",
+ "num-bigint",
+ "num-traits",
  "rand 0.10.1",
  "reqwest 0.13.4",
  "rustls",
@@ -1010,6 +1012,27 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "buzz-community-mcp"
+version = "0.1.0"
+dependencies = [
+ "buzz-core",
+ "buzz-sdk",
+ "buzz-ws-client",
+ "futures-util",
+ "nostr 0.44.7",
+ "rmcp",
+ "rustls",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -1232,6 +1255,31 @@ dependencies = [
  "tokio-tungstenite 0.29.0",
  "url",
  "zeroize",
+]
+
+[[package]]
+name = "buzz-paperclip"
+version = "0.1.0"
+dependencies = [
+ "buzz-core",
+ "buzz-sdk",
+ "buzz-ws-client",
+ "chrono",
+ "clap",
+ "hex",
+ "nostr 0.44.7",
+ "reqwest 0.13.4",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

@@ -1,0 +1,35 @@
+[package]
+name = "buzz-community-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "MCP server exposing Buzz community operations (messages and tasks) to external agents."
+
+[lib]
+name = "buzz_community_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "buzz-community-mcp"
+path = "src/main.rs"
+
+[dependencies]
+buzz-core = { workspace = true }
+buzz-sdk = { workspace = true }
+buzz-ws-client = { path = "../buzz-ws-client" }
+nostr = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+futures-util = { workspace = true }
+# Explicit rustls dep with the ring provider, matching buzz-cli/buzz-dev-mcp:
+# a unified multi-package release build otherwise leaves rustls unable to
+# auto-select a provider and the first TLS connection panics.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
