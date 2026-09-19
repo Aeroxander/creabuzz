@@ -33,7 +33,7 @@ pub fn build_llm_http_client() -> reqwest::Client {
 
 pub(crate) const LLM_CHAT_PATH: &str = "/llm/chat/completions";
 const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(240);
-const MAX_REQUEST_BODY_BYTES: usize = 1 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 /// OpenAI-compatible chat completion passthrough.
@@ -143,7 +143,7 @@ pub async fn chat_completions(
         );
     }
 
-    Ok(Response::builder()
+    Response::builder()
         .status(upstream_status)
         .header(header::CONTENT_TYPE, content_type)
         .body(axum::body::Body::from(upstream_body))
@@ -152,5 +152,5 @@ pub async fn chat_completions(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "response construction failed",
             )
-        })?)
+        })
 }
