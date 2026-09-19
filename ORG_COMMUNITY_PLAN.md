@@ -17,10 +17,10 @@ so the org belongs to the whole community, and demote the Paperclip bridge
 (`crates/buzz-paperclip`, desktop window, managed-agents surface) to an
 **optional one-way import + private sandbox**.
 
-## Status — Phase 0 implemented (uncommitted)
+## Status — Phase 0 implemented and committed
 
-All Phase 0 fixes are implemented on this working tree by four scoped
-workers plus direct fixes, all gates green: workspace `cargo check`,
+All Phase 0 fixes are implemented and committed on feat/org-graph
+(four scoped workers plus direct fixes), all gates green: workspace `cargo check`,
 clippy clean on every touched crate (sdk/cli/db/relay/paperclip/mcp;
 remaining warnings are pre-existing launchpad/llm_gateway), desktop tsc +
 biome + 6513 unit tests, web typecheck + tests, migration-count test
