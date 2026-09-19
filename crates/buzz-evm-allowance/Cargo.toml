@@ -1,0 +1,31 @@
+[package]
+name = "buzz-evm-allowance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Onchain spend-ceiling guard for NIP-ORG budgets — OrgAllowance.sol client (fail-closed)"
+
+[dependencies]
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+hex        = { workspace = true }
+k256       = { workspace = true }
+sha3       = { workspace = true }
+reqwest    = { workspace = true }
+tokio      = { workspace = true, features = ["time"] }
+async-trait = "0.1"
+
+[features]
+default = []
+test-support = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+k256 = { workspace = true }
+hex = { workspace = true }
+
+[[test]]
+name = "anvil"
+required-features = ["test-support"]

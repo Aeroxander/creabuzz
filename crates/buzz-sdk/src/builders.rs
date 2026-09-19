@@ -2347,18 +2347,22 @@ pub fn build_delete_addressable(
     Ok(EventBuilder::new(Kind::Custom(KIND_DELETION as u16), "").tags(tags))
 }
 
-// ─── NIP-ORG: Community org graph (kinds:37010–37012) ─────────────────────
+// ─── NIP-ORG: Community org graph (kinds:37010–37014) ─────────────────────
 //
 //  Public surface:
 //  • `validate_org_envelope`  — Layer A protocol validator (mirrors relay ingest)
 //  • `OrgNodeContent`        — parsed org node content body
 //  • `OrgGrantContent`       — parsed org grant content body
-//  • `OrgBudgetContent`      — parsed org budget content body
+//  • `OrgBudgetContent`      — parsed org budget content body (with optional
+//                              `onchain` spend binding)
 //  • `build_org_node`        — build a kind:37010 event
 //  • `build_org_grant`       — build a kind:37011 event
 //  • `build_org_budget`      — build a kind:37012 event
+//  • `BudgetSpendReceiptContent` / `build_budget_spend_receipt`
+//                            — kind:37014 spend receipt (mirror of an
+//                              onchain allowance spend)
 
-use buzz_core::kind::{KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
+use buzz_core::kind::{KIND_BUDGET_SPEND_RECEIPT, KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
 
 /// Maximum byte length of an org `d` tag value (matches relay constant).
 pub const ORG_D_MAX_LEN: usize = 64;
@@ -2581,6 +2585,24 @@ pub struct BudgetLimits {
     pub tasks: Option<TaskLimits>,
 }
 
+/// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
+///
+/// When present, the spend limit is enforced at the value layer: the harness's
+/// authorized spender calls `OrgAllowance.sol` `spend()` over the key
+/// `(bytes32 subject, address token, uint64 epoch)` before an action
+/// executes. The contract is the ledger; Nostr is the record (NIP-LP rule).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+    /// The budgeted subject's 32-byte pubkey — same value as
+    /// [`OrgBudgetContent::subject`].
+    pub subject: String,
+}
+
 /// Content body of a kind:37012 budget event.
 ///
 /// Serialized with camelCase keys per NIP-ORG (`onExceed`, …).
@@ -2597,6 +2619,9 @@ pub struct OrgBudgetContent {
     pub limits: BudgetLimits,
     /// What happens when limits are exceeded.
     pub on_exceed: OnExceed,
+    /// Optional onchain binding for the spend ceiling (omit when off-chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OnchainBinding>,
 }
 
 fn is_lower_hex_pubkey(value: &str) -> bool {
@@ -2784,6 +2809,72 @@ pub fn build_org_budget(
     validate_org_envelope(&tags, &content_json)?;
 
     Ok(EventBuilder::new(Kind::Custom(KIND_ORG_BUDGET as u16), &content_json).tags(tags))
+}
+
+/// Content body of a kind:37014 budget spend receipt event.
+///
+/// The receipt mirror of a spend settled against an onchain allowance bound to
+/// a kind:37012 budget — the NIP-ORG analogue of NIP-LP's 47005 receipt.
+/// Serialized with camelCase keys per NIP-ORG (`txHash`, …). Advisory: the
+/// contract is the ledger, Nostr the record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetSpendReceiptContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// The budgeted subject's 32-byte pubkey (mirrors the 37012 `subject`).
+    pub subject: String,
+    /// Token address the spend moved (`0x…`).
+    pub token: String,
+    /// Amount spent in `unit`.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`, or the token's smallest unit).
+    pub unit: String,
+    /// Allowance epoch key the spend was settled over (`uint64`).
+    pub epoch: u64,
+    /// Budget window the epoch counter maps to (`"epoch" | "day" | "week" | "month"`).
+    pub window: BudgetWindow,
+    /// Hash of the chain transaction that settled the spend.
+    pub tx_hash: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+}
+
+/// Build a kind:37014 budget spend receipt event.
+///
+/// Tags are:
+/// - `d`: `spend_id` — stable spend id, NIP-33 replacement key
+/// - `p`: the budgeted subject pubkey
+pub fn build_budget_spend_receipt(
+    spend_id: &str,
+    content: &BudgetSpendReceiptContent,
+) -> Result<EventBuilder, SdkError> {
+    if spend_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "budget spend receipt 'spend_id' must not be empty".into(),
+        ));
+    }
+    if spend_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "budget spend receipt 'spend_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    let subject_pk = check_pubkey_hex(&content.subject, "subject")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", spend_id])?, tag(&["p", &subject_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize budget spend receipt content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(
+        Kind::Custom(KIND_BUDGET_SPEND_RECEIPT as u16),
+        &content_json,
+    )
+    .tags(tags))
 }
 
 // ─── NIP-ORG: Contribution records (kind:37013) ──────────────────────────
@@ -5892,6 +5983,7 @@ mod tests {
                 }),
             },
             on_exceed: OnExceed::RequireApproval,
+            onchain: None,
         }
     }
 
@@ -5935,6 +6027,56 @@ mod tests {
         let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
         assert_eq!(parsed.window, BudgetWindow::Epoch);
         assert_eq!(parsed.limits.runs, Some(50));
+    }
+
+    #[test]
+    fn budget_spend_receipt_builds_valid_event() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 2500,
+            unit: "usd-cents".into(),
+            epoch: 7,
+            window: BudgetWindow::Week,
+            tx_hash: "0xdeadbeef".into(),
+            contract: "0xabc".into(),
+        };
+        let builder = build_budget_spend_receipt("spend-1", &content).unwrap();
+        let keys = Keys::generate();
+        let event = builder.sign_with_keys(&keys).unwrap();
+        assert_eq!(event.kind.as_u16() as u32, KIND_BUDGET_SPEND_RECEIPT);
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["d", "spend-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["p", &"c".repeat(64)]));
+        let parsed: BudgetSpendReceiptContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
+        // camelCase wire key for the tx hash.
+        let json: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert!(json.get("txHash").is_some());
+        assert!(json.get("tx_hash").is_none());
+    }
+
+    #[test]
+    fn budget_spend_receipt_rejects_empty_id() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 1,
+            unit: "usd-cents".into(),
+            epoch: 0,
+            window: BudgetWindow::Day,
+            tx_hash: "0x1".into(),
+            contract: "0xabc".into(),
+        };
+        let err = build_budget_spend_receipt("", &content).unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
     }
 
     #[test]
@@ -6583,6 +6725,31 @@ mod tests {
             Some(&serde_json::Value::String("require-approval".into()))
         );
         assert!(json.get("on_exceed").is_none());
+        // An absent onchain binding is skipped entirely (camelCase contract).
+        assert!(json.get("onchain").is_none());
+
+        // A present onchain binding serializes as the flat camelCase object.
+        let mut bound = sample_budget_content();
+        bound.onchain = Some(OnchainBinding {
+            chain: "anvil-31337".into(),
+            contract: "0xabc".into(),
+            subject: "b".repeat(64),
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("contract"),
+            Some(&serde_json::Value::String("0xabc".into()))
+        );
+        assert_eq!(
+            onchain.get("subject"),
+            Some(&serde_json::Value::String("b".repeat(64)))
+        );
+        assert!(onchain.get("subject_pubkey").is_none());
     }
 
     // ── Contribution record (37013) tests ──────────────────────────────────

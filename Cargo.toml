@@ -32,6 +32,7 @@ members = [
     "crates/buzz-backend-kubernetes",
     "crates/buzz-datastore-tracing",
     "crates/buzz-evm-auth",
+    "crates/buzz-evm-allowance",
     "crates/buzz-fleet-worker",
     "crates/buzz-paperclip",
     "crates/buzz-community-mcp",
@@ -154,6 +155,7 @@ buzz-audit = { path = "crates/buzz-audit" }
 buzz-workflow = { path = "crates/buzz-workflow" }
 buzz-media = { path = "crates/buzz-media" }
 buzz-sdk = { path = "crates/buzz-sdk" }
+buzz-evm-allowance = { path = "crates/buzz-evm-allowance" }
 buzz-ws-client = { path = "crates/buzz-ws-client" }
 buzz-relay-mesh = { path = "crates/buzz-relay-mesh" }
 buzz-datastore-tracing = { path = "crates/buzz-datastore-tracing" }

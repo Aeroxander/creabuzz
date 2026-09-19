@@ -1,14 +1,22 @@
-//! `buzz org` commands — NIP-ORG kinds:37010–37013 read/write path.
+//! `buzz org` commands — NIP-ORG kinds:37010–37014 read/write path.
 //!
 //! The org graph is the coordination layer: roles, delegations, budgets,
 //! and contribution records. Every mutation is a signed, community-level
 //! Nostr event on the relay's hash-chain audit log.
+//!
+//! The `allowance` subcommands are the onchain value layer: the spend
+//! ceiling of a kind:37012 budget with an `onchain` binding is enforced
+//! against `OrgAllowance.sol` at the point where an agent would spend
+//! (see `crates/buzz-evm-allowance`). Opt-in via `BUZZ_EVM_*` env; with it
+//! unset, every other org command behaves exactly as before.
 
 use buzz_core::kind::{KIND_CONTRIBUTION_RECORD, KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
+use buzz_evm_allowance::{AllowanceClient, AllowanceDecision, AllowanceError, Window};
 use buzz_sdk::{
-    build_delete_addressable, BudgetLimits, BudgetWindow, ContributionRecordContent, HumanVsAi,
-    OnExceed, OrgBudgetContent, OrgGrantContent, OrgNodeContent, OrgNodeKind, OrgScope,
-    ReviewStatus, SpendLimit, TaskLimits, ORG_D_MAX_LEN,
+    build_budget_spend_receipt, build_delete_addressable, BudgetLimits, BudgetSpendReceiptContent,
+    BudgetWindow, ContributionRecordContent, HumanVsAi, OnExceed, OrgBudgetContent,
+    OrgGrantContent, OrgNodeContent, OrgNodeKind, OrgScope, ReviewStatus, SpendLimit, TaskLimits,
+    ORG_D_MAX_LEN,
 };
 use nostr::{Event, Timestamp};
 
@@ -382,6 +390,9 @@ async fn cmd_budget_create(
         window: budget_window,
         limits: BudgetLimits { spend, runs, tasks },
         on_exceed: OnExceed::RequireApproval,
+        // No CLI flag yet for the onchain spend binding — budgets created via
+        // the CLI stay off-chain until a dedicated flag lands.
+        onchain: None,
     };
 
     let builder = buzz_sdk::build_org_budget(subject_id, &content)
@@ -550,6 +561,201 @@ async fn cmd_contribution_list(client: &BuzzClient, limit: Option<u32>) -> Resul
 
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
+// ── Onchain allowance commands (OrgAllowance.sol) ──────────────────────────
+
+/// Environment variable carrying the EVM node URL the guard talks to.
+const ENV_EVM_RPC_URL: &str = "BUZZ_EVM_RPC_URL";
+/// Environment variable carrying the deployed OrgAllowance contract address.
+const ENV_ALLOWANCE_CONTRACT: &str = "BUZZ_ALLOWANCE_CONTRACT";
+/// Environment variable carrying the authorized spender EVM key.
+const ENV_SPENDER_KEY: &str = "BUZZ_SPENDER_KEY";
+
+fn parse_allowance_amount(amount: &str) -> Result<u128, CliError> {
+    amount
+        .trim()
+        .parse::<u128>()
+        .map_err(|_| CliError::Usage(format!("amount must be a decimal integer: {amount:?}")))
+}
+
+fn parse_allowance_window(window: &str) -> Result<Window, CliError> {
+    window
+        .parse::<Window>()
+        .map_err(|e| CliError::Usage(e.to_string()))
+}
+
+/// Build the guard from the opt-in environment. Returns a usage error that
+/// documents the seam when the binding is unset — the default (unset)
+/// behavior of every other command is unchanged.
+fn allowance_client(rpc_url: &str, contract: &str) -> Result<AllowanceClient, CliError> {
+    AllowanceClient::new(rpc_url, contract)
+        .map_err(|e| CliError::Usage(format!("invalid allowance configuration: {e}")))
+}
+
+/// `buzz org allowance check` — read-only onchain spend-ceiling check.
+///
+/// Local-only: needs no relay connection and no Nostr key. Fails closed:
+/// any guard error is a non-zero exit, never an allowance.
+pub async fn cmd_allowance_check(
+    subject: &str,
+    token: &str,
+    amount: &str,
+    window: &str,
+) -> Result<(), CliError> {
+    let amount = parse_allowance_amount(amount)?;
+    let window = parse_allowance_window(window)?;
+    let rpc_url = std::env::var(ENV_EVM_RPC_URL)
+        .ok()
+        .filter(|v| !v.is_empty());
+    let contract = std::env::var(ENV_ALLOWANCE_CONTRACT)
+        .ok()
+        .filter(|v| !v.is_empty());
+    let (Some(rpc_url), Some(contract)) = (rpc_url, contract) else {
+        return Err(CliError::Usage(format!(
+            "onchain allowance enforcement is opt-in: set {ENV_EVM_RPC_URL} and \
+             {ENV_ALLOWANCE_CONTRACT} to enable it"
+        )));
+    };
+    let client = allowance_client(&rpc_url, &contract)?;
+    let decision = client.check(subject, token, amount, window).await;
+    match decision {
+        AllowanceDecision::Allowed { remaining_after } => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "decision": "allowed",
+                    "remainingAfter": remaining_after.to_string(),
+                    "window": window.as_str(),
+                    "contract": client.contract_hex(),
+                })
+            );
+            Ok(())
+        }
+        AllowanceDecision::Exceeded { remaining } => Err(CliError::Other(format!(
+            "spend exceeds the onchain allowance: remaining {} (window {})",
+            remaining, window
+        ))),
+        AllowanceDecision::Denied { reason } => Err(CliError::Other(format!(
+            "allowance check failed closed (deny): {reason}"
+        ))),
+    }
+}
+
+/// `buzz org allowance spend` — settle a spend onchain from the authorized
+/// spender key, then mirror a kind:37014 Budget Spend Receipt to the relay.
+///
+/// The receipt is published only after the spend transaction mined
+/// successfully; a failed or unconfirmed spend publishes nothing.
+async fn cmd_allowance_spend(
+    client: &BuzzClient,
+    subject: &str,
+    token: &str,
+    amount: &str,
+    window: &str,
+    unit: &str,
+) -> Result<(), CliError> {
+    let amount = parse_allowance_amount(amount)?;
+    let window = parse_allowance_window(window)?;
+    let budget_window: BudgetWindow = window
+        .as_str()
+        .parse()
+        .map_err(|e| CliError::Usage(format!("{e}")))?;
+
+    let rpc_url = std::env::var(ENV_EVM_RPC_URL)
+        .ok()
+        .filter(|v| !v.is_empty());
+    let contract = std::env::var(ENV_ALLOWANCE_CONTRACT)
+        .ok()
+        .filter(|v| !v.is_empty());
+    let spender_key = std::env::var(ENV_SPENDER_KEY)
+        .ok()
+        .filter(|v| !v.is_empty());
+    let (Some(rpc_url), Some(contract), Some(spender_key)) = (rpc_url, contract, spender_key)
+    else {
+        return Err(CliError::Usage(format!(
+            "onchain allowance enforcement is opt-in: set {ENV_EVM_RPC_URL}, \
+             {ENV_ALLOWANCE_CONTRACT} and {ENV_SPENDER_KEY} to enable it"
+        )));
+    };
+
+    let guard = allowance_client(&rpc_url, &contract)?
+        .with_spender_key(&spender_key)
+        .map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY}: {e}")))?;
+
+    // Fail closed before broadcasting: a denied or exceeded check never
+    // reaches the chain.
+    if let AllowanceDecision::Exceeded { remaining } =
+        guard.check(subject, token, amount, window).await
+    {
+        return Err(CliError::Other(format!(
+            "spend exceeds the onchain allowance: remaining {remaining} (window {})",
+            window
+        )));
+    }
+
+    let receipt = guard
+        .record_spend(subject, token, amount, window)
+        .await
+        .map_err(|e: AllowanceError| match e {
+            AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
+                "the contract refused the spend at simulation; nothing was broadcast: {detail}"
+            )),
+            AllowanceError::SpendReverted { tx_hash } => CliError::Other(format!(
+                "spend transaction {tx_hash} reverted onchain; nothing was spent"
+            )),
+            AllowanceError::SpendUnconfirmed { tx_hash, .. } => CliError::Other(format!(
+                "spend transaction {tx_hash} not confirmed in time; \
+                 treat the spend as unsettled and re-check before retrying"
+            )),
+            other => CliError::Other(format!("spend failed closed: {other}")),
+        })?;
+
+    // Receipt mirror — kind:37014, published only after a settled spend.
+    // The d tag (NIP-33 replacement key) is the tx hash: one receipt per
+    // onchain spend, idempotent under republication.
+    let spend_id = receipt
+        .tx_hash
+        .trim_start_matches("0x")
+        .to_ascii_lowercase();
+    if spend_id.len() > ORG_D_MAX_LEN {
+        return Err(CliError::Other(format!(
+            "tx hash exceeds the {}-byte d-tag cap",
+            ORG_D_MAX_LEN
+        )));
+    }
+    let content = BudgetSpendReceiptContent {
+        v: 1,
+        subject: subject.to_ascii_lowercase(),
+        token: token.to_ascii_lowercase(),
+        amount: u64::try_from(amount).map_err(|_| {
+            CliError::Other("amount exceeds u64 and cannot be mirrored to a receipt".into())
+        })?,
+        unit: unit.to_string(),
+        epoch: window.epoch_now(),
+        window: budget_window,
+        tx_hash: receipt.tx_hash.clone(),
+        contract: guard.contract_hex(),
+    };
+    let builder = build_budget_spend_receipt(&spend_id, &content)
+        .map_err(|e| CliError::Usage(e.to_string()))?;
+    let event = client.sign_event(builder)?;
+    let response = client.submit_event(event).await?;
+    parse_write_response(&response, "spend receipt was dominated; retry")?;
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "ok",
+            "txHash": receipt.tx_hash,
+            "receipt": { "kind": 37014, "d": spend_id },
+            "amount": amount.to_string(),
+            "unit": unit,
+            "window": window.as_str(),
+            "contract": guard.contract_hex(),
+        })
+    );
+    Ok(())
+}
+
 pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), CliError> {
     use crate::OrgCmd;
     match cmd {
@@ -653,6 +859,18 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
             }
             crate::OrgContributionCmd::Get { id } => cmd_contribution_get(client, &id).await,
             crate::OrgContributionCmd::List { limit } => cmd_contribution_list(client, limit).await,
+        },
+        // `Allowance(Check)` is intercepted in `run()` before the relay
+        // connection (local-only EVM read); only Spend reaches dispatch.
+        OrgCmd::Allowance(sub) => match sub {
+            crate::OrgAllowanceCmd::Check { .. } => unreachable!("handled before dispatch"),
+            crate::OrgAllowanceCmd::Spend {
+                subject,
+                token,
+                amount,
+                window,
+                unit,
+            } => cmd_allowance_spend(client, &subject, &token, &amount, &window, &unit).await,
         },
     }
 }

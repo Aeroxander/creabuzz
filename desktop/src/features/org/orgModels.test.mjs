@@ -137,7 +137,53 @@ describe("eventToOrgBudget", () => {
     assert.equal(budget.limits.runs, 100);
     assert.equal(budget.limits.spend.amount, 5000);
     assert.equal(budget.onExceed, "require-approval");
+    assert.equal(budget.onchain, undefined);
     assert.equal(budget.revoked, false);
+  });
+
+  it("reads a well-formed onchain spend binding", () => {
+    const budget = eventToOrgBudget(
+      orgEvent(37012, "b1", {
+        v: 1,
+        subject: BOB,
+        window: "week",
+        limits: { spend: { amount: 2500, unit: "usd-cents" } },
+        onExceed: "require-approval",
+        onchain: {
+          chain: "anvil-31337",
+          contract: "0xabc",
+          subject: BOB,
+        },
+      }),
+    );
+    assert.deepEqual(budget.onchain, {
+      chain: "anvil-31337",
+      contract: "0xabc",
+      subject: BOB,
+    });
+  });
+
+  it("treats a malformed onchain binding as absent", () => {
+    for (const onchain of [
+      "not-an-object",
+      [],
+      {},
+      { chain: "eip155:8453" },
+      { chain: "eip155:8453", contract: "0xabc" },
+      { chain: "", contract: "0xabc", subject: BOB },
+    ]) {
+      const budget = eventToOrgBudget(
+        orgEvent(37012, "b1", {
+          v: 1,
+          subject: BOB,
+          window: "day",
+          limits: {},
+          onExceed: "require-approval",
+          onchain,
+        }),
+      );
+      assert.equal(budget.onchain, undefined, `onchain: ${JSON.stringify(onchain)}`);
+    }
   });
 
   it("marks kind:5 tombstones revoked", () => {

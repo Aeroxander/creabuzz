@@ -99,6 +99,18 @@ together in a DAO" — with the onchain step strictly opt-in.
 
 ## The kinds
 
+| Kind | Name | Shape | Purpose |
+|------|------|-------|---------|
+| `37010` | Org node | parameterized replaceable, `d` = node id | role/team/agent seat in the org chart |
+| `37011` | Org grant | parameterized replaceable, `d` = grant id | scoped, revocable delegation of authority |
+| `37012` | Budget | parameterized replaceable, `d` = subject id | bound on autonomous action (spend/runs/tasks) |
+| `37013` | Contribution record | parameterized replaceable, `d` = action id | verified contribution profile for credit settlement |
+| `37014` | Budget spend receipt | parameterized replaceable, `d` = spend id | Nostr mirror of a spend settled against an onchain allowance |
+
+All five are community-level, global-only records: addressed by
+`(pubkey, kind, d)`, stored with no channel association, and never
+channel-scoped by a stray `h`.
+
 ### `37010` — Org Node (addressable, community-level)
 
 A node in the org graph. Addressed by `(author-pubkey, 37010, d)` where `d`
@@ -189,6 +201,11 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
     "runs": 50,
     "tasks": { "create": 20, "approve": 0 }
   },
+  "onchain": {
+    "chain": "eip155:8453",
+    "contract": "0x...",
+    "subject": "<the agent's 32-byte pubkey, same value as content.subject>"
+  },
   "onExceed": "require-approval"
 }
 ```
@@ -207,11 +224,87 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
   harness's signing path, or onchain allowances for a bound DAO). A budget a
   surface cannot observe is advisory and MUST be rendered as such.
 
+### Onchain spend bindings
+
+A budget's SPEND ceiling MAY declare an optional `onchain` binding:
+
+- `chain` — `eip155:<chainId>` (EIP-155 chain id), or the literal
+  `"anvil-31337"` in local dev.
+- `contract` — the deployed allowance contract address (`0x…`;
+  `OrgAllowance.sol`).
+- `subject` — the budgeted agent's 32-byte pubkey. It MUST equal the budget's
+  `content.subject`; the contract keys allowances over
+  `(bytes32 subject, address token, uint64 epoch)`.
+
+A budget without `onchain` is enforced where the surface can observe it, or
+is advisory. A budget **with** `onchain` is enforced at the value layer: the
+harness's authorized spender calls the contract's `spend()` over the key
+above **before** the action executes, so the contract rejects any spend over
+the epoch allowance. The contract is the ledger; Nostr is the record —
+NIP-LP's rule, applied here unchanged. Each settled spend is mirrored as a
+kind:37014 receipt (below); the receipt is advisory and the chain is
+authoritative, so clients MUST cross-check the contract before acting on
+money.
+
+**Epoch mapping.** The contract's `uint64 epoch` key maps to the budget
+`window`:
+
+| `window` | Epoch counter |
+|----------|---------------|
+| `day` | `unix_time / 86400` |
+| `week` | `unix_time / 604800` |
+| `month` | `unix_time / 2592000` |
+| `epoch` | the governance epoch counter — the DAO-bound upgrade; there is no time-derived formula |
+
+The dev windows are deterministic so an off-chain client can compute the
+same allowance slot the contract checks. The `epoch` window is deliberately
+not time-derived: a governance epoch begins when the bound DAO (NIP-LP)
+upgrades it, and only the DAO's own decision procedure defines its boundary.
+
+### `37014` — Budget Spend Receipt (addressable, community-level)
+
+The receipt mirror of an onchain spend: each successful `spend()` against an
+allowance bound to a kind:37012 budget is published as one `37014`. It is
+the NIP-ORG analogue of NIP-LP's `47005` chain-state receipt. Addressed by
+`(author, 37014, d)` where `d` is the spend id. Community-level and
+global-only, exactly like `37010`–`37013`: no channel association, and a
+stray `h` never channel-scopes it.
+
+```json
+{
+  "v": 1,
+  "subject": "<the agent's 32-byte pubkey, same value as the 37012 subject>",
+  "token": "0x...",
+  "amount": 2500,
+  "unit": "usd-cents",
+  "epoch": 7,
+  "window": "week",
+  "txHash": "0x...",
+  "contract": "0x..."
+}
+```
+
+- `subject`, `token`, `epoch` reproduce the contract's allowance key;
+  `txHash` names the chain transaction that settled the spend (the analogue
+  of NIP-LP's rule that every receipt names its `tx`), and `contract` names
+  the ledger it settled on. `window` records which budget window the `epoch`
+  counter maps to.
+- Tags: `["d", <spend-id>]` (required, exactly one) and
+  `["p", <subject-pubkey>]` (the budgeted agent).
+- **Advisory.** The contract is the ledger; Nostr is the record. A client
+  MUST verify the `txHash` against the chain before treating a spend as
+  settled. Receipts are ordinary member writes — the relay validates only
+  the shared org envelope and never re-derives the spend from the chain.
+- Replacement follows NIP-33: a newer `37014` for the same
+  `(author, d)` supersedes, so a corrected receipt (e.g. a re-mirrored
+  `txHash`) replaces the stale one without deleting the audit trail — the
+  superseded event remains on the relay's hash-chain audit log.
+
 ## Relay behavior
 
-- Relay ingest validates envelope shape for `37010`–`37012` exactly as it
+- Relay ingest validates envelope shape for `37010`–`37014` exactly as it
   does for other structured records (JSON-object content, tag caps, bounded
-  `d`), and registers the kinds in `crates/buzz-core/src/kind.rs`. The three
+  `d`), and registers the kinds in `crates/buzz-core/src/kind.rs`. The five
   are **global-only**: like projects and launch records they are addressed by
   `(pubkey, kind, d)` and a stray `h` never channel-scopes them.
 - **Grant-chain verification is opt-in and scoped.** The relay validates
@@ -220,7 +313,8 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
   **not** rewrite authorship. A relay that does not enforce grants simply
   stores and forwards them; clients can still verify chains locally.
 - Reads request explicit `kinds`
-  (`{kinds: [37010, 37011, 37012]}`, or the single kind a surface needs); the
+  (`{kinds: [37010, 37011, 37012, 37013, 37014]}`, or the single kind a
+  surface needs); the
   relay's p-gate rejects unscoped reads. No channel filter is involved — the
   org is community-level, so the community boundary is the relay host.
 

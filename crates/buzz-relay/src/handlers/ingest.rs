@@ -29,7 +29,8 @@ use buzz_core::kind::{
     KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT,
     KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST,
     KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
-    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_BUDGET_SPEND_RECEIPT,
+    KIND_ORG_BUDGET, KIND_ORG_GRANT,
     KIND_ORG_NODE, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT,
     KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
     KIND_SCORE_ROOT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
@@ -546,7 +547,11 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
         // scopes them to their community via the `h` tag.
-        KIND_ORG_NODE | KIND_ORG_GRANT | KIND_ORG_BUDGET | KIND_CONTRIBUTION_RECORD => Ok(Scope::MessagesWrite),
+        KIND_ORG_NODE
+        | KIND_ORG_GRANT
+        | KIND_ORG_BUDGET
+        | KIND_CONTRIBUTION_RECORD
+        | KIND_BUDGET_SPEND_RECEIPT => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -711,6 +716,7 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_ORG_GRANT
             | KIND_ORG_BUDGET
             | KIND_CONTRIBUTION_RECORD
+            | KIND_BUDGET_SPEND_RECEIPT
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -3194,6 +3200,11 @@ async fn ingest_event_inner(
         // Budget-specific content contract (camelCase keys, `window` enum)
         // and the publication rule: subject agent itself or community owner.
         super::budget_enforcement::validate_budget_publication(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_BUDGET_SPEND_RECEIPT {
+        validate_org_envelope(&event, "budget spend receipt event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
     if kind_u32 == KIND_CONTRIBUTION_RECORD {
@@ -5843,6 +5854,7 @@ mod postgres_tests {
             KIND_ORG_GRANT,
             KIND_ORG_BUDGET,
             KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
         ] {
             assert!(
                 is_parameterized_replaceable(kind),
@@ -5864,6 +5876,7 @@ mod postgres_tests {
             KIND_ORG_GRANT,
             KIND_ORG_BUDGET,
             KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
         ] {
             assert_eq!(
                 required_scope_for_kind(kind, &dummy).unwrap(),
@@ -5911,6 +5924,24 @@ mod postgres_tests {
                 "kind {kind} should accept a valid envelope"
             );
         }
+    }
+
+    #[test]
+    fn org_envelope_accepts_budget_spend_receipt() {
+        // 37014 shares the org envelope (exactly one d tag, JSON-object
+        // content, global-only) and adds a p tag for the budgeted subject.
+        let subject = "e".repeat(64);
+        let ev = make_org_event(
+            KIND_BUDGET_SPEND_RECEIPT,
+            &[&["d", "spend-1"], &["p", subject.as_str()]],
+        );
+        assert!(
+            validate_org_envelope(&ev, "budget spend receipt event").is_ok(),
+            "a well-formed 37014 receipt should pass the shared org envelope"
+        );
+        let missing_d = make_org_event(KIND_BUDGET_SPEND_RECEIPT, &[&["p", subject.as_str()]]);
+        let err = validate_org_envelope(&missing_d, "budget spend receipt event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
     }
 
     #[test]

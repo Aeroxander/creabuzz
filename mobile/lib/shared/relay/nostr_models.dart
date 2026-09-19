@@ -59,6 +59,7 @@ abstract final class EventKind {
   static const orgGrant = 37011;
   static const orgBudget = 37012;
   static const contributionRecord = 37013;
+  static const budgetSpendReceipt = 37014;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [

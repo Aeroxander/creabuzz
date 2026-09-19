@@ -723,6 +723,12 @@ pub const KIND_ORG_BUDGET: u32 = 37012;
 /// Community-level and global-only, no routing tag. See
 /// `docs/nips/NIP-ORG.md`.
 pub const KIND_CONTRIBUTION_RECORD: u32 = 37013;
+/// NIP-ORG: budget spend receipt — the Nostr mirror of a spend settled against
+/// an onchain allowance bound to a kind:37012 budget (parameterized
+/// replaceable, d = spend id). Community-level and global-only, no routing
+/// tag. Advisory: the contract is the ledger, Nostr the record (NIP-LP rule).
+/// See `docs/nips/NIP-ORG.md`.
+pub const KIND_BUDGET_SPEND_RECEIPT: u32 = 37014;
 
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
@@ -867,6 +873,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ORG_GRANT,
     KIND_ORG_BUDGET,
     KIND_CONTRIBUTION_RECORD,
+    KIND_BUDGET_SPEND_RECEIPT,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -972,6 +979,7 @@ const _: () = assert!(is_parameterized_replaceable(KIND_ORG_NODE)); // 37010 ∈
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_GRANT)); // 37011 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_BUDGET)); // 37012 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_CONTRIBUTION_RECORD)); // 37013 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_BUDGET_SPEND_RECEIPT)); // 37014 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

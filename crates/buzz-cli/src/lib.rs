@@ -2269,6 +2269,10 @@ pub enum OrgCmd {
     #[command(subcommand)]
     Budget(OrgBudgetCmd),
 
+    /// Onchain spend-ceiling guard (OrgAllowance.sol) — opt-in via BUZZ_EVM_*
+    #[command(subcommand)]
+    Allowance(OrgAllowanceCmd),
+
     /// Manage contribution records (action verification + credit)
     #[command(subcommand)]
     Contribution(OrgContributionCmd),
@@ -2453,6 +2457,51 @@ pub enum OrgBudgetCmd {
     },
 }
 
+/// Onchain spend-ceiling guard subcommands — OrgAllowance.sol client.
+///
+/// Opt-in: with `BUZZ_EVM_RPC_URL` / `BUZZ_ALLOWANCE_CONTRACT` unset, these
+/// commands fail with a usage error and nothing else in the CLI changes.
+/// `check` is read-only and needs no relay connection; `spend` records the
+/// spend from the authorized spender key (`BUZZ_SPENDER_KEY`) and mirrors a
+/// kind:37014 Budget Spend Receipt to the relay.
+#[derive(Subcommand)]
+pub enum OrgAllowanceCmd {
+    /// Check whether a spend fits the subject's onchain allowance (read-only)
+    Check {
+        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
+        #[arg(long)]
+        subject: String,
+        /// Token contract address (0x…)
+        #[arg(long)]
+        token: String,
+        /// Amount in the token's smallest unit (decimal)
+        #[arg(long)]
+        amount: String,
+        /// Budget window the epoch counter maps to: epoch | day | week | month
+        #[arg(long, default_value = "day")]
+        window: String,
+    },
+    /// Record a spend onchain (as the authorized spender) and publish a
+    /// kind:37014 Budget Spend Receipt
+    Spend {
+        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
+        #[arg(long)]
+        subject: String,
+        /// Token contract address (0x…)
+        #[arg(long)]
+        token: String,
+        /// Amount in the token's smallest unit (decimal)
+        #[arg(long)]
+        amount: String,
+        /// Budget window the epoch counter maps to: epoch | day | week | month
+        #[arg(long, default_value = "day")]
+        window: String,
+        /// Unit identifier recorded in the Nostr receipt
+        #[arg(long, default_value = "usd-cents")]
+        unit: String,
+    },
+}
+
 /// Normalize hand-authored `BUZZ_AUTH_TAG` input to strict JSON.
 ///
 /// `.env` files and shell exports sometimes carry the tag in the unquoted
@@ -2497,6 +2546,19 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             PackCmd::Validate { path } => commands::pack::cmd_validate(path),
             PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
         };
+    }
+
+    // Onchain allowance checks are local-only — no relay connection and no
+    // Nostr key needed (the check is an EVM read). The spend path goes
+    // through the normal dispatch below: it publishes a kind:37014 receipt.
+    if let Cmd::Org(OrgCmd::Allowance(OrgAllowanceCmd::Check {
+        ref subject,
+        ref token,
+        ref amount,
+        ref window,
+    })) = cli.command
+    {
+        return commands::org::cmd_allowance_check(subject, token, amount, window).await;
     }
 
     // Auth: private key is required for all relay operations.

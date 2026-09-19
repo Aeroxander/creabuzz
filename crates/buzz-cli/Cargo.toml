@@ -45,6 +45,9 @@ chrono = { workspace = true }
 buzz-sdk = { workspace = true }
 buzz-core = { workspace = true }
 
+# Onchain spend-ceiling guard (OrgAllowance.sol) — `buzz org allowance`
+buzz-evm-allowance = { workspace = true }
+
 # Base64 encoding — NIP-98 event serialization for Authorization header
 base64 = "0.22"
 

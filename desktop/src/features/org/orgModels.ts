@@ -135,7 +135,44 @@ export type BudgetLimits = {
 
 export type BudgetWindow = "epoch" | "day" | "week" | "month";
 
+/**
+ * Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
+ * `subject` is the budgeted agent's 32-byte pubkey — same value as the
+ * budget's `subject`.
+ */
+export type OnchainBinding = {
+  chain: string;
+  contract: string;
+  subject: string;
+};
+
 export type OnExceed = "require-approval";
+
+/**
+ * Read the optional `onchain` spend-binding object from budget content.
+ * Returns a fully-typed binding only when every required field is a string;
+ * anything malformed is treated as absent.
+ */
+function parseOnchainBinding(value: unknown): OnchainBinding | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const obj = value as Record<string, unknown>;
+  const chain = obj.chain;
+  const contract = obj.contract;
+  const subject = obj.subject;
+  if (
+    typeof chain !== "string" ||
+    typeof contract !== "string" ||
+    typeof subject !== "string" ||
+    !chain ||
+    !contract ||
+    !subject
+  ) {
+    return undefined;
+  }
+  return { chain, contract, subject };
+}
 
 export type OrgBudget = {
   eventId: string;
@@ -144,6 +181,8 @@ export type OrgBudget = {
   window: BudgetWindow;
   limits: BudgetLimits;
   onExceed: OnExceed;
+  /** Present only when the spend ceiling is bound to an onchain allowance. */
+  onchain?: OnchainBinding;
   createdAt: number;
   revoked: boolean;
 };
@@ -166,6 +205,7 @@ export function eventToOrgBudget(event: RelayEvent): OrgBudget {
       content.onExceed === "require-approval"
         ? "require-approval"
         : "require-approval",
+    onchain: parseOnchainBinding(content.onchain),
     createdAt: event.created_at,
     revoked: isRevoked(event, content),
   };
