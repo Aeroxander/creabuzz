@@ -154,12 +154,26 @@ fn main() {
     }
 
     tauri_build::try_build(
-        tauri_build::Attributes::new().plugin(
-            "websocket",
-            tauri_build::InlinedPlugin::new()
-                .commands(&["connect", "send", "disconnect", "disconnect_all"])
-                .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
-        ),
+        tauri_build::Attributes::new()
+            .plugin(
+                "websocket",
+                tauri_build::InlinedPlugin::new()
+                    .commands(&["connect", "send", "disconnect", "disconnect_all"])
+                    .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
+            )
+            .plugin(
+                "nip07",
+                // The Paperclip window's NIP-07 signer (`paperclip_window.rs`).
+                // A plugin rather than plain app commands because the Paperclip
+                // webview loads a remote URL, and Tauri's ACL resolves remote IPC
+                // strictly: with no app manifest every remote invoke is refused
+                // ("Plugin not found"), while local windows keep working. Granting
+                // through the plugin lets `capabilities/paperclip-nip07.json`
+                // scope exactly these two commands to the managed loopback origin.
+                tauri_build::InlinedPlugin::new()
+                    .commands(&["nip07_public_key", "nip07_sign_event"])
+                    .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
+            ),
     )
     .expect("failed to build Tauri application");
 }

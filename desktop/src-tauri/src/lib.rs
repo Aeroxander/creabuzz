@@ -198,6 +198,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(native_websocket::init())
+        .plugin(nip07_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init());
 
@@ -828,6 +829,13 @@ pub fn run() {
             list_audio_output_devices,
             set_audio_output_device,
             get_audio_output_device,
+            paperclip_status,
+            start_paperclip,
+            stop_paperclip,
+            open_paperclip_window,
+            set_paperclip_window_bounds,
+            paperclip_window_is_docked,
+            close_paperclip_window,
             start_pairing,
             start_identity_recovery_pairing,
             confirm_pairing_sas,

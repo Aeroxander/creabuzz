@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and trusted huddle companions",
+  "description": "Capability for the main window and trusted huddle companions. Local IPC only; the Paperclip window's signer has its own capability (paperclip-nip07) that scopes remote IPC to the managed loopback instance.",
   "windows": ["main", "huddle-*"],
   "permissions": [
     "core:default",

@@ -9,7 +9,6 @@ pub(crate) use agent_env::{
     baked_build_env, build_buzz_agent_provider_defaults, discovery_env_with_baked_floor,
 };
 mod agent_description;
-pub(crate) use agent_description::{effective_agent_description, record_effective_description};
 mod backend;
 pub(crate) mod bestie_assignment;
 pub(crate) mod claude_config;
@@ -49,6 +48,11 @@ pub(crate) use team_repair::team_persona_key;
 mod teams;
 mod types;
 
+// Paperclip integration
+pub(crate) mod paperclip_env;
+pub(crate) mod paperclip_http;
+pub(crate) mod paperclip_manager;
+
 // Shared lock for tests that call `lock_path_mutex` or `lock_env_mutex`.
 // Both helpers delegate here so any two tests using either helper are mutually
 // exclusive with each other. Tests in other modules that maintain their own
@@ -72,6 +76,7 @@ pub(crate) fn lock_env_mutex() -> std::sync::MutexGuard<'static, ()> {
     PROCESS_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+pub(crate) use agent_description::{effective_agent_description, record_effective_description};
 pub use backend::*;
 pub(crate) use definition_validation::{
     validate_agent_definition_text, validate_agent_description_text,
