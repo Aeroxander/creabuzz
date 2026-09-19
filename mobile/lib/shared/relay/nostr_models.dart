@@ -41,12 +41,24 @@ abstract final class EventKind {
   static const jobResult = 43004;
   static const jobCancel = 43005;
   static const jobError = 43006;
+  static const agentCapabilities = 44010;
+  static const agentTask = 44011;
+  static const agentTurnMetric = 44200;
+  static const workflowTriggered = 46001;
+  static const workflowCompleted = 46005;
+  static const workflowFailed = 46006;
   static const forumPost = 45001;
   static const forumComment = 45003;
   static const huddleStarted = 48100;
   static const huddleParticipantJoined = 48101;
   static const huddleParticipantLeft = 48102;
   static const huddleEnded = 48103;
+
+  /// NIP-ORG: community org graph (addressable, d = id, h = community).
+  static const orgNode = 37010;
+  static const orgGrant = 37011;
+  static const orgBudget = 37012;
+  static const contributionRecord = 37013;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [
