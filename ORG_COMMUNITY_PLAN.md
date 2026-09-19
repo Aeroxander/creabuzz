@@ -255,7 +255,38 @@ explicitly before merge:
 
 ---
 
-## Definition of done
+## Phase 7 — The value layer (onchain spend enforcement)
+
+> Status: implemented and verified against a live local anvil — see the
+> commits below and the honest not-wired list in the PR description.
+
+The audit found one thing stored on Nostr that needs onchain teeth:
+kind-37012 **spend ceilings** are recorded but enforced nowhere (runs and
+task counters are enforced at the relay; NIP-ORG explicitly assigns spend to
+"where value actually moves"). Dev target: a local anvil chain
+(`contracts/foundry.toml` already pins `http://127.0.0.1:8545`).
+
+The split, per NIP-LP's rule ("the chain is the ledger; Nostr is the
+record"): the kind-37012 budget stays the coordination record; a minimal
+`OrgAllowance.sol` contract is the enforcement ledger; a kind-37014 Budget
+Spend Receipt mirrors each onchain spend back as an event.
+
+Fixed data contract:
+- `37012` content gains optional
+  `"onchain": { "chain", "contract", "subject" }` (subject = the 32-byte
+  agent pubkey as bytes32 — no keccak).
+- Allowance key = `(bytes32 subject, address token, uint64 epoch)`;
+  dev epoch mapping: day = unix/86400, week = unix/604800,
+  month = unix/2592000.
+- Harness checks onchain allowance before a spend action executes
+  (fail-closed), records the spend as the authorized spender, and publishes
+  the `37014` receipt. Opt-in via env config; unset = today's behavior.
+- Deliberate dev simplification: the contract is the ledger; token custody
+  stays with the treasury EOA. The DAO-bound upgrade replaces the owner
+  with DAO governance (NIP-ORG onchain section) and moves custody onchain.
+
+---
+
 
 An operator opens a community and, without leaving Buzz: sees the org as a
 chart of roles and seats; sees what needs them; approves or denies with
