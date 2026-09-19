@@ -66,6 +66,12 @@ export const KIND_TEAM_CATALOG = 30178;
 export const KIND_USER_STATUS = 30315;
 export const KIND_AGENT_OBSERVER_FRAME = 24200;
 export const KIND_AGENT_TURN_METRIC = 44200;
+// Agent fleet cooperation plane (mirror of buzz-core 44010–44019).
+export const KIND_AGENT_CAPABILITIES = 44010;
+export const KIND_AGENT_TASK = 44011;
+export const KIND_WORKFLOW_TRIGGERED = 46001;
+export const KIND_WORKFLOW_COMPLETED = 46005;
+export const KIND_WORKFLOW_FAILED = 46006;
 export const KIND_EVENT_REMINDER = 30300;
 export const KIND_REPO_ANNOUNCEMENT = 30617;
 export const KIND_REPO_STATE = 30618;
@@ -78,6 +84,17 @@ export const KIND_LAUNCH_UPDATE = 47003;
 export const KIND_LAUNCH_PROPOSAL = 47004;
 export const KIND_LAUNCH_RECEIPT = 47005;
 export const KIND_SCORE_ROOT = 37006;
+// NIP-ORG: community org graph (addressable, d = id, h = community).
+export const KIND_ORG_NODE = 37010;
+export const KIND_ORG_GRANT = 37011;
+export const KIND_ORG_BUDGET = 37012;
+export const KIND_CONTRIBUTION_RECORD = 37013;
+export const ORG_EVENT_KINDS = [
+  KIND_ORG_NODE,
+  KIND_ORG_GRANT,
+  KIND_ORG_BUDGET,
+  KIND_CONTRIBUTION_RECORD,
+] as const;
 export const LAUNCHPAD_EVENT_KINDS = [
   KIND_LAUNCH_RECORD,
   KIND_LAUNCH_BID,

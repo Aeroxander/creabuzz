@@ -13,6 +13,8 @@ export const routes = rootRoute("root.tsx", [
   route("/launchpad", "launchpad.tsx"),
   route("/launchpad/$launchId", "launchpad.$launchId.tsx"),
   route("/messages/new", "messages.new.tsx"),
+  route("/paperclip", "paperclip.tsx"),
+  route("/org", "org.tsx"),
   route("/channels/$channelId", "channels.$channelId.tsx"),
   route(
     "/channels/$channelId/posts/$postId",

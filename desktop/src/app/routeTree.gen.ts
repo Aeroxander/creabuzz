@@ -10,6 +10,8 @@ import { Route as settingsRouteImport } from "./routes/settings";
 import { Route as remindersRouteImport } from "./routes/reminders";
 import { Route as pulseRouteImport } from "./routes/pulse";
 import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as paperclipRouteImport } from "./routes/paperclip";
+import { Route as orgRouteImport } from "./routes/org";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as agentsRouteImport } from "./routes/agents";
 import { Route as indexRouteImport } from "./routes/index";
@@ -43,6 +45,16 @@ const pulseRoute = pulseRouteImport.update({
 const projectsRoute = projectsRouteImport.update({
   id: "/projects",
   path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const paperclipRoute = paperclipRouteImport.update({
+  id: "/paperclip",
+  path: "/paperclip",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgRoute = orgRouteImport.update({
+  id: "/org",
+  path: "/org",
   getParentRoute: () => rootRouteImport,
 } as any);
 const launchpadRoute = launchpadRouteImport.update({
@@ -96,6 +108,8 @@ export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
   "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
+  "/paperclip": typeof paperclipRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -112,6 +126,8 @@ export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
   "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
+  "/paperclip": typeof paperclipRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -129,6 +145,8 @@ export interface FileRoutesById {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
   "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
+  "/paperclip": typeof paperclipRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -147,6 +165,8 @@ export interface FileRouteTypes {
     | "/"
     | "/agents"
     | "/launchpad"
+    | "/org"
+    | "/paperclip"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -163,6 +183,8 @@ export interface FileRouteTypes {
     | "/"
     | "/agents"
     | "/launchpad"
+    | "/org"
+    | "/paperclip"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -179,6 +201,8 @@ export interface FileRouteTypes {
     | "/"
     | "/agents"
     | "/launchpad"
+    | "/org"
+    | "/paperclip"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -196,6 +220,8 @@ export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   agentsRoute: typeof agentsRoute;
   launchpadRoute: typeof launchpadRoute;
+  orgRoute: typeof orgRoute;
+  paperclipRoute: typeof paperclipRoute;
   projectsRoute: typeof projectsRoute;
   pulseRoute: typeof pulseRoute;
   remindersRoute: typeof remindersRoute;
@@ -244,6 +270,20 @@ declare module "@tanstack/react-router" {
       path: "/projects";
       fullPath: "/projects";
       preLoaderRoute: typeof projectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/paperclip": {
+      id: "/paperclip";
+      path: "/paperclip";
+      fullPath: "/paperclip";
+      preLoaderRoute: typeof paperclipRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org": {
+      id: "/org";
+      path: "/org";
+      fullPath: "/org";
+      preLoaderRoute: typeof orgRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/launchpad": {
@@ -316,6 +356,8 @@ const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   agentsRoute: agentsRoute,
   launchpadRoute: launchpadRoute,
+  orgRoute: orgRoute,
+  paperclipRoute: paperclipRoute,
   projectsRoute: projectsRoute,
   pulseRoute: pulseRoute,
   remindersRoute: remindersRoute,

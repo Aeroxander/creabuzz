@@ -46,7 +46,9 @@ export type AppSidebarProps = {
     | "workflows"
     | "pulse"
     | "projects"
-    | "launchpad";
+    | "launchpad"
+    | "paperclip"
+    | "org";
   unreadChannelCounts: ReadonlyMap<string, number>;
   unreadChannelIds: ReadonlySet<string>;
   highPriorityUnreadChannelIds: ReadonlySet<string>;
@@ -91,6 +93,8 @@ export type AppSidebarProps = {
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   onSelectHome: () => void;
+  onSelectPaperclip: () => void;
+  onSelectOrg: () => void;
   onSelectChannel: (channelId: string) => void;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
   /** Full channel set for global search, including channels outside the joined sidebar list. */

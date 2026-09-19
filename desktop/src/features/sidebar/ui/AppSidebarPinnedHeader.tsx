@@ -1,4 +1,13 @@
-import { Activity, Bot, Folders, Inbox, Rocket, Zap } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Folders,
+  Inbox,
+  Rocket,
+  Zap,
+  Paperclip,
+  Network,
+} from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
@@ -22,7 +31,9 @@ type SidebarSelectedView =
   | "workflows"
   | "pulse"
   | "projects"
-  | "launchpad";
+  | "launchpad"
+  | "paperclip"
+  | "org";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -45,9 +56,11 @@ type AppSidebarPrimaryMenuProps = {
   onSelectAgents: () => void;
   onSelectHome: () => void;
   onSelectLaunchpad: () => void;
+  onSelectOrg: () => void;
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
+  onSelectPaperclip: () => void;
   projectsOverviewActive: boolean;
   selectedView: SidebarSelectedView;
 };
@@ -96,9 +109,11 @@ export function AppSidebarPrimaryMenu({
   onSelectAgents,
   onSelectHome,
   onSelectLaunchpad,
+  onSelectOrg,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
+  onSelectPaperclip,
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
@@ -200,6 +215,32 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-current={selectedView === "paperclip" ? "page" : undefined}
+              data-testid="open-paperclip-view"
+              isActive={selectedView === "paperclip"}
+              onClick={onSelectPaperclip}
+              tooltip="Paperclip"
+              type="button"
+            >
+              <Paperclip className="h-4 w-4" />
+              <SidebarMenuLabel>Paperclip</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-current={selectedView === "org" ? "page" : undefined}
+              data-testid="open-org-view"
+              isActive={selectedView === "org"}
+              onClick={onSelectOrg}
+              tooltip="Org"
+              type="button"
+            >
+              <Network className="h-4 w-4" />
+              <SidebarMenuLabel>Org</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarProjectsSection />

@@ -10,7 +10,9 @@ export type AppView =
   | "workflows"
   | "pulse"
   | "projects"
-  | "launchpad";
+  | "launchpad"
+  | "paperclip"
+  | "org";
 
 const WINDOW_DRAG_HANDLE_HEIGHT = 44;
 const TAURI_DRAG_REGION_ATTR = "data-tauri-drag-region";
@@ -234,6 +236,13 @@ export function deriveShellRoute(pathname: string): {
     };
   }
 
+  if (pathname === "/paperclip") {
+    return {
+      selectedChannelId: null,
+      selectedView: "paperclip",
+    };
+  }
+
   if (pathname === "/agents") {
     return {
       selectedChannelId: null,
@@ -266,6 +275,13 @@ export function deriveShellRoute(pathname: string): {
     return {
       selectedChannelId: null,
       selectedView: "launchpad",
+    };
+  }
+
+  if (pathname === "/org") {
+    return {
+      selectedChannelId: null,
+      selectedView: "org",
     };
   }
 

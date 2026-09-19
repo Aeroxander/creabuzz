@@ -16,6 +16,7 @@ import {
 } from "@/features/agents/lib/agentAutocompleteEligibility";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useClassifiedMembers } from "@/features/channels/lib/useClassifiedMembers";
+import { ChannelAgentActivityRail } from "@/features/channels/ui/ChannelAgentActivityRail";
 import { formatMemberName } from "@/features/channels/lib/memberUtils";
 import {
   canAddChannelMembers,
@@ -875,6 +876,8 @@ export function MembersSidebar({
                 {changeRoleError}
               </p>
             ) : null}
+
+            <ChannelAgentActivityRail channelId={channelId} />
 
             {addMembersMutation.error instanceof Error ? (
               <p className="mt-4 text-sm text-destructive">
