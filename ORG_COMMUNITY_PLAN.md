@@ -288,6 +288,53 @@ Fixed data contract:
 ---
 
 
+## Phase 8 — DAO binding (majeur) — designed, not built
+
+Corrected facts (verified in-repo): `contracts/lib/majeur` IS vendored
+(gitlink `7d7a36b`, registered in `.gitmodules`, landed with the launchpad
+snapshot `edf93fa9c`). What is missing is any integration: no contract
+summons a DAO, and nothing maps the org graph onto it. The earlier
+"majeur is not vendored" assessment was wrong; only the integration is
+absent.
+
+The binding, per NIP-ORG's onchain section, using majeur as the
+Moloch-family framework (Summoner factory at deterministic CREATE2
+addresses; ragequit = the exit right; MolochViewHelper for reads):
+
+1. **Summon + bind.** The community owner (or a launch proposal, NIP-LP
+   path) summons a majeur DAO; the root org node's `37010` content gains
+   `onchain: { chain, dao, boundAt }` (field already specified). One tx,
+   one event — the graph itself stays offchain.
+2. **Mapping.** Node `holders` -> initial shares; budgets -> treasury
+   allowances (replacing OrgAllowance's deployer-owner with DAO governance
+   — the documented upgrade path from Phase 7); governance follows shares,
+   seats stay offchain.
+3. **What does NOT move.** Grants below the root, tasks, approvals, and
+   org edits remain relay events; only root authority, capital, and exit
+   become enforceable onchain.
+4. **Mirror.** An indexer publishes 47005-style receipts for summon,
+   allowance, and ragequit; clients verify against the chain when money is
+   at stake (NIP-LP rule).
+
+Open design questions to settle at implementation time:
+- Who may author the binding field on the root node (root holder vs
+  community owner), and what stops a forged binding?
+- Seats change; shares do not auto-mutate — define the re-bind (a new
+  summon generation vs governance proposals per seat change).
+- Allowance granularity: majeur treasury allowances vs OrgAllowance's
+  per-agent keys (likely: DAO grants an executor role to the relay/
+  harness spender; per-agent limits stay in OrgAllowance, owned by the
+  DAO).
+
+Sequencing decision: Phase 8 comes after the next slice (relay grant-chain
+enforcement + "Needs me" inbox) — the coordination layer must be enforced
+before the org gains money and exit, and a binding designed now would
+target a moving org model.
+
+---
+
+## Definition of done
+
 An operator opens a community and, without leaving Buzz: sees the org as a
 chart of roles and seats; sees what needs them; approves or denies with
 their name attached; sets a budget and trusts an overrun becomes a request,
