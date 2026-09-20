@@ -95,6 +95,8 @@ function parseNodeOnchain(value: unknown): OrgNodeOnchain | undefined {
 
 export type OrgNode = {
   eventId: string;
+  /** Event author pubkey (lowercased) — the identity that published it. */
+  author: string;
   dtag: string;
   name: string;
   kind: OrgNodeKind;
@@ -118,6 +120,7 @@ export function eventToOrgNode(event: RelayEvent): OrgNode {
 
   return {
     eventId: event.id,
+    author: event.pubkey.toLowerCase(),
     dtag,
     name: (typeof content.name === "string" && content.name) || dtag,
     kind:
@@ -137,6 +140,8 @@ export function eventToOrgNode(event: RelayEvent): OrgNode {
 
 export type OrgGrant = {
   eventId: string;
+  /** Event author pubkey (lowercased) — the identity that published it. */
+  author: string;
   dtag: string;
   /** Signer/issuer pubkey (content.issuer; empty when the event omits it). */
   issuer: string;
@@ -157,6 +162,7 @@ export function eventToOrgGrant(event: RelayEvent): OrgGrant {
 
   return {
     eventId: event.id,
+    author: event.pubkey.toLowerCase(),
     dtag,
     issuer: (typeof content.issuer === "string" && content.issuer) || "",
     // The canonical grantee lives in the content; the `p` tag mirrors it.
@@ -235,6 +241,8 @@ function parseOnchainBinding(value: unknown): OnchainBinding | undefined {
 
 export type OrgBudget = {
   eventId: string;
+  /** Event author pubkey (lowercased) — the identity that published it. */
+  author: string;
   dtag: string;
   subject: string;
   window: BudgetWindow;
@@ -252,6 +260,7 @@ export function eventToOrgBudget(event: RelayEvent): OrgBudget {
 
   return {
     eventId: event.id,
+    author: event.pubkey.toLowerCase(),
     dtag,
     subject: (typeof content.subject === "string" && content.subject) || "",
     window: (content.window === "day" ||
@@ -291,6 +300,8 @@ export type AppealEntry = {
 
 export type ContributionRecord = {
   eventId: string;
+  /** Event author pubkey (lowercased) — the identity that published it. */
+  author: string;
   dtag: string;
   action: string;
   dimensions: Record<string, number>;
@@ -322,6 +333,7 @@ export function eventToContributionRecord(
 
   return {
     eventId: event.id,
+    author: event.pubkey.toLowerCase(),
     dtag,
     action: (typeof content.action === "string" && content.action) || "",
     dimensions: (content.dimensions ?? {}) as Record<string, number>,

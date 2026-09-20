@@ -9,6 +9,9 @@ import {
   KIND_CONTRIBUTION_RECORD,
   KIND_AGENT_TURN_METRIC,
   KIND_AGENT_TASK,
+  KIND_AGENT_CAPABILITIES,
+  KIND_APPROVAL_REQUEST,
+  KIND_BUDGET_SPEND_RECEIPT,
 } from "@/shared/constants/kinds";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -31,6 +34,15 @@ import {
   summarizeConsumption,
   type ConsumptionSummary,
 } from "./lib/budgetConsumption";
+import {
+  LIVENESS_FETCH_LIMIT,
+  type LivenessEventLike,
+} from "./lib/nodeLiveness";
+import {
+  ACTIVITY_FETCH_LIMIT,
+  KIND_APPROVAL_GRANT,
+  KIND_APPROVAL_DENY,
+} from "./lib/dashboard";
 
 // ── Query keys ──────────────────────────────────────────────────────────────
 
@@ -185,6 +197,72 @@ export function useAgentTasksQuery(enabled = true) {
   return useQuery({
     queryKey: [...orgQueryKey, "agent-tasks"],
     queryFn: ({ signal }) => fetchAgentTasks(signal),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+// ── Agent liveness (kinds:44010 capabilities + 44200 turn metrics) ────────
+
+/**
+ * Newest liveness signal per agent identity, bounded. Heartbeat-style rows
+ * flood history, so the read pulls a capped page per kind — the newest
+ * signals are what liveness needs, and a truncated page still has them.
+ * Derivation (thresholds + per-seat newest) lives in lib/nodeLiveness.ts;
+ * this hook only fetches.
+ */
+async function fetchLivenessEvents(
+  _signal?: AbortSignal,
+): Promise<LivenessEventLike[]> {
+  const [capabilities, metrics] = await Promise.all([
+    relayClient.fetchEvents({
+      kinds: [KIND_AGENT_CAPABILITIES],
+      limit: LIVENESS_FETCH_LIMIT,
+    }),
+    relayClient.fetchEvents({
+      kinds: [KIND_AGENT_TURN_METRIC],
+      limit: LIVENESS_FETCH_LIMIT,
+    }),
+  ]);
+  return [...capabilities, ...metrics];
+}
+
+export function useAgentLivenessQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "liveness"],
+    queryFn: ({ signal }) => fetchLivenessEvents(signal),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+// ── Dashboard activity extras (kind:37014 receipts + 46_0xx approvals) ────
+
+/**
+ * Receipts and approval traffic for the dashboard feed. Org kinds 37010–37013
+ * are covered by the org chart query (models), so this fetch stays bounded to
+ * the kinds with no model layer yet.
+ */
+async function fetchActivityExtras(
+  _signal?: AbortSignal,
+): Promise<RelayEvent[]> {
+  return relayClient.fetchEvents({
+    kinds: [
+      KIND_BUDGET_SPEND_RECEIPT,
+      KIND_APPROVAL_REQUEST,
+      KIND_APPROVAL_GRANT,
+      KIND_APPROVAL_DENY,
+    ],
+    limit: ACTIVITY_FETCH_LIMIT,
+  });
+}
+
+export function useOrgActivityExtrasQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "activity-extras"],
+    queryFn: ({ signal }) => fetchActivityExtras(signal),
     staleTime: ORG_STALE_TIME_MS,
     gcTime: ORG_GC_TIME_MS,
     enabled,

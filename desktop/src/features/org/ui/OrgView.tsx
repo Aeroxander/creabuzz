@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs";
+import { OrgDashboard } from "./OrgDashboard";
 import { OrgChart } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
 import { OrgWizard } from "./OrgWizard";
@@ -42,7 +43,7 @@ function ContributionRecordsTab() {
 
 export function OrgView() {
   const query = useOrgChartQuery();
-  const [activeTab, setActiveTab] = React.useState("chart");
+  const [activeTab, setActiveTab] = React.useState("dashboard");
   // The onboarding wizard auto-opens from an empty org chart and simply
   // stops appearing once a root exists (paperclip-ux-reference.md §3). It
   // owns its own open state after that so the walk survives the root's
@@ -62,12 +63,15 @@ export function OrgView() {
       </div>
       <Tabs
         className="flex min-h-0 flex-1 flex-col"
-        defaultValue="chart"
+        defaultValue="dashboard"
         onValueChange={setActiveTab}
         value={activeTab}
       >
         <div className="px-4 pt-2">
           <TabsList aria-label="Org views">
+            <TabsTrigger data-testid="org-tab-dashboard" value="dashboard">
+              Dashboard
+            </TabsTrigger>
             <TabsTrigger data-testid="org-tab-chart" value="chart">
               Chart
             </TabsTrigger>
@@ -79,6 +83,12 @@ export function OrgView() {
             </TabsTrigger>
           </TabsList>
         </div>
+        <TabsContent
+          className="min-h-0 flex-1 overflow-y-auto"
+          value="dashboard"
+        >
+          <OrgDashboard onOpenTab={(tab) => setActiveTab(tab)} query={query} />
+        </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="chart">
           <OrgChart query={query} />
         </TabsContent>

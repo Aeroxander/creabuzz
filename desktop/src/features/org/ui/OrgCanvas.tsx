@@ -15,6 +15,7 @@ import {
   type CanvasView,
 } from "../lib/canvasLayout";
 import type { OrgTreeNode } from "../lib/tree";
+import type { AgentLiveness } from "../lib/nodeLiveness";
 import { OrgNodeCanvasCard } from "./OrgNodeCanvasCard";
 
 type OrgCanvasProps = {
@@ -24,6 +25,8 @@ type OrgCanvasProps = {
   onSelect: (dtag: string) => void;
   /** Summary read by screen readers; the node list is the a11y source of truth. */
   summaryLabel: string;
+  /** Agent-seat liveness keyed by lowercase seat pubkey (cards' status dots). */
+  liveness: ReadonlyMap<string, AgentLiveness>;
   testId?: string;
 };
 
@@ -53,6 +56,7 @@ export function OrgCanvas({
   selectedDtag,
   onSelect,
   summaryLabel,
+  liveness,
   testId = "org-canvas-viewport",
 }: OrgCanvasProps) {
   const metrics = CANVAS_DENSITY[density];
@@ -262,6 +266,7 @@ export function OrgCanvas({
             <OrgNodeCanvasCard
               ancestorLabel={ancestorLabelByDtag.get(placed.dtag) ?? ""}
               key={placed.dtag}
+              liveness={liveness}
               metrics={metrics}
               onSelect={onSelect}
               placed={placed}

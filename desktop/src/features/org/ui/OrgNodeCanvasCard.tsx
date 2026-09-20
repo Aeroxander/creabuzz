@@ -3,8 +3,14 @@ import * as React from "react";
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Card } from "@/shared/ui/card";
+import { StatusGlyph } from "@/shared/ui/StatusGlyph";
 import { OnchainChip } from "./OnchainChip";
 import type { CanvasMetrics, PlacedNode } from "../lib/canvasLayout";
+import {
+  bestSeatStatus,
+  type AgentLiveness,
+  type AgentLivenessStatus,
+} from "../lib/nodeLiveness";
 import type { OrgNodeKind } from "../orgModels";
 
 const KIND_LABEL: Record<OrgNodeKind, string> = {
@@ -12,6 +18,18 @@ const KIND_LABEL: Record<OrgNodeKind, string> = {
   team: "Team",
   agent_seat: "Agent seat",
 };
+
+const LIVE_ARIA: Record<AgentLivenessStatus, string> = {
+  live: "Node agents live",
+  waiting: "Node agents waiting",
+  gone: "Node agents gone",
+};
+
+const GONE_TONE = {
+  live: "live",
+  waiting: "waiting",
+  gone: "neutral",
+} as const;
 
 function KindBadge({ kind }: { kind: OrgNodeKind }) {
   return (
@@ -27,6 +45,8 @@ type OrgNodeCanvasCardProps = {
   selected: boolean;
   /** Ancestor names for the hover tooltip ("Founder › CTO"). */
   ancestorLabel: string;
+  /** Agent-seat liveness keyed by lowercase seat pubkey. */
+  liveness: ReadonlyMap<string, AgentLiveness>;
   onSelect: (dtag: string) => void;
 };
 
@@ -34,17 +54,17 @@ type OrgNodeCanvasCardProps = {
  * One node on the org canvas. Memoized: panning/zooming only changes the
  * wrapper transform, so cards must not re-render per pointer event.
  *
- * Status dot is reserved: node liveness (kind:44200 turn metrics) is future
- * work. When it lands, overlay a dot on the occupant avatars using the
- * status-* tokens (reference §2.2 statusDotColor) — until then the kind
- * badge plus the onchain chip carry the node's state, and no fake
- * "everything is fine" dot is shown.
+ * The status dot overlays agent-seat liveness (kind:44010/44200 derived in
+ * lib/nodeLiveness.ts) using the status-* tokens (reference §2.2
+ * statusDotColor): live/waiting/gone from the node's agent seats; a
+ * human-only node shows no dot. The kind badge carries the node's role.
  */
 export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
   placed,
   metrics,
   selected,
   ancestorLabel,
+  liveness,
   onSelect,
 }: OrgNodeCanvasCardProps) {
   const node = placed.treeNode.node;
@@ -52,6 +72,14 @@ export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
     () => [...node.holders, ...node.agentSeats],
     [node.holders, node.agentSeats],
   );
+  const seatStatuses = React.useMemo(
+    () =>
+      node.agentSeats.map(
+        (seat) => liveness.get(seat.trim().toLowerCase())?.status,
+      ),
+    [node.agentSeats, liveness],
+  );
+  const nodeStatus = bestSeatStatus(seatStatuses);
   const tooltip = ancestorLabel
     ? `${node.name} — reports to ${ancestorLabel}`
     : node.name;
@@ -75,8 +103,17 @@ export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
       title={tooltip}
     >
       <div className="flex items-center justify-between gap-1">
-        <span className="truncate text-sm font-semibold leading-tight">
-          {node.name}
+        <span className="flex min-w-0 items-center gap-1.5">
+          {nodeStatus && (
+            <StatusGlyph
+              aria-label={LIVE_ARIA[nodeStatus]}
+              className={cn(nodeStatus === "gone" && "opacity-60")}
+              tone={GONE_TONE[nodeStatus]}
+            />
+          )}
+          <span className="truncate text-sm font-semibold leading-tight">
+            {node.name}
+          </span>
         </span>
         <KindBadge kind={node.kind} />
       </div>

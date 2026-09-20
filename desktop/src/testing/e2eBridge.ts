@@ -3310,8 +3310,13 @@ const mockReminderEvents: RelayEvent[] = [];
 
 // NIP-ORG + agent-metric events served to org-surface reads. Seeded by
 // specs via __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__; the real relay is the
-// system of record, this is only the mock's read model.
-const MOCK_ORG_KINDS = new Set([37010, 37011, 37012, 37013, 37014, 44200]);
+// system of record, this is only the mock's read model. 44010 (agent
+// capabilities) feeds the org dashboard liveness; 46010/46030/46031
+// (approval request/grant/deny) feed the dashboard activity feed, and
+// 37014 spend receipts likewise.
+const MOCK_ORG_KINDS = new Set([
+  37010, 37011, 37012, 37013, 37014, 44010, 44200, 46010, 46030, 46031,
+]);
 const mockOrgEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];

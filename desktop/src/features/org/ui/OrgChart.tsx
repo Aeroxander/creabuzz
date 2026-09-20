@@ -16,14 +16,8 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
-import { MetricCard } from "@/shared/ui/MetricCard";
 import { PubKey } from "@/shared/ui/PubKey";
 import { Spinner } from "@/shared/ui/spinner";
-import { UtilizationBar } from "@/shared/ui/UtilizationBar";
-import {
-  summarizeUtilizations,
-  utilizationPercentage,
-} from "@/shared/ui/utilizationThresholds";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,14 +25,20 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import {
-  useBudgetUtilizationsQuery,
+  useAgentLivenessQuery,
   useDeleteOrgNodeMutation,
   useDeleteOrgBudgetMutation,
 } from "../hooks";
-import { METRIC_FETCH_LIMIT } from "../lib/budgetConsumption";
+import {
+  collectAgentSeats,
+  newestSeenPerSeat,
+  type AgentLiveness,
+} from "../lib/nodeLiveness";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import type { CanvasDensity } from "../lib/canvasLayout";
+import { LivenessBadge } from "./LivenessBadge";
 import { OrgCanvas } from "./OrgCanvas";
+import { OrgMetricRow } from "./OrgMetricRow";
 import { OrgNodeForm } from "./OrgNodeForm";
 import { OrgGrantForm } from "./OrgGrantForm";
 import { OrgBudgetForm } from "./OrgBudgetForm";
@@ -58,8 +58,22 @@ type OrgChartProps = {
   query: UseQueryResult<OrgChartType, Error>;
 };
 
+/** Liveness decays even without new events, so re-derive it on a timer. */
+const LIVENESS_TICK_MS = 30_000;
+
 export function OrgChart({ query }: OrgChartProps) {
   const { data, isLoading, error } = query;
+  const livenessQuery = useAgentLivenessQuery();
+  const [nowTick, setNowTick] = React.useState(() =>
+    Math.floor(Date.now() / 1_000),
+  );
+  React.useEffect(() => {
+    const id = window.setInterval(
+      () => setNowTick(Math.floor(Date.now() / 1_000)),
+      LIVENESS_TICK_MS,
+    );
+    return () => window.clearInterval(id);
+  }, []);
   const [createNodeOpen, setCreateNodeOpen] = React.useState(false);
   const [createGrantOpen, setCreateGrantOpen] = React.useState(false);
   const [createBudgetOpen, setCreateBudgetOpen] = React.useState(false);
@@ -85,6 +99,17 @@ export function OrgChart({ query }: OrgChartProps) {
     });
     budgetsHeadingRef.current?.focus({ preventScroll: true });
   }, []);
+
+  // Liveness derivation must live before the early returns (rules of hooks).
+  const agentSeats = React.useMemo(
+    () => collectAgentSeats(data?.nodes ?? []),
+    [data?.nodes],
+  );
+  const liveness = React.useMemo(
+    () => newestSeenPerSeat(livenessQuery.data ?? [], agentSeats, nowTick),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [livenessQuery.data, agentSeats, nowTick],
+  );
 
   if (isLoading) {
     return (
@@ -140,28 +165,10 @@ export function OrgChart({ query }: OrgChartProps) {
     );
   }
 
-  const summary = orgChartSummary(data.nodes, data.grants, data.budgets);
-
   return (
     <div className="p-4 space-y-4">
-      {/* Metric row */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <MetricCard
-          label="Nodes"
-          testId="org-metric-nodes"
-          value={summary.nodeCount}
-        />
-        <MetricCard
-          description={`${summary.agentSeatCount} agent seats`}
-          label="Active grants"
-          testId="org-metric-grants"
-          value={summary.grantCount}
-        />
-        <OrgBudgetMetricCards
-          budgets={data.budgets}
-          onFocusBudgets={focusBudgets}
-        />
-      </div>
+      {/* Metric row — one implementation shared with the dashboard. */}
+      <OrgMetricRow data={data} onFocusBudgets={focusBudgets} />
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <SegmentedControl
           legend="Chart view"
@@ -232,6 +239,7 @@ export function OrgChart({ query }: OrgChartProps) {
         <OrgNodeSection
           data={data}
           density={density}
+          liveness={liveness}
           onSelectNode={handleSelectNode}
           selectedDtag={selectedNodeDtag}
           viewMode={viewMode}
@@ -281,6 +289,7 @@ export function OrgChart({ query }: OrgChartProps) {
 function OrgNodeSection({
   data,
   density,
+  liveness,
   viewMode,
   selectedDtag,
   onSelectNode,
@@ -288,6 +297,8 @@ function OrgNodeSection({
 }: {
   data: OrgChartType;
   density: CanvasDensity;
+  /** Agent-seat liveness keyed by lowercase seat pubkey. */
+  liveness: ReadonlyMap<string, AgentLiveness>;
   viewMode: ChartViewMode;
   selectedDtag?: string;
   onSelectNode: (dtag: string) => void;
@@ -298,12 +309,18 @@ function OrgNodeSection({
     () => orgChartSummary(data.nodes, data.grants, data.budgets),
     [data.nodes, data.grants, data.budgets],
   );
+  const liveAgentCount = React.useMemo(
+    () =>
+      [...liveness.values()].filter((entry) => entry.status === "live").length,
+    [liveness],
+  );
 
   const list = (
     <div className="space-y-0.5">
       {tree.roots.map((node) => (
         <OrgTreeNodeRow
           key={node.node.dtag}
+          liveness={liveness}
           node={node}
           onCreateChild={onCreateChild}
         />
@@ -318,10 +335,11 @@ function OrgNodeSection({
         <>
           <OrgCanvas
             density={density}
+            liveness={liveness}
             onSelect={onSelectNode}
             roots={tree.roots}
             selectedDtag={selectedDtag}
-            summaryLabel={`Org chart: ${summary.nodeCount} nodes (${summary.roleCount} roles, ${summary.teamCount} teams, ${summary.agentSeatCount} agent seats) and ${summary.grantCount} active grants. Interactions are pointer-driven; the node list below the canvas is the accessible version of this chart.`}
+            summaryLabel={`Org chart: ${summary.nodeCount} nodes (${summary.roleCount} roles, ${summary.teamCount} teams, ${summary.agentSeatCount} agent seats), ${liveAgentCount} of ${summary.agentSeatCount} agent seats live, and ${summary.grantCount} active grants. Interactions are pointer-driven; the node list below the canvas is the accessible version of this chart.`}
           />
           <details className="mt-2">
             <summary className="cursor-pointer text-xs text-muted-foreground">
@@ -337,6 +355,7 @@ function OrgNodeSection({
         <OrgNodeSelectionPanel
           data={data}
           dtag={selectedDtag}
+          liveness={liveness}
           onClose={() => onSelectNode(selectedDtag)}
           tree={tree}
         />
@@ -356,11 +375,14 @@ function OrgNodeSection({
 function OrgNodeSelectionPanel({
   data,
   dtag,
+  liveness,
   onClose,
   tree,
 }: {
   data: OrgChartType;
   dtag: string;
+  /** Agent-seat liveness keyed by lowercase seat pubkey. */
+  liveness: ReadonlyMap<string, AgentLiveness>;
   onClose: () => void;
   tree: ReturnType<typeof buildOrgTree>;
 }) {
@@ -368,6 +390,9 @@ function OrgNodeSelectionPanel({
   if (!treeNode) return null;
   const node = treeNode.node;
   const occupants = [...node.holders, ...node.agentSeats];
+  const agentSeatSet = new Set(
+    node.agentSeats.map((seat) => seat.trim().toLowerCase()),
+  );
   const occupantSet = new Set(occupants);
   const now = Math.floor(Date.now() / 1000);
   const viaGrants = data.grants.filter(
@@ -412,9 +437,18 @@ function OrgNodeSelectionPanel({
           <span className="font-medium text-foreground">Occupants: </span>
           {occupants.length > 0 ? (
             <span className="inline-flex flex-wrap items-center gap-1.5 align-middle">
-              {occupants.map((pubkey) => (
-                <PubKey key={pubkey} pubkey={pubkey} interactive={false} />
-              ))}
+              {occupants.map((pubkey) => {
+                const seat = pubkey.trim().toLowerCase();
+                const status = agentSeatSet.has(seat)
+                  ? liveness.get(seat)?.status
+                  : undefined;
+                return (
+                  <span className="inline-flex items-center gap-1" key={pubkey}>
+                    <PubKey pubkey={pubkey} interactive={false} />
+                    {status && <LivenessBadge status={status} />}
+                  </span>
+                );
+              })}
             </span>
           ) : (
             "none"
@@ -454,27 +488,42 @@ function NodeOnchainChip({ node }: { node: OrgNode }) {
   );
 }
 
-function OccupantChips({ pubkeys }: { pubkeys: string[] }) {
+function OccupantChips({
+  pubkeys,
+  liveness,
+}: {
+  pubkeys: string[];
+  /** Agent-seat liveness keyed by lowercase seat pubkey. */
+  liveness: ReadonlyMap<string, AgentLiveness>;
+}) {
   if (pubkeys.length === 0) return null;
   return (
     <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-      {pubkeys.map((pubkey) => (
-        <PubKey
-          key={pubkey}
-          pubkey={pubkey}
-          interactive={false}
-          className="text-xs text-muted-foreground"
-        />
-      ))}
+      {pubkeys.map((pubkey) => {
+        const status = liveness.get(pubkey.trim().toLowerCase())?.status;
+        return (
+          <span className="inline-flex items-center gap-1" key={pubkey}>
+            <PubKey
+              className="text-xs text-muted-foreground"
+              pubkey={pubkey}
+              interactive={false}
+            />
+            {status && <LivenessBadge status={status} />}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
 function OrgTreeNodeRow({
   node,
+  liveness,
   onCreateChild,
 }: {
   node: OrgTreeNode;
+  /** Agent-seat liveness keyed by lowercase seat pubkey. */
+  liveness: ReadonlyMap<string, AgentLiveness>;
   onCreateChild: (parentDtag: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
@@ -518,7 +567,7 @@ function OrgTreeNodeRow({
             </span>
             {node.depth === 0 && <NodeOnchainChip node={node.node} />}
           </div>
-          <OccupantChips pubkeys={occupants} />
+          <OccupantChips liveness={liveness} pubkeys={occupants} />
         </div>
 
         {/* Context menu */}
@@ -554,6 +603,7 @@ function OrgTreeNodeRow({
         node.children.map((child) => (
           <OrgTreeNodeRow
             key={child.node.dtag}
+            liveness={liveness}
             node={child}
             onCreateChild={onCreateChild}
           />
@@ -665,110 +715,5 @@ function OrgBudgetSection({
         })}
       </div>
     </div>
-  );
-}
-
-// ── Metric row: budgets + needs attention ─────────────────────────────────
-
-/**
- * Budgets metric card (count + worst utilization bar) and the needs-attention
- * card (budgets at/over 70% + unverifiable floor counts). Clicking
- * needs-attention scrolls to and focuses the budgets section — a real
- * affordance, never a fake navigation. Revoked events are filtered upstream
- * in hooks.ts before the chart sees them, so revoked anomalies are not
- * counted here; adding them needs a dedicated query, not a silent guess.
- */
-function OrgBudgetMetricCards({
-  budgets,
-  onFocusBudgets,
-}: {
-  budgets: OrgBudget[];
-  onFocusBudgets: () => void;
-}) {
-  const activeBudgets = React.useMemo(
-    () => budgets.filter((b) => !b.revoked),
-    [budgets],
-  );
-  const utilizations = useBudgetUtilizationsQuery(activeBudgets);
-  const entries = utilizations.data ?? [];
-
-  const inputs = entries.map((entry) => {
-    if (!entry.summary) {
-      return { flagged: false, percentage: null, truncated: false };
-    }
-    const { consumed, limit, truncated } = entry.summary;
-    return {
-      flagged: typeof limit === "number" && limit === 0 && consumed > 0,
-      percentage: utilizationPercentage(consumed, limit),
-      truncated,
-    };
-  });
-  const { worstIndex, attentionCount } = summarizeUtilizations(inputs);
-
-  const worst = worstIndex !== null ? entries[worstIndex] : undefined;
-  const anyTruncated = entries.some((entry) => entry.summary?.truncated);
-  const floorEntry = anyTruncated
-    ? entries.find((entry) => entry.summary?.truncated)
-    : undefined;
-
-  const worstSummary = worst?.summary;
-  const worstHasCeiling =
-    typeof worstSummary?.limit === "number" && (worstSummary?.limit ?? 0) > 0;
-
-  return (
-    <>
-      <MetricCard
-        description={
-          utilizations.isPending
-            ? "checking usage…"
-            : activeBudgets.length === 0
-              ? undefined
-              : worstSummary
-                ? undefined
-                : "no usage data"
-        }
-        label="Budgets"
-        testId="org-metric-budgets"
-        value={activeBudgets.length}
-      >
-        {worst && worstSummary && (
-          <UtilizationBar
-            caption={`worst of ${activeBudgets.length} budgets`}
-            className="mt-1.5"
-            consumed={worstSummary.consumed}
-            label={`Worst budget utilization (${worst.budget.subject || worst.budget.dtag})`}
-            limit={worstHasCeiling ? worstSummary.limit : null}
-            readout={
-              worstSummary.truncated
-                ? undefined
-                : worstHasCeiling
-                  ? `${worstSummary.consumed} / ${worstSummary.limit} runs`
-                  : `${worstSummary.consumed} runs`
-            }
-            truncated={worstSummary.truncated}
-          />
-        )}
-        {!worst && floorEntry?.summary && (
-          <UtilizationBar
-            className="mt-1.5"
-            consumed={floorEntry.summary.consumed}
-            floor={METRIC_FETCH_LIMIT}
-            label={`Budget usage floor (${floorEntry.budget.subject || floorEntry.budget.dtag})`}
-            truncated
-          />
-        )}
-      </MetricCard>
-      <MetricCard
-        description={
-          activeBudgets.length === 0
-            ? "no budgets to watch"
-            : "budgets ≥70% · floor counts"
-        }
-        label="Needs attention"
-        onClick={activeBudgets.length > 0 ? onFocusBudgets : undefined}
-        testId="org-metric-needs-attention"
-        value={attentionCount}
-      />
-    </>
   );
 }

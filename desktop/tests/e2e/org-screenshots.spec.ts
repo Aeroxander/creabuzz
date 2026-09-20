@@ -199,6 +199,90 @@ function buildOrgEvents(): unknown[] {
       content: "{}",
       sig: "mock-sig",
     })),
+    // Dashboard seeds: agent liveness (kind:44010), an over-budget run
+    // ceiling (32 of 30 → 107% → blocking banner), an expired grant still
+    // parenting an active one, an approval request, and a spend receipt.
+    // 44010 capability announcements are authored by the agent itself —
+    // the liveness derivation keys on the author, so these carry the seat
+    // pubkeys, not the local viewer's key.
+    {
+      id: "agent-cap-eng-live",
+      pubkey: agent,
+      created_at: NOW - 60, // live
+      kind: 44010,
+      tags: [["d", "eng"]],
+      content: JSON.stringify({ v: 1, name: "Engineering Agent" }),
+      sig: "mock-sig",
+    },
+    {
+      id: "agent-cap-ops-gone",
+      pubkey: hex("a6e7b00d"),
+      created_at: NOW - 2 * 3_600, // gone
+      kind: 44010,
+      tags: [["d", "ops"]],
+      content: JSON.stringify({ v: 1, name: "Ops Agent" }),
+      sig: "mock-sig",
+    },
+    orgEvent("org-budget-agent-hot", 37012, "budget-agent-hot", {
+      v: 1,
+      subject: agent,
+      window: "month",
+      limits: { runs: 30 },
+      onExceed: "require-approval",
+    }),
+    orgEvent("org-grant-under-expired", 37011, "grant-under-expired", {
+      v: 1,
+      issuer: agent,
+      grantee: hex("feedd00d"),
+      via: "eng",
+      verbs: ["read:#eng"],
+      parentGrant: "grant-expired",
+      expires: NOW + 3_600,
+      revoked: false,
+    }),
+    // Newest activity sorts to the top of the capped feed — distinct recent
+    // timestamps so they survive the 12-row cut.
+    {
+      id: "approval-req-overrun",
+      pubkey: TYLER,
+      created_at: NOW - 5,
+      kind: 46010,
+      tags: [
+        ["d", "abc".padEnd(64, "1")],
+        ["p", agent],
+      ],
+      content: JSON.stringify({
+        type: "budget-exceeded",
+        subject: agent,
+        counterType: "runs",
+        window: "month",
+        limit: 30,
+      }),
+      sig: "mock-sig",
+    },
+    {
+      id: "receipt-spend-1",
+      pubkey: TYLER,
+      created_at: NOW - 10,
+      kind: 37014,
+      tags: [
+        ["d", "spend-1"],
+        ["e", "org-grant-root"],
+      ],
+      content: "{}",
+      sig: "mock-sig",
+    },
+    // 32 turns this month against the hot budget's 30-run ceiling → 107%
+    // → the "blocking" over-budget banner.
+    ...Array.from({ length: 32 }, (_, i) => ({
+      id: `metric-hot-${i}`,
+      pubkey: agent,
+      created_at: NOW - i * 3_600 - 60,
+      kind: 44200,
+      tags: [["p", agent]],
+      content: "{}",
+      sig: "mock-sig",
+    })),
     orgEvent("org-cr-build", 37013, "cr-build", {
       v: 1,
       action: "Shipped the org grant chain viewer",
@@ -259,6 +343,18 @@ async function openOrgView(page: Page) {
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await seedOrgEvents(page);
   await page.getByTestId("open-org-view").click();
+  // Dashboard is the default org tab (its empty state renders when nothing
+  // is seeded, so assert the tab, not a dashboard child).
+  await expect(page.getByTestId("org-tab-dashboard")).toHaveAttribute(
+    "data-state",
+    "active",
+  );
+  await waitForAnimations(page);
+}
+
+/** The Dashboard is the default org tab; chart-owned specs switch to it. */
+async function openChartTab(page: Page) {
+  await page.getByTestId("org-tab-chart").click();
   await expect(page.getByText("Delegations")).toBeVisible();
   await waitForAnimations(page);
 }
@@ -269,6 +365,7 @@ test.describe("org UI screenshots", () => {
   }) => {
     await installMockBridge(page);
     await openOrgView(page);
+    await openChartTab(page);
     const viewport = page.getByTestId("org-canvas-viewport");
     await expect(viewport).toBeVisible();
     // All 7 seeded nodes are on the canvas (list fallback stays in the
@@ -306,8 +403,8 @@ test.describe("org UI screenshots", () => {
     await page.getByTestId("org-canvas-node-eng").click();
     const panel = page.getByTestId("org-node-selection");
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText("Delegations through this node (2)");
-    await expect(panel).toContainText("Budgets covering its occupants (1)");
+    await expect(panel).toContainText("Delegations through this node (3)");
+    await expect(panel).toContainText("Budgets covering its occupants (2)");
     await waitForAnimations(page);
     await viewport.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${SHOTS}/org-canvas.png` });
@@ -329,6 +426,7 @@ test.describe("org UI screenshots", () => {
   }) => {
     await installMockBridge(page);
     await openOrgView(page);
+    await openChartTab(page);
     // Grant chain viewer: three rows with the attenuated chain and one
     // violation marker (sr-only text is the assertion surface).
     await expect(page.getByText("Delegations")).toBeVisible();
@@ -374,6 +472,7 @@ test.describe("org UI screenshots", () => {
   }) => {
     await installMockBridge(page);
     await openOrgView(page);
+    await openChartTab(page);
     // grant-wide: attenuated verb (violation), parent chain, future expiry.
     await page.getByRole("button", { name: /^Open grant read$/ }).click();
     const sheet = page.getByRole("dialog");
@@ -398,6 +497,7 @@ test.describe("org UI screenshots", () => {
   }) => {
     await installMockBridge(page);
     await openOrgView(page);
+    await openChartTab(page);
     // Collapsed shelf shows the count badge; expanding reveals history rows.
     const toggle = page.getByTestId("org-curtain-toggle");
     await expect(toggle).toBeVisible();
@@ -428,6 +528,51 @@ test.describe("org UI screenshots", () => {
     ).toHaveCount(0);
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/org-curtain-expired-drawer.png` });
+  });
+
+  test("dashboard tab: banners, live agents, metrics, activity feed", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    // Blocking banners first: over-budget agent (32/30 → 107%) and the
+    // expired grant still parenting an active one.
+    await expect(
+      page.getByTestId("org-banner-budget-budget-agent-hot"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("org-banner-budget-budget-agent-hot"),
+    ).toContainText("hit 107% of its month runs budget");
+    await expect(
+      page.getByTestId("org-banner-expired-parent-grants"),
+    ).toBeVisible();
+    await expect(page.getByText("Raise the budget")).toBeVisible();
+    await expect(page.getByText("Review grants")).toBeVisible();
+    // Live agents: one live, one gone (grayed).
+    await expect(page.getByText("Live agents — 1 of 2 live")).toBeVisible();
+    await expect(page.getByTestId("org-agent-liveness-live")).toBeVisible();
+    await expect(page.getByTestId("org-agent-liveness-gone")).toBeVisible();
+    await expect(page.getByTestId("org-agent-liveness-live")).toHaveText(
+      "Live",
+    );
+    // The gone row is grayed out.
+    await expect(
+      page.locator("[data-live-agent]").filter({ hasText: "Gone" }),
+    ).toBeVisible();
+    // Metric row reuses the Chart-tab numbers.
+    await expect(page.getByTestId("org-metric-nodes")).toBeVisible();
+    await expect(page.getByTestId("org-metric-grants")).toBeVisible();
+    await expect(page.getByTestId("org-metric-budgets")).toBeVisible();
+    // Activity feed: grants, budgets, receipts, approvals (never raw JSON).
+    const rows = page.getByTestId("org-activity-row");
+    await expect(rows.first()).toBeVisible();
+    await expect(rows).toHaveCount(12); // capped at ACTIVITY_ROW_LIMIT
+    await expect(page.getByText("Spend receipt recorded:")).toBeVisible();
+    await expect(
+      page.getByText("Budget approval requested:", { exact: false }),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-dashboard.png` });
   });
 
   test("wizard auto-opens on an empty org chart", async ({ page }) => {
