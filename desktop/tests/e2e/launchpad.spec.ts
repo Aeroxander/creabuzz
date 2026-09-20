@@ -10,9 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("launchpad directory renders with empty state", async ({ page }) => {
-  await expect(
-    page.getByRole("heading", { name: "Launchpad" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Launchpad" })).toBeVisible();
   await expect(page.getByTestId("launchpad-curate")).toBeVisible();
   await expect(page.getByText("No launches yet.")).toBeVisible();
 });
