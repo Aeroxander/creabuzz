@@ -6018,7 +6018,10 @@ mod tests {
             onchain.get("dao"),
             Some(&serde_json::Value::String("0xdao".into()))
         );
-        assert_eq!(onchain.get("boundAt"), Some(&serde_json::Value::from(1_798_765_432u64)));
+        assert_eq!(
+            onchain.get("boundAt"),
+            Some(&serde_json::Value::from(1_798_765_432u64))
+        );
         assert!(onchain.get("bound_at").is_none());
 
         // Round-trips through a pre-binding event payload unchanged.
