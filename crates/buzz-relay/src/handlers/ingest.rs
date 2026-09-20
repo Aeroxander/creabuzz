@@ -3186,6 +3186,10 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_ORG_NODE {
         validate_org_envelope(&event, "org node event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // The `onchain` binding on the org root is a governance act: only the
+        // root's holders or the community owner may publish it, and only on
+        // a root node. Always on — a forged binding must never store.
+        super::org_grant_enforcement::validate_org_node_binding(state, tenant, &event).await?;
     }
 
     if kind_u32 == KIND_ORG_GRANT {

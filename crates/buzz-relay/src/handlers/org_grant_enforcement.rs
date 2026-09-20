@@ -299,6 +299,131 @@ pub(crate) async fn enforce_grant_chain(
     .map_err(chain_error)
 }
 
+/// NIP-ORG onchain binding authority (kind:37010).
+///
+/// The `onchain` field on an org node binds the org root to a DAO (see
+/// NIP-ORG "Opt-in onchain binding"). That is a governance act, so it is
+/// restricted at ingest regardless of `ORG_GRANT_ENFORCEMENT`:
+///
+/// - only a **root** node may carry it (a binding on a subordinate seat
+///   would claim authority over a subtree its author may not speak for);
+/// - only the community **owner** or one of the root node's **holders**
+///   may author it — the same trust boundary the budget publication rule
+///   draws (author = subject or owner).
+///
+/// A malformed `onchain` object is rejected rather than stored dead: a
+/// binding the clients cannot read is worse than none. Returns the
+/// rejection message when publication is not allowed.
+#[allow(clippy::question_mark)] // absent field (None) and non-object field (Some(error)) differ
+pub(crate) fn org_node_binding_error(
+    content: &serde_json::Value,
+    author_hex: &str,
+    author_role: Option<&str>,
+) -> Option<String> {
+    // Absent `onchain` -> nothing to validate. Present but not an object ->
+    // reject rather than store a binding the clients cannot read.
+    let Some(onchain) = content.get("onchain") else {
+        return None;
+    };
+    let Some(binding) = onchain.as_object() else {
+        return Some("org node content `onchain` must be an object".into());
+    };
+
+    // Root only: a bound node must not itself report a parent.
+    let has_parent = content
+        .get("parent")
+        .and_then(|p| p.as_str())
+        .is_some_and(|p| !p.is_empty());
+    if has_parent {
+        return Some("restricted: only the org root node may carry an `onchain` binding".into());
+    }
+
+    let chain = binding.get("chain").and_then(|c| c.as_str());
+    let dao = binding.get("dao").and_then(|d| d.as_str());
+    let bound_at = binding.get("boundAt").and_then(|b| b.as_u64());
+    let (Some(chain), Some(dao), Some(bound_at)) = (chain, dao, bound_at) else {
+        return Some(
+            "org node content `onchain` must carry non-empty `chain`, `dao`, and numeric `boundAt`"
+                .into(),
+        );
+    };
+    if chain.trim().is_empty() || dao.trim().is_empty() {
+        return Some("org node content `onchain` chain and dao must be non-empty".into());
+    }
+    if bound_at == 0 {
+        return Some("org node content `onchain` boundAt must be a positive unix timestamp".into());
+    }
+
+    let holder = content
+        .get("holders")
+        .and_then(|h| h.as_array())
+        .map(|holders| {
+            holders
+                .iter()
+                .filter_map(|h| h.as_str())
+                .any(|h| h.eq_ignore_ascii_case(author_hex))
+        })
+        .unwrap_or(false);
+    if holder {
+        return None;
+    }
+    if author_role == Some("owner") {
+        return None;
+    }
+    Some(
+        "restricted: an org onchain binding may only be published by a root node holder or the community owner"
+            .into(),
+    )
+}
+
+/// Validate a kind:37010 org node that carries an `onchain` binding at
+/// ingest: shape plus the publication-authority rule (root holder or
+/// community owner). Nodes without an `onchain` field are untouched.
+pub(crate) async fn validate_org_node_binding(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &nostr::Event,
+) -> Result<(), IngestError> {
+    let content: serde_json::Value = serde_json::from_str(&event.content).map_err(|e| {
+        IngestError::Rejected(format!("invalid: org node content must be valid JSON: {e}"))
+    })?;
+    if content.get("onchain").is_none() {
+        return Ok(());
+    }
+
+    let author_hex = event.pubkey.to_hex();
+    let author_holds = content
+        .get("holders")
+        .and_then(|h| h.as_array())
+        .map(|holders| {
+            holders
+                .iter()
+                .filter_map(|h| h.as_str())
+                .any(|h| h.eq_ignore_ascii_case(&author_hex))
+        })
+        .unwrap_or(false);
+    if author_holds {
+        // Holders are trusted for their own root; still run the shape rule.
+        if let Some(msg) = org_node_binding_error(&content, &author_hex, Some("owner")) {
+            return Err(IngestError::Rejected(msg));
+        }
+        return Ok(());
+    }
+
+    let author_role = state
+        .db
+        .get_relay_member(tenant.community(), &author_hex)
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error checking binding author: {e}"))
+        })?
+        .map(|m| m.role);
+    if let Some(msg) = org_node_binding_error(&content, &author_hex, author_role.as_deref()) {
+        return Err(IngestError::Rejected(msg));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1029,5 +1154,91 @@ mod tests {
         expect_rejection(result, "issuer", "issuer/author mismatch must be rejected");
 
         pg_cleanup(&pool, community).await;
+    }
+
+    // -- org node onchain binding authority --------------------------------
+
+    fn binding_content(holders: &[&str], parent: Option<&str>) -> serde_json::Value {
+        let mut v = serde_json::json!({
+            "v": 1,
+            "name": "Founder",
+            "kind": "role",
+            "holders": holders,
+            "onchain": {
+                "chain": "eip155:31337",
+                "dao": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+                "boundAt": 1_789_870_800u64,
+            },
+        });
+        if let Some(parent) = parent {
+            v["parent"] = serde_json::Value::String(parent.into());
+        }
+        v
+    }
+
+    #[test]
+    fn binding_by_root_holder_is_allowed() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let content = binding_content(&[author], None);
+        assert!(org_node_binding_error(&content, author, None).is_none());
+    }
+
+    #[test]
+    fn binding_by_community_owner_is_allowed() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let holder = "bb00000000000000000000000000000000000000000000000000000000000002";
+        let content = binding_content(&[holder], None);
+        assert!(org_node_binding_error(&content, author, Some("owner")).is_none());
+    }
+
+    #[test]
+    fn binding_by_unrelated_member_is_rejected() {
+        let holder = "bb00000000000000000000000000000000000000000000000000000000000002";
+        let author = "cc00000000000000000000000000000000000000000000000000000000000003";
+        let content = binding_content(&[holder], None);
+        let err = org_node_binding_error(&content, author, Some("member"));
+        assert!(err.is_some_and(|e| e.contains("root node holder or the community owner")));
+    }
+
+    #[test]
+    fn binding_on_a_subordinate_node_is_rejected() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let content = binding_content(&[author], Some("founder"));
+        let err = org_node_binding_error(&content, author, Some("owner"));
+        assert!(err.is_some_and(|e| e.contains("only the org root node")));
+    }
+
+    #[test]
+    fn malformed_binding_is_rejected_even_for_holders() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let mut content = binding_content(&[author], None);
+        content["onchain"] = serde_json::json!({ "chain": "eip155:31337" });
+        let err = org_node_binding_error(&content, author, None);
+        assert!(err.is_some_and(|e| e.contains("dao")));
+    }
+
+    #[test]
+    fn non_object_binding_is_rejected() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let mut content = binding_content(&[author], None);
+        content["onchain"] = serde_json::json!("0xdeadbeef");
+        let err = org_node_binding_error(&content, author, Some("owner"));
+        assert!(err.is_some_and(|e| e.contains("must be an object")));
+    }
+
+    #[test]
+    fn zero_bound_at_is_rejected() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let mut content = binding_content(&[author], None);
+        content["onchain"]["boundAt"] = serde_json::json!(0);
+        let err = org_node_binding_error(&content, author, None);
+        assert!(err.is_some_and(|e| e.contains("boundAt")));
+    }
+
+    #[test]
+    fn node_without_onchain_is_untouched() {
+        let author = "aa00000000000000000000000000000000000000000000000000000000000001";
+        let content = serde_json::json!({ "v": 1, "name": "CTO", "kind": "role" });
+        assert!(org_node_binding_error(&content, author, None).is_none());
     }
 }
