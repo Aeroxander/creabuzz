@@ -243,7 +243,9 @@ export function OrgChart({ query }: OrgChartProps) {
       )}
 
       {/* Grants */}
-      {data.grants.length > 0 && <OrgGrantChainView grants={data.grants} />}
+      {data.grants.length > 0 && (
+        <OrgGrantChainView grants={data.grants} nodes={data.nodes} />
+      )}
 
       {/* Budgets */}
       {data.budgets.length > 0 && (
@@ -367,7 +369,13 @@ function OrgNodeSelectionPanel({
   const node = treeNode.node;
   const occupants = [...node.holders, ...node.agentSeats];
   const occupantSet = new Set(occupants);
-  const viaGrants = data.grants.filter((g) => !g.revoked && g.via === dtag);
+  const now = Math.floor(Date.now() / 1000);
+  const viaGrants = data.grants.filter(
+    (g) =>
+      !g.revoked &&
+      g.via === dtag &&
+      !(g.expires !== undefined && now >= g.expires),
+  );
   const budgets = data.budgets.filter(
     (b) => !b.revoked && occupantSet.has(b.subject),
   );

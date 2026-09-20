@@ -62,9 +62,15 @@ async function fetchOrgNodes(signal?: AbortSignal): Promise<OrgNode[]> {
   return events.map(eventToOrgNode).filter((n) => !n.revoked);
 }
 
+/**
+ * Grants are fetched WITHOUT dropping revoked/expired events: the delegation
+ * surface keeps revocation and expiry as visible history (the "Revoked &
+ * expired" curtain in OrgGrantChainView). Consumers split by lifecycle where
+ * they need the active set only — see lib/grantCurtain.ts.
+ */
 async function fetchOrgGrants(signal?: AbortSignal): Promise<OrgGrant[]> {
   const events = await fetchOrgEvents([KIND_ORG_GRANT], signal);
-  return events.map(eventToOrgGrant).filter((g) => !g.revoked);
+  return events.map(eventToOrgGrant);
 }
 
 async function fetchOrgBudgets(signal?: AbortSignal): Promise<OrgBudget[]> {

@@ -175,9 +175,13 @@ export function orgChartSummary(
   nodes: OrgNode[],
   grants: OrgGrant[],
   budgets: OrgBudget[],
+  /** Unix seconds; expired grants no longer count as in force. */
+  now = Math.floor(Date.now() / 1000),
 ) {
   const activeNodes = nodes.filter((n) => !n.revoked);
-  const activeGrants = grants.filter((g) => !g.revoked);
+  const activeGrants = grants.filter(
+    (g) => !g.revoked && !(g.expires !== undefined && now >= g.expires),
+  );
   return {
     nodeCount: activeNodes.length,
     grantCount: activeGrants.length,

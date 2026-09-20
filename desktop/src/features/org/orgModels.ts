@@ -138,6 +138,8 @@ export function eventToOrgNode(event: RelayEvent): OrgNode {
 export type OrgGrant = {
   eventId: string;
   dtag: string;
+  /** Signer/issuer pubkey (content.issuer; empty when the event omits it). */
+  issuer: string;
   grantee: string;
   via: string;
   verbs: string[];
@@ -156,6 +158,7 @@ export function eventToOrgGrant(event: RelayEvent): OrgGrant {
   return {
     eventId: event.id,
     dtag,
+    issuer: (typeof content.issuer === "string" && content.issuer) || "",
     // The canonical grantee lives in the content; the `p` tag mirrors it.
     grantee:
       (typeof content.grantee === "string" && content.grantee) ||

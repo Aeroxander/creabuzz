@@ -11303,6 +11303,25 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (MOCK_ORG_KINDS.has(event.kind)) {
+      // NIP-33 LWW upsert like the relay: newest republish of a (pubkey,
+      // kind, d-tag) replaces the stored one. Keeps wizard publishes and
+      // revocations visible to the org read model.
+      const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+      if (dTag) {
+        const idx = mockOrgEvents.findIndex(
+          (e) =>
+            e.pubkey.toLowerCase() === event.pubkey.toLowerCase() &&
+            e.kind === event.kind &&
+            e.tags.some((t) => t[0] === "d" && t[1] === dTag),
+        );
+        if (idx >= 0) mockOrgEvents.splice(idx, 1);
+      }
+      mockOrgEvents.push(event);
+      sendWsText(socket.handler, ["OK", event.id, true, ""]);
+      return;
+    }
+
     const channelId = getChannelIdFromTags(event.tags);
     if (!channelId) {
       sendWsText(socket.handler, [

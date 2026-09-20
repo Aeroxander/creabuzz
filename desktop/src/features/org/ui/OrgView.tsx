@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useOrgChartQuery, useContributionRecordsQuery } from "../hooks";
 import { Button } from "@/shared/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -5,6 +6,7 @@ import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs";
 import { OrgChart } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
+import { OrgWizard } from "./OrgWizard";
 
 function ContributionRecordsTab() {
   const query = useContributionRecordsQuery();
@@ -40,6 +42,13 @@ function ContributionRecordsTab() {
 
 export function OrgView() {
   const query = useOrgChartQuery();
+  const [activeTab, setActiveTab] = React.useState("chart");
+  // The onboarding wizard auto-opens from an empty org chart and simply
+  // stops appearing once a root exists (paperclip-ux-reference.md §3). It
+  // owns its own open state after that so the walk survives the root's
+  // publish; onFinish/onOpenCanvas land back on the canvas tab.
+  const wizardAutoOpen =
+    !query.isPending && !query.isError && (query.data?.nodes.length ?? 0) === 0;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -51,7 +60,12 @@ export function OrgView() {
           Org Chart
         </h1>
       </div>
-      <Tabs className="flex min-h-0 flex-1 flex-col" defaultValue="chart">
+      <Tabs
+        className="flex min-h-0 flex-1 flex-col"
+        defaultValue="chart"
+        onValueChange={setActiveTab}
+        value={activeTab}
+      >
         <div className="px-4 pt-2">
           <TabsList aria-label="Org views">
             <TabsTrigger data-testid="org-tab-chart" value="chart">
@@ -75,6 +89,12 @@ export function OrgView() {
           <ContributionRecordsTab />
         </TabsContent>
       </Tabs>
+      <OrgWizard
+        autoOpen={wizardAutoOpen}
+        nodes={query.data?.nodes ?? []}
+        onFinish={() => setActiveTab("chart")}
+        onOpenCanvas={() => setActiveTab("chart")}
+      />
     </div>
   );
 }

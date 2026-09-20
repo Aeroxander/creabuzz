@@ -149,6 +149,26 @@ function buildOrgEvents(): unknown[] {
       expires: NOW + 86_400 * 7,
       revoked: false,
     }),
+    // Revocation/expiry history for the curtain shelf (P2 item 11): a
+    // revoked child under an active parent, and an expired unrevoked grant.
+    orgEvent("org-grant-revoked", 37011, "grant-revoked", {
+      v: 1,
+      issuer: agent,
+      grantee: hex("ca11c34e"),
+      via: "eng",
+      verbs: ["read:#eng"],
+      parentGrant: "grant-eng",
+      revoked: true,
+    }),
+    orgEvent("org-grant-expired", 37011, "grant-expired", {
+      v: 1,
+      issuer: agent,
+      grantee: hex("e8891e5"),
+      via: "ops-agent",
+      verbs: ["read"],
+      expires: NOW - 100,
+      revoked: false,
+    }),
     orgEvent("org-budget-agent", 37012, "budget-agent", {
       v: 1,
       subject,
@@ -348,5 +368,141 @@ test.describe("org UI screenshots", () => {
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/org-contribution-detail.png` });
   });
-});
 
+  test("grant drawer: identities, entailment, parent chain, expiry", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    // grant-wide: attenuated verb (violation), parent chain, future expiry.
+    await page.getByRole("button", { name: /^Open grant read$/ }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("Grant grant-wide")).toBeVisible();
+    await expect(sheet.getByText("Parent chain")).toBeVisible();
+    await expect(
+      sheet.getByText("violation", { exact: false }).first(),
+    ).toBeVisible();
+    await expect(sheet.getByText(/Expires/).first()).toBeVisible();
+    await expect(sheet.getByText("Issuer")).toBeVisible();
+    await expect(sheet.getByText("Grantee")).toBeVisible();
+    await expect(
+      sheet.getByRole("button", { name: "Revoke grant" }),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-grant-drawer.png` });
+  });
+
+  test("revocation curtain: revoked + expired grants stay visible", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    // Collapsed shelf shows the count badge; expanding reveals history rows.
+    const toggle = page.getByTestId("org-curtain-toggle");
+    await expect(toggle).toBeVisible();
+    await expect(page.getByTestId("org-curtain-count")).toHaveText("2");
+    await toggle.click();
+    await expect(page.getByTestId("org-curtain-row")).toHaveCount(2);
+    await expect(page.getByTestId("org-curtain-row").first()).toContainText(
+      "revoked",
+    );
+    await expect(page.getByTestId("org-curtain-row").nth(1)).toContainText(
+      "expired",
+    );
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-curtain.png` });
+    // History rows stay openable: the expired grant's drawer shows its end.
+    await page
+      .getByTestId("org-curtain-row")
+      .nth(1)
+      .getByRole("button")
+      .click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(
+      sheet.getByText("expired", { exact: false }).first(),
+    ).toBeVisible();
+    await expect(
+      sheet.getByRole("button", { name: "Revoke grant" }),
+    ).toHaveCount(0);
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-curtain-expired-drawer.png` });
+  });
+
+  test("wizard auto-opens on an empty org chart", async ({ page }) => {
+    await installMockBridge(page);
+    await page.goto("/");
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+    // No org events seeded: the chart is empty, the wizard offers itself.
+    await page.getByTestId("open-org-view").click();
+    const wizard = page.getByRole("dialog");
+    await expect(wizard.getByText("Create your org")).toBeVisible();
+    await expect(wizard.getByText("Step 1")).toBeVisible();
+    await expect(
+      wizard.getByRole("heading", { name: "Name the org root" }),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-wizard-empty.png` });
+  });
+
+  test("wizard walk: real publish, skippable steps, review, finish on canvas", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await page.goto("/");
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+    await page.getByTestId("open-org-view").click();
+    const wizard = page.getByRole("dialog");
+    await expect(wizard.getByText("Create your org")).toBeVisible();
+
+    // Step 1 publishes the root (kind:37010) through the mock relay.
+    await wizard.getByLabel("Root name").fill("Acme");
+    await wizard.getByRole("button", { name: "Create root" }).click();
+    await expect(
+      wizard.getByRole("heading", { name: "Add a role or agent seat" }),
+    ).toBeVisible();
+
+    // Steps 2-4 are skippable; the strip counts through the gaps.
+    await wizard.getByRole("button", { name: "Skip step" }).click();
+    await expect(
+      wizard.getByRole("heading", { name: "First grant" }),
+    ).toBeVisible();
+    await wizard.getByRole("button", { name: "Skip step" }).click();
+    await expect(
+      wizard.getByRole("heading", { name: "First budget" }),
+    ).toBeVisible();
+    await wizard.getByRole("button", { name: "Skip step" }).click();
+    await expect(wizard.getByRole("heading", { name: "Review" })).toBeVisible();
+    await expect(wizard.getByText("skipped", { exact: true })).toHaveCount(3);
+    await expect(
+      wizard.getByText("acme", { exact: false }).first(),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-wizard-review.png` });
+
+    // Finish lands on the fitted canvas with the wizard closed.
+    await wizard.getByRole("button", { name: "Finish & view org" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByTestId("org-canvas-node-acme")).toBeVisible();
+  });
+
+  test("every org screenshot is byte-distinct", async () => {
+    const fs = await import("node:fs");
+    const crypto = await import("node:crypto");
+    const files = fs
+      .readdirSync(SHOTS)
+      .filter((file) => file.endsWith(".png"))
+      .sort();
+    expect(files.length).toBeGreaterThan(0);
+    const hashes = files.map((file) =>
+      crypto
+        .createHash("sha256")
+        .update(fs.readFileSync(`${SHOTS}/${file}`))
+        .digest("hex"),
+    );
+    expect(new Set(hashes).size, "screenshots must be byte-distinct").toBe(
+      hashes.length,
+    );
+  });
+});
