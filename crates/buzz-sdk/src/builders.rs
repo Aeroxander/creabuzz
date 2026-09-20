@@ -2455,6 +2455,30 @@ pub struct OrgNodeContent {
     /// UI rendering hints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui: Option<OrgNodeUi>,
+    /// Optional onchain binding for the org ROOT node (NIP-ORG "Opt-in
+    /// onchain binding"). Set by `buzz org bind` after a majeur DAO is
+    /// summoned for the community; absent = pure coordination data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OrgOnchainBinding>,
+}
+
+/// Optional onchain binding of an org ROOT node to a Moloch-family DAO
+/// (NIP-ORG "Opt-in onchain binding"). Distinct from [`OnchainBinding`],
+/// which is the per-budget spend-ceiling binding on kind:37012.
+///
+/// On binding, the root node's `holders` map to initial DAO shares (minted
+/// once at bind time; later seat changes are governance proposals, never
+/// auto-mutations) and budgets map to treasury allowances. The exit right
+/// is ragequit.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgOnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Bound DAO (Moloch clone) address (`0x…`).
+    pub dao: String,
+    /// Unix seconds when the binding was recorded onchain.
+    pub bound_at: u64,
 }
 
 /// Spend limit within a budget.
@@ -5648,6 +5672,7 @@ mod tests {
             agent_seats: vec![],
             scope: OrgScope::default(),
             ui: None,
+            onchain: None,
         }
     }
 
@@ -5968,6 +5993,38 @@ mod tests {
             Some(&serde_json::Value::String("b".repeat(64)))
         );
         assert!(onchain.get("subject_pubkey").is_none());
+    }
+
+    #[test]
+    fn org_node_onchain_binding_serializes_camel_case() {
+        // An absent root binding is skipped entirely (serde default).
+        let json = serde_json::to_value(sample_node_content()).unwrap();
+        assert!(json.get("onchain").is_none());
+
+        // A present root binding serializes as the flat camelCase object.
+        let mut bound = sample_node_content();
+        bound.onchain = Some(OrgOnchainBinding {
+            chain: "anvil-31337".into(),
+            dao: "0xdao".into(),
+            bound_at: 1_798_765_432,
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("dao"),
+            Some(&serde_json::Value::String("0xdao".into()))
+        );
+        assert_eq!(onchain.get("boundAt"), Some(&serde_json::Value::from(1_798_765_432u64)));
+        assert!(onchain.get("bound_at").is_none());
+
+        // Round-trips through a pre-binding event payload unchanged.
+        let parsed: OrgNodeContent =
+            serde_json::from_value(serde_json::to_value(sample_node_content()).unwrap()).unwrap();
+        assert_eq!(parsed, sample_node_content());
     }
 
     // ── Contribution record (37013) tests ──────────────────────────────────

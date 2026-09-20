@@ -2276,6 +2276,24 @@ pub enum OrgCmd {
     /// Manage contribution records (action verification + credit)
     #[command(subcommand)]
     Contribution(OrgContributionCmd),
+
+    /// Bind the org ROOT node to an onchain DAO (NIP-ORG "Opt-in onchain
+    /// binding") — republishes the root 37010 with `content.onchain`.
+    ///
+    /// This is the NODE binding (DAO governance). Different flag surface
+    /// from the budget `--onchain` flag (the kind:37012 spend-ceiling
+    /// binding to OrgAllowance.sol): `bind` takes `--chain` + `--dao`.
+    Bind {
+        /// Root node `d` tag to bind
+        #[arg(long)]
+        root: String,
+        /// Chain identifier, e.g. `anvil-31337` or `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// Bound DAO contract address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        dao: String,
+    },
 }
 
 /// Org contribution record subcommands — kind:37013.

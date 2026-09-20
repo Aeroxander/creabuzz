@@ -288,7 +288,16 @@ Fixed data contract:
 ---
 
 
-## Phase 8 — DAO binding (majeur) — designed, not built
+## Phase 8 — DAO binding (majeur) — implemented (dev-first, anvil-verified)
+
+> Status: built and verified end-to-end against a local anvil. `OrgBinding.sol`
+> summons a majeur DAO and records the binding; `DeployOrgDao.s.sol` orchestrates
+> deploy + summon + OrgAllowance ownership handover; `buzz org bind` republishes
+> the 37010 root with `content.onchain = {chain, dao, boundAt}`. > Relay-side enforcement LANDED: kind-37010 events carrying `onchain` must be
+> authored by a root-node holder or the community owner, on a root node, with
+> a well-formed binding — always on, never store-and-forward. Honest gaps: the
+> production governance-proposal path for the OrgAllowance handover (dev does
+> a direct `setOwner`), and the 47005-style receipt mirror indexer.
 
 Corrected facts (verified in-repo): `contracts/lib/majeur` IS vendored
 (gitlink `7d7a36b`, registered in `.gitmodules`, landed with the launchpad

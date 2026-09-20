@@ -15,8 +15,8 @@ use buzz_evm_allowance::{AllowanceClient, AllowanceDecision, AllowanceError, Win
 use buzz_sdk::{
     build_budget_spend_receipt, build_delete_addressable, BudgetLimits, BudgetSpendReceiptContent,
     BudgetWindow, ContributionRecordContent, HumanVsAi, OnExceed, OnchainBinding, OrgBudgetContent,
-    OrgGrantContent, OrgNodeContent, OrgNodeKind, OrgScope, ReviewStatus, SpendLimit, TaskLimits,
-    ORG_D_MAX_LEN,
+    OrgGrantContent, OrgNodeContent, OrgNodeKind, OrgOnchainBinding, OrgScope, ReviewStatus,
+    SpendLimit, TaskLimits, ORG_D_MAX_LEN,
 };
 use nostr::{Event, Timestamp};
 
@@ -148,6 +148,7 @@ async fn cmd_node_create(
         agent_seats: agents_hex,
         scope: OrgScope::default(),
         ui: None,
+        onchain: None,
     };
 
     let builder =
@@ -805,6 +806,143 @@ async fn cmd_allowance_spend(
     Ok(())
 }
 
+/// Validate a 20-byte EVM address (`0x` + 40 hex). Returns it lowercased.
+fn validate_eth_address(s: &str, what: &str) -> Result<String, CliError> {
+    let hex_part = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .ok_or_else(|| CliError::Usage(format!("{what} must start with 0x")))?;
+    if hex_part.len() != 40 || !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(CliError::Usage(format!(
+            "{what} must be 0x followed by 40 hex characters (20 bytes)"
+        )));
+    }
+    Ok(format!("0x{}", hex_part.to_ascii_lowercase()))
+}
+
+/// `buzz org bind` — republish the org ROOT node (kind:37010) with
+/// `content.onchain = { chain, dao, boundAt }` (NIP-ORG "Opt-in onchain
+/// binding"). The 37010 update IS the binding record; no new receipt kind.
+///
+/// Authorization (dev-first, client-side): the signer must be a holder on
+/// the root node (`content.holders`). The alternative path — "or is the
+/// community owner" — is RELAY-SIDE only (`relay_members` is not visible to
+/// the client); enforcing it (and gating who may write `onchain` at all) is
+/// a documented follow-up. Additionally, NIP-33 last-write-wins operates on
+/// the `kind:pubkey:d` coordinate, so the republish must come from the
+/// current head's author — a binding signed by anyone else would fork the
+/// coordinate instead of replacing the head, so it is rejected up front.
+///
+/// Shares semantics: the initial mint happens once at bind time (holders ->
+/// shares 1:1 or weighted); later seat changes are DAO governance
+/// proposals, never auto-mutations of the share supply.
+///
+/// The created_at-dominance pattern from `cmd_grant_revoke` guarantees the
+/// binding dominates the observed head under NIP-33 LWW.
+async fn cmd_org_bind(
+    client: &BuzzClient,
+    root: &str,
+    chain: &str,
+    dao: &str,
+) -> Result<(), CliError> {
+    validate_d_tag(root, "root node")?;
+    if chain.trim().is_empty() {
+        return Err(CliError::Usage("--chain must not be empty".into()));
+    }
+    let dao_addr = validate_eth_address(dao, "dao address")?;
+    let signer_pk = hex::encode(client.keys().public_key().to_bytes());
+
+    let filter = serde_json::json!({ "kinds": [KIND_ORG_NODE], "#d": [root] });
+    let events = fetch_org_events(client, vec![KIND_ORG_NODE], Some(filter.clone())).await?;
+    let head = events
+        .iter()
+        .max_by_key(|e| e.created_at)
+        .ok_or_else(|| CliError::Other(format!("org node '{root}' not found")))?;
+    let head_ts = head.created_at;
+    let head_author = hex::encode(head.pubkey.to_bytes());
+
+    if head_author != signer_pk {
+        return Err(CliError::Other(format!(
+            "org node '{root}' is authored by {head_author}; NIP-33 replacement works per \
+             coordinate (kind:pubkey:d), so only the node author can republish the binding. \
+             Community-owner binding by a non-author is a relay-side follow-up."
+        )));
+    }
+
+    // Tombstoned roots cannot be bound.
+    let tombstones = fetch_tombstones(
+        client,
+        vec![format!("{KIND_ORG_NODE}:{head_author}:{root}")],
+    )
+    .await?;
+    if tombstones.contains(&format!("{KIND_ORG_NODE}:{head_author}:{root}")) {
+        return Err(CliError::Other(format!(
+            "org node '{root}' is deleted (NIP-09 tombstone); cannot bind"
+        )));
+    }
+
+    let mut content: OrgNodeContent = serde_json::from_str(&head.content)
+        .map_err(|e| CliError::Other(format!("failed to parse node content: {e}")))?;
+
+    // Client-side authorization: signer holds the root. (Community-owner
+    // authorization needs relay_members — see the function docs.)
+    if !content
+        .holders
+        .iter()
+        .any(|h| h.eq_ignore_ascii_case(&signer_pk))
+    {
+        return Err(CliError::Other(format!(
+            "signer {signer_pk} is not a holder of root node '{root}'; onchain binding \
+             requires a root holder (community-owner authorization is relay-side, \
+             not yet enforced)"
+        )));
+    }
+
+    let bound_at = Timestamp::now().as_secs();
+    content.onchain = Some(OrgOnchainBinding {
+        chain: chain.to_string(),
+        dao: dao_addr.clone(),
+        bound_at,
+    });
+
+    // Publish at `max(now, head.created_at + 1)` so the binding dominates
+    // the observed head under NIP-33 LWW (same pattern as grant revoke).
+    let next_ts = head_ts
+        .as_secs()
+        .checked_add(1)
+        .map(|after_head| after_head.max(bound_at))
+        .ok_or_else(|| CliError::Other("node timestamp cannot be advanced".into()))?;
+    let builder = buzz_sdk::build_org_node(root, &content)
+        .map_err(|e| CliError::Usage(e.to_string()))?
+        .custom_created_at(Timestamp::from(next_ts));
+    let event = client.sign_event(builder)?;
+    let bind_ts = event.created_at;
+    let response = client.submit_event(event).await?;
+    println!(
+        "{}",
+        parse_write_response(&response, "node was updated while binding")?
+    );
+
+    // Post-submit guard (mirrors grant revoke): if a newer head survived
+    // our publish, a concurrent edit raced it — fail instead of claiming
+    // the binding is live.
+    let after = fetch_org_events(client, vec![KIND_ORG_NODE], Some(filter.clone())).await?;
+    if let Some(latest) = after.iter().max_by_key(|e| e.created_at) {
+        let latest_dao = serde_json::from_str::<OrgNodeContent>(&latest.content)
+            .ok()
+            .and_then(|c| c.onchain)
+            .map(|b| b.dao);
+        if latest.created_at > bind_ts || latest_dao.as_deref() != Some(dao_addr.as_str()) {
+            return Err(CliError::Conflict("node was updated while binding".into()));
+        }
+        println!("new head: {}", latest.id);
+    }
+    println!(
+        "onchain: {{\"chain\": \"{chain}\", \"dao\": \"{dao_addr}\", \"boundAt\": {bound_at}}}"
+    );
+    Ok(())
+}
+
 pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), CliError> {
     use crate::OrgCmd;
     match cmd {
@@ -911,6 +1049,7 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
             crate::OrgContributionCmd::Get { id } => cmd_contribution_get(client, &id).await,
             crate::OrgContributionCmd::List { limit } => cmd_contribution_list(client, limit).await,
         },
+        OrgCmd::Bind { root, chain, dao } => cmd_org_bind(client, &root, &chain, &dao).await,
         // `Allowance(Check)` is intercepted in `run()` before the relay
         // connection (local-only EVM read); only Spend reaches dispatch.
         OrgCmd::Allowance(sub) => match sub {
@@ -936,6 +1075,18 @@ mod tests {
 
     fn binding_spec() -> String {
         format!("{CHAIN}|{CONTRACT}|{SUBJECT}")
+    }
+
+    #[test]
+    fn eth_address_accepts_0x_hex_and_normalizes_case() {
+        assert_eq!(
+            validate_eth_address("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01", "dao").unwrap(),
+            "0xabcdef0123456789abcdef0123456789abcdef01"
+        );
+        // Non-0x, wrong length, and non-hex inputs are rejected.
+        assert!(validate_eth_address(SUBJECT, "dao").is_err()); // no 0x prefix
+        assert!(validate_eth_address("0x1234", "dao").is_err());
+        assert!(validate_eth_address("0xzz34567890abcdef1234567890abcdef12345678", "dao").is_err());
     }
 
     #[test]
