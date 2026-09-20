@@ -13,14 +13,27 @@ import {
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { MetricCard } from "@/shared/ui/MetricCard";
 import { PubKey } from "@/shared/ui/PubKey";
+import { Spinner } from "@/shared/ui/spinner";
+import { UtilizationBar } from "@/shared/ui/UtilizationBar";
+import {
+  summarizeUtilizations,
+  utilizationPercentage,
+} from "@/shared/ui/utilizationThresholds";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { useDeleteOrgNodeMutation, useDeleteOrgBudgetMutation } from "../hooks";
+import {
+  useBudgetUtilizationsQuery,
+  useDeleteOrgNodeMutation,
+  useDeleteOrgBudgetMutation,
+} from "../hooks";
+import { METRIC_FETCH_LIMIT } from "../lib/budgetConsumption";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import { OrgNodeForm } from "./OrgNodeForm";
 import { OrgGrantForm } from "./OrgGrantForm";
@@ -47,20 +60,38 @@ export function OrgChart({ query }: OrgChartProps) {
   const [selectedParentDtag, setSelectedParentDtag] = React.useState<
     string | undefined
   >();
+  const budgetsHeadingRef = React.useRef<HTMLHeadingElement>(null);
+  const focusBudgets = React.useCallback(() => {
+    budgetsHeadingRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    budgetsHeadingRef.current?.focus({ preventScroll: true });
+  }, []);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading org chart...
-      </div>
+      <EmptyState
+        icon={<Spinner aria-hidden="true" className="h-6 w-6" />}
+        testId="org-chart-loading"
+        title="Loading org chart…"
+      />
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-destructive">
-        Failed to load org chart
-      </div>
+      <EmptyState
+        action={
+          <Button onClick={() => query.refetch()} size="sm" variant="outline">
+            Retry
+          </Button>
+        }
+        description="The relay did not answer the org query. Check the connection, then retry."
+        testId="org-chart-error"
+        title="Failed to load org chart"
+        variant="error"
+      />
     );
   }
 
@@ -71,21 +102,24 @@ export function OrgChart({ query }: OrgChartProps) {
       data.budgets.length === 0)
   ) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 p-8">
-        <p className="text-sm text-muted-foreground">
-          No org data yet. Create your first role or team to get started.
-        </p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setSelectedParentDtag(undefined);
-            setCreateNodeOpen(true);
-          }}
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Create First Node
-        </Button>
-      </div>
+      <EmptyState
+        action={
+          <Button
+            onClick={() => {
+              setSelectedParentDtag(undefined);
+              setCreateNodeOpen(true);
+            }}
+            size="sm"
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Create First Node
+          </Button>
+        }
+        description="No roles, teams, or budgets yet."
+        icon={<Plus aria-hidden="true" className="h-5 w-5" />}
+        testId="org-chart-empty"
+        title="No org data yet"
+      />
     );
   }
 
@@ -93,11 +127,25 @@ export function OrgChart({ query }: OrgChartProps) {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Summary bar */}
+      {/* Metric row */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <MetricCard
+          label="Nodes"
+          testId="org-metric-nodes"
+          value={summary.nodeCount}
+        />
+        <MetricCard
+          description={`${summary.agentSeatCount} agent seats`}
+          label="Active grants"
+          testId="org-metric-grants"
+          value={summary.grantCount}
+        />
+        <OrgBudgetMetricCards
+          budgets={data.budgets}
+          onFocusBudgets={focusBudgets}
+        />
+      </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <span>{summary.nodeCount} nodes</span>
-        <span>{summary.grantCount} grants</span>
-        <span>{summary.budgetCount} budgets</span>
         <div className="ml-auto flex gap-1.5">
           <Button
             variant="outline"
@@ -147,7 +195,12 @@ export function OrgChart({ query }: OrgChartProps) {
       {data.grants.length > 0 && <OrgGrantChainView grants={data.grants} />}
 
       {/* Budgets */}
-      {data.budgets.length > 0 && <OrgBudgetSection budgets={data.budgets} />}
+      {data.budgets.length > 0 && (
+        <OrgBudgetSection
+          budgets={data.budgets}
+          headingRef={budgetsHeadingRef}
+        />
+      )}
 
       {/* Dialogs */}
       <OrgNodeForm
@@ -331,7 +384,13 @@ function OrgNodeIcon({ kind }: { kind: OrgNode["kind"] }) {
 
 // ── Budget section ────────────────────────────────────────────────────────
 
-function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
+function OrgBudgetSection({
+  budgets,
+  headingRef,
+}: {
+  budgets: OrgBudget[];
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+}) {
   const deleteMutation = useDeleteOrgBudgetMutation();
   const activeBudgets = budgets.filter((b) => !b.revoked);
 
@@ -339,7 +398,13 @@ function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold mb-2">Budgets</h3>
+      <h3
+        className="mb-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        ref={headingRef}
+        tabIndex={-1}
+      >
+        Budgets
+      </h3>
       <div className="space-y-2">
         {activeBudgets.map((budget) => {
           const limits = budget.limits;
@@ -407,5 +472,110 @@ function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+// ── Metric row: budgets + needs attention ─────────────────────────────────
+
+/**
+ * Budgets metric card (count + worst utilization bar) and the needs-attention
+ * card (budgets at/over 70% + unverifiable floor counts). Clicking
+ * needs-attention scrolls to and focuses the budgets section — a real
+ * affordance, never a fake navigation. Revoked events are filtered upstream
+ * in hooks.ts before the chart sees them, so revoked anomalies are not
+ * counted here; adding them needs a dedicated query, not a silent guess.
+ */
+function OrgBudgetMetricCards({
+  budgets,
+  onFocusBudgets,
+}: {
+  budgets: OrgBudget[];
+  onFocusBudgets: () => void;
+}) {
+  const activeBudgets = React.useMemo(
+    () => budgets.filter((b) => !b.revoked),
+    [budgets],
+  );
+  const utilizations = useBudgetUtilizationsQuery(activeBudgets);
+  const entries = utilizations.data ?? [];
+
+  const inputs = entries.map((entry) => {
+    if (!entry.summary) {
+      return { flagged: false, percentage: null, truncated: false };
+    }
+    const { consumed, limit, truncated } = entry.summary;
+    return {
+      flagged: typeof limit === "number" && limit === 0 && consumed > 0,
+      percentage: utilizationPercentage(consumed, limit),
+      truncated,
+    };
+  });
+  const { worstIndex, attentionCount } = summarizeUtilizations(inputs);
+
+  const worst = worstIndex !== null ? entries[worstIndex] : undefined;
+  const anyTruncated = entries.some((entry) => entry.summary?.truncated);
+  const floorEntry = anyTruncated
+    ? entries.find((entry) => entry.summary?.truncated)
+    : undefined;
+
+  const worstSummary = worst?.summary;
+  const worstHasCeiling =
+    typeof worstSummary?.limit === "number" && (worstSummary?.limit ?? 0) > 0;
+
+  return (
+    <>
+      <MetricCard
+        description={
+          utilizations.isPending
+            ? "checking usage…"
+            : activeBudgets.length === 0
+              ? undefined
+              : worstSummary
+                ? undefined
+                : "no usage data"
+        }
+        label="Budgets"
+        testId="org-metric-budgets"
+        value={activeBudgets.length}
+      >
+        {worst && worstSummary && (
+          <UtilizationBar
+            caption={`worst of ${activeBudgets.length} budgets`}
+            className="mt-1.5"
+            consumed={worstSummary.consumed}
+            label={`Worst budget utilization (${worst.budget.subject || worst.budget.dtag})`}
+            limit={worstHasCeiling ? worstSummary.limit : null}
+            readout={
+              worstSummary.truncated
+                ? undefined
+                : worstHasCeiling
+                  ? `${worstSummary.consumed} / ${worstSummary.limit} runs`
+                  : `${worstSummary.consumed} runs`
+            }
+            truncated={worstSummary.truncated}
+          />
+        )}
+        {!worst && floorEntry?.summary && (
+          <UtilizationBar
+            className="mt-1.5"
+            consumed={floorEntry.summary.consumed}
+            floor={METRIC_FETCH_LIMIT}
+            label={`Budget usage floor (${floorEntry.budget.subject || floorEntry.budget.dtag})`}
+            truncated
+          />
+        )}
+      </MetricCard>
+      <MetricCard
+        description={
+          activeBudgets.length === 0
+            ? "no budgets to watch"
+            : "budgets ≥70% · floor counts"
+        }
+        label="Needs attention"
+        onClick={activeBudgets.length > 0 ? onFocusBudgets : undefined}
+        testId="org-metric-needs-attention"
+        value={attentionCount}
+      />
+    </>
   );
 }

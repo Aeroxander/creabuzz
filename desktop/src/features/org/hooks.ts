@@ -478,6 +478,47 @@ export function useBudgetConsumptionQuery(
   });
 }
 
+export type BudgetUtilizationEntry = {
+  budget: OrgBudget;
+  /** Consumption summary for the budget, or null when it has no subject. */
+  summary: ConsumptionSummary | null;
+};
+
+async function fetchBudgetUtilizations(
+  budgets: OrgBudget[],
+): Promise<BudgetUtilizationEntry[]> {
+  return Promise.all(
+    budgets.map(async (budget) => ({
+      budget,
+      summary: budget.subject
+        ? await fetchBudgetConsumption(
+            budget.subject,
+            budget.window,
+            budget.limits.runs,
+          )
+        : null,
+    })),
+  );
+}
+
+/**
+ * Batched per-budget consumption for the org metric row. One query over all
+ * active budgets (the per-budget hook above stays for the budget cards), so
+ * the summary row does not mount a variable number of hook calls.
+ */
+export function useBudgetUtilizationsQuery(budgets: OrgBudget[]) {
+  const key = budgets
+    .map((b) => `${b.dtag}:${b.subject}:${b.window}:${b.limits.runs ?? "-"}`)
+    .join("|");
+  return useQuery({
+    queryKey: [...orgQueryKey, "budget-utilizations", key],
+    queryFn: () => fetchBudgetUtilizations(budgets),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled: budgets.length > 0,
+  });
+}
+
 // ── Contribution review (Phase 3) ──────────────────────────────────────────
 
 type ReviewUpdateInput = {

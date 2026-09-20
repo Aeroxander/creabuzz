@@ -1,4 +1,4 @@
-import { Progress } from "@/shared/ui/progress";
+import { UtilizationBar } from "@/shared/ui/UtilizationBar";
 import { useBudgetConsumptionQuery } from "../hooks";
 import { METRIC_FETCH_LIMIT } from "../lib/budgetConsumption";
 import type { OrgBudget } from "../orgModels";
@@ -14,16 +14,12 @@ const RESET_HINT: Record<OrgBudget["window"], string> = {
   epoch: "all-time window",
 };
 
-function barColorClass(percentage: number): string {
-  if (percentage > 80) return "[&>div]:bg-destructive";
-  if (percentage >= 60) return "[&>div]:bg-amber-500";
-  return "[&>div]:bg-emerald-500";
-}
-
 /**
- * Runs consumed inside a budget's window, computed from kind:44200 agent
- * turn metrics. When the metric fetch hits its cap the count is a floor,
- * so the honest display is ">N in window" instead of a wrong percentage.
+ * Thin consumer of the shared UtilizationBar (thresholds + honesty rule live
+ * there). Runs consumed inside the budget's window come from kind:44200
+ * agent turn metrics; when the metric fetch hits its cap the count is a
+ * floor, so UtilizationBar shows ">{METRIC_FETCH_LIMIT} … floor" instead of
+ * a wrong percentage.
  */
 export function OrgBudgetConsumption({ budget }: OrgBudgetConsumptionProps) {
   const query = useBudgetConsumptionQuery(
@@ -46,35 +42,29 @@ export function OrgBudgetConsumption({ budget }: OrgBudgetConsumptionProps) {
   }
 
   const { consumed, limit, truncated } = query.data;
-
-  if (truncated) {
-    return (
-      <div className="mt-1.5 space-y-0.5">
-        <p className="text-2xs font-medium text-amber-600 dark:text-amber-400">
-          {`>${METRIC_FETCH_LIMIT} turns in window — count is a floor`}
-        </p>
-        <p className="text-2xs text-muted-foreground">
-          {RESET_HINT[budget.window]}
-        </p>
-      </div>
-    );
-  }
-
   const hasCeiling = typeof limit === "number";
-  const percentage = hasCeiling && limit > 0 ? (consumed / limit) * 100 : null;
 
   return (
-    <div className="mt-1.5 space-y-1">
-      <Progress
-        aria-label={label}
-        className={percentage !== null ? barColorClass(percentage) : undefined}
-        value={percentage === null ? null : Math.min(100, percentage)}
+    <div className="mt-1.5">
+      <UtilizationBar
+        caption={
+          hasCeiling
+            ? RESET_HINT[budget.window]
+            : `no runs ceiling · ${RESET_HINT[budget.window]}`
+        }
+        consumed={consumed}
+        floor={METRIC_FETCH_LIMIT}
+        label={label}
+        limit={hasCeiling ? limit : null}
+        readout={
+          truncated
+            ? undefined
+            : hasCeiling
+              ? `${consumed} / ${limit} runs used`
+              : `${consumed} runs in window`
+        }
+        truncated={truncated}
       />
-      <p className="text-2xs text-muted-foreground">
-        {hasCeiling
-          ? `${consumed} / ${limit} runs used · ${RESET_HINT[budget.window]}`
-          : `${consumed} runs in window · no runs ceiling · ${RESET_HINT[budget.window]}`}
-      </p>
     </div>
   );
 }

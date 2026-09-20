@@ -1,4 +1,7 @@
 import { useOrgChartQuery, useContributionRecordsQuery } from "../hooks";
+import { Button } from "@/shared/ui/button";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs";
 import { OrgChart } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
@@ -8,17 +11,27 @@ function ContributionRecordsTab() {
 
   if (query.isPending) {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading contribution records...
-      </div>
+      <EmptyState
+        icon={<Spinner aria-hidden="true" className="h-6 w-6" />}
+        testId="contributions-loading"
+        title="Loading contribution records…"
+      />
     );
   }
 
   if (query.isError) {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-destructive">
-        Failed to load contribution records
-      </div>
+      <EmptyState
+        action={
+          <Button onClick={() => query.refetch()} size="sm" variant="outline">
+            Retry
+          </Button>
+        }
+        description="The relay did not answer the contribution query. Check the connection, then retry."
+        testId="contributions-error"
+        title="Failed to load contribution records"
+        variant="error"
+      />
     );
   }
 
