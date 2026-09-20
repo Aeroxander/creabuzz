@@ -331,6 +331,15 @@ enforcement + "Needs me" inbox) — the coordination layer must be enforced
 before the org gains money and exit, and a binding designed now would
 target a moving org model.
 
+Status: the next slice is DONE and live-verified. Relay grant-chain
+enforcement (`ORG_GRANT_ENFORCEMENT`, default off) is in with ten
+Postgres-backed ingest tests; the "Needs me" inbox renders 46010s with
+inline Approve/Deny over the existing 46030/46031 command surface; and the
+full resolution loop was exercised against a live local relay: seeded
+budget approval -> owner-signed 46030 -> row granted + command event
+persisted with its `d` tag (REQ `#d` servability confirmed), then probe
+artifacts removed.
+
 ---
 
 ## Definition of done
