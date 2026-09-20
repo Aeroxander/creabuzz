@@ -30,6 +30,8 @@ pub mod network;
 pub mod nip10;
 /// Agent observer frame helpers.
 pub mod observer;
+/// NIP-ORG grant-chain verification — pure attenuation/standing/expiry walk.
+pub mod org_grant;
 /// NIP-AB device pairing — crypto primitives, message types, and errors.
 pub mod pairing;
 /// Presence status types shared across crates.

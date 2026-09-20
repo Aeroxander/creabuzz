@@ -28,6 +28,8 @@ pub mod moderation_authz;
 pub mod moderation_commands;
 /// Relay-signed moderation notice DMs.
 pub mod moderation_notices;
+/// NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
+pub mod org_grant_enforcement;
 /// Product-feedback validation + deployment sidecar persistence.
 pub mod product_feedback;
 #[allow(dead_code, missing_docs)]

@@ -258,6 +258,14 @@ pub struct Config {
     /// are permitted regardless of auth method (API token, NIP-42).
     pub require_relay_membership: bool,
 
+    /// When `true`, ingest of kind:37011 org grants verifies the grant
+    /// chain (attenuation, root standing, expiry) before acceptance, per
+    /// NIP-ORG "Relay behavior". Opt-in via `ORG_GRANT_ENFORCEMENT=on`;
+    /// the default is `off`, which stores and forwards grants unchanged.
+    /// When on, a grant whose chain cannot be fully verified (missing
+    /// parent/node, lookup error) is rejected — never stored as verified.
+    pub org_grant_enforcement: bool,
+
     /// Whether this deployment can serve huddle (voice) audio.
     ///
     /// Huddle audio frames are relayed peer-to-peer *within a single pod*
@@ -737,6 +745,23 @@ impl Config {
         let require_relay_membership = std::env::var("BUZZ_REQUIRE_RELAY_MEMBERSHIP")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+
+        // NIP-ORG grant-chain enforcement: strictly opt-in. Only the exact
+        // spellings "on"/"off" are accepted; any other value is a startup
+        // error so a typo can never silently disable (or enable) authority
+        // enforcement. Default off = byte-identical store-and-forward.
+        let org_grant_enforcement = match std::env::var("ORG_GRANT_ENFORCEMENT") {
+            Ok(raw) => match raw.trim() {
+                "on" => true,
+                "off" | "" => false,
+                other => {
+                    return Err(ConfigError::InvalidValue(format!(
+                        "ORG_GRANT_ENFORCEMENT must be \"on\" or \"off\" (got \"{other}\")"
+                    )))
+                }
+            },
+            Err(_) => false,
+        };
 
         // Defaults true → single-pod (N=1) keeps today's huddle behavior. A
         // horizontally-scaled deployment sets this false; see the field doc.
@@ -1325,6 +1350,7 @@ impl Config {
             metrics_port,
             pubkey_allowlist_enabled,
             require_relay_membership,
+            org_grant_enforcement,
             huddle_audio_available,
             mesh,
             mesh_demo_echo,
@@ -1459,6 +1485,10 @@ mod tests {
             "require_relay_membership should default to false"
         );
         assert!(
+            !config.org_grant_enforcement,
+            "org_grant_enforcement should default to false (opt-in)"
+        );
+        assert!(
             config.relay_owner_pubkey.is_none(),
             "relay_owner_pubkey should default to None"
         );
@@ -1584,6 +1614,43 @@ mod tests {
     /// changes the resolved auth mode (token auth was removed).
     const SOME_ADMIN_TOKEN: &str =
         "5f0e1d2c3b4a59687786958493a2b1c0decadebeefcafe0123456789abcdef01";
+
+    #[test]
+    fn org_grant_enforcement_parses_explicit_on_and_off() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "on");
+        let config = Config::from_env().expect("config with ORG_GRANT_ENFORCEMENT=on");
+        assert!(config.org_grant_enforcement);
+
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "off");
+        let config = Config::from_env().expect("config with ORG_GRANT_ENFORCEMENT=off");
+        assert!(!config.org_grant_enforcement);
+
+        // Empty is an explicit kill switch, not a crashloop.
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "");
+        let config = Config::from_env().expect("config with empty ORG_GRANT_ENFORCEMENT");
+        assert!(!config.org_grant_enforcement);
+
+        std::env::remove_var("ORG_GRANT_ENFORCEMENT");
+    }
+
+    #[test]
+    fn org_grant_enforcement_rejects_unknown_values() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "true");
+        let err = Config::from_env().expect_err("non-on/off value must fail startup");
+        assert!(
+            err.to_string().contains("ORG_GRANT_ENFORCEMENT"),
+            "error must name the variable: {err}"
+        );
+        // Trimmed whitespace still rejects — only exact "on"/"off" pass.
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", " true");
+        assert!(
+            Config::from_env().is_err(),
+            "whitespace-padded value must be rejected"
+        );
+        std::env::remove_var("ORG_GRANT_ENFORCEMENT");
+    }
 
     #[test]
     fn admin_token_set_is_ignored_and_warns_at_startup() {
