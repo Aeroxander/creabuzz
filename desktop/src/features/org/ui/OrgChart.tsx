@@ -8,12 +8,14 @@ import {
   Plus,
   MoreHorizontal,
   Trash2,
+  X,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { MetricCard } from "@/shared/ui/MetricCard";
 import { PubKey } from "@/shared/ui/PubKey";
 import { Spinner } from "@/shared/ui/spinner";
@@ -35,6 +37,8 @@ import {
 } from "../hooks";
 import { METRIC_FETCH_LIMIT } from "../lib/budgetConsumption";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
+import type { CanvasDensity } from "../lib/canvasLayout";
+import { OrgCanvas } from "./OrgCanvas";
 import { OrgNodeForm } from "./OrgNodeForm";
 import { OrgGrantForm } from "./OrgGrantForm";
 import { OrgBudgetForm } from "./OrgBudgetForm";
@@ -48,6 +52,8 @@ import type {
 } from "../orgModels";
 import type { UseQueryResult } from "@tanstack/react-query";
 
+type ChartViewMode = "canvas" | "list";
+
 type OrgChartProps = {
   query: UseQueryResult<OrgChartType, Error>;
 };
@@ -60,6 +66,17 @@ export function OrgChart({ query }: OrgChartProps) {
   const [selectedParentDtag, setSelectedParentDtag] = React.useState<
     string | undefined
   >();
+  // Canvas is the default; the indented list stays available both as the
+  // screen-reader/small-window fallback and (in canvas mode) as the
+  // accessible source of truth inside a collapsed "Node list" disclosure.
+  const [viewMode, setViewMode] = React.useState<ChartViewMode>("canvas");
+  const [density, setDensity] = React.useState<CanvasDensity>("comfortable");
+  const [selectedNodeDtag, setSelectedNodeDtag] = React.useState<
+    string | undefined
+  >();
+  const handleSelectNode = React.useCallback((dtag: string) => {
+    setSelectedNodeDtag((current) => (current === dtag ? undefined : dtag));
+  }, []);
   const budgetsHeadingRef = React.useRef<HTMLHeadingElement>(null);
   const focusBudgets = React.useCallback(() => {
     budgetsHeadingRef.current?.scrollIntoView({
@@ -145,7 +162,37 @@ export function OrgChart({ query }: OrgChartProps) {
           onFocusBudgets={focusBudgets}
         />
       </div>
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+        <SegmentedControl
+          legend="Chart view"
+          onValueChange={(mode) => setViewMode(mode)}
+          optionTestIdPrefix="org-view"
+          options={
+            [
+              { value: "canvas", label: "Canvas" },
+              { value: "list", label: "List" },
+            ] as const
+          }
+          size="compact"
+          testId="org-view-toggle"
+          value={viewMode}
+        />
+        {viewMode === "canvas" && (
+          <SegmentedControl
+            legend="Canvas density"
+            onValueChange={(next) => setDensity(next)}
+            optionTestIdPrefix="org-density"
+            options={
+              [
+                { value: "comfortable", label: "Comfortable" },
+                { value: "compact", label: "Compact" },
+              ] as const
+            }
+            size="compact"
+            testId="org-density-toggle"
+            value={density}
+          />
+        )}
         <div className="ml-auto flex gap-1.5">
           <Button
             variant="outline"
@@ -180,10 +227,14 @@ export function OrgChart({ query }: OrgChartProps) {
         </div>
       </div>
 
-      {/* Node tree */}
+      {/* Node tree (canvas + accessible list) */}
       {data.nodes.length > 0 && (
         <OrgNodeSection
           data={data}
+          density={density}
+          onSelectNode={handleSelectNode}
+          selectedDtag={selectedNodeDtag}
+          viewMode={viewMode}
           onCreateChild={(parentDtag) => {
             setSelectedParentDtag(parentDtag);
             setCreateNodeOpen(true);
@@ -227,26 +278,160 @@ export function OrgChart({ query }: OrgChartProps) {
 
 function OrgNodeSection({
   data,
+  density,
+  viewMode,
+  selectedDtag,
+  onSelectNode,
   onCreateChild,
 }: {
   data: OrgChartType;
+  density: CanvasDensity;
+  viewMode: ChartViewMode;
+  selectedDtag?: string;
+  onSelectNode: (dtag: string) => void;
   onCreateChild: (parentDtag: string) => void;
 }) {
   const tree = React.useMemo(() => buildOrgTree(data.nodes), [data.nodes]);
+  const summary = React.useMemo(
+    () => orgChartSummary(data.nodes, data.grants, data.budgets),
+    [data.nodes, data.grants, data.budgets],
+  );
+
+  const list = (
+    <div className="space-y-0.5">
+      {tree.roots.map((node) => (
+        <OrgTreeNodeRow
+          key={node.node.dtag}
+          node={node}
+          onCreateChild={onCreateChild}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div>
-      <h3 className="text-sm font-semibold mb-2">Roles &amp; Teams</h3>
-      <div className="space-y-0.5">
-        {tree.roots.map((node) => (
-          <OrgTreeNodeRow
-            key={node.node.dtag}
-            node={node}
-            onCreateChild={onCreateChild}
+      <h3 className="mb-2 text-sm font-semibold">Roles &amp; Teams</h3>
+      {viewMode === "canvas" ? (
+        <>
+          <OrgCanvas
+            density={density}
+            onSelect={onSelectNode}
+            roots={tree.roots}
+            selectedDtag={selectedDtag}
+            summaryLabel={`Org chart: ${summary.nodeCount} nodes (${summary.roleCount} roles, ${summary.teamCount} teams, ${summary.agentSeatCount} agent seats) and ${summary.grantCount} active grants. Interactions are pointer-driven; the node list below the canvas is the accessible version of this chart.`}
           />
-        ))}
-      </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-muted-foreground">
+              Node list
+            </summary>
+            <div className="mt-1">{list}</div>
+          </details>
+        </>
+      ) : (
+        list
+      )}
+      {selectedDtag !== undefined && (
+        <OrgNodeSelectionPanel
+          data={data}
+          dtag={selectedDtag}
+          onClose={() => onSelectNode(selectedDtag)}
+          tree={tree}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Selected node panel ───────────────────────────────────────────────────
+
+/**
+ * Per-node drill-in shown when a canvas card is clicked: that node's
+ * occupants, the delegations issued through it, and the budgets covering its
+ * occupants. The full grant chain and budget sections below stay rendered —
+ * this panel narrows, it never replaces.
+ */
+function OrgNodeSelectionPanel({
+  data,
+  dtag,
+  onClose,
+  tree,
+}: {
+  data: OrgChartType;
+  dtag: string;
+  onClose: () => void;
+  tree: ReturnType<typeof buildOrgTree>;
+}) {
+  const treeNode = tree.byDtag.get(dtag);
+  if (!treeNode) return null;
+  const node = treeNode.node;
+  const occupants = [...node.holders, ...node.agentSeats];
+  const occupantSet = new Set(occupants);
+  const viaGrants = data.grants.filter((g) => !g.revoked && g.via === dtag);
+  const budgets = data.budgets.filter(
+    (b) => !b.revoked && occupantSet.has(b.subject),
+  );
+
+  return (
+    <Card className="mt-2 p-3" data-testid="org-node-selection">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold">{node.name}</span>
+          <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+            {node.kind.replace("_", " ")}
+          </span>
+          {node.onchain && (
+            <OnchainChip
+              address={node.onchain.dao}
+              chain={node.onchain.chain}
+              label={`Bound to DAO ${node.onchain.dao} on ${node.onchain.chain}`}
+            />
+          )}
+        </div>
+        <Button
+          aria-label={`Deselect ${node.name}`}
+          className="h-6 w-6 shrink-0 p-0"
+          onClick={onClose}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <X aria-hidden="true" className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+        <div>
+          <span className="font-medium text-foreground">Occupants: </span>
+          {occupants.length > 0 ? (
+            <span className="inline-flex flex-wrap items-center gap-1.5 align-middle">
+              {occupants.map((pubkey) => (
+                <PubKey key={pubkey} pubkey={pubkey} interactive={false} />
+              ))}
+            </span>
+          ) : (
+            "none"
+          )}
+        </div>
+        <div>
+          <span className="font-medium text-foreground">
+            Delegations through this node ({viaGrants.length}):{" "}
+          </span>
+          {viaGrants.length > 0
+            ? viaGrants.map((g) => g.verbs.join(", ") || g.dtag).join(" · ")
+            : "none"}
+        </div>
+        <div>
+          <span className="font-medium text-foreground">
+            Budgets covering its occupants ({budgets.length}):{" "}
+          </span>
+          {budgets.length > 0
+            ? budgets
+                .map((b) => `${b.subject || b.dtag} (${b.window})`)
+                .join(" · ")
+            : "none"}
+        </div>
+      </div>
+    </Card>
   );
 }
 

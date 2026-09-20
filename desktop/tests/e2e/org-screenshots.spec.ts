@@ -82,6 +82,43 @@ function buildOrgEvents(): unknown[] {
       agentSeats: [agent],
       scope: { readBelow: true, assignBelow: true, canGrant: ["read"] },
     }),
+    // Deeper tree so the canvas has a real forest to lay out (7 nodes).
+    orgEvent("org-node-platform", 37010, "platform", {
+      v: 1,
+      name: "Platform",
+      kind: "team",
+      parent: "eng",
+      holders: [],
+      agentSeats: [],
+      scope: { readBelow: true, assignBelow: false, canGrant: [] },
+    }),
+    orgEvent("org-node-sre", 37010, "sre", {
+      v: 1,
+      name: "SRE",
+      kind: "role",
+      parent: "eng",
+      holders: [hex("5be12007")],
+      agentSeats: [],
+      scope: { readBelow: false, assignBelow: false, canGrant: [] },
+    }),
+    orgEvent("org-node-design", 37010, "design", {
+      v: 1,
+      name: "Design",
+      kind: "team",
+      parent: "founder",
+      holders: [hex("0dd5e55")],
+      agentSeats: [],
+      scope: { readBelow: true, assignBelow: true, canGrant: ["read"] },
+    }),
+    orgEvent("org-node-ops-agent", 37010, "ops-agent", {
+      v: 1,
+      name: "Ops Agent",
+      kind: "agent_seat",
+      parent: "eng",
+      holders: [],
+      agentSeats: [hex("a6e7b00d")],
+      scope: { readBelow: false, assignBelow: false, canGrant: [] },
+    }),
     // Root grant from standing, two attenuated children, one violation.
     orgEvent("org-grant-root", 37011, "grant-root", {
       v: 1,
@@ -123,6 +160,14 @@ function buildOrgEvents(): unknown[] {
         contract: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
         subject,
       },
+    }),
+    orgEvent("org-budget-eng", 37012, "budget-eng", {
+      v: 1,
+      subject:
+        "bb22a5299220cad76ffd46190ccbeede8ab5dc260faa28b6e5a2cb31b9aff260",
+      window: "week",
+      limits: { runs: 20, tasks: { create: 10 } },
+      onExceed: "require-approval",
     }),
     // 32 turns this month against a 50-run ceiling → amber bar.
     ...Array.from({ length: 32 }, (_, i) => ({
@@ -199,6 +244,66 @@ async function openOrgView(page: Page) {
 }
 
 test.describe("org UI screenshots", () => {
+  test("org canvas: tree layout, fit-to-screen, selection, density", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    const viewport = page.getByTestId("org-canvas-viewport");
+    await expect(viewport).toBeVisible();
+    // All 7 seeded nodes are on the canvas (list fallback stays in the
+    // collapsed "Node list" disclosure, so only canvas cards carry
+    // data-org-card).
+    const cards = page.locator("[data-org-card]");
+    await expect(cards).toHaveCount(7);
+    // Fit-on-mount put every node inside the viewport bounds.
+    const vpBox = await viewport.boundingBox();
+    if (!vpBox) throw new Error("canvas viewport has no bounding box");
+    for (const dtag of [
+      "founder",
+      "cto",
+      "eng",
+      "platform",
+      "design",
+      "ops-agent",
+      "sre",
+    ]) {
+      const box = await page
+        .getByTestId(`org-canvas-node-${dtag}`)
+        .boundingBox();
+      if (!box) throw new Error(`canvas node ${dtag} not laid out`);
+      expect(box.x, dtag).toBeGreaterThanOrEqual(vpBox.x - 2);
+      expect(box.y, dtag).toBeGreaterThanOrEqual(vpBox.y - 2);
+      expect(box.x + box.width, dtag).toBeLessThanOrEqual(
+        vpBox.x + vpBox.width + 2,
+      );
+      expect(box.y + box.height, dtag).toBeLessThanOrEqual(
+        vpBox.y + vpBox.height + 2,
+      );
+    }
+    // Selecting a node rings it and opens the per-node drill-in: Engineering
+    // has two delegations through it and one budget over its occupant.
+    await page.getByTestId("org-canvas-node-eng").click();
+    const panel = page.getByTestId("org-node-selection");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("Delegations through this node (2)");
+    await expect(panel).toContainText("Budgets covering its occupants (1)");
+    await waitForAnimations(page);
+    await viewport.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${SHOTS}/org-canvas.png` });
+    // Compact density shrinks the cards.
+    await page.getByTestId("org-density-compact").click();
+    const compactBox = await page
+      .getByTestId("org-canvas-node-eng")
+      .boundingBox();
+    if (!compactBox) throw new Error("compact card not laid out");
+    expect(compactBox.width).toBeLessThan(200);
+    // Fit-to-screen button re-fits after the density switch.
+    await page.getByTestId("org-density-comfortable").click();
+    await page.getByRole("button", { name: "Fit chart to screen" }).click();
+    await expect(page.getByTestId("org-canvas-node-founder")).toBeVisible();
+  });
+
   test("chart tab: grant chain, budgets with consumption, onchain chips", async ({
     page,
   }) => {
@@ -215,9 +320,12 @@ test.describe("org UI screenshots", () => {
     await expect(page.getByText(/expires/).first()).toBeVisible();
     // Budget consumption: 32 of 50 turns this month.
     await expect(page.getByText("32 / 50 runs used")).toBeVisible();
-    // Onchain chips on the root node and the budget card.
-    await expect(page.getByText("Base · 0x123456…5678")).toBeVisible();
-    await expect(page.getByText("Base · 0xabcdef…abcd")).toBeVisible();
+    await expect(page.getByText("0 / 20 runs used")).toBeVisible();
+    // Onchain chips on the root node and the budget card. The root chip
+    // exists twice (canvas card + the closed "Node list" disclosure), so
+    // assert the visible one.
+    await expect(page.getByText("Base · 0x123456…5678").first()).toBeVisible();
+    await expect(page.getByText("Base · 0xabcdef…abcd").first()).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/org-grants.png`, fullPage: false });
   });
 
@@ -241,3 +349,4 @@ test.describe("org UI screenshots", () => {
     await page.screenshot({ path: `${SHOTS}/org-contribution-detail.png` });
   });
 });
+
