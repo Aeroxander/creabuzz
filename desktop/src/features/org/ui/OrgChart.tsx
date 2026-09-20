@@ -151,6 +151,7 @@ export function OrgChart({ query }: OrgChartProps) {
 
       {/* Dialogs */}
       <OrgNodeForm
+        nodes={data.nodes}
         open={createNodeOpen}
         onOpenChange={setCreateNodeOpen}
         parentDtag={selectedParentDtag}
@@ -161,6 +162,7 @@ export function OrgChart({ query }: OrgChartProps) {
         nodes={data.nodes}
       />
       <OrgBudgetForm
+        nodes={data.nodes}
         open={createBudgetOpen}
         onOpenChange={setCreateBudgetOpen}
       />

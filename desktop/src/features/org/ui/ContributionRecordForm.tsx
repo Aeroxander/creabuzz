@@ -9,11 +9,17 @@ import {
 } from "@/shared/ui/dialog";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Textarea } from "@/shared/ui/textarea";
 import { signRelayEvent } from "@/shared/api/tauri";
 import { relayClient } from "@/shared/api/relayClient";
 import { KIND_CONTRIBUTION_RECORD } from "@/shared/constants/kinds";
 import { useQueryClient } from "@tanstack/react-query";
-import { orgQueryKey } from "../hooks";
+import {
+  orgQueryKey,
+  useAgentTasksQuery,
+  useContributionRecordsQuery,
+} from "../hooks";
+import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
 
 type ContributionRecordFormProps = {
   open: boolean;
@@ -37,8 +43,10 @@ export function ContributionRecordForm({
   ]);
   const [humanPct, setHumanPct] = React.useState("100");
   const [aiPct, setAiPct] = React.useState("0");
-  const [evidence, setEvidence] = React.useState("");
-  const [informedBy, setInformedBy] = React.useState("");
+  const [evidence, setEvidence] = React.useState<string[]>([]);
+  const [informedBy, setInformedBy] = React.useState<string[]>([]);
+  const [pasteOpen, setPasteOpen] = React.useState(false);
+  const [pasteText, setPasteText] = React.useState("");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [isCreating, setIsCreating] = React.useState(false);
   const dtagRef = React.useRef<HTMLInputElement>(null);
@@ -50,14 +58,50 @@ export function ContributionRecordForm({
     setDimensions([{ key: "", value: "", id: makeDimId() }]);
     setHumanPct("100");
     setAiPct("0");
-    setEvidence("");
-    setInformedBy("");
+    setEvidence([]);
+    setInformedBy([]);
+    setPasteOpen(false);
+    setPasteText("");
     setErrorMessage(null);
     const timerId = globalThis.setTimeout(() => {
       dtagRef.current?.focus();
     }, 50);
     return () => globalThis.clearTimeout(timerId);
   }, [open]);
+
+  const recordsQuery = useContributionRecordsQuery();
+  const tasksQuery = useAgentTasksQuery();
+
+  const informedByOptions = React.useMemo<OrgPickerOption[]>(
+    () =>
+      (recordsQuery.data ?? []).map((record) => ({
+        id: record.dtag,
+        label: record.action,
+        sub: new Date(record.createdAt * 1000).toISOString().slice(0, 10),
+      })),
+    [recordsQuery.data],
+  );
+
+  const evidenceOptions = React.useMemo<OrgPickerOption[]>(
+    () =>
+      (tasksQuery.data ?? []).map((task) => ({
+        id: task.eventId,
+        label: task.status ? `${task.title} (${task.status})` : task.title,
+        sub: task.dtag || undefined,
+      })),
+    [tasksQuery.data],
+  );
+
+  const addPastedEvidence = () => {
+    const ids = pasteText
+      .split(/[\s,]+/)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (ids.length === 0) return;
+    setEvidence((prev) => [...new Set([...prev, ...ids])]);
+    setPasteText("");
+    setPasteOpen(false);
+  };
 
   const canSubmit =
     dtag.trim().length > 0 && action.trim().length > 0 && !isCreating;
@@ -96,14 +140,8 @@ export function ContributionRecordForm({
               dims[k] = v;
             }
           }
-          const evidenceLinks = evidence
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          const informedByRefs = informedBy
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
+          const evidenceLinks = evidence;
+          const informedByRefs = informedBy;
           const content = JSON.stringify({
             v: 1,
             action: action.trim(),
@@ -310,36 +348,68 @@ export function ContributionRecordForm({
               />
             </div>
           </div>
+          <OrgEntityPicker
+            disabled={isCreating}
+            emptyMessage={
+              tasksQuery.data?.length
+                ? undefined
+                : "No agent tasks found. Paste event IDs below or run some tasks first."
+            }
+            mode="multi"
+            onChange={setEvidence}
+            options={evidenceOptions}
+            searchPlaceholder="Search agent tasks..."
+            selected={evidence}
+            triggerLabel="Evidence"
+          />
           <div className="space-y-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="cr-evidence"
-            >
-              Evidence (comma-separated event IDs or URLs)
-            </label>
-            <Input
+            <Button
+              aria-expanded={pasteOpen}
+              className="h-6 px-0 text-xs"
               disabled={isCreating}
-              id="cr-evidence"
-              onChange={(event) => setEvidence(event.target.value)}
-              placeholder="abc123, def456"
-              value={evidence}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="cr-informed-by"
+              onClick={() => setPasteOpen((prev) => !prev)}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
-              Informed By (comma-separated record IDs)
-            </label>
-            <Input
-              disabled={isCreating}
-              id="cr-informed-by"
-              onChange={(event) => setInformedBy(event.target.value)}
-              placeholder="cr-previous-record"
-              value={informedBy}
-            />
+              {pasteOpen ? "− Hide paste IDs" : "+ Paste IDs"}
+            </Button>
+            {pasteOpen ? (
+              <div className="space-y-1.5">
+                <Textarea
+                  aria-label="Paste evidence event IDs or URLs"
+                  disabled={isCreating}
+                  onChange={(event) => setPasteText(event.target.value)}
+                  placeholder="One event ID or URL per line (or comma-separated)"
+                  rows={3}
+                  value={pasteText}
+                />
+                <Button
+                  disabled={isCreating || !pasteText.trim()}
+                  onClick={addPastedEvidence}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Add to Evidence
+                </Button>
+              </div>
+            ) : null}
           </div>
+          <OrgEntityPicker
+            disabled={isCreating}
+            emptyMessage={
+              informedByOptions.length > 0
+                ? undefined
+                : "No contribution records yet. Create one first."
+            }
+            mode="multi"
+            onChange={setInformedBy}
+            options={informedByOptions}
+            searchPlaceholder="Search contribution records..."
+            selected={informedBy}
+            triggerLabel="Informed By"
+          />
           {errorMessage ? (
             <p className="text-sm text-destructive">{errorMessage}</p>
           ) : null}

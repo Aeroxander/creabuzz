@@ -10,13 +10,18 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { useCreateOrgNodeMutation } from "../hooks";
+import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
+import { slugify } from "../lib/pickerOptions";
+import { buildOrgTree } from "../lib/tree";
 import type { OrgNode } from "../orgModels";
 
 type OrgNodeFormProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Preset parent (used by the "Add Child" action). */
   parentDtag?: string;
   editNode?: OrgNode;
+  nodes: OrgNode[];
 };
 
 export function OrgNodeForm({
@@ -24,9 +29,11 @@ export function OrgNodeForm({
   onOpenChange,
   parentDtag,
   editNode,
+  nodes,
 }: OrgNodeFormProps) {
   const [name, setName] = React.useState("");
   const [dtag, setDtag] = React.useState("");
+  const [parent, setParent] = React.useState<string | null>(null);
   const [kind, setKind] = React.useState<"role" | "team" | "agent_seat">(
     "role",
   );
@@ -40,17 +47,45 @@ export function OrgNodeForm({
       setName(editNode.name);
       setDtag(editNode.dtag);
       setKind(editNode.kind);
+      setParent(editNode.parent ?? null);
     } else {
       setName("");
       setDtag("");
       setKind("role");
+      setParent(parentDtag ?? null);
     }
     setErrorMessage(null);
     const timerId = globalThis.setTimeout(() => {
       nameRef.current?.focus();
     }, 50);
     return () => globalThis.clearTimeout(timerId);
-  }, [open, editNode]);
+  }, [open, editNode, parentDtag]);
+
+  const handleNameChange = (nextName: string) => {
+    const previousName = name;
+    setName(nextName);
+    if (editNode) return;
+    // Auto-slug the d tag from the name until the user edits it directly.
+    setDtag((previousDtag) =>
+      previousDtag === "" || previousDtag === slugify(previousName)
+        ? slugify(nextName)
+        : previousDtag,
+    );
+  };
+
+  const parentOptions = React.useMemo<OrgPickerOption[]>(() => {
+    const depths = new Map<string, number>();
+    const tree = buildOrgTree(nodes);
+    for (const [, entry] of tree.byDtag)
+      depths.set(entry.node.dtag, entry.depth);
+    return nodes
+      .filter((node) => node.dtag !== editNode?.dtag)
+      .map((node) => ({
+        id: node.dtag,
+        label: "— ".repeat(depths.get(node.dtag) ?? 0) + node.name,
+        kindBadge: node.kind,
+      }));
+  }, [nodes, editNode]);
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -70,7 +105,7 @@ export function OrgNodeForm({
             dtag: trimmedDtag,
             name: trimmedName,
             kind,
-            parent: parentDtag,
+            parent: parent ?? undefined,
           });
           onOpenChange(false);
         } catch (error) {
@@ -80,7 +115,7 @@ export function OrgNodeForm({
         }
       })();
     },
-    [name, dtag, kind, parentDtag, createMutation, onOpenChange],
+    [name, dtag, kind, parent, createMutation, onOpenChange],
   );
 
   const kindOptions = [
@@ -126,7 +161,7 @@ export function OrgNodeForm({
             <Input
               disabled={createMutation.isPending}
               id="org-node-name"
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => handleNameChange(event.target.value)}
               placeholder="e.g. Leadership"
               ref={nameRef}
               value={name}
@@ -191,11 +226,16 @@ export function OrgNodeForm({
               ))}
             </div>
           </div>
-          {parentDtag && (
-            <p className="text-xs text-muted-foreground">
-              Parent: {parentDtag}
-            </p>
-          )}
+          <OrgEntityPicker
+            disabled={createMutation.isPending}
+            emptyMessage="No other nodes yet. Leave the parent empty for a root node."
+            mode="single"
+            onChange={setParent}
+            options={parentOptions}
+            searchPlaceholder="Search nodes..."
+            selected={parent}
+            triggerLabel="Parent"
+          />
           {errorMessage ? (
             <p className="text-sm text-destructive">{errorMessage}</p>
           ) : null}

@@ -10,10 +10,13 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { useCreateOrgBudgetMutation } from "../hooks";
+import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
+import type { OrgNode } from "../orgModels";
 
 type OrgBudgetFormProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  nodes: OrgNode[];
 };
 
 const WINDOW_OPTIONS = [
@@ -23,7 +26,11 @@ const WINDOW_OPTIONS = [
   { value: "month", label: "Month" },
 ] as const;
 
-export function OrgBudgetForm({ open, onOpenChange }: OrgBudgetFormProps) {
+export function OrgBudgetForm({
+  open,
+  onOpenChange,
+  nodes,
+}: OrgBudgetFormProps) {
   const moveWindowSelection = (step: number) => {
     setWindow((prev) => {
       const index = WINDOW_OPTIONS.findIndex((opt) => opt.value === prev);
@@ -36,7 +43,7 @@ export function OrgBudgetForm({ open, onOpenChange }: OrgBudgetFormProps) {
   };
 
   const [dtag, setDtag] = React.useState("");
-  const [subject, setSubject] = React.useState("");
+  const [subject, setSubject] = React.useState<string | null>(null);
   const [window, setWindow] = React.useState<
     "epoch" | "day" | "week" | "month"
   >("month");
@@ -64,8 +71,19 @@ export function OrgBudgetForm({ open, onOpenChange }: OrgBudgetFormProps) {
     return () => globalThis.clearTimeout(timerId);
   }, [open]);
 
+  const subjectOptions = React.useMemo<OrgPickerOption[]>(
+    () =>
+      nodes.map((node) => ({
+        id: node.dtag,
+        label: node.name,
+        kindBadge: node.kind,
+      })),
+    [nodes],
+  );
+
   const canSubmit =
     dtag.trim().length > 0 &&
+    subject !== null &&
     subject.trim().length > 0 &&
     !createMutation.isPending;
 
@@ -78,7 +96,7 @@ export function OrgBudgetForm({ open, onOpenChange }: OrgBudgetFormProps) {
         try {
           await createMutation.mutateAsync({
             dtag: dtag.trim(),
-            subject: subject.trim(),
+            subject: (subject ?? "").trim(),
             window,
             spendAmount: spendAmount
               ? Number.parseInt(spendAmount, 10)
@@ -149,21 +167,16 @@ export function OrgBudgetForm({ open, onOpenChange }: OrgBudgetFormProps) {
               value={dtag}
             />
           </div>
-          <div className="space-y-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="org-budget-subject"
-            >
-              Subject (agent pubkey or node ID)
-            </label>
-            <Input
-              disabled={createMutation.isPending}
-              id="org-budget-subject"
-              onChange={(event) => setSubject(event.target.value)}
-              placeholder="Agent pubkey or org node d-tag"
-              value={subject}
-            />
-          </div>
+          <OrgEntityPicker
+            disabled={createMutation.isPending}
+            emptyMessage="No org nodes yet. Create a node first."
+            mode="single"
+            onChange={setSubject}
+            options={subjectOptions}
+            searchPlaceholder="Search nodes..."
+            selected={subject}
+            triggerLabel="Subject"
+          />
           <div className="space-y-1.5">
             <span
               className="text-sm font-medium text-foreground"

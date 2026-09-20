@@ -8,6 +8,7 @@ import {
   KIND_ORG_BUDGET,
   KIND_CONTRIBUTION_RECORD,
   KIND_AGENT_TURN_METRIC,
+  KIND_AGENT_TASK,
 } from "@/shared/constants/kinds";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -133,6 +134,51 @@ export function useContributionRecordsQuery(enabled = true) {
   return useQuery({
     queryKey: [...orgQueryKey, "contributions"],
     queryFn: ({ signal }) => fetchContributionRecords(signal),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+// ── Agent tasks (kind:44011) — evidence picker source ──────────────────────
+
+export type AgentTaskRef = {
+  eventId: string;
+  dtag: string;
+  title: string;
+  status?: string;
+  createdAt: number;
+};
+
+async function fetchAgentTasks(signal?: AbortSignal): Promise<AgentTaskRef[]> {
+  const events = await fetchOrgEvents([KIND_AGENT_TASK], signal);
+  return events.map((event) => {
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = JSON.parse(event.content);
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        parsed = value as Record<string, unknown>;
+      }
+    } catch {
+      // Malformed content — fall back to the event id as the title.
+    }
+    return {
+      eventId: event.id,
+      dtag: event.tags.find((t) => t[0] === "d")?.[1] ?? "",
+      title: (typeof parsed.title === "string" && parsed.title) || event.id,
+      status:
+        typeof parsed.status === "string" && parsed.status
+          ? parsed.status
+          : undefined,
+      createdAt: event.created_at,
+    };
+  });
+}
+
+export function useAgentTasksQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "agent-tasks"],
+    queryFn: ({ signal }) => fetchAgentTasks(signal),
     staleTime: ORG_STALE_TIME_MS,
     gcTime: ORG_GC_TIME_MS,
     enabled,

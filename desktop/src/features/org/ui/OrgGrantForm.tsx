@@ -10,6 +10,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { useCreateOrgGrantMutation } from "../hooks";
+import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
 import type { OrgNode } from "../orgModels";
 
 type OrgGrantFormProps = {
@@ -29,7 +30,7 @@ const VERB_PRESETS = [
 
 export function OrgGrantForm({ open, onOpenChange, nodes }: OrgGrantFormProps) {
   const [dtag, setDtag] = React.useState("");
-  const [grantee, setGrantee] = React.useState("");
+  const [grantee, setGrantee] = React.useState<string | null>(null);
   const [via, setVia] = React.useState("");
   const [verbs, setVerbs] = React.useState<string[]>([]);
   const [customVerb, setCustomVerb] = React.useState("");
@@ -51,8 +52,25 @@ export function OrgGrantForm({ open, onOpenChange, nodes }: OrgGrantFormProps) {
     return () => globalThis.clearTimeout(timerId);
   }, [open]);
 
+  const granteeOptions = React.useMemo<OrgPickerOption[]>(() => {
+    const seen = new Map<string, OrgPickerOption>();
+    for (const node of nodes) {
+      for (const pubkey of [...node.holders, ...node.agentSeats]) {
+        if (seen.has(pubkey)) continue;
+        seen.set(pubkey, {
+          id: pubkey,
+          label: node.name,
+          sub: node.kind,
+          pubkey,
+        });
+      }
+    }
+    return [...seen.values()];
+  }, [nodes]);
+
   const canSubmit =
     dtag.trim().length > 0 &&
+    grantee !== null &&
     grantee.trim().length === 64 &&
     via.trim().length > 0 &&
     verbs.length > 0 &&
@@ -81,7 +99,7 @@ export function OrgGrantForm({ open, onOpenChange, nodes }: OrgGrantFormProps) {
         try {
           await createMutation.mutateAsync({
             dtag: dtag.trim(),
-            grantee: grantee.trim(),
+            grantee: (grantee ?? "").trim(),
             via: via.trim(),
             verbs,
           });
@@ -129,21 +147,16 @@ export function OrgGrantForm({ open, onOpenChange, nodes }: OrgGrantFormProps) {
               value={dtag}
             />
           </div>
-          <div className="space-y-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="org-grant-grantee"
-            >
-              Grantee (64-char hex pubkey)
-            </label>
-            <Input
-              disabled={createMutation.isPending}
-              id="org-grant-grantee"
-              onChange={(event) => setGrantee(event.target.value)}
-              placeholder="abcdef..."
-              value={grantee}
-            />
-          </div>
+          <OrgEntityPicker
+            disabled={createMutation.isPending}
+            emptyMessage="No seat holders yet. Add a node with holders first."
+            mode="single"
+            onChange={setGrantee}
+            options={granteeOptions}
+            searchPlaceholder="Search holders and agent seats..."
+            selected={grantee}
+            triggerLabel="Grantee"
+          />
           <div className="space-y-1.5">
             <label
               className="text-sm font-medium text-foreground"
