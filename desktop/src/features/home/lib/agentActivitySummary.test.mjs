@@ -47,6 +47,32 @@ test("workflow lifecycle headlines", () => {
   assert.equal(agentActivitySummary(46006, "")?.headline, "Workflow failed");
 });
 
+test("workflow lifecycle renders readable fields, never raw JSON", () => {
+  const envelope = JSON.stringify({ workflow: "nightly-sync", step: 2 });
+  assert.equal(agentActivitySummary(46001, envelope)?.preview, "nightly-sync");
+  assert.equal(agentActivitySummary(46005, envelope)?.preview, "nightly-sync");
+  assert.equal(agentActivitySummary(46006, envelope)?.preview, "nightly-sync");
+
+  const errorPayload = JSON.stringify({ error: "upstream 502" });
+  assert.equal(
+    agentActivitySummary(46006, errorPayload)?.preview,
+    "upstream 502",
+  );
+
+  // Unrecognized structured content falls back to the kind-aware sentence,
+  // not the raw envelope.
+  assert.equal(agentActivitySummary(46005, "{}")?.preview, "");
+  assert.equal(
+    agentActivitySummary(46006, "{}")?.preview,
+    "A workflow step failed.",
+  );
+});
+
+test("workflow lifecycle keeps plain-text messages verbatim", () => {
+  const text = "Deploy finished\nsecond line";
+  assert.equal(agentActivitySummary(46005, text)?.preview, "Deploy finished");
+});
+
 test("unknown kinds return null so callers fall back", () => {
   assert.equal(agentActivitySummary(9, "hello"), null);
   assert.equal(agentActivitySummary(99999, "{}"), null);

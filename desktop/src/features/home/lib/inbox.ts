@@ -195,20 +195,34 @@ export function agentActivitySummary(
         preview: "Usage details are encrypted to the agent owner.",
       };
     case 46001:
-      return {
-        headline: "Workflow started",
-        preview: content.trim().split("\n")[0] ?? "",
-      };
     case 46005:
-      return {
-        headline: "Workflow completed",
-        preview: content.trim().split("\n")[0] ?? "",
-      };
-    case 46006:
+    case 46006: {
+      // Workflow lifecycle content may be structured JSON (step envelopes,
+      // error payloads). Render a readable field, never the raw envelope.
+      const parsed = parseAgentContent(content);
+      const structuredMessage =
+        parsed &&
+        (stringField(parsed, "message") ??
+          stringField(parsed, "error") ??
+          stringField(parsed, "workflow") ??
+          stringField(parsed, "name"));
+      const plainFirstLine = content.trim().split("\n")[0] ?? "";
+      const preview =
+        structuredMessage ??
+        (parsed === null && !content.trim().startsWith("[")
+          ? plainFirstLine
+          : "");
+      if (kind === 46001) {
+        return { headline: "Workflow started", preview };
+      }
+      if (kind === 46005) {
+        return { headline: "Workflow completed", preview };
+      }
       return {
         headline: "Workflow failed",
-        preview: content.trim().split("\n")[0] ?? "A workflow step failed.",
+        preview: preview || "A workflow step failed.",
       };
+    }
     default:
       return null;
   }
@@ -307,6 +321,19 @@ function feedPreview(item: FeedItem) {
     (item.kind === 44200 || item.kind === 44010 || item.kind === 44011)
   ) {
     return summary.preview;
+  }
+
+  // Workflow lifecycle events with structured (JSON) content render the
+  // kind-aware summary field, never the raw envelope. Plain-text workflow
+  // messages keep the full verbatim text below.
+  if (
+    summary &&
+    (item.kind === 46001 || item.kind === 46005 || item.kind === 46006)
+  ) {
+    const trimmed = item.content.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      return summary.preview;
+    }
   }
 
   // Budget overrun requests carry JSON content — render the kind-aware
