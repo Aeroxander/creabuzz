@@ -7,6 +7,7 @@ import {
   KIND_ORG_GRANT,
   KIND_ORG_BUDGET,
   KIND_CONTRIBUTION_RECORD,
+  KIND_AGENT_TURN_METRIC,
 } from "@/shared/constants/kinds";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -18,10 +19,17 @@ import {
   type OrgNode,
   type OrgGrant,
   type OrgBudget,
+  type BudgetWindow,
   type ContributionRecord,
+  type ReviewStatus,
   type OrgChart,
 } from "./orgModels";
 import { deleteAddressableEvents } from "./lib/orgDeletion";
+import {
+  METRIC_FETCH_LIMIT,
+  summarizeConsumption,
+  type ConsumptionSummary,
+} from "./lib/budgetConsumption";
 
 // ── Query keys ──────────────────────────────────────────────────────────────
 
@@ -374,6 +382,131 @@ export function useDeleteOrgBudgetMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: [...orgQueryKey, "budgets"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [...orgQueryKey, "chart"],
+      });
+    },
+  });
+}
+
+// ── Budget consumption (Phase 2) ───────────────────────────────────────────
+
+async function fetchBudgetConsumption(
+  subject: string,
+  window: BudgetWindow,
+  runsLimit?: number,
+): Promise<ConsumptionSummary> {
+  const events = await relayClient.fetchEvents({
+    kinds: [KIND_AGENT_TURN_METRIC],
+    "#p": [subject],
+    limit: METRIC_FETCH_LIMIT,
+  });
+  return summarizeConsumption(events, {
+    window,
+    runsLimit,
+    nowSeconds: Math.floor(Date.now() / 1_000),
+    // The relay returned a full page: the real count may be higher, so the
+    // UI must show a floor, not a percentage computed from a truncated set.
+    hitFetchLimit: events.length >= METRIC_FETCH_LIMIT,
+  });
+}
+
+export function useBudgetConsumptionQuery(
+  subject: string,
+  window: BudgetWindow,
+  runsLimit?: number,
+) {
+  return useQuery({
+    queryKey: [
+      ...orgQueryKey,
+      "consumption",
+      subject,
+      window,
+      runsLimit ?? null,
+    ],
+    queryFn: () => fetchBudgetConsumption(subject, window, runsLimit),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled: subject.length > 0,
+  });
+}
+
+// ── Contribution review (Phase 3) ──────────────────────────────────────────
+
+type ReviewUpdateInput = {
+  dtag: string;
+  reviewStatus: ReviewStatus;
+  appealNote?: string;
+};
+
+/**
+ * Republish a kind:37013 record with the same `d` tag, copying every prior
+ * field and updating `reviewStatus` (NIP-33 LWW picks the newest write).
+ * The relay-side reviewer grant check is future work; any signer may review
+ * for now and the UI labels reviewers as unverified.
+ */
+async function republishContributionReview(
+  input: ReviewUpdateInput,
+): Promise<string> {
+  const events = await relayClient.fetchEvents({
+    kinds: [KIND_CONTRIBUTION_RECORD],
+    "#d": [input.dtag],
+    limit: 500,
+  });
+  if (events.length === 0) {
+    throw new Error(`Contribution record "${input.dtag}" not found.`);
+  }
+  const current = events.reduce((newest, event) =>
+    event.created_at > newest.created_at ? event : newest,
+  );
+
+  let content: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(current.content);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("not an object");
+    }
+    content = parsed as Record<string, unknown>;
+  } catch {
+    content = {};
+  }
+
+  content.reviewStatus = input.reviewStatus;
+  if (input.reviewStatus === "appealed") {
+    const history = Array.isArray(content.appealHistory)
+      ? (content.appealHistory as unknown[])
+      : [];
+    content.appealHistory = [
+      ...history,
+      {
+        status: "appealed",
+        at: Math.floor(Date.now() / 1_000),
+        ...(input.appealNote ? { note: input.appealNote } : {}),
+      },
+    ];
+  }
+
+  const event = await signRelayEvent({
+    kind: KIND_CONTRIBUTION_RECORD,
+    content: JSON.stringify(content),
+    tags: current.tags,
+  });
+  await relayClient.publishEvent(
+    event,
+    "Timed out updating contribution review.",
+    "Failed to update contribution review.",
+  );
+  return event.id;
+}
+
+export function useUpdateContributionReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: republishContributionReview,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [...orgQueryKey, "contributions"],
       });
       await queryClient.invalidateQueries({
         queryKey: [...orgQueryKey, "chart"],

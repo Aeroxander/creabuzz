@@ -1507,6 +1507,7 @@ declare global {
       slotId: string;
     }) => unknown;
     __BUZZ_E2E_SEED_MOCK_REMINDERS__?: (reminders: RelayEvent[]) => void;
+    __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__?: (events: RelayEvent[]) => void;
     __BUZZ_E2E_QUERY_CLIENT__?: {
       invalidateQueries: (filters: {
         queryKey: readonly unknown[];
@@ -3306,6 +3307,12 @@ const deferredSendMessageLiveEchoes: Array<{
 }> = [];
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
+
+// NIP-ORG + agent-metric events served to org-surface reads. Seeded by
+// specs via __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__; the real relay is the
+// system of record, this is only the mock's read model.
+const MOCK_ORG_KINDS = new Set([37010, 37011, 37012, 37013, 37014, 44200]);
+const mockOrgEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
@@ -10975,6 +10982,29 @@ function sendToMockSocket(args: {
       return;
     }
 
+    // NIP-ORG org kinds and agent turn metrics: community-level, no #h.
+    // Match kind, #d, #p, and authors like the relay's global read path.
+    if (filter.kinds?.some((kind) => MOCK_ORG_KINDS.has(kind))) {
+      const dValues = filter["#d"];
+      const pValues = filter["#p"];
+      const authors = filter.authors?.map((a) => a.toLowerCase());
+      for (const event of mockOrgEvents) {
+        if (filter.kinds && !filter.kinds.includes(event.kind)) continue;
+        if (authors && !authors.includes(event.pubkey.toLowerCase())) {
+          continue;
+        }
+        const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+        if (dValues && (!dTag || !dValues.includes(dTag))) continue;
+        if (pValues) {
+          const pTags = event.tags.filter((t) => t[0] === "p").map((t) => t[1]);
+          if (!pValues.some((p) => pTags.includes(p))) continue;
+        }
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     // Project queries: NIP-34 kinds, or kind:1 comments scoped by repo `a`
     // tag or by issue/PR root `e` tag (discussions, approvals, review
     // requests, assignment operations). Channel messages are kind 9, so a
@@ -11777,6 +11807,13 @@ export function maybeInstallE2eTauriMocks() {
     mockReminderEvents.length = 0;
     for (const r of reminders) {
       mockReminderEvents.push(r);
+    }
+  };
+
+  window.__BUZZ_E2E_SEED_MOCK_ORG_EVENTS__ = (events) => {
+    mockOrgEvents.length = 0;
+    for (const event of events) {
+      mockOrgEvents.push(event);
     }
   };
 

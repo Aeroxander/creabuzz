@@ -42,6 +42,57 @@ export type OrgNodeUi = {
   description?: string;
 };
 
+/** Delegation scope of a node (NIP-ORG §37010, camelCase keys). */
+export type OrgScope = {
+  readBelow: boolean;
+  assignBelow: boolean;
+  canGrant: string[];
+};
+
+function parseScope(value: unknown): OrgScope {
+  const empty: OrgScope = {
+    readBelow: false,
+    assignBelow: false,
+    canGrant: [],
+  };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return empty;
+  }
+  const obj = value as Record<string, unknown>;
+  return {
+    readBelow: obj.readBelow === true,
+    assignBelow: obj.assignBelow === true,
+    canGrant: stringArray(obj.canGrant),
+  };
+}
+
+/**
+ * Opt-in DAO binding on an org root node (NIP-ORG §"Opt-in onchain
+ * binding"): `content.onchain { chain, dao, boundAt }`. Read-only.
+ */
+export type OrgNodeOnchain = {
+  chain: string;
+  dao: string;
+  boundAt?: number;
+};
+
+function parseNodeOnchain(value: unknown): OrgNodeOnchain | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.chain !== "string" || !obj.chain) return undefined;
+  if (typeof obj.dao !== "string" || !obj.dao) return undefined;
+  return {
+    chain: obj.chain,
+    dao: obj.dao,
+    boundAt:
+      typeof obj.boundAt === "number" && Number.isFinite(obj.boundAt)
+        ? obj.boundAt
+        : undefined,
+  };
+}
+
 export type OrgNode = {
   eventId: string;
   dtag: string;
@@ -53,6 +104,9 @@ export type OrgNode = {
   /** Agent seat occupants (pubkeys). */
   agentSeats: string[];
   ui?: OrgNodeUi;
+  scope: OrgScope;
+  /** Present only when the node's community has bound its root to a DAO. */
+  onchain?: OrgNodeOnchain;
   createdAt: number;
   revoked: boolean;
 };
@@ -72,6 +126,8 @@ export function eventToOrgNode(event: RelayEvent): OrgNode {
     holders: stringArray(content.holders),
     agentSeats: stringArray(content.agentSeats),
     ui: (content.ui ?? undefined) as OrgNodeUi | undefined,
+    scope: parseScope(content.scope),
+    onchain: parseNodeOnchain(content.onchain),
     createdAt: event.created_at,
     revoked: isRevoked(event, content),
   };

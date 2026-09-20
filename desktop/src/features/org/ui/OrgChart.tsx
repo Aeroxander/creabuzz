@@ -4,14 +4,12 @@ import {
   Users,
   Shield,
   DollarSign,
-  Clock,
   AlertTriangle,
   Plus,
   MoreHorizontal,
   Trash2,
   ChevronRight,
   ChevronDown,
-  FileText,
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -22,21 +20,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import {
-  useContributionRecordsQuery,
-  useDeleteOrgNodeMutation,
-  useRevokeOrgGrantMutation,
-  useDeleteOrgBudgetMutation,
-} from "../hooks";
+import { useDeleteOrgNodeMutation, useDeleteOrgBudgetMutation } from "../hooks";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import { OrgNodeForm } from "./OrgNodeForm";
 import { OrgGrantForm } from "./OrgGrantForm";
 import { OrgBudgetForm } from "./OrgBudgetForm";
-import { ContributionRecordForm } from "./ContributionRecordForm";
+import { OrgGrantChainView } from "./OrgGrantChainView";
+import { OrgBudgetConsumption } from "./OrgBudgetConsumption";
+import { OnchainChip } from "./OnchainChip";
 import type {
-  ContributionRecord,
   OrgNode,
-  OrgGrant,
   OrgBudget,
   OrgChart as OrgChartType,
 } from "../orgModels";
@@ -48,12 +41,9 @@ type OrgChartProps = {
 
 export function OrgChart({ query }: OrgChartProps) {
   const { data, isLoading, error } = query;
-  const contributionsQuery = useContributionRecordsQuery();
   const [createNodeOpen, setCreateNodeOpen] = React.useState(false);
   const [createGrantOpen, setCreateGrantOpen] = React.useState(false);
   const [createBudgetOpen, setCreateBudgetOpen] = React.useState(false);
-  const [createContributionOpen, setCreateContributionOpen] =
-    React.useState(false);
   const [selectedParentDtag, setSelectedParentDtag] = React.useState<
     string | undefined
   >();
@@ -74,14 +64,11 @@ export function OrgChart({ query }: OrgChartProps) {
     );
   }
 
-  const contributions = contributionsQuery.data ?? [];
-
   if (
     !data ||
     (data.nodes.length === 0 &&
       data.grants.length === 0 &&
-      data.budgets.length === 0 &&
-      contributions.length === 0)
+      data.budgets.length === 0)
   ) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-8">
@@ -142,15 +129,6 @@ export function OrgChart({ query }: OrgChartProps) {
             <Plus className="mr-1 h-3 w-3" />
             Budget
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setCreateContributionOpen(true)}
-          >
-            <FileText className="mr-1 h-3 w-3" />
-            Record
-          </Button>
         </div>
       </div>
 
@@ -166,15 +144,10 @@ export function OrgChart({ query }: OrgChartProps) {
       )}
 
       {/* Grants */}
-      {data.grants.length > 0 && <OrgGrantSection grants={data.grants} />}
+      {data.grants.length > 0 && <OrgGrantChainView grants={data.grants} />}
 
       {/* Budgets */}
       {data.budgets.length > 0 && <OrgBudgetSection budgets={data.budgets} />}
-
-      {/* Contribution records */}
-      {contributions.length > 0 && (
-        <ContributionRecordsSection records={contributions} />
-      )}
 
       {/* Dialogs */}
       <OrgNodeForm
@@ -190,10 +163,6 @@ export function OrgChart({ query }: OrgChartProps) {
       <OrgBudgetForm
         open={createBudgetOpen}
         onOpenChange={setCreateBudgetOpen}
-      />
-      <ContributionRecordForm
-        open={createContributionOpen}
-        onOpenChange={setCreateContributionOpen}
       />
     </div>
   );
@@ -223,6 +192,17 @@ function OrgNodeSection({
         ))}
       </div>
     </div>
+  );
+}
+
+function NodeOnchainChip({ node }: { node: OrgNode }) {
+  if (!node.onchain) return null;
+  return (
+    <OnchainChip
+      address={node.onchain.dao}
+      chain={node.onchain.chain}
+      label={`Bound to DAO ${node.onchain.dao} on ${node.onchain.chain}`}
+    />
   );
 }
 
@@ -284,9 +264,12 @@ function OrgTreeNodeRow({
 
         {/* Node name + details */}
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium truncate block">
-            {node.node.name}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium truncate block">
+              {node.node.name}
+            </span>
+            {node.depth === 0 && <NodeOnchainChip node={node.node} />}
+          </div>
           <OccupantChips pubkeys={occupants} />
         </div>
 
@@ -344,69 +327,6 @@ function OrgNodeIcon({ kind }: { kind: OrgNode["kind"] }) {
   );
 }
 
-// ── Grant section ─────────────────────────────────────────────────────────
-
-function OrgGrantSection({ grants }: { grants: OrgGrant[] }) {
-  const revokeMutation = useRevokeOrgGrantMutation();
-  const activeGrants = grants.filter((g) => !g.revoked);
-
-  if (activeGrants.length === 0) return null;
-
-  return (
-    <div>
-      <h3 className="text-sm font-semibold mb-2">Delegations</h3>
-      <div className="space-y-2">
-        {activeGrants.map((grant) => (
-          <Card key={grant.dtag} className="group p-3 relative">
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">
-                  {grant.verbs.join(", ")}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  to{" "}
-                  <PubKey
-                    pubkey={grant.grantee}
-                    interactive={false}
-                    className="text-xs"
-                  />
-                  {grant.expires && (
-                    <span className="ml-2">
-                      <Clock className="inline h-3 w-3" />
-                      expires{" "}
-                      {new Date(grant.expires * 1000).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label={`Grant actions for ${grant.verbs.join(", ") || grant.dtag}`}
-                    className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted"
-                    type="button"
-                  >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={() => revokeMutation.mutate(grant.dtag)}
-                  >
-                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    Revoke
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Budget section ────────────────────────────────────────────────────────
 
 function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
@@ -437,11 +357,18 @@ function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
             <Card key={budget.dtag} className="group p-3 relative">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">
                       {budget.subject || budget.dtag}
                     </span>
+                    {budget.onchain && (
+                      <OnchainChip
+                        address={budget.onchain.contract}
+                        chain={budget.onchain.chain}
+                        label={`Spend bound onchain on ${budget.onchain.chain} to ${budget.onchain.contract}`}
+                      />
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {limitText || "no limits"}
@@ -450,6 +377,7 @@ function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
                       on exceed: {budget.onExceed}
                     </span>
                   </div>
+                  <OrgBudgetConsumption budget={budget} />
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -475,48 +403,6 @@ function OrgBudgetSection({ budgets }: { budgets: OrgBudget[] }) {
             </Card>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-// ── Contribution records section ──────────────────────────────────────────
-
-const REVIEW_STATUS_BADGE_CLASS: Record<
-  ContributionRecord["reviewStatus"],
-  string
-> = {
-  pending: "bg-muted text-muted-foreground",
-  accepted:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  rejected: "bg-destructive/15 text-destructive",
-  appealed: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-};
-
-function ContributionRecordsSection({
-  records,
-}: {
-  records: ContributionRecord[];
-}) {
-  return (
-    <div>
-      <h3 className="text-sm font-semibold mb-2">Contribution Records</h3>
-      <div className="space-y-1">
-        {records.map((record) => (
-          <Card key={record.eventId} className="flex items-center gap-3 p-2.5">
-            <span className="flex-1 min-w-0 truncate text-sm">
-              {record.action || record.dtag}
-            </span>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-2xs font-medium capitalize ${REVIEW_STATUS_BADGE_CLASS[record.reviewStatus]}`}
-            >
-              {record.reviewStatus}
-            </span>
-            <span className="shrink-0 text-2xs text-muted-foreground">
-              {new Date(record.createdAt * 1000).toLocaleDateString()}
-            </span>
-          </Card>
-        ))}
       </div>
     </div>
   );

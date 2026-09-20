@@ -109,13 +109,13 @@ export function ContributionRecordForm({
             action: action.trim(),
             dimensions: dims,
             evidence: evidenceLinks,
-            human_vs_ai: {
+            humanVsAi: {
               human: Number.parseFloat(humanPct) / 100,
               ai: Number.parseFloat(aiPct) / 100,
             },
-            informed_by: informedByRefs,
-            review_status: "pending",
-            appeal_history: [],
+            informedBy: informedByRefs,
+            reviewStatus: "pending",
+            appealHistory: [],
           });
           const tags: string[][] = [["d", dtag.trim()]];
           for (const e of evidenceLinks) {

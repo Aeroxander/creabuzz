@@ -249,3 +249,86 @@ describe("eventToContributionRecord", () => {
     assert.equal(record.reviewStatus, "pending");
   });
 });
+
+describe("eventToOrgNode scope + onchain", () => {
+  it("reads the camelCase scope and defaults missing scope to closed", () => {
+    const scoped = eventToOrgNode(
+      orgEvent(37010, "cto", {
+        v: 1,
+        name: "CTO",
+        scope: {
+          readBelow: true,
+          assignBelow: true,
+          canGrant: ["read", "spend:100000"],
+        },
+      }),
+    );
+    assert.deepEqual(scoped.scope, {
+      readBelow: true,
+      assignBelow: true,
+      canGrant: ["read", "spend:100000"],
+    });
+
+    for (const scope of [undefined, "x", [], 7]) {
+      const node = eventToOrgNode(orgEvent(37010, "cto", { v: 1, scope }));
+      assert.deepEqual(node.scope, {
+        readBelow: false,
+        assignBelow: false,
+        canGrant: [],
+      });
+    }
+  });
+
+  it("reads a well-formed root-node onchain DAO binding", () => {
+    const node = eventToOrgNode(
+      orgEvent(37010, "root", {
+        v: 1,
+        name: "Root",
+        onchain: {
+          chain: "eip155:8453",
+          dao: "0xdao",
+          boundAt: 1_798_765_432,
+        },
+      }),
+    );
+    assert.deepEqual(node.onchain, {
+      chain: "eip155:8453",
+      dao: "0xdao",
+      boundAt: 1_798_765_432,
+    });
+  });
+
+  it("treats a malformed node onchain binding as absent", () => {
+    for (const onchain of [
+      undefined,
+      "x",
+      [],
+      {},
+      { chain: "eip155:8453" },
+      { dao: "0xdao" },
+      { chain: "", dao: "0xdao" },
+      { chain: "eip155:8453", dao: 7 },
+    ]) {
+      const node = eventToOrgNode(orgEvent(37010, "root", { v: 1, onchain }));
+      assert.equal(
+        node.onchain,
+        undefined,
+        `onchain: ${JSON.stringify(onchain)}`,
+      );
+    }
+  });
+
+  it("tolerates a missing boundAt", () => {
+    const node = eventToOrgNode(
+      orgEvent(37010, "root", {
+        v: 1,
+        onchain: { chain: "eip155:8453", dao: "0xdao" },
+      }),
+    );
+    assert.deepEqual(node.onchain, {
+      chain: "eip155:8453",
+      dao: "0xdao",
+      boundAt: undefined,
+    });
+  });
+});
