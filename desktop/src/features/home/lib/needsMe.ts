@@ -204,6 +204,40 @@ export function needsMeStatus(
   return "pending";
 }
 
+export type NeedsMePayloadRow = {
+  label: string;
+  /** Machine value (counter, window, limit, token hash) — render monospace. */
+  value: string;
+};
+
+/**
+ * Budget-overrun payload rows: the four numbers the relay emits on kind:46010
+ * (`{ counterType, window, limit }` + the token-hash reference). Workflow
+ * requests carry no structured payload.
+ */
+export function needsMePayloadRows(
+  approval: NeedsMeApproval,
+): NeedsMePayloadRow[] {
+  if (approval.kind !== "budget-overrun") {
+    return [];
+  }
+  const rows: NeedsMePayloadRow[] = [];
+  if (approval.counterType !== null) {
+    rows.push({ label: "Counter", value: approval.counterType });
+  }
+  if (approval.window !== null) {
+    rows.push({ label: "Window", value: approval.window });
+  }
+  if (approval.limit !== null) {
+    rows.push({ label: "Limit", value: String(approval.limit) });
+  }
+  rows.push({
+    label: "Reference",
+    value: truncateForPreview(approval.tokenHash),
+  });
+  return rows;
+}
+
 export function needsMeHeadline(approval: NeedsMeApproval): string {
   return approval.kind === "budget-overrun"
     ? "Budget approval needed"
@@ -224,11 +258,38 @@ export function needsMePreview(approval: NeedsMeApproval): string {
   return `${subjectPart}hit its ${counter} budget${limitPart} and needs approval to continue.`;
 }
 
+/** Pending rows older than this get the amber aging treatment (WhatNeedsMe
+ *  pattern: attention emphasis scales with wait time). */
+export const NEEDS_ME_AGING_THRESHOLD_SECONDS = 24 * 60 * 60;
+
+/**
+ * True when a still-open request has been waiting longer than the aging
+ * threshold. Resolved rows never age — the decision already happened.
+ */
+export function isNeedsMeAging(
+  approval: Pick<NeedsMeApproval, "createdAt">,
+  status: NeedsMeStatus,
+  nowSeconds: number = Math.floor(Date.now() / 1_000),
+): boolean {
+  return (
+    (status === "pending" || status === "resolving") &&
+    nowSeconds - approval.createdAt > NEEDS_ME_AGING_THRESHOLD_SECONDS
+  );
+}
+
 /** Callbacks the inbox rows use to resolve an approval request. */
 export type NeedsMeApprovalActions = {
   resolve: (approval: NeedsMeApproval, approved: boolean) => void;
   /** Approval event ids with a resolution publish in flight. */
   resolvingEventIds: ReadonlySet<string>;
+  /**
+   * Per-token inline error from the last failed resolution publish. Approval
+   * state is visible on screen, so failures render next to the buttons —
+   * never a toast (docs/paperclip-ux-reference.md §1 contextual-feedback rule).
+   */
+  resolveErrors?: ReadonlyMap<string, string>;
+  /** Clears a stale inline error so a retry starts clean. */
+  clearResolveError?: (tokenHash: string) => void;
 };
 
 /** Inbox feed-item shape for a pending approval request. */

@@ -17,9 +17,12 @@ import {
 } from "@/features/home/lib/inbox";
 import { buildInboxListRows } from "@/features/home/lib/inboxListRows";
 import {
+  isNeedsMeAging,
   parseNeedsMeApproval,
   type NeedsMeApprovalActions,
+  type NeedsMeStatus,
 } from "@/features/home/lib/needsMe";
+import { NeedsMeApprovalCard } from "@/features/home/ui/NeedsMeApprovalCard";
 import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
@@ -36,7 +39,6 @@ import {
   useReminderSources,
 } from "@/features/reminders/ui/RemindersPanel";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
-import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
@@ -63,7 +65,7 @@ const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
   project: "No project work found",
   mention: "No mentions found",
   thread: "No threads found",
-  needs_action: "Nothing needs action",
+  needs_action: "No approvals waiting",
   agent_activity: "No agent updates found",
   reminders: "No reminders",
   drafts: "No drafts",
@@ -217,83 +219,45 @@ function PersonalItemRow({
 }
 
 /**
- * Approve/Deny controls for a pending "Needs me" approval request row (kind
- * 46010). The buttons own their accessible labels — the surrounding row's
+ * Inline approval card for a "Needs me" approval request row (kind 46010).
+ * The card's buttons own their accessible labels — the surrounding row's
  * activation button stays untouched and clicks here do not select the row.
  * Resolution publishes the same kind:46030/46031 command surface the CLI and
- * relay use; in-flight requests render a status line instead of buttons.
+ * relay use; pending-state button labels and inline publish errors come from
+ * the card itself (no toasts for on-screen state). Requests waiting longer
+ * than 24h render the amber aging treatment.
  */
-function InboxApprovalActions({
+function InboxNeedsMeCard({
   actions,
   isDone,
   item,
-  senderLabel,
 }: {
   actions?: NeedsMeApprovalActions;
   isDone: boolean;
   item: InboxItem;
-  senderLabel: string;
 }) {
   const approval = React.useMemo(
     () =>
       isDone ? null : parseNeedsMeApproval(relayEventFromFeedItem(item.item)),
     [isDone, item.item],
   );
-  const isResolving =
-    approval !== null && actions?.resolvingEventIds.has(approval.id) === true;
-
   if (!actions || !approval) {
     return null;
   }
-
-  if (isResolving) {
-    return (
-      <div
-        aria-live="polite"
-        className="mt-2 flex items-center gap-1 text-2xs font-medium text-muted-foreground"
-        role="status"
-      >
-        <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />
-        Sending {approval.kind === "budget-overrun" ? "budget" : "approval"}{" "}
-        decision…
-      </div>
-    );
-  }
-
-  const requestLabel = `approval request from ${senderLabel}`;
-
+  const isResolving = actions.resolvingEventIds.has(approval.id);
+  const status: NeedsMeStatus = isResolving ? "resolving" : "pending";
   return (
-    <div className="mt-2 flex items-center gap-1.5">
-      <Button
-        aria-label={`Approve ${requestLabel}`}
-        className="h-6 gap-1 px-2 text-xs"
-        data-testid={`home-inbox-approve-${approval.id}`}
-        onClick={(event) => {
-          // The row wrapper selects on click; stop it so the decision only
-          // resolves this request.
-          event.stopPropagation();
-          actions.resolve(approval, true);
-        }}
-        size="xs"
-        type="button"
-      >
-        Approve
-      </Button>
-      <Button
-        aria-label={`Deny ${requestLabel}`}
-        className="h-6 gap-1 px-2 text-xs"
-        data-testid={`home-inbox-deny-${approval.id}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          actions.resolve(approval, false);
-        }}
-        size="xs"
-        type="button"
-        variant="outline"
-      >
-        Deny
-      </Button>
-    </div>
+    <NeedsMeApprovalCard
+      approval={approval}
+      className="mt-2"
+      error={actions.resolveErrors?.get(approval.tokenHash) ?? null}
+      isAging={isNeedsMeAging(approval, status)}
+      onResolve={(target, approved) => {
+        actions.resolve(target, approved);
+      }}
+      status={status}
+      testId={`home-inbox-needs-me-${approval.id}`}
+    />
   );
 }
 
@@ -602,11 +566,10 @@ export function InboxListPane({
                   videoReviewCommentRootId={videoReviewCommentRootId}
                 />
               </div>
-              <InboxApprovalActions
+              <InboxNeedsMeCard
                 actions={approvalActions}
                 isDone={isDone}
                 item={item}
-                senderLabel={item.senderLabel}
               />
             </div>
           </div>
@@ -854,7 +817,9 @@ export function InboxListPane({
                     ? "Turn off Show unread only to see read activity."
                     : filter === "all"
                       ? "New activity will appear here."
-                      : "Switch back to All to see other activity."}
+                      : filter === "needs_action"
+                        ? "When an agent hits a budget or a workflow needs a decision, it appears here."
+                        : "Switch back to All to see other activity."}
                 </p>
               </div>
             </div>

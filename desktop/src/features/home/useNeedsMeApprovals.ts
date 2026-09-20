@@ -1,6 +1,5 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 import { useCommunities } from "@/features/communities/useCommunities";
 import {
@@ -41,9 +40,18 @@ type NeedsMeQueryData = {
 type NeedsMeLocalData = {
   resolving: string[];
   resolved: string[];
+  /**
+   * Per-token inline failure message from the last rejected resolution
+   * publish. Cleared on the next attempt for the same token.
+   */
+  errors: { tokenHash: string; message: string }[];
 };
 
-const EMPTY_LOCAL: NeedsMeLocalData = { resolving: [], resolved: [] };
+const EMPTY_LOCAL: NeedsMeLocalData = {
+  resolving: [],
+  resolved: [],
+  errors: [],
+};
 
 /**
  * The #p audience for the request read: the current user plus (optionally)
@@ -280,10 +288,40 @@ export function useNeedsMeApprovals({
     [items],
   );
 
+  // `?? []`: cached local data written before the errors field existed must
+  // not crash the surface (local query data persists per community session).
+  const resolveErrors = React.useMemo(
+    () =>
+      new Map(
+        (local.errors ?? []).map((entry) => [entry.tokenHash, entry.message]),
+      ),
+    [local.errors],
+  );
+
+  const clearResolveError = React.useCallback(
+    (tokenHash: string) => {
+      queryClient.setQueryData<NeedsMeLocalData>(
+        needsMeLocalQueryKey(communityId, currentPubkey),
+        (current) => ({
+          resolving: current?.resolving ?? [],
+          resolved: current?.resolved ?? [],
+          errors: (current?.errors ?? []).filter(
+            (entry) => entry.tokenHash !== tokenHash,
+          ),
+        }),
+      );
+    },
+    [communityId, currentPubkey, queryClient],
+  );
+
   return {
     items,
     pendingRequestEvents,
     resolvedEventIds,
+    /** Inline publish-failure messages keyed by approval token hash. */
+    resolveErrors,
+    /** Clears a stale inline error so a retry starts clean. */
+    clearResolveError,
     /** True once the bounded reads have completed at least once. */
     hasLoaded: data !== undefined,
     resolutionsComplete: data?.resolutionsComplete ?? true,
@@ -336,9 +374,14 @@ export function useResolveNeedsMeApproval(currentPubkey?: string) {
       });
       const localKey = needsMeLocalQueryKey(communityId, currentPubkey);
       const previous = queryClient.getQueryData<NeedsMeLocalData>(localKey);
+      // A retry clears its own stale inline error; the rollback snapshot keeps
+      // the previous error so a cancelled attempt restores it.
       queryClient.setQueryData<NeedsMeLocalData>(localKey, (current) => ({
         resolving: [...(current?.resolving ?? []), tokenHash],
         resolved: current?.resolved ?? [],
+        errors: (current?.errors ?? []).filter(
+          (entry) => entry.tokenHash !== tokenHash,
+        ),
       }));
       return { previous, localKey };
     },
@@ -347,24 +390,38 @@ export function useResolveNeedsMeApproval(currentPubkey?: string) {
       queryClient.setQueryData<NeedsMeLocalData>(localKey, (current) => ({
         resolving: (current?.resolving ?? []).filter((t) => t !== tokenHash),
         resolved: [...(current?.resolved ?? []), tokenHash],
+        errors: current?.errors ?? [],
       }));
       void queryClient.invalidateQueries({
         queryKey: needsMeQueryKey(communityId, currentPubkey),
       });
     },
-    onError: (error, _variables, context) => {
-      // Roll the optimistic resolution back — the row returns to pending.
+    onError: (error, { tokenHash }, context) => {
+      // Roll the optimistic resolution back — the row returns to pending —
+      // and surface the rejection INLINE on the approval card. Approval state
+      // is visible on screen, so a toast would detach the failure from the
+      // row the operator is acting on (design rule: no toasts for on-screen
+      // state).
+      const message = describeResolutionError(
+        error instanceof Error ? error.message : String(error),
+      );
       if (context) {
         queryClient.setQueryData<NeedsMeLocalData>(
           context.localKey,
-          context.previous ?? EMPTY_LOCAL,
+          (current) => ({
+            resolving: (current?.resolving ?? []).filter(
+              (t) => t !== tokenHash,
+            ),
+            resolved: (current?.resolved ?? []).filter((t) => t !== tokenHash),
+            errors: [
+              ...(current?.errors ?? []).filter(
+                (entry) => entry.tokenHash !== tokenHash,
+              ),
+              { tokenHash, message },
+            ],
+          }),
         );
       }
-      toast.error(
-        describeResolutionError(
-          error instanceof Error ? error.message : String(error),
-        ),
-      );
     },
   });
 }

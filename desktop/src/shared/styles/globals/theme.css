@@ -63,6 +63,33 @@
     --buzz-hosted-community-modal-action-fg: 255 255 255;
     --buzz-hosted-community-modal-overlay-bg: 0 0 0;
     --buzz-hosted-community-identity-bg: 255 255 255;
+
+    /*
+     * Semantic status tier (see docs/paperclip-ux-reference.md §5): one hue per
+     * meaning, routed through every status glyph/badge/row. Light values are
+     * darkened for >=3:1 contrast on the Latte surface; dark values are lightened
+     * for Macchiato. `*-bg` is the low-alpha pill/surface companion, `*-border`
+     * the mid-alpha hairline for outlined chips. Consume only via the
+     * `status-*` Tailwind colors — never hardcode status hex in components.
+     */
+    --status-live: #2563eb; /* blue = liveness / in progress */
+    --status-live-bg: rgb(37 99 235 / 0.1);
+    --status-live-border: rgb(37 99 235 / 0.32);
+    --status-waiting: #b45309; /* amber = waiting / attention */
+    --status-waiting-bg: rgb(180 83 9 / 0.1);
+    --status-waiting-border: rgb(180 83 9 / 0.32);
+    --status-blocking: #dc2626; /* red = blocking / failing */
+    --status-blocking-bg: rgb(220 38 38 / 0.1);
+    --status-blocking-border: rgb(220 38 38 / 0.32);
+    --status-ok: #15803d; /* green = done / healthy */
+    --status-ok-bg: rgb(21 128 61 / 0.1);
+    --status-ok-border: rgb(21 128 61 / 0.32);
+    --status-review: #6d28d9; /* violet = in review */
+    --status-review-bg: rgb(109 40 217 / 0.1);
+    --status-review-border: rgb(109 40 217 / 0.32);
+    --status-neutral: #64748b; /* gray = neutral / terminal */
+    --status-neutral-bg: rgb(100 116 139 / 0.1);
+    --status-neutral-border: rgb(100 116 139 / 0.32);
   }
 
   .dark {
@@ -113,6 +140,30 @@
     --sidebar-accent-foreground: 227 68.25% 87.65%;
     --sidebar-border: 231 15.61% 33.92%;
     --sidebar-ring: 231 15.61% 33.92%;
+
+    /*
+     * Semantic status tier, dark re-tune (see docs/paperclip-ux-reference.md
+     * §5): lighter hues keep >=3:1 contrast on the Macchiato surface; alpha
+     * companions step up to 14% like the brand chip recipe.
+     */
+    --status-live: #60a5fa;
+    --status-live-bg: rgb(96 165 250 / 0.14);
+    --status-live-border: rgb(96 165 250 / 0.36);
+    --status-waiting: #fbbf24;
+    --status-waiting-bg: rgb(251 191 36 / 0.14);
+    --status-waiting-border: rgb(251 191 36 / 0.36);
+    --status-blocking: #f87171;
+    --status-blocking-bg: rgb(248 113 113 / 0.14);
+    --status-blocking-border: rgb(248 113 113 / 0.36);
+    --status-ok: #4ade80;
+    --status-ok-bg: rgb(74 222 128 / 0.14);
+    --status-ok-border: rgb(74 222 128 / 0.36);
+    --status-review: #a78bfa;
+    --status-review-bg: rgb(167 139 250 / 0.14);
+    --status-review-border: rgb(167 139 250 / 0.36);
+    --status-neutral: #94a3b8;
+    --status-neutral-bg: rgb(148 163 184 / 0.14);
+    --status-neutral-border: rgb(148 163 184 / 0.36);
   }
 
   * {

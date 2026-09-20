@@ -131,6 +131,42 @@ export default {
           added: "var(--status-added)",
           deleted: "var(--status-deleted)",
           modified: "var(--status-modified)",
+          // Semantic status tier (docs/paperclip-ux-reference.md §5): one hue
+          // per meaning — blue=liveness, amber=waiting/attention, red=
+          // blocking/fail, green=ok, violet=in-review, gray=neutral. Values
+          // live in globals/theme.css (`:root` + `.dark`, WCAG-tuned per
+          // theme). Consume via `text-status-<tone>`, `bg-status-<tone>-bg`,
+          // `border-status-<tone>-border`; no hardcoded status colors.
+          live: {
+            DEFAULT: "var(--status-live)",
+            bg: "var(--status-live-bg)",
+            border: "var(--status-live-border)",
+          },
+          waiting: {
+            DEFAULT: "var(--status-waiting)",
+            bg: "var(--status-waiting-bg)",
+            border: "var(--status-waiting-border)",
+          },
+          blocking: {
+            DEFAULT: "var(--status-blocking)",
+            bg: "var(--status-blocking-bg)",
+            border: "var(--status-blocking-border)",
+          },
+          ok: {
+            DEFAULT: "var(--status-ok)",
+            bg: "var(--status-ok-bg)",
+            border: "var(--status-ok-border)",
+          },
+          review: {
+            DEFAULT: "var(--status-review)",
+            bg: "var(--status-review-bg)",
+            border: "var(--status-review-border)",
+          },
+          neutral: {
+            DEFAULT: "var(--status-neutral)",
+            bg: "var(--status-neutral-bg)",
+            border: "var(--status-neutral-border)",
+          },
         },
         warning: {
           DEFAULT: "var(--ui-warning)",

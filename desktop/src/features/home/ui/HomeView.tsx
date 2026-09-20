@@ -788,6 +788,7 @@ export function HomeView({
           {showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               agentPubkeys={inboxAgentPubkeys}
+              approvalActions={approvalActions}
               canDelete={canDelete}
               canOpenChannel={canOpenSelected}
               canReply={canReply}

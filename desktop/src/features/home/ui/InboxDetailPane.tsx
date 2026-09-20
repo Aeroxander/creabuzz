@@ -14,6 +14,12 @@ import type {
   InboxItem,
   InboxReply,
 } from "@/features/home/lib/inbox";
+import {
+  isNeedsMeAging,
+  parseNeedsMeApproval,
+  type NeedsMeApprovalActions,
+  type NeedsMeStatus,
+} from "@/features/home/lib/needsMe";
 import { getProjectInboxReference } from "@/features/home/lib/projectInbox";
 import { ProjectInboxDetail } from "@/features/home/ui/ProjectInboxDetail";
 import { ChannelMembersBar } from "@/features/channels/ui/ChannelMembersBar";
@@ -27,6 +33,7 @@ import {
   type InboxDisplayMessage,
   InboxMessageRow,
 } from "@/features/home/ui/InboxMessageRow";
+import { NeedsMeApprovalCard } from "@/features/home/ui/NeedsMeApprovalCard";
 import type { TimelineMessage } from "@/features/messages/types";
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 import {
@@ -41,6 +48,7 @@ import {
   buildVideoReviewPresentationByMessageId,
   hasRenderedVideoAttachment,
 } from "@/features/messages/lib/videoReviewContext";
+import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import { MessageComposer } from "@/features/messages/ui/MessageComposer";
@@ -75,6 +83,8 @@ const EMPTY_REPLIES: InboxReply[] = [];
 
 type InboxDetailPaneProps = {
   agentPubkeys?: ReadonlySet<string>;
+  /** Approve/Deny for the selected "Needs me" approval request. */
+  approvalActions?: NeedsMeApprovalActions;
   canDelete: boolean;
   canOpenChannel: boolean;
   canReply: boolean;
@@ -165,6 +175,7 @@ export function InboxDetailPane(props: InboxDetailPaneProps) {
 
 function InboxMessageDetailPane({
   agentPubkeys,
+  approvalActions,
   canDelete,
   canOpenChannel,
   canReply,
@@ -430,6 +441,15 @@ function InboxMessageDetailPane({
     scrollContainerRef,
     composerWrapperRef,
     conversationId,
+  );
+
+  // A selected kind:46010 request renders its inline approval card above the
+  // message timeline — same resolution surface as the list row. Kept above the
+  // `!item` early return so hook order stays stable.
+  const selectedNeedsMeApproval = React.useMemo(
+    () =>
+      item ? parseNeedsMeApproval(relayEventFromFeedItem(item.item)) : null,
+    [item],
   );
 
   if (!item) {
@@ -721,6 +741,34 @@ function InboxMessageDetailPane({
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>Some message context could not be loaded.</span>
               </div>
+            ) : null}
+            {selectedNeedsMeApproval && approvalActions ? (
+              <NeedsMeApprovalCard
+                approval={selectedNeedsMeApproval}
+                className="mx-4 mb-2"
+                error={
+                  approvalActions.resolveErrors?.get(
+                    selectedNeedsMeApproval.tokenHash,
+                  ) ?? null
+                }
+                isAging={isNeedsMeAging(
+                  selectedNeedsMeApproval,
+                  approvalActions.resolvingEventIds.has(
+                    selectedNeedsMeApproval.id,
+                  )
+                    ? ("resolving" as NeedsMeStatus)
+                    : ("pending" as NeedsMeStatus),
+                )}
+                onResolve={approvalActions.resolve}
+                status={
+                  approvalActions.resolvingEventIds.has(
+                    selectedNeedsMeApproval.id,
+                  )
+                    ? "resolving"
+                    : "pending"
+                }
+                testId={`home-inbox-needs-me-detail-${selectedNeedsMeApproval.id}`}
+              />
             ) : null}
             {displayMessages.map((message, index) => {
               const hasUnreadBoundary = message.id === unreadBoundaryEventId;

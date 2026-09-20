@@ -166,6 +166,7 @@ export default defineConfig({
         "**/agent-access-warning.spec.ts",
         "**/edit-agent-run-on.spec.ts",
         "**/inbox-live-update.spec.ts",
+        "**/needsme-ux.spec.ts",
         "**/mesh-compute.spec.ts",
         "**/observer-archive-policy.spec.ts",
         "**/harness-management.spec.ts",

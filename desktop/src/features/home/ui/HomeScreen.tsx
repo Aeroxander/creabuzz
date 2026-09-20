@@ -56,6 +56,8 @@ export function HomeScreen({
   // useMutation result each render would defeat this memo (AGENTS gotcha 6).
   const resolveApprovalMutate = resolveApproval.mutate;
   const needsMeItems = needsMe.items;
+  const needsMeResolveErrors = needsMe.resolveErrors;
+  const needsMeClearResolveError = needsMe.clearResolveError;
   const approvalActions = React.useMemo((): NeedsMeApprovalActions => {
     const resolvingEventIds = new Set(
       needsMeItems
@@ -70,8 +72,15 @@ export function HomeScreen({
         });
       },
       resolvingEventIds,
+      resolveErrors: needsMeResolveErrors,
+      clearResolveError: needsMeClearResolveError,
     };
-  }, [needsMeItems, resolveApprovalMutate]);
+  }, [
+    needsMeClearResolveError,
+    needsMeItems,
+    needsMeResolveErrors,
+    resolveApprovalMutate,
+  ]);
 
   const augmentedFeed = React.useMemo((): HomeFeedResponse | undefined => {
     if (!homeFeedQuery.data) return undefined;
