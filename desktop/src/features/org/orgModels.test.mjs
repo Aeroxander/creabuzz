@@ -182,7 +182,11 @@ describe("eventToOrgBudget", () => {
           onchain,
         }),
       );
-      assert.equal(budget.onchain, undefined, `onchain: ${JSON.stringify(onchain)}`);
+      assert.equal(
+        budget.onchain,
+        undefined,
+        `onchain: ${JSON.stringify(onchain)}`,
+      );
     }
   });
 

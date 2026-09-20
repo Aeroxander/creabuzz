@@ -10,6 +10,13 @@ import {
   getProjectInboxReference,
   isProjectInboxItem,
 } from "@/features/home/lib/projectInbox";
+import {
+  KIND_APPROVAL_REQUEST,
+  needsMeHeadline,
+  needsMePreview,
+  parseNeedsMeApproval,
+  type NeedsMeApproval,
+} from "@/features/home/lib/needsMe";
 import type { TimelineReaction } from "@/features/messages/types";
 import type {
   Channel,
@@ -207,6 +214,26 @@ export function agentActivitySummary(
   }
 }
 
+/**
+ * The "Needs me" view of a kind:46010 approval request — budget overrun or
+ * workflow request. Pure function of the event so headline/preview/type-label
+ * stay unit-testable.
+ */
+function needsMeApprovalForItem(item: FeedItem): NeedsMeApproval | null {
+  if (item.kind !== KIND_APPROVAL_REQUEST) {
+    return null;
+  }
+  return parseNeedsMeApproval({
+    content: item.content,
+    created_at: item.createdAt,
+    id: item.id,
+    kind: item.kind,
+    pubkey: item.pubkey,
+    sig: "",
+    tags: item.tags,
+  });
+}
+
 function projectRootItem(item: FeedItem, groupItems: readonly FeedItem[]) {
   return (
     groupItems.find(
@@ -249,8 +276,10 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
       return "Forum post";
     case 45003:
       return "Forum reply";
-    case 46010:
-      return "Approval requested";
+    case 46010: {
+      const approval = needsMeApprovalForItem(item);
+      return approval ? needsMeHeadline(approval) : "Approval requested";
+    }
     default: {
       const summary = agentActivitySummary(item.kind, item.content);
       if (summary) {
@@ -278,6 +307,21 @@ function feedPreview(item: FeedItem) {
     (item.kind === 44200 || item.kind === 44010 || item.kind === 44011)
   ) {
     return summary.preview;
+  }
+
+  // Budget overrun requests carry JSON content — render the kind-aware
+  // summary, never the raw envelope. Workflow requests keep their plain-text
+  // message when one was attached.
+  if (item.kind === 46010) {
+    const approval = needsMeApprovalForItem(item);
+    if (approval && approval.kind === "budget-overrun") {
+      return needsMePreview(approval);
+    }
+    // Structured (JSON) content that is not a recognized budget envelope must
+    // not render raw either — fall back to the workflow summary.
+    if (item.content.trim().startsWith("{")) {
+      return "A workflow is waiting for approval.";
+    }
   }
 
   const content = item.content.trim();
@@ -384,6 +428,16 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
   if (item.item.channelType === "dm") {
     return {
       text: item.senderLabel ? `DM from ${item.senderLabel}` : "DM",
+      channelLabel: null,
+    };
+  }
+
+  // NIP-ORG budget overrun requests are community-level events — they have no
+  // channel. Label the org scope instead of the generic "Needs action".
+  const needsMeApproval = needsMeApprovalForItem(item.item);
+  if (needsMeApproval?.kind === "budget-overrun") {
+    return {
+      text: "Org budget",
       channelLabel: null,
     };
   }

@@ -16,6 +16,11 @@ import {
   type InboxTypeLabel,
 } from "@/features/home/lib/inbox";
 import { buildInboxListRows } from "@/features/home/lib/inboxListRows";
+import {
+  parseNeedsMeApproval,
+  type NeedsMeApprovalActions,
+} from "@/features/home/lib/needsMe";
+import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { InboxFilterMenu } from "@/features/home/ui/InboxFilterMenu";
@@ -31,6 +36,7 @@ import {
   useReminderSources,
 } from "@/features/reminders/ui/RemindersPanel";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
+import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
@@ -210,9 +216,92 @@ function PersonalItemRow({
   );
 }
 
+/**
+ * Approve/Deny controls for a pending "Needs me" approval request row (kind
+ * 46010). The buttons own their accessible labels — the surrounding row's
+ * activation button stays untouched and clicks here do not select the row.
+ * Resolution publishes the same kind:46030/46031 command surface the CLI and
+ * relay use; in-flight requests render a status line instead of buttons.
+ */
+function InboxApprovalActions({
+  actions,
+  isDone,
+  item,
+  senderLabel,
+}: {
+  actions?: NeedsMeApprovalActions;
+  isDone: boolean;
+  item: InboxItem;
+  senderLabel: string;
+}) {
+  const approval = React.useMemo(
+    () =>
+      isDone ? null : parseNeedsMeApproval(relayEventFromFeedItem(item.item)),
+    [isDone, item.item],
+  );
+  const isResolving =
+    approval !== null && actions?.resolvingEventIds.has(approval.id) === true;
+
+  if (!actions || !approval) {
+    return null;
+  }
+
+  if (isResolving) {
+    return (
+      <div
+        aria-live="polite"
+        className="mt-2 flex items-center gap-1 text-2xs font-medium text-muted-foreground"
+        role="status"
+      >
+        <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />
+        Sending {approval.kind === "budget-overrun" ? "budget" : "approval"}{" "}
+        decision…
+      </div>
+    );
+  }
+
+  const requestLabel = `approval request from ${senderLabel}`;
+
+  return (
+    <div className="mt-2 flex items-center gap-1.5">
+      <Button
+        aria-label={`Approve ${requestLabel}`}
+        className="h-6 gap-1 px-2 text-xs"
+        data-testid={`home-inbox-approve-${approval.id}`}
+        onClick={(event) => {
+          // The row wrapper selects on click; stop it so the decision only
+          // resolves this request.
+          event.stopPropagation();
+          actions.resolve(approval, true);
+        }}
+        size="xs"
+        type="button"
+      >
+        Approve
+      </Button>
+      <Button
+        aria-label={`Deny ${requestLabel}`}
+        className="h-6 gap-1 px-2 text-xs"
+        data-testid={`home-inbox-deny-${approval.id}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          actions.resolve(approval, false);
+        }}
+        size="xs"
+        type="button"
+        variant="outline"
+      >
+        Deny
+      </Button>
+    </div>
+  );
+}
+
 type InboxListPaneProps = {
   activeReminderEventIds?: ReadonlySet<string>;
   agentPubkeys?: ReadonlySet<string>;
+  /** Approve/Deny for pending "Needs me" approval rows. */
+  approvalActions?: NeedsMeApprovalActions;
   activeDraftCount: number;
   draftItems: DraftViewItem[];
   doneSet: ReadonlySet<string>;
@@ -243,6 +332,7 @@ type InboxListPaneProps = {
 export function InboxListPane({
   activeReminderEventIds,
   agentPubkeys,
+  approvalActions,
   activeDraftCount,
   draftItems,
   doneSet,
@@ -512,6 +602,12 @@ export function InboxListPane({
                   videoReviewCommentRootId={videoReviewCommentRootId}
                 />
               </div>
+              <InboxApprovalActions
+                actions={approvalActions}
+                isDone={isDone}
+                item={item}
+                senderLabel={item.senderLabel}
+              />
             </div>
           </div>
         </div>

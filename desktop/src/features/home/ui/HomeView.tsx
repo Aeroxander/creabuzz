@@ -57,6 +57,7 @@ import { DeleteMessageConfirmDialog } from "@/features/messages/ui/DeleteMessage
 import { splitOutgoingTags } from "@/features/messages/lib/imetaMediaMarkdown";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
+import type { NeedsMeApprovalActions } from "@/features/home/lib/needsMe";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useRemindLater } from "@/features/reminders/ui/RemindMeLaterProvider";
@@ -87,6 +88,9 @@ type HomeViewProps = {
   errorMessage?: string;
   currentPubkey?: string;
   availableChannelIds: ReadonlySet<string>;
+  /** Resolve/deny actions for pending "Needs me" approval rows (optional so
+   *  non-home consumers of the pane stay self-contained). */
+  approvalActions?: NeedsMeApprovalActions;
   onOpenContext: (
     channelId: string,
     messageId: string,
@@ -101,6 +105,7 @@ export function HomeView({
   errorMessage,
   currentPubkey,
   availableChannelIds,
+  approvalActions,
   onOpenContext,
   onRefresh,
 }: HomeViewProps) {
@@ -693,6 +698,7 @@ export function HomeView({
             <InboxListPane
               activeReminderEventIds={activeReminderEventIds}
               agentPubkeys={inboxAgentPubkeys}
+              approvalActions={approvalActions}
               activeDraftCount={activeDraftCount}
               draftItems={draftItems}
               doneSet={effectiveDoneSet}

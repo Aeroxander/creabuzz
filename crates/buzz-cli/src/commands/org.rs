@@ -14,7 +14,7 @@ use buzz_core::kind::{KIND_CONTRIBUTION_RECORD, KIND_ORG_BUDGET, KIND_ORG_GRANT,
 use buzz_evm_allowance::{AllowanceClient, AllowanceDecision, AllowanceError, Window};
 use buzz_sdk::{
     build_budget_spend_receipt, build_delete_addressable, BudgetLimits, BudgetSpendReceiptContent,
-    BudgetWindow, ContributionRecordContent, HumanVsAi, OnExceed, OrgBudgetContent,
+    BudgetWindow, ContributionRecordContent, HumanVsAi, OnExceed, OnchainBinding, OrgBudgetContent,
     OrgGrantContent, OrgNodeContent, OrgNodeKind, OrgScope, ReviewStatus, SpendLimit, TaskLimits,
     ORG_D_MAX_LEN,
 };
@@ -351,6 +351,56 @@ async fn cmd_grant_list(client: &BuzzClient, limit: Option<u32>) -> Result<(), C
 
 // ── Budget commands ────────────────────────────────────────────────────────
 
+/// Parse the `--onchain '<chain>|<contract>|<subject>'` flag into an
+/// [`OnchainBinding`] (NIP-ORG §37012 spend binding).
+///
+/// One pipe-delimited value keeps the three coordinated fields atomic: a
+/// binding without its subject or contract is meaningless, and clap would
+/// happily accept a partial trio as three independent flags.
+///
+/// - `<chain>`: chain identifier, `eip155:<chainId>` (or `anvil-31337` in dev).
+/// - `<contract>`: allowance contract address, `0x` + 40 hex chars.
+/// - `<subject>`: the budgeted subject's 32-byte pubkey, 64 hex chars. Must
+///   equal the budget's `--subject` when that names a pubkey.
+pub fn parse_onchain_binding(spec: &str) -> Result<OnchainBinding, CliError> {
+    let parts: Vec<&str> = spec.split('|').collect();
+    if parts.len() != 3 {
+        return Err(CliError::Usage(
+            "--onchain must be '<chain>|<contract>|<subject>' (exactly three pipe-separated parts)"
+                .to_string(),
+        ));
+    }
+    let (chain, contract, subject) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
+
+    if chain.is_empty() {
+        return Err(CliError::Usage(
+            "--onchain chain must not be empty (expected eip155:<chainId>)".to_string(),
+        ));
+    }
+
+    let contract_ok = contract.len() == 42
+        && contract.starts_with("0x")
+        && contract[2..].bytes().all(|b| b.is_ascii_hexdigit());
+    if !contract_ok {
+        return Err(CliError::Usage(format!(
+            "--onchain contract must be a 0x-prefixed 20-byte address, got {contract:?}"
+        )));
+    }
+
+    let subject_ok = subject.len() == 64 && subject.bytes().all(|b| b.is_ascii_hexdigit());
+    if !subject_ok {
+        return Err(CliError::Usage(format!(
+            "--onchain subject must be a 32-byte hex pubkey, got {subject:?}"
+        )));
+    }
+
+    Ok(OnchainBinding {
+        chain: chain.to_string(),
+        contract: contract.to_string(),
+        subject: subject.to_lowercase(),
+    })
+}
+
 #[allow(clippy::too_many_arguments)] // CLI command: each flag is a distinct input
 async fn cmd_budget_create(
     client: &BuzzClient,
@@ -361,6 +411,7 @@ async fn cmd_budget_create(
     runs: Option<u32>,
     task_create: Option<u32>,
     task_approve: Option<u32>,
+    onchain: Option<&str>,
 ) -> Result<(), CliError> {
     validate_d_tag(subject_id, "budget")?;
 
@@ -390,9 +441,7 @@ async fn cmd_budget_create(
         window: budget_window,
         limits: BudgetLimits { spend, runs, tasks },
         on_exceed: OnExceed::RequireApproval,
-        // No CLI flag yet for the onchain spend binding — budgets created via
-        // the CLI stay off-chain until a dedicated flag lands.
-        onchain: None,
+        onchain: onchain.map(parse_onchain_binding).transpose()?,
     };
 
     let builder = buzz_sdk::build_org_budget(subject_id, &content)
@@ -818,6 +867,7 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 runs,
                 task_create,
                 task_approve,
+                onchain,
             } => {
                 cmd_budget_create(
                     client,
@@ -828,6 +878,7 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                     runs,
                     task_create,
                     task_approve,
+                    onchain.as_deref(),
                 )
                 .await
             }
@@ -872,5 +923,72 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 unit,
             } => cmd_allowance_spend(client, &subject, &token, &amount, &window, &unit).await,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CHAIN: &str = "eip155:8453";
+    const CONTRACT: &str = "0x1234567890abcdef1234567890abcdef12345678";
+    const SUBJECT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    fn binding_spec() -> String {
+        format!("{CHAIN}|{CONTRACT}|{SUBJECT}")
+    }
+
+    #[test]
+    fn onchain_binding_parses_the_three_parts() {
+        let binding = parse_onchain_binding(&binding_spec()).expect("valid spec");
+        assert_eq!(binding.chain, CHAIN);
+        assert_eq!(binding.contract, CONTRACT);
+        assert_eq!(binding.subject, SUBJECT);
+    }
+
+    #[test]
+    fn onchain_binding_rejects_wrong_part_count() {
+        for spec in [
+            format!("{CHAIN}|{CONTRACT}"),
+            format!("{CHAIN}|{CONTRACT}|{SUBJECT}|extra"),
+            String::new(),
+        ] {
+            let err = parse_onchain_binding(&spec).expect_err("must reject");
+            assert!(matches!(err, CliError::Usage(_)), "spec {spec:?}");
+        }
+    }
+
+    #[test]
+    fn onchain_binding_rejects_bad_contract() {
+        let short = format!("{CHAIN}|0x1234|{SUBJECT}");
+        assert!(parse_onchain_binding(&short).is_err());
+
+        let no_prefix = format!("{CHAIN}|{}|{SUBJECT}", &CONTRACT[2..]);
+        assert!(parse_onchain_binding(&no_prefix).is_err());
+
+        let non_hex = format!("{CHAIN}|0xzz4567890abcdef1234567890abcdef12345678|{SUBJECT}");
+        assert!(parse_onchain_binding(&non_hex).is_err());
+    }
+
+    #[test]
+    fn onchain_binding_rejects_bad_subject() {
+        let short = format!("{CHAIN}|{CONTRACT}|abc");
+        assert!(parse_onchain_binding(&short).is_err());
+
+        let non_hex = format!("{CHAIN}|{CONTRACT}|{}", "z".repeat(64));
+        assert!(parse_onchain_binding(&non_hex).is_err());
+    }
+
+    #[test]
+    fn onchain_binding_rejects_empty_chain() {
+        let spec = format!("|{CONTRACT}|{SUBJECT}");
+        assert!(parse_onchain_binding(&spec).is_err());
+    }
+
+    #[test]
+    fn onchain_binding_normalizes_subject_case() {
+        let upper = format!("{CHAIN}|{CONTRACT}|{}", SUBJECT.to_uppercase());
+        let binding = parse_onchain_binding(&upper).expect("valid spec");
+        assert_eq!(binding.subject, SUBJECT);
     }
 }

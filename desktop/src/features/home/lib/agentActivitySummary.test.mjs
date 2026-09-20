@@ -22,7 +22,11 @@ test("capabilities degrade honestly on malformed content", () => {
 test("tasks render status + title with description preview", () => {
   const summary = agentActivitySummary(
     44011,
-    JSON.stringify({ title: "Fix login", status: "in_progress", description: "OAuth race\nmore" }),
+    JSON.stringify({
+      title: "Fix login",
+      status: "in_progress",
+      description: "OAuth race\nmore",
+    }),
   );
   assert.deepEqual(summary, {
     headline: "Task in_progress: Fix login",

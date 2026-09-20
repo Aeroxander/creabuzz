@@ -2436,6 +2436,10 @@ pub enum OrgBudgetCmd {
         /// Maximum tasks that can be approved per window
         #[arg(long)]
         task_approve: Option<u32>,
+        /// Onchain spend binding: '<chain>|<contract>|<subject>' (NIP-ORG §37012).
+        /// Example: --onchain 'eip155:8453|0xabc...def|<32-byte-hex-pubkey>'
+        #[arg(long)]
+        onchain: Option<String>,
     },
     /// Get a budget by id
     Get {
@@ -2722,6 +2726,45 @@ mod tests {
             event.as_str(),
         ])
         .is_err());
+    }
+
+    #[test]
+    fn org_budget_create_accepts_onchain_flag() {
+        let subject = "a".repeat(64);
+        let spec = format!("eip155:8453|0x1234567890abcdef1234567890abcdef12345678|{subject}");
+        assert!(Cli::try_parse_from([
+            "buzz",
+            "org",
+            "budget",
+            "create",
+            "--id",
+            "spend-ceiling",
+            "--subject",
+            subject.as_str(),
+            "--spend",
+            "1000",
+            "--onchain",
+            spec.as_str(),
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn org_budget_create_onchain_flag_is_optional() {
+        let subject = "a".repeat(64);
+        assert!(Cli::try_parse_from([
+            "buzz",
+            "org",
+            "budget",
+            "create",
+            "--id",
+            "spend-ceiling",
+            "--subject",
+            subject.as_str(),
+            "--runs",
+            "5",
+        ])
+        .is_ok());
     }
 
     #[test]
