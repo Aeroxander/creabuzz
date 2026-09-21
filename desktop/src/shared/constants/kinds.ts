@@ -69,6 +69,10 @@ export const KIND_AGENT_TURN_METRIC = 44200;
 // Agent fleet cooperation plane (mirror of buzz-core 44010–44019).
 export const KIND_AGENT_CAPABILITIES = 44010;
 export const KIND_AGENT_TASK = 44011;
+// Agent Wiki (mirror of buzz-core 44002): agent-maintained knowledge base
+// pages (d = "<space>/<slug>", content = markdown). Distinct from the human
+// wiki page kind 44001 (Yjs/Trystero live editing).
+export const KIND_AGENT_WIKI_PAGE = 44002;
 export const KIND_WORKFLOW_TRIGGERED = 46001;
 export const KIND_WORKFLOW_COMPLETED = 46005;
 export const KIND_WORKFLOW_FAILED = 46006;

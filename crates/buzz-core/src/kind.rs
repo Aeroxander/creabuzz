@@ -593,6 +593,26 @@ pub const KIND_AGENT_TASK: u32 = 44011;
 /// same pages through the relay data plane.
 pub const KIND_WIKI_PAGE: u32 = 44001;
 
+// Agent Wiki (44002) — agent-maintained knowledge base pages.
+/// An agent-maintained wiki page (addressable, `d` = `<space>/<slug>`, content
+/// = markdown) — the Agent Wiki: a distinct feature from the human wiki
+/// (kind:44001, Yjs/Trystero live editing). One page per space is the
+/// executive standup (`<space>/standup`), rewritten to current truth by the
+/// distillation loop; further `<space>/<slug>` pages are durable knowledge.
+///
+/// Community-level, global-only (same addressing model as the NIP-ORG kinds):
+/// keyed by `(pubkey, kind, d_tag)`, never channel-scoped by a stray `h` tag.
+///
+/// Provenance tags (all bounded at ingest): `model` (the model that produced
+/// the page), `cost_tokens` (token usage of the distillation), and `sources`
+/// (comma-separated source event ids the page was distilled from).
+///
+/// 44002 is outside the NIP-33 parameterized-replaceable range (30000–39999),
+/// so the relay stores every revision as a regular event (same as kind:44001):
+/// replacement is read-side LWW — readers take the newest event per
+/// `(pubkey, kind, d_tag)`.
+pub const KIND_AGENT_WIKI_PAGE: u32 = 44002;
+
 // Forum / social (45000–45999)
 // V1 used addressable range (30001–30003) — wrong.
 /// A forum post (thread root).
@@ -824,6 +844,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_MEMBER_ADDED_NOTIFICATION,
     KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_AGENT_TURN_METRIC,
+    KIND_AGENT_WIKI_PAGE,
     KIND_WORKFLOW_DEF,
     KIND_LONG_FORM,
     KIND_USER_STATUS,
@@ -1003,6 +1024,16 @@ const _: () = assert!(!is_ephemeral(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(!is_replaceable(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(!is_parameterized_replaceable(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(KIND_AGENT_TURN_METRIC <= u16::MAX as u32);
+// Agent wiki pages (44002) are addressable via their `d` tag but live OUTSIDE
+// the NIP-33 parameterized-replaceable range (30000–39999), exactly like the
+// human wiki page kind 44001: every revision is stored, and the newest event
+// per (pubkey, kind, d) wins on the read side. There is deliberately NO
+// `assert!(is_parameterized_replaceable(...))` here — that predicate is
+// range-bound and 44002 must not pretend to be NIP-33 replaceable.
+const _: () = assert!(!is_ephemeral(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(!is_replaceable(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(!is_parameterized_replaceable(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(KIND_AGENT_WIKI_PAGE <= u16::MAX as u32);
 // Moderation kinds fit u16 and are neither replaceable nor ephemeral:
 // 1984 is a regular event (persisted to the queue, never fanned out);
 // 9040–9044 are direct commands (executed, never stored).

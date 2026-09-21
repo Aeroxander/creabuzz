@@ -1,3 +1,4 @@
+pub mod agent_wiki;
 pub mod agents;
 pub mod channel_templates;
 pub mod channels;

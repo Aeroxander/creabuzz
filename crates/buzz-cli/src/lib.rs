@@ -249,6 +249,9 @@ enum Cmd {
     /// Community org graph — roles, grants, and budgets (NIP-ORG)
     #[command(subcommand)]
     Org(OrgCmd),
+    /// Agent Wiki — agent-maintained knowledge base (kind:44002)
+    #[command(subcommand)]
+    Agwiki(AgwikiCmd),
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -2317,6 +2320,57 @@ pub enum OrgCmd {
     },
 }
 
+/// Agent Wiki subcommands — kind:44002 agent-maintained knowledge base pages.
+///
+/// This is a distinct feature from the human wiki (kind:44001, Yjs/Trystero
+/// live editing): an agent distillation loop maintains an executive standup
+/// page per space. Configuration reuses the contribution classifier env vars
+/// (`BUZZ_CLASSIFIER_API_URL`, `BUZZ_CLASSIFIER_API_KEY`,
+/// `BUZZ_CLASSIFIER_MODEL`) — see `docs/agent-wiki.md`.
+#[derive(Subcommand)]
+pub enum AgwikiCmd {
+    /// Distill done tasks + contribution records into the space standup page
+    ///
+    /// Fetches a bounded source bundle (done kind:44011 tasks and published
+    /// kind:37013 contribution records) newer than the persisted cursor,
+    /// drafts an executive standup page (`<space>/standup`, rewritten to the
+    /// current truth — patch semantics, never a diary) via the classifier
+    /// endpoint, validates the markdown strictly (one retry, then fail
+    /// loudly), and either prints the draft or, with `--publish`, signs and
+    /// publishes it as kind:44002 with provenance tags (`model`,
+    /// `cost_tokens`, `sources`).
+    ///
+    /// The cursor is persisted in the standup page's front-matter
+    /// (`agwiki-cursor`) and only advances on a successful publish. A run
+    /// with nothing new never calls the LLM. Max ~1500 output tokens,
+    /// 30s timeout, 429 back-off with one retry.
+    Distill {
+        /// Wiki space (d = `<space>/standup`)
+        #[arg(long, default_value = "default")]
+        space: String,
+        /// Max source events per kind to ingest (hard cap 20)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Sign and publish the standup page instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Show one agent wiki page by coordinate `<space>/<slug>`
+    Show {
+        /// Page coordinate, e.g. `default/standup`
+        page: String,
+    },
+    /// List agent wiki pages, newest revision per coordinate
+    List {
+        /// Only list pages in this space (d prefix `<space>/`)
+        #[arg(long)]
+        space: Option<String>,
+        /// Max events to scan (default 200, cap 512)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
 /// Org contribution record subcommands — kind:37013.
 ///
 /// `contribute` is an alias for `contribution` (the canonical name), matching
@@ -2714,6 +2768,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
         Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
+        Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
     }
 }
@@ -2882,6 +2937,7 @@ mod tests {
     fn command_inventory_is_stable() {
         let expected_groups: Vec<&str> = vec![
             "agents",
+            "agwiki",
             "canvas",
             "channels",
             "dms",

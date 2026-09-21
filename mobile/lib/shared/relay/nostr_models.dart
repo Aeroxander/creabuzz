@@ -43,6 +43,7 @@ abstract final class EventKind {
   static const jobError = 43006;
   static const agentCapabilities = 44010;
   static const agentTask = 44011;
+  static const agentWikiPage = 44002;
   static const agentTurnMetric = 44200;
   static const workflowTriggered = 46001;
   static const workflowCompleted = 46005;

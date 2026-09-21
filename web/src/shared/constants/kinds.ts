@@ -9,6 +9,8 @@ export const KIND_AGENT_TASK = 44011;
 export const KIND_GIT_ISSUE = 1621;
 /** Wiki page (addressable, d = slug, content = markdown). */
 export const KIND_WIKI_PAGE = 44001;
+/** Agent Wiki page (addressable, d = "<space>/<slug>", content = markdown). */
+export const KIND_AGENT_WIKI_PAGE = 44002;
 /** NIP-LP: DAO launch record (addressable, d = launch id). */
 export const KIND_LAUNCH_RECORD = 37001;
 /** NIP-LP: auction bid mirror. */

@@ -13,14 +13,14 @@ use buzz_auth::Scope;
 use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
-    KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH,
-    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS,
-    KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE,
-    KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET,
-    KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
-    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
-    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
-    KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
+    KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
+    KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD,
+    KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
+    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
+    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
+    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
+    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
     KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
     KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
     KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
@@ -561,7 +561,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_GIT_STATUS_DRAFT => Ok(Scope::MessagesWrite),
         // Command kinds — DM management, workflows, approvals
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
-        KIND_WIKI_PAGE => Ok(Scope::MessagesWrite),
+        KIND_WIKI_PAGE | KIND_AGENT_WIKI_PAGE => Ok(Scope::MessagesWrite),
         KIND_AGENT_CAPABILITIES | KIND_AGENT_TASK => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
@@ -740,6 +740,9 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // NIP-AM: agent turn metrics are owner-scoped global events.
             // Channel identity is encrypted inside the payload — no `h` tag.
             | KIND_AGENT_TURN_METRIC
+            // Agent Wiki pages (44002): community-level knowledge base pages,
+            // keyed by (pubkey, kind, d). A stray `h` tag must not channel-scope them.
+            | KIND_AGENT_WIKI_PAGE
             // NIP-PL leases are author-owned, addressable global state.
             | super::push_lease::KIND_PUSH_LEASE
     )
@@ -1674,6 +1677,147 @@ fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
         Ok(serde_json::Value::Object(_)) => Ok(()),
         _ => Err(format!("{label} content must be a JSON object")),
     }
+}
+
+// Agent Wiki caps: pages are markdown (no JSON envelope), so the content cap
+// is generous (same ceiling as launch content) and the provenance tags are
+// bounded so junk cannot win read-side LWW against an honest page.
+const AGENT_WIKI_CONTENT_MAX_LEN: usize = 65536;
+/// Max `d`-tag length for an Agent Wiki page (`<space>/<slug>` with both parts).
+const AGENT_WIKI_D_MAX_LEN: usize = 256;
+/// Max length of the `model` provenance tag value.
+const AGENT_WIKI_MODEL_MAX_LEN: usize = 128;
+/// Max length of the `cost_tokens` provenance tag value (digits).
+const AGENT_WIKI_COST_TOKENS_MAX_LEN: usize = 16;
+/// Max count of comma-separated source event ids in one `sources` tag.
+const AGENT_WIKI_SOURCES_MAX: usize = 64;
+/// Max length of one source event id (64 hex chars) plus one separator.
+const AGENT_WIKI_SOURCE_ID_MAX_LEN: usize = 65;
+
+/// Validate the envelope of a kind:44002 Agent Wiki page event.
+///
+/// Community-level, global-only (same addressing model as the NIP-ORG kinds):
+/// exactly one bounded `d` tag shaped `<space>/<slug>` (both parts non-empty,
+/// lowercase alnum/`-`/`_`/`.`/`/`), markdown content (no JSON envelope, so
+/// `content` is not parsed as JSON — matching kind:44001 wiki pages), and
+/// bounded provenance tags: at most one `model`, one `cost_tokens` (digits),
+/// and one `sources` list (comma-separated 64-hex event ids, capped).
+///
+/// Content is UNTRUSTED DATA to any downstream consumer of the page (the
+/// distillation loop reads it as data, never as instructions) — the relay
+/// bounds but does not interpret it. Malformed pages must not win read-side
+/// LWW against a valid head, so the envelope is checked at ingest.
+fn validate_agent_wiki_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "agent wiki page event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    if d.len() > AGENT_WIKI_D_MAX_LEN {
+        return Err(format!(
+            "{LABEL} `d` tag too long (max {AGENT_WIKI_D_MAX_LEN} bytes)"
+        ));
+    }
+    // d = `<space>/<slug>`: at least one '/', both halves non-empty
+    // (`default/projects/research/standup` = space `default` + nested slug).
+    // Every '/'-separated segment matches `^[a-z0-9][a-z0-9_.-]*$`.
+    let Some((space, slug)) = d.split_once('/') else {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<space>/<slug>` with at least one '/' (got {d:?})"
+        ));
+    };
+    if space.is_empty() || slug.is_empty() {
+        return Err(format!(
+            "{LABEL} `d` tag halves must both be non-empty (got {d:?})"
+        ));
+    }
+    for part in d.split('/') {
+        if part.is_empty() {
+            return Err(format!(
+                "{LABEL} `d` tag parts must all be non-empty (got {d:?})"
+            ));
+        }
+        let part_bytes = part.as_bytes();
+        let valid_first = part_bytes[0].is_ascii_lowercase() || part_bytes[0].is_ascii_digit();
+        let valid_rest = part_bytes[1..].iter().all(|&b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        });
+        if !valid_first || !valid_rest {
+            return Err(format!(
+                "{LABEL} `d` tag parts must match [a-z0-9][a-z0-9_.-]* (got {d:?})"
+            ));
+        }
+    }
+
+    if event.content.is_empty() {
+        return Err(format!("{LABEL} content must not be empty"));
+    }
+    if event.content.len() > AGENT_WIKI_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {AGENT_WIKI_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+
+    let mut model_count = 0usize;
+    let mut cost_tokens_count = 0usize;
+    let mut sources_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "model" => {
+                model_count += 1;
+                if value.is_empty() || value.len() > AGENT_WIKI_MODEL_MAX_LEN {
+                    return Err(format!(
+                        "{LABEL} `model` tag must be 1..={AGENT_WIKI_MODEL_MAX_LEN} chars"
+                    ));
+                }
+            }
+            "cost_tokens" => {
+                cost_tokens_count += 1;
+                if value.is_empty()
+                    || value.len() > AGENT_WIKI_COST_TOKENS_MAX_LEN
+                    || !value.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(format!(
+                        "{LABEL} `cost_tokens` tag must be a short digit string"
+                    ));
+                }
+            }
+            "sources" => {
+                sources_count += 1;
+                if value.is_empty()
+                    || value.len() > AGENT_WIKI_SOURCES_MAX * AGENT_WIKI_SOURCE_ID_MAX_LEN
+                {
+                    return Err(format!(
+                        "{LABEL} `sources` tag value exceeds the {AGENT_WIKI_SOURCES_MAX}-id bound"
+                    ));
+                }
+                for id in value.split(',') {
+                    if !(id.len() == 64
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+                    {
+                        return Err(format!(
+                            "{LABEL} `sources` ids must be lowercase 64-hex event ids, comma-separated"
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if model_count > 1 {
+        return Err(format!("{LABEL} must have at most one `model` tag"));
+    }
+    if cost_tokens_count > 1 {
+        return Err(format!("{LABEL} must have at most one `cost_tokens` tag"));
+    }
+    if sources_count > 1 {
+        return Err(format!("{LABEL} must have at most one `sources` tag"));
+    }
+    Ok(())
 }
 
 /// Validate the envelope of a kind:37001 NIP-LP launch record.
@@ -3219,6 +3363,11 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_CONTRIBUTION_RECORD {
         validate_org_envelope(&event, "contribution record event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_AGENT_WIKI_PAGE {
+        validate_agent_wiki_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -5981,6 +6130,105 @@ mod postgres_tests {
         let ev = make_event_with_tags(KIND_ORG_NODE, "not json", &[&["d", "cto"]]);
         let err = validate_org_envelope(&ev, "org node event").unwrap_err();
         assert!(err.contains("JSON object"), "got: {err}");
+    }
+
+    // ---- Agent Wiki (44002) ----
+
+    fn make_agent_wiki_event(tags: &[&[&str]]) -> Event {
+        make_event_with_tags(KIND_AGENT_WIKI_PAGE, "# Standup\n\nBody", tags)
+    }
+
+    #[test]
+    fn agent_wiki_envelope_accepts_valid_page() {
+        let d = "default/projects/research/standup";
+        let ev = make_agent_wiki_event(&[
+            &["d", d],
+            &["model", "test-model"],
+            &["cost_tokens", "1500"],
+            &["sources", &"a".repeat(64)],
+        ]);
+        assert!(validate_agent_wiki_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn agent_wiki_envelope_accepts_minimal_page_without_provenance() {
+        let ev = make_agent_wiki_event(&[&["d", "default/standup"]]);
+        assert!(validate_agent_wiki_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_plain_44001_style_d_slug() {
+        // 44002 requires `<space>/<slug>` — a bare slug is a 44001 page shape.
+        let ev = make_agent_wiki_event(&[&["d", "standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("at least one"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_empty_parts() {
+        for d in ["/standup", "default/", "default//x"] {
+            let ev = make_agent_wiki_event(&[&["d", d]]);
+            let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+            assert!(
+                err.contains("non-empty") || err.contains("at least one"),
+                "d={d:?} got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_bad_slug_character() {
+        let ev = make_agent_wiki_event(&[&["d", "Default/Standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("must match"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_empty_content() {
+        let ev = make_event_with_tags(KIND_AGENT_WIKI_PAGE, "", &[&["d", "default/standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_junk_provenance() {
+        // Two model tags.
+        let two_models = make_agent_wiki_event(&[
+            &["d", "default/standup"],
+            &["model", "m1"],
+            &["model", "m2"],
+        ]);
+        assert!(validate_agent_wiki_envelope(&two_models).is_err());
+
+        // cost_tokens must be digits.
+        let bad_cost =
+            make_agent_wiki_event(&[&["d", "default/standup"], &["cost_tokens", "1.5k"]]);
+        let err = validate_agent_wiki_envelope(&bad_cost).unwrap_err();
+        assert!(err.contains("cost_tokens"), "got: {err}");
+
+        // sources ids must be lowercase 64-hex.
+        let upper_src =
+            make_agent_wiki_event(&[&["d", "default/standup"], &["sources", &"A".repeat(64)]]);
+        let err = validate_agent_wiki_envelope(&upper_src).unwrap_err();
+        assert!(err.contains("64-hex"), "got: {err}");
+
+        // sources must not exceed the cap (68 ids × 65 chars).
+        let too_many = "b".repeat(64);
+        let many = vec![too_many.as_str(); 68].join(",");
+        let overflow = make_agent_wiki_event(&[&["d", "default/standup"], &["sources", &many]]);
+        assert!(validate_agent_wiki_envelope(&overflow).is_err());
+    }
+
+    #[test]
+    fn agent_wiki_kind_is_global_only_and_not_param_replaceable() {
+        assert!(
+            is_global_only_kind(KIND_AGENT_WIKI_PAGE),
+            "kind 44002 should be a community-level global-only kind"
+        );
+        assert!(
+            !buzz_core::kind::is_parameterized_replaceable(KIND_AGENT_WIKI_PAGE),
+            "44002 is outside 30000–39999; replacement is read-side LWW"
+        );
     }
 
     #[test]
