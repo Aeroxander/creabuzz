@@ -1048,6 +1048,19 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
             }
             crate::OrgContributionCmd::Get { id } => cmd_contribution_get(client, &id).await,
             crate::OrgContributionCmd::List { limit } => cmd_contribution_list(client, limit).await,
+            crate::OrgContributionCmd::Classify {
+                task,
+                publish,
+                note,
+            } => {
+                crate::commands::org_classify::cmd_contribution_classify(
+                    client,
+                    &task,
+                    publish,
+                    note.as_deref(),
+                )
+                .await
+            }
         },
         OrgCmd::Bind { root, chain, dao } => cmd_org_bind(client, &root, &chain, &dao).await,
         // `Allowance(Check)` is intercepted in `run()` before the relay

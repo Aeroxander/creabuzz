@@ -2297,7 +2297,11 @@ pub enum OrgCmd {
 }
 
 /// Org contribution record subcommands — kind:37013.
+///
+/// `contribute` is an alias for `contribution` (the canonical name), matching
+/// the classifier command family (`buzz org contribute classify ...`).
 #[derive(Subcommand)]
+#[command(visible_alias = "contribute")]
 pub enum OrgContributionCmd {
     /// Record a contribution action with its multi-dimensional profile
     Create {
@@ -2334,6 +2338,27 @@ pub enum OrgContributionCmd {
         /// Max events to return (default 100)
         #[arg(long)]
         limit: Option<u32>,
+    },
+    /// Draft a kind:37013 contribution record for a completed kind-44011 task
+    /// via the LLM classifier (BUZZ_CLASSIFIER_API_URL/API_KEY/MODEL).
+    ///
+    /// The system proposes, the human disposes: without `--publish` this only
+    /// prints the validated draft (review_status stays `pending`); the
+    /// desktop Contributions tab is the review surface. With `--publish` the
+    /// record is signed with the CLI key and published with `d` = the task
+    /// event id, so re-classifying the same task replaces the same record
+    /// (NIP-33 LWW).
+    Classify {
+        /// Kind-44011 task event id (64 hex) to classify
+        #[arg(long)]
+        task: String,
+        /// Sign and publish the draft (default: preview only)
+        #[arg(long)]
+        publish: bool,
+        /// Operator context appended to the task content (treated as data by
+        /// the classifier, never as instructions)
+        #[arg(long)]
+        note: Option<String>,
     },
 }
 

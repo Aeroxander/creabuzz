@@ -13,6 +13,7 @@ pub mod messages;
 pub mod moderation;
 pub mod notes;
 pub mod org;
+pub mod org_classify;
 pub mod pack;
 pub mod patches;
 pub mod pr;
