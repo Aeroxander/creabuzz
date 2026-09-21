@@ -9,6 +9,7 @@ import {
 
 import { useBudgetUtilizationsQuery } from "../hooks";
 import { METRIC_FETCH_LIMIT } from "../lib/budgetConsumption";
+import { pluralize } from "../lib/format";
 import { orgChartSummary } from "../lib/tree";
 import type { OrgChart } from "../orgModels";
 
@@ -68,7 +69,7 @@ export function OrgMetricRow({ data, onFocusBudgets }: OrgMetricRowProps) {
         value={summary.nodeCount}
       />
       <MetricCard
-        description={`${summary.agentSeatCount} agent seats`}
+        description={pluralize(summary.agentSeatCount, "agent seat")}
         label="Active grants"
         testId="org-metric-grants"
         value={summary.grantCount}
@@ -89,10 +90,10 @@ export function OrgMetricRow({ data, onFocusBudgets }: OrgMetricRowProps) {
       >
         {worst && worstSummary && (
           <UtilizationBar
-            caption={`worst of ${activeBudgets.length} budgets`}
-            className="mt-1.5"
+            caption={`worst of ${pluralize(activeBudgets.length, "budget")}`}
+            className="mt-1.5 px-1"
             consumed={worstSummary.consumed}
-            label={`Worst budget utilization (${worst.budget.subject || worst.budget.dtag})`}
+            label="Worst budget"
             limit={worstHasCeiling ? worstSummary.limit : null}
             readout={
               worstSummary.truncated
@@ -106,7 +107,7 @@ export function OrgMetricRow({ data, onFocusBudgets }: OrgMetricRowProps) {
         )}
         {!worst && floorEntry?.summary && (
           <UtilizationBar
-            className="mt-1.5"
+            className="mt-1.5 px-1"
             consumed={floorEntry.summary.consumed}
             floor={METRIC_FETCH_LIMIT}
             label={`Budget usage floor (${floorEntry.budget.subject || floorEntry.budget.dtag})`}
@@ -118,7 +119,7 @@ export function OrgMetricRow({ data, onFocusBudgets }: OrgMetricRowProps) {
         description={
           activeBudgets.length === 0
             ? "no budgets to watch"
-            : "budgets ≥70% · floor counts"
+            : "budgets at 70%+ · truncated counts marked"
         }
         label="Needs attention"
         onClick={activeBudgets.length > 0 ? onFocusBudgets : undefined}

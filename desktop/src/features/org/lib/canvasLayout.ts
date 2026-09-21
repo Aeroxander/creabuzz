@@ -144,8 +144,10 @@ export function clampCanvasZoom(value: number): number {
 }
 
 /**
- * Compute the fitted view (zoom clamped to at most 1, never below MIN_ZOOM)
- * that centers the content bounds in a container of the given size.
+ * Compute the fitted view that fills the container with the content bounds:
+ * scales DOWN for oversized forests and UP for sparse ones (small charts
+ * should not sit tiny in a large viewport), clamped to [MIN_ZOOM, MAX_ZOOM],
+ * centered.
  */
 export function fitCanvasView(
   containerWidth: number,
@@ -162,7 +164,7 @@ export function fitCanvasView(
   }
   const scaleX = (containerWidth - FIT_PADDING) / bounds.width;
   const scaleY = (containerHeight - FIT_PADDING) / bounds.height;
-  const zoom = clampCanvasZoom(Math.min(scaleX, scaleY, 1));
+  const zoom = clampCanvasZoom(Math.min(scaleX, scaleY));
   return {
     zoom,
     x: (containerWidth - bounds.width * zoom) / 2,

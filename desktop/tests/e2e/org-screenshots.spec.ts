@@ -269,7 +269,13 @@ function buildOrgEvents(): unknown[] {
         ["d", "spend-1"],
         ["e", "org-grant-root"],
       ],
-      content: "{}",
+      content: JSON.stringify({
+        v: 1,
+        subject: agent,
+        amount: 2500,
+        unit: "usd-cents",
+        window: "week",
+      }),
       sig: "mock-sig",
     },
     // 32 turns this month against the hot budget's 30-run ceiling → 107%
@@ -567,7 +573,9 @@ test.describe("org UI screenshots", () => {
     const rows = page.getByTestId("org-activity-row");
     await expect(rows.first()).toBeVisible();
     await expect(rows).toHaveCount(12); // capped at ACTIVITY_ROW_LIMIT
-    await expect(page.getByText("Spend receipt recorded:")).toBeVisible();
+    await expect(
+      page.getByText("Spend recorded: 2500 usd-cents"),
+    ).toBeVisible();
     await expect(
       page.getByText("Budget approval requested:", { exact: false }),
     ).toBeVisible();

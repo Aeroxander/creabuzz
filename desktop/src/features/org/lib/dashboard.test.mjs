@@ -321,17 +321,46 @@ describe("activity rows", () => {
       /Budget approval requested: Bob over 30 runs\/month/,
     );
     assert.equal(byKind.get(46010).tone, "waiting");
-    assert.match(
-      byKind.get(37014).description,
-      /Spend receipt recorded: feed123456…/,
-    );
+    // Empty receipt content → neutral copy, never the raw `d` slug.
+    assert.equal(byKind.get(37014).description, "Spend recorded on-chain");
     assert.equal(byKind.get(37014).tone, "ok");
+    assert.doesNotMatch(byKind.get(37014).description, /feed1234567890/);
     assert.match(byKind.get(46030).description, /Approval granted/);
     assert.equal(byKind.get(46030).tone, "ok");
     for (const row of rows) {
       const expected = row.kind === 37013 ? "contributions" : "grants";
       assert.equal(row.targetTab, expected, `kind ${row.kind}`);
     }
+  });
+
+  it("renders a receipt's amount, unit, and subject when present", () => {
+    const rows = deriveActivityRows({
+      ...input,
+      nodes: [],
+      grants: [],
+      budgets: [],
+      contributions: [],
+      extras: [
+        {
+          id: "receipt-2",
+          kind: 37014,
+          pubkey: "0000".padEnd(64, "0"),
+          created_at: NOW - 10,
+          tags: [["d", "spend-9"]],
+          content: JSON.stringify({
+            v: 1,
+            subject: BOB,
+            amount: 2500,
+            unit: "usd-cents",
+            window: "week",
+          }),
+        },
+      ],
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].tone, "ok");
+    assert.equal(rows[0].description, "Spend recorded: 2500 usd-cents by Bob");
+    assert.doesNotMatch(rows[0].description, /spend-9/);
   });
 
   it("sorts newest first and bounds the list", () => {

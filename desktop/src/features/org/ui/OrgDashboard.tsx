@@ -3,10 +3,11 @@ import * as React from "react";
 import { AlertTriangle, Plus, RefreshCw } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
+import { useUsersBatchQuery } from "@/features/profile/hooks";
+import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { EmptyState } from "@/shared/ui/EmptyState";
-import { PubKey } from "@/shared/ui/PubKey";
 import { Spinner } from "@/shared/ui/spinner";
 import { StatusGlyph } from "@/shared/ui/StatusGlyph";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -19,6 +20,7 @@ import {
   useContributionRecordsQuery,
   useOrgActivityExtrasQuery,
 } from "../hooks";
+import { pluralize } from "../lib/format";
 import { collectAgentSeats, newestSeenPerSeat } from "../lib/nodeLiveness";
 import {
   deriveActivityRows,
@@ -146,6 +148,36 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
     ],
   );
 
+  // Profile-backed identity for agent seats and activity actors: display
+  // name (profile → node name → truncated pubkey) plus avatar URL. One batch
+  // query covers both lists.
+  const identityPubkeys = React.useMemo(() => {
+    const keys = new Set(agents);
+    for (const row of activity) {
+      if (row.actorPubkey) keys.add(row.actorPubkey);
+    }
+    return [...keys];
+  }, [agents, activity]);
+  const profiles = useUsersBatchQuery(identityPubkeys).data?.profiles;
+  const resolveIdentity = React.useCallback(
+    (
+      pubkey: string,
+    ): { label: string; avatarUrl: string | null; isAgent: boolean } => {
+      const key = pubkey.trim().toLowerCase();
+      const profile = profiles?.[key];
+      return {
+        label: resolveUserLabel({
+          pubkey,
+          profiles,
+          fallbackName: namesByPubkey.get(key) ?? undefined,
+        }),
+        avatarUrl: profile?.avatarUrl ?? null,
+        isAgent: profile?.isAgent ?? false,
+      };
+    },
+    [profiles, namesByPubkey],
+  );
+
   const loading =
     query.isPending || contributionsQuery.isPending || extrasQuery.isPending;
   const error =
@@ -266,8 +298,7 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
               className="px-1 text-xs text-muted-foreground"
               data-testid="org-banners-more"
             >
-              +{hiddenBannerCount} more blocking issue
-              {hiddenBannerCount === 1 ? "" : "s"}
+              +{pluralize(hiddenBannerCount, "more blocking issue")}
             </p>
           )}
         </div>
@@ -296,7 +327,7 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
             {sortedAgents.map((seat) => {
               const entry = liveness.get(seat);
               const status = entry?.status ?? "gone";
-              const name = namesByPubkey.get(seat) ?? truncatePubkey(seat);
+              const identity = resolveIdentity(seat);
               return (
                 <div
                   className={cn(
@@ -307,14 +338,17 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
                   key={seat}
                 >
                   <UserAvatar
-                    avatarUrl={null}
-                    className="h-5 w-5"
-                    displayName={name}
+                    avatarUrl={identity.avatarUrl}
+                    className="h-5 w-5 shrink-0"
+                    displayName={identity.label}
+                    shape={identity.isAgent ? "squircle" : "circle"}
                     size="xs"
                   />
-                  <PubKey interactive={false} pubkey={seat} variant="compact" />
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {name}
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {identity.label}
+                  </span>
+                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                    {truncatePubkey(seat)}
                   </span>
                   <LivenessBadge
                     status={status}
@@ -348,35 +382,47 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
           />
         ) : (
           <Card className="divide-y p-1" data-testid="org-activity-feed">
-            {activity.map((row) => (
-              <button
-                aria-label={`${row.description} by ${row.actorPubkey}`}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
-                data-testid="org-activity-row"
-                key={row.key}
-                onClick={() =>
-                  onOpenTab(
-                    row.targetTab === "contributions"
-                      ? "contributions"
-                      : "chart",
-                  )
-                }
-                type="button"
-              >
-                <StatusGlyph aria-label={row.description} tone={row.tone} />
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {row.description}
-                </span>
-                <PubKey
-                  interactive={false}
-                  pubkey={row.actorPubkey}
-                  variant="compact"
-                />
-                <span className="shrink-0 text-2xs text-muted-foreground">
-                  {relativeTimeLabel(row.createdAt, nowTick)}
-                </span>
-              </button>
-            ))}
+            {activity.map((row) => {
+              const identity = resolveIdentity(row.actorPubkey);
+              const known = Boolean(
+                profiles?.[row.actorPubkey.trim().toLowerCase()] ??
+                  namesByPubkey.get(row.actorPubkey.trim().toLowerCase()),
+              );
+              return (
+                <button
+                  aria-label={`${row.description} by ${identity.label}`}
+                  className="flex w-full items-center gap-2 px-2 py-1.5 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid="org-activity-row"
+                  key={row.key}
+                  onClick={() =>
+                    onOpenTab(
+                      row.targetTab === "contributions"
+                        ? "contributions"
+                        : "chart",
+                    )
+                  }
+                  type="button"
+                >
+                  <StatusGlyph aria-label={row.description} tone={row.tone} />
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {row.description}
+                  </span>
+                  <span
+                    className={cn(
+                      "min-w-0 max-w-32 shrink truncate text-2xs",
+                      known
+                        ? "font-medium text-foreground/70"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {identity.label}
+                  </span>
+                  <span className="shrink-0 text-2xs font-medium tabular-nums text-muted-foreground">
+                    {relativeTimeLabel(row.createdAt, nowTick)}
+                  </span>
+                </button>
+              );
+            })}
           </Card>
         )}
       </div>

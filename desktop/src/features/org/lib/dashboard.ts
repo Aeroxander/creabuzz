@@ -18,6 +18,7 @@ import type {
   OrgNode,
 } from "../orgModels";
 import { consumptionPercentage } from "./budgetConsumption";
+import { pluralize } from "./format";
 import type { AgentLiveness } from "./nodeLiveness";
 
 // Mirrors buzz-core's approval command kinds (kind:46030 grant / 46031 deny)
@@ -141,7 +142,7 @@ export function deriveBlockingBanners(input: BannerInput): BlockingBanner[] {
     banners.push({
       key: "expired-parent-grants",
       tone: "blocking",
-      title: `${expiredParentCount} expired grant${expiredParentCount === 1 ? "" : "s"} still parent${expiredParentCount === 1 ? "s" : ""} active delegations`,
+      title: `${pluralize(expiredParentCount, "expired grant")} still parent${expiredParentCount === 1 ? "s" : ""} active delegations`,
       detail: "Expired authority is still anchoring live grants.",
       actionLabel: "Review grants",
       actionTarget: "grants",
@@ -169,7 +170,7 @@ export function deriveBlockingBanners(input: BannerInput): BlockingBanner[] {
     banners.push({
       key: "gone-agents-with-grants",
       tone: "waiting",
-      title: `${goneAgents.length} agent${goneAgents.length === 1 ? "" : "s"} offline with active grants`,
+      title: `${pluralize(goneAgents.length, "agent")} offline with active grants`,
       detail: "Their work is paused until they come back.",
       actionLabel: "Open grants",
       actionTarget: "grants",
@@ -302,13 +303,29 @@ function extrasToRow(
   const actorPubkey = event.pubkey ?? "";
   switch (event.kind) {
     case 37014: {
-      const spendId = tagValue(event.tags, "d") ?? "spend";
+      // The receipt's meaningful fields (NIP-ORG §37014: amount + unit +
+      // subject) read as the row; the `d` slug never surfaces.
+      const parsed = parseJsonObject(event.content);
+      const amount =
+        parsed &&
+        typeof parsed.amount === "number" &&
+        Number.isFinite(parsed.amount)
+          ? parsed.amount
+          : null;
+      const unit = parsed ? stringField(parsed, "unit") : null;
+      const subject = parsed ? stringField(parsed, "subject") : null;
+      const by = subject
+        ? ` by ${displayName(subject, input.namesByPubkey)}`
+        : "";
+      const amountText = amount !== null && unit ? `${amount} ${unit}` : null;
       return {
         key: event.id,
         kind: event.kind,
         createdAt,
         tone: "ok",
-        description: `Spend receipt recorded: ${shortId(spendId)}`,
+        description: amountText
+          ? `Spend recorded: ${amountText}${by}`
+          : `Spend recorded on-chain${by}`,
         actorPubkey,
         targetTab: "grants",
       };

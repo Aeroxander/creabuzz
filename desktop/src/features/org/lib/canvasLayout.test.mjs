@@ -91,13 +91,27 @@ describe("clampCanvasZoom", () => {
 });
 
 describe("fitCanvasView", () => {
-  it("centers content and never exceeds zoom 1", () => {
+  it("scales down to fit oversized content, centered, never below MIN_ZOOM", () => {
     const view = fitCanvasView(1000, 600, { width: 2000, height: 1200 });
     assert.ok(view);
-    assert.ok(view.zoom <= 1);
+    assert.ok(view.zoom < 1);
     assert.ok(view.zoom >= MIN_ZOOM);
     assert.equal(view.x, (1000 - 2000 * view.zoom) / 2);
     assert.equal(view.y, (600 - 1200 * view.zoom) / 2);
+  });
+
+  it("scales sparse content UP to fill the viewport, clamped to MAX_ZOOM", () => {
+    const view = fitCanvasView(1000, 600, { width: 200, height: 100 });
+    assert.ok(view);
+    assert.equal(view.zoom, MAX_ZOOM);
+    assert.equal(view.x, (1000 - 200 * view.zoom) / 2);
+    assert.equal(view.y, (600 - 100 * view.zoom) / 2);
+  });
+
+  it("never ships micro content at zoom 1 when the viewport is larger", () => {
+    const view = fitCanvasView(1200, 800, { width: 300, height: 150 });
+    assert.ok(view);
+    assert.ok(view.zoom > 1);
   });
 
   it("returns null for a degenerate viewport", () => {

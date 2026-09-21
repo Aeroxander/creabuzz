@@ -1,5 +1,11 @@
 import * as React from "react";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  Gauge,
+  GitBranch,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { Button } from "@/shared/ui/button";
@@ -711,6 +717,34 @@ function BudgetStep({
   );
 }
 
+/** Kind icon per review row: node steps branch, grants flow, budgets meter. */
+function stepIconFor(row: WizardReviewRow): LucideIcon {
+  const outcome = row.outcome;
+  if (!outcome) return GitBranch;
+  if (outcome.step === "skipped") {
+    if (outcome.skippedStep === "grant") return ArrowRight;
+    if (outcome.skippedStep === "budget") return Gauge;
+    return GitBranch;
+  }
+  if (outcome.kind === "node") return GitBranch;
+  if (outcome.kind === "grant") return ArrowRight;
+  return Gauge;
+}
+
+/** The created entity's kind badge; skipped rows have none (already marked). */
+function stepKindBadge(row: WizardReviewRow): string | null {
+  const outcome = row.outcome;
+  if (!outcome || outcome.step === "skipped") return null;
+  if (outcome.kind === "node") {
+    return outcome.nodeKind === "role"
+      ? "Role"
+      : outcome.nodeKind === "team"
+        ? "Team"
+        : "Agent seat";
+  }
+  return outcome.kind === "grant" ? "Grant" : "Budget";
+}
+
 // Step 5 — review: what was actually created, what was skipped.
 function ReviewStep({
   state,
@@ -745,9 +779,20 @@ function ReviewStep({
                 {row.position}
               </span>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-foreground">
-                  {row.title}
-                </p>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {React.createElement(stepIconFor(row), {
+                    "aria-hidden": true,
+                    className: "h-3.5 w-3.5 shrink-0 text-muted-foreground",
+                  })}
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {row.title}
+                  </p>
+                  {stepKindBadge(row) && (
+                    <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {stepKindBadge(row)}
+                    </span>
+                  )}
+                </div>
                 <ReviewSummaryRow row={row} />
               </div>
             </div>
@@ -809,12 +854,12 @@ function ReviewRowAction({
   return (
     <Button
       aria-label={`View ${outcome.name} on the canvas`}
-      className="h-6 shrink-0 gap-0.5 px-2 text-2xs"
+      className="h-6 shrink-0 gap-0.5 px-2 text-2xs text-muted-foreground"
       onClick={() => onOpenCanvas(outcome.dtag)}
       type="button"
-      variant="outline"
+      variant="ghost"
     >
-      Canvas
+      View on canvas
       <ChevronRight aria-hidden="true" className="h-3 w-3" />
     </Button>
   );

@@ -265,6 +265,7 @@ export function OrgCanvas({
           {layout.nodes.map((placed) => (
             <OrgNodeCanvasCard
               ancestorLabel={ancestorLabelByDtag.get(placed.dtag) ?? ""}
+              compact={density === "compact"}
               key={placed.dtag}
               liveness={liveness}
               metrics={metrics}

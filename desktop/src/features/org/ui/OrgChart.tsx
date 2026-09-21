@@ -34,6 +34,7 @@ import {
   newestSeenPerSeat,
   type AgentLiveness,
 } from "../lib/nodeLiveness";
+import { pluralize } from "../lib/format";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import type { CanvasDensity } from "../lib/canvasLayout";
 import { LivenessBadge } from "./LivenessBadge";
@@ -339,7 +340,7 @@ function OrgNodeSection({
             onSelect={onSelectNode}
             roots={tree.roots}
             selectedDtag={selectedDtag}
-            summaryLabel={`Org chart: ${summary.nodeCount} nodes (${summary.roleCount} roles, ${summary.teamCount} teams, ${summary.agentSeatCount} agent seats), ${liveAgentCount} of ${summary.agentSeatCount} agent seats live, and ${summary.grantCount} active grants. Interactions are pointer-driven; the node list below the canvas is the accessible version of this chart.`}
+            summaryLabel={`Org chart: ${summary.nodeCount} nodes (${summary.roleCount} roles, ${summary.teamCount} teams, ${pluralize(summary.agentSeatCount, "agent seat")}), ${liveAgentCount} of ${summary.agentSeatCount} live, and ${summary.grantCount} active grants. Interactions are pointer-driven; the node list below the canvas is the accessible version of this chart.`}
           />
           <details className="mt-2">
             <summary className="cursor-pointer text-xs text-muted-foreground">

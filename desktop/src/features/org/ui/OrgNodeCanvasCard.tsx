@@ -1,11 +1,14 @@
 import * as React from "react";
 
+import { Users } from "lucide-react";
+
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Card } from "@/shared/ui/card";
 import { StatusGlyph } from "@/shared/ui/StatusGlyph";
 import { OnchainChip } from "./OnchainChip";
 import type { CanvasMetrics, PlacedNode } from "../lib/canvasLayout";
+import { pluralize } from "../lib/format";
 import {
   bestSeatStatus,
   type AgentLiveness,
@@ -45,6 +48,8 @@ type OrgNodeCanvasCardProps = {
   selected: boolean;
   /** Ancestor names for the hover tooltip ("Founder › CTO"). */
   ancestorLabel: string;
+  /** Compact density: icons + counts replace the occupant text line. */
+  compact?: boolean;
   /** Agent-seat liveness keyed by lowercase seat pubkey. */
   liveness: ReadonlyMap<string, AgentLiveness>;
   onSelect: (dtag: string) => void;
@@ -58,12 +63,17 @@ type OrgNodeCanvasCardProps = {
  * lib/nodeLiveness.ts) using the status-* tokens (reference §2.2
  * statusDotColor): live/waiting/gone from the node's agent seats; a
  * human-only node shows no dot. The kind badge carries the node's role.
+ *
+ * Density contract: comfortable renders the occupant line at `text-2xs`
+ * (readable at fit zoom); compact swaps text for an icon + count so the
+ * smaller card stays legible instead of shipping unreadable micro-text.
  */
 export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
   placed,
   metrics,
   selected,
   ancestorLabel,
+  compact = false,
   liveness,
   onSelect,
 }: OrgNodeCanvasCardProps) {
@@ -118,26 +128,31 @@ export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
         <KindBadge kind={node.kind} />
       </div>
       <div className="mt-1.5 flex items-center gap-1">
-        {occupants.slice(0, 3).map((pubkey) => (
+        {occupants.slice(0, compact ? 2 : 3).map((pubkey) => (
           <UserAvatar
             key={pubkey}
             avatarUrl={null}
+            className="shrink-0"
             displayName={pubkey}
             size="xs"
           />
         ))}
-        {occupants.length > 3 && (
-          <span className="text-3xs text-muted-foreground">
-            +{occupants.length - 3}
+        {occupants.length > (compact ? 2 : 3) && (
+          <span className="text-2xs font-medium text-muted-foreground">
+            +{occupants.length - (compact ? 2 : 3)}
           </span>
         )}
-        {occupants.length === 0 && (
-          <span className="text-3xs text-muted-foreground">no occupants</span>
-        )}
-        {node.agentSeats.length > 0 && (
-          <span className="ml-auto text-3xs text-muted-foreground">
-            {node.agentSeats.length} agent seat
-            {node.agentSeats.length === 1 ? "" : "s"}
+        {occupants.length === 0 &&
+          (compact ? (
+            <span className="flex items-center gap-0.5 text-2xs text-muted-foreground">
+              <Users aria-hidden="true" className="h-3 w-3" />0
+            </span>
+          ) : (
+            <span className="text-2xs text-muted-foreground">no occupants</span>
+          ))}
+        {node.agentSeats.length > 0 && !compact && (
+          <span className="ml-auto text-2xs text-muted-foreground">
+            {pluralize(node.agentSeats.length, "agent seat")}
           </span>
         )}
       </div>
