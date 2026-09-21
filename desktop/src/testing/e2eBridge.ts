@@ -12727,6 +12727,56 @@ export function maybeInstallE2eTauriMocks() {
             pubkey === (identity?.pubkey ?? DEFAULT_MOCK_IDENTITY.pubkey),
         };
       }
+      case "org_classify_task": {
+        const request = (payload ?? null) as {
+          taskEventId?: string;
+          publish?: boolean;
+        } | null;
+        if (!request?.taskEventId) {
+          throw new Error("org_classify_task requires taskEventId");
+        }
+        if (request.publish) {
+          return {
+            mode: "published",
+            taskEventId: request.taskEventId,
+            eventId: `mock-record-${request.taskEventId.slice(0, 12)}`,
+          };
+        }
+        return {
+          mode: "preview",
+          taskEventId: request.taskEventId,
+          draft: {
+            action: "Mock drafted contribution for the completed task",
+            dimensions: { build: 0.8, coordinate: 0.2 },
+            humanVsAi: { human: 0.7, ai: 0.3 },
+            reviewStatus: "pending",
+          },
+        };
+      }
+      case "org_classify_all_done": {
+        return {
+          ok: 2,
+          skipped: 1,
+          failed: 0,
+          tasks: [
+            {
+              status: "ok",
+              detail: "published mock-record-aaa",
+              line: "[ok]     1111aaaa Ship the release -> published mock-record-aaa",
+            },
+            {
+              status: "ok",
+              detail: "published mock-record-bbb",
+              line: "[ok]     2222bbbb Harden retries -> published mock-record-bbb",
+            },
+            {
+              status: "skip",
+              detail: "record already exists",
+              line: "[skip]   3333cccc Older task (37013 record with d = task id already exists)",
+            },
+          ],
+        };
+      }
       case "get_nsec": {
         const nsecSequence = activeConfig?.mock?.nsecErrors;
         if (nsecSequence && nsecSequence.length > 0) {

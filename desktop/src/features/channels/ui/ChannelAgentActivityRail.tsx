@@ -1,11 +1,36 @@
 import * as React from "react";
-import { Bot } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Bot, Sparkles } from "lucide-react";
 
 import { agentActivitySummary } from "@/features/home/lib/inbox";
 import { useHomeFeedQuery } from "@/features/home/hooks";
+import {
+  useOrgClassifyTaskMutation,
+  type OrgClassifyResult,
+} from "@/features/org/hooks";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import type { FeedItem } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/shared/ui/alert-dialog";
+import { Button } from "@/shared/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/shared/ui/sheet";
+import { Spinner } from "@/shared/ui/spinner";
 
 /** Rows shown before the rail collapses into the Home feed link. */
 const MAX_RAIL_ROWS = 8;
@@ -55,6 +80,217 @@ export function selectActiveAgentNames(items: readonly FeedItem[]): string[] {
     }
   }
   return names;
+}
+
+/**
+ * Status carried by a kind-44011 task row, parsed from its JSON content.
+ * Returns `null` when the row is not a task or the content is unparseable.
+ */
+function taskStatus(item: FeedItem): string | null {
+  if (item.kind !== 44011) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(item.content);
+    if (typeof parsed === "object" && parsed !== null) {
+      const status = (parsed as Record<string, unknown>).status;
+      return typeof status === "string" && status !== "" ? status : null;
+    }
+  } catch {
+    // Malformed task content — no status.
+  }
+  return null;
+}
+
+/**
+ * "Draft contribution" on a done task: previews the classifier draft without
+ * confirmation (nothing is published), then offers "Publish for review" with
+ * a small confirm. On publish the user lands on the Org Contributions tab,
+ * which is invalidated so the new pending record appears immediately.
+ */
+function AgentTaskDraftAction({ item }: { item: FeedItem }) {
+  const navigate = useNavigate();
+  const previewMutation = useOrgClassifyTaskMutation();
+  const publishMutation = useOrgClassifyTaskMutation();
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [preview, setPreview] = React.useState<OrgClassifyResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const busy = previewMutation.isPending || publishMutation.isPending;
+
+  const runPreview = () => {
+    setError(null);
+    setPreview(null);
+    previewMutation.mutate(
+      { taskEventId: item.id, publish: false },
+      {
+        onSuccess: (result) => {
+          setPreview(result);
+          setSheetOpen(true);
+        },
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : String(err)),
+      },
+    );
+  };
+
+  const runPublish = () => {
+    setConfirmOpen(false);
+    setError(null);
+    publishMutation.mutate(
+      { taskEventId: item.id, publish: true },
+      {
+        onSuccess: () => {
+          setSheetOpen(false);
+          setPreview(null);
+          void navigate({ to: "/org", search: { tab: "contributions" } });
+        },
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : String(err)),
+      },
+    );
+  };
+
+  const draft = preview?.draft ?? null;
+  const dimensions = draft?.dimensions;
+  const humanVsAi = draft?.humanVsAi;
+
+  return (
+    <div
+      className="mt-1.5 flex flex-wrap items-center gap-2"
+      data-testid={`draft-contribution-${item.id}`}
+    >
+      {!sheetOpen && !preview ? (
+        <Button
+          data-testid={`draft-contribution-preview-${item.id}`}
+          disabled={busy}
+          onClick={runPreview}
+          size="xs"
+          variant="outline"
+        >
+          <Sparkles aria-hidden="true" className="mr-1 h-3 w-3" />
+          {previewMutation.isPending ? "Drafting…" : "Draft contribution"}
+        </Button>
+      ) : null}
+      {error ? (
+        <p
+          className="text-2xs text-destructive"
+          data-testid={`draft-contribution-error-${item.id}`}
+        >
+          {error}
+        </p>
+      ) : null}
+      {preview?.mode === "published" ? (
+        <p className="text-2xs text-muted-foreground">
+          Published record {preview.eventId?.slice(0, 12)}… — opening
+          Contributions.
+        </p>
+      ) : null}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Contribution draft</SheetTitle>
+            <SheetDescription>
+              Classifier proposal for the completed task — nothing is published
+              until you confirm.
+            </SheetDescription>
+          </SheetHeader>
+          {busy ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner aria-hidden="true" className="h-3.5 w-3.5" />
+              {publishMutation.isPending ? "Publishing…" : "Drafting…"}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Action
+                </p>
+                <p
+                  className="mt-0.5 text-sm"
+                  data-testid="draft-contribution-action"
+                >
+                  {typeof draft?.action === "string" ? draft.action : "—"}
+                </p>
+              </div>
+              {draft &&
+              typeof dimensions === "object" &&
+              dimensions !== null ? (
+                <div>
+                  <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Dimensions
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {Object.entries(dimensions as Record<string, unknown>).map(
+                      ([name, value]) => (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-2xs"
+                          key={name}
+                        >
+                          {name}
+                          <span className="font-mono text-muted-foreground">
+                            {typeof value === "number"
+                              ? value.toFixed(2)
+                              : String(value)}
+                          </span>
+                        </span>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              {draft && typeof humanVsAi === "object" && humanVsAi !== null ? (
+                <p className="text-2xs text-muted-foreground">
+                  Human/AI:{" "}
+                  {Object.entries(humanVsAi as Record<string, unknown>)
+                    .map(([name, value]) => `${name} ${value}`)
+                    .join(" · ")}
+                </p>
+              ) : null}
+              {preview && preview.mode === "preview" ? (
+                <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      className="w-full"
+                      data-testid="draft-contribution-publish"
+                      size="sm"
+                    >
+                      Publish for review
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Publish a pending contribution record for review?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        The drafted kind:37013 record is signed with your key
+                        and posted to the community relay with review status
+                        "pending". You can still accept or reject it from the
+                        Contributions tab.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Not yet</AlertDialogCancel>
+                      <AlertDialogAction
+                        data-testid="draft-contribution-publish-confirm"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void runPublish();
+                        }}
+                      >
+                        Publish
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
 }
 
 /**
@@ -146,6 +382,9 @@ export function ChannelAgentActivityRail({
                 <p className="mt-1 text-2xs text-muted-foreground">
                   {formatItemTimestamp(item.createdAt, { withTime: true })}
                 </p>
+                {taskStatus(item) === "done" ? (
+                  <AgentTaskDraftAction item={item} />
+                ) : null}
               </li>
             );
           })}

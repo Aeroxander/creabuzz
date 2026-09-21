@@ -1050,13 +1050,17 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
             crate::OrgContributionCmd::List { limit } => cmd_contribution_list(client, limit).await,
             crate::OrgContributionCmd::Classify {
                 task,
+                all_done,
                 publish,
+                limit,
                 note,
             } => {
-                crate::commands::org_classify::cmd_contribution_classify(
+                crate::commands::org_classify::cmd_contribution_classify_dispatch(
                     client,
-                    &task,
+                    task.as_deref(),
+                    all_done,
                     publish,
+                    limit,
                     note.as_deref(),
                 )
                 .await

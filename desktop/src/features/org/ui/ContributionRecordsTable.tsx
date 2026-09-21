@@ -1,10 +1,11 @@
 import * as React from "react";
-import { Search, FileText, Plus } from "lucide-react";
+import { Search, FileText, Plus, Sparkles } from "lucide-react";
 
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Progress } from "@/shared/ui/progress";
+import { Spinner } from "@/shared/ui/spinner";
 import {
   Sheet,
   SheetContent,
@@ -12,8 +13,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui/sheet";
-import { useUpdateContributionReviewMutation } from "../hooks";
+import {
+  useOrgClassifyAllDoneMutation,
+  useUpdateContributionReviewMutation,
+} from "../hooks";
 import type { ContributionRecord, ReviewStatus } from "../orgModels";
+import { cn } from "@/shared/lib/cn";
 import { ContributionRecordForm } from "./ContributionRecordForm";
 
 type ContributionRecordsTableProps = {
@@ -280,6 +285,7 @@ export function ContributionRecordsTable({
     null,
   );
   const [createOpen, setCreateOpen] = React.useState(false);
+  const classify = useOrgClassifyAllDoneMutation();
 
   const filtered = React.useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -321,6 +327,18 @@ export function ContributionRecordsTable({
             />
           </div>
           <Button
+            data-testid="org-classify-all-done"
+            disabled={classify.isPending}
+            onClick={() => {
+              classify.mutate(undefined);
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <Sparkles className="mr-1 h-3 w-3" />
+            Draft missing records
+          </Button>
+          <Button
             onClick={() => setCreateOpen(true)}
             size="sm"
             variant="outline"
@@ -330,6 +348,58 @@ export function ContributionRecordsTable({
           </Button>
         </div>
       </div>
+
+      {classify.isPending ? (
+        <div
+          className="mb-2 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+          data-testid="org-classify-batch-progress"
+        >
+          <Spinner aria-hidden="true" className="h-3.5 w-3.5" />
+          Drafting contribution records for done tasks… (one LLM call per
+          record)
+        </div>
+      ) : null}
+      {classify.isError ? (
+        <p
+          className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          data-testid="org-classify-batch-error"
+        >
+          Draft failed:{" "}
+          {classify.error instanceof Error
+            ? classify.error.message
+            : String(classify.error)}
+        </p>
+      ) : null}
+      {classify.isSuccess ? (
+        <div
+          className="mb-2 rounded-md border bg-muted/40 px-3 py-2 text-xs"
+          data-testid="org-classify-batch-result"
+        >
+          <p className="font-medium">
+            Drafted {classify.data.ok}/{classify.data.ok + classify.data.failed}
+            , skipped {classify.data.skipped}, failed {classify.data.failed}.
+          </p>
+          {classify.data.tasks.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {classify.data.tasks.map((task) => (
+                <li
+                  className={cn(
+                    "truncate font-mono text-2xs",
+                    task.status === "fail"
+                      ? "text-destructive"
+                      : task.status === "skip"
+                        ? "text-muted-foreground"
+                        : "text-foreground",
+                  )}
+                  key={task.line}
+                >
+                  {task.line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <nav aria-label="Filter by review status" className="mb-2 flex gap-1.5">
         {STATUS_FILTERS.map((option) => (

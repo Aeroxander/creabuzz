@@ -462,6 +462,27 @@ test.describe("org UI screenshots", () => {
     await page.screenshot({ path: `${SHOTS}/org-contributions.png` });
   });
 
+  test("contributions tab: batch draft of missing records", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await page.getByTestId("org-tab-contributions").click();
+    await expect(page.getByTestId("contribution-row").first()).toBeVisible();
+    // The mocked Tauri command returns a structured batch result (2 ok, 1
+    // skip) so the affordance renders its inline summary without a real
+    // classifier/relay round trip.
+    await page.getByTestId("org-classify-all-done").click();
+    await expect(page.getByTestId("org-classify-batch-result")).toBeVisible();
+    await expect(
+      page.getByText("Drafted 2/2, skipped 1, failed 0."),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({
+      path: `${SHOTS}/org-contributions-batch-draft.png`,
+    });
+  });
+
   test("contribution detail sheet with review actions", async ({ page }) => {
     await installMockBridge(page);
     await openOrgView(page);

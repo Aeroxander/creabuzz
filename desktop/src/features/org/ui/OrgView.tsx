@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+
 import { useOrgChartQuery, useContributionRecordsQuery } from "../hooks";
 import { Button } from "@/shared/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -43,7 +45,11 @@ function ContributionRecordsTab() {
 
 export function OrgView() {
   const query = useOrgChartQuery();
-  const [activeTab, setActiveTab] = React.useState("dashboard");
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { tab?: string };
+  const [activeTab, setActiveTab] = React.useState(
+    search.tab === "contributions" ? "contributions" : "dashboard",
+  );
   // The onboarding wizard auto-opens from an empty org chart and simply
   // stops appearing once a root exists (paperclip-ux-reference.md §3). It
   // owns its own open state after that so the walk survives the root's
@@ -64,7 +70,14 @@ export function OrgView() {
       <Tabs
         className="flex min-h-0 flex-1 flex-col"
         defaultValue="dashboard"
-        onValueChange={setActiveTab}
+        onValueChange={(tab) => {
+          setActiveTab(tab);
+          void navigate({
+            to: "/org",
+            search: tab === "dashboard" ? {} : { tab },
+            replace: true,
+          });
+        }}
         value={activeTab}
       >
         <div className="px-4 pt-2">

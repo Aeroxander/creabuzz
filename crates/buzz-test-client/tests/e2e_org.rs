@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use buzz_test_client::BuzzTestClient;
-use nostr::{EventBuilder, Filter, Kind, Keys, Tag};
+use nostr::{EventBuilder, Filter, Keys, Kind, Tag};
 use uuid::Uuid;
 
 fn relay_url() -> String {
@@ -24,11 +24,16 @@ fn sub_id(name: &str) -> String {
 }
 
 const KIND_ORG_NODE: u16 = 37010;
-const KIND_ORG_GRANT: u16 = 37011;
 const KIND_ORG_BUDGET: u16 = 37012;
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-fn org_node_event(keys: &Keys, d: &str, name: &str, parent: Option<&str>, holders: Vec<&str>) -> nostr::Event {
+fn org_node_event(
+    keys: &Keys,
+    d: &str,
+    name: &str,
+    parent: Option<&str>,
+    holders: Vec<&str>,
+) -> nostr::Event {
     let mut content = serde_json::json!({
         "v": 1,
         "name": name,
@@ -38,7 +43,12 @@ fn org_node_event(keys: &Keys, d: &str, name: &str, parent: Option<&str>, holder
         content["parent"] = serde_json::Value::String(p.into());
     }
     if !holders.is_empty() {
-        content["holders"] = serde_json::Value::Array(holders.iter().map(|h| serde_json::Value::String((*h).into())).collect());
+        content["holders"] = serde_json::Value::Array(
+            holders
+                .iter()
+                .map(|h| serde_json::Value::String((*h).into()))
+                .collect(),
+        );
     }
     let mut tags = vec![Tag::parse(["d", d]).unwrap()];
     let mut builder = EventBuilder::new(Kind::Custom(KIND_ORG_NODE), content.to_string());
@@ -47,24 +57,6 @@ fn org_node_event(keys: &Keys, d: &str, name: &str, parent: Option<&str>, holder
         builder = builder.tag(t);
     }
     builder.sign_with_keys(keys).expect("sign org node")
-}
-
-fn org_grant_event(keys: &Keys, d: &str, grantee: &str, via: &str, verbs: Vec<&str>, parent_grant: Option<&str>) -> nostr::Event {
-    let mut content = serde_json::json!({
-        "v": 1,
-        "issuer": keys.public_key().to_hex(),
-        "grantee": grantee,
-        "via": via,
-        "verbs": verbs,
-        "revoked": false,
-    });
-    if let Some(pg) = parent_grant {
-        content["parentGrant"] = serde_json::Value::String(pg.into());
-    }
-    let builder = EventBuilder::new(Kind::Custom(KIND_ORG_GRANT), content.to_string())
-        .tag(Tag::parse(["d", d]).unwrap())
-        .tag(Tag::parse(["p", grantee]).unwrap());
-    builder.sign_with_keys(keys).expect("sign org grant")
 }
 
 async fn e2e_db_pool() -> sqlx::Pool<sqlx::Postgres> {
@@ -99,7 +91,11 @@ async fn ensure_test_community(host: &str) -> Uuid {
 
 async fn seed_relay_owner(keys: &Keys) {
     let url = relay_url();
-    let host = url.trim_start_matches("ws://").split(':').next().unwrap_or("localhost");
+    let host = url
+        .trim_start_matches("ws://")
+        .split(':')
+        .next()
+        .unwrap_or("localhost");
     let pool = e2e_db_pool().await;
     let community_id = ensure_test_community(host).await;
     sqlx::query(
@@ -112,10 +108,7 @@ async fn seed_relay_owner(keys: &Keys) {
     .unwrap_or_else(|e| panic!("seed relay owner: {e}"));
 }
 
-async fn collect(
-    client: &mut BuzzTestClient,
-    sid: &str,
-) -> Vec<nostr::Event> {
+async fn collect(client: &mut BuzzTestClient, sid: &str) -> Vec<nostr::Event> {
     let mut out = Vec::new();
     loop {
         match client.recv_event(TIMEOUT).await {
@@ -123,7 +116,11 @@ async fn collect(
                 subscription_id,
                 event,
             }) if subscription_id == sid => out.push(*event),
-            Ok(buzz_test_client::RelayMessage::Eose { subscription_id }) if subscription_id == sid => break,
+            Ok(buzz_test_client::RelayMessage::Eose { subscription_id })
+                if subscription_id == sid =>
+            {
+                break
+            }
             Ok(_) => continue,
             Err(_) => break,
         }
@@ -135,7 +132,9 @@ async fn collect(
 #[ignore]
 async fn org_node_lifecycle_lww_and_readback() {
     let keys = Keys::generate();
-    let mut c = BuzzTestClient::connect(&relay_url(), &keys).await.expect("connect");
+    let mut c = BuzzTestClient::connect(&relay_url(), &keys)
+        .await
+        .expect("connect");
     let d = format!("n-{}", Uuid::new_v4());
     let e1 = org_node_event(&keys, &d, "Root", None, vec![]);
     let ok = c.send_event(e1).await.expect("publish node");
@@ -152,7 +151,10 @@ async fn org_node_lifecycle_lww_and_readback() {
     let filter = Filter::new()
         .kind(Kind::Custom(KIND_ORG_NODE))
         .author(keys.public_key())
-        .custom_tags(nostr::SingleLetterTag::lowercase(nostr::Alphabet::D), [d.as_str()]);
+        .custom_tags(
+            nostr::SingleLetterTag::lowercase(nostr::Alphabet::D),
+            [d.as_str()],
+        );
     c.subscribe(&sid, vec![filter]).await.expect("subscribe");
     let events = collect(&mut c, &sid).await;
     let name = events
@@ -160,7 +162,11 @@ async fn org_node_lifecycle_lww_and_readback() {
         .max_by_key(|e| e.created_at)
         .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.content).ok())
         .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
-    assert_eq!(name.as_deref(), Some("Root v2"), "LWW must deliver the newer node");
+    assert_eq!(
+        name.as_deref(),
+        Some("Root v2"),
+        "LWW must deliver the newer node"
+    );
     c.close_subscription(&sid).await.ok();
 }
 
@@ -168,7 +174,9 @@ async fn org_node_lifecycle_lww_and_readback() {
 #[ignore]
 async fn org_budget_invalid_window_rejected_over_ws() {
     let keys = Keys::generate();
-    let mut c = BuzzTestClient::connect(&relay_url(), &keys).await.expect("connect");
+    let mut c = BuzzTestClient::connect(&relay_url(), &keys)
+        .await
+        .expect("connect");
     let d = format!("b-{}", Uuid::new_v4());
     let content = serde_json::json!({
         "v": 1,
@@ -195,10 +203,14 @@ async fn org_budget_invalid_window_rejected_over_ws() {
 #[ignore]
 async fn org_p_gate_requires_kinds() {
     let keys = Keys::generate();
-    let mut c = BuzzTestClient::connect(&relay_url(), &keys).await.expect("connect");
+    let mut c = BuzzTestClient::connect(&relay_url(), &keys)
+        .await
+        .expect("connect");
     let sid = sub_id("p-gate");
     // REQ without kinds must be rejected (p-gate) or return nothing — assert no EOSE loop hang.
-    c.subscribe(&sid, vec![Filter::new()]).await.expect("subscribe");
+    c.subscribe(&sid, vec![Filter::new()])
+        .await
+        .expect("subscribe");
     let events = collect(&mut c, &sid).await;
     assert!(
         events.is_empty(),
@@ -216,8 +228,16 @@ async fn org_binding_requires_root_holder_or_owner() {
 
     // Root node authored by owner, holder = stranger (as a member).
     let d = format!("root-{}", Uuid::new_v4());
-    let root = org_node_event(&owner, &d, "Root", None, vec![stranger.public_key().to_hex().as_str()]);
-    let mut oc = BuzzTestClient::connect(&relay_url(), &owner).await.expect("owner connect");
+    let root = org_node_event(
+        &owner,
+        &d,
+        "Root",
+        None,
+        vec![stranger.public_key().to_hex().as_str()],
+    );
+    let mut oc = BuzzTestClient::connect(&relay_url(), &owner)
+        .await
+        .expect("owner connect");
     let ok = oc.send_event(root).await.expect("publish root");
     assert!(ok.accepted);
 
@@ -238,9 +258,14 @@ async fn org_binding_requires_root_holder_or_owner() {
         .tag(Tag::parse(["d", &d]).unwrap())
         .sign_with_keys(&stranger)
         .expect("sign binding");
-    let mut sc = BuzzTestClient::connect(&relay_url(), &stranger).await.expect("holder connect");
+    let mut sc = BuzzTestClient::connect(&relay_url(), &stranger)
+        .await
+        .expect("holder connect");
     let okb = sc.send_event(bind_event).await.expect("holder bind");
-    assert!(okb.accepted, "a holder must be able to bind the root they hold");
+    assert!(
+        okb.accepted,
+        "a holder must be able to bind the root they hold"
+    );
 
     // A completely unrelated signer must be rejected.
     let other = Keys::generate();
@@ -260,7 +285,9 @@ async fn org_binding_requires_root_holder_or_owner() {
         .tag(Tag::parse(["d", &d]).unwrap())
         .sign_with_keys(&other)
         .expect("sign other");
-    let mut oc2 = BuzzTestClient::connect(&relay_url(), &other).await.expect("other connect");
+    let mut oc2 = BuzzTestClient::connect(&relay_url(), &other)
+        .await
+        .expect("other connect");
     let okc = oc2.send_event(bind_event2).await.expect("other bind");
     assert!(!okc.accepted, "an unrelated signer must not bind the root");
     assert!(okc.message.contains("restricted"), "got: {}", okc.message);

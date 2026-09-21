@@ -2348,13 +2348,26 @@ pub enum OrgContributionCmd {
     /// record is signed with the CLI key and published with `d` = the task
     /// event id, so re-classifying the same task replaces the same record
     /// (NIP-33 LWW).
+    ///
+    /// LLM cost note: every drafted record spends one classifier call (plus
+    /// one retry call if the first draft fails validation). Batch mode
+    /// (`--all-done`) spends one call per drafted record, so `--limit` is a
+    /// hard cap on the per-run spend.
     Classify {
         /// Kind-44011 task event id (64 hex) to classify
+        #[arg(long, conflicts_with = "all_done")]
+        task: Option<String>,
+        /// Classify every done kind-44011 task that has no 37013 record yet
+        /// (batch; implies publish — previewing N drafts is not practical)
         #[arg(long)]
-        task: String,
-        /// Sign and publish the draft (default: preview only)
+        all_done: bool,
+        /// Sign and publish the draft (default: preview only; batch always
+        /// publishes)
         #[arg(long)]
         publish: bool,
+        /// Max records to draft in batch mode (default 5, hard capped at 20)
+        #[arg(long, requires = "all_done")]
+        limit: Option<u32>,
         /// Operator context appended to the task content (treated as data by
         /// the classifier, never as instructions)
         #[arg(long)]
