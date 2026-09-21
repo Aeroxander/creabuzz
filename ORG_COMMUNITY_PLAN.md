@@ -351,6 +351,33 @@ artifacts removed.
 
 ---
 
+## Audit round (2026-09-21) — production readiness + parity
+
+- docs/production-readiness-audit.md: all areas READY or
+  READY-WITH-CAVEATS; zero data-loss/security blockers. Top
+  recommendations: rotate the classifier key (chat exposure),
+  multi-reviewer contribution protocol decision, stale-chain hint,
+  ARCHITECTURE.md NIP-ORG section, e2e_org.rs in CI.
+- docs/paperclip-parity-status.md: 13-feature matrix — 8 PARITY, 4
+  PARTIAL, 1 MISSING (audit-log UI). DAO journey: 7/8 steps work
+  today; ragequit needs a UI workaround.
+- Conformance suite e2e_org.rs (4 tests) green over the real WS and
+  committed — pins LWW lifecycle, window rejection, p-gate, binding
+  authority.
+
+## Follow-ups ledger (live)
+
+- Classifier endpoint (BUZZ_CLASSIFIER_*): TEXT-ONLY (deepseek-v4-flash
+  rejects image_url). Vision-based design review needs an image-capable
+  model on the gateway or a session-model swap.
+- Web fleet liveness is a binary 3-min seam; desktop org uses the 3-tier
+  vocabulary — unify eventually.
+- Contribution review by a different signer than the record author
+  creates a parallel NIP-33 event (author-keyed LWW) — needs a protocol
+  decision for multi-reviewer records.
+
+---
+
 ## Definition of done
 
 An operator opens a community and, without leaving Buzz: sees the org as a
