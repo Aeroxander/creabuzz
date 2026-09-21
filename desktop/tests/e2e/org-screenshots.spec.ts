@@ -620,6 +620,44 @@ test.describe("org UI screenshots", () => {
     await page.screenshot({ path: `${SHOTS}/org-wizard-empty.png` });
   });
 
+  test("audit tab: attributed structural changes + verify modal", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await page.getByTestId("org-tab-audit").click();
+    await expect(page.getByTestId("org-audit-view")).toBeVisible();
+    await expect(page.getByTestId("org-audit-row").first()).toBeVisible();
+    // The verify modal re-checks presence/recency of the same events.
+    await page.getByTestId("org-audit-verify").click();
+    await expect(page.getByTestId("org-audit-verify-modal")).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-audit.png` });
+  });
+
+  test("ragequit: hint without binding, confirm dialog with binding", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await page.getByTestId("org-tab-chart").click();
+    // The seeded root carries content.onchain, so the exit affordance
+    // renders inside the root node's actions menu (the mock EVM value
+    // layer reports configured). The trigger is hover-revealed, so
+    // force-click it, then pick "Exit (ragequit)…" from the menu.
+    // The actions menu lives in the accessible node list, collapsed under
+    // a disclosure in canvas mode.
+    await page.getByText("Node list").click();
+    const menuTrigger = page
+      .getByRole("button", { name: "Node actions for Founder" })
+      .first();
+    await menuTrigger.click({ force: true, timeout: 5000 });
+    await page.getByTestId("org-ragequit-open").click({ timeout: 5000 });
+    await expect(page.getByTestId("org-ragequit-dialog")).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-ragequit.png` });
+  });
+
   test("wizard walk: real publish, skippable steps, review, finish on canvas", async ({
     page,
   }) => {

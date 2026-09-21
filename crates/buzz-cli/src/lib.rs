@@ -2294,6 +2294,27 @@ pub enum OrgCmd {
         #[arg(long)]
         dao: String,
     },
+
+    /// Exit a bound DAO by ragequitting (NIP-ORG "Opt-in onchain binding").
+    ///
+    /// Local-only (EVM value layer; no relay connection, no Nostr key).
+    /// DEV mapping: the configured value-layer spender key
+    /// (`BUZZ_SPENDER_KEY`) IS the shareholder — the Nostr-holder ↔ EVM
+    /// identity mapping is a documented simplification until the
+    /// governance/DAO-proposal handover. Burns shares (default: the full
+    /// balance) and withdraws the holder's pro-rata of each `--token`
+    /// (default: ETH).
+    Ragequit {
+        /// Bound DAO contract address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        dao: String,
+        /// Shares to burn (default: the spender key's full share balance)
+        #[arg(long)]
+        shares: Option<u128>,
+        /// Treasury token to withdraw pro-rata, `0x…` (repeatable; default ETH)
+        #[arg(long = "token")]
+        tokens: Vec<String>,
+    },
 }
 
 /// Org contribution record subcommands — kind:37013.
@@ -2619,6 +2640,16 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     })) = cli.command
     {
         return commands::org::cmd_allowance_check(subject, token, amount, window).await;
+    }
+
+    // Ragequit is local-only — the EVM exit right needs no relay identity.
+    if let Cmd::Org(OrgCmd::Ragequit {
+        ref dao,
+        ref shares,
+        ref tokens,
+    }) = cli.command
+    {
+        return commands::org_ragequit::cmd_ragequit(dao, *shares, tokens.clone()).await;
     }
 
     // Auth: private key is required for all relay operations.

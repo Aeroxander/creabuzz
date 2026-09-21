@@ -48,6 +48,12 @@ buzz-core = { workspace = true }
 # Onchain spend-ceiling guard (OrgAllowance.sol) — `buzz org allowance`
 buzz-evm-allowance = { workspace = true }
 
+# EVM key handling for the ragequit exit path (`buzz org ragequit`)
+k256 = { workspace = true }
+
+# Trait impls for the mocked EvmRpc test seam
+async-trait = "0.1"
+
 # Base64 encoding — NIP-98 event serialization for Authorization header
 base64 = "0.22"
 

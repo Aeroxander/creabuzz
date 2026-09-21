@@ -46,6 +46,7 @@ import { OrgBudgetForm } from "./OrgBudgetForm";
 import { OrgGrantChainView } from "./OrgGrantChainView";
 import { OrgBudgetConsumption } from "./OrgBudgetConsumption";
 import { OnchainChip } from "./OnchainChip";
+import { OrgRagequitAction } from "./OrgRagequitDialog";
 import type {
   OrgNode,
   OrgBudget,
@@ -587,6 +588,11 @@ function OrgTreeNodeRow({
               <Plus className="mr-2 h-3.5 w-3.5" />
               Add Child
             </DropdownMenuItem>
+            {/* Exit right on a bound org (NIP-ORG): read-by-default, hint
+                without a configured EVM value layer. */}
+            {node.node.onchain && (
+              <OrgRagequitAction onchain={node.node.onchain} />
+            )}
             <DropdownMenuItem
               className="text-destructive"
               onClick={() => deleteMutation.mutate(node.node.dtag)}

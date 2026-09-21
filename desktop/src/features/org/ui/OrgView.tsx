@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs";
 import { OrgDashboard } from "./OrgDashboard";
 import { OrgChart } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
+import { OrgAuditView } from "./OrgAuditView";
 import { OrgWizard } from "./OrgWizard";
 
 function ContributionRecordsTab() {
@@ -47,8 +48,11 @@ export function OrgView() {
   const query = useOrgChartQuery();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { tab?: string };
+  const searchTab = search.tab;
   const [activeTab, setActiveTab] = React.useState(
-    search.tab === "contributions" ? "contributions" : "dashboard",
+    searchTab === "contributions" || searchTab === "audit"
+      ? searchTab
+      : "dashboard",
   );
   // The onboarding wizard auto-opens from an empty org chart and simply
   // stops appearing once a root exists (paperclip-ux-reference.md §3). It
@@ -94,6 +98,9 @@ export function OrgView() {
             >
               Contributions
             </TabsTrigger>
+            <TabsTrigger data-testid="org-tab-audit" value="audit">
+              Audit
+            </TabsTrigger>
           </TabsList>
         </div>
         <TabsContent
@@ -110,6 +117,9 @@ export function OrgView() {
           value="contributions"
         >
           <ContributionRecordsTab />
+        </TabsContent>
+        <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="audit">
+          <OrgAuditView onOpenTab={() => setActiveTab("chart")} />
         </TabsContent>
       </Tabs>
       <OrgWizard

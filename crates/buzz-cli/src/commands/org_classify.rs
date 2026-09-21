@@ -43,7 +43,9 @@ pub const DEFAULT_CLASSIFIER_MODEL: &str = "deepseek-v4-flash-0731";
 /// Kind of the coordination task rows the classifier consumes.
 pub const KIND_AGENT_TASK: u32 = 44011;
 /// Response token cap — bounds the cost of one draft.
-const CLASSIFIER_MAX_TOKENS: u32 = 800;
+// Reasoning models spend completion tokens on reasoning before `content`;
+// keep the draft budget above that.
+const CLASSIFIER_MAX_TOKENS: u32 = 2000;
 /// Hard timeout for one classifier call.
 const CLASSIFIER_TIMEOUT: Duration = Duration::from_secs(30);
 /// Temperature for the draft call — low, reproducible drafts.

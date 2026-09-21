@@ -614,11 +614,11 @@ async fn cmd_contribution_list(client: &BuzzClient, limit: Option<u32>) -> Resul
 // ── Onchain allowance commands (OrgAllowance.sol) ──────────────────────────
 
 /// Environment variable carrying the EVM node URL the guard talks to.
-const ENV_EVM_RPC_URL: &str = "BUZZ_EVM_RPC_URL";
+pub(crate) const ENV_EVM_RPC_URL: &str = "BUZZ_EVM_RPC_URL";
 /// Environment variable carrying the deployed OrgAllowance contract address.
 const ENV_ALLOWANCE_CONTRACT: &str = "BUZZ_ALLOWANCE_CONTRACT";
 /// Environment variable carrying the authorized spender EVM key.
-const ENV_SPENDER_KEY: &str = "BUZZ_SPENDER_KEY";
+pub(crate) const ENV_SPENDER_KEY: &str = "BUZZ_SPENDER_KEY";
 
 fn parse_allowance_amount(amount: &str) -> Result<u128, CliError> {
     amount
@@ -807,7 +807,7 @@ async fn cmd_allowance_spend(
 }
 
 /// Validate a 20-byte EVM address (`0x` + 40 hex). Returns it lowercased.
-fn validate_eth_address(s: &str, what: &str) -> Result<String, CliError> {
+pub(crate) fn validate_eth_address(s: &str, what: &str) -> Result<String, CliError> {
     let hex_part = s
         .strip_prefix("0x")
         .or_else(|| s.strip_prefix("0X"))
@@ -1079,6 +1079,9 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 unit,
             } => cmd_allowance_spend(client, &subject, &token, &amount, &window, &unit).await,
         },
+        // Intercepted in `run()` before the relay connection (local-only
+        // EVM exit; no Nostr key, no relay).
+        OrgCmd::Ragequit { .. } => unreachable!("handled before dispatch"),
     }
 }
 

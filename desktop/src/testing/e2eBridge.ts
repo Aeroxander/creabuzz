@@ -211,6 +211,8 @@ type E2eConfig = {
     };
     /** Native picker boundary result for Pocket voice import tests. */
     pocketVoiceImportResult?: "success" | "cancel" | "invalid";
+    /** Override the org EVM value-layer status served to the exit affordance. */
+    evmStatus?: { rpcConfigured: boolean; spenderConfigured: boolean };
     /** Advertised HEAD for the first mock project without adding that branch. */
     projectHeadBranch?: string;
     /** Override the repository access channel for project authorization states. */
@@ -12775,6 +12777,29 @@ export function maybeInstallE2eTauriMocks() {
               line: "[skip]   3333cccc Older task (37013 record with d = task id already exists)",
             },
           ],
+        };
+      }
+      case "org_evm_status": {
+        // The e2e mock always presents a configured EVM value layer so the
+        // exit affordance renders as an action (tests also cover the hint
+        // path by overriding the response to "unconfigured").
+        const override = activeConfig?.mock?.evmStatus;
+        if (override) return override;
+        return { rpcConfigured: true, spenderConfigured: true };
+      }
+      case "org_ragequit": {
+        const request = (payload ?? null) as {
+          dao?: string;
+          shares?: string | null;
+        } | null;
+        const dao =
+          request?.dao ?? "0x1234567890abcdef1234567890abcdef12345678";
+        return {
+          txHash: `0x${"ab".repeat(32)}`,
+          dao,
+          sharesBurned: request?.shares ?? "1",
+          sharesRemaining: "0",
+          lootRemaining: "0",
         };
       }
       case "get_nsec": {

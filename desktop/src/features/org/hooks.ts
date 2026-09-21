@@ -43,6 +43,7 @@ import {
   KIND_APPROVAL_GRANT,
   KIND_APPROVAL_DENY,
 } from "./lib/dashboard";
+import { AUDIT_EVENT_KINDS, AUDIT_FETCH_LIMIT } from "./lib/audit";
 
 // ── Query keys ──────────────────────────────────────────────────────────────
 
@@ -263,6 +264,42 @@ export function useOrgActivityExtrasQuery(enabled = true) {
   return useQuery({
     queryKey: [...orgQueryKey, "activity-extras"],
     queryFn: ({ signal }) => fetchActivityExtras(signal),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+// ── Audit log (the evidence spine) ────────────────────────────────────────
+
+/**
+ * Raw structural org events (kinds 37010–37014 + 46010/46030/46031), newest
+ * first in the view layer. The event stream IS the evidence — every
+ * structural change is a signed, community-level event on the relay, and
+ * every revision is kept (no LWW folding): an audit view shows history, not
+ * the current head. Bounded at AUDIT_FETCH_LIMIT; the caller surfaces the
+ * truncation honestly.
+ *
+ * NOTE (future upgrade): the relay also maintains a hash-chain audit log
+ * with an operator-side verification path (buzz-admin). Exact cryptographic
+ * chain verification is that operator view's job; this query provides the
+ * community-visible presence evidence.
+ */
+async function fetchAuditEvents(_signal?: AbortSignal): Promise<RelayEvent[]> {
+  const events = await relayClient.fetchEvents({
+    kinds: [...AUDIT_EVENT_KINDS],
+    limit: AUDIT_FETCH_LIMIT,
+  });
+  // Newest first so the view can rely on page order even before rendering.
+  return events.sort(
+    (a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id),
+  );
+}
+
+export function useOrgAuditQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "audit"],
+    queryFn: ({ signal }) => fetchAuditEvents(signal),
     staleTime: ORG_STALE_TIME_MS,
     gcTime: ORG_GC_TIME_MS,
     enabled,
@@ -682,6 +719,67 @@ export function useUpdateContributionReviewMutation() {
       await queryClient.invalidateQueries({
         queryKey: [...orgQueryKey, "chart"],
       });
+    },
+  });
+}
+
+// ── Ragequit / exit (dev-first, NIP-ORG onchain binding) ──────────────────
+
+/** Result of a settled ragequit (from the `org_ragequit` Tauri command). */
+export type OrgRagequitResult = {
+  txHash: string;
+  dao: string;
+  sharesBurned: string;
+  sharesRemaining: string;
+  lootRemaining: string;
+};
+
+/** Value-layer env presence (hint-only — no gates). */
+export type OrgEvmStatus = {
+  rpcConfigured: boolean;
+  spenderConfigured: boolean;
+};
+
+/**
+ * Whether the value-layer env (BUZZ_EVM_RPC_URL / BUZZ_SPENDER_KEY) is
+ * configured. Read-only; drives the "configure EVM key" hint vs. the exit
+ * action. DEV mapping: the configured spender key IS the shareholder.
+ */
+export function useOrgEvmStatusQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "evm-status"],
+    queryFn: () => invokeTauri<OrgEvmStatus>("org_evm_status"),
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+/**
+ * Ragequit the bound DAO from the configured value-layer spender key (the
+ * DEV shareholder mapping). On settlement the org queries invalidate — the
+ * binding's own Nostr record does not change, but dashboards reading
+ * budgets/consumption should refresh. Shares are decimal strings (uint256).
+ */
+export function useOrgRagequitMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      dao: string;
+      shares?: string;
+      tokens?: string[];
+    }): Promise<OrgRagequitResult> =>
+      invokeTauri<OrgRagequitResult>("org_ragequit", {
+        dao: input.dao,
+        shares: input.shares ?? null,
+        tokens: input.tokens ?? [],
+      }),
+    onSuccess: async () => {
+      for (const leaf of ["chart", "nodes", "grants", "budgets", "audit"]) {
+        await queryClient.invalidateQueries({
+          queryKey: [...orgQueryKey, leaf],
+        });
+      }
     },
   });
 }

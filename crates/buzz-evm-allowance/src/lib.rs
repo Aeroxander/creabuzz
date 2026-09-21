@@ -31,12 +31,15 @@
 //! via `k256`. Selectors are computed from canonical signatures and pinned
 //! by tests against `cast sig`.
 
-mod abi;
+// `abi` and `tx` are public so downstream value-layer surfaces (the
+// ragequit/exit path in buzz-cli) can reuse the pinned encoders and the
+// bounded EIP-155 signing path instead of re-deriving them.
+pub mod abi;
 mod client;
 mod epoch;
 mod error;
 mod rpc;
-mod tx;
+pub mod tx;
 
 pub use client::{
     AllowanceClient, AllowanceDecision, SpendReceipt, DEFAULT_RECEIPT_DEADLINE, DEFAULT_RPC_TIMEOUT,

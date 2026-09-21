@@ -2,9 +2,10 @@
 name = "buzz-fleet-worker"
 version = "0.1.0"
 edition = "2021"
-description = "Always-on sandbox fleet worker: consumes kind:44011 tasks assigned to it through the relay LLM gateway."
+description = "Always-on sandbox fleet worker: consumes kind:44011 tasks assigned to it, answers via a direct OpenAI-compatible LLM or the relay gateway, and drafts pending kind:37013 contribution records for completed work."
 
 [dependencies]
+buzz-sdk = { path = "../buzz-sdk" }
 buzz-ws-client = { path = "../buzz-ws-client" }
 nostr = { workspace = true }
 reqwest = { workspace = true }
