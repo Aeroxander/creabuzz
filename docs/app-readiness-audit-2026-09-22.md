@@ -125,3 +125,47 @@ Recommendations (ranked):
   NIP-ORG, org graph, wiki.
 - paperclip-parity-status.md: two rows stale (audit log UI + ragequit UI
   shipped in 59d7689d7).
+
+
+## Progress log (same day, 2026-09-22)
+
+Addressed by follow-up commits on feat/org-graph:
+
+- e2e_org CI lane: added to the `relay-e2e` job (`_ci-relay.yml`) against
+  the compose Postgres. (Blocker 1 — done.)
+- P0 observability failure: `event.rs::huddle_started_links` now acquires
+  an attributed writer connection; the P0 scan passes. (Blocker 4 — done.)
+- Multi-reviewer fork: protocol codified in NIP-ORG ("Contribution record
+  review & multi-reviewer resolution" — reviewer-keyed republish,
+  newest-per-action-d canonical resolution, reviewer-authority SHOULD,
+  clients MUST collapse); desktop `fetchContributionRecords` collapses
+  forks via `canonicalContributionRecords`. (Blocker 2 — protocol done;
+  relay-side reviewer-authority enforcement remains future work.)
+- Workflow approval dead end: `build_approval_grant/deny` now emit the
+  token-hash reference in the `d` tag (the relay resolution contract;
+  the old `t` tag was rejected by the relay), and the card renders
+  working Approve/Deny buttons wired to `useApprovalMutation`. (Fix
+  list item 1 — done.)
+- `buzz workflows runs` reads `GET /workflows/{id}/runs` via NIP-98; the
+  dead-kind query is gone. (Fix list item 2 — done.)
+- Preview defaults: Workflows/Projects/Forum ship `defaultEnabled: true`;
+  Launchpad/Pulse/thread-scoped-ACP/agent-managed-profiles stay opt-in;
+  manifest test pins the split. (Fix list item 4 — partial: the
+  onboarding mention of experiments is still open.)
+- Removal sweep, safe subset: kinds 40004/40005/40006 removed (constants,
+  ALL_KINDS, ingest h-scope arms).
+
+Still open (decided, need dedicated work):
+
+- Job protocol 43001-43006 removal: wired in ~12 files (desktop inbox/
+  search/sound/feed-section, web channel readers, feed SQL, e2e
+  fixtures). Decided to remove (superseded by 44011); needs a dedicated
+  refactor with test updates.
+- Dual message plane (kind 9 vs 40002): needs a product decision + a
+  coordinated producer migration across desktop, buzz-acp, and web.
+- NIP-PMA (30179) and NIP-51 write-only lists: remove-or-wire decisions
+  with spec implications; not urgent (inert).
+- Classifier key rotation: owner action at the LLM provider; still
+  pending (the audit's original blocker 3).
+- Stale-chain chip, ARCHITECTURE.md/AGENTS.md/VISION.md refresh, and the
+  onboarding experiments step: open.
