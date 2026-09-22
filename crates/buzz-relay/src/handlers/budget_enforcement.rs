@@ -382,6 +382,70 @@ async fn enforce_one_run_budget(
 }
 
 /// Resolve the budgets that actually bound `counter_type` for this agent.
+/// One counter limit resolved through (or without) a performance ladder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedCounterLimit {
+    limit: i64,
+    /// True when the ladder is violated with `onViolation: "revoke"`: the
+    /// budget hard-rejects (no approval path) for as long as the window is
+    /// violated.
+    hard_reject: bool,
+}
+
+/// Resolve the effective counter limit for one budget, applying the
+/// performance ladder when present.
+///
+/// Pure: all DB access (contribution counts) happens in the caller. A
+/// malformed ladder fails closed to the base limits (NIP-ORG §
+/// Performance-linked autonomy); malformed base limits yield `None`, which
+/// the caller treats as "no enforceable limit" — the same skip a missing
+/// base limit gets today.
+fn resolve_laddered_limit(
+    base_limits: &serde_json::Value,
+    performance_link: Option<&serde_json::Value>,
+    summary: Option<buzz_sdk::ContributionSummary>,
+    counter_type: &str,
+) -> Option<ResolvedCounterLimit> {
+    let from_limits = |limits: &buzz_sdk::BudgetLimits| match counter_type {
+        "runs" => limits.runs,
+        "task_create" => limits.tasks.as_ref().and_then(|t| t.create),
+        "task_approve" => limits.tasks.as_ref().and_then(|t| t.approve),
+        _ => None,
+    };
+
+    let base_typed: buzz_sdk::BudgetLimits = match serde_json::from_value(base_limits.clone()) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+    let base_limit = from_limits(&base_typed)?;
+
+    let Some(link_val) = performance_link else {
+        return Some(base_limit).map(|limit| ResolvedCounterLimit {
+            limit: limit as i64,
+            hard_reject: false,
+        });
+    };
+    let link: buzz_sdk::PerformanceLink = match serde_json::from_value(link_val.clone()) {
+        Ok(l) => l,
+        Err(e) => {
+            // Fail closed to base: a ladder the relay cannot parse never
+            // widens anything, and must not break enforcement either.
+            tracing::warn!("malformed performanceLink, using base limits: {e}");
+            return Some(base_limit).map(|limit| ResolvedCounterLimit {
+                limit: limit as i64,
+                hard_reject: false,
+            });
+        }
+    };
+    let summary = summary.unwrap_or_default();
+    let resolution = buzz_sdk::evaluate_performance_link(&link, &summary, &base_typed);
+    let hard_reject = resolution.violated && link.on_violation == buzz_sdk::OnViolation::Revoke;
+    from_limits(&resolution.limits).map(|limit| ResolvedCounterLimit {
+        limit: limit as i64,
+        hard_reject,
+    })
+}
+
 async fn applicable_limits(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -412,28 +476,74 @@ async fn applicable_limits(
             continue;
         };
 
-        let limit_value = match counter_type {
-            "runs" => limits.get("runs").and_then(|r| r.as_i64()),
-            "task_create" => limits
-                .get("tasks")
-                .and_then(|t| t.get("create"))
-                .and_then(|c| c.as_i64()),
-            "task_approve" => limits
-                .get("tasks")
-                .and_then(|t| t.get("approve"))
-                .and_then(|a| a.as_i64()),
-            _ => None,
-        };
+        // Performance ladder (NIP-ORG § Performance-linked autonomy): fetch
+        // the subject's contribution outcome counts over the ladder's own
+        // window, then resolve the active tier. A malformed ladder fails
+        // closed to the base limits inside `resolve_laddered_limit`.
+        let ladder_counts: Option<buzz_sdk::ContributionSummary> =
+            match content.get("performanceLink") {
+                Some(link_val) => {
+                    let link: Option<buzz_sdk::PerformanceLink> =
+                        serde_json::from_value(link_val.clone()).ok();
+                    match link {
+                        Some(link) => {
+                            let window_start = budget_window_start(
+                                match link.window {
+                                    buzz_sdk::BudgetWindow::Epoch => "epoch",
+                                    buzz_sdk::BudgetWindow::Day => "day",
+                                    buzz_sdk::BudgetWindow::Week => "week",
+                                    buzz_sdk::BudgetWindow::Month => "month",
+                                },
+                                Utc::now(),
+                            );
+                            let dims = link.dimensions.clone().unwrap_or_default();
+                            match state
+                                .db
+                                .count_contribution_outcomes(
+                                    community_id,
+                                    agent_pubkey_hex,
+                                    window_start,
+                                    &dims,
+                                )
+                                .await
+                            {
+                                Ok(c) => Some(buzz_sdk::ContributionSummary {
+                                    accepted: c.accepted as u32,
+                                    rejected: c.rejected as u32,
+                                }),
+                                Err(e) => {
+                                    return Err(IngestError::Internal(format!(
+                                        "error: db error counting contribution outcomes: {e}"
+                                    )));
+                                }
+                            }
+                        }
+                        None => None,
+                    }
+                }
+                None => None,
+            };
 
-        let Some(limit) = limit_value else {
+        let Some(resolved) = resolve_laddered_limit(
+            limits,
+            content.get("performanceLink"),
+            ladder_counts,
+            counter_type,
+        ) else {
             continue;
         };
 
         applicable.push(ApplicableLimit {
             budget_event_id_hex: budget_event.event_id_hex,
-            on_exceed: budget_event.on_exceed,
+            // A violated ladder with `onViolation: "revoke"` hard-rejects:
+            // zero autonomy means zero, with no approval escape hatch.
+            on_exceed: if resolved.hard_reject {
+                "reject".to_string()
+            } else {
+                budget_event.on_exceed
+            },
             window: window.to_string(),
-            limit,
+            limit: resolved.limit,
             window_start: budget_window_start(window, Utc::now()),
         });
     }
@@ -591,6 +701,114 @@ mod tests {
     fn fixed_now() -> DateTime<Utc> {
         // Wednesday 2026-09-16 15:42:07 UTC
         Utc.with_ymd_and_hms(2026, 9, 16, 15, 42, 7).unwrap()
+    }
+
+    fn base_limits_json() -> serde_json::Value {
+        serde_json::json!({ "runs": 50, "tasks": { "create": 20, "approve": 0 } })
+    }
+
+    fn ladder_json() -> serde_json::Value {
+        serde_json::json!({
+            "window": "week",
+            "dimensions": ["build"],
+            "tiers": [
+                { "minAccepted": 3, "limits": { "runs": 80, "tasks": { "create": 30, "approve": 0 } } },
+                { "minAccepted": 10, "limits": { "runs": 200, "tasks": { "create": 60, "approve": 2 } } }
+            ],
+            "onViolation": "revoke",
+            "violationThreshold": { "rejected": 1 }
+        })
+    }
+
+    #[test]
+    fn no_ladder_uses_base_limits() {
+        let r = resolve_laddered_limit(&base_limits_json(), None, None, "runs").unwrap();
+        assert_eq!(r.limit, 50);
+        assert!(!r.hard_reject);
+    }
+
+    #[test]
+    fn ladder_tier_raises_the_limit() {
+        let summary = buzz_sdk::ContributionSummary {
+            accepted: 5,
+            rejected: 0,
+        };
+        let r = resolve_laddered_limit(
+            &base_limits_json(),
+            Some(&ladder_json()),
+            Some(summary),
+            "runs",
+        )
+        .unwrap();
+        assert_eq!(r.limit, 80);
+        assert!(!r.hard_reject);
+    }
+
+    #[test]
+    fn violated_ladder_with_revoke_zeroes_and_hard_rejects() {
+        let summary = buzz_sdk::ContributionSummary {
+            accepted: 30,
+            rejected: 1,
+        };
+        let r = resolve_laddered_limit(
+            &base_limits_json(),
+            Some(&ladder_json()),
+            Some(summary),
+            "runs",
+        )
+        .unwrap();
+        assert_eq!(r.limit, 0);
+        assert!(r.hard_reject);
+    }
+
+    #[test]
+    fn violated_ladder_without_revoke_keeps_the_approval_path() {
+        let mut link = ladder_json();
+        link["onViolation"] = serde_json::json!("require-approval");
+        let summary = buzz_sdk::ContributionSummary {
+            accepted: 30,
+            rejected: 2,
+        };
+        let r = resolve_laddered_limit(&base_limits_json(), Some(&link), Some(summary), "runs")
+            .unwrap();
+        assert_eq!(r.limit, 0);
+        assert!(!r.hard_reject);
+    }
+
+    #[test]
+    fn malformed_ladder_fails_closed_to_base() {
+        let bad = serde_json::json!({ "tiers": "not-an-array" });
+        let r = resolve_laddered_limit(&base_limits_json(), Some(&bad), None, "runs").unwrap();
+        assert_eq!(r.limit, 50);
+        assert!(!r.hard_reject);
+    }
+
+    #[test]
+    fn malformed_base_limits_yield_no_enforceable_limit() {
+        let bad = serde_json::json!({ "runs": "fifty" });
+        assert!(resolve_laddered_limit(&bad, None, None, "runs").is_none());
+    }
+
+    #[test]
+    fn task_create_counter_extracts_from_tier() {
+        let summary = buzz_sdk::ContributionSummary {
+            accepted: 12,
+            rejected: 0,
+        };
+        let r = resolve_laddered_limit(
+            &base_limits_json(),
+            Some(&ladder_json()),
+            Some(summary),
+            "task_create",
+        )
+        .unwrap();
+        assert_eq!(r.limit, 60);
+    }
+
+    #[test]
+    fn uncapped_counter_in_every_layer_yields_none() {
+        let limits = serde_json::json!({ "runs": 50 });
+        assert!(resolve_laddered_limit(&limits, None, None, "task_approve").is_none());
     }
 
     #[test]

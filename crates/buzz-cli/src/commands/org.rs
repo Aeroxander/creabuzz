@@ -443,6 +443,7 @@ async fn cmd_budget_create(
         limits: BudgetLimits { spend, runs, tasks },
         on_exceed: OnExceed::RequireApproval,
         onchain: onchain.map(parse_onchain_binding).transpose()?,
+        performance_link: None,
     };
 
     let builder = buzz_sdk::build_org_budget(subject_id, &content)

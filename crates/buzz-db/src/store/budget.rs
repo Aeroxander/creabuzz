@@ -100,6 +100,84 @@ pub async fn budget_enforcement_lookup(
     Ok(results)
 }
 
+/// Deterministic per-window contribution outcome counts for one contributor,
+/// consumed by budget ladder evaluation (NIP-ORG § Performance-linked
+/// autonomy). Only the newest row per action (`d_tag`) counts — kind:37013
+/// is parameterized-replaceable, so superseded versions must not inflate
+/// the tally. Records with a `reviewStatus` other than `accepted` /
+/// `rejected` (e.g. `pending`) count as neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContributionOutcomeCounts {
+    /// `reviewStatus: "accepted"` records in the window.
+    pub accepted: u64,
+    /// `reviewStatus: "rejected"` records in the window.
+    pub rejected: u64,
+}
+
+/// Count accepted/rejected contribution records for one contributor within
+/// a window. `dimensions` filters to records carrying at least one of the
+/// named dimensions (empty slice = no dimension filter).
+pub async fn count_contribution_outcomes(
+    pool: &PgPool,
+    community_id: Uuid,
+    subject_pubkey_hex: &str,
+    window_start: chrono::DateTime<chrono::Utc>,
+    dimensions: &[String],
+) -> Result<ContributionOutcomeCounts> {
+    // jsonb `?|` needs a text[] operand; build it once.
+    let dims: Vec<String> = dimensions.to_vec();
+    let sql = if dims.is_empty() {
+        r#"
+        SELECT
+          COUNT(*) FILTER (WHERE st = 'accepted')::bigint AS accepted,
+          COUNT(*) FILTER (WHERE st = 'rejected')::bigint AS rejected
+        FROM (
+          SELECT DISTINCT ON (d_tag) (content::jsonb->>'reviewStatus') AS st
+          FROM events
+          WHERE community_id = $1
+            AND kind = 37013
+            AND deleted_at IS NULL
+            AND pubkey = decode($2, 'hex')
+            AND d_tag IS NOT NULL
+            AND created_at >= $3
+          ORDER BY d_tag, created_at DESC
+        ) latest
+        "#
+    } else {
+        r#"
+        SELECT
+          COUNT(*) FILTER (WHERE st = 'accepted')::bigint AS accepted,
+          COUNT(*) FILTER (WHERE st = 'rejected')::bigint AS rejected
+        FROM (
+          SELECT DISTINCT ON (d_tag) (content::jsonb->>'reviewStatus') AS st
+          FROM events
+          WHERE community_id = $1
+            AND kind = 37013
+            AND deleted_at IS NULL
+            AND pubkey = decode($2, 'hex')
+            AND d_tag IS NOT NULL
+            AND created_at >= $3
+            AND content::jsonb->'dimensions' ?| $4
+          ORDER BY d_tag, created_at DESC
+        ) latest
+        "#
+    };
+
+    let mut query = sqlx::query(sql)
+        .bind(community_id)
+        .bind(subject_pubkey_hex.to_ascii_lowercase())
+        .bind(window_start);
+    if !dims.is_empty() {
+        query = query.bind(dims);
+    }
+    let row = query.fetch_one(pool).await?;
+
+    Ok(ContributionOutcomeCounts {
+        accepted: row.get::<i64, _>("accepted").max(0) as u64,
+        rejected: row.get::<i64, _>("rejected").max(0) as u64,
+    })
+}
+
 /// Check whether a budget subject has hit its limit for a counter type
 /// within the current window.
 ///
@@ -423,6 +501,25 @@ impl Db {
         agent_pubkey_hex: &str,
     ) -> Result<Vec<BudgetEvent>> {
         budget_enforcement_lookup(&self.pool, *community_id.as_uuid(), agent_pubkey_hex).await
+    }
+
+    /// Count accepted/rejected contribution records for a budget ladder.
+    #[datastore_span(name = "count_contribution_outcomes", system = "postgresql")]
+    pub async fn count_contribution_outcomes(
+        &self,
+        community_id: CommunityId,
+        subject_pubkey_hex: &str,
+        window_start: chrono::DateTime<chrono::Utc>,
+        dimensions: &[String],
+    ) -> Result<ContributionOutcomeCounts> {
+        count_contribution_outcomes(
+            &self.pool,
+            *community_id.as_uuid(),
+            subject_pubkey_hex,
+            window_start,
+            dimensions,
+        )
+        .await
     }
 
     /// Check whether a budget subject has hit its limit for a counter type

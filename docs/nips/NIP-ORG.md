@@ -223,6 +223,9 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
   counts); spend ceilings are enforced where value actually moves (the
   harness's signing path, or onchain allowances for a bound DAO). A budget a
   surface cannot observe is advisory and MUST be rendered as such.
+- A budget MAY carry a `performanceLink` ladder that scales its limits with
+  the subject's accepted contribution records — see [Performance-linked
+  autonomy](#performance-linked-autonomy-budget-ladders).
 
 ### Onchain spend bindings
 
@@ -260,6 +263,110 @@ The dev windows are deterministic so an off-chain client can compute the
 same allowance slot the contract checks. The `epoch` window is deliberately
 not time-derived: a governance epoch begins when the bound DAO (NIP-LP)
 upgrades it, and only the DAO's own decision procedure defines its boundary.
+
+### Performance-linked autonomy (budget ladders)
+
+A budget MAY carry an optional `performanceLink` object: a pre-authorized
+escalation ladder that ties the subject's autonomy to its verified
+contribution record. This is the NIP-ORG answer to "agents earn autonomy by
+doing good work" — the credit ledger (`37013`) becomes the input to the
+permission system, with the human decision made once, at ladder-signing
+time, and every subsequent step deterministic.
+
+Publishing a budget with a `performanceLink` IS the human approval. Every
+tier is a standing pre-authorization the budget author could have granted
+directly, so the root-standing rule applies to the highest tier: a ladder
+can never reach authority its author does not hold. No evaluator signature
+exists anywhere in the design — evaluation is a pure function over signed
+events, and any client MUST derive the same active limits from the same
+inputs.
+
+```json
+{
+  "v": 1,
+  "subject": "<agent npub-hex>",
+  "window": "week",
+  "limits": {
+    "spend": { "amount": 100000, "unit": "usd-cents" },
+    "runs": 50,
+    "tasks": { "create": 20, "approve": 0 }
+  },
+  "onExceed": "require-approval",
+  "performanceLink": {
+    "window": "week",
+    "dimensions": ["build"],
+    "tiers": [
+      { "minAccepted": 3,
+        "limits": { "spend": { "amount": 200000, "unit": "usd-cents" },
+                    "runs": 80, "tasks": { "create": 30, "approve": 0 } } },
+      { "minAccepted": 10,
+        "limits": { "spend": { "amount": 500000, "unit": "usd-cents" },
+                    "runs": 200, "tasks": { "create": 60, "approve": 2 } } }
+    ],
+    "onViolation": "revoke",
+    "violationThreshold": { "rejected": 1 }
+  }
+}
+```
+
+Field semantics:
+
+- `performanceLink.window` — the window contribution counts are taken
+  over (same vocabulary as the budget `window`; the two windows are
+  independent: a monthly budget may ladder on weekly contributions).
+- `performanceLink.dimensions` — optional. When present, only records
+  carrying at least one of the named dimensions count toward the ladder.
+- `performanceLink.tiers` — 1–8 entries, `minAccepted` strictly ascending.
+  Each tier's `limits` is the active budget while that tier holds. Every
+  component the base budget caps MUST be capped by the tier at >= the base
+  value; a tier MAY introduce a component the base leaves uncapped (that is
+  a pre-authorized widening the author signed for).
+- `performanceLink.onViolation` — what happens when the violation threshold
+  is crossed: `"base"` (fall back to the base limits until the window
+  heals, the default), `"require-approval"` (zero autonomy, every action
+  routed through the workflow approval kinds), or `"revoke"` (zero
+  autonomy, hard-rejected — no approval path).
+- `performanceLink.violationThreshold` — rejected records in the window
+  that trigger `onViolation`. `rejected` MUST be >= 1. Omitting the
+  threshold means rejections never gate the ladder.
+
+Counting rules (deterministic; all inputs are signed events):
+
+- A record counts for the subject when the kind:37013 event's signer is
+  the budget `subject` (or the record's `p` tag names the subject).
+- Only `reviewStatus: "accepted"` counts toward `minAccepted`; only
+  `reviewStatus: "rejected"` counts toward the violation threshold.
+  `pending` and `appealed` records count as neither.
+- Records are deduplicated per action: the newest version per record `d`
+  tag wins (parameterized replaceable, NIP-33 LWW), and soft-deleted
+  records never count.
+- The window is the interval `[now - window_len, now)` using the same
+  window-length mapping as the budget epoch table (`day` / `week` /
+  `month`; `epoch` is cumulative).
+
+Resolution rules:
+
+- If the violation threshold is crossed, `onViolation` applies.
+- Otherwise the active tier is the highest tier with `minAccepted <=`
+  the accepted count; below the first tier, the base `limits` hold.
+- A consumer that cannot parse a `performanceLink` MUST fall back to the
+  base limits and MUST NOT treat the unparseable ladder as widening
+  anything (fail closed to the signed base).
+
+Enforcement mapping:
+
+- The relay MUST evaluate the ladder where it enforces kind and task
+  counters (counts are one deterministic query over its own event store)
+  and MUST apply `onViolation: "revoke"` as a hard reject.
+- Spend ceilings stay enforced at the value layer: the onchain allowance
+  contract is bound at the *maximum* tier's spend when the budget is
+  published, while the harness evaluates the active tier before calling
+  `spend()`. The contract remains the ledger; the ladder lives in Nostr
+  exactly like every other budget input.
+- Republishing the budget under the same `(pubkey, 37012, d)` replaces
+  the ladder (NIP-33 LWW). Tightening a ladder is always allowed;
+  *widening* one is a new authorization decision by the budget author
+  and inherits the author-root-standing check on ingest.
 
 ### `37014` — Budget Spend Receipt (addressable, community-level)
 

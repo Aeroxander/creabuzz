@@ -2586,6 +2586,223 @@ pub struct OnchainBinding {
     pub subject: String,
 }
 
+/// Performance-linked autonomy ("budget ladder", NIP-ORG §
+/// Performance-linked autonomy): a pre-authorized escalation on a kind:37012
+/// budget. The budgeted subject's ACTIVE limits rise with the number of its
+/// *accepted* kind:37013 contribution records in the window and fall when
+/// records are rejected.
+///
+/// The ladder is signed once by the budget author — publishing it IS the
+/// human approval — and every tier is a standing pre-authorization the
+/// author could have granted directly (the root-standing rule applies to
+/// the highest tier). Evaluation is deterministic over signed events; any
+/// client MUST derive the same active limits from the same inputs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceLink {
+    /// Contribution window the accepted/rejected counts are taken over.
+    pub window: BudgetWindow,
+    /// When set, only records carrying at least one of these dimensions
+    /// count toward the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<Vec<String>>,
+    /// Escalation tiers, strictly ascending by `minAccepted`. The highest
+    /// tier is the maximum pre-authorized autonomy.
+    pub tiers: Vec<PerformanceTier>,
+    /// What happens when rejections cross the violation threshold.
+    #[serde(default)]
+    pub on_violation: OnViolation,
+    /// Rejected records in the window that trigger `onViolation`.
+    /// `None` means violations never gate the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub violation_threshold: Option<ViolationThreshold>,
+}
+
+/// One rung of a [`PerformanceLink`] ladder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceTier {
+    /// Accepted contribution records required in the window.
+    pub min_accepted: u32,
+    /// Limits active while this tier holds. Every component present on the
+    /// base budget MUST be present here and >= the base component.
+    pub limits: BudgetLimits,
+}
+
+/// What happens when the violation threshold is crossed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnViolation {
+    /// Drop to the budget's base limits until the window heals (default).
+    #[default]
+    Base,
+    /// Zero autonomy while violated; every action routes through the
+    /// workflow approval flow (same machinery as `onExceed`).
+    RequireApproval,
+    /// Zero autonomy while violated, hard-rejected — no approval path.
+    Revoke,
+}
+
+/// Rejected-record count that triggers [`PerformanceLink::on_violation`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViolationThreshold {
+    /// Rejected contribution records in the window.
+    pub rejected: u32,
+}
+
+/// Deterministic per-window outcome counts for one contributor, as fed to
+/// [`evaluate_performance_link`]. The caller derives these from kind:37013
+/// events (see the NIP-ORG counting rules); this crate only resolves tiers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContributionSummary {
+    /// Accepted (`reviewStatus: "accepted"`) records in the window.
+    pub accepted: u32,
+    /// Rejected (`reviewStatus: "rejected"`) records in the window.
+    pub rejected: u32,
+}
+
+/// The ladder state resolved against a [`ContributionSummary`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LadderResolution {
+    /// Limits the subject currently holds.
+    pub limits: BudgetLimits,
+    /// Matched tier index into [`PerformanceLink::tiers`] (`None` = the
+    /// base limits hold).
+    pub tier: Option<usize>,
+    /// True when the violation threshold is crossed.
+    pub violated: bool,
+}
+
+/// Zero autonomy, expressed as explicit zeros so a consumer can never read
+/// an absent component as "uncapped".
+fn zeroed_limits() -> BudgetLimits {
+    BudgetLimits {
+        spend: Some(SpendLimit {
+            amount: 0,
+            unit: "usd-cents".into(),
+        }),
+        runs: Some(0),
+        tasks: Some(TaskLimits {
+            create: Some(0),
+            approve: Some(0),
+        }),
+    }
+}
+
+/// Resolve a budget ladder against deterministic contribution counts.
+///
+/// - Violated (`rejected >= threshold`) collapses to `onViolation`:
+///   `Base` returns the base limits, `RequireApproval`/`Revoke` return
+///   explicit zero limits (the caller distinguishes approval routing from
+///   hard rejection via [`PerformanceLink::on_violation`]).
+/// - Otherwise the highest tier with `minAccepted <= accepted` holds;
+///   below the first tier the base limits hold.
+pub fn evaluate_performance_link(
+    link: &PerformanceLink,
+    summary: &ContributionSummary,
+    base_limits: &BudgetLimits,
+) -> LadderResolution {
+    let violated = match link.violation_threshold {
+        Some(t) => summary.rejected >= t.rejected,
+        None => false,
+    };
+    if violated {
+        let limits = match link.on_violation {
+            OnViolation::Base => base_limits.clone(),
+            OnViolation::RequireApproval | OnViolation::Revoke => zeroed_limits(),
+        };
+        return LadderResolution {
+            limits,
+            tier: None,
+            violated: true,
+        };
+    }
+    let tier = link
+        .tiers
+        .iter()
+        .rposition(|t| summary.accepted >= t.min_accepted);
+    let limits = match tier {
+        Some(i) => link.tiers[i].limits.clone(),
+        None => base_limits.clone(),
+    };
+    LadderResolution {
+        limits,
+        tier,
+        violated: false,
+    }
+}
+
+/// Validate a ladder against its base budget. Fail-closed: a malformed
+/// ladder never publishes.
+pub fn validate_performance_link(
+    link: &PerformanceLink,
+    base_limits: &BudgetLimits,
+) -> Result<(), SdkError> {
+    if link.tiers.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at least one tier".into(),
+        ));
+    }
+    if link.tiers.len() > 8 {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at most 8 tiers".into(),
+        ));
+    }
+    let mut prev = 0u32;
+    for (i, tier) in link.tiers.iter().enumerate() {
+        if tier.min_accepted <= prev {
+            return Err(SdkError::InvalidInput(format!(
+                "performanceLink tier {i}: minAccepted must be strictly ascending (got {prev} then {})",
+                tier.min_accepted
+            )));
+        }
+        prev = tier.min_accepted;
+        // Every component the base caps, a tier must cap at least as high —
+        // a tier may introduce a component the base leaves uncapped (that is
+        // a pre-authorized widening the author signed for).
+        if let (Some(b), Some(t)) = (&base_limits.spend, &tier.limits.spend) {
+            if t.amount < b.amount {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: spend {} is below the base spend {}",
+                    t.amount, b.amount
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (base_limits.runs, tier.limits.runs) {
+            if t < b {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: runs {t} is below the base runs {b}"
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (&base_limits.tasks, &tier.limits.tasks) {
+            if let (Some(bc), Some(tc)) = (b.create, t.create) {
+                if tc < bc {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.create {tc} is below the base {bc}"
+                    )));
+                }
+            }
+            if let (Some(ba), Some(ta)) = (b.approve, t.approve) {
+                if ta < ba {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.approve {ta} is below the base {ba}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Some(t) = &link.violation_threshold {
+        if t.rejected == 0 {
+            return Err(SdkError::InvalidInput(
+                "violationThreshold.rejected must be >= 1 (0 would violate every budget)".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Content body of a kind:37012 budget event.
 ///
 /// Serialized with camelCase keys per NIP-ORG (`onExceed`, …).
@@ -2605,6 +2822,10 @@ pub struct OrgBudgetContent {
     /// Optional onchain binding for the spend ceiling (omit when off-chain).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain: Option<OnchainBinding>,
+    /// Optional performance-linked autonomy ladder (NIP-ORG §
+    /// Performance-linked autonomy). Omit for a flat budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance_link: Option<PerformanceLink>,
 }
 
 fn is_lower_hex_pubkey(value: &str) -> bool {
@@ -2782,6 +3003,10 @@ pub fn build_org_budget(
         return Err(SdkError::InvalidInput(format!(
             "org budget 'subject_id' exceeds {ORG_D_MAX_LEN} bytes"
         )));
+    }
+
+    if let Some(link) = &content.performance_link {
+        validate_performance_link(link, &content.limits)?;
     }
 
     let tags: Vec<Tag> = vec![tag(&["d", subject_id])?];
@@ -5707,7 +5932,183 @@ mod tests {
             },
             on_exceed: OnExceed::RequireApproval,
             onchain: None,
+            performance_link: None,
         }
+    }
+
+    fn ladder_budget() -> OrgBudgetContent {
+        let mut c = sample_budget_content();
+        c.performance_link = Some(PerformanceLink {
+            window: BudgetWindow::Week,
+            dimensions: Some(vec!["build".into()]),
+            tiers: vec![
+                PerformanceTier {
+                    min_accepted: 3,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 200000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(80),
+                        tasks: Some(TaskLimits {
+                            create: Some(30),
+                            approve: Some(0),
+                        }),
+                    },
+                },
+                PerformanceTier {
+                    min_accepted: 10,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 500000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(200),
+                        tasks: Some(TaskLimits {
+                            create: Some(60),
+                            approve: Some(2),
+                        }),
+                    },
+                },
+            ],
+            on_violation: OnViolation::Revoke,
+            violation_threshold: Some(ViolationThreshold { rejected: 1 }),
+        });
+        c
+    }
+
+    #[test]
+    fn performance_link_ladder_resolves_tiers() {
+        let link = ladder_budget().performance_link.unwrap();
+        let base = ladder_budget().limits;
+
+        // Below the first tier: base limits hold.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 2,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, None);
+        assert!(!r.violated);
+        assert_eq!(r.limits.runs, base.runs);
+
+        // First tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(0));
+        assert_eq!(r.limits.runs, Some(80));
+
+        // Top tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 25,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(1));
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 500000);
+    }
+
+    #[test]
+    fn performance_link_violation_semantics() {
+        let mut c = ladder_budget();
+        let base = c.limits.clone();
+        let link = c.performance_link.take().unwrap();
+
+        // Revoke: explicit zero limits.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 1,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 0);
+        assert_eq!(r.limits.runs, Some(0));
+
+        // Base: falls back to the budget's own limits.
+        let mut softened = link.clone();
+        softened.on_violation = OnViolation::Base;
+        let r = evaluate_performance_link(
+            &softened,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 5,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits, base);
+
+        // No threshold: rejections never gate the ladder.
+        let mut no_threshold = link.clone();
+        no_threshold.violation_threshold = None;
+        let r = evaluate_performance_link(
+            &no_threshold,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 9,
+            },
+            &base,
+        );
+        assert!(!r.violated);
+        assert_eq!(r.tier, Some(0));
+    }
+
+    #[test]
+    fn performance_link_validation_rejects_bad_ladders() {
+        let base = ladder_budget().limits;
+        let mut c = ladder_budget();
+        let link = c.performance_link.take().unwrap();
+
+        // Non-ascending tiers.
+        let mut bad = link.clone();
+        bad.tiers[1].min_accepted = 3;
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Tier spend below base spend.
+        let mut bad = link.clone();
+        bad.tiers[0].limits.spend = Some(SpendLimit {
+            amount: 1,
+            unit: "usd-cents".into(),
+        });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Zero violation threshold.
+        let mut bad = link.clone();
+        bad.violation_threshold = Some(ViolationThreshold { rejected: 0 });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Empty ladder.
+        let mut bad = link;
+        bad.tiers.clear();
+        assert!(validate_performance_link(&bad, &base).is_err());
+    }
+
+    #[test]
+    fn budget_with_ladder_builds_and_round_trips_camel_case() {
+        let content = ladder_budget();
+        let builder = build_org_budget("subject-agent", &content).unwrap();
+        let event = sign(builder);
+        assert!(event.content.contains("\"performanceLink\""));
+        assert!(event.content.contains("\"minAccepted\""));
+        assert!(event.content.contains("\"onViolation\":\"revoke\""));
+
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
     }
 
     #[test]
