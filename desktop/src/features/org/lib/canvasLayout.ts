@@ -18,8 +18,8 @@ export type CanvasMetrics = {
 // shrinks every dimension; two densities are enough here (the reference
 // ships four).
 export const CANVAS_DENSITY: Record<CanvasDensity, CanvasMetrics> = {
-  comfortable: { cardW: 200, cardH: 100, gapX: 32, gapY: 80 },
-  compact: { cardW: 152, cardH: 72, gapX: 20, gapY: 56 },
+  comfortable: { cardW: 200, cardH: 88, gapX: 32, gapY: 80 },
+  compact: { cardW: 152, cardH: 60, gapX: 20, gapY: 56 },
 };
 
 export const CANVAS_PADDING = 60;

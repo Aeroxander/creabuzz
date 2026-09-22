@@ -245,7 +245,7 @@ export function OrgCanvas({
                 d={edge.path}
                 fill="none"
                 key={edge.dtag}
-                stroke="var(--status-neutral)"
+                stroke="hsl(var(--border))"
                 strokeWidth={1.5}
               />
             ))}
@@ -276,37 +276,37 @@ export function OrgCanvas({
           ))}
         </div>
       </div>
-      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+      <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
         <Button
           aria-label="Zoom in"
-          className="h-7 w-7 p-0"
+          className="size-9 rounded border border-border bg-background p-0 transition-colors hover:bg-accent sm:size-7"
           onClick={() => zoomBy(ZOOM_STEP)}
           size="sm"
           type="button"
           variant="outline"
         >
-          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+          <Plus aria-hidden="true" className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
         </Button>
         <Button
           aria-label="Zoom out"
-          className="h-7 w-7 p-0"
+          className="size-9 rounded border border-border bg-background p-0 transition-colors hover:bg-accent sm:size-7"
           onClick={() => zoomBy(1 / ZOOM_STEP)}
           size="sm"
           type="button"
           variant="outline"
         >
-          <Minus aria-hidden="true" className="h-3.5 w-3.5" />
+          <Minus aria-hidden="true" className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
         </Button>
         <Button
           aria-label="Fit chart to screen"
-          className="h-7 w-7 p-0"
+          className="size-9 rounded border border-border bg-background p-0 transition-colors hover:bg-accent sm:size-7"
           onClick={fitToScreen}
           size="sm"
           title={`Zoom ${Math.round((view.zoom / MAX_ZOOM) * 100) / 10}× (limits ${MIN_ZOOM}–${MAX_ZOOM})`}
           type="button"
           variant="outline"
         >
-          <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
+          <Maximize2 aria-hidden="true" className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
         </Button>
       </div>
     </div>

@@ -445,10 +445,9 @@ test.describe("org UI screenshots", () => {
     // Budget consumption: 32 of 50 turns this month.
     await expect(page.getByText("32 / 50 runs used")).toBeVisible();
     await expect(page.getByText("0 / 20 runs used")).toBeVisible();
-    // Onchain chips on the root node and the budget card. The root chip
-    // exists twice (canvas card + the closed "Node list" disclosure), so
-    // assert the visible one.
-    await expect(page.getByText("Base · 0x123456…5678").first()).toBeVisible();
+    // Onchain bindings on the root canvas node (corner indicator since the
+    // visual redesign) and the budget card (full chip).
+    await expect(page.getByTestId("org-canvas-onchain-founder")).toBeVisible();
     await expect(page.getByText("Base · 0xabcdef…abcd").first()).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/org-grants.png`, fullPage: false });
   });
