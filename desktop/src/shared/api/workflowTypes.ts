@@ -54,7 +54,8 @@ export type WorkflowApprovalStatus =
   | "expired";
 
 export type WorkflowApproval = {
-  /** Opaque, non-actionable identifier for display/correlation only. */
+  /** Hex-encoded approval token hash. Pass as the `token` to the grant/deny
+   * mutation — it becomes the kind:46030/46031 `d` tag the relay resolves. */
   approvalRef: string;
   workflowId: string;
   runId: string;
