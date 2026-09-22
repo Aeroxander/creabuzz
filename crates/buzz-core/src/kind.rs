@@ -481,12 +481,6 @@ pub const KIND_STREAM_MESSAGE: u32 = 9;
 pub const KIND_STREAM_MESSAGE_V2: u32 = 40002;
 /// V1 used kind:10004 (replaceable range + NIP-51 collision — wrong).
 pub const KIND_STREAM_MESSAGE_EDIT: u32 = 40003;
-/// A stream message that has been pinned in a channel.
-pub const KIND_STREAM_MESSAGE_PINNED: u32 = 40004;
-/// A stream message that has been bookmarked by a user.
-pub const KIND_STREAM_MESSAGE_BOOKMARKED: u32 = 40005;
-/// A stream message scheduled for future delivery.
-pub const KIND_STREAM_MESSAGE_SCHEDULED: u32 = 40006;
 /// A reminder attached to a stream message or time.
 pub const KIND_STREAM_REMINDER: u32 = 40007;
 /// A diff/patch message showing file changes (unified diff format).
@@ -821,9 +815,6 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE,
     KIND_STREAM_MESSAGE_V2,
     KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_PINNED,
-    KIND_STREAM_MESSAGE_BOOKMARKED,
-    KIND_STREAM_MESSAGE_SCHEDULED,
     KIND_STREAM_REMINDER,
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
