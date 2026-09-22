@@ -359,6 +359,39 @@ export function eventToContributionRecord(
 
 // ── Read models ─────────────────────────────────────────────────────────────
 
+/**
+ * NIP-ORG multi-reviewer resolution: reviews are republished under the
+ * reviewer's own key with the same `d` tag, so parallel records for one
+ * action exist by design. The canonical record per action is the newest
+ * `created_at`; a tie breaks to the lowest event id (deterministic across
+ * clients). Ledgers and review queues render only canonical records —
+ * superseded versions must not double-count or resurrect verdicts.
+ */
+export function canonicalContributionRecords(
+  records: ContributionRecord[],
+): ContributionRecord[] {
+  const byDtag = new Map<string, ContributionRecord>();
+  for (const record of records) {
+    if (!record.dtag) {
+      // A record without an action id cannot be ordered; keep it visible
+      // rather than silently dropping it.
+      byDtag.set(`__event__${record.eventId}`, record);
+      continue;
+    }
+    const current = byDtag.get(record.dtag);
+    if (!current) {
+      byDtag.set(record.dtag, record);
+      continue;
+    }
+    const newer =
+      record.createdAt > current.createdAt ||
+      (record.createdAt === current.createdAt &&
+        record.eventId < current.eventId);
+    if (newer) byDtag.set(record.dtag, record);
+  }
+  return [...byDtag.values()];
+}
+
 export type OrgChart = {
   nodes: OrgNode[];
   grants: OrgGrant[];

@@ -368,6 +368,43 @@ Enforcement mapping:
   *widening* one is a new authorization decision by the budget author
   and inherits the author-root-standing check on ingest.
 
+### Contribution record review & multi-reviewer resolution
+
+Review disposal for a kind:37013 record is itself a publication: a reviewer
+accepts, rejects, or appeals by republishing the record with the **same
+`d` tag** — every prior field copied, `reviewStatus` updated (appeals
+append to `appealHistory`) — under the **reviewer's own key**. NIP-33 LWW
+is author-keyed, so a review by a signer other than the original author
+creates a parallel record; that is the intended mechanism, and it makes
+review authority legible (the reviewer signs in their own name) rather
+than an impersonation of the drafter.
+
+Because parallel records exist, clients MUST resolve the canonical record
+per action:
+
+1. Group kind:37013 events by `d` tag (the action id).
+2. The **newest `created_at` wins**; a tie is broken by the lowest event
+   id (deterministic across clients).
+3. Ledgers, review queues, and ladder counts render or consume only the
+   canonical record. Superseded versions are visible history at most,
+   never double-counted.
+
+Ladder counting (§ Performance-linked autonomy) already consumes only the
+canonical record per action, so a fork can neither double-count credit nor
+resurrect a rejected verdict.
+
+Review authority:
+
+- Publishing `reviewStatus: "accepted"` or `"rejected"` SHOULD be done by
+  a key holding review authority: an org node seat, or a grant carrying a
+  review verb (authority bottoms out at a human-held seat, per the design
+  rules).
+- A client MUST label a disposition published by a key without verified
+  review authority as unverified (the desktop review queue does).
+- Relay-side enforcement of reviewer authority MAY follow the
+  `ORG_GRANT_ENFORCEMENT` opt-in pattern; until then the graph remains
+  the source of truth and the UI the honesty surface.
+
 ### `37014` — Budget Spend Receipt (addressable, community-level)
 
 The receipt mirror of an onchain spend: each successful `spend()` against an

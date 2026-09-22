@@ -19,6 +19,7 @@ import {
   eventToOrgNode,
   eventToOrgGrant,
   eventToOrgBudget,
+  canonicalContributionRecords,
   eventToContributionRecord,
   type OrgNode,
   type OrgGrant,
@@ -95,7 +96,11 @@ async function fetchContributionRecords(
   signal?: AbortSignal,
 ): Promise<ContributionRecord[]> {
   const events = await fetchOrgEvents([KIND_CONTRIBUTION_RECORD], signal);
-  return events.map(eventToContributionRecord);
+  // Multi-reviewer resolution (NIP-ORG § Contribution record review):
+  // collapse reviewer forks to the canonical newest record per action id.
+  return canonicalContributionRecords(
+    events.map(eventToContributionRecord),
+  );
 }
 
 async function fetchOrgChart(signal?: AbortSignal): Promise<OrgChart> {

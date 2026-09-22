@@ -8,6 +8,7 @@ import {
   eventToOrgGrant,
   eventToOrgBudget,
   eventToContributionRecord,
+  canonicalContributionRecords,
 } from "./orgModels.ts";
 
 const ALICE = "a".repeat(64);
@@ -330,5 +331,66 @@ describe("eventToOrgNode scope + onchain", () => {
       dao: "0xdao",
       boundAt: undefined,
     });
+  });
+});
+
+
+describe("canonicalContributionRecords", () => {
+  const base = (overrides) => ({
+    eventId: "evt-1",
+    author: ALICE,
+    dtag: "action-1",
+    action: "did-a-thing",
+    dimensions: {},
+    evidence: [],
+    humanVsAi: { human: 0, ai: 1 },
+    informedBy: [],
+    reviewStatus: "pending",
+    appealHistory: [],
+    createdAt: 100,
+    ...overrides,
+  });
+
+  it("collapses reviewer forks to the newest record per action id", () => {
+    const pending = base({
+      eventId: "evt-author",
+      reviewStatus: "pending",
+      createdAt: 100,
+    });
+    const accepted = base({
+      eventId: "evt-reviewer",
+      author: BOB,
+      reviewStatus: "accepted",
+      createdAt: 200,
+    });
+    const out = canonicalContributionRecords([pending, accepted]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].eventId, "evt-reviewer");
+    assert.equal(out[0].reviewStatus, "accepted");
+  });
+
+  it("keeps a newer rejection over an older acceptance", () => {
+    const accepted = base({ eventId: "a", reviewStatus: "accepted", createdAt: 100 });
+    const rejected = base({ eventId: "b", reviewStatus: "rejected", createdAt: 300 });
+    const out = canonicalContributionRecords([accepted, rejected]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].reviewStatus, "rejected");
+  });
+
+  it("breaks created_at ties by lowest event id", () => {
+    const laterId = base({ eventId: "zzz", createdAt: 100 });
+    const earlierId = base({ eventId: "aaa", reviewStatus: "accepted", createdAt: 100 });
+    const out = canonicalContributionRecords([laterId, earlierId]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].eventId, "aaa");
+  });
+
+  it("keeps distinct actions and preserves records without a dtag", () => {
+    const one = base({ dtag: "action-1" });
+    const two = base({ dtag: "action-2", eventId: "evt-2" });
+    const orphan = base({ dtag: "", eventId: "evt-orphan" });
+    const out = canonicalContributionRecords([one, two, orphan]);
+    assert.equal(out.length, 3);
+    assert.ok(out.some((r) => r.eventId === "evt-orphan"));
   });
 });
