@@ -24,25 +24,24 @@ test("thread-scoped ACP sessions is a default-off desktop experiment", () => {
   assert.equal(feature.defaultEnabled, undefined);
 });
 
-test("existing Projects and Workflows experiments remain unchanged", () => {
-  const existing = Object.fromEntries(
-    manifest.features
-      .filter(({ id }) => id === "projects" || id === "workflows")
-      .map((feature) => [feature.id, feature]),
+test("shipped surfaces are default-on; experiments stay default-off", () => {
+  const byId = Object.fromEntries(
+    manifest.features.map((feature) => [feature.id, feature]),
   );
 
-  assert.deepEqual(existing, {
-    projects: {
-      id: "projects",
-      name: "Projects",
-      description: "Git repository browser and collaboration",
-      platforms: ["desktop"],
-    },
-    workflows: {
-      id: "workflows",
-      name: "Workflows",
-      description: "YAML-defined automations with approval gates",
-      platforms: ["desktop"],
-    },
-  });
+  // Mature surfaces ship enabled (VISION.md advertises them; the desktop
+  // readiness audit flagged that a fresh install hid them behind
+  // Settings -> Experiments).
+  for (const id of ["workflows", "projects", "forum"]) {
+    assert.equal(byId[id].defaultEnabled, true, `${id} must default on`);
+  }
+  // Experimental surfaces stay opt-in.
+  for (const id of [
+    "launchpad",
+    "pulse",
+    "threadScopedAcpSessions",
+    "agentManagedProfiles",
+  ]) {
+    assert.equal(byId[id].defaultEnabled, undefined, `${id} must default off`);
+  }
 });
