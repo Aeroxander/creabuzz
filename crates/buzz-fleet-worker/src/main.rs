@@ -222,9 +222,9 @@ async fn publish_task_row(
     keys: &Keys,
     task: &Event,
     status: &str,
-) {
+) -> Option<String> {
     let (d, _, h, e) = tags_for(task);
-    let Some(d) = d else { return };
+    let d = d?;
     let mut tags = vec![t("d", &d), t("p", &keys.public_key().to_hex())];
     if let Some(h) = &h {
         tags.push(t("h", h));
@@ -242,7 +242,9 @@ async fn publish_task_row(
         .tags(tags)
         .sign_with_keys(keys)
         .expect("task row sign");
+    let id = event.id.to_hex();
     let _ = ws.send_event(event).await;
+    Some(id)
 }
 
 async fn post_turn(
@@ -664,6 +666,7 @@ async fn maybe_contribute(
     keys: &Keys,
     cfg: &LlmConfig,
     task: &Event,
+    credit_id: &str,
     answer: &str,
 ) {
     if env_trimmed(ENV_AUTO_CONTRIBUTE)
@@ -673,9 +676,11 @@ async fn maybe_contribute(
         tracing::info!(task = %task.id.to_hex(), "auto-contribute disabled");
         return;
     }
-    let task_id = task.id.to_hex();
-    if contribution_exists(ws, &task_id).await {
-        tracing::info!(task = %task_id, "credit record already exists; skipping draft");
+    let (log_task_d, _, _, _) = tags_for(task);
+    let log_id = credit_id.chars().take(12).collect::<String>();
+    let _ = log_task_d;
+    if contribution_exists(ws, credit_id).await {
+        tracing::info!(task = %log_id, "credit record already exists; skipping draft");
         return;
     }
 
@@ -708,7 +713,7 @@ async fn maybe_contribute(
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
             Err(err) => {
-                tracing::warn!(task = %task_id, "credit draft LLM call failed: {err}");
+                tracing::warn!(task = %log_id, "credit draft LLM call failed: {err}");
                 return;
             }
         }
@@ -716,14 +721,14 @@ async fn maybe_contribute(
     let draft = match parse_draft_strict(&raw) {
         Ok(d) => d,
         Err(err) => {
-            tracing::warn!(task = %task_id, "credit draft invalid: {err}");
+            tracing::warn!(task = %log_id, "credit draft invalid: {err}");
             return;
         }
     };
 
     let mut evidence = draft.evidence;
-    if !evidence.iter().any(|e| e == &task_id) {
-        evidence.insert(0, task_id.clone());
+    if !evidence.iter().any(|e| e == credit_id) {
+        evidence.insert(0, credit_id.to_string());
     }
     let content = ContributionRecordContent {
         v: 1,
@@ -738,40 +743,47 @@ async fn maybe_contribute(
             human: 0.0,
             ai: 1.0,
         },
-        informed_by: vec![task_id.clone()],
+        informed_by: vec![credit_id.to_string()],
         classifier_version: Some(format!("{model}@{}", now_secs())),
         review_status: ReviewStatus::Pending,
         appeal_history: vec![],
     };
 
-    let builder = match build_contribution_record(&task_id, &content) {
+    let builder = match build_contribution_record(credit_id, &content) {
         Ok(b) => b,
         Err(err) => {
-            tracing::warn!(task = %task_id, "credit record build failed: {err}");
+            tracing::warn!(task = %log_id, "credit record build failed: {err}");
             return;
         }
     };
     let event = match builder.sign_with_keys(keys) {
         Ok(e) => e,
         Err(err) => {
-            tracing::warn!(task = %task_id, "credit record sign failed: {err}");
+            tracing::warn!(task = %log_id, "credit record sign failed: {err}");
             return;
         }
     };
     match ws.send_event(event).await {
         Ok(ok) if ok.accepted => {
             tracing::info!(
-                task = %task_id,
+                task = %log_id,
                 "drafted pending contribution record; human review decides",
             );
         }
         other => tracing::warn!(
-            task = %task_id,
+            task = %log_id,
             "credit publish failed: {:?}",
             other.ok().map(|o| o.message)
         ),
     }
 }
+
+/// A dropped relay connection must not silently kill a long-running worker:
+/// reconnect with bounded exponential backoff (5s → 60s, reset on a
+/// successful attach). Processed-task state resets per attach; row reduction
+/// and status filters prevent any reprocessing.
+const RECONNECT_BASE: Duration = Duration::from_secs(5);
+const RECONNECT_MAX: Duration = Duration::from_secs(60);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -791,15 +803,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let client = reqwest::Client::new();
-    let mut ws = buzz_ws_client::NostrWsConnection::connect(&relay_url).await?;
-    ws.authenticate(&keys, None).await?;
+    let mut backoff = RECONNECT_BASE;
+    loop {
+        match run_worker(&relay_url, &keys, &name, &cfg, &client).await {
+            Ok(()) => break Ok(()),
+            Err(err) => {
+                tracing::error!("worker connection lost: {err}; retrying in {backoff:?}");
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(RECONNECT_MAX);
+            }
+        }
+    }
+}
 
+/// One full attach → poll → process cycle. Any relay/socket error bubbles up
+/// to the reconnect loop in [`main`].
+async fn run_worker(
+    relay_url: &str,
+    keys: &Keys,
+    name: &str,
+    cfg: &LlmConfig,
+    client: &reqwest::Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut ws = buzz_ws_client::NostrWsConnection::connect(relay_url).await?;
+    ws.authenticate(keys, None).await?;
+    tracing::info!("attached to relay");
     let mut processed: HashSet<String> = HashSet::new();
     let mut last_announce = Instant::now() - ANNOUNCE_INTERVAL;
 
     loop {
         if last_announce.elapsed() >= ANNOUNCE_INTERVAL {
-            announce(&mut ws, &keys, &name).await;
+            announce(&mut ws, keys, name).await;
             last_announce = Instant::now();
         }
 
@@ -855,16 +889,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let title = task_title(&event);
             if is_open_unclaimed {
-                publish_task_row(&mut ws, &keys, &event, "assigned").await;
+                publish_task_row(&mut ws, keys, &event, "assigned").await;
                 tracing::info!(task = %d, "claiming open task: {title}");
             }
             tracing::info!(task = %d, "picking up task: {title}");
 
-            publish_task_row(&mut ws, &keys, &event, "in_progress").await;
+            publish_task_row(&mut ws, keys, &event, "in_progress").await;
             if let Some(h) = &h {
                 post_turn(
                     &mut ws,
-                    &keys,
+                    keys,
                     Some(h),
                     e.as_deref(),
                     &format!("⚙️ Working: {title}"),
@@ -875,9 +909,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let llm_result = loop {
                 answer_attempts += 1;
                 match chat_completions(
-                    &client,
-                    &keys,
-                    &cfg,
+                    client,
+                    keys,
+                    cfg,
                     "You are a sandbox fleet worker in a Buzz community. Complete the task concisely.",
                     &format!("Task: {title}\n\n{}", event.content),
                     CallParams {
@@ -897,10 +931,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             match llm_result {
                 Ok(answer) => {
-                    publish_task_row(&mut ws, &keys, &event, "done").await;
+                    // The contribution record's d = the done row's event id —
+                    // the same identity `buzz org contribution classify` uses,
+                    // so both draft paths land on one NIP-33 record per task.
+                    let done_row_id = publish_task_row(&mut ws, keys, &event, "done").await;
                     post_turn(
                         &mut ws,
-                        &keys,
+                        keys,
                         h.as_deref(),
                         e.as_deref(),
                         &format!(
@@ -911,13 +948,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .await;
                     tracing::info!(task = %d, "completed");
-                    maybe_contribute(&mut ws, &client, &keys, &cfg, &event, &answer).await;
+                    if let Some(credit_id) = done_row_id {
+                        maybe_contribute(&mut ws, client, keys, cfg, &event, &credit_id, &answer)
+                            .await;
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(task = %d, "failed: {err}");
                     post_turn(
                         &mut ws,
-                        &keys,
+                        keys,
                         h.as_deref(),
                         e.as_deref(),
                         &format!("⚠️ Task failed: {err}"),
