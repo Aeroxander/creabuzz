@@ -237,6 +237,14 @@ pub async fn huddle_started_links(
     if parent_channel_ids.is_empty() || ephemeral_channel_ids.is_empty() {
         return Ok(Vec::new());
     }
+    // Attributed pool acquisition (P0 policy): this read backs the liveness
+    // snapshot's creator-authorization check, same operation class as the
+    // single-link variant below.
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
     let rows = sqlx::query(
         r#"
         SELECT DISTINCT ON (backing.id)
@@ -267,7 +275,7 @@ pub async fn huddle_started_links(
     .bind(KIND_HUDDLE_STARTED as i32)
     .bind(ephemeral_channel_ids)
     .bind(HUDDLE_LINK_CONTENT_MAX_BYTES)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
 
     rows.into_iter()
