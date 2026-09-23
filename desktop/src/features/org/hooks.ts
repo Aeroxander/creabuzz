@@ -98,9 +98,7 @@ async function fetchContributionRecords(
   const events = await fetchOrgEvents([KIND_CONTRIBUTION_RECORD], signal);
   // Multi-reviewer resolution (NIP-ORG § Contribution record review):
   // collapse reviewer forks to the canonical newest record per action id.
-  return canonicalContributionRecords(
-    events.map(eventToContributionRecord),
-  );
+  return canonicalContributionRecords(events.map(eventToContributionRecord));
 }
 
 async function fetchOrgChart(signal?: AbortSignal): Promise<OrgChart> {

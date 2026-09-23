@@ -334,7 +334,6 @@ describe("eventToOrgNode scope + onchain", () => {
   });
 });
 
-
 describe("canonicalContributionRecords", () => {
   const base = (overrides) => ({
     eventId: "evt-1",
@@ -370,8 +369,16 @@ describe("canonicalContributionRecords", () => {
   });
 
   it("keeps a newer rejection over an older acceptance", () => {
-    const accepted = base({ eventId: "a", reviewStatus: "accepted", createdAt: 100 });
-    const rejected = base({ eventId: "b", reviewStatus: "rejected", createdAt: 300 });
+    const accepted = base({
+      eventId: "a",
+      reviewStatus: "accepted",
+      createdAt: 100,
+    });
+    const rejected = base({
+      eventId: "b",
+      reviewStatus: "rejected",
+      createdAt: 300,
+    });
     const out = canonicalContributionRecords([accepted, rejected]);
     assert.equal(out.length, 1);
     assert.equal(out[0].reviewStatus, "rejected");
@@ -379,7 +386,11 @@ describe("canonicalContributionRecords", () => {
 
   it("breaks created_at ties by lowest event id", () => {
     const laterId = base({ eventId: "zzz", createdAt: 100 });
-    const earlierId = base({ eventId: "aaa", reviewStatus: "accepted", createdAt: 100 });
+    const earlierId = base({
+      eventId: "aaa",
+      reviewStatus: "accepted",
+      createdAt: 100,
+    });
     const out = canonicalContributionRecords([laterId, earlierId]);
     assert.equal(out.length, 1);
     assert.equal(out[0].eventId, "aaa");
