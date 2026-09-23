@@ -30,7 +30,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use buzz_core::kind::{KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN};
+use buzz_core::kind::{
+    KIND_ORG_BUDGET, KIND_ORG_NODE, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN,
+};
 use nostr::{Event, EventBuilder, Kind, Tag};
 
 use crate::client::BuzzClient;
@@ -133,6 +135,15 @@ pub struct TeamStrategy {
     /// Roster slot of the designated final writer (produces the certificate).
     #[serde(rename = "finalWriter")]
     pub final_writer: String,
+    /// `d` of the strategy this revision was reflected from (slice 2
+    /// reflection lineage; absent on original strategies). Validation
+    /// requires 1..=64 chars so the revision's own `d` stays in bounds.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "parentStrategy"
+    )]
+    pub parent_strategy: Option<String>,
 }
 
 impl TeamStrategy {
@@ -236,6 +247,14 @@ impl TeamStrategy {
                 self.final_writer
             ));
         }
+        if let Some(parent) = &self.parent_strategy {
+            if parent.trim().is_empty() || parent.len() > 64 {
+                return Err(format!(
+                    "'parentStrategy' must be 1..=64 chars (got {})",
+                    parent.len()
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -255,6 +274,10 @@ pub struct Turn {
     pub content: String,
     /// Token usage for this LLM call (from the response when available).
     pub tokens: u64,
+    /// Org-bound runs only: the roster slot's occupant pubkey (the seat
+    /// holder / agent-seat key whose identity the turn is recorded under).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pubkey: Option<String>,
 }
 
 /// Content of a kind:44021 run event.
@@ -279,6 +302,22 @@ pub struct RunDocument {
     /// `complete` — slice 1 publishes only completed runs; failures publish
     /// nothing and the partial transcript is printed in-process instead.
     pub status: String,
+    /// Org-bound runs only: the org node `d` the roster was resolved from.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "orgNode")]
+    pub org_node: Option<String>,
+    /// Org-bound runs only: roster slot → occupant pubkey (holders first,
+    /// then agent seats, in node order).
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "seats")]
+    pub seats: Option<BTreeMap<String, String>>,
+    /// Per-participant token share (slot → sum of that slot's turn tokens,
+    /// including the final writer). Recorded honestly per run; budgets are
+    /// advisory here — the relay's runs counter does not observe 44022s.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        rename = "participantTokens"
+    )]
+    pub participant_tokens: BTreeMap<String, u64>,
 }
 
 impl RunDocument {
@@ -292,6 +331,9 @@ impl RunDocument {
             total_tokens: 0,
             model: model.to_string(),
             status: "complete".to_string(),
+            org_node: None,
+            seats: None,
+            participant_tokens: BTreeMap::new(),
         }
     }
 }
@@ -504,9 +546,10 @@ async fn call_llm_with_retry_and_backoff(
     user: &str,
     max_tokens: u32,
     backoff: Duration,
+    call_timeout: Duration,
 ) -> Result<(String, u64), CliError> {
     let http = reqwest::Client::builder()
-        .timeout(LLM_TIMEOUT)
+        .timeout(call_timeout)
         .build()
         .map_err(|e| CliError::Other(format!("classifier client init failed: {e}")))?;
 
@@ -720,6 +763,7 @@ fn print_transcript(strategy: &TeamStrategy, run: &RunDocument, note: Option<&st
 ///
 /// Never publishes anything partial: on any LLM failure the partial
 /// transcript is printed with a note and the error propagates.
+#[allow(clippy::too_many_arguments)] // the run loop's explicit inputs; grouping would obscure the call sites
 async fn execute_run(
     cfg: &ClassifierConfig,
     strategy: &TeamStrategy,
@@ -728,12 +772,17 @@ async fn execute_run(
     strategy_id: &str,
     model: &str,
     backoff: Duration,
+    binding: Option<&RunBinding>,
 ) -> Result<RunDocument, CliError> {
     strategy
         .validate()
         .map_err(|e| CliError::Other(format!("strategy failed validation at run start: {e}")))?;
 
     let mut run = RunDocument::new(strategy_id, problem, model);
+    if let Some(b) = binding {
+        run.org_node = Some(b.org_node.clone());
+        run.seats = Some(b.seats.clone());
+    }
 
     for (phase_idx, step) in strategy.steps.iter().enumerate() {
         for _round in 0..step.rounds {
@@ -746,6 +795,7 @@ async fn execute_run(
                     &user,
                     max_tokens_per_turn,
                     backoff,
+                    LLM_TIMEOUT,
                 )
                 .await
                 {
@@ -755,6 +805,7 @@ async fn execute_run(
                             agent_slot: slot.clone(),
                             content,
                             tokens,
+                            pubkey: binding.and_then(|b| b.seats.get(slot)).cloned(),
                         });
                         run.total_tokens = run.total_tokens.saturating_add(tokens);
                     }
@@ -789,6 +840,7 @@ async fn execute_run(
                     &user,
                     max_tokens_per_turn,
                     backoff,
+                    LLM_TIMEOUT,
                 )
                 .await
                 {
@@ -798,6 +850,7 @@ async fn execute_run(
                             agent_slot: summarizer.clone(),
                             content: digest,
                             tokens,
+                            pubkey: binding.and_then(|b| b.seats.get(summarizer)).cloned(),
                         });
                         run.total_tokens = run.total_tokens.saturating_add(tokens);
                     }
@@ -819,10 +872,21 @@ async fn execute_run(
     // Final writer produces the certificate.
     let ctx = full_run_context(&run.transcript);
     let (system, user) = build_final_writer_messages(strategy, problem, &ctx);
-    match call_llm_with_retry_and_backoff(cfg, &system, &user, max_tokens_per_turn, backoff).await {
+    let final_writer_tokens: u64;
+    match call_llm_with_retry_and_backoff(
+        cfg,
+        &system,
+        &user,
+        max_tokens_per_turn,
+        backoff,
+        LLM_TIMEOUT,
+    )
+    .await
+    {
         Ok((answer, tokens)) => {
             run.total_tokens = run.total_tokens.saturating_add(tokens);
             run.final_answer = answer;
+            final_writer_tokens = tokens;
         }
         Err(e) => {
             print_transcript(
@@ -838,7 +902,155 @@ async fn execute_run(
         }
     }
 
+    // Honest per-participant token share (turns + the final writer's call;
+    // the final writer's call is not a transcript row, so its tokens are
+    // attributed here).
+    for t in &run.transcript {
+        *run.participant_tokens
+            .entry(t.agent_slot.clone())
+            .or_insert(0) += t.tokens;
+    }
+    *run.participant_tokens
+        .entry(strategy.final_writer.clone())
+        .or_insert(0) += final_writer_tokens;
+
     Ok(run)
+}
+
+// ── Org binding (seats + advisory budgets) ────────────────────────────────
+
+/// Resolved org binding for one run: the node the roster was resolved from
+/// and the roster-slot → occupant-pubkey map.
+#[derive(Debug, Clone)]
+pub struct RunBinding {
+    /// The org node's `d` tag.
+    pub org_node: String,
+    /// Roster slot → occupant pubkey (holders first, then agent seats, in
+    /// node order).
+    pub seats: BTreeMap<String, String>,
+}
+
+/// What the relay enforces vs what this CLI only advises (slice 2):
+///
+/// ENFORCED by the relay: nothing for team runs. Team turns are kind 44022,
+/// not 44200 turn metrics, so the relay's budget runs counter never sees
+/// them, and strategy/run publications are plain 44020/44021 writes.
+///
+/// ADVISORY (this CLI, before the run starts): for each roster occupant
+/// with a kind:37012 budget carrying a `runs` limit, the projected
+/// per-participant turn count of the run is compared against that limit and
+/// a loud warning is printed when it would exceed it. The run record itself
+/// (`participantTokens`, `totalTokens`, `seats`, `orgNode`) is the durable
+/// evidence of consumption; relay enforcement of budgets against team runs
+/// is future work.
+const BUDGET_QUERY_BOUND: u32 = 256;
+
+/// Projected number of LLM calls each roster slot makes under `strategy`:
+/// one per (round × appearance) per phase, plus the summary digest when the
+/// slot is the phase's first participant, plus the final writer's call.
+fn projected_turns_per_slot(strategy: &TeamStrategy) -> BTreeMap<String, u64> {
+    let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+    for step in &strategy.steps {
+        for slot in &step.participants {
+            *counts.entry(slot.clone()).or_insert(0) += u64::from(step.rounds);
+        }
+        if step.flow == "summary" {
+            if let Some(summarizer) = step.participants.first() {
+                *counts.entry(summarizer.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+    *counts.entry(strategy.final_writer.clone()).or_insert(0) += 1;
+    counts
+}
+
+/// Minimal parse of a kind:37012 budget content for the advisory path.
+#[derive(Debug, Clone, Deserialize)]
+struct BudgetProbe {
+    limits: BudgetProbeLimits,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BudgetProbeLimits {
+    #[serde(default)]
+    runs: Option<u32>,
+}
+
+/// One advisory finding: a participant's runs budget vs the projected turn
+/// count of this run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BudgetAdvisory {
+    /// Roster slot the occupant was mapped to.
+    pub slot: String,
+    /// Occupant pubkey.
+    pub pubkey: String,
+    /// The (strictest) `runs` limit across the occupant's budgets.
+    pub runs_limit: u32,
+    /// Projected LLM calls for this slot in the upcoming run.
+    pub projected_turns: u64,
+}
+
+impl BudgetAdvisory {
+    /// Whether the projected turn count exceeds the runs limit outright.
+    pub fn exceeds(&self) -> bool {
+        self.projected_turns > u64::from(self.runs_limit)
+    }
+}
+
+/// Pure advisory derivation (tested without network): match each seat's
+/// pubkey against fetched budgets; a participant with any budget carrying a
+/// `runs` limit yields one advisory using the strictest (minimum) limit.
+fn derive_preflight_advisories(
+    strategy: &TeamStrategy,
+    seats: &BTreeMap<String, String>,
+    budgets: &BTreeMap<String, Vec<BudgetProbe>>,
+) -> Vec<BudgetAdvisory> {
+    let projected = projected_turns_per_slot(strategy);
+    let mut out = Vec::new();
+    for (slot, pubkey) in seats {
+        let Some(probes) = budgets.get(pubkey) else {
+            continue;
+        };
+        let limits: Vec<u32> = probes.iter().filter_map(|p| p.limits.runs).collect();
+        if limits.is_empty() {
+            continue;
+        }
+        out.push(BudgetAdvisory {
+            slot: slot.clone(),
+            pubkey: pubkey.clone(),
+            runs_limit: *limits.iter().min().expect("non-empty checked above"),
+            projected_turns: projected.get(slot).copied().unwrap_or(0),
+        });
+    }
+    out.sort_by(|a, b| a.slot.cmp(&b.slot));
+    out
+}
+
+fn print_preflight_advisories(advisories: &[BudgetAdvisory], max_tokens_per_turn: u32) {
+    if advisories.is_empty() {
+        return;
+    }
+    eprintln!("budget advisory (ADVISORY ONLY — the relay does not enforce budgets against team runs; kind-44022 turns are not 44200 turn metrics, the run record is the evidence):");
+    for a in advisories {
+        let verdict = if a.exceeds() {
+            "WOULD EXCEED"
+        } else {
+            "within"
+        };
+        eprintln!(
+            "  slot {} ({}): runs budget {} per window, projected {} LLM call(s) this run — {}",
+            a.slot, a.pubkey, a.runs_limit, a.projected_turns, verdict
+        );
+    }
+    eprintln!(
+        "  projected upper bound on run tokens: ≤ {} turns × {} max_tokens_per_turn (advisory; per-turn context makes real spend lower)",
+        advisories
+            .iter()
+            .map(|a| a.projected_turns)
+            .max()
+            .unwrap_or(0),
+        max_tokens_per_turn
+    );
 }
 
 // ── Relay reads ───────────────────────────────────────────────────────────
@@ -894,6 +1106,462 @@ async fn fetch_strategy(client: &BuzzClient, strategy_id: &str) -> Result<TeamSt
         .validate()
         .map_err(|e| CliError::Other(format!("stored strategy '{strategy_id}' is invalid: {e}")))?;
     Ok(strategy)
+}
+
+/// Fetch the newest kind:37010 org node with `d` = node_id and parse its
+/// content (the node graph is NIP-33 replaceable; the newest wins).
+async fn fetch_org_node(
+    client: &BuzzClient,
+    node_id: &str,
+) -> Result<buzz_sdk::OrgNodeContent, CliError> {
+    let filter = serde_json::json!({ "kinds": [KIND_ORG_NODE], "#d": [node_id] });
+    let events: Vec<Event> = client
+        .query_all_bounded(filter, STRATEGY_QUERY_BOUND)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let best = events
+        .iter()
+        .filter(|e| tag_values(e, "d").iter().any(|d| d == node_id))
+        .max_by_key(|e| (e.created_at, e.id.to_hex()))
+        .ok_or_else(|| {
+            CliError::NotFound(format!(
+                "org node '{node_id}' (kind 37010) not found on the relay"
+            ))
+        })?;
+    let node: buzz_sdk::OrgNodeContent = serde_json::from_str(&best.content)
+        .map_err(|e| CliError::Other(format!("org node '{node_id}' is not parseable JSON: {e}")))?;
+    Ok(node)
+}
+
+/// Resolve the run binding for `--org-node`: map the strategy's roster
+/// slots (sorted, deterministic) onto the node's occupants (holders first,
+/// then agent seats, in node order). Fail closed when the node has fewer
+/// occupants than roster slots — every member must get a distinct identity.
+fn resolve_seats(
+    strategy: &TeamStrategy,
+    node_id: &str,
+    node: &buzz_sdk::OrgNodeContent,
+) -> Result<RunBinding, CliError> {
+    let mut occupants: Vec<String> = Vec::new();
+    for pk in node.holders.iter().chain(node.agent_seats.iter()) {
+        let lower = pk.to_ascii_lowercase();
+        if lower.len() != 64 || !lower.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(CliError::Other(format!(
+                "org node '{node_id}' carries a malformed occupant pubkey: {pk:?}"
+            )));
+        }
+        occupants.push(lower);
+    }
+    let slots: Vec<&String> = strategy.roles.keys().collect();
+    if occupants.len() < slots.len() {
+        return Err(CliError::Usage(format!(
+            "org node '{node_id}' has {} occupant(s) ({} holder(s), {} agent seat(s)) but the strategy's roster needs {} — every roster slot needs a distinct seat",
+            occupants.len(),
+            node.holders.len(),
+            node.agent_seats.len(),
+            slots.len()
+        )));
+    }
+    let seats: BTreeMap<String, String> = slots
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| ((*slot).clone(), occupants[i].clone()))
+        .collect();
+    Ok(RunBinding {
+        org_node: node_id.to_string(),
+        seats,
+    })
+}
+
+/// Fetch kind:37012 budgets and keep those whose subject (content field or
+/// `d` tag) matches one of the participant pubkeys, keyed by pubkey.
+async fn fetch_participant_budgets(
+    client: &BuzzClient,
+    pubkeys: &[String],
+) -> Result<BTreeMap<String, Vec<BudgetProbe>>, CliError> {
+    let filter = serde_json::json!({ "kinds": [KIND_ORG_BUDGET] });
+    let events: Vec<Event> = client
+        .query_all_bounded(filter, BUDGET_QUERY_BOUND)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let mut out: BTreeMap<String, Vec<BudgetProbe>> = BTreeMap::new();
+    for event in &events {
+        let d = tag_values(event, "d")
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        let probe: BudgetProbe = match serde_json::from_str(&event.content) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let subject = serde_json::from_str::<serde_json::Value>(&event.content)
+            .ok()
+            .and_then(|v| {
+                v.get("subject")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+        let matched = pubkeys
+            .iter()
+            .any(|pk| subject.eq_ignore_ascii_case(pk) || d.eq_ignore_ascii_case(pk));
+        if matched {
+            out.entry(subject.to_ascii_lowercase())
+                .or_default()
+                .push(probe.clone());
+            if !subject.is_empty() && subject != d {
+                out.entry(d.to_ascii_lowercase())
+                    .or_default()
+                    .push(probe.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
+// ── Reflection (paper §2.2 — the learning loop) ──────────────────────────
+
+/// Reflection output budget: the revised strategy JSON fits comfortably in
+/// the strategy size bounds (≤64 KiB envelope, prompts ≤4096 chars each).
+const REFLECTION_MAX_TOKENS: u32 = 4096;
+/// Hard ceiling for the reflection retry's budget bump (reasoning models
+/// spend completion tokens on reasoning before the JSON; a budget that dies
+/// mid-JSON yields truncated output — the single retry runs at 2×, bounded
+/// here).
+const REFLECTION_RETRY_MAX_TOKENS: u32 = 16_384;
+/// Reflection writes a full strategy JSON in one call — several times the
+/// size of a turn — so it gets a longer (still bounded) call timeout than
+/// the 30s turn timeout; live smoke with glm-5.3-flash timed out at 30s
+/// mid-generation on both attempts.
+const REFLECTION_LLM_TIMEOUT: Duration = Duration::from_secs(120);
+/// Bounded relay read for the revision-lineage scan.
+const REVISION_SCAN_BOUND: u32 = 256;
+
+/// Reflection system prompt (paper §2.2: the designated member inspects the
+/// team's conversation — failure diagnosis, member-specific evidence,
+/// strength → assigned role — and proposes targeted mutations to roles,
+/// phases, and synthesis rules as one revised strategy, kept
+/// problem-independent by the paper's leakage screen).
+fn build_reflection_messages(original: &TeamStrategy, run: &RunDocument) -> (String, String) {
+    let system = format!(
+        "You are the designated REFLECTION member of a fixed agent team (teamwork reflection, arXiv {PAPER_ARXIV_ID} section 2.2).\n\nInspect the team's conversation from one completed run and produce EXACTLY ONE revised teamwork strategy. Work through three steps before writing the JSON:\n1. FAILURE DIAGNOSIS: where did reasoning get challenged, corrected, or repaired? Where were individual correct answers lost to team dynamics (e.g. premature consensus, a digest that dropped a well-supported claim)?\n\n2. MEMBER-SPECIFIC EVIDENCE: which roster member showed which strength or weakness across the phases?\n\n3. TARGETED MUTATIONS: convert an observed member strength into a specialized role; revise the phases (add/remove/reorder), rounds, information flow (local/summary), shared prompts, per-agent prompts, and the synthesis/final-writer rule. Mutate only what the evidence justifies.\n\nHARD CONSTRAINT: strategies must be PROBLEM-INDEPENDENT. Never encode answer values, problem-specific facts, configurations, or source-derived solution recipes into roles, prompts, or phases. A strategy that only helps the problem that produced it is invalid.\n\nKeep every field within these bounds: name <= 128 chars, description <= 1024, teamworkPrompt <= 8192, role/step prompts <= 4096, 1..=6 roles, 1..=6 phases, 1..=4 rounds per phase, flow \"local\" or \"summary\", participants and finalWriter must be defined role slots.\n\nRespond with ONLY the revised strategy as one JSON object. No markdown fences, no commentary, no trailing text."
+    );
+    let user = format!(
+        "ORIGINAL STRATEGY (kind 44020, d = {}):\n{}\n\nTEAM CONVERSATION (all phases):\n{}\n\nPROBLEM THE TEAM SOLVED:\n{}\n\nFINAL ANSWER (the final writer's certificate):\n{}\n\nProduce the revised strategy JSON now.",
+        run.strategy_id,
+        serde_json::to_string_pretty(original).unwrap_or_default(),
+        full_run_context(&run.transcript),
+        truncate(&run.problem, 4000),
+        truncate(&run.final_answer, 4000),
+    );
+    (system, user)
+}
+
+/// Extract a JSON object from a model response: strips markdown fences and
+/// any prose around the outermost braces (fail loud when no object exists).
+fn extract_json_object(content: &str) -> Result<String, CliError> {
+    let trimmed = content.trim();
+    let stripped = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed)
+        .trim();
+    let stripped = stripped.strip_suffix("```").unwrap_or(stripped).trim();
+    if serde_json::from_str::<serde_json::Value>(stripped).is_ok() {
+        return Ok(stripped.to_string());
+    }
+    let no_object = || {
+        CliError::Other(format!(
+            "reflection response contains no JSON object (starts with: {:?})",
+            truncate(stripped, 160)
+        ))
+    };
+    let start = stripped.find('{').ok_or_else(no_object)?;
+    let end = stripped.rfind('}').ok_or_else(no_object)?;
+    if start >= end {
+        return Err(no_object());
+    }
+    Ok(stripped[start..=end].to_string())
+}
+
+/// Parse + strictly validate a revised strategy exactly like the stored /
+/// published ones (same schema, same bounds, fail loud).
+fn parse_revised_strategy(content: &str) -> Result<TeamStrategy, CliError> {
+    let json = extract_json_object(content)?;
+    let strategy: TeamStrategy = serde_json::from_str(&json).map_err(|e| {
+        CliError::Other(format!("revised strategy is not valid strategy JSON: {e}"))
+    })?;
+    strategy
+        .validate()
+        .map_err(|e| CliError::Other(format!("revised strategy failed validation: {e}")))?;
+    Ok(strategy)
+}
+
+/// Fetch the newest kind:44021 run with `d` = run_id and parse it.
+async fn fetch_run(client: &BuzzClient, run_id: &str) -> Result<RunDocument, CliError> {
+    let filter = serde_json::json!({ "kinds": [KIND_TEAM_RUN], "#d": [run_id] });
+    let events: Vec<Event> = client
+        .query_all_bounded(filter, STRATEGY_QUERY_BOUND)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let best = events
+        .iter()
+        .filter(|e| tag_values(e, "d").iter().any(|d| d == run_id))
+        .max_by_key(|e| (e.created_at, e.id.to_hex()))
+        .ok_or_else(|| {
+            CliError::NotFound(format!(
+                "team run '{run_id}' (kind 44021) not found on the relay"
+            ))
+        })?;
+    let run: RunDocument = serde_json::from_str(&best.content).map_err(|e| {
+        CliError::Other(format!("stored run '{run_id}' is not parseable JSON: {e}"))
+    })?;
+    Ok(run)
+}
+
+/// Highest existing revision number among kind:44020 strategies whose `d`
+/// is `<original-id>-rev<N>` (the lineage the bank keeps). Scans a bounded
+/// slice of the strategy bank; returns 0 when no revision exists yet.
+async fn highest_existing_revision(
+    client: &BuzzClient,
+    original_id: &str,
+) -> Result<u32, CliError> {
+    let filter = serde_json::json!({ "kinds": [KIND_TEAM_STRATEGY] });
+    let events: Vec<Event> = client
+        .query_all_bounded(filter, REVISION_SCAN_BOUND)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let prefix = format!("{original_id}-rev");
+    let mut max_rev: u32 = 0;
+    for event in &events {
+        for d in tag_values(event, "d") {
+            if let Some(n) = d
+                .strip_prefix(&prefix)
+                .and_then(|rest| rest.parse::<u32>().ok())
+            {
+                max_rev = max_rev.max(n);
+            }
+        }
+    }
+    Ok(max_rev)
+}
+
+/// The revision `d` for a strategy's Nth revision: `<original-id>-rev<N>`,
+/// bounded by the relay's 64-char `d` cap (fail closed, never truncate —
+/// a truncated id would break the lineage prefix scan).
+fn revision_d(original_id: &str, n: u32) -> Result<String, CliError> {
+    let d = format!("{original_id}-rev{n}");
+    if d.len() > 64 {
+        return Err(CliError::Usage(format!(
+            "revision id '{d}' exceeds the 64-char d cap; use a shorter original strategy id"
+        )));
+    }
+    Ok(d)
+}
+
+/// Diff-oriented summary of what the revision changed vs the original.
+fn print_reflection_diff(original: &TeamStrategy, revised: &TeamStrategy) {
+    println!("reflection diff (original -> revised):");
+    if original.teamwork_prompt != revised.teamwork_prompt {
+        println!("  teamworkPrompt: CHANGED");
+        println!("    old: {}", truncate(&original.teamwork_prompt, 160));
+        println!("    new: {}", truncate(&revised.teamwork_prompt, 160));
+    }
+    let removed: Vec<&String> = original
+        .roles
+        .keys()
+        .filter(|s| !revised.roles.contains_key(*s))
+        .collect();
+    let added: Vec<&String> = revised
+        .roles
+        .keys()
+        .filter(|s| !original.roles.contains_key(*s))
+        .collect();
+    for slot in removed {
+        println!("  role {slot}: REMOVED");
+    }
+    for slot in added {
+        println!(
+            "  role {slot}: ADDED ({})",
+            truncate(&revised.roles[slot], 160)
+        );
+    }
+    for (slot, role) in &revised.roles {
+        if let Some(old_role) = original.roles.get(slot) {
+            if old_role != role {
+                println!("  role {slot}: prompt CHANGED");
+                println!("    old: {}", truncate(old_role, 160));
+                println!("    new: {}", truncate(role, 160));
+            }
+        }
+    }
+    if original.steps.len() != revised.steps.len() {
+        println!(
+            "  phases: {} -> {} ({} added, {} removed)",
+            original.steps.len(),
+            revised.steps.len(),
+            revised.steps.len().saturating_sub(original.steps.len()),
+            original.steps.len().saturating_sub(revised.steps.len()),
+        );
+    }
+    for (idx, (old_step, new_step)) in original.steps.iter().zip(revised.steps.iter()).enumerate() {
+        let mut changes: Vec<String> = Vec::new();
+        if old_step.participants != new_step.participants {
+            changes.push(format!(
+                "participants {} -> [{}]",
+                old_step.participants.join(","),
+                new_step.participants.join(",")
+            ));
+        }
+        if old_step.rounds != new_step.rounds {
+            changes.push(format!("rounds {} -> {}", old_step.rounds, new_step.rounds));
+        }
+        if old_step.flow != new_step.flow {
+            changes.push(format!("flow {} -> {}", old_step.flow, new_step.flow));
+        }
+        if old_step.prompt != new_step.prompt {
+            changes.push("prompt CHANGED".to_string());
+        }
+        if old_step.per_agent_prompts != new_step.per_agent_prompts {
+            changes.push("perAgentPrompts CHANGED".to_string());
+        }
+        if !changes.is_empty() {
+            println!("  phase {}: {}", idx + 1, changes.join("; "));
+        }
+    }
+    for (idx, new_step) in revised.steps.iter().enumerate().skip(original.steps.len()) {
+        println!(
+            "  phase {}: ADDED ({} participant(s), {} round(s), {} flow): {}",
+            idx + 1,
+            new_step.participants.len(),
+            new_step.rounds,
+            new_step.flow,
+            truncate(&new_step.prompt, 160)
+        );
+    }
+    if original.final_writer != revised.final_writer {
+        println!(
+            "  finalWriter: {} -> {}",
+            original.final_writer, revised.final_writer
+        );
+    }
+    if original.parent_strategy != revised.parent_strategy {
+        println!(
+            "  parentStrategy: {:?} -> {:?}",
+            original.parent_strategy, revised.parent_strategy
+        );
+    }
+}
+
+/// `buzz team reflect --run <run-id> [--publish]`
+pub async fn cmd_team_reflect(
+    client: &BuzzClient,
+    run_id: &str,
+    publish: bool,
+) -> Result<(), CliError> {
+    // Fail closed before any network call: no key/URL, no reflection.
+    let cfg = conductor_config()?;
+    cmd_team_reflect_with_config(
+        client,
+        &cfg,
+        run_id,
+        publish,
+        RATE_LIMIT_BACKOFF,
+        REFLECTION_LLM_TIMEOUT,
+    )
+    .await
+}
+
+/// [`cmd_team_reflect`] with an injected classifier config + backoff (tests).
+async fn cmd_team_reflect_with_config(
+    client: &BuzzClient,
+    cfg: &ClassifierConfig,
+    run_id: &str,
+    publish: bool,
+    backoff: Duration,
+    call_timeout: Duration,
+) -> Result<(), CliError> {
+    if run_id.trim().is_empty() {
+        return Err(CliError::Usage("--run must not be empty".to_string()));
+    }
+    let run = fetch_run(client, run_id).await?;
+    let original = fetch_strategy(client, &run.strategy_id).await?;
+
+    let (system, user) = build_reflection_messages(&original, &run);
+    let (content, tokens) = call_llm_with_retry_and_backoff(
+        cfg,
+        &system,
+        &user,
+        REFLECTION_MAX_TOKENS,
+        backoff,
+        call_timeout,
+    )
+    .await?;
+    // A reflection budget that dies mid-JSON yields truncated output (the
+    // same failure mode as an empty turn). One retry at a doubled budget,
+    // then fail loud — a half-written strategy is never published.
+    let (mut revised, tokens) = match parse_revised_strategy(&content) {
+        Ok(r) => (r, tokens),
+        Err(first) => {
+            let retry_tokens = (REFLECTION_MAX_TOKENS * 2).min(REFLECTION_RETRY_MAX_TOKENS);
+            eprintln!("  {first}; retrying reflection once with {retry_tokens} max_tokens…");
+            let (content2, tokens2) = call_llm_with_retry_and_backoff(
+                cfg,
+                &system,
+                &user,
+                retry_tokens,
+                backoff,
+                call_timeout,
+            )
+            .await?;
+            let revised = parse_revised_strategy(&content2)?;
+            (revised, tokens + tokens2)
+        }
+    };
+
+    println!(
+        "reflected on run {run_id} (strategy {}): {} reflection tokens",
+        run.strategy_id, tokens
+    );
+    print_reflection_diff(&original, &revised);
+    println!(
+        "\nrevised strategy JSON:\n{}",
+        serde_json::to_string_pretty(&revised)
+            .map_err(|e| CliError::Other(format!("failed to serialize revision: {e}")))?
+    );
+
+    if !publish {
+        println!("preview only; pass --publish to sign and publish the revision");
+        return Ok(());
+    }
+
+    // Lineage: N = 1 + the highest existing `<original-id>-rev<N>`; the
+    // revision references the ORIGINAL strategy in `parentStrategy` so the
+    // bank keeps a chain back to its root regardless of revision depth.
+    let original_id = run.strategy_id.clone();
+    let n = highest_existing_revision(client, &original_id).await? + 1;
+    let d = revision_d(&original_id, n)?;
+    revised.parent_strategy = Some(original_id);
+
+    let revision = serde_json::to_string(&revised)
+        .map_err(|e| CliError::Other(format!("failed to serialize revision: {e}")))?;
+    let builder = EventBuilder::new(Kind::Custom(KIND_TEAM_STRATEGY as u16), revision).tags(vec![
+        Tag::parse(["d", &d]).map_err(|e| CliError::Other(format!("invalid d tag: {e}")))?,
+    ]);
+    let event = client.sign_event(builder)?;
+    let response = client.submit_event(event).await?;
+    let normalized = parse_write_response(&response, "revision was superseded; re-reflect")?;
+    println!("{normalized}");
+    println!("published revision {d} (parent {})", run.strategy_id);
+    Ok(())
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────
@@ -1021,6 +1689,7 @@ pub async fn cmd_team_run(
     strategy_id: &str,
     problem: &str,
     max_tokens_per_turn: Option<u32>,
+    org_node: Option<String>,
     publish: bool,
 ) -> Result<(), CliError> {
     // Fail closed before any network call: no key/URL, no run.
@@ -1032,6 +1701,7 @@ pub async fn cmd_team_run(
         problem,
         RunParams {
             max_tokens_per_turn,
+            org_node,
             publish,
             now: nostr::Timestamp::now().as_secs(),
             backoff: RATE_LIMIT_BACKOFF,
@@ -1044,6 +1714,7 @@ pub async fn cmd_team_run(
 #[derive(Debug, Clone)]
 struct RunParams {
     max_tokens_per_turn: Option<u32>,
+    org_node: Option<String>,
     publish: bool,
     now: u64,
     backoff: Duration,
@@ -1057,6 +1728,7 @@ async fn cmd_team_run_with_config(
     params: RunParams,
 ) -> Result<(), CliError> {
     let max_tokens_per_turn = params.max_tokens_per_turn;
+    let org_node = params.org_node;
     let publish = params.publish;
     let now = params.now;
     let backoff = params.backoff;
@@ -1074,6 +1746,23 @@ async fn cmd_team_run_with_config(
     }
 
     let strategy = fetch_strategy(client, strategy_id).await?;
+
+    // Org binding: resolve the roster onto the node's seats, then run the
+    // advisory budget pre-flight BEFORE any LLM call (fail-closed on shape
+    // errors, advisory-only on budget risk).
+    let binding = match org_node.as_deref() {
+        Some(node_id) => {
+            let node = fetch_org_node(client, node_id).await?;
+            let binding = resolve_seats(&strategy, node_id, &node)?;
+            let pubkeys: Vec<String> = binding.seats.values().cloned().collect();
+            let budgets = fetch_participant_budgets(client, &pubkeys).await?;
+            let advisories = derive_preflight_advisories(&strategy, &binding.seats, &budgets);
+            print_preflight_advisories(&advisories, raw_tokens);
+            Some(binding)
+        }
+        None => None,
+    };
+
     let run = execute_run(
         cfg,
         &strategy,
@@ -1082,6 +1771,7 @@ async fn cmd_team_run_with_config(
         strategy_id,
         &cfg.model,
         backoff,
+        binding.as_ref(),
     )
     .await?;
 
@@ -1172,6 +1862,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                     },
                 ],
                 final_writer: "agent-2".to_string(),
+                parent_strategy: None,
             },
         ),
         (
@@ -1205,6 +1896,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                     },
                 ],
                 final_writer: "agent-0".to_string(),
+                parent_strategy: None,
             },
         ),
         (
@@ -1247,6 +1939,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                     },
                 ],
                 final_writer: "agent-1".to_string(),
+                parent_strategy: None,
             },
         ),
     ]
@@ -1293,8 +1986,20 @@ pub async fn dispatch(cmd: crate::TeamCmd, client: &BuzzClient) -> Result<(), Cl
             strategy,
             problem,
             max_tokens_per_turn,
+            org_node,
             publish,
-        } => cmd_team_run(client, &strategy, &problem, max_tokens_per_turn, publish).await,
+        } => {
+            cmd_team_run(
+                client,
+                &strategy,
+                &problem,
+                max_tokens_per_turn,
+                org_node,
+                publish,
+            )
+            .await
+        }
+        TeamCmd::Reflect { run, publish } => cmd_team_reflect(client, &run, publish).await,
         TeamCmd::Strategy(sub) => match sub {
             TeamStrategyCmd::Put { id, file, publish } => {
                 cmd_strategy_put(client, &id, &file, publish).await
@@ -1342,6 +2047,7 @@ mod tests {
                 per_agent_prompts: None,
             }],
             final_writer: "agent-0".to_string(),
+            parent_strategy: None,
         }
     }
 
@@ -1372,12 +2078,27 @@ mod tests {
             std::sync::Mutex<std::collections::VecDeque<Result<serde_json::Value, u16>>>,
         event_posts: std::sync::Mutex<Vec<serde_json::Value>>,
         query_response: std::sync::Mutex<Vec<serde_json::Value>>,
+        /// Ordered substring routes over the raw /query request body: the
+        /// first route whose key appears in the body wins; the default
+        /// `query_response` is the fallback. Lets one mock serve the several
+        /// distinct filters a slice-2 command issues (run fetch, strategy
+        /// fetch, revision scan, org node, budgets).
+        query_routes: std::sync::Mutex<Vec<(String, Vec<serde_json::Value>)>>,
     }
 
     impl MockState {
         fn with_strategy(event: &Event) -> Self {
             let state = Self::default();
             *state.query_response.lock().unwrap() = vec![serde_json::to_value(event).unwrap()];
+            state
+        }
+
+        fn with_routes(routes: Vec<(&str, Vec<serde_json::Value>)>) -> Self {
+            let state = Self::default();
+            *state.query_routes.lock().unwrap() = routes
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
             state
         }
 
@@ -1400,7 +2121,16 @@ mod tests {
                     let json_start = request.find("\r\n\r\n").map(|i| i + 4);
                     let body_text = json_start.map(|i| &request[i..]).unwrap_or("");
                     let (status, body) = if request.starts_with("POST /query ") {
-                        let events = state.query_response.lock().unwrap().clone();
+                        let events = {
+                            let routes = state.query_routes.lock().unwrap();
+                            match routes
+                                .iter()
+                                .find(|(key, _)| request.contains(key.as_str()))
+                            {
+                                Some((_, v)) => v.clone(),
+                                None => state.query_response.lock().unwrap().clone(),
+                            }
+                        };
                         (
                             "200 OK".to_string(),
                             serde_json::to_string(&events).unwrap(),
@@ -1639,6 +2369,7 @@ mod tests {
             problem,
             RunParams {
                 max_tokens_per_turn: Some(128),
+                org_node: None,
                 publish,
                 now: 1_700_000_000,
                 backoff: Duration::from_millis(1),
@@ -1920,6 +2651,7 @@ mod tests {
             "p",
             RunParams {
                 max_tokens_per_turn: Some(0),
+                org_node: None,
                 publish: false,
                 now: 1,
                 backoff: Duration::from_secs(1),
@@ -1934,6 +2666,7 @@ mod tests {
             "p",
             RunParams {
                 max_tokens_per_turn: Some(MAX_TOKENS_HARD_CAP + 1),
+                org_node: None,
                 publish: false,
                 now: 1,
                 backoff: Duration::from_secs(1),
@@ -1971,6 +2704,7 @@ mod tests {
             agent_slot: "agent-0".into(),
             content: "AGENT0-SECRET".into(),
             tokens: 1,
+            pubkey: None,
         }];
         let ctx = phase_context(&strategy, 1, &turns);
         assert!(
@@ -2010,12 +2744,14 @@ mod tests {
                 agent_slot: "agent-0".into(),
                 content: "AGENT0-SECRET".into(),
                 tokens: 1,
+                pubkey: None,
             },
             Turn {
                 phase: 1,
                 agent_slot: "agent-0".into(),
                 content: "DIGEST: 42".into(),
                 tokens: 1,
+                pubkey: None,
             },
         ];
         let ctx = phase_context(&strategy, 1, &turns);
@@ -2062,5 +2798,581 @@ mod tests {
                 "seed {id} must cite arXiv {PAPER_ARXIV_ID}"
             );
         }
+    }
+
+    // ── Reflection (slice 2, paper §2.2) ───────────────────────────────────
+
+    /// A completed two-turn run (as a published kind:44021 would carry).
+    fn completed_run(strategy_id: &str) -> RunDocument {
+        let mut run = RunDocument::new(strategy_id, "What is 6*7?", "test-model");
+        run.transcript = vec![
+            Turn {
+                phase: 1,
+                agent_slot: "agent-0".into(),
+                content: "I get 42 but I am unsure about the carry.".into(),
+                tokens: 11,
+                pubkey: None,
+            },
+            Turn {
+                phase: 1,
+                agent_slot: "agent-1".into(),
+                content: "Checked the carry: 42 is right; your step 3 dropped a factor.".into(),
+                tokens: 13,
+                pubkey: None,
+            },
+        ];
+        run.final_answer = "FINAL ANSWER: 42".into();
+        run.total_tokens = 24;
+        run
+    }
+
+    fn run_event(run: &RunDocument, run_id: &str) -> Event {
+        EventBuilder::new(
+            Kind::Custom(KIND_TEAM_RUN as u16),
+            serde_json::to_string(run).expect("serializes"),
+        )
+        .tags(vec![Tag::parse(["d", run_id]).expect("tag")])
+        .sign_with_keys(&Keys::generate())
+        .expect("signs")
+    }
+
+    /// A revised strategy with an evidence-shaped mutation: agent-1's
+    /// verified-repair strength becomes an explicit role, rounds doubled.
+    fn revised_strategy_json() -> String {
+        let mut revised = basic_strategy();
+        revised.roles.insert(
+            "agent-1".to_string(),
+            "Verification auditor. Re-derive the disputed step and state whether the carry survives."
+                .to_string(),
+        );
+        revised.steps[0].rounds = 2;
+        serde_json::to_string(&revised).expect("serializes")
+    }
+
+    #[test]
+    fn reflection_prompt_carries_transcript_and_the_leakage_guard() {
+        let original = basic_strategy();
+        let run = completed_run("s1");
+        let (system, user) = build_reflection_messages(&original, &run);
+        // The paper's §2.2 steps are named in order.
+        assert!(system.contains("FAILURE DIAGNOSIS"));
+        assert!(system.contains("MEMBER-SPECIFIC EVIDENCE"));
+        assert!(system.contains("TARGETED MUTATIONS"));
+        // The problem-independence (leakage) screen is a hard constraint.
+        assert!(system.contains("PROBLEM-INDEPENDENT"));
+        assert!(system.contains("Never encode answer values"));
+        // The user message carries the original strategy, the conversation,
+        // the problem, and the certificate.
+        assert!(user.contains("teamworkPrompt"), "original strategy JSON");
+        assert!(user.contains("dropped a factor"), "transcript turns");
+        assert!(user.contains("What is 6*7?"), "the problem");
+        assert!(user.contains("FINAL ANSWER: 42"), "the certificate");
+    }
+
+    #[test]
+    fn reflection_json_extraction_strips_fences_and_prose() {
+        let raw = revised_strategy_json();
+        assert!(extract_json_object(&raw).is_ok());
+        assert!(extract_json_object(&format!("```json\n{raw}\n```")).is_ok());
+        assert!(extract_json_object(&format!("Here is the revision:\n{raw}\nDone.")).is_ok());
+        assert!(extract_json_object("no json here").is_err());
+        assert!(extract_json_object("{ broken").is_err());
+    }
+
+    #[test]
+    fn revised_strategies_face_the_same_strict_validation() {
+        // A schema-valid revision parses.
+        let revised = parse_revised_strategy(&revised_strategy_json()).expect("valid revision");
+        assert_eq!(revised.steps[0].rounds, 2);
+
+        // A revision violating the flow enum fails the same validation as a
+        // stored strategy — the reflection loop never publishes a looser
+        // schema than `strategy put`.
+        let bad = basic_strategy();
+        let mut bad_json = serde_json::to_value(&bad).unwrap();
+        bad_json["steps"][0]["flow"] = "debate".into();
+        let err = parse_revised_strategy(&bad_json.to_string()).unwrap_err();
+        assert!(
+            matches!(&err, CliError::Other(m) if m.contains("failed validation")),
+            "got {err:?}"
+        );
+
+        // Non-strategy JSON fails parse.
+        let err = parse_revised_strategy("{\"v\":1}").unwrap_err();
+        assert!(
+            matches!(&err, CliError::Other(m) if m.contains("not valid strategy JSON")),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn revision_ids_stay_inside_the_d_cap() {
+        assert_eq!(revision_d("s1", 1).unwrap(), "s1-rev1");
+        assert_eq!(revision_d("s1", 12).unwrap(), "s1-rev12");
+        let long = revision_d(&"x".repeat(60), 1).unwrap_err();
+        assert!(matches!(long, CliError::Usage(_)), "got {long:?}");
+    }
+
+    #[tokio::test]
+    async fn reflect_mock_round_trip_publishes_rev1_with_parent_strategy() {
+        let run = completed_run("s1");
+        let strategy = basic_strategy();
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"sat-run-1\"]",
+                vec![serde_json::to_value(run_event(&run, "sat-run-1")).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+            // No existing revisions yet.
+            ("\"kinds\":[44020]", vec![]),
+        ]));
+        state.push_chat(Ok(chat_response(
+            &format!("```json\n{}\n```", revised_strategy_json()),
+            512,
+        )));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_reflect_with_config(
+            &client,
+            &cfg,
+            "sat-run-1",
+            true,
+            Duration::from_millis(1),
+            LLM_TIMEOUT,
+        )
+        .await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        let posts = state.event_posts.lock().unwrap();
+        assert_eq!(posts.len(), 1, "exactly one revision event");
+        assert_eq!(posts[0]["kind"], KIND_TEAM_STRATEGY);
+        let d: Vec<String> = posts[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| {
+                let arr = t.as_array()?;
+                if arr.first()?.as_str()? == "d" {
+                    Some(arr.get(1)?.as_str().unwrap_or_default().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(d, vec!["s1-rev1".to_string()]);
+        let content: serde_json::Value =
+            serde_json::from_str(posts[0]["content"].as_str().unwrap()).unwrap();
+        assert_eq!(content["parentStrategy"], "s1", "lineage back to the root");
+        assert_eq!(content["steps"][0]["rounds"], 2);
+    }
+
+    #[tokio::test]
+    async fn reflect_lineage_chain_continues_past_existing_revisions() {
+        let run = completed_run("s1");
+        let strategy = basic_strategy();
+        let mut rev1 = basic_strategy();
+        rev1.parent_strategy = Some("s1".to_string());
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"sat-run-1\"]",
+                vec![serde_json::to_value(run_event(&run, "sat-run-1")).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+            (
+                "\"kinds\":[44020]",
+                vec![serde_json::to_value(strategy_event(&rev1, "s1-rev1")).unwrap()],
+            ),
+        ]));
+        state.push_chat(Ok(chat_response(&revised_strategy_json(), 512)));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_reflect_with_config(
+            &client,
+            &cfg,
+            "sat-run-1",
+            true,
+            Duration::from_millis(1),
+            LLM_TIMEOUT,
+        )
+        .await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+        let posts = state.event_posts.lock().unwrap();
+        assert_eq!(posts.len(), 1);
+        let d: Vec<String> = posts[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| {
+                let arr = t.as_array()?;
+                if arr.first()?.as_str()? == "d" {
+                    Some(arr.get(1)?.as_str().unwrap_or_default().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            d,
+            vec!["s1-rev2".to_string()],
+            "N = 1 + highest existing rev"
+        );
+        let content: serde_json::Value =
+            serde_json::from_str(posts[0]["content"].as_str().unwrap()).unwrap();
+        assert_eq!(content["parentStrategy"], "s1");
+    }
+
+    #[tokio::test]
+    async fn reflect_fails_loud_on_an_invalid_revision_and_publishes_nothing() {
+        let run = completed_run("s1");
+        let strategy = basic_strategy();
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"sat-run-1\"]",
+                vec![serde_json::to_value(run_event(&run, "sat-run-1")).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+        ]));
+        // Not a strategy at all — on both the first attempt and the
+        // doubled-budget parse retry.
+        state.push_chat(Ok(chat_response("{\"v\":1,\"name\":\"x\"}", 64)));
+        state.push_chat(Ok(chat_response("{\"v\":1,\"name\":\"x\"}", 64)));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_reflect_with_config(
+            &client,
+            &cfg,
+            "sat-run-1",
+            true,
+            Duration::from_millis(1),
+            LLM_TIMEOUT,
+        )
+        .await;
+        assert!(
+            matches!(&result, Err(CliError::Other(m)) if m.contains("not valid strategy JSON")),
+            "got {result:?}"
+        );
+        assert!(state.event_posts.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn reflect_retries_a_truncated_revision_once_with_a_doubled_budget() {
+        let run = completed_run("s1");
+        let strategy = basic_strategy();
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"sat-run-1\"]",
+                vec![serde_json::to_value(run_event(&run, "sat-run-1")).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+        ]));
+        // First attempt: budget dies mid-JSON (truncated list).
+        let full = revised_strategy_json();
+        let cut = &full[..full.len() / 2];
+        state.push_chat(Ok(chat_response(cut, 4096)));
+        // Doubled-budget retry completes.
+        state.push_chat(Ok(chat_response(&full, 8192)));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_reflect_with_config(
+            &client,
+            &cfg,
+            "sat-run-1",
+            false,
+            Duration::from_millis(1),
+            LLM_TIMEOUT,
+        )
+        .await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+        let chats = state.chat_calls.lock().unwrap();
+        assert_eq!(chats.len(), 2);
+        assert_eq!(chats[0]["max_tokens"], 4096);
+        assert_eq!(chats[1]["max_tokens"], 8192, "retry doubles the budget");
+        assert!(state.event_posts.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn reflect_requires_an_existing_run() {
+        let state = std::sync::Arc::new(MockState::default());
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+        let result = cmd_team_reflect_with_config(
+            &client,
+            &cfg,
+            "missing",
+            false,
+            Duration::from_millis(1),
+            LLM_TIMEOUT,
+        )
+        .await;
+        assert!(matches!(result, Err(CliError::NotFound(_))));
+        assert!(state.chat_calls.lock().unwrap().is_empty());
+    }
+
+    // ── Org binding: seats + advisory budgets (slice 2) ────────────────────
+
+    const HOLDER_1: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const AGENT_SEAT_1: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const AGENT_SEAT_2: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+    fn org_node_content(holders: &[&str], agents: &[&str]) -> buzz_sdk::OrgNodeContent {
+        buzz_sdk::OrgNodeContent {
+            v: 1,
+            name: "Test team".to_string(),
+            node_kind: buzz_sdk::OrgNodeKind::Team,
+            parent: None,
+            holders: holders.iter().map(|s| s.to_string()).collect(),
+            agent_seats: agents.iter().map(|s| s.to_string()).collect(),
+            scope: buzz_sdk::OrgScope::default(),
+            ui: None,
+            onchain: None,
+        }
+    }
+
+    fn org_node_event(content: &buzz_sdk::OrgNodeContent, node_id: &str) -> Event {
+        EventBuilder::new(
+            Kind::Custom(KIND_ORG_NODE as u16),
+            serde_json::to_string(content).expect("serializes"),
+        )
+        .tags(vec![Tag::parse(["d", node_id]).expect("tag")])
+        .sign_with_keys(&Keys::generate())
+        .expect("signs")
+    }
+
+    fn budget_event(subject: &str, runs: u32) -> Event {
+        let content = serde_json::json!({
+            "v": 1,
+            "subject": subject,
+            "window": "day",
+            "limits": { "runs": runs },
+            "onExceed": "require-approval"
+        });
+        EventBuilder::new(Kind::Custom(KIND_ORG_BUDGET as u16), content.to_string())
+            .tags(vec![Tag::parse(["d", subject]).expect("tag")])
+            .sign_with_keys(&Keys::generate())
+            .expect("signs")
+    }
+
+    #[test]
+    fn seat_resolution_maps_roster_slots_to_node_occupants_in_order() {
+        let strategy = basic_strategy(); // agent-0, agent-1
+        let node = org_node_content(&[HOLDER_1], &[AGENT_SEAT_1, AGENT_SEAT_2]);
+        let binding = resolve_seats(&strategy, "team-a", &node).expect("resolves");
+        assert_eq!(binding.org_node, "team-a");
+        assert_eq!(binding.seats["agent-0"], HOLDER_1, "holders first");
+        assert_eq!(binding.seats["agent-1"], AGENT_SEAT_1, "then agent seats");
+    }
+
+    #[test]
+    fn seat_resolution_fails_closed_on_shape_errors() {
+        let strategy = basic_strategy();
+        // Too few occupants for the roster.
+        let node = org_node_content(&[HOLDER_1], &[]);
+        let err = resolve_seats(&strategy, "team-a", &node).unwrap_err();
+        assert!(matches!(err, CliError::Usage(_)), "got {err:?}");
+
+        // Malformed occupant pubkey.
+        let node = org_node_content(&["deadbeef"], &[AGENT_SEAT_1]);
+        let err = resolve_seats(&strategy, "team-a", &node).unwrap_err();
+        assert!(matches!(err, CliError::Other(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn projected_turns_count_rounds_digests_and_the_final_writer() {
+        let mut strategy = basic_strategy();
+        strategy.steps = vec![
+            PhaseStep {
+                participants: vec!["agent-0".into(), "agent-1".into()],
+                rounds: 2,
+                flow: "local".to_string(),
+                prompt: "P1".to_string(),
+                per_agent_prompts: None,
+            },
+            PhaseStep {
+                participants: vec!["agent-0".into()],
+                rounds: 1,
+                flow: "summary".to_string(),
+                prompt: "P2".to_string(),
+                per_agent_prompts: None,
+            },
+        ];
+        strategy.final_writer = "agent-1".to_string();
+        let counts = projected_turns_per_slot(&strategy);
+        // agent-0: 2 rounds (P1) + 1 round + 1 digest (P2) = 4;
+        // agent-1: 2 rounds (P1) + the final writer = 3.
+        assert_eq!(counts["agent-0"], 4);
+        assert_eq!(counts["agent-1"], 3);
+    }
+
+    #[test]
+    fn preflight_advisories_fire_only_for_budgeted_participants() {
+        let strategy = basic_strategy();
+        let mut seats = BTreeMap::new();
+        seats.insert("agent-0".to_string(), HOLDER_1.to_string());
+        seats.insert("agent-1".to_string(), AGENT_SEAT_1.to_string());
+
+        let mut budgets = BTreeMap::new();
+        budgets.insert(
+            HOLDER_1.to_string(),
+            vec![BudgetProbe {
+                limits: BudgetProbeLimits { runs: Some(2) },
+            }],
+        );
+        let advisories = derive_preflight_advisories(&strategy, &seats, &budgets);
+        assert_eq!(
+            advisories.len(),
+            1,
+            "only the budgeted participant: {advisories:?}"
+        );
+        assert_eq!(advisories[0].slot, "agent-0");
+        assert_eq!(advisories[0].pubkey, HOLDER_1);
+        // basic_strategy projects 2 turns for agent-0 (1 round + final).
+        assert_eq!(advisories[0].projected_turns, 2);
+        assert!(!advisories[0].exceeds());
+
+        // Over-budget projection fires the exceeds flag.
+        budgets.insert(
+            HOLDER_1.to_string(),
+            vec![BudgetProbe {
+                limits: BudgetProbeLimits { runs: Some(1) },
+            }],
+        );
+        let advisories = derive_preflight_advisories(&strategy, &seats, &budgets);
+        assert!(advisories[0].exceeds(), "2 > 1 must warn");
+
+        // A budget without a runs limit never advises.
+        let mut empty = BTreeMap::new();
+        empty.insert(
+            HOLDER_1.to_string(),
+            vec![BudgetProbe {
+                limits: BudgetProbeLimits { runs: None },
+            }],
+        );
+        assert!(derive_preflight_advisories(&strategy, &seats, &empty).is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_with_org_node_resolves_seats_and_records_the_binding() {
+        let strategy = basic_strategy();
+        let node = org_node_content(&[HOLDER_1], &[AGENT_SEAT_1]);
+        let budget = budget_event(AGENT_SEAT_1, 1); // runs=1 < projected 2 → advisory fires
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"team-a\"]",
+                vec![serde_json::to_value(org_node_event(&node, "team-a")).unwrap()],
+            ),
+            (
+                "\"kinds\":[37012]",
+                vec![serde_json::to_value(budget).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+        ]));
+        state.push_chat(Ok(chat_response("Turn A", 5)));
+        state.push_chat(Ok(chat_response("Turn B", 7)));
+        state.push_chat(Ok(chat_response("FINAL ANSWER: 42", 9)));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_run_with_config(
+            &client,
+            &cfg,
+            "s1",
+            "6*7?",
+            RunParams {
+                max_tokens_per_turn: Some(128),
+                org_node: Some("team-a".to_string()),
+                publish: true,
+                now: 1_700_000_000,
+                backoff: Duration::from_millis(1),
+            },
+        )
+        .await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        let posts = state.event_posts.lock().unwrap();
+        let run = posts.iter().find(|p| p["kind"] == KIND_TEAM_RUN).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(run["content"].as_str().unwrap()).unwrap();
+        assert_eq!(content["orgNode"], "team-a");
+        assert_eq!(content["seats"]["agent-0"], HOLDER_1);
+        assert_eq!(content["seats"]["agent-1"], AGENT_SEAT_1);
+        let transcript = content["transcript"].as_array().unwrap();
+        assert_eq!(transcript[0]["pubkey"], HOLDER_1, "turn identity reference");
+        assert_eq!(transcript[1]["pubkey"], AGENT_SEAT_1);
+        // Honest per-participant token share (agent-0: 5 turn + 9 final
+        // writer; agent-1: 7).
+        assert_eq!(content["participantTokens"]["agent-0"], 14);
+        assert_eq!(content["participantTokens"]["agent-1"], 7);
+    }
+
+    #[tokio::test]
+    async fn run_with_org_node_fails_closed_before_any_llm_call_when_seats_are_short() {
+        let strategy = basic_strategy();
+        let node = org_node_content(&[HOLDER_1], &[]); // 1 occupant, 2 slots
+        let state = std::sync::Arc::new(MockState::with_routes(vec![
+            (
+                "\"#d\":[\"team-a\"]",
+                vec![serde_json::to_value(org_node_event(&node, "team-a")).unwrap()],
+            ),
+            (
+                "\"#d\":[\"s1\"]",
+                vec![serde_json::to_value(strategy_event(&strategy, "s1")).unwrap()],
+            ),
+        ]));
+        let base_url = spawn_mock(state.clone()).await;
+        let keys = Keys::generate();
+        let client = BuzzClient::new(base_url.clone(), keys, None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+
+        let result = cmd_team_run_with_config(
+            &client,
+            &cfg,
+            "s1",
+            "6*7?",
+            RunParams {
+                max_tokens_per_turn: Some(128),
+                org_node: Some("team-a".to_string()),
+                publish: true,
+                now: 1_700_000_000,
+                backoff: Duration::from_millis(1),
+            },
+        )
+        .await;
+        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
+        assert!(
+            state.chat_calls.lock().unwrap().is_empty(),
+            "no LLM calls without resolved seats"
+        );
+        assert!(state.event_posts.lock().unwrap().is_empty());
     }
 }

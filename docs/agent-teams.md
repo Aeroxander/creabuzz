@@ -162,3 +162,55 @@ content for 44020/44021 (bounded ≤64 KiB), non-empty bounded markdown for
 - **Org binding**: org seats/grants/budgets (NIP-ORG 37010–37012) attach to
   roster slots; grant chains gate who may run strategies on agent seats and
   budget envelopes cap per-run LLM spend (`totalTokens` becomes billable).
+
+## Slice 2 — reflection + org binding (implemented)
+
+### Reflection (`buzz team reflect --run <run-id> [--publish]`)
+
+Implements the paper's §2.2 teamwork reflection: the conductor fetches the
+kind:44021 run (transcript + certificate) and its kind:44020 strategy, sends
+both to the classifier endpoint (same `BUZZ_CLASSIFIER_*` config as the run
+loop) with a reflection prompt that walks the paper's three steps — failure
+diagnosis (where reasoning got challenged/repaired, where individual correct
+answers were lost to team dynamics), member-specific evidence, and targeted
+mutations (strength → assigned role, phase/round/flow/synthesis revisions) —
+under the paper's problem-independence leakage screen (a strategy must never
+encode answer values or source-derived recipes).
+
+The model's reply is parsed as one JSON object (markdown fences and prose
+stripped) and validated with the **same strict strategy schema** as
+`strategy put` — an invalid revision fails loud and publishes nothing.
+
+- Without `--publish`: prints a diff-oriented summary (teamworkPrompt /
+  role added-removed-changed, phases added-removed, per-phase
+  participants/rounds/flow/prompt changes, finalWriter change) plus the
+  revised JSON for review.
+- With `--publish`: signs the revision as a **new kind:44020** with
+  `d = <original-id>-rev<N>` where `N` = 1 + the highest existing
+  `<original-id>-rev<N>` on the relay (bounded scan), and the content carries
+  `"parentStrategy": "<original-id>"` so the bank keeps a lineage chain back
+  to the root regardless of revision depth. The revision `d` is never
+  truncated; ids that would exceed the 64-char cap fail with a usage error.
+
+### Org binding (`buzz team run --org-node <node-d>`)
+
+- **Seat resolution**: the strategy's roster slots (sorted) map onto the org
+  node's occupants — `holders` first, then `agentSeats`, in node order. Each
+  LLM-backed member records that occupant's pubkey as its identity reference
+  in its transcript rows (`Turn.pubkey`) and in the run record
+  (`seats: {slot → pubkey}`). Fewer occupants than roster slots, or a
+  malformed occupant pubkey, fail closed before any LLM call. The run record
+  also gains `orgNode` and `participantTokens` (per-slot token share,
+  including the final writer's call).
+- **Budgets — precisely what is enforced vs advisory**: the relay enforces
+  *nothing* against team runs. Team turns are kind 44022, not 44200 turn
+  metrics, so the relay's budget `runs` counter never observes them; the run
+  record above is the evidence of consumption. What the CLI does is an
+  **advisory pre-flight** before any LLM call: it fetches kind:37012 budgets
+  whose subject (content field or `d` tag) matches an occupant pubkey, and
+  for each participant with a `runs` limit prints the strictest limit, the
+  projected per-participant call count (rounds × appearances + summary
+  digests + the final writer), and a loud `WOULD EXCEED` warning when the
+  projection exceeds the limit. There is deliberately no `--force` gate and
+  no new enforcement machinery — relay-side budget enforcement against team
+  runs is future work.

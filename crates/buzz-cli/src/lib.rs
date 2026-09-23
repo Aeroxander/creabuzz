@@ -2398,7 +2398,24 @@ pub enum TeamCmd {
         /// Response token cap per LLM turn (default 700, hard cap 2048)
         #[arg(long)]
         max_tokens_per_turn: Option<u32>,
+        /// Org node `d` to bind roster slots to (holders first, then agent
+        /// seats, in node order). Runs an ADVISORY budget pre-flight; the
+        /// relay does not enforce budgets against team runs.
+        #[arg(long)]
+        org_node: Option<String>,
         /// Sign and publish the run + turns instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Reflect on a completed run and propose a revised strategy (§2.2)
+    #[command(
+        after_help = "Examples:\n  buzz team reflect --run <run-id>\n  buzz team reflect --run <run-id> --publish\n\nFetches the kind:44021 run + its strategy, asks the classifier endpoint for teamwork reflection (failure diagnosis, member-specific evidence, targeted mutations), and prints a diff of the revised strategy. With --publish, signs the revision as a new kind:44020 with d = <original-id>-rev<N> and a parentStrategy reference."
+    )]
+    Reflect {
+        /// The completed run's id (the kind:44021 `d` tag)
+        #[arg(long)]
+        run: String,
+        /// Sign and publish the revised strategy (kind:44020, d = <id>-rev<N>)
         #[arg(long)]
         publish: bool,
     },
