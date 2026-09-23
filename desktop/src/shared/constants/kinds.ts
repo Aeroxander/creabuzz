@@ -73,6 +73,13 @@ export const KIND_AGENT_TASK = 44011;
 // pages (d = "<space>/<slug>", content = markdown). Distinct from the human
 // wiki page kind 44001 (Yjs/Trystero live editing).
 export const KIND_AGENT_WIKI_PAGE = 44002;
+// Self-organizing agent teams (sat) — mirror of buzz-core 44020-44022
+// (arXiv 2609.22682 teamwork strategies; see docs/agent-teams.md).
+// Strategy definitions (d = strategy id), executed runs (d = run id), and
+// per-turn records (d = "<run-id>/<phase>/<agentSlot>").
+export const KIND_TEAM_STRATEGY = 44020;
+export const KIND_TEAM_RUN = 44021;
+export const KIND_TEAM_TURN = 44022;
 export const KIND_WORKFLOW_TRIGGERED = 46001;
 export const KIND_WORKFLOW_COMPLETED = 46005;
 export const KIND_WORKFLOW_FAILED = 46006;

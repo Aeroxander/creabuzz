@@ -581,6 +581,49 @@ pub const DEFAULT_TASK_PRIORITY: &str = "normal";
 /// the workflow approval kinds; any fleet member may pick up an open task.
 pub const KIND_AGENT_TASK: u32 = 44011;
 
+// Self-organizing agent teams (44020–44029) — SAT slice 1.
+//
+// Fixed agent teams learn reusable `teamwork strategies` P = (S, τ, α):
+// ordered conversational PHASES (participants, rounds, local-vs-summary info
+// flow, step prompts), a shared teamwork prompt, and persistent role prompts
+// (arXiv 2609.22682, "Self-Organizing Agent Teams Learn to Reason Together").
+// See `docs/agent-teams.md`. All three kinds are community-level and
+// global-only: keyed by `(pubkey, kind, d_tag)`, never channel-scoped by a
+// stray `h` tag. They sit outside the NIP-33 parameterized-replaceable range
+// (30000–39999), so the relay stores every revision as a regular event and
+// replacement is read-side LWW — readers take the newest event per
+// `(pubkey, kind, d_tag)`, exactly like kinds 44001/44002.
+
+/// Team: a teamwork strategy definition (addressable, `d` = strategy id).
+///
+/// Content is JSON:
+/// `{ "v": 1, "name": string, "description": string, "teamworkPrompt":
+/// string, "roles": { "<slot>": "<role prompt>" }, "steps": [{ "participants":
+/// ["<slot>", ...], "rounds": int, "flow": "local"|"summary", "prompt":
+/// string, "perAgentPrompts"?: { "<slot>": string } }], "finalWriter":
+/// "<slot>" }`. Slots are persistent roster positions shared by the whole
+/// strategy; `steps` are the ordered conversational phases. Bounded at
+/// ingest (sizes, participant/phase/round caps); semantics validated by the
+/// CLI before a run.
+pub const KIND_TEAM_STRATEGY: u32 = 44020;
+
+/// Team: one executed run of a strategy (addressable, `d` = run id).
+///
+/// Content is JSON:
+/// `{ "v": 1, "strategyId": string, "problem": string, "transcript":
+/// [{ "phase": int, "agentSlot": string, "content": string, "tokens": int }],
+/// "finalAnswer": string, "totalTokens": int, "model": string, "status":
+/// "complete" }`. The transcript rows mirror the kind:44022 turn events so a
+/// reader can reconstruct the run from a single event; the turn events carry
+/// the same content as durable per-turn records.
+pub const KIND_TEAM_RUN: u32 = 44021;
+
+/// Team: one conversational turn of a run (addressable, `d` =
+/// `<run-id>/<phase>/<agentSlot>`). Content is markdown: the agent's turn,
+/// the summary digest of a summary-flow phase, or the final writer's
+/// certificate.
+pub const KIND_TEAM_TURN: u32 = 44022;
+
 // Wiki (44001) — community knowledge base pages.
 /// A wiki page (addressable, NIP-33): `d` tag = page slug, content = markdown.
 /// The community brain in the web client: humans and agents read/write the

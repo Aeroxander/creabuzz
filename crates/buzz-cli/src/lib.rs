@@ -252,6 +252,9 @@ enum Cmd {
     /// Agent Wiki — agent-maintained knowledge base (kind:44002)
     #[command(subcommand)]
     Agwiki(AgwikiCmd),
+    /// Self-organizing agent teams — teamwork strategies and runs (arXiv 2609.22682)
+    #[command(subcommand)]
+    Team(TeamCmd),
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -2371,6 +2374,85 @@ pub enum AgwikiCmd {
     },
 }
 
+/// Self-organizing agent teams (SAT) — `buzz team`.
+///
+/// Slice 1 of the teamwork-strategy engine from arXiv 2609.22682
+/// ("Self-Organizing Agent Teams Learn to Reason Together"): fixed agent
+/// teams execute reusable teamwork strategies P = (S, τ, α) — ordered
+/// conversational phases under a shared teamwork prompt and persistent role
+/// prompts. Kinds 44020 (strategy), 44021 (run), 44022 (turn); see
+/// `docs/agent-teams.md` for the full spec.
+#[derive(Subcommand)]
+pub enum TeamCmd {
+    /// Execute a strategy's phases against a problem (LLM conductor)
+    #[command(
+        after_help = "Examples:\n  buzz team run --strategy mechanistic_step_audit --problem \"Compute 1+1\"\n  buzz team run --strategy s1 --problem \"<text>\" --max-tokens-per-turn 400 --publish\n\nDefault prints the transcript + final answer + totals (preview). With --publish, \nsigns + publishes the kind:44022 turns and the kind:44021 run. Missing \nBUZZ_CLASSIFIER_API_URL/KEY is a hard error before any network call; an LLM \nfailure mid-run publishes nothing partial."
+    )]
+    Run {
+        /// Strategy id (the kind:44020 `d` tag), e.g. `mechanistic_step_audit`
+        #[arg(long)]
+        strategy: String,
+        /// The problem the team should solve
+        #[arg(long)]
+        problem: String,
+        /// Response token cap per LLM turn (default 700, hard cap 2048)
+        #[arg(long)]
+        max_tokens_per_turn: Option<u32>,
+        /// Sign and publish the run + turns instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Manage team strategy definitions (kind:44020)
+    #[command(subcommand)]
+    Strategy(TeamStrategyCmd),
+    /// Seed example strategies from the paper's Appendix A
+    #[command(subcommand)]
+    Strategies(TeamStrategiesCmd),
+}
+
+/// Team strategy management — kind:44020 (addressable, d = strategy id).
+#[derive(Subcommand)]
+pub enum TeamStrategyCmd {
+    /// Strictly validate and (with --publish) publish a strategy file
+    Put {
+        /// Strategy id (`d` tag), 1..=64 chars
+        #[arg(long)]
+        id: String,
+        /// Path to a strategy JSON file
+        #[arg(long)]
+        file: String,
+        /// Sign and publish instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Show the newest revision of one strategy
+    Get {
+        /// Strategy id
+        id: String,
+    },
+    /// List strategies, newest revision per id
+    List {
+        /// Max events to scan (default 50, cap 256)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+/// Seeded strategy loading.
+#[derive(Subcommand)]
+pub enum TeamStrategiesCmd {
+    /// Load 2–3 strategies transcribed from arXiv 2609.22682 Appendix A
+    ///
+    /// Without --publish, prints each seed for review. With --publish,
+    /// validates + publishes each one as kind:44020 (revisions replace via
+    /// read-side LWW).
+    SeedExamples {
+        /// Sign and publish the seeds instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+}
+
 /// Org contribution record subcommands — kind:37013.
 ///
 /// `contribute` is an alias for `contribution` (the canonical name), matching
@@ -2769,6 +2851,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
         Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
         Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
+        Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
     }
 }
@@ -2959,6 +3042,7 @@ mod tests {
             "reactions",
             "repos",
             "social",
+            "team",
             "upload",
             "users",
             "workflows",

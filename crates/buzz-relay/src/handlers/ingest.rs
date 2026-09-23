@@ -33,10 +33,10 @@ use buzz_core::kind::{
     KIND_ORG_NODE, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT,
     KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
     KIND_SCORE_ROOT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
-    KIND_USER_STATUS, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN,
+    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_PAGE,
+    KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -559,6 +559,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
         KIND_WIKI_PAGE | KIND_AGENT_WIKI_PAGE => Ok(Scope::MessagesWrite),
         KIND_AGENT_CAPABILITIES | KIND_AGENT_TASK => Ok(Scope::MessagesWrite),
+        // SAT slice 1: team strategies, runs, and turns are agent-authored
+        // community-level records (same write scope as fleet tasks).
+        KIND_TEAM_STRATEGY | KIND_TEAM_RUN | KIND_TEAM_TURN => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
         _ => Err("restricted: unknown event kind"),
@@ -739,6 +742,13 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // Agent Wiki pages (44002): community-level knowledge base pages,
             // keyed by (pubkey, kind, d). A stray `h` tag must not channel-scope them.
             | KIND_AGENT_WIKI_PAGE
+            // SAT slice 1 (44020–44022): team strategies, runs, and turns are
+            // community-level records keyed by (pubkey, kind, d), exactly like
+            // the NIP-ORG kinds and Agent Wiki pages. A stray `h` tag must
+            // never channel-scope a strategy definition or its transcripts.
+            | KIND_TEAM_STRATEGY
+            | KIND_TEAM_RUN
+            | KIND_TEAM_TURN
             // NIP-PL leases are author-owned, addressable global state.
             | super::push_lease::KIND_PUSH_LEASE
     )
@@ -1821,6 +1831,105 @@ fn validate_agent_wiki_envelope(event: &Event) -> Result<(), String> {
 ///
 /// Deliberately absent: any authority over linked projects, repositories, or
 /// channels — membership is an assertion, never a permission grant.
+// SAT slice 1 caps: team strategies are JSON documents; runs are JSON
+// transcripts; turns are markdown. All three are community-level records
+// (global-only), so a bounded envelope plus JSON-object shape protects the
+// read-side LWW slot from junk heads — same rationale as the NIP-ORG kinds.
+const TEAM_CONTENT_MAX_LEN: usize = 65536;
+/// Max `d`-tag length for a strategy id or run id (slug-shaped ids).
+const TEAM_ID_D_MAX_LEN: usize = 64;
+/// Max `d`-tag length for a turn (`<run-id>/<phase>/<agentSlot>`).
+const TEAM_TURN_D_MAX_LEN: usize = 256;
+
+/// Validate the shared envelope of a kind:44020 strategy or kind:44021 run.
+///
+/// Exactly one bounded `d` tag (strategy id / run id) and a JSON-object,
+/// bounded content body. Semantic validation (steps non-empty, participants
+/// within roles, flow enum, final writer within roster) lives in the CLI
+/// (`buzz team strategy put`, run start) — the relay bounds but does not
+/// interpret — mirroring the NIP-ORG envelope/authority split.
+fn validate_team_json_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let d = single_bounded_d_tag(event, label)?;
+    if d.is_empty() || d.len() > TEAM_ID_D_MAX_LEN {
+        return Err(format!(
+            "{label} `d` tag must be 1..={TEAM_ID_D_MAX_LEN} chars (got {} bytes)",
+            d.len()
+        ));
+    }
+    if event.content.is_empty() {
+        return Err(format!("{label} content must not be empty"));
+    }
+    if event.content.len() > TEAM_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{label} content too long (max {TEAM_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
+}
+
+/// Validate the envelope of a kind:44022 team turn event.
+///
+/// `d` = `<run-id>/<phase>/<agentSlot>` (all parts non-empty, bounded), and
+/// non-empty bounded markdown content. The turn content is UNTRUSTED DATA to
+/// any downstream reader — the relay bounds but does not interpret it.
+///
+/// The turn `d` deliberately does NOT go through [`single_bounded_d_tag`]:
+/// that helper caps `d` at 64 chars (the NIP-ORG / fleet id ceiling), while a
+/// turn coordinate embeds a run id of up to that size plus `/phase/slot`
+/// suffixes — so the turn cap is its own [`TEAM_TURN_D_MAX_LEN`] and the
+/// exact-one/cardinality check is repeated here.
+fn validate_team_turn_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "team turn event";
+    let d_tags: Vec<&str> = event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let parts = tag.as_slice();
+            (parts.first().map(|name| name.as_str()) == Some("d"))
+                .then(|| parts.get(1).map(|v| v.as_str()))
+                .flatten()
+        })
+        .collect();
+    if d_tags.len() != 1 {
+        return Err(format!(
+            "{LABEL} must have exactly one `d` tag (got {})",
+            d_tags.len()
+        ));
+    }
+    let d = d_tags[0];
+    if d.is_empty() || d.chars().count() > TEAM_TURN_D_MAX_LEN {
+        return Err(format!(
+            "{LABEL} `d` tag must be 1..={TEAM_TURN_D_MAX_LEN} chars (got {} chars)",
+            d.chars().count()
+        ));
+    }
+    if d.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(format!(
+            "{LABEL} `d` tag must not contain control characters or whitespace"
+        ));
+    }
+    // d = `<run-id>/<phase>/<agentSlot>`: at least two '/' separators, all
+    // parts non-empty and free of control characters / whitespace.
+    let parts: Vec<&str> = d.split('/').collect();
+    if parts.len() < 3 || parts.iter().any(|p| p.is_empty()) {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<run-id>/<phase>/<agentSlot>` with non-empty parts (got {d:?})"
+        ));
+    }
+    if event.content.is_empty() {
+        return Err(format!("{LABEL} content must not be empty"));
+    }
+    if event.content.len() > TEAM_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {TEAM_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_launch_record_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "launch record event";
     let d = single_bounded_d_tag(event, LABEL)?;
@@ -3361,6 +3470,24 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_AGENT_WIKI_PAGE {
         validate_agent_wiki_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    // SAT slice 1: team strategies/runs are JSON-object records, turns are
+    // markdown. Envelope-only (bounded, global-only) at ingest; semantic
+    // strategy validation is the CLI's job (see `buzz team strategy put`).
+    if kind_u32 == KIND_TEAM_STRATEGY {
+        validate_team_json_envelope(&event, "team strategy event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_TEAM_RUN {
+        validate_team_json_envelope(&event, "team run event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_TEAM_TURN {
+        validate_team_turn_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -6222,6 +6349,131 @@ mod postgres_tests {
             !buzz_core::kind::is_parameterized_replaceable(KIND_AGENT_WIKI_PAGE),
             "44002 is outside 30000–39999; replacement is read-side LWW"
         );
+    }
+
+    // ---- SAT slice 1 (44020–44022) ----
+
+    fn make_team_strategy_event() -> Event {
+        make_event_with_tags(
+            KIND_TEAM_STRATEGY,
+            r#"{"v":1,"name":"audit","description":"d","teamworkPrompt":"t","roles":{"agent-0":"r"},"steps":[{"participants":["agent-0"],"rounds":1,"flow":"local","prompt":"p"}],"finalWriter":"agent-0"}"#,
+            &[&["d", "mechanistic_step_audit"]],
+        )
+    }
+
+    #[test]
+    fn team_strategy_envelope_accepts_valid() {
+        // Strategy + run share the JSON-object envelope validator.
+        assert!(
+            validate_team_json_envelope(&make_team_strategy_event(), "team strategy event").is_ok()
+        );
+        let run = make_event_with_tags(
+            KIND_TEAM_RUN,
+            r#"{"v":1,"strategyId":"s","problem":"p","transcript":[],"finalAnswer":"a","totalTokens":12,"model":"m","status":"complete"}"#,
+            &[&["d", "run-1-1700000000"]],
+        );
+        assert!(validate_team_json_envelope(&run, "team run event").is_ok());
+    }
+
+    #[test]
+    fn team_strategy_envelope_rejects_junk_shapes() {
+        // Non-object content.
+        let not_json = make_event_with_tags(KIND_TEAM_STRATEGY, "not json", &[&["d", "s1"]]);
+        let err = validate_team_json_envelope(&not_json, "team strategy event").unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
+
+        // JSON array content.
+        let array = make_event_with_tags(KIND_TEAM_STRATEGY, "[1,2]", &[&["d", "s1"]]);
+        assert!(validate_team_json_envelope(&array, "team strategy event").is_err());
+
+        // Missing d.
+        let no_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[]);
+        assert!(validate_team_json_envelope(&no_d, "team strategy event").is_err());
+
+        // Over-long d (TEAM_ID_D_MAX_LEN).
+        let long_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[&["d", &"x".repeat(65)]]);
+        let err = validate_team_json_envelope(&long_d, "team strategy event").unwrap_err();
+        assert!(
+            err.contains("too long") || err.contains("must be 1..="),
+            "got: {err}"
+        );
+
+        // Empty content.
+        let empty = make_event_with_tags(KIND_TEAM_STRATEGY, "", &[&["d", "s1"]]);
+        let err = validate_team_json_envelope(&empty, "team strategy event").unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+
+        // Two d tags (cardinality).
+        let two_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[&["d", "s1"], &["d", "s2"]]);
+        assert!(validate_team_json_envelope(&two_d, "team strategy event").is_err());
+    }
+
+    #[test]
+    fn team_run_envelope_bounds_content() {
+        let big = "x".repeat(TEAM_CONTENT_MAX_LEN + 1);
+        let run = make_event_with_tags(
+            KIND_TEAM_RUN,
+            &serde_json::json!({"pad": big}).to_string(),
+            &[&["d", "run-1"]],
+        );
+        let err = validate_team_json_envelope(&run, "team run event").unwrap_err();
+        assert!(err.contains("too long"), "got: {err}");
+    }
+
+    #[test]
+    fn team_turn_envelope_accepts_valid_markdown() {
+        let ev = make_event_with_tags(
+            KIND_TEAM_TURN,
+            "# Phase 1\n\nMy analysis...",
+            &[&["d", "run-1/1/agent-0"]],
+        );
+        assert!(validate_team_turn_envelope(&ev).is_ok());
+
+        // Longer nested run id still under the turn cap.
+        let nested = format!("{}/2/agent-1", "r".repeat(60));
+        let ev2 = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", &nested]]);
+        assert!(validate_team_turn_envelope(&ev2).is_ok());
+    }
+
+    #[test]
+    fn team_turn_envelope_rejects_bad_d_and_empty_content() {
+        // Fewer than three parts.
+        for d in ["run-1", "run-1/1"] {
+            let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", d]]);
+            let err = validate_team_turn_envelope(&ev).unwrap_err();
+            assert!(
+                err.contains("`<run-id>/<phase>/<agentSlot>`"),
+                "d={d} got: {err}"
+            );
+        }
+        // Empty part.
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", "run-1//agent-0"]]);
+        assert!(validate_team_turn_envelope(&ev).is_err());
+        // Empty content.
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "", &[&["d", "run-1/1/agent-0"]]);
+        let err = validate_team_turn_envelope(&ev).unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+        // Over-long d.
+        let long = format!("{}/1/agent-0", "r".repeat(TEAM_TURN_D_MAX_LEN));
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", &long]]);
+        assert!(validate_team_turn_envelope(&ev).is_err());
+    }
+
+    #[test]
+    fn team_kinds_are_global_only_and_scope_to_messages_write() {
+        for kind in [KIND_TEAM_STRATEGY, KIND_TEAM_RUN, KIND_TEAM_TURN] {
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} should be global-only"
+            );
+            assert!(
+                !buzz_core::kind::is_parameterized_replaceable(kind),
+                "kind {kind} sits outside 30000–39999; replacement is read-side LWW"
+            );
+            // Eligible write scope for ordinary members (mirrors fleet kinds).
+            let ev = make_event_with_tags(kind, "{}", &[&["d", "x"]]);
+            assert!(required_scope_for_kind(kind, &ev).is_ok());
+        }
     }
 
     #[test]

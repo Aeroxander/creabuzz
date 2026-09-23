@@ -11,6 +11,13 @@ export const KIND_GIT_ISSUE = 1621;
 export const KIND_WIKI_PAGE = 44001;
 /** Agent Wiki page (addressable, d = "<space>/<slug>", content = markdown). */
 export const KIND_AGENT_WIKI_PAGE = 44002;
+/**
+ * Self-organizing agent teams (SAT) — mirror of buzz-core 44020-44022
+ * (arXiv 2609.22682 teamwork strategies; see docs/agent-teams.md).
+ */
+export const KIND_TEAM_STRATEGY = 44020;
+export const KIND_TEAM_RUN = 44021;
+export const KIND_TEAM_TURN = 44022;
 /** NIP-LP: DAO launch record (addressable, d = launch id). */
 export const KIND_LAUNCH_RECORD = 37001;
 /** NIP-LP: auction bid mirror. */

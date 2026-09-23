@@ -44,6 +44,9 @@ abstract final class EventKind {
   static const agentCapabilities = 44010;
   static const agentTask = 44011;
   static const agentWikiPage = 44002;
+  static const teamStrategy = 44020;
+  static const teamRun = 44021;
+  static const teamTurn = 44022;
   static const agentTurnMetric = 44200;
   static const workflowTriggered = 46001;
   static const workflowCompleted = 46005;
