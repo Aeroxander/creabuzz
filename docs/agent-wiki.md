@@ -103,6 +103,30 @@ sources.
 `max_tokens ≈ 1500`, timeout 30 s, temperature 0.2, one 429 back-off retry
 (3 s) then fail loudly.
 
+### Self-reflective retrieval (bounded follow-up search)
+
+The cursor bundle is a window over tasks + contributions; it can miss
+community context a wiki-insightful standup needs (a decision discussed in
+a channel, a forum debate behind a task). Between fetch and distill the run
+may run a bounded reflection loop — retrieve → reflect → follow-up query —
+adapted from the WFM pattern (arXiv 2609.18182 §3.3):
+
+1. A small reflection call (`max_tokens 400`) judges the bundle: sufficient,
+   or up to **2 keyword NIP-50 queries** (≤200 chars each) for missing
+   context. STRICT JSON: `{"sufficient": bool, "queries": [...], "reason": …}`.
+2. Each query runs as a bounded search (`kinds 9/40002/45001/45003`, limit 5)
+   over channel + forum content; hits merge into a deduped context pool
+   (cap **12 entries**, 400-char snippets).
+3. Hard budget **2 rounds**; the "sufficient" answer exits early so cheap
+   runs stay cheap. Reflection costs are added to the published
+   `cost_tokens`; every consumed event id joins the `sources` provenance tag.
+
+Fail-open: any reflection/search failure logs loudly and the distill
+proceeds with what has accumulated — the loop is an enhancement, never a
+gate. Search snippets enter the distill prompt as `search_context` and are
+framed in the system prompt as UNTRUSTED DATA (channel/forum text is
+arbitrary member content).
+
 ## Security gate (mirrors Paperclip's Phase-5 policy)
 
 | Rule | Enforcement |
