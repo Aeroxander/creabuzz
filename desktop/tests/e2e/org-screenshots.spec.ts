@@ -31,6 +31,34 @@ function orgEvent(
   };
 }
 
+function wikiEvent(
+  id: string,
+  d: string,
+  created_at: number,
+  content: string,
+  extraTags: string[][] = [],
+) {
+  return {
+    id,
+    pubkey: TYLER,
+    created_at,
+    kind: 44002,
+    tags: [["d", d], ...extraTags],
+    content,
+    sig: "mock-sig",
+  };
+}
+
+const STANDUP_FRONT_MATTER = [
+  "---",
+  "slug: default/standup",
+  "agwiki-cursor: 1750000000",
+  "model: glm-5.3-flash",
+  "generated-at: 1750000000",
+  "---",
+  "",
+].join("\n");
+
 function buildOrgEvents(): unknown[] {
   const hex = (prefix: string) => `${prefix}${"0".repeat(64 - prefix.length)}`;
   const agent = hex("cefe0001");
@@ -329,6 +357,43 @@ function buildOrgEvents(): unknown[] {
       reviewStatus: "appealed",
       appealHistory: [{ status: "appealed", at: NOW - 500 }],
     }),
+    // Agent wiki (kind:44002): two standup revisions — the older one must
+    // lose read-side LWW — plus a second page for the sheet view.
+    wikiEvent(
+      "wiki-standup-v1",
+      "default/standup",
+      NOW - 2 * 3_600,
+      `${STANDUP_FRONT_MATTER}# Standup (stale revision)\n\nThis older body must never render.`,
+      [["model", "glm-5.3-flash"]],
+    ),
+    wikiEvent(
+      "wiki-standup-v2",
+      "default/standup",
+      NOW - 600,
+      `${STANDUP_FRONT_MATTER}# Standup\n\n## Shipped\n\n- Grant chain viewer with attenuation checks\n- Budget consumption bars\n\n## Next\n\nDistill the research backlog.`,
+      [
+        ["model", "glm-5.3-flash"],
+        ["cost_tokens", "4200"],
+      ],
+    ),
+    wikiEvent(
+      "wiki-research-index",
+      "default/projects/research/index",
+      NOW - 1_800,
+      [
+        "---",
+        "slug: default/projects/research/index",
+        "---",
+        "",
+        "# Research index",
+        "",
+        "Open questions and findings, distilled from done tasks.",
+      ].join("\n"),
+      [
+        ["model", "glm-5.3-flash"],
+        ["sources", `${"ab".repeat(32)},${"cd".repeat(32)}`],
+      ],
+    ),
   ];
 }
 
@@ -696,6 +761,40 @@ test.describe("org UI screenshots", () => {
     await wizard.getByRole("button", { name: "Finish & view org" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByTestId("org-canvas-node-acme")).toBeVisible();
+  });
+
+  test("agent wiki section: standup LWW, provenance, page sheet", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    // The standup card renders the newest revision's markdown body — the
+    // stale revision must never appear (read-side LWW, newest per d).
+    const standup = page.getByTestId("org-wiki-standup");
+    await expect(standup).toBeVisible();
+    await expect(standup).toContainText("Grant chain viewer");
+    await expect(page.getByTestId("org-wiki-standup-body")).not.toContainText(
+      "stale revision",
+    );
+    // Front matter is data, not prose: the YAML block never renders.
+    await expect(standup).not.toContainText("agwiki-cursor");
+    // Provenance line: relative time + model tag (never raw JSON).
+    const provenance = page.getByTestId("org-wiki-standup-provenance");
+    await expect(provenance).toContainText("by glm-5.3-flash");
+    await expect(provenance).toContainText("ago");
+    // The other page lists and opens its full markdown in a sheet.
+    const row = page.getByTestId("org-wiki-page-row");
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("default/projects/research/index");
+    await row.click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText("Research index");
+    await expect(sheet).toContainText(
+      "Open questions and findings, distilled from done tasks.",
+    );
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/org-wiki.png` });
   });
 
   test("every org screenshot is byte-distinct", async () => {

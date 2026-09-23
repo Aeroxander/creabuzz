@@ -3317,7 +3317,7 @@ const mockReminderEvents: RelayEvent[] = [];
 // (approval request/grant/deny) feed the dashboard activity feed, and
 // 37014 spend receipts likewise.
 const MOCK_ORG_KINDS = new Set([
-  37010, 37011, 37012, 37013, 37014, 44010, 44200, 46010, 46030, 46031,
+  37010, 37011, 37012, 37013, 37014, 44002, 44010, 44200, 46010, 46030, 46031,
 ]);
 const mockOrgEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];

@@ -29,6 +29,7 @@ import {
   BANNER_LIMIT,
 } from "../lib/dashboard";
 import type { OrgChart } from "../orgModels";
+import { AgentWikiSection } from "./AgentWikiSection";
 import { LivenessBadge } from "./LivenessBadge";
 import { OrgMetricRow } from "./OrgMetricRow";
 
@@ -426,6 +427,9 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
           </Card>
         )}
       </div>
+
+      {/* 5. Agent wiki — kind:44002 standup + page list (read-only). */}
+      <AgentWikiSection nowSeconds={nowTick} />
     </div>
   );
 }
