@@ -67,6 +67,21 @@ pub const AGWIKI_PAGE_MAX_CHARS: usize = 64_000;
 const AGWIKI_FIELD_MAX_CHARS: usize = 2_000;
 /// Existing-page truncation included in the prompt (patch semantics).
 const AGWIKI_EXISTING_MAX_CHARS: usize = 8_000;
+/// Hard budget on self-reflective retrieval rounds (paper §3.3: bounded
+/// agentic loop; B caps worst-case inference cost).
+const AGWIKI_REFLECTION_ROUNDS: usize = 2;
+/// Max follow-up search queries per reflection round.
+const AGWIKI_REFLECTION_QUERIES_PER_ROUND: usize = 2;
+/// Per-query length cap (a query is a search filter, not an essay).
+const AGWIKI_REFLECTION_QUERY_MAX_CHARS: usize = 200;
+/// Per-result truncation inside the accumulated search context.
+const AGWIKI_SEARCH_SNIPPET_MAX_CHARS: usize = 400;
+/// Total accumulated search-context entries (bounded prompt growth).
+const AGWIKI_SEARCH_CONTEXT_MAX_ENTRIES: usize = 12;
+/// Per-query event limit for the NIP-50 search read.
+const AGWIKI_SEARCH_RESULT_LIMIT: u32 = 5;
+/// Max tokens for one reflection call (small: a decision, not a draft).
+const AGWIKI_REFLECTION_MAX_TOKENS: u32 = 400;
 /// Backoff between two attempts when the endpoint answers HTTP 429.
 const AGWIKI_429_BACKOFF: Duration = Duration::from_secs(3);
 /// Front-matter key holding the persisted distill cursor.

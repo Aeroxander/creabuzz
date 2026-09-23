@@ -397,16 +397,133 @@ function buildOrgEvents(): unknown[] {
   ];
 }
 
+function teamEvent(
+  id: string,
+  kind: number,
+  dtag: string,
+  content: unknown,
+  created_at: number,
+) {
+  return {
+    id,
+    pubkey: TYLER,
+    created_at,
+    kind,
+    tags: [["d", dtag]],
+    content: typeof content === "string" ? content : JSON.stringify(content),
+    sig: "mock-sig",
+  };
+}
+
+/**
+ * Teams (SAT kinds 44020-44022) seeds for the org Teams tab: one strategy
+ * root + its reflection revision (lineage chip), one run with four turns
+ * across two phases, and the final answer in the run head.
+ */
+function buildTeamEvents(): unknown[] {
+  const STRATEGY = {
+    v: 1,
+    name: "Mechanistic step audit",
+    description:
+      "AIME-2024 bank strategy from arXiv 2609.22682: every reasoning step is audited by independent solvers before the certificate.",
+    teamworkPrompt:
+      "Treat arithmetic, algebraic transformations, case splits, and counting steps as audit targets before accepting a final answer.",
+    roles: {
+      "agent-0": "Independent solver and step auditor.",
+      "agent-1": "Independent solver and step auditor.",
+      "agent-2": "Consensus challenger.",
+    },
+    steps: [
+      {
+        participants: ["agent-0", "agent-1", "agent-2"],
+        rounds: 1,
+        flow: "local",
+        prompt: "Audit the reasoning chains step by step.",
+      },
+    ],
+    finalWriter: "agent-2",
+  };
+  const RUN_ID = "sat-smoke-2-1750000000";
+  return [
+    teamEvent("team-strategy-root", 44020, "sat-smoke-2", STRATEGY, NOW - 3600),
+    teamEvent(
+      "team-strategy-rev1",
+      44020,
+      "sat-smoke-2-rev1",
+      {
+        ...STRATEGY,
+        name: "Mechanistic step audit (revised)",
+        parentStrategy: "sat-smoke-2",
+      },
+      NOW - 3000,
+    ),
+    teamEvent(
+      "team-run-1",
+      44021,
+      RUN_ID,
+      {
+        v: 1,
+        strategyId: "sat-smoke-2",
+        problem: "Prove whether 2025 is prime, and factor it if it is not.",
+        transcript: [],
+        finalAnswer:
+          "## Certificate\n\n2025 is composite: 2025 = 5² × 3⁴. Divisible by 5 (last digit 5) and by 9 (digit sum 9).\n\nNo prime factor exceeds √2025 ≈ 45.",
+        totalTokens: 1732,
+        model: "deepseek-v4-flash-0731",
+        status: "complete",
+      },
+      NOW - 600,
+    ),
+    teamEvent(
+      "team-turn-1",
+      44022,
+      `${RUN_ID}/1/agent-0`,
+      "# Independent audit\n\n2025 ends in 5, so 5 divides it. 2025 = 5 × 405.",
+      NOW - 580,
+    ),
+    teamEvent(
+      "team-turn-2",
+      44022,
+      `${RUN_ID}/1/agent-1`,
+      "# Independent audit\n\n405 = 5 × 81, so 2025 = 5² × 81.",
+      NOW - 540,
+    ),
+    teamEvent(
+      "team-turn-3",
+      44022,
+      `${RUN_ID}/2/agent-0`,
+      "# Check\n\n81 = 3⁴, so the certificate should read 5² × 3⁴ — not 5² × 9.",
+      NOW - 500,
+    ),
+    teamEvent(
+      "team-turn-4",
+      44022,
+      `${RUN_ID}/2/agent-2`,
+      "# Consensus\n\nBoth audits agree; I draft the certificate as 2025 = 5² × 3⁴.",
+      NOW - 460,
+    ),
+  ];
+}
+
 function seedOrgEvents(page: Page) {
-  return page.evaluate((events) => {
-    const seed = (
-      window as Window & {
-        __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__?: (events: unknown[]) => void;
-      }
-    ).__BUZZ_E2E_SEED_MOCK_ORG_EVENTS__;
-    if (!seed) throw new Error("org seed helper is not installed");
-    seed(events);
-  }, buildOrgEvents());
+  return page.evaluate(
+    (events) => {
+      const seed = (
+        window as Window & {
+          __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__?: (events: unknown[]) => void;
+        }
+      ).__BUZZ_E2E_SEED_MOCK_ORG_EVENTS__;
+      if (!seed) throw new Error("org seed helper is not installed");
+      seed(events);
+    },
+    [...buildOrgEvents(), ...buildTeamEvents()],
+  );
+}
+
+async function openTeamsTab(page: Page) {
+  await page.getByTestId("org-tab-teams").click();
+  await expect(page.getByTestId("org-teams-view")).toBeVisible();
+  await waitForAnimations(page);
 }
 
 async function openOrgView(page: Page) {
@@ -795,6 +912,110 @@ test.describe("org UI screenshots", () => {
     );
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/org-wiki.png` });
+  });
+
+  test("teams tab: strategy bank with lineage, model, and run list", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await openTeamsTab(page);
+    // Bank: the root and its reflection revision fold to two heads; the
+    // root row carries the `rev1 of sat-smoke-2` lineage chip.
+    await expect(page.getByTestId("org-bank-row")).toHaveCount(2);
+    await expect(page.getByTestId("org-bank-row").first()).toContainText(
+      "Mechanistic step audit (revised)",
+    );
+    await expect(
+      page.getByText("rev1 of sat-smoke-2", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByTestId("org-bank-row").first()).toContainText(
+      "1 phase",
+    );
+    // Runs: one row with strategy name, status pill, token total.
+    await expect(page.getByTestId("org-run-row")).toHaveCount(1);
+    const runRow = page.getByTestId("org-run-row").first();
+    await expect(runRow).toContainText("Mechanistic step audit");
+    await expect(runRow).toContainText("1,732 tok");
+    await expect(page.getByTestId("org-run-status")).toHaveText("complete");
+    await expect(runRow).toContainText("Prove whether 2025 is prime");
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/teams-tab.png` });
+  });
+
+  test("teams run detail: transcript grouped by phase, final answer, reflect", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await openTeamsTab(page);
+    await page.getByTestId("org-run-row").first().click();
+    const sheet = page.getByTestId("org-run-sheet");
+    await expect(sheet).toBeVisible();
+    // Four turns grouped into two phase sections.
+    await expect(page.getByTestId("org-run-sheet-phase")).toHaveCount(2);
+    await expect(page.getByTestId("org-run-turn")).toHaveCount(4);
+    await expect(sheet).toContainText("Phase 1 · 2 turns");
+    await expect(sheet).toContainText("Phase 2 · 2 turns");
+    await expect(sheet).toContainText("Independent audit");
+    // Final answer highlighted with the token total.
+    const finalAnswer = page.getByTestId("org-run-final-answer");
+    await expect(finalAnswer).toContainText("Certificate");
+    await expect(finalAnswer).toContainText("1,732 tokens total");
+    await expect(sheet).toContainText("deepseek-v4-flash-0731");
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/team-run-detail-sheet.png` });
+    // Reflect: confirm, then the revised strategy summary lands inline.
+    await page.getByTestId("org-reflect").click();
+    await expect(page.getByTestId("org-reflect-confirm")).toBeVisible();
+    await page.getByRole("button", { name: "Confirm reflection" }).click();
+    await expect(page.getByTestId("org-reflect-result")).toBeVisible();
+    await expect(page.getByTestId("org-reflect-result")).toContainText(
+      "Published sat-smoke-2-rev1",
+    );
+    await expect(page.getByTestId("org-reflect-result")).toContainText(
+      "Mock reflected strategy",
+    );
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/team-run-reflect-result.png` });
+  });
+
+  test("teams run dialog: strategy picker, problem, org node bind", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await openTeamsTab(page);
+    await page.getByTestId("org-open-run-dialog").click();
+    const dialog = page.getByTestId("org-run-dialog");
+    await expect(dialog).toBeVisible();
+    // The dialog's description states the atomic-publish contract.
+    await expect(dialog).toContainText(
+      "Publishes the run head only after every turn persisted",
+    );
+    // Select a strategy through the picker.
+    await page
+      .getByRole("button", { name: /select choose a strategy/i })
+      .click();
+    await page
+      .getByRole("option", { name: /Mechanistic step audit/ })
+      .first()
+      .click();
+    await expect(dialog).toContainText("Mechanistic step audit");
+    // Fill the problem + bind the org node picker to the eng node.
+    await page
+      .getByTestId("org-run-problem")
+      .fill("Prove whether 2025 is prime.");
+    await page
+      .getByRole("button", { name: /bind seats to an org node/i })
+      .click();
+    await page
+      .getByRole("option", { name: /Engineering/ })
+      .first()
+      .click();
+    await expect(dialog).toContainText("Engineering");
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/team-run-dialog.png` });
   });
 
   test("every org screenshot is byte-distinct", async () => {

@@ -261,15 +261,14 @@ function parseOnchainBinding(value: unknown): OnchainBinding | undefined {
   return { chain, contract, subject };
 }
 
-
-
 /**
  * Read the optional `performanceLink` object from budget content, fully
  * typed. Anything malformed is treated as absent (the relay/sdk validate
  * at publication; a viewer never blocks on a bad stored ladder).
  */
 function parsePerformanceLink(value: unknown): PerformanceLink | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const obj = value as Record<string, unknown>;
   const linkWindow = obj.window;
   if (
@@ -293,12 +292,18 @@ function parsePerformanceLink(value: unknown): PerformanceLink | undefined {
     });
   }
   const onViolation = obj.onViolation;
-  if (onViolation !== "base" && onViolation !== "require-approval" && onViolation !== "revoke") {
+  if (
+    onViolation !== "base" &&
+    onViolation !== "require-approval" &&
+    onViolation !== "revoke"
+  ) {
     return undefined;
   }
   const threshold = obj.violationThreshold;
   const violationThreshold =
-    threshold && typeof threshold === "object" && !Array.isArray(threshold) &&
+    threshold &&
+    typeof threshold === "object" &&
+    !Array.isArray(threshold) &&
     typeof (threshold as Record<string, unknown>).rejected === "number"
       ? { rejected: (threshold as Record<string, unknown>).rejected as number }
       : undefined;

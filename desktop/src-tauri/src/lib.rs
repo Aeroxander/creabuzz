@@ -601,6 +601,8 @@ pub fn run() {
             get_relay_http_url,
             org_classify_task,
             org_classify_all_done,
+            team_run,
+            team_reflect,
             org_ragequit,
             org_evm_status,
             get_media_proxy_port,

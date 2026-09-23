@@ -60,11 +60,19 @@ describe("countLadderOutcomes", () => {
     const weekStart = ladderWindowStart("week", 1_700_000_000);
     const records = [
       record({ reviewStatus: "accepted", createdAt: weekStart + 10 }),
-      record({ reviewStatus: "accepted", createdAt: weekStart + 20, dimensions: { teach: 1 } }),
+      record({
+        reviewStatus: "accepted",
+        createdAt: weekStart + 20,
+        dimensions: { teach: 1 },
+      }),
       record({ reviewStatus: "rejected", createdAt: weekStart + 30 }),
       record({ reviewStatus: "pending", createdAt: weekStart + 40 }),
       record({ reviewStatus: "accepted", createdAt: weekStart - 1 }), // outside window
-      record({ reviewStatus: "accepted", createdAt: weekStart + 50, author: "b".repeat(64) }),
+      record({
+        reviewStatus: "accepted",
+        createdAt: weekStart + 50,
+        author: "b".repeat(64),
+      }),
     ];
     const counts = countLadderOutcomes(SUBJECT, link, records, 1_700_000_000);
     // Accepted: first record (build, in-window, subject). Rejected: third

@@ -10,6 +10,7 @@ import { OrgDashboard } from "./OrgDashboard";
 import { OrgChart } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
 import { OrgAuditView } from "./OrgAuditView";
+import { OrgTeamsView } from "./OrgTeamsView";
 import { OrgWizard } from "./OrgWizard";
 
 function ContributionRecordsTab() {
@@ -50,7 +51,9 @@ export function OrgView() {
   const search = useSearch({ strict: false }) as { tab?: string };
   const searchTab = search.tab;
   const [activeTab, setActiveTab] = React.useState(
-    searchTab === "contributions" || searchTab === "audit"
+    searchTab === "contributions" ||
+      searchTab === "audit" ||
+      searchTab === "teams"
       ? searchTab
       : "dashboard",
   );
@@ -101,6 +104,9 @@ export function OrgView() {
             <TabsTrigger data-testid="org-tab-audit" value="audit">
               Audit
             </TabsTrigger>
+            <TabsTrigger data-testid="org-tab-teams" value="teams">
+              Teams
+            </TabsTrigger>
           </TabsList>
         </div>
         <TabsContent
@@ -120,6 +126,9 @@ export function OrgView() {
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="audit">
           <OrgAuditView onOpenTab={() => setActiveTab("chart")} />
+        </TabsContent>
+        <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="teams">
+          <OrgTeamsView />
         </TabsContent>
       </Tabs>
       <OrgWizard

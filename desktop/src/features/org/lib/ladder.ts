@@ -16,18 +16,27 @@ import type {
 } from "../orgModels";
 
 /** Start of the ladder window (unix seconds). */
-export function ladderWindowStart(window: BudgetWindow, nowSecs: number): number {
+export function ladderWindowStart(
+  window: BudgetWindow,
+  nowSecs: number,
+): number {
   const now = new Date(nowSecs * 1000);
   switch (window) {
     case "day": {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+      );
       return d.getTime() / 1000;
     }
     case "week": {
       const day = now.getUTCDay(); // 0 = Sunday
       const daysSinceMonday = (day + 6) % 7;
       const monday = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday),
+        Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() - daysSinceMonday,
+        ),
       );
       return monday.getTime() / 1000;
     }
@@ -67,7 +76,13 @@ export function countLadderOutcomes(
   for (const record of records) {
     if (record.author !== subject) continue;
     if (record.createdAt < windowStart) continue;
-    if (dims.length > 0 && !(record.dimensions && Object.keys(record.dimensions).some((d) => dims.includes(d)))) {
+    if (
+      dims.length > 0 &&
+      !(
+        record.dimensions &&
+        Object.keys(record.dimensions).some((d) => dims.includes(d))
+      )
+    ) {
       continue;
     }
     if (record.reviewStatus === "accepted") accepted += 1;
@@ -105,7 +120,13 @@ export function resolveLadder(
     const zeroed = link.onViolation !== "base";
     return {
       tier: null,
-      activeLimits: zeroed ? { spend: { amount: 0, unit: "usd-cents" }, runs: 0, tasks: { create: 0, approve: 0 } } : baseLimits,
+      activeLimits: zeroed
+        ? {
+            spend: { amount: 0, unit: "usd-cents" },
+            runs: 0,
+            tasks: { create: 0, approve: 0 },
+          }
+        : baseLimits,
       violated: true,
       accepted: counts.accepted,
       rejected: counts.rejected,
@@ -119,9 +140,11 @@ export function resolveLadder(
     if (counts.accepted >= link.tiers[i].minAccepted) tier = i;
   }
   const nextTierMin =
-    tier === null ? link.tiers[0].minAccepted
-    : tier + 1 < link.tiers.length ? link.tiers[tier + 1].minAccepted
-    : null;
+    tier === null
+      ? link.tiers[0].minAccepted
+      : tier + 1 < link.tiers.length
+        ? link.tiers[tier + 1].minAccepted
+        : null;
 
   return {
     tier,

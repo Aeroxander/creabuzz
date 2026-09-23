@@ -3318,6 +3318,9 @@ const mockReminderEvents: RelayEvent[] = [];
 // 37014 spend receipts likewise.
 const MOCK_ORG_KINDS = new Set([
   37010, 37011, 37012, 37013, 37014, 44002, 44010, 44200, 46010, 46030, 46031,
+  // Self-organizing agent teams kinds (44020-44022): strategy bank, runs,
+  // and per-turn events served to the org Teams surface reads.
+  44020, 44021, 44022,
 ]);
 const mockOrgEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
@@ -12786,6 +12789,49 @@ export function maybeInstallE2eTauriMocks() {
         const override = activeConfig?.mock?.evmStatus;
         if (override) return override;
         return { rpcConfigured: true, spenderConfigured: true };
+      }
+      case "team_run": {
+        const request = (payload ?? null) as {
+          strategyId?: string;
+          problem?: string;
+          orgNode?: string | null;
+        } | null;
+        if (!request?.strategyId || !request?.problem) {
+          throw new Error("team_run requires strategyId and problem");
+        }
+        const runId = `${request.strategyId}-${Math.floor(Date.now() / 1000)}`;
+        return {
+          runId,
+          eventId: `mock-run-${runId}`,
+          turns: 4,
+        };
+      }
+      case "team_reflect": {
+        const request = (payload ?? null) as { runId?: string } | null;
+        if (!request?.runId) {
+          throw new Error("team_reflect requires runId");
+        }
+        return {
+          revisionD: "sat-smoke-2-rev1",
+          eventId: "mock-revision-sat-smoke-2-rev1",
+          revised: {
+            v: 1,
+            name: "Mock reflected strategy",
+            description: "Revision produced by the mocked reflection.",
+            teamworkPrompt: "Keep auditing.",
+            roles: { "agent-0": "Solver." },
+            steps: [
+              {
+                participants: ["agent-0"],
+                rounds: 1,
+                flow: "local",
+                prompt: "Solve.",
+              },
+            ],
+            finalWriter: "agent-0",
+            parentStrategy: "sat-smoke-2",
+          },
+        };
       }
       case "org_ragequit": {
         const request = (payload ?? null) as {

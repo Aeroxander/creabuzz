@@ -35,7 +35,9 @@ export function OrgBudgetLadder({ budget }: OrgBudgetLadderProps) {
   }
   if (contributions.isError || !contributions.data) {
     return (
-      <p className="mt-1.5 text-2xs text-muted-foreground">Ladder unavailable</p>
+      <p className="mt-1.5 text-2xs text-muted-foreground">
+        Ladder unavailable
+      </p>
     );
   }
 
@@ -71,7 +73,8 @@ export function OrgBudgetLadder({ budget }: OrgBudgetLadderProps) {
         <p className="mt-1 text-2xs">
           <span className="font-medium text-foreground">{tierLabel}</span>
           <span className="text-muted-foreground">
-            {" "}· {counts.accepted} accepted {WINDOW_LABEL[link.window]}
+            {" "}
+            · {counts.accepted} accepted {WINDOW_LABEL[link.window]}
             {resolution.nextTierMin !== null
               ? ` · ${Math.max(0, resolution.nextTierMin - counts.accepted)} more to unlock the next`
               : " · top tier reached"}
@@ -89,7 +92,8 @@ export function OrgBudgetLadder({ budget }: OrgBudgetLadderProps) {
               data-active-tier={active || undefined}
             >
               {active ? "▸ " : "  "}
-              {tier.minAccepted}+ accepted →{runCeiling !== undefined ? ` ${runCeiling} runs` : ""}
+              {tier.minAccepted}+ accepted →
+              {runCeiling !== undefined ? ` ${runCeiling} runs` : ""}
               {tier.limits.tasks?.create !== undefined
                 ? ` · ${tier.limits.tasks.create} tasks`
                 : ""}
@@ -97,7 +101,8 @@ export function OrgBudgetLadder({ budget }: OrgBudgetLadderProps) {
           );
         })}
         <li className="text-2xs text-muted-foreground">
-          {"  "}base → {budget.limits.runs !== undefined
+          {"  "}base →{" "}
+          {budget.limits.runs !== undefined
             ? ` ${budget.limits.runs} runs`
             : ""}
           {budget.limits.tasks?.create !== undefined
