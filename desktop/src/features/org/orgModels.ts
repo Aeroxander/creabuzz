@@ -213,6 +213,28 @@ export type OnchainBinding = {
 
 export type OnExceed = "require-approval";
 
+// ── Performance-linked autonomy (NIP-ORG § Performance-linked autonomy) ─────
+
+export type OnViolation = "base" | "require-approval" | "revoke";
+
+export type PerformanceTier = {
+  minAccepted: number;
+  limits: BudgetLimits;
+};
+
+export type ViolationThreshold = {
+  rejected: number;
+};
+
+export type PerformanceLink = {
+  window: BudgetWindow;
+  /** When present, only records carrying at least one dimension count. */
+  dimensions?: string[];
+  tiers: PerformanceTier[];
+  onViolation: OnViolation;
+  violationThreshold?: ViolationThreshold;
+};
+
 /**
  * Read the optional `onchain` spend-binding object from budget content.
  * Returns a fully-typed binding only when every required field is a string;
@@ -239,6 +261,60 @@ function parseOnchainBinding(value: unknown): OnchainBinding | undefined {
   return { chain, contract, subject };
 }
 
+
+
+/**
+ * Read the optional `performanceLink` object from budget content, fully
+ * typed. Anything malformed is treated as absent (the relay/sdk validate
+ * at publication; a viewer never blocks on a bad stored ladder).
+ */
+function parsePerformanceLink(value: unknown): PerformanceLink | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const obj = value as Record<string, unknown>;
+  const linkWindow = obj.window;
+  if (
+    linkWindow !== "day" &&
+    linkWindow !== "week" &&
+    linkWindow !== "month" &&
+    linkWindow !== "epoch"
+  ) {
+    return undefined;
+  }
+  const tiersRaw = obj.tiers;
+  if (!Array.isArray(tiersRaw) || tiersRaw.length === 0) return undefined;
+  const tiers: PerformanceTier[] = [];
+  for (const raw of tiersRaw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const tier = raw as Record<string, unknown>;
+    if (typeof tier.minAccepted !== "number" || !tier.limits) return undefined;
+    tiers.push({
+      minAccepted: tier.minAccepted,
+      limits: tier.limits as BudgetLimits,
+    });
+  }
+  const onViolation = obj.onViolation;
+  if (onViolation !== "base" && onViolation !== "require-approval" && onViolation !== "revoke") {
+    return undefined;
+  }
+  const threshold = obj.violationThreshold;
+  const violationThreshold =
+    threshold && typeof threshold === "object" && !Array.isArray(threshold) &&
+    typeof (threshold as Record<string, unknown>).rejected === "number"
+      ? { rejected: (threshold as Record<string, unknown>).rejected as number }
+      : undefined;
+  const dims = obj.dimensions;
+  const dimensions = Array.isArray(dims)
+    ? dims.filter((d): d is string => typeof d === "string")
+    : undefined;
+  return {
+    window: linkWindow,
+    ...(dimensions && dimensions.length > 0 ? { dimensions } : {}),
+    tiers,
+    onViolation,
+    ...(violationThreshold ? { violationThreshold } : {}),
+  };
+}
+
 export type OrgBudget = {
   eventId: string;
   /** Event author pubkey (lowercased) — the identity that published it. */
@@ -250,6 +326,8 @@ export type OrgBudget = {
   onExceed: OnExceed;
   /** Present only when the spend ceiling is bound to an onchain allowance. */
   onchain?: OnchainBinding;
+  /** Optional performance-linked autonomy ladder (NIP-ORG); absent = flat budget. */
+  performanceLink?: PerformanceLink;
   createdAt: number;
   revoked: boolean;
 };
@@ -274,6 +352,7 @@ export function eventToOrgBudget(event: RelayEvent): OrgBudget {
         ? "require-approval"
         : "require-approval",
     onchain: parseOnchainBinding(content.onchain),
+    performanceLink: parsePerformanceLink(content.performanceLink),
     createdAt: event.created_at,
     revoked: isRevoked(event, content),
   };

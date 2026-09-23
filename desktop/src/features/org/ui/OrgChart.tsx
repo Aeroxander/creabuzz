@@ -45,6 +45,7 @@ import { OrgGrantForm } from "./OrgGrantForm";
 import { OrgBudgetForm } from "./OrgBudgetForm";
 import { OrgGrantChainView } from "./OrgGrantChainView";
 import { OrgBudgetConsumption } from "./OrgBudgetConsumption";
+import { OrgBudgetLadder } from "./OrgBudgetLadder";
 import { OnchainChip } from "./OnchainChip";
 import { OrgRagequitAction } from "./OrgRagequitDialog";
 import type {
@@ -695,6 +696,7 @@ function OrgBudgetSection({
                     </span>
                   </div>
                   <OrgBudgetConsumption budget={budget} />
+                  <OrgBudgetLadder budget={budget} />
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
