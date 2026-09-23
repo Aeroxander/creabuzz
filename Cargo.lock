@@ -963,6 +963,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-backend-ax"
+version = "0.1.0"
+dependencies = [
+ "nostr 0.44.7",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "buzz-backend-kubernetes"
 version = "0.1.0"
 dependencies = [
