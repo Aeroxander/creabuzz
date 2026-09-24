@@ -1,0 +1,30 @@
+[package]
+name = "buzz-client-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared, side-effect-free client core (NIP-44 and friends) for Buzz clients"
+
+# `rlib` for Rust consumers (desktop backend, CLI, relay-side helpers);
+# `cdylib`/`staticlib` produce the mobile FFI artifacts consumed by the
+# Flutter app through flutter_rust_bridge.
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+nostr = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+flutter_rust_bridge = "=2.13.0"
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+[lints.rust]
+# flutter_rust_bridge's `#[frb]` macro emits `cfg(frb_expand)` gates for its
+# codegen expansion; declare the cfg so rustc accepts it as intentional
+# instead of firing `unexpected_cfgs` (which `-D warnings` turns fatal).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
