@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IContinuousClearingAuction, ILBPInitializer} from "./CCA.sol";
+import {IContinuousClearingAuction, ICcaFinalization, ILBPInitializer} from "./CCA.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title GraduationExecutor
@@ -10,15 +10,27 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///
 /// The CCA's own `sweepCurrency`/`sweepUnsoldTokens` are recipient-only; this
 /// contract is deployed as BOTH recipients at launch, so only it can pull.
-/// One call does everything atomically:
-///   1. sweep net raised currency into this contract (protocol fee already
+/// A launch ends in one of two terminal outcomes:
+///
+/// Graduated (raise >= threshold): one `executeGraduation` call does everything
+/// atomically:
+///   1. materialize the auction's final checkpoint (the end-block raise does
+///      not exist until checkpointed),
+///   2. sweep net raised currency into this contract (protocol fee already
 ///      taken by the immutable fee controller),
-///   2. sweep unsold tokens back here,
-///   3. split: `reserveBps` → reserve escrow (the TokenMaster floor), the
+///   3. sweep unsold tokens back here,
+///   4. split: `reserveBps` → reserve escrow (the TokenMaster floor), the
 ///      remainder → treasury,
-///   4. unsold tokens → treasury (they are launch supply, not sale value),
-///   5. record the graduation and emit the receipts an indexer mirrors as
+///   5. unsold tokens → treasury (they are launch supply, not sale value),
+///   6. record the graduation and emit the receipts an indexer mirrors as
 ///      47005 `sweep`/`lock` events.
+///
+/// Failed (raise < threshold): every bidder wei refunds through exits, and
+/// `recoverFailedLaunch` returns the sale supply to `treasury` — without it the
+/// supply would be stranded forever in the auction, whose sweep is
+/// `tokensRecipient`-only. Recovery is legal ONLY when the auction is over and
+/// did NOT graduate: it is `treasury`-only, runs once per auction, and refuses
+/// graduated (hence also executed) launches with `AuctionGraduated`.
 ///
 /// The reserve stays escrowed until the TokenMaster/LBAMM pool deploys and
 /// the treasury records its address (`releaseReserve`). If the pool never
@@ -43,6 +55,9 @@ contract GraduationExecutor is ILBPInitializer {
     }
 
     mapping(address auction => Graduation) public graduations;
+    /// @notice One recovery per auction: once a failed launch's sale supply has
+    /// been returned to `treasury`, `recoverFailedLaunch` refuses to run again.
+    mapping(address auction => bool) public launchRecovered;
 
     event GraduationExecuted(
         address indexed auction,
@@ -55,6 +70,8 @@ contract GraduationExecutor is ILBPInitializer {
     );
     event ReserveReleased(address indexed auction, address pool, uint256 amount);
     event StuckReserveWithdrawn(address indexed auction, address currency);
+    /// @notice Emitted when a failed launch's sale supply is returned to the treasury.
+    event FailedLaunchRecovered(address indexed auction, address token, uint256 amount);
 
     error NotGraduated(address auction);
     error AlreadyExecuted(address auction);
@@ -64,6 +81,12 @@ contract GraduationExecutor is ILBPInitializer {
     error AlreadyReleased(address auction);
     error NothingToRelease(address auction);
     error BadReserveBps(uint16 reserveBps);
+    /// @notice Thrown when `recoverFailedLaunch` is called before the auction is over.
+    error AuctionStillRunning(address auction);
+    /// @notice Thrown when `recoverFailedLaunch` is called on a graduated launch.
+    error AuctionGraduated(address auction);
+    /// @notice Thrown when the failed launch's supply has already been recovered.
+    error AlreadyRecovered(address auction);
 
     constructor(address treasury_, uint16 reserveBps_) {
         if (treasury_ == address(0)) revert OnlyTreasury(address(0));
@@ -74,11 +97,16 @@ contract GraduationExecutor is ILBPInitializer {
 
     /// @notice One atomic graduation. Callable by anyone; the recipient
     /// guards inside the auction decide who can actually move the money.
+    /// @dev Materializes the auction's final checkpoint BEFORE reading
+    /// `isGraduated()`, which only sees the latest checkpoint — without this a
+    /// keeper calling right after `endBlock` gets `NotGraduated` even for a
+    /// launch that cleared the threshold.
     function executeGraduation(address auction) external {
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
-        if (!cca.isGraduated()) revert NotGraduated(auction);
         Graduation storage g = graduations[auction];
         if (g.executed) revert AlreadyExecuted(auction);
+        ICcaFinalization(auction).checkpoint();
+        if (!cca.isGraduated()) revert NotGraduated(auction);
 
         // The executor is the designated sweep recipient; the CCA enforces
         // this itself, so a clear failure here means the launch misconfigured
@@ -126,6 +154,39 @@ contract GraduationExecutor is ILBPInitializer {
             treasuryShare,
             unsoldTokens
         );
+    }
+
+    /// @notice Return a failed launch's sale supply to the treasury.
+    /// @dev Legal ONLY when the auction is over and did NOT graduate. The final
+    /// checkpoint is materialized first, so a graduated launch whose end-block
+    /// raise is not yet checkpointed is still refused (`AuctionGraduated`) — an
+    /// executed launch is necessarily graduated, so the same check shields it.
+    /// The executor is the auction's `tokensRecipient`, which is what authorizes
+    /// the `sweepUnsoldTokens` pull. Exactly the swept amount is forwarded (the
+    /// executor's pre-existing token balance is left alone). Runs once per
+    /// auction; the auction's own one-shot sweep is the backstop.
+    function recoverFailedLaunch(address auction) external {
+        if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        if (launchRecovered[auction]) revert AlreadyRecovered(auction);
+        IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
+        if (block.number < ICcaFinalization(auction).endBlock()) {
+            revert AuctionStillRunning(auction);
+        }
+        ICcaFinalization(auction).checkpoint();
+        if (cca.isGraduated()) revert AuctionGraduated(auction);
+        if (cca.tokensRecipient() != address(this)) {
+            revert NotTokensRecipient(auction, address(this), cca.tokensRecipient());
+        }
+
+        address token = cca.token();
+        uint256 balanceBefore = _tokenBalance(token, address(this));
+        launchRecovered[auction] = true;
+        cca.sweepUnsoldTokens();
+        uint256 recovered = _tokenBalance(token, address(this)) - balanceBefore;
+        if (recovered > 0) {
+            token.safeTransfer(treasury, recovered);
+        }
+        emit FailedLaunchRecovered(auction, token, recovered);
     }
 
     /// @notice Send the escrowed reserve to the recorded TokenMaster pool.

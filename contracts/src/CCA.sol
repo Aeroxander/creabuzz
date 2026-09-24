@@ -29,6 +29,21 @@ interface IContinuousClearingAuction {
     function sweepUnsoldTokens() external;
 }
 
+/// @notice Finalization handoff points the executor drives at the close of an
+/// auction. Kept separate from `IContinuousClearingAuction` so minimal mocks
+/// and sweep-only consumers need not implement them.
+interface ICcaFinalization {
+    /// @notice Materialize the checkpoint at the current block; after the end
+    /// block this records the final raise that `isGraduated()` reads (which
+    /// otherwise only sees the latest stale checkpoint). Anyone may call it.
+    /// @dev Mirrors upstream `checkpoint()`, whose returned checkpoint data
+    /// this binding intentionally ignores (same selector).
+    function checkpoint() external;
+    /// @notice The block at which the auction ends; the auction is over once
+    /// `block.number >= endBlock()`.
+    function endBlock() external view returns (uint64);
+}
+
 /// @notice Downstream strategy consumed by a graduated auction. The canonical
 /// implementation seeds a Uniswap v4 pool; the launchpad deploys
 /// `AppTokenLBPInitializer` instead to seed apptoken rails.

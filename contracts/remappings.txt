@@ -1,1 +1,4 @@
 @limitbreak/tm-core-lib/=lib/tm-tokenmaster/lib/tm-core-lib/
+@openzeppelin/contracts/=lib/continuous-clearing-auction/lib/openzeppelin-contracts/contracts/
+account-abstraction/=lib/zerodev-kernel-7579-plugins/dependencies/eth-infinitism-account-abstraction-0.8.0/contracts/
+src/=lib/zerodev-kernel-7579-plugins/src/

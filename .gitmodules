@@ -22,3 +22,9 @@
 [submodule "apptoken-dev"]
 	path = apptoken-dev
 	url = https://github.com/limitbreakinc/apptoken-dev.git
+[submodule "contracts/lib/zerodev-kernel"]
+	path = contracts/lib/zerodev-kernel
+	url = https://github.com/zerodevapp/kernel
+[submodule "contracts/lib/zerodev-kernel-7579-plugins"]
+	path = contracts/lib/zerodev-kernel-7579-plugins
+	url = https://github.com/zerodevapp/kernel-7579-plugins

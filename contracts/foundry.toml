@@ -3,6 +3,9 @@ evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
+# vm.ffi for the pinned P-256 fixture signer in test/kernel-sign.mjs
+# (KernelWebAuthnUserOp.t.sol).
+ffi = true
 fs_permissions = [{ access = "read-write", path = "./deployments" }]
 
 [rpc_endpoints]

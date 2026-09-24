@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {GraduationExecutor} from "../src/GraduationExecutor.sol";
-import {IContinuousClearingAuction} from "../src/CCA.sol";
+import {IContinuousClearingAuction, ICcaFinalization} from "../src/CCA.sol";
 
 contract PlainERC20 {
     mapping(address => uint256) public balanceOf;
@@ -20,8 +20,13 @@ contract PlainERC20 {
 
 /// A graduated auction the executor can actually sweep: real balances,
 /// recipient-guarded sweeps, and honest params.
-contract FundedMockAuction is IContinuousClearingAuction {
+/// `ICcaFinalization` mirrors the CCA's checkpoint behavior: `isGraduated()`
+/// only reflects materialized checkpoints (the end-block raise does not exist
+/// until `checkpoint()` runs), and `endBlock()` bounds when sweeps may happen.
+contract FundedMockAuction is IContinuousClearingAuction, ICcaFinalization {
     bool public graduated;
+    bool public checkpointed;
+    uint64 internal endBlock_;
     LBPInitializationParams public params;
     PlainERC20 public currencyToken;
     PlainERC20 public saleToken;
@@ -31,10 +36,20 @@ contract FundedMockAuction is IContinuousClearingAuction {
     constructor() {
         currencyToken = new PlainERC20();
         saleToken = new PlainERC20();
+        endBlock_ = uint64(block.number); // over by default
     }
 
     function setGraduated(bool g) external {
         graduated = g;
+    }
+    function setEndBlock(uint64 b) external {
+        endBlock_ = b;
+    }
+    function checkpoint() external override {
+        checkpointed = true;
+    }
+    function endBlock() external view override returns (uint64) {
+        return endBlock_;
     }
     function setParams(uint256 price, uint256 sold, uint256 raised) external {
         params = LBPInitializationParams(price, sold, raised);
@@ -48,7 +63,7 @@ contract FundedMockAuction is IContinuousClearingAuction {
         saleToken.mint(address(this), tokens_);
     }
     function isGraduated() external view override returns (bool) {
-        return graduated;
+        return graduated && checkpointed;
     }
     function currencyRaised() external view override returns (uint256) {
         return params.currencyRaised;
@@ -190,6 +205,104 @@ contract GraduationExecutorTest is Test {
             abi.encodeWithSelector(GraduationExecutor.NotGraduated.selector, address(auction))
         );
         executor.onGraduation(address(auction), params);
+    }
+
+    /// Ordering seam (finding 2): the mock hides graduation until
+    /// `checkpoint()` runs, exactly like the CCA's end-block raise. Removing
+    /// the production `checkpoint()` call from `executeGraduation` makes this
+    /// revert `NotGraduated` and fail.
+    function test_execute_materializes_checkpoint_before_graduation_check() public {
+        assertFalse(auction.isGraduated(), "graduation invisible until checkpointed");
+        executor.executeGraduation(address(auction));
+        assertTrue(auction.checkpointed(), "executeGraduation must materialize the checkpoint");
+        (,,,,,, , bool executed) = _grad(address(auction));
+        assertTrue(executed);
+    }
+
+    function test_recover_failed_launch_returns_supply_to_treasury_exactly() public {
+        auction.setGraduated(false);
+        PlainERC20 token = PlainERC20(auction.token());
+        PlainERC20 currencyToken = PlainERC20(auction.currency());
+        // Stray dust predating the recovery: only the swept supply moves.
+        token.mint(address(executor), 7e18);
+
+        vm.prank(treasury);
+        executor.recoverFailedLaunch(address(auction));
+
+        assertEq(token.balanceOf(treasury), 300e18, "sale supply recovered exactly");
+        assertEq(token.balanceOf(address(executor)), 7e18, "pre-existing dust untouched");
+        assertEq(token.balanceOf(address(auction)), 0, "sweep cleared the auction");
+        // Recovery touches the sale supply only — no currency moves.
+        assertEq(currencyToken.balanceOf(treasury), 0, "no currency on a failed launch");
+        assertEq(currencyToken.balanceOf(address(auction)), 9000e6);
+        assertTrue(executor.launchRecovered(address(auction)));
+        (,,,,,, , bool executed) = _grad(address(auction));
+        assertFalse(executed, "recovery must never record a graduation");
+    }
+
+    function test_recover_failed_launch_only_treasury() public {
+        auction.setGraduated(false);
+        vm.expectRevert(abi.encodeWithSelector(GraduationExecutor.OnlyTreasury.selector, eoa));
+        vm.prank(eoa);
+        executor.recoverFailedLaunch(address(auction));
+    }
+
+    /// The mock starts graduated but UNcheckpointed (`isGraduated()` reads
+    /// false) — without recovery's own `checkpoint()` call before the
+    /// graduation check, this would drain a graduated launch and fail.
+    function test_recover_failed_launch_refuses_graduated_launch() public {
+        assertFalse(auction.isGraduated(), "graduation invisible until checkpointed");
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(GraduationExecutor.AuctionGraduated.selector, address(auction))
+        );
+        executor.recoverFailedLaunch(address(auction));
+        assertEq(PlainERC20(auction.token()).balanceOf(address(auction)), 300e18, "nothing moved");
+    }
+
+    /// Executed implies graduated on-chain, so the same guard shields the
+    /// happy path after `executeGraduation` has run.
+    function test_recover_after_execution_reverts_graduated() public {
+        executor.executeGraduation(address(auction));
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(GraduationExecutor.AuctionGraduated.selector, address(auction))
+        );
+        executor.recoverFailedLaunch(address(auction));
+    }
+
+    function test_recover_failed_launch_while_auction_running_reverts() public {
+        auction.setGraduated(false);
+        auction.setEndBlock(uint64(block.number) + 10);
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(GraduationExecutor.AuctionStillRunning.selector, address(auction))
+        );
+        executor.recoverFailedLaunch(address(auction));
+    }
+
+    function test_recover_failed_launch_twice_reverts() public {
+        auction.setGraduated(false);
+        vm.prank(treasury);
+        executor.recoverFailedLaunch(address(auction));
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(GraduationExecutor.AlreadyRecovered.selector, address(auction))
+        );
+        executor.recoverFailedLaunch(address(auction));
+        assertEq(PlainERC20(auction.token()).balanceOf(treasury), 300e18, "moved exactly once");
+    }
+
+    function test_recover_failed_launch_requires_tokens_recipient() public {
+        auction.setGraduated(false);
+        auction.setRecipients(address(executor), eoa);
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GraduationExecutor.NotTokensRecipient.selector, address(auction), address(executor), eoa
+            )
+        );
+        executor.recoverFailedLaunch(address(auction));
     }
 
     function _grad(address a)
