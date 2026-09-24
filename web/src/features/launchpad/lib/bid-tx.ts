@@ -229,6 +229,48 @@ export function buildBidTransaction(
 }
 
 /**
+ * Compose the full ordered call list of a bid: the Permit2 approval
+ * (ERC-20-currency auctions) followed by `submitBid`. This is THE composer
+ * behind both send paths in `ui/RecordBidDialog.tsx`: the injected wallet sends
+ * these calls via sequential `eth_sendTransaction`, the passkey account sends
+ * them through `identity/lib/sponsoredSender.ts`. The sender swap must never
+ * change these bytes — `identity/lib/sponsoredSender.test.mjs` binds that
+ * parity at both adapters' wire boundaries.
+ *
+ * `plan.owner` is sender-chosen and is the only sender-dependent input: the
+ * CCA budget is pulled from the CALLER (`ContinuousClearingAuction.sol`
+ * `submitBid` → `permit2TransferFrom(..., msg.sender, ...)`), while `owner`
+ * receives tokens and refunds. Nothing here assumes `msg.sender == owner`.
+ * (Native-currency auctions are unchanged from the old inline composition:
+ * `value` stays "0x0" — only the ERC-20 path is wired.)
+ */
+export function buildBidCalls(input: {
+  auction: string;
+  plan: BidPlan;
+  /** ERC-20 currency address, or null/other for a non-ERC-20 auction. */
+  currency: string | null;
+  /** Permit2 approval deadline (unix seconds). */
+  deadline: bigint;
+}): UnsignedTx[] {
+  const calls: UnsignedTx[] = [];
+  const currency = input.currency;
+  if (currency && /^0x[0-9a-fA-F]{40}$/.test(currency)) {
+    calls.push({
+      to: PERMIT2_ADDRESS,
+      value: "0x0",
+      data: encodePermit2Approve(
+        currency,
+        input.auction,
+        input.plan.amount,
+        input.deadline,
+      ),
+    });
+  }
+  calls.push(buildBidTransaction(input.auction, input.plan));
+  return calls;
+}
+
+/**
  * A bid plan whose previous-tick hint defaults to the launch's own floor price
  * (the auction's first initialized tick) unless the caller supplies a better
  * one. Passing the launch floor is what the 4-arg `submitBid` overload does

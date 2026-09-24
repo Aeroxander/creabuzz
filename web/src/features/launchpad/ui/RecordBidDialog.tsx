@@ -6,15 +6,24 @@ import { Modal } from "./Modal";
 import { clearingPrice } from "../chain";
 import {
   bidPlanWithDefaultHint,
-  buildBidTransaction,
-  encodePermit2Approve,
-  PERMIT2_ADDRESS,
+  buildBidCalls,
   validateBid,
   type BidPlan,
 } from "../lib/bid-tx";
 import { toAtomic } from "../lib/amounts";
 import { TX_HASH_RE } from "../lib/milestone-receipt";
+import { createInjectedWalletSender } from "../lib/wallet-sender";
 import type { LaunchRecord } from "../models";
+import { kernel033ChainRpcUrl } from "@/features/identity/lib/kernel033";
+import {
+  createSponsoredSender,
+  SponsoredSenderUnavailableError,
+} from "@/features/identity/lib/sponsoredSender";
+import {
+  PaymasterDeniedError,
+  zerodevConfigFromEnv,
+} from "@/features/identity/lib/zerodev";
+import { truncatePubkey } from "@/shared/lib/pubkey";
 
 interface BidInput {
   bucket: string;
@@ -30,9 +39,12 @@ interface BidInput {
  * The dialog composes the real CCA `submitBid` calldata (the exact bytes the
  * contract accepts — `lib/bid-tx.ts`, bound by `BidCalldata.t.sol`), snaps the
  * desired max price onto the auction's tick grid, and validates against the
- * same reverts. When a wallet is present it sends the transaction and records
- * the hash; without a wallet (or an indexer/agent that bid elsewhere) the
- * manual hash entry stays available. The mirror (`Record bid`) is only
+ * same reverts. The sender is a picker: the injected wallet (current) or the
+ * passkey-owned Kernel-0.3.3 account with ZeroDev gas sponsorship
+ * (`lib/sponsoredSender.ts`). Both consume the SAME composed calls — the
+ * sender swap never changes the calldata. After a send the hash is recorded;
+ * without any sender (or an indexer/agent that bid elsewhere) the manual hash
+ * entry stays available. The mirror (`Record bid`) is only
  * enabled once a tx hash exists: the chain is the ledger, the mirror is the
  * record, and a mirror with no tx would claim a bid that never landed.
  */
@@ -59,6 +71,9 @@ export function RecordBidDialog({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [clearing, setClearing] = useState<bigint | null>(null);
+  const [senderKind, setSenderKind] = useState<"wallet" | "passkey">("wallet");
+  const [passkeyAccount, setPasskeyAccount] = useState<string | null>(null);
+  const [passkeyNote, setPasskeyNote] = useState<string | null>(null);
 
   const auction = record.auction;
   const floorPriceQ96 = toAtomic(record.floorPrice) ?? null;
@@ -139,69 +154,98 @@ export function RecordBidDialog({
       }
     | undefined;
 
+  // The passkey sender runs on the sponsored stack's chain (Sepolia in this
+  // wave): the ZeroDev chain id plus `kernel033ChainRpcUrl`'s RPC for the
+  // kernel reads. Missing config is an explicit unavailable state below.
+  const chainId = zerodevConfigFromEnv().chainId ?? 0;
+  const sponsoredRpcUrl = useMemo(() => {
+    if (!Number.isInteger(chainId) || chainId <= 0) return "";
+    try {
+      return kernel033ChainRpcUrl(chainId);
+    } catch {
+      return "";
+    }
+  }, [chainId]);
+  const sponsoredSender = useMemo(
+    () => createSponsoredSender({ chainId, rpcUrl: sponsoredRpcUrl }),
+    [chainId, sponsoredRpcUrl],
+  );
+  const sponsoredStatus = useMemo(
+    () => sponsoredSender.availability(),
+    [sponsoredSender],
+  );
+
+  // Derive the counterfactual account when the passkey option is picked.
+  // Fence the async result (Rule 2): a stale derivation must not write state.
+  useEffect(() => {
+    if (senderKind !== "passkey") return;
+    let alive = true;
+    setPasskeyAccount(null);
+    setPasskeyNote(null);
+    sponsoredSender.getAddress().then(
+      (address) => {
+        if (alive) setPasskeyAccount(address);
+      },
+      (err: unknown) => {
+        if (alive) {
+          setPasskeyNote(
+            err instanceof Error
+              ? err.message
+              : "Could not derive the account.",
+          );
+        }
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [senderKind, sponsoredSender]);
+
+  let passkeyStatusText = "Deriving the account address…";
+  if (!sponsoredStatus.available) {
+    passkeyStatusText =
+      `${sponsoredStatus.reason ?? ""} ${sponsoredStatus.action ?? ""}`.trim();
+  } else if (passkeyNote) {
+    passkeyStatusText = passkeyNote;
+  } else if (passkeyAccount) {
+    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)} — tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
+  }
+
   const sendBid = async () => {
     if (!auction || !plan) return;
     setError(null);
     setSending(true);
     try {
-      if (!wallet) {
-        setError(
-          "No wallet found in this browser. Bid on the auction contract directly, then paste the transaction hash below.",
-        );
-        return;
-      }
-      const accounts = (await wallet.request({
-        method: "eth_requestAccounts",
-      })) as string[];
-      const address = accounts?.[0];
-      if (!address) throw new Error("No account selected in the wallet.");
-      // Owner is the connected wallet: tokens and refunds settle there.
-      const ownerPlan = { ...plan, owner: address };
-      // USDC auctions pull via Permit2: approve the auction as spender for
-      // the budget before the bid, then submit.
-      const calls: Array<{ to: string; value: string; data: string }> = [];
-      const currency = record.currency;
-      if (currency && /^0x[0-9a-fA-F]{40}$/.test(currency)) {
-        const deadline = BigInt(Math.floor(Date.now() / 1000)) + 3600n;
-        calls.push({
-          to: PERMIT2_ADDRESS,
-          value: "0x0",
-          data: encodePermit2Approve(
-            currency,
-            auction,
-            ownerPlan.amount,
-            deadline,
-          ),
-        });
-      }
-      const bidTx = buildBidTransaction(auction, ownerPlan);
-      calls.push({
-        to: bidTx.to,
-        value: bidTx.value,
-        data: bidTx.data,
+      const sender =
+        senderKind === "passkey"
+          ? sponsoredSender
+          : createInjectedWalletSender(wallet);
+      const senderAddress = await sender.getAddress();
+      // Owner is the sending account: tokens and refunds settle there. The
+      // budget is pulled from the CALLER onchain, so the composed calldata is
+      // sender-agnostic apart from this owner choice.
+      const ownerPlan = { ...plan, owner: senderAddress };
+      const calls = buildBidCalls({
+        auction,
+        plan: ownerPlan,
+        currency: record.currency ?? null,
+        deadline: BigInt(Math.floor(Date.now() / 1000)) + 3600n,
       });
-      // One confirm, batched: the wallet decides how (eth_sendTransaction
-      // per call or a bundler); we send sequentially, recording each hash.
-      let lastHash = "";
-      for (const call of calls) {
-        const hash = (await wallet.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: address,
-              to: call.to,
-              value: call.value,
-              data: call.data,
-            },
-          ],
-        })) as string;
-        lastHash = hash;
-      }
-      if (!TX_HASH_RE.test(lastHash))
-        throw new Error("The wallet returned an invalid hash.");
-      setTx(lastHash);
+      const result = await sender.sendCalls(calls);
+      if (!TX_HASH_RE.test(result.txHash))
+        throw new Error("The sender returned an invalid hash.");
+      setTx(result.txHash);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The bid was not sent.");
+      if (err instanceof PaymasterDeniedError) {
+        setError(`${err.serverMessage} ${err.dashboardAction}`);
+      } else if (
+        err instanceof SponsoredSenderUnavailableError &&
+        err.availability.action
+      ) {
+        setError(`${err.message} ${err.availability.action}`);
+      } else {
+        setError(err instanceof Error ? err.message : "The bid was not sent.");
+      }
     } finally {
       setSending(false);
     }
@@ -248,6 +292,47 @@ export function RecordBidDialog({
           bids. You can compose the terms below but nothing will send.
         </p>
       ) : null}
+      <fieldset className="mt-3 rounded-lg border border-black/10 p-3 dark:border-white/10">
+        <legend className="text-sm font-medium">Send with</legend>
+        <label className="flex items-start gap-2 text-sm text-black/80 dark:text-white/80">
+          <input
+            checked={senderKind === "wallet"}
+            data-testid="bid-sender-wallet"
+            name="bid-sender"
+            onChange={() => setSenderKind("wallet")}
+            type="radio"
+          />
+          <span>
+            Injected wallet (current)
+            {!wallet ? (
+              <span className="block text-xs text-black/60 dark:text-white/60">
+                No injected wallet in this browser — pick the passkey account
+                instead.
+              </span>
+            ) : null}
+          </span>
+        </label>
+        <label className="mt-2 flex items-start gap-2 text-sm text-black/80 dark:text-white/80">
+          <input
+            checked={senderKind === "passkey"}
+            data-testid="bid-sender-passkey"
+            name="bid-sender"
+            onChange={() => setSenderKind("passkey")}
+            type="radio"
+          />
+          <span>
+            Passkey account — gas sponsored (Sepolia)
+            {senderKind === "passkey" ? (
+              <span
+                className="block text-xs text-black/60 dark:text-white/60"
+                data-testid="bid-sender-passkey-status"
+              >
+                {passkeyStatusText}
+              </span>
+            ) : null}
+          </span>
+        </label>
+      </fieldset>
       <div className="mt-3 flex flex-col gap-3">
         <div>
           <label className="text-sm font-medium" htmlFor="bid-bucket">
