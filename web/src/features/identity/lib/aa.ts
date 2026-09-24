@@ -271,6 +271,15 @@ export interface BundlerConfig {
   backoffMs?: number;
   /** Injection seam for tests. Defaults to global `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * Wire-shape adapter for `eth_sendUserOperation` /
+   * `eth_estimateUserOperationGas`. Defaults to identity (the packed
+   * struct, matching `eth_sendUserOperation` against a self-bundling
+   * EntryPoint); ZeroDev's hosted bundler speaks the ERC-4337 v0.7-style
+   * UNPACKED JSON and rejects the packed keys (see `zerodev.ts` ledger
+   * item 3) — pass `toRpcUserOperation` there.
+   */
+  userOpEncoder?: (userOp: PackedUserOperation) => unknown;
 }
 
 export interface BundlerTransport {
@@ -289,6 +298,12 @@ export interface BundlerTransport {
   getUserOperationReceipt(
     userOpHash: string,
   ): Promise<UserOperationReceipt | null>;
+  /**
+   * Escape hatch for provider-specific JSON-RPC methods (e.g. ZeroDev's
+   * `zd_sponsorUserOperation`) under the same bounded retry policy as the
+   * typed methods (Rule 4).
+   */
+  request<T>(method: string, params: unknown[]): Promise<T>;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -311,6 +326,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+/**
+ * Error bodies carry the upstream failure (e.g. ZeroDev's sponsorship
+ * simulation/policy text arrives as an HTTP 400 body) — discarding them
+ * hides the exact failure (Review-Proven Rule 1). Bounded to 2000 chars.
+ */
+async function boundedBodyText(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text === "" ? "" : `: ${text.slice(0, 2000)}`;
+  } catch {
+    return "";
+  }
 }
 
 async function fetchWithTimeout(
@@ -347,6 +376,8 @@ export function createBundlerTransport(
   const maxAttempts = Math.max(1, config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
   const backoffMs = Math.max(0, config.backoffMs ?? DEFAULT_BACKOFF_MS);
   const fetchImpl = config.fetchImpl ?? fetch;
+  const userOpEncoder =
+    config.userOpEncoder ?? ((op: PackedUserOperation) => op);
 
   async function rpc<T>(method: string, params: unknown[]): Promise<T> {
     if (url === undefined) {
@@ -364,12 +395,12 @@ export function createBundlerTransport(
         );
         if (response.status === 429 || response.status >= 500) {
           lastError = new BundlerRpcError(
-            `bundler: ${method} HTTP ${response.status}`,
+            `bundler: ${method} HTTP ${response.status}${await boundedBodyText(response)}`,
             { retryable: true },
           );
         } else if (!response.ok) {
           throw new BundlerRpcError(
-            `bundler: ${method} HTTP ${response.status}`,
+            `bundler: ${method} HTTP ${response.status}${await boundedBodyText(response)}`,
           );
         } else {
           const payload = (await response.json()) as {
@@ -411,20 +442,26 @@ export function createBundlerTransport(
     url: url ?? "",
     async sendUserOperation(userOp, entryPoint) {
       return requireString(
-        await rpc<string>("eth_sendUserOperation", [userOp, entryPoint]),
+        await rpc<string>("eth_sendUserOperation", [
+          userOpEncoder(userOp),
+          entryPoint,
+        ]),
         "userOpHash",
       );
     },
     async estimateUserOperationGas(userOp, entryPoint) {
       return (await rpc<UserOperationGasEstimate>(
         "eth_estimateUserOperationGas",
-        [userOp, entryPoint],
+        [userOpEncoder(userOp), entryPoint],
       )) as UserOperationGasEstimate;
     },
     async getUserOperationReceipt(userOpHash) {
       return rpc<UserOperationReceipt | null>("eth_getUserOperationReceipt", [
         userOpHash,
       ]);
+    },
+    async request<T>(method: string, params: unknown[]): Promise<T> {
+      return rpc<T>(method, params);
     },
   };
 }
