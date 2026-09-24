@@ -34,6 +34,7 @@ mod native_websocket_batch;
 mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;
+mod passkey_derive;
 mod persona_catalog;
 mod prevent_sleep;
 mod ptt_shortcut;
@@ -552,6 +553,9 @@ pub fn run() {
             unarchive_builderlab_community,
             transfer_builderlab_community,
             title_bar_double_click,
+            passkey_capability,
+            passkey_create,
+            passkey_get,
             get_identity,
             get_nsec,
             generate_backup_passphrase,

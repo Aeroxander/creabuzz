@@ -122,6 +122,10 @@ mesh-llm-system = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.
 mesh-llm-events = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-events", optional = true }
 base64 = "0.22"
 sha2 = "0.11"
+# Passkey derivation parity with web (HKDF-SHA256 + keccak-256 for the r1
+# address preview) — RustCrypto siblings of sha2.
+hkdf = "0.13"
+sha3 = "0.10"
 tar = "0.4"
 bzip2 = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
