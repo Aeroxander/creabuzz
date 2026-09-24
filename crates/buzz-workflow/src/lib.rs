@@ -2417,6 +2417,27 @@ steps:
                 .push(emission);
             Box::pin(async move { Ok("test-approval-event".to_string()) })
         }
+
+        fn distill_agent_wiki(
+            &self,
+            _community_id: CommunityId,
+            space: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<serde_json::Value, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            let space = space.to_owned();
+            Box::pin(async move {
+                Ok(serde_json::json!({
+                    "status": "published",
+                    "space": space,
+                    "event_id": "test-distill-event",
+                }))
+            })
+        }
     }
 
     fn approval_def() -> WorkflowDef {
@@ -2650,6 +2671,358 @@ steps:
         assert!(
             sink.emissions.lock().expect("emission log").is_empty(),
             "rejected suspensions must emit nothing"
+        );
+    }
+
+    // -- Self-maintaining Agent Wiki: scheduled distill smoke ----------------
+
+    /// Sink recording `distill_agent_wiki` invocations (the action the cron
+    /// smoke drives end to end through `execute_run`).
+    #[derive(Default)]
+    struct DistillRecordingSink {
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl crate::ActionSink for DistillRecordingSink {
+        fn send_message(
+            &self,
+            _community_id: CommunityId,
+            _channel_id: &str,
+            _text: &str,
+            _authored_text: &str,
+            _author_pubkey: &str,
+            _reply_to: Option<&str>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async move { Ok("unused".to_string()) })
+        }
+
+        fn emit_approval_request(
+            &self,
+            _community_id: CommunityId,
+            _channel_id: &str,
+            _token_hash_hex: &str,
+            _approver_spec: &str,
+            _message: &str,
+            _author_pubkey: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async move { Ok("unused".to_string()) })
+        }
+
+        fn distill_agent_wiki(
+            &self,
+            _community_id: CommunityId,
+            space: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<serde_json::Value, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            self.calls
+                .lock()
+                .expect("distill call log poisoned")
+                .push(space.to_string());
+            let space = space.to_owned();
+            Box::pin(async move {
+                Ok(serde_json::json!({
+                    "status": "published",
+                    "space": space,
+                    "event_id": "test-distill-event",
+                    "cursor": 200,
+                }))
+            })
+        }
+    }
+
+    /// The claim key a scheduled fire dedupes on must be stable across all
+    /// scheduler ticks inside one cron window: `WorkflowEngine::run` computes
+    /// `scheduled_for` from `cron_fire_instant` on every 60s tick, and the
+    /// durable `(community, workflow, scheduled_for)` claim lets only one of
+    /// those ticks (or pods) create the run. If two ticks in the window could
+    /// compute different keys, the at-most-once boundary would leak.
+    #[test]
+    fn cron_claim_key_is_stable_within_window() {
+        use chrono::{Duration, TimeZone};
+        let workflow_id = Uuid::new_v4();
+        // 09:00:00 UTC on a Monday, per the shipped `0 9 * * 1-5` schedule.
+        let base = Utc.with_ymd_and_hms(2026, 1, 5, 9, 0, 0).unwrap();
+        let first = cron_fire_instant("0 9 * * 1-5", base + Duration::seconds(3), 60, workflow_id)
+            .expect("tick 3s after the window fires");
+        // A drifted tick (another pod, 45s later) lands on the same claim key.
+        let second =
+            cron_fire_instant("0 9 * * 1-5", base + Duration::seconds(48), 60, workflow_id)
+                .expect("drifted tick within the window fires");
+        assert_eq!(first, second, "both ticks claim one fire → executes once");
+        assert_eq!(first, base, "claim key anchors on the scheduled time");
+
+        // The next day's window is a NEW claim key (the schedule advances).
+        let next = cron_fire_instant(
+            "0 9 * * 1-5",
+            base + Duration::days(1) + Duration::seconds(3),
+            60,
+            workflow_id,
+        )
+        .expect("next-day window fires");
+        assert_ne!(first, next, "the next window is a fresh fire");
+    }
+
+    /// A scheduled `distill_agent_wiki` fire executes the action exactly once:
+    /// the durable claim dedupes duplicate ticks/pods, the won claim runs the
+    /// step through the action sink once, and the result is visible in run
+    /// history (execution trace). Follows the engine's per-fire body from
+    /// `WorkflowEngine::run` (claim → create run → execute → finalize).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn scheduled_distill_fire_executes_action_once_and_claim_dedupes() {
+        use chrono::TimeZone;
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def: WorkflowDef = serde_json::from_value(serde_json::json!({
+            "name": "agwiki-nightly",
+            "trigger": {"on": "schedule", "cron": "0 9 * * 1-5"},
+            "steps": [{"id": "distill", "action": "distill_agent_wiki", "space": "default"}],
+            "enabled": true,
+        }))
+        .expect("distill definition parses");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "agwiki-nightly",
+                &serde_json::to_value(&def)
+                    .expect("serialize def")
+                    .to_string(),
+                &[7u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        let sink = Arc::new(DistillRecordingSink::default());
+        engine.set_action_sink(sink.clone());
+
+        let scheduled_for = Utc.with_ymd_and_hms(2026, 1, 5, 9, 0, 0).unwrap();
+
+        // First claim wins — this is the scheduler's at-most-once boundary.
+        let claim = db
+            .claim_scheduled_workflow_fire(community, workflow_id, scheduled_for)
+            .await
+            .expect("claim fire")
+            .expect("first claim must win");
+
+        // Per-fire body: create the run and execute it (as `run()` does).
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        db.attach_scheduled_workflow_run(community, workflow_id, claim.scheduled_for, run_id)
+            .await
+            .expect("attach run to claim");
+        let trigger_ctx = crate::executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            timestamp: scheduled_for.timestamp().to_string(),
+            ..Default::default()
+        };
+        let result = executor::execute_run(&engine, community, run_id, &def, &trigger_ctx)
+            .await
+            .expect("execute scheduled distill run");
+        engine
+            .finish_execution(
+                Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: Some(channel_id),
+                    author_pubkey: &member,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &trigger_ctx,
+                    existing_trace: None,
+                },
+                Ok(result),
+            )
+            .await;
+
+        // The action ran exactly once, for the definition's space …
+        assert_eq!(
+            sink.calls.lock().expect("call log").as_slice(),
+            ["default".to_string()],
+            "the scheduled fire executes the action once"
+        );
+
+        // … and its result is visible in workflow run history.
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("load run");
+        assert_eq!(run.status, RunStatus::Completed);
+        let trace = run.execution_trace.as_array().expect("trace is an array");
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0]["step_id"], "distill");
+        assert_eq!(trace[0]["status"], "completed");
+        assert_eq!(trace[0]["output"]["status"], "published");
+        assert_eq!(trace[0]["output"]["space"], "default");
+
+        // Duplicate fire (a re-tick or a second pod) must NOT claim again —
+        // the first claim already consumed this instant.
+        let duplicate = db
+            .claim_scheduled_workflow_fire(community, workflow_id, scheduled_for)
+            .await
+            .expect("duplicate claim attempt");
+        assert!(duplicate.is_none(), "duplicate-fire claim must be refused");
+        assert_eq!(
+            sink.calls.lock().expect("call log").len(),
+            1,
+            "a refused duplicate claim must never execute the action again"
+        );
+    }
+
+    /// A failed distill (here: the sink's fail-closed LLM-config error path
+    /// surface) must leave a visible run-status failure — never a silent
+    /// no-op (Review-Proven Rule 1).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn scheduled_distill_failure_is_visible_in_run_status() {
+        struct FailingSink;
+        impl crate::ActionSink for FailingSink {
+            fn send_message(
+                &self,
+                _community_id: CommunityId,
+                _channel_id: &str,
+                _text: &str,
+                _authored_text: &str,
+                _author_pubkey: &str,
+                _reply_to: Option<&str>,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                        + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move { Ok("unused".to_string()) })
+            }
+
+            fn emit_approval_request(
+                &self,
+                _community_id: CommunityId,
+                _channel_id: &str,
+                _token_hash_hex: &str,
+                _approver_spec: &str,
+                _message: &str,
+                _author_pubkey: &str,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                        + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move { Ok("unused".to_string()) })
+            }
+
+            fn distill_agent_wiki(
+                &self,
+                _community_id: CommunityId,
+                _space: &str,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<serde_json::Value, crate::ActionSinkError>,
+                        > + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move {
+                    Err(crate::ActionSinkError::Distill(
+                        "BUZZ_CLASSIFIER_API_URL is required (OpenAI-compatible classifier base URL)"
+                            .to_string(),
+                    ))
+                })
+            }
+        }
+
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def: WorkflowDef = serde_json::from_value(serde_json::json!({
+            "name": "agwiki-nightly",
+            "trigger": {"on": "schedule", "cron": "0 9 * * 1-5"},
+            "steps": [{"id": "distill", "action": "distill_agent_wiki", "space": "default"}],
+            "enabled": true,
+        }))
+        .expect("distill definition parses");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "agwiki-nightly",
+                &serde_json::to_value(&def)
+                    .expect("serialize def")
+                    .to_string(),
+                &[8u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        engine.set_action_sink(Arc::new(FailingSink));
+
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        let trigger_ctx = crate::executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            ..Default::default()
+        };
+        let result = executor::execute_run(&engine, community, run_id, &def, &trigger_ctx).await;
+        engine
+            .finish_execution(
+                Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: Some(channel_id),
+                    author_pubkey: &member,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &trigger_ctx,
+                    existing_trace: None,
+                },
+                result,
+            )
+            .await;
+
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("load run");
+        assert_eq!(run.status, RunStatus::Failed, "failure must be visible");
+        let code = run.error_code.as_deref().unwrap_or_default();
+        assert!(!code.is_empty(), "failure must carry a machine code");
+        let message = run.error_message.as_deref().unwrap_or_default();
+        assert!(
+            message.contains("BUZZ_CLASSIFIER_API_URL"),
+            "failure message must name the missing config: {message}"
         );
     }
 }

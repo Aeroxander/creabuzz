@@ -638,6 +638,296 @@ impl ActionSink for RelayActionSink {
             Ok(event_id_hex)
         })
     }
+
+    fn distill_agent_wiki(
+        &self,
+        community_id: CommunityId,
+        space: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        let space = space.to_owned();
+
+        Box::pin(async move {
+            // 0. Upgrade weak reference — fails only during shutdown.
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Fail closed when the classifier endpoint is unconfigured: a
+            // scheduled maintenance run must leave a visible run-status error,
+            // never silently skip (Review-Proven Rule 1). Same
+            // `BUZZ_CLASSIFIER_*` env/config as `org classify` and
+            // `buzz agwiki distill`.
+            let target = classifier_target()?;
+
+            // Same community scoping contract as `send_message`: the run
+            // carries its owning community; read its host back only to form a
+            // complete TenantContext (labelling), never to re-derive the
+            // community from the deployment default.
+            let host = state
+                .db
+                .lookup_community_host(community_id)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?
+                .ok_or_else(|| {
+                    ActionSinkError::Database(format!(
+                        "workflow run community {community_id} is not mapped to a host"
+                    ))
+                })?;
+            let tenant = buzz_core::tenant::TenantContext::resolved(community_id, host);
+
+            info!(community = %community_id, space = %space, "DistillAgentWiki: running the distill loop");
+            let ports = RelayDistillPorts {
+                state: &state,
+                tenant: &tenant,
+                target: &target,
+            };
+            let outcome = buzz_agwiki::run::run_distill(
+                &ports,
+                &buzz_agwiki::run::DistillOptions {
+                    space: &space,
+                    limit: None,
+                    publish: true,
+                },
+                &|msg| tracing::warn!(target: "agwiki", "{msg}"),
+            )
+            .await
+            .map_err(|e| match e {
+                buzz_agwiki::run::DistillError::Failed(m) => ActionSinkError::Distill(m),
+                buzz_agwiki::run::DistillError::Port(e) => e,
+            })?;
+            Ok(distill_outcome_json(&outcome))
+        })
+    }
+}
+
+// ── Agent Wiki self-maintenance (`distill_agent_wiki`) ─────────────────────
+
+/// Resolve the classifier endpoint through a provider (injectable for tests).
+/// Fail closed — an unconfigured deployment surfaces a visible run-status
+/// error instead of silently skipping a scheduled maintenance run.
+fn classifier_target_from(
+    get: impl Fn(&str) -> Option<String>,
+) -> Result<buzz_agwiki::llm::LlmTarget, ActionSinkError> {
+    buzz_agwiki::llm::classifier_target_from_provider(get).map_err(ActionSinkError::Distill)
+}
+
+/// Resolve the classifier endpoint from the shared `BUZZ_CLASSIFIER_*` env
+/// (same config as `org classify` / `buzz agwiki distill`).
+fn classifier_target() -> Result<buzz_agwiki::llm::LlmTarget, ActionSinkError> {
+    classifier_target_from(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+}
+
+/// Sign a composed Agent Wiki page and enforce the relay's kind:44002
+/// envelope before the internal publish — the same
+/// [`validate_agent_wiki_envelope`] bounds a client-side publish must satisfy
+/// (malformed pages must never win read-side LWW against a valid head). This
+/// is the production publish path's validation seam: `RelayDistillPorts::
+/// publish` signs and validates through exactly this function.
+fn sign_and_validate_agent_wiki_page(
+    keys: &nostr::Keys,
+    builder: EventBuilder,
+) -> Result<nostr::Event, ActionSinkError> {
+    let event = builder
+        .sign_with_keys(keys)
+        .map_err(|e| ActionSinkError::EventBuild(format!("signing: {e}")))?;
+    crate::handlers::ingest::validate_agent_wiki_envelope(&event)
+        .map_err(ActionSinkError::Distill)?;
+    Ok(event)
+}
+
+/// Relay-side ports for the shared `buzz-agwiki` distill core: bounded reads
+/// from the relay's own store, NIP-50 reflection search via Postgres FTS, the
+/// shared classifier LLM transport, and the internal relay-signed publish.
+struct RelayDistillPorts<'a> {
+    state: &'a Arc<AppState>,
+    tenant: &'a buzz_core::tenant::TenantContext,
+    target: &'a buzz_agwiki::llm::LlmTarget,
+}
+
+impl buzz_agwiki::run::DistillPorts for RelayDistillPorts<'_> {
+    type Error = ActionSinkError;
+
+    fn fetch_kind_events(
+        &self,
+        kind: u32,
+        since: u64,
+        bound: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, Vec<nostr::Event>, Self::Error> {
+        let query = buzz_db::EventQuery {
+            kinds: Some(vec![kind as i32]),
+            since: (since > 0)
+                .then(|| chrono::DateTime::from_timestamp(since as i64, 0))
+                .flatten(),
+            limit: Some(i64::from(bound)),
+            ..buzz_db::EventQuery::for_community(self.tenant.community())
+        };
+        Box::pin(async move {
+            let rows = self
+                .state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            Ok(rows.into_iter().map(|row| row.event).collect())
+        })
+    }
+
+    fn fetch_existing_page(
+        &self,
+        coordinate: &str,
+    ) -> buzz_agwiki::run::PortFut<'_, Option<(String, u64)>, Self::Error> {
+        let query = buzz_db::EventQuery {
+            kinds: Some(vec![i32::from(buzz_agwiki::KIND_AGENT_WIKI as u16)]),
+            d_tag: Some(coordinate.to_owned()),
+            limit: Some(i64::from(buzz_agwiki::AGWIKI_PAGE_QUERY_BOUND)),
+            ..buzz_db::EventQuery::for_community(self.tenant.community())
+        };
+        let coordinate = coordinate.to_owned();
+        Box::pin(async move {
+            let rows = self
+                .state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            let events: Vec<nostr::Event> = rows.into_iter().map(|row| row.event).collect();
+            Ok(buzz_agwiki::newest_page(&events, &coordinate))
+        })
+    }
+
+    fn search(
+        &self,
+        query: &str,
+        kinds: &[u32],
+        limit: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, Vec<serde_json::Value>, Self::Error> {
+        let search_query = buzz_search::SearchQuery {
+            community: self.tenant.community(),
+            q: query.to_owned(),
+            // Same scope the CLI's NIP-50 follow-up search sees: all community
+            // text (channels + forum), access-rechecked on the hydrate read.
+            channel_scope: buzz_search::ChannelScope::Any,
+            kinds: Some(kinds.iter().map(|k| *k as i32).collect()),
+            authors: None,
+            since: None,
+            until: None,
+            page: 1,
+            per_page: limit,
+            mode: buzz_search::SearchMode::FullText,
+        };
+        Box::pin(async move {
+            let result = self
+                .state
+                .search
+                .search(&search_query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            let hit_ids: Vec<[u8; 32]> = result.hits.into_iter().map(|h| h.event_id).collect();
+            let id_refs: Vec<&[u8]> = hit_ids.iter().map(|b| b.as_slice()).collect();
+            let events = self
+                .state
+                .db
+                .get_events_by_ids_routed(
+                    "agwiki_reflection_search",
+                    self.tenant.community(),
+                    &id_refs,
+                )
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            Ok(events
+                .iter()
+                .map(|stored| {
+                    serde_json::json!({
+                        "id": stored.event.id.to_hex(),
+                        "content": stored.event.content,
+                    })
+                })
+                .collect())
+        })
+    }
+
+    fn chat(
+        &self,
+        http: &reqwest::Client,
+        system: &str,
+        user: &str,
+        max_tokens: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, serde_json::Value, Self::Error> {
+        // Capture owned copies (the reqwest client is Arc-backed) so the
+        // boxed future is bound only by `&self`, matching the trait.
+        let http = http.clone();
+        let target = self.target.clone();
+        let system = system.to_owned();
+        let user = user.to_owned();
+        Box::pin(async move {
+            buzz_agwiki::llm::chat_completion(&http, &target, &system, &user, max_tokens)
+                .await
+                .map_err(|e| ActionSinkError::Distill(e.to_string()))
+        })
+    }
+
+    fn publish(&self, builder: EventBuilder) -> buzz_agwiki::run::PortFut<'_, String, Self::Error> {
+        Box::pin(async move {
+            // Relay-signed internal publish — but the envelope bounds are the
+            // same as the client ingest path (fail closed on violations).
+            let event = sign_and_validate_agent_wiki_page(&self.state.relay_keypair, builder)?;
+            let (stored_event, was_inserted) = self
+                .state
+                .db
+                .insert_event_with_thread_metadata(self.tenant.community(), &event, None, None)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            if was_inserted {
+                let _ = dispatch_persistent_event(
+                    self.tenant,
+                    self.state,
+                    &stored_event,
+                    buzz_agwiki::KIND_AGENT_WIKI,
+                    &event.pubkey.to_hex(),
+                    None,
+                )
+                .await;
+            }
+            Ok(event.id.to_hex())
+        })
+    }
+
+    fn llm_model(&self) -> &str {
+        &self.target.model
+    }
+}
+
+/// Map the core outcome to the step output recorded in workflow run history.
+fn distill_outcome_json(outcome: &buzz_agwiki::run::DistillOutcome) -> serde_json::Value {
+    use buzz_agwiki::run::DistillOutcome;
+    match outcome {
+        DistillOutcome::Skipped { coordinate, since } => serde_json::json!({
+            "status": "skipped",
+            "space": coordinate.split('/').next().unwrap_or_default(),
+            "coordinate": coordinate,
+            "since": since,
+        }),
+        DistillOutcome::Preview { report, .. } | DistillOutcome::Published { report, .. } => {
+            serde_json::json!({
+                "status": if matches!(outcome, DistillOutcome::Published { .. }) {
+                    "published"
+                } else {
+                    "preview"
+                },
+                "space": report.space,
+                "coordinate": report.coordinate,
+                "event_id": match outcome {
+                    DistillOutcome::Published { write_result, .. } => write_result.clone(),
+                    _ => String::new(),
+                },
+                "cursor": report.cursor,
+                "cost_tokens": report.cost_tokens,
+                "model": report.model,
+                "sources": report.sources,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -933,6 +1223,165 @@ mod tests {
 
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].as_slice(), ["p", owner.as_str()]);
+    }
+
+    // ── `distill_agent_wiki` publish path: envelope bounds ─────────────────
+
+    /// One envelope-violation case: a composed page whose (d, content, tags)
+    /// trip exactly one of the relay's kind:44002 bounds. The publish path
+    /// (`sign_and_validate_agent_wiki_page`) must reject every case — these
+    /// are the same bounds `validate_agent_wiki_envelope` enforces at ingest.
+    struct EnvelopeCase<'a> {
+        name: &'static str,
+        d: &'a str,
+        content: &'a str,
+        tags: Vec<(&'static str, &'a str)>,
+    }
+
+    #[test]
+    fn agent_wiki_publish_path_enforces_envelope_bounds() {
+        let keys = nostr::Keys::generate();
+
+        // The composed shape the distill loop publishes passes.
+        let valid = EventBuilder::new(
+            Kind::Custom(buzz_agwiki::KIND_AGENT_WIKI as u16),
+            "---\nslug: default/standup\nagwiki-cursor: 1\n---\n# body",
+        )
+        .tags(vec![
+            Tag::parse(["d", "default/standup"]).expect("d tag"),
+            Tag::parse(["model", "test-model"]).expect("model tag"),
+            Tag::parse(["cost_tokens", "1500"]).expect("cost tag"),
+            Tag::parse(["sources", &"a".repeat(64)]).expect("sources tag"),
+        ]);
+        assert!(
+            sign_and_validate_agent_wiki_page(&keys, valid).is_ok(),
+            "a well-formed page must pass the publish path"
+        );
+
+        let long_d = "a".repeat(257);
+        let long_content = "x".repeat(65_537);
+        let cases = [
+            EnvelopeCase {
+                name: "d without '/'",
+                d: "standalone",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "uppercase d segment",
+                d: "Default/standup",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "empty d segment",
+                d: "default//standup",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "over-long d",
+                d: long_d.as_str(),
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "empty content",
+                d: "default/standup",
+                content: "",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "over-long content",
+                d: "default/standup",
+                content: long_content.as_str(),
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "duplicate model tags",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("model", "a"), ("model", "b")],
+            },
+            EnvelopeCase {
+                name: "empty model value",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("model", "")],
+            },
+            EnvelopeCase {
+                name: "non-digit cost_tokens",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("cost_tokens", "1.5k")],
+            },
+            EnvelopeCase {
+                name: "duplicate cost_tokens",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("cost_tokens", "1"), ("cost_tokens", "2")],
+            },
+            EnvelopeCase {
+                name: "duplicate sources",
+                d: "default/standup",
+                content: "body",
+                tags: vec![
+                    (
+                        "sources",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ),
+                    (
+                        "sources",
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    ),
+                ],
+            },
+            EnvelopeCase {
+                name: "malformed source id",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("sources", "not-hex")],
+            },
+        ];
+
+        for case in &cases {
+            let mut builder = EventBuilder::new(
+                Kind::Custom(buzz_agwiki::KIND_AGENT_WIKI as u16),
+                case.content,
+            )
+            .tag(Tag::parse(["d", case.d]).expect("d tag parses"));
+            for (name, value) in &case.tags {
+                builder = builder.tag(Tag::parse([*name, *value]).expect("tag parses"));
+            }
+            let result = sign_and_validate_agent_wiki_page(&keys, builder);
+            assert!(
+                matches!(result, Err(ActionSinkError::Distill(_))),
+                "publish path must reject envelope violation '{}', got: {result:?}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_target_fails_closed_without_config() {
+        // Missing config must surface as a visible Distill error naming the
+        // missing variable — never a silent skip (Review-Proven Rule 1).
+        let missing = classifier_target_from(|name| {
+            (name == "BUZZ_CLASSIFIER_API_KEY").then(|| "k".to_string())
+        });
+        match missing {
+            Err(ActionSinkError::Distill(m)) => {
+                assert!(m.contains("BUZZ_CLASSIFIER_API_URL"), "got: {m}");
+            }
+            other => panic!("expected a Distill error, got: {other:?}"),
+        }
+
+        let ok = classifier_target_from(|name| match name {
+            "BUZZ_CLASSIFIER_API_URL" => Some("http://x".to_string()),
+            "BUZZ_CLASSIFIER_API_KEY" => Some("k".to_string()),
+            _ => None,
+        });
+        assert!(ok.is_ok(), "a configured target resolves: {ok:?}");
     }
 }
 

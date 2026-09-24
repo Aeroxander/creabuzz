@@ -43,6 +43,7 @@ chrono = { workspace = true }
 
 # Typed event builders for all write operations
 buzz-sdk = { workspace = true }
+buzz-agwiki = { path = "../buzz-agwiki" }
 buzz-core = { workspace = true }
 
 # Onchain spend-ceiling guard (OrgAllowance.sol) — `buzz org allowance`

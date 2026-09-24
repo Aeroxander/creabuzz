@@ -170,6 +170,66 @@ closed, no silent local fallback), `BUZZ_CLASSIFIER_MODEL` (default
 and `buzz agwiki distill`; the wiki insists on markdown (no
 `response_format`), the classifier on JSON.
 
+## Self-maintenance (scheduled distill)
+
+The distill loop is also a workflow action — `distill_agent_wiki` — so the
+wiki maintains itself on the durable cron scheduler without a human typing
+`buzz agwiki distill`. One workflow per community (or per space) is enough:
+
+```yaml
+name: agwiki-nightly
+description: Keep the Agent Wiki standup page current without a manual distill
+trigger:
+  on: schedule
+  cron: "0 9 * * 1-5"   # 09:00 UTC, weekdays
+steps:
+  - id: distill
+    action: distill_agent_wiki
+    space: default       # page coordinate: default/standup
+enabled: true
+```
+
+Create it once (workflow creation is channel-scoped, like every workflow):
+
+```bash
+cat agwiki-nightly.yaml | buzz workflows create --channel <uuid> --yaml -
+# or: buzz workflows create --channel <uuid> --yaml "$(cat agwiki-nightly.yaml)"
+```
+
+A scheduled run executes the shared distill loop end to end relay-side:
+bounded source bundle since the page's durable cursor, reflection search,
+strict validation (one retry, then fail closed — nothing published), and a
+relay-signed kind:44002 publish honoring the same ingest envelope bounds as
+client publishes. The run's outcome is visible in workflow run history
+(`buzz workflows runs --workflow <uuid>`): `published` carries the event id,
+new cursor, cost, model, and sources; `skipped` means nothing new since the
+cursor (no LLM call, nothing published — the cheap daily no-op). The cursor
+and front-matter contract are identical to the CLI loop — a scheduled publish
+and a manual `--publish` cannot disagree.
+
+The relay process needs `BUZZ_CLASSIFIER_API_URL` / `BUZZ_CLASSIFIER_API_KEY`
+(plus optional `BUZZ_CLASSIFIER_MODEL`) configured — the same env the CLI
+uses. A scheduled run with missing config **fails visibly** (run status shows
+the failure naming the missing variable) instead of silently skipping.
+
+Self-maintenance is self-maintained *by default* once the workflow exists, and
+off exactly when you say so:
+
+- **Turn off**: `buzz workflows update --channel <uuid> --workflow <uuid> --yaml
+  '<same yaml with enabled: false>'` — the scheduler skips disabled workflows.
+- **Turn off permanently**: `buzz workflows delete --workflow <uuid>`.
+- **Pause just the schedule**: change the `cron` to something rarer, or swap
+  `cron` for `interval: 24h`.
+- **Multiple spaces**: one workflow per space (`space: research`, …), or a
+  `message_posted`/`webhook`-triggered workflow whose step templates the space
+  (`space: '{{trigger.text}}'` — the space is templated like every other
+  string field and the coordinate grammar rejects junk at run time).
+
+There is deliberately no separate toggle UI or seeded template yet: the
+workflow *is* the toggle (and its run history is the audit trail). Channel
+templates (`channel_templates.rs`) seed channel personas, not workflows, so
+the YAML + CLI is the shipping story for now.
+
 ## Skills roadmap (downstream)
 
 - **Source expansion**: channel message text (community relay) as a first-

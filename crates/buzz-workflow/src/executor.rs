@@ -466,6 +466,7 @@ pub fn resolve_step_templates(
         Delay { duration } => Ok(Delay {
             duration: duration.clone(),
         }),
+        DistillAgentWiki { space } => Ok(DistillAgentWiki { space: t(space)? }),
     }
 }
 
@@ -760,6 +761,27 @@ pub async fn dispatch_action(
                     Ok(StepResult::Completed(
                         serde_json::json!({ "slept_secs": secs }),
                     ))
+                }
+
+                DistillAgentWiki { space } => {
+                    // The shared distill loop runs relay-side through the
+                    // action sink: bounded sources since the page's durable
+                    // cursor, the classifier LLM call (fail closed when
+                    // unconfigured), strict validation, and a kind:44002
+                    // publish. Any failure here surfaces as a visible run
+                    // failure — a scheduled maintenance run must never
+                    // silently no-op (Review-Proven Rule 1).
+                    info!(
+                        run_id = %run_id,
+                        step = step_id,
+                        "DistillAgentWiki → space {space}"
+                    );
+                    let output = engine
+                        .action_sink()?
+                        .distill_agent_wiki(community_id, space)
+                        .await
+                        .map_err(WorkflowError::from)?;
+                    Ok(StepResult::Completed(output))
                 }
             }
         })
@@ -1490,6 +1512,38 @@ mod tests {
             }
             other => panic!("unexpected action: {other:?}"),
         }
+    }
+
+    #[test]
+    fn resolve_step_templates_resolves_distill_space() {
+        let ctx = make_trigger();
+        let step = Step {
+            id: "distill".to_owned(),
+            name: None,
+            if_expr: None,
+            timeout_secs: None,
+            action: ActionDef::DistillAgentWiki {
+                space: "research".to_owned(),
+            },
+        };
+        let resolved = resolve_step_templates(&step, &ctx, &HashMap::new()).unwrap();
+        assert!(
+            matches!(resolved, ActionDef::DistillAgentWiki { ref space } if space == "research"),
+            "literal space passes through: {resolved:?}"
+        );
+
+        // The space is templated like every other string field.
+        let templated = Step {
+            action: ActionDef::DistillAgentWiki {
+                space: "{{trigger.author}}".to_owned(),
+            },
+            ..step
+        };
+        let resolved = resolve_step_templates(&templated, &ctx, &HashMap::new()).unwrap();
+        assert!(
+            matches!(resolved, ActionDef::DistillAgentWiki { ref space } if space == "abc123def456"),
+            "template resolves: {resolved:?}"
+        );
     }
 
     #[tokio::test]

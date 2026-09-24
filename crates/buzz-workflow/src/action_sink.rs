@@ -29,6 +29,12 @@ pub enum ActionSinkError {
     /// Message content is empty or whitespace-only.
     #[error("empty message content")]
     EmptyContent,
+    /// The Agent Wiki distillation loop failed (LLM contract, corrupt cursor
+    /// page, publish bounds, or unconfigured classifier). Surfaced as a
+    /// visible workflow run failure — a scheduled distill must never silently
+    /// no-op.
+    #[error("agent wiki distill failed: {0}")]
+    Distill(String),
 }
 
 impl From<ActionSinkError> for crate::WorkflowError {
@@ -105,4 +111,32 @@ pub trait ActionSink: Send + Sync {
         message: &str,
         author_pubkey: &str,
     ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>>;
+
+    /// Run the Agent Wiki distill loop for one wiki space and publish the
+    /// standup page (kind:44002) — the `distill_agent_wiki` action.
+    ///
+    /// The sink executes the shared `buzz-agwiki` core end to end: bounded
+    /// source fetch from the relay store (done kind:44011 tasks + published
+    /// kind:37013 records since the page's durable cursor), the classifier
+    /// LLM call (same `BUZZ_CLASSIFIER_*` env as `org classify` — **fail
+    /// closed** on missing config: return [`ActionSinkError::Distill`] so a
+    /// scheduled run leaves a visible run-status error instead of silently
+    /// skipping), strict draft validation, and a relay-signed kind:44002
+    /// publish through the relay's internal ingest path (which enforces the
+    /// same `validate_agent_wiki_envelope` bounds as client publishes).
+    ///
+    /// - `community_id`: the run's owning community (same scoping contract as
+    ///   [`ActionSink::send_message`]).
+    /// - `space`: wiki space name; the page coordinate is `<space>/standup`.
+    ///
+    /// Returns the step-output object recorded in workflow run history:
+    /// `{"status": "published", "space", "coordinate", "event_id", "cursor",
+    /// "cost_tokens", "model", "sources"}` or `{"status": "skipped",
+    /// "space", "coordinate", "since"}` when nothing new was found (skip
+    /// cleanly — no LLM call, nothing published).
+    fn distill_agent_wiki(
+        &self,
+        community_id: CommunityId,
+        space: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>>;
 }

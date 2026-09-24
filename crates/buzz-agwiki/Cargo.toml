@@ -1,0 +1,18 @@
+[package]
+name = "buzz-agwiki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Agent Wiki (kind:44002) distillation core — prompts, strict validation, front-matter, cursor rules"
+
+[dependencies]
+buzz-core  = { workspace = true }
+buzz-sdk   = { workspace = true }
+nostr      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+reqwest    = { workspace = true }
+tokio      = { workspace = true }

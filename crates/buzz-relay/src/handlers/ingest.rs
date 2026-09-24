@@ -1709,8 +1709,11 @@ const AGENT_WIKI_SOURCE_ID_MAX_LEN: usize = 65;
 /// Content is UNTRUSTED DATA to any downstream consumer of the page (the
 /// distillation loop reads it as data, never as instructions) — the relay
 /// bounds but does not interpret it. Malformed pages must not win read-side
-/// LWW against a valid head, so the envelope is checked at ingest.
-fn validate_agent_wiki_envelope(event: &Event) -> Result<(), String> {
+/// LWW against a valid head, so the envelope is checked at ingest — and on
+/// the relay's own internal `distill_agent_wiki` publish path
+/// (`workflow_sink::sign_and_validate_agent_wiki_page`), which enforces the
+/// same bounds as client publishes.
+pub(crate) fn validate_agent_wiki_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "agent wiki page event";
     let d = single_bounded_d_tag(event, LABEL)?;
     if d.len() > AGENT_WIKI_D_MAX_LEN {
