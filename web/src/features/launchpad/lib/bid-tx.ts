@@ -39,6 +39,10 @@ export const DEFAULT_PREV_TICK_PRICE_Q96 = MIN_FLOOR_PRICE;
 export const SELECTOR_SUBMIT_BID = "0xa52c8728";
 // exitBid(uint256)
 export const SELECTOR_EXIT_BID = "0x8e4deb17";
+// exitPartiallyFilledBid(uint256,uint64,uint64)
+export const SELECTOR_EXIT_PARTIALLY_FILLED_BID = "0x36dec5f2";
+// checkpoint() — materialize the current block's checkpoint
+export const SELECTOR_CHECKPOINT = "0xc2c4c5c1";
 // claimTokens(uint256)
 export const SELECTOR_CLAIM_TOKENS = "0x46e04a2f";
 // claimTokensBatch(address,uint256[])
@@ -178,6 +182,33 @@ export function encodeSubmitBid(plan: BidPlan): string {
 /** ABI-encode `exitBid(uint256)`. */
 export function encodeExitBid(bidId: bigint): string {
   return `0x${SELECTOR_EXIT_BID.slice(2)}${pad32(bidId)}`;
+}
+
+/**
+ * ABI-encode `exitPartiallyFilledBid(uint256,uint64,uint64)` — the refund of
+ * the unfilled share of a partially filled (or outbid) bid. The two hints are
+ * checkpoint block numbers the caller derives from the checkpoint walk
+ * (`lib/my-bids.ts`); the contract validates them against its latest state and
+ * reverts `InvalidLastFullyFilledCheckpointHint` / `InvalidOutbidBlock
+ * CheckpointHint` when they are stale, so they must be derived fresh per send.
+ */
+export function encodeExitPartiallyFilledBid(
+  bidId: bigint,
+  lastFullyFilledCheckpointBlock: bigint,
+  outbidBlock: bigint,
+): string {
+  return (
+    "0x" +
+    SELECTOR_EXIT_PARTIALLY_FILLED_BID.slice(2) +
+    pad32(bidId) +
+    pad32(lastFullyFilledCheckpointBlock) +
+    pad32(outbidBlock)
+  );
+}
+
+/** ABI-encode the bare `checkpoint()` call (no args). */
+export function encodeCheckpointCallData(): string {
+  return SELECTOR_CHECKPOINT;
 }
 
 /** ABI-encode `claimTokens(uint256)`. */

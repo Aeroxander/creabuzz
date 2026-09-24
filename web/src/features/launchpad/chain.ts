@@ -142,6 +142,47 @@ async function rpc(
   }
 }
 
+/** One `eth_call` view read. Returns the raw hex return data. */
+export async function ethCall(
+  endpoint: string,
+  to: string,
+  data: string,
+): Promise<string> {
+  const result = await rpc(endpoint, "eth_call", [{ to, data }, "latest"]);
+  if (typeof result !== "string") throw new Error("bad eth_call return");
+  return result;
+}
+
+/** `eth_blockNumber` — the chain head, as the derivation's current block. */
+export async function ethBlockNumber(endpoint: string): Promise<bigint> {
+  return decodeQuantity((await rpc(endpoint, "eth_blockNumber", [])) as string);
+}
+
+/** One log entry as `eth_getLogs` returns it (hex quantity fields). */
+export interface RpcLog {
+  address: string;
+  topics: string[];
+  data: string;
+  blockNumber: string;
+  transactionHash: string;
+  logIndex: string;
+}
+
+/** `eth_getLogs` over a bounded block range (address + topic filtered). */
+export async function ethGetLogs(
+  endpoint: string,
+  filter: {
+    address: string;
+    topics: (string | null)[];
+    fromBlock: string;
+    toBlock: string;
+  },
+): Promise<RpcLog[]> {
+  const result = await rpc(endpoint, "eth_getLogs", [filter]);
+  if (!Array.isArray(result)) throw new Error("bad eth_getLogs return");
+  return result as RpcLog[];
+}
+
 /** Live reads. Throws on any failure so callers fall back to preview. */
 export async function liveProgress(
   record: LaunchRecord,

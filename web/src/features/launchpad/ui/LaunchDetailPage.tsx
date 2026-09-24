@@ -68,9 +68,16 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { ManagePanel } from "./ManagePanel";
+import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
 
-type Tab = "overview" | "updates" | "proposals" | "treasury" | "manage";
+type Tab =
+  | "overview"
+  | "updates"
+  | "proposals"
+  | "treasury"
+  | "mybids"
+  | "manage";
 
 export function LaunchDetailPage({
   launchId,
@@ -158,6 +165,10 @@ export function LaunchDetailPage({
     { id: "updates", label: `Updates (${launch.updates.length})` },
     { id: "proposals", label: `Proposals (${launch.proposals.length})` },
     { id: "treasury", label: "Treasury" },
+    // Onchain bids only exist when the launch has an auction linked.
+    ...(launch.record.auction
+      ? [{ id: "mybids" as const, label: "My bids" }]
+      : []),
     { id: "manage", label: "Manage", founderOnly: true },
   ];
 
@@ -249,6 +260,9 @@ export function LaunchDetailPage({
       {tab === "overview" ? <OverviewTab launch={launch} /> : null}
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
       {tab === "proposals" ? <ProposalsTab launch={launch} /> : null}
+      {tab === "mybids" && launch.record.auction ? (
+        <MyBidsPanel record={launch.record} rpcEndpoint={getRpcEndpoint()} />
+      ) : null}
       {tab === "treasury" ? (
         <TreasuryTab
           launch={launch}

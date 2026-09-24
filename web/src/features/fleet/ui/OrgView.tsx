@@ -20,7 +20,7 @@ import { useOrgChart } from "../use-org-chart";
 import type { OrgTreeNode } from "../lib/index-org";
 import { getBrowserAgent } from "../browser-agent";
 import { useUserNames } from "@/features/profiles/use-profiles";
-import { getAgentPubkey } from "@/shared/lib/agent-identity";
+import { peekAgentPubkey } from "@/shared/lib/agent-identity";
 import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -42,7 +42,7 @@ function AgentOrgCard({
   onTeam: (team: string | null) => void;
   userName: (pubkey: string) => string;
 }) {
-  const isMine = agent.id === getAgentPubkey();
+  const isMine = agent.id === peekAgentPubkey();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(agent.team ?? "");
   return (
@@ -255,7 +255,7 @@ function OrgChartView({
 }
 
 function setTeamFn(agent: AgentCapabilities, team: string | null) {
-  if (agent.id === getAgentPubkey()) {
+  if (agent.id === peekAgentPubkey()) {
     getBrowserAgent().setTeam(team);
   }
 }
