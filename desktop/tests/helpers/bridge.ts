@@ -252,6 +252,9 @@ type MockBridgeOptions = {
   personas?: MockPersonaSeed[];
   /** Community catalog replaceable-event heads returned by relay queries. */
   personaCatalogEvents?: RelayEvent[];
+  /** Launchpad feed events (kinds 37001/47002-47005) returned by relay
+   *  queries — seed read-only launch state for the ops-cockpit surfaces. */
+  launchpadEvents?: RelayEvent[];
   /** Outcomes for successive explicit persona share publications. */
   personaSharePublicationStatuses?: Array<"published" | "queued">;
   teams?: MockTeamSeed[];

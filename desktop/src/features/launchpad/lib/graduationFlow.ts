@@ -546,9 +546,8 @@ export interface GraduationDeps {
   /** Read `executor.graduations(auction)` (also the idempotency guard). */
   readGraduation(): Promise<GraduationRecord>;
   /**
-   * Publish one 47005 receipt via `usePublishLaunchMirrorMutation` (the same
-   * publish path bidHooks uses) with the `tx` tag already bound inside
-   * `parts`.
+   * Publish one 47005 receipt via `usePublishLaunchMirrorMutation` with the
+   * `tx` tag already bound inside `parts`.
    */
   publishReceipt(
     kind: "sweep" | "lock",

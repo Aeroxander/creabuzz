@@ -1017,6 +1017,12 @@ export function LaunchManagePanel({
 
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-3">
+      <p className="text-2xs text-muted-foreground">
+        Operator and founder actions — edit terms, link community channels,
+        deploy the token and auction, and execute the graduation. Sends run from
+        the operator wallet; bidder money actions (bid, exit, claim) happen on
+        the web app.
+      </p>
       <section className="rounded-2xl border border-border/70 bg-card/60 px-4 py-3">
         <h3 className="text-sm font-semibold">Terms</h3>
         <p className="mt-1 text-sm text-muted-foreground">

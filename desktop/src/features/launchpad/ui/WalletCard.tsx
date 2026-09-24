@@ -38,8 +38,11 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 /**
- * In-app EVM wallet surface: create/import, address display with copy, and
- * the connected chain id. v1 has no export or rotate — the key lives only in
+ * Operator wallet surface: create/import, address display with copy, and
+ * the connected chain id. This is a keyring-held dev/operator key — the
+ * posture launch operations (deploy, graduation, mint) run from — NOT the
+ * product's custody story, which is passkey-first on the web app where
+ * bidders' funds live. v1 has no export or rotate — the key lives only in
  * the macOS Keychain. RPC failures and rejected commands surface inline.
  */
 export function WalletCard({ rpcUrl }: { rpcUrl: string }) {
@@ -73,7 +76,7 @@ export function WalletCard({ rpcUrl }: { rpcUrl: string }) {
           className="text-2xs font-medium uppercase tracking-wide text-muted-foreground"
           id="launchpad-wallet-heading"
         >
-          Wallet
+          Operator wallet
         </h3>
         {chain.isLoading ? (
           <span className="text-2xs text-muted-foreground">
@@ -173,8 +176,8 @@ export function WalletCard({ rpcUrl }: { rpcUrl: string }) {
       ) : (
         <p className="mt-1 text-2xs text-muted-foreground">
           {address
-            ? "Stored in your macOS Keychain. Export and rotation aren't available in v1."
-            : "Private keys are stored in your macOS Keychain."}
+            ? "Operator key for launch operations (deploy, graduation, mint) — bidder funds use passkey custody on the web app. Stored in your macOS Keychain. Export and rotation aren't available in v1."
+            : "Operator keys are stored in your macOS Keychain. Bidder funds use passkey custody on the web app."}
         </p>
       )}
 

@@ -7,7 +7,6 @@ import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_DELETION,
-  KIND_LAUNCH_BID,
   type KIND_LAUNCH_PROPOSAL,
   type KIND_LAUNCH_RECEIPT,
   type KIND_LAUNCH_UPDATE,
@@ -97,26 +96,16 @@ export function useUpdateLaunchRecordMutation() {
   });
 }
 
-export type PublishMirrorInput =
-  | {
-      kind: typeof KIND_LAUNCH_BID;
-      author: string;
-      launchId: string;
-      bucket: string;
-      extraTags?: undefined;
-      content: Record<string, unknown>;
-    }
-  | {
-      kind:
-        | typeof KIND_LAUNCH_UPDATE
-        | typeof KIND_LAUNCH_PROPOSAL
-        | typeof KIND_LAUNCH_RECEIPT;
-      author: string;
-      launchId: string;
-      bucket?: undefined;
-      extraTags?: string[][];
-      content: Record<string, unknown>;
-    };
+export type PublishMirrorInput = {
+  kind:
+    | typeof KIND_LAUNCH_UPDATE
+    | typeof KIND_LAUNCH_PROPOSAL
+    | typeof KIND_LAUNCH_RECEIPT;
+  author: string;
+  launchId: string;
+  extraTags?: string[][];
+  content: Record<string, unknown>;
+};
 
 export function usePublishLaunchMirrorMutation() {
   const queryClient = useQueryClient();
@@ -125,7 +114,6 @@ export function usePublishLaunchMirrorMutation() {
       const tags: string[][] = [
         ["a", launchCoordinate(input.author, input.launchId)],
       ];
-      if (input.kind === KIND_LAUNCH_BID) tags.push(["m", input.bucket]);
       if (input.extraTags) tags.push(...input.extraTags);
       return publishSignedEvent({
         kind: input.kind,

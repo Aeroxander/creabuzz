@@ -21,7 +21,7 @@ import { LaunchStageBadge } from "@/features/launchpad/ui/LaunchStageBadge";
 import { LaunchTreasuryPanel } from "@/features/launchpad/ui/LaunchTreasuryPanel";
 import { LaunchUpdatesPanel } from "@/features/launchpad/ui/LaunchUpdatesPanel";
 import { PostUpdateDialog } from "@/features/launchpad/ui/PostUpdateDialog";
-import { RecordBidDialog } from "@/features/launchpad/ui/RecordBidDialog";
+import { BidOnWebDialog } from "@/features/launchpad/ui/BidOnWebDialog";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
@@ -192,7 +192,7 @@ export function LaunchDetailScreen({
             <LaunchTreasuryPanel launch={launch} isFounder={isFounder} />
           </TabsContent>
           <TabsContent value="bids">
-            <MyBidsPanel launch={launch} />
+            <MyBidsPanel launch={launch} relayOrigin={relayOrigin} />
           </TabsContent>
           {isFounder ? (
             <TabsContent value="manage">
@@ -218,11 +218,11 @@ export function LaunchDetailScreen({
         </div>
       </Tabs>
 
-      <RecordBidDialog
+      <BidOnWebDialog
+        launch={launch}
         onOpenChange={setBidOpen}
         open={bidOpen}
-        launchName={launch.record.name}
-        record={launch.record}
+        relayOrigin={relayOrigin}
       />
       {isFounder ? (
         <PostUpdateDialog

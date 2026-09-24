@@ -75,6 +75,7 @@ import {
   KIND_TEXT_NOTE,
   KIND_TEAM_CATALOG,
   KIND_USER_STATUS,
+  LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
 import type {
   RawAcpAuthMethodsResult,
@@ -333,6 +334,9 @@ type E2eConfig = {
     personas?: MockPersonaSeed[];
     /** Community catalog replaceable-event heads returned by relay queries. */
     personaCatalogEvents?: RelayEvent[];
+    /** Launchpad feed events (kinds 37001/47002-47005) returned by relay
+     *  queries — seed read-only launch state for the ops-cockpit surfaces. */
+    launchpadEvents?: RelayEvent[];
     /** Outcomes for successive explicit persona share publications. */
     personaSharePublicationStatuses?: Array<"published" | "queued">;
     teams?: MockTeamSeed[];
@@ -3323,6 +3327,7 @@ const MOCK_ORG_KINDS = new Set([
   44020, 44021, 44022,
 ]);
 const mockOrgEvents: RelayEvent[] = [];
+const mockLaunchpadEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
@@ -3472,6 +3477,16 @@ function resetMockPersonaCatalogEvents(config: E2eConfig | undefined) {
   mockPersonaEvents.length = 0;
   for (const event of config?.mock?.personaCatalogEvents ?? []) {
     mockPersonaEvents.push({
+      ...event,
+      tags: event.tags.map((tag) => [...tag]),
+    });
+  }
+}
+
+function resetMockLaunchpadEvents(config: E2eConfig | undefined) {
+  mockLaunchpadEvents.length = 0;
+  for (const event of config?.mock?.launchpadEvents ?? []) {
+    mockLaunchpadEvents.push({
       ...event,
       tags: event.tags.map((tag) => [...tag]),
     });
@@ -11015,6 +11030,22 @@ function sendToMockSocket(args: {
       return;
     }
 
+    // Launchpad feed (read-only): seeded launch records, bid mirrors,
+    // updates, proposals, and receipts for the ops-cockpit surfaces. The
+    // bidder money plane lives on the web app — desktop only reads this feed.
+    if (
+      filter.kinds?.some((kind) =>
+        (LAUNCHPAD_EVENT_KINDS as readonly number[]).includes(kind),
+      )
+    ) {
+      for (const event of mockLaunchpadEvents) {
+        if (filter.kinds && !filter.kinds.includes(event.kind)) continue;
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     // Project queries: NIP-34 kinds, or kind:1 comments scoped by repo `a`
     // tag or by issue/PR root `e` tag (discussions, approvals, review
     // requests, assignment operations). Channel messages are kind 9, so a
@@ -11435,6 +11466,7 @@ export function maybeInstallE2eTauriMocks() {
   resetMockMesh();
   resetMockUserStatuses();
   resetMockPersonaCatalogEvents(config);
+  resetMockLaunchpadEvents(config);
   resetMockObservedUnread();
   resetMockTeamCatalogEvents(config);
   resetMockSaveSubscriptions(config);

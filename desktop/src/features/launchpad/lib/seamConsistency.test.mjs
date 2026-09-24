@@ -71,10 +71,7 @@ const WIRE_COMMANDS = {
 
 /** TS declarations that must mirror each Rust reply struct, field for field. */
 const TS_REPLY_SOURCES = {
-  EvmWalletStatus: [
-    ["../walletHooks.ts", "EvmWalletStatus"],
-    ["../bidHooks.ts", "WalletStatus"],
-  ],
+  EvmWalletStatus: [["../walletHooks.ts", "EvmWalletStatus"]],
   EvmWalletAddress: [["../walletHooks.ts", "EvmWalletAddress"]],
   EvmChainStatus: [["../walletHooks.ts", "EvmChainStatus"]],
   EvmCallResult: [
@@ -82,22 +79,19 @@ const TS_REPLY_SOURCES = {
     ["../auctionHooks.ts", "EvmCallResult"],
   ],
   EvmSendResult: [
-    ["../bidHooks.ts", "TxReceipt"],
     ["./mintFlow.ts", "MintTxReceipt"],
     ["./auctionFlow.ts", "AuctionTxReceipt"],
   ],
-  // `EvmFindBidIdsResult` has no named TS declaration (exitHooks inlines
-  // `invokeTauri<{ bidIds: string[] }>`); its Rust shape is still pinned above
-  // and the invoke call's argument keys are checked below.
+  // `EvmFindBidIdsResult` has no TS declaration left on desktop (bidder
+  // money reads moved to the web money plane; the Rust shape is still
+  // pinned above so the wire command cannot drift silently).
 };
 
 /** Every TS module allowed to talk to the `evm_*` commands directly. */
 const IPC_MODULES = [
   "../walletHooks.ts",
   "../mintHooks.ts",
-  "../bidHooks.ts",
   "../auctionHooks.ts",
-  "../exitHooks.ts",
 ];
 
 const RUST_WALLET_RS = "../../../../src-tauri/src/commands/wallet.rs";
@@ -173,14 +167,12 @@ function parseInvokeCallSites(source, label) {
     if (body === "") {
       keys = [];
     } else if (spread) {
-      // `{ ...args }` / `...args` — the named parameter's declared shape is
-      // the wire surface (bidHooks' `EvmSendArgs`).
-      assert.equal(
-        spread[1],
-        "args",
+      // A `{ ...args }` spread hides the wire surface. The one pinned shape
+      // (`EvmSendArgs`, the deleted bidder-money bidHooks) is gone with the
+      // money plane; pass an object literal or an annotated `const args`.
+      assert.fail(
         `${label}: spread argument \`${spread[1]}\` has no pinned shape`,
       );
-      keys = { substitute: "EvmSendArgs" };
     } else if (body.startsWith("{")) {
       keys = objectLiteralKeys(body);
     } else if (/^\w+$/.test(body)) {
@@ -289,16 +281,7 @@ test("every invokeTauri call site passes only wire-valid argument names", () => 
         `${file} invokes unknown command ${site.command} — is it in wallet.rs?`,
       );
       let keys = site.keys;
-      if (keys.substitute === "EvmSendArgs") {
-        keys = tsShapes.get("../bidHooks.ts")?.EvmSendArgs;
-        assert.ok(keys, `${file}: EvmSendArgs declaration not found`);
-        assert.deepEqual(
-          [...keys].sort(),
-          [...allowed].sort(),
-          "EvmSendArgs drifted from evm_send_transaction's wire parameters",
-        );
-        sawSendTransaction = true;
-      } else if (typeof keys.substitute === "string") {
+      if (typeof keys.substitute === "string") {
         const name = keys.substitute.replace(/^const /, "");
         keys = parseAnnotatedArgs(source, name);
         sawSendTransaction = true;

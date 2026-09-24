@@ -86,7 +86,8 @@ export function LaunchpadScreen() {
               Launchpad
             </h2>
             <p className="text-sm text-muted-foreground">
-              Discover raises to back — or launch your own DAO.
+              Read-only raise directory plus founder and operator tools. Bidding
+              happens on the web app — same account, sponsored.
             </p>
           </div>
           <Button
