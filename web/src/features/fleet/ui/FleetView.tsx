@@ -32,7 +32,7 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import type { Channel } from "@/features/channels/use-channels";
 import { getBrowserAgent, type AgentLifecycleState } from "../browser-agent";
 import {
-  getAgentPubkey,
+  peekAgentPubkey,
   resetAgentIdentity,
 } from "@/shared/lib/agent-identity";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -48,7 +48,7 @@ function RuntypeIcon({ runtype }: { runtype: AgentCapabilities["runtype"] }) {
 function AgentCard({ agent }: { agent: AgentCapabilities }) {
   // Author-based: an agent's `d` tag is chosen by whoever publishes it, so the
   // id alone does not establish that this row is this tab's agent.
-  const me = agent.pubkey === getAgentPubkey();
+  const me = agent.pubkey === peekAgentPubkey();
   return (
     <div className="flex items-start gap-3 rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
       <div className="relative mt-0.5 shrink-0">
@@ -208,8 +208,11 @@ export function FleetView({ channels }: { channels: Channel[] }) {
 
   // The tab agent is a person like any other fleet member: resolve its own
   // pubkey through the same batched profile read before naming it.
-  const tabAgentPubkey = getAgentPubkey();
-  const tabAgentPubkeys = useMemo(() => [tabAgentPubkey], [tabAgentPubkey]);
+  const tabAgentPubkey = peekAgentPubkey();
+  const tabAgentPubkeys = useMemo(
+    () => (tabAgentPubkey ? [tabAgentPubkey] : []),
+    [tabAgentPubkey],
+  );
   const userName = useUserNames(tabAgentPubkeys);
 
   useEffect(() => {
@@ -297,7 +300,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       {state === "running" ? (
         <p className="rounded-md border border-black/10 bg-white px-3 py-2 text-xs text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
           This tab's agent is <strong>online</strong> as{" "}
-          <strong>{userName(tabAgentPubkey)}</strong>. Mention{" "}
+          <strong>{userName(tabAgentPubkey ?? "")}</strong>. Mention{" "}
           <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
             @buzz-tab
           </code>{" "}

@@ -705,6 +705,13 @@ test("the trust page states each commitment and its real proof state", async ({
   // fabricated "verified". Served auction is set explicitly so this test is
   // self-contained (not dependent on an earlier test's side effect).
   servedAuction = "0x5555555555555555555555555555555555555555";
+  // Make the chain proof hermetic: abort the RPC read so the check is
+  // genuinely "no reachable RPC" regardless of whatever node happens to be
+  // listening on the default endpoint (a local anvil/hardhat would otherwise
+  // answer "0x" and flip the row to a reachable "no code" state). The point
+  // stands either way: a check that cannot confirm a deployment must never
+  // render as a pass.
+  await page.route(/127\.0\.0\.1:8545/, (route) => route.abort());
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
   const card = page.getByTestId("launch-commitments");
@@ -719,12 +726,16 @@ test("the trust page states each commitment and its real proof state", async ({
   await expect(card).toContainText("5 tranches from 2x");
   // The point of the card: a check that cannot be made never renders as a
   // pass. With no reachable RPC the auction row must be an honest failure
-  // state, not "deployed".
+  // state — "unreadable" — never "deployed" or "verified". Any honest
+  // non-pass state is acceptable (unreachable → "unreadable", no link →
+  // "not set", a reachable chain reporting an empty account → "no code at
+  // this address"); only a fabricated pass is not.
   const auctionRow = card
     .locator("div", { hasText: "Auction contract" })
     .last();
-  await expect(auctionRow).toContainText(/unreadable|not set/);
+  await expect(auctionRow).toContainText(/unreadable|not set|no code/);
   await expect(auctionRow).not.toContainText("deployed");
+  await expect(auctionRow).not.toContainText("verified");
 });
 
 test("milestone claims and verdicts mirror to the feed with a closed vocabulary", async ({
@@ -739,15 +750,18 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
     .click();
   const panel = page.getByTestId("launch-milestones");
   await expect(panel).toBeVisible({ timeout: 15_000 });
-  // Bad evidence hash is refused before mirroring.
+  // A receipt must name the settlement tx the relay requires (mirrors are
+  // refused without one), so the Record claim / Verdict controls stay
+  // disabled until the founder supplies a well-formed evidence hash and tx.
+  // A bad evidence hash is therefore refused before mirroring: the button
+  // never enables, so no invalid mirror can reach the relay.
   await page.getByTestId("claim-id").fill("milestone-1");
+  await page.getByTestId("milestone-tx").fill(`0x${"cd".repeat(32)}`);
   await page.getByTestId("evidence-hash").fill("not-hex");
-  await page.getByTestId("record-claim").click();
-  await expect(
-    page.getByText("Evidence hash must be 64 hex characters"),
-  ).toBeVisible();
+  await expect(page.getByTestId("record-claim")).toBeDisabled();
   // A valid claim mirrors with kind=claim.
   await page.getByTestId("evidence-hash").fill("ab".repeat(32));
+  await expect(page.getByTestId("record-claim")).toBeEnabled();
   await page.getByTestId("record-claim").click();
   await expect
     .poll(() =>
@@ -762,7 +776,8 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
         content: expect.stringContaining('"table":"claim"'),
       }),
     );
-  // A verdict mirrors with kind=verdict.
+  // A verdict mirrors with kind=verdict using the closed approve|reject
+  // vocabulary (a word, not a boolean).
   await page.getByTestId("verdict-approve").click();
   await expect
     .poll(() =>
@@ -774,7 +789,7 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
     )
     .toEqual(
       expect.objectContaining({
-        content: expect.stringContaining('"approve":true'),
+        content: expect.stringContaining('"verdict":"approve"'),
       }),
     );
 });

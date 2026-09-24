@@ -21,6 +21,12 @@ import type {
 
 const AGENT_STORAGE_KEY = "buzz.agent.nsec";
 
+function parseNsecHex(hex: string): Uint8Array {
+  return new Uint8Array(
+    hex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)),
+  );
+}
+
 function getOrCreateAgentIdentity(): Uint8Array {
   if (typeof localStorage === "undefined") {
     return generateSecretKey();
@@ -33,14 +39,28 @@ function getOrCreateAgentIdentity(): Uint8Array {
       .join("");
     localStorage.setItem(AGENT_STORAGE_KEY, hex);
   }
-  return new Uint8Array(
-    hex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)),
-  );
+  return parseNsecHex(hex);
 }
 
 /** Stable agent pubkey for this browser (created on first use). */
 export function getAgentPubkey(): string {
   return getPublicKey(getOrCreateAgentIdentity());
+}
+
+/**
+ * The stored agent pubkey if one exists — never creates one.
+ *
+ * Read-only introspection for display and identity comparison. Unlike
+ * {@link getAgentPubkey} it will not materialize a key where none is stored,
+ * so retiring the key with {@link resetAgentIdentity} (which the reset control
+ * uses to hand the agent a fresh identity on its next run) is not silently
+ * undone by a render that merely reads the pubkey to show it.
+ */
+export function peekAgentPubkey(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  const hex = localStorage.getItem(AGENT_STORAGE_KEY);
+  if (!hex) return null;
+  return getPublicKey(parseNsecHex(hex));
 }
 
 /** Sign a template with the persisted browser-agent key. */
