@@ -24,9 +24,25 @@ import {
   type AgentWikiDistillOutcome,
   type AgentWikiPage,
 } from "../lib/agentWiki";
+import {
+  SELF_MAINTENANCE_DISABLED_FEEDBACK,
+  SELF_MAINTENANCE_ENABLED_FEEDBACK,
+  SELF_MAINTENANCE_ERROR_STATUS,
+  SELF_MAINTENANCE_NEEDS_CHANNEL_STATUS,
+  SELF_MAINTENANCE_NO_CHANNEL_COPY,
+  SELF_MAINTENANCE_PENDING_FEEDBACK,
+  SELF_MAINTENANCE_PENDING_STATUS,
+  selfMaintenanceStatusLabel,
+  selfMaintenanceToggleLabel,
+  type SelfMaintenanceAction,
+} from "../lib/agentWikiSelfMaintenance";
 import { relativeTimeLabel } from "../lib/dashboard";
 import { fetchAgentWikiPage, useAgentWikiPagesQuery } from "../hooks";
-import { useAgentWikiDistillMutation } from "../agentWikiHooks";
+import {
+  useAgentWikiDistillMutation,
+  useSelfMaintenanceMutation,
+  useSelfMaintenanceState,
+} from "../agentWikiHooks";
 
 type AgentWikiSectionProps = {
   /** Shared dashboard clock so relative labels stay live. */
@@ -109,6 +125,148 @@ function DistillFeedback({
   );
 }
 
+/** Toggle feedback: pending is status, save failures alert with the excerpt. */
+function SelfMaintenanceFeedback({
+  pending,
+  outcome,
+  error,
+}: {
+  pending: boolean;
+  outcome: SelfMaintenanceAction | undefined;
+  error: string | null;
+}) {
+  let text: string | null = null;
+  let isError = false;
+  if (error !== null) {
+    text = error;
+    isError = true;
+  } else if (pending) {
+    text = SELF_MAINTENANCE_PENDING_FEEDBACK;
+  } else if (outcome === "enable") {
+    text = SELF_MAINTENANCE_ENABLED_FEEDBACK;
+  } else if (outcome === "disable") {
+    text = SELF_MAINTENANCE_DISABLED_FEEDBACK;
+  }
+  if (text === null) return null;
+  return (
+    <p
+      className={`mt-1 text-2xs ${isError ? "text-destructive" : "text-muted-foreground"}`}
+      data-testid={
+        isError
+          ? "org-wiki-self-maintenance-error"
+          : "org-wiki-self-maintenance-feedback"
+      }
+      role={isError ? "alert" : "status"}
+    >
+      {text}
+    </p>
+  );
+}
+
+/**
+ * Self-maintenance (scheduled distill) status + one-click toggle. The status
+ * line is derived from the `agwiki-nightly` workflow's own trigger — when it
+ * is absent, broken, or out of this section's channel reach, the row says so
+ * instead of guessing (docs/agent-wiki.md § Self-maintenance).
+ */
+function SelfMaintenanceRow() {
+  const state = useSelfMaintenanceState();
+  const [pickedChannelId, setPickedChannelId] = React.useState<string | null>(
+    null,
+  );
+  const hostChannelId = pickedChannelId ?? state.hostChannels[0]?.id ?? null;
+  const mutation = useSelfMaintenanceMutation(
+    hostChannelId,
+    state.workflow?.id ?? null,
+  );
+  const pending = mutation.isPending;
+
+  // A failed read must not render as "off" — unknown is its own state.
+  let statusText: string;
+  if (state.isError) {
+    statusText = SELF_MAINTENANCE_ERROR_STATUS;
+  } else if (state.isPending) {
+    statusText = SELF_MAINTENANCE_PENDING_STATUS;
+  } else if (state.hostChannels.length === 0) {
+    statusText = SELF_MAINTENANCE_NEEDS_CHANNEL_STATUS;
+  } else {
+    statusText = selfMaintenanceStatusLabel(
+      state.enabled,
+      state.schedule,
+      state.hostChannelName,
+    );
+  }
+
+  // Creation is channel-scoped: without a channel to host the workflow there
+  // is nothing honest to create, so the constraint is surfaced, not faked.
+  const needsChannel = !state.enabled && state.hostChannels.length === 0;
+  const blocked = pending || state.isPending || state.isError || needsChannel;
+
+  return (
+    <div
+      className="mb-2 rounded-md border px-2 py-1.5"
+      data-testid="org-wiki-self-maintenance"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p
+          className="min-w-0 text-2xs text-muted-foreground"
+          data-testid="org-wiki-self-maintenance-status"
+        >
+          {statusText}
+        </p>
+        <div className="flex items-center gap-1.5">
+          {!state.enabled && state.hostChannels.length > 1 ? (
+            <span className="flex items-center gap-1">
+              <label
+                className="text-2xs text-muted-foreground"
+                htmlFor="org-wiki-self-maintenance-channel"
+              >
+                Channel
+              </label>
+              <select
+                className="rounded border bg-background px-1 py-0.5 text-2xs"
+                data-testid="org-wiki-self-maintenance-channel"
+                id="org-wiki-self-maintenance-channel"
+                onChange={(event) => setPickedChannelId(event.target.value)}
+                value={hostChannelId ?? ""}
+              >
+                {state.hostChannels.map((channel) => (
+                  <option key={channel.id} value={channel.id}>
+                    {channel.name}
+                  </option>
+                ))}
+              </select>
+            </span>
+          ) : null}
+          <Button
+            aria-busy={pending}
+            data-testid="org-wiki-self-maintenance-toggle"
+            disabled={blocked}
+            onClick={() =>
+              mutation.mutate(state.enabled ? "disable" : "enable")
+            }
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {selfMaintenanceToggleLabel(state.enabled, pending)}
+          </Button>
+        </div>
+      </div>
+      {needsChannel ? (
+        <p className="mt-1 text-2xs text-muted-foreground">
+          {SELF_MAINTENANCE_NO_CHANNEL_COPY}
+        </p>
+      ) : null}
+      <SelfMaintenanceFeedback
+        error={mutation.error?.message ?? state.errorMessage}
+        outcome={mutation.data}
+        pending={pending}
+      />
+    </div>
+  );
+}
+
 /** Full-page markdown view for one wiki page head, re-fetched by d. */
 function AgentWikiPageSheet({
   d,
@@ -181,6 +339,7 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
     return (
       <div data-testid="org-wiki-section">
         <h3 className="mb-2 text-sm font-semibold">Agent wiki</h3>
+        <SelfMaintenanceRow />
         <EmptyState
           icon={<Spinner aria-hidden="true" className="h-6 w-6" />}
           testId="org-wiki-loading"
@@ -194,6 +353,7 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
     return (
       <div data-testid="org-wiki-section">
         <h3 className="mb-2 text-sm font-semibold">Agent wiki</h3>
+        <SelfMaintenanceRow />
         <EmptyState
           action={
             <Button
@@ -217,6 +377,7 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
     return (
       <div data-testid="org-wiki-section">
         <h3 className="mb-2 text-sm font-semibold">Agent wiki</h3>
+        <SelfMaintenanceRow />
         <EmptyState
           action={
             <div className="flex flex-col items-center gap-1.5">
@@ -257,6 +418,7 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
           pending={distill.isPending}
         />
       </div>
+      <SelfMaintenanceRow />
       {distillFeedback}
       <div className="space-y-2">
         {standup ? (
