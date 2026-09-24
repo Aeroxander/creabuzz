@@ -10,8 +10,15 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
 
+type RpcEndpointControlProps = {
+  /** Called with the saved endpoint so siblings (e.g. WalletCard) can track it. */
+  onEndpointSaved?: (endpoint: string) => void;
+};
+
 /** Point launchpad chain reads at an RPC endpoint (default: local Anvil). */
-export function RpcEndpointControl() {
+export function RpcEndpointControl({
+  onEndpointSaved,
+}: RpcEndpointControlProps) {
   const relayOrigin = getCachedRelayOrigin();
   const queryClient = useQueryClient();
   const [endpoint, setEndpoint] = React.useState(() =>
@@ -45,7 +52,9 @@ export function RpcEndpointControl() {
       />
       <Button
         onClick={() => {
-          setRpcEndpoint(relayOrigin, endpoint.trim() || DEFAULT_RPC_ENDPOINT);
+          const saved = endpoint.trim() || DEFAULT_RPC_ENDPOINT;
+          setRpcEndpoint(relayOrigin, saved);
+          onEndpointSaved?.(saved);
           setOpen(false);
           void queryClient.invalidateQueries({ queryKey: ["launchpad"] });
         }}

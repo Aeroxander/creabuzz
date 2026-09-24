@@ -15,6 +15,7 @@ import {
 import { effectiveLaunchStage } from "@/features/launchpad/lib/launchpadStatus";
 import { LaunchManagePanel } from "@/features/launchpad/ui/LaunchManagePanel";
 import { LaunchOverviewPanel } from "@/features/launchpad/ui/LaunchOverviewPanel";
+import { MyBidsPanel } from "@/features/launchpad/ui/MyBidsPanel";
 import { LaunchProposalsPanel } from "@/features/launchpad/ui/LaunchProposalsPanel";
 import { LaunchStageBadge } from "@/features/launchpad/ui/LaunchStageBadge";
 import { LaunchTreasuryPanel } from "@/features/launchpad/ui/LaunchTreasuryPanel";
@@ -26,7 +27,7 @@ import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { cn } from "@/shared/lib/cn";
-import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
+import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { ArrowLeft, Star } from "lucide-react";
 
 export function LaunchDetailScreen({
@@ -50,37 +51,6 @@ export function LaunchDetailScreen({
     ? launchFollowKey(launch.record.author, launch.record.id)
     : "";
   const isFollowed = followed.has(followKey);
-
-  const handleRecordBid = React.useCallback(
-    async (input: {
-      bucket: string;
-      budget: string;
-      maxPrice: string;
-      tx: string;
-    }) => {
-      if (!launch) return;
-      try {
-        await mirrorMutation.mutateAsync({
-          kind: KIND_LAUNCH_BID,
-          author: launch.record.author,
-          launchId: launch.record.id,
-          bucket: input.bucket,
-          content: {
-            budget: input.budget || undefined,
-            maxPrice: input.maxPrice || undefined,
-            tx: input.tx || undefined,
-          },
-        });
-        toast.success("Bid recorded. The chain remains the source of truth.");
-        setBidOpen(false);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Recording the bid failed.",
-        );
-      }
-    },
-    [launch, mirrorMutation],
-  );
 
   const handlePostUpdate = React.useCallback(
     async (input: {
@@ -196,6 +166,7 @@ export function LaunchDetailScreen({
               Proposals ({launch.proposals.length})
             </TabsTrigger>
             <TabsTrigger value="treasury">Treasury</TabsTrigger>
+            <TabsTrigger value="bids">My bids</TabsTrigger>
             {isFounder ? (
               <TabsTrigger value="manage">Manage</TabsTrigger>
             ) : null}
@@ -219,6 +190,9 @@ export function LaunchDetailScreen({
           </TabsContent>
           <TabsContent value="treasury">
             <LaunchTreasuryPanel launch={launch} isFounder={isFounder} />
+          </TabsContent>
+          <TabsContent value="bids">
+            <MyBidsPanel launch={launch} />
           </TabsContent>
           {isFounder ? (
             <TabsContent value="manage">
@@ -245,11 +219,10 @@ export function LaunchDetailScreen({
       </Tabs>
 
       <RecordBidDialog
-        isPublishing={mirrorMutation.isPending}
-        onPublish={handleRecordBid}
         onOpenChange={setBidOpen}
         open={bidOpen}
         launchName={launch.record.name}
+        record={launch.record}
       />
       {isFounder ? (
         <PostUpdateDialog

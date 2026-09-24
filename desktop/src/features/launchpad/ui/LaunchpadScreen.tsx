@@ -15,9 +15,11 @@ import {
   useFollowedLaunches,
 } from "@/features/launchpad/lib/followedLaunches";
 import { effectiveLaunchStage } from "@/features/launchpad/lib/launchpadStatus";
+import { getRpcEndpoint } from "@/features/launchpad/lib/chainRpc";
 import type { Launch } from "@/features/launchpad/launchpadModels";
 import { CreateLaunchDialog } from "@/features/launchpad/ui/CreateLaunchDialog";
 import { RpcEndpointControl } from "@/features/launchpad/ui/RpcEndpointControl";
+import { WalletCard } from "@/features/launchpad/ui/WalletCard";
 import { AuctionProgressBar } from "@/features/launchpad/ui/LaunchAuctionProgress";
 import { LaunchStageBadge } from "@/features/launchpad/ui/LaunchStageBadge";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -38,6 +40,7 @@ export function LaunchpadScreen() {
   const createMutation = useCreateLaunchMutation();
   const [filter, setFilter] = React.useState<LaunchFilter>("all");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [rpcUrl, setRpcUrl] = React.useState(() => getRpcEndpoint(relayOrigin));
 
   const launches = React.useMemo(() => data ?? [], [data]);
   const visible = launches.filter((launch) => {
@@ -100,7 +103,8 @@ export function LaunchpadScreen() {
           <Stat label="Launches" value={launches.length} />
           <Stat label="Live now" value={live} />
           <Stat label="Graduated" value={graduated} />
-          <RpcEndpointControl />
+          <RpcEndpointControl onEndpointSaved={setRpcUrl} />
+          <WalletCard rpcUrl={rpcUrl} />
           <div
             className="ml-auto flex items-center gap-1"
             role="tablist"
