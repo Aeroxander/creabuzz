@@ -16,7 +16,7 @@ use crate::error::AllowanceError;
 pub const MAX_GAS: u64 = 300_000;
 
 /// RLP-encode a byte string (scalars are pre-minimized by the caller).
-fn rlp_bytes(data: &[u8]) -> Vec<u8> {
+pub(crate) fn rlp_bytes(data: &[u8]) -> Vec<u8> {
     if data.len() == 1 && data[0] < 0x80 {
         return data.to_vec();
     }
@@ -35,7 +35,7 @@ fn rlp_bytes(data: &[u8]) -> Vec<u8> {
 }
 
 /// Wrap an already-encoded payload list.
-fn rlp_list(payload: &[u8]) -> Vec<u8> {
+pub(crate) fn rlp_list(payload: &[u8]) -> Vec<u8> {
     if payload.len() < 56 {
         let mut out = Vec::with_capacity(1 + payload.len());
         out.push(0xc0 + payload.len() as u8);
@@ -52,13 +52,23 @@ fn rlp_list(payload: &[u8]) -> Vec<u8> {
 
 /// Minimal big-endian encoding: no leading zeros, and zero encodes as the
 /// empty string (RLP scalar rule).
-fn minimal_be(value: u128) -> Vec<u8> {
+pub(crate) fn minimal_be(value: u128) -> Vec<u8> {
     if value == 0 {
         return Vec::new();
     }
     let be = value.to_be_bytes();
     let first = be.iter().position(|&b| b != 0).unwrap_or(be.len() - 1);
     be[first..].to_vec()
+}
+
+/// RLP-encode a fixed-width big-endian scalar (signature `r`/`s`) as the
+/// *integer* it represents: leading zeros stripped, zero as the empty
+/// string. A fixed 32-byte string is a non-canonical integer encoding
+/// whenever the scalar's top byte is zero (~1/128 of signatures) and is
+/// rejected by strict RLP decoders.
+pub(crate) fn rlp_scalar(scalar: &[u8]) -> Vec<u8> {
+    let first = scalar.iter().position(|&b| b != 0).unwrap_or(scalar.len());
+    rlp_bytes(&scalar[first..])
 }
 
 /// Derive the 20-byte EVM address of a secp256k1 key:
@@ -150,8 +160,10 @@ fn sign_tx_fields(key: &SigningKey, tx: &LegacyTxFields<'_>) -> Result<SignedTx,
     final_payload.extend_from_slice(&rlp_bytes(&minimal_be(tx.value)));
     final_payload.extend_from_slice(&rlp_bytes(tx.data));
     final_payload.extend_from_slice(&rlp_bytes(&minimal_be(v as u128)));
-    final_payload.extend_from_slice(&rlp_bytes(&sig_bytes[..32]));
-    final_payload.extend_from_slice(&rlp_bytes(&sig_bytes[32..]));
+    // `r` and `s` are integers in the RLP tuple — minimally encoded with
+    // leading zeros stripped (see [`rlp_scalar`]), never fixed-width strings.
+    final_payload.extend_from_slice(&rlp_scalar(&sig_bytes[..32]));
+    final_payload.extend_from_slice(&rlp_scalar(&sig_bytes[32..]));
 
     let encoded = rlp_list(&final_payload);
     let tx_hash = keccak256(&encoded);
@@ -281,6 +293,87 @@ mod tests {
         assert!(
             tx.raw.windows(needle.len()).any(|w| w == needle),
             "calldata must appear verbatim in the raw tx"
+        );
+    }
+
+    #[test]
+    fn rlp_scalar_encodes_minimal_integers() {
+        // Zero -> empty string; leading zeros stripped; a lone 0x80 byte
+        // must survive as a one-byte string (0x81 0x80).
+        assert_eq!(rlp_scalar(&[0u8; 32]), vec![0x80]);
+        assert_eq!(rlp_scalar(&[0x00, 0x00, 0x01]), vec![0x01]);
+        assert_eq!(rlp_scalar(&[0x00, 0x80]), vec![0x81, 0x80]);
+        assert_eq!(rlp_scalar(&[0x80; 32]), rlp_bytes(&[0x80; 32]));
+    }
+
+    // The two vectors below were derived independently with `cast mktx`
+    // (foundry 1.4.3, same pinning convention as the `cast sig` selector
+    // tests) — RFC 6979 deterministic signatures make the comparison
+    // byte-exact, so these pin the RLP structure, the EIP-155 signing
+    // digest, the signature encoding, and address derivation end to end.
+    //
+    // ```text
+    // cast mktx --legacy --private-key 0x07…07 --chain 1 --nonce 9 \
+    //   --gas-limit 21000 --gas-price 2000000000 --value 0 \
+    //   0x0000000000000000000000000000000000000042 0xdeadbeef
+    // ```
+    #[test]
+    fn sign_legacy_tx_matches_cast_derived_vector() {
+        let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
+        let mut to = [0u8; 20];
+        to[19] = 0x42;
+        let signed = sign_legacy_tx(
+            &key,
+            &LegacyTxFields {
+                chain_id: 1,
+                nonce: 9,
+                gas_price: 2_000_000_000,
+                gas: 21_000,
+                to: &to,
+                value: 0,
+                data: &[0xde, 0xad, 0xbe, 0xef],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            hex::encode(&signed.raw),
+            "f8670984773594008252089400000000000000000000000000000000000000428084deadbeef25a0\
+             55fb9d4e4d4ba8315346de0df80cf19d9b683de6edc1a885f236ea5ebf726574a0638bc61d3d486\
+             2a0569b427f050f414037dc49ab8aa3b87af33daf0553ebc55a"
+        );
+    }
+
+    // Same command with `--private-key 0x…0037` (scalar 55): this
+    // signature's `s` scalar starts with 0x00, so canonical RLP encodes it
+    // as a 31-byte string (0x9f prefix) — the raw is 104 bytes, one shorter
+    // than the fixed-width case. Encoding `r`/`s` as fixed 32-byte strings
+    // (0xa0 + 32 bytes) yields a different, non-canonical byte string that
+    // strict decoders reject — this vector fails if the stripping is lost.
+    #[test]
+    fn sign_legacy_tx_minimally_encodes_signature_scalars() {
+        let mut key_bytes = [0u8; 32];
+        key_bytes[31] = 55;
+        let key = SigningKey::from_slice(&key_bytes).unwrap();
+        let mut to = [0u8; 20];
+        to[19] = 0x42;
+        let signed = sign_legacy_tx(
+            &key,
+            &LegacyTxFields {
+                chain_id: 1,
+                nonce: 9,
+                gas_price: 2_000_000_000,
+                gas: 21_000,
+                to: &to,
+                value: 0,
+                data: &[0xde, 0xad, 0xbe, 0xef],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            hex::encode(&signed.raw),
+            "f8660984773594008252089400000000000000000000000000000000000000428084deadbeef26a0\
+             0d7ea12cffd60b0bfb5abd6b84bd95310afb761735992a06a7705d3208fe0b289f88cedc8f79b2\
+             29bfcdc5fb84d8ad166b6a41b6f118cf0634365c90d5e544d2"
         );
     }
 }

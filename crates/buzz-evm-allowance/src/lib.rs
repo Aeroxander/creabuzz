@@ -29,7 +29,9 @@
 //! Like `buzz-evm-auth` and the launchpad composer, this crate ships without
 //! alloy/ethers: JSON-RPC over `reqwest`, keccak256/ABI/RLP by hand, signing
 //! via `k256`. Selectors are computed from canonical signatures and pinned
-//! by tests against `cast sig`.
+//! by tests against `cast sig`. The [`wallet`] module extends the same stack
+//! to general-purpose EIP-1559 signing and broadcast (local keys, type-2
+//! transactions, bounded receipts) for the desktop app.
 
 // `abi` and `tx` are public so downstream value-layer surfaces (the
 // ragequit/exit path in buzz-cli) can reuse the pinned encoders and the
@@ -40,13 +42,15 @@ mod epoch;
 mod error;
 mod rpc;
 pub mod tx;
+pub mod wallet;
 
 pub use client::{
     AllowanceClient, AllowanceDecision, SpendReceipt, DEFAULT_RECEIPT_DEADLINE, DEFAULT_RPC_TIMEOUT,
 };
 pub use epoch::Window;
-pub use error::AllowanceError;
+pub use error::{AllowanceError, WalletError};
 pub use rpc::{EvmRpc, HttpEvmRpc};
+pub use wallet::{Eip1559TxFields, FeeSuggestion, TxReceipt, Wallet, WalletClient};
 
 #[cfg(feature = "test-support")]
 pub mod test_support;

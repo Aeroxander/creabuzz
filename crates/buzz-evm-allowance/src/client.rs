@@ -31,7 +31,7 @@ pub const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 /// Default deadline for waiting for a broadcast spend to mine.
 pub const DEFAULT_RECEIPT_DEADLINE: Duration = Duration::from_secs(30);
 /// Poll interval while waiting for a receipt.
-const RECEIPT_POLL_INTERVAL: Duration = Duration::from_millis(500);
+pub(crate) const RECEIPT_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Outcome of [`AllowanceClient::check`]. There is no "allow on error":
 /// every failure mode is a deny.
@@ -340,7 +340,7 @@ fn is_revert(detail: &str) -> bool {
 }
 
 /// Parse a JSON-RPC hex quantity ("0x…") into a u128.
-fn parse_hex_quantity(value: &serde_json::Value) -> Result<u128, String> {
+pub(crate) fn parse_hex_quantity(value: &serde_json::Value) -> Result<u128, String> {
     let s = value
         .as_str()
         .ok_or_else(|| format!("expected hex quantity string, got {value}"))?;
