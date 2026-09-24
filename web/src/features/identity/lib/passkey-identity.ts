@@ -1,30 +1,44 @@
 /**
- * Passkey (PRF) identity state machine for Buzz web.
+ * Passkey identity state machine for Buzz web.
  *
  * Identity root = the secp256k1 key derived from PRF(passkey, salt). The key
  * exists only in memory while signed in; the durable state is just the
- * credential id + salt + pubkey (all public/safe). Same credential + salt
- * anywhere (e.g. a synced ecosystem) yields the same key.
+ * credential id + salt + public keys (Nostr pubkey, secp256r1 owner key — all
+ * public/safe). Same credential + salt anywhere (e.g. a synced ecosystem)
+ * yields the same key. The passkey's own secp256r1 key is stored alongside as
+ * the future smart-wallet (ZeroDev Kernel) owner root — see
+ * `docs/identity-token-architecture.md`.
  */
 
-import { getPublicKey } from "nostr-tools/pure";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import { hkdfSha256, prfProvider, PrfUnavailableError } from "./passkey";
+import {
+  createPasskey,
+  deriveNostrSecretKey,
+  evmOwnerFromR1,
+  getPasskeyAssertion,
+  nostrPubkeyHex,
+  PrfUnavailableError,
+  type PasskeyIdentity,
+  // Explicit extension: node --test resolves this chain without a loader
+  // (tsconfig allowImportingTsExtensions); vite handles it as usual.
+} from "./passkey.ts";
 
 const CRED_KEY = "buzz.passkey.credentialId";
 const SALT_KEY = "buzz.passkey.salt";
 const PUBKEY_KEY = "buzz.passkey.pubkey";
 const MODE_KEY = "buzz.passkey.mode";
+const R1_KEY = "buzz.passkey.r1";
 
 export type PasskeyMode = "prf" | "unlock";
-
-const HKDF_INFO = new TextEncoder().encode("buzz-nostr-v1");
 
 export interface PasskeyState {
   credentialId: string;
   salt: Uint8Array;
   pubkey: string;
   mode: PasskeyMode;
+  /** secp256r1 owner key (public), 65-byte uncompressed hex. */
+  r1UncompressedHex: string | null;
   /** In-memory secret key while signed in (never persisted). */
   secretKey: Uint8Array | null;
 }
@@ -52,6 +66,13 @@ function persist(state: PasskeyState): void {
     localStorage.setItem(SALT_KEY, bytesToB64(state.salt));
     localStorage.setItem(PUBKEY_KEY, state.pubkey);
     localStorage.setItem(MODE_KEY, state.mode);
+    // Only non-secret, public material is durable: the r1 owner key is public
+    // (its private half never leaves the authenticator).
+    if (state.r1UncompressedHex) {
+      localStorage.setItem(R1_KEY, state.r1UncompressedHex);
+    } else {
+      localStorage.removeItem(R1_KEY);
+    }
   } catch {
     // storage unavailable
   }
@@ -63,8 +84,6 @@ function loadStored(): PasskeyState | null {
     const salt = localStorage.getItem(SALT_KEY);
     const pubkey = localStorage.getItem(PUBKEY_KEY);
     if (!credentialId || !salt || !pubkey) return null;
-    const storedMode: string | null = null; // read below
-    void storedMode;
     const mode: PasskeyMode =
       localStorage.getItem(MODE_KEY) === "unlock" ? "unlock" : "prf";
     return {
@@ -72,6 +91,7 @@ function loadStored(): PasskeyState | null {
       salt: b64ToBytes(salt),
       pubkey,
       mode,
+      r1UncompressedHex: localStorage.getItem(R1_KEY),
       secretKey: null,
     };
   } catch {
@@ -114,88 +134,149 @@ export function isPasskeyUnlocked(): boolean {
 }
 
 export function activePasskeyPubkey(): string | null {
-  return isPasskeyActive() ? current!.pubkey : null;
+  return isPasskeyActive() && current ? current.pubkey : null;
 }
 
 /**
- * Set up passkey sign-in. Tries PRF derivation; on platforms without PRF
- * (iCloud Keychain) it installs "unlock" mode: the passkey gates the browser
- * identity with a plain assertion (Touch ID) instead of deriving it.
+ * The passkey identity's pubkey as stored on this browser, or null.
+ *
+ * Available before this session unlocks the credential, so "who am I" answers
+ * consistently and nothing mints a second identity in the meantime.
  */
-export async function setupPasskey(
-  displayName: string,
-): Promise<{ mode: PasskeyMode; pubkey: string }> {
-  const salt = crypto.getRandomValues(new Uint8Array(32));
-  const provider = prfProvider();
-  const { credentialId, okm: okmAtCreate } = await provider.create(
-    salt,
-    displayName,
-  );
+export function passkeyStoredPubkey(): string | null {
+  return loadStored()?.pubkey ?? null;
+}
+
+/**
+ * Both public roots of the registered passkey, straight from storage.
+ *
+ * Null when nothing is registered — or when the stored registration predates
+ * wallet-owner capture (no r1 key); register again to get the smart-wallet
+ * root. The Nostr pubkey alone stays available via `passkeyStoredPubkey`.
+ */
+export function passkeyIdentity(): PasskeyIdentity | null {
+  const stored = loadStored();
+  if (!stored?.r1UncompressedHex) return null;
   try {
-    // Prefer the PRF output delivered with the registration ceremony itself
-    // (Safari 18.4+ does this) — zero extra touches. Fall back to a single
-    // follow-up assertion when the platform defers the output.
-    const okm = okmAtCreate ?? (await provider.get(salt, credentialId)).okm;
-    return signInWithOkm(credentialId, salt, okm, "prf");
+    return {
+      nostr: { pubkeyHex: stored.pubkey },
+      evmOwner: evmOwnerFromR1(hexToBytes(stored.r1UncompressedHex)),
+    };
+  } catch {
+    // Corrupt stored r1 material: nothing derivable to show — never guess.
+    return null;
+  }
+}
+
+/**
+ * Refuse to adopt a re-derived key that differs from the registered one.
+ *
+ * Signing under a mismatched key would act as a different person than the app
+ * filters for; failing loudly beats a silent identity swap.
+ */
+export function ensureSamePubkey(
+  storedPubkey: string,
+  derivedPubkey: string,
+): void {
+  if (storedPubkey !== derivedPubkey) {
+    throw new Error(
+      `This passkey re-derived a different Nostr identity than the one registered on this browser (registered ${storedPubkey}, derived ${derivedPubkey}). Signing would act as the wrong identity — register a new passkey instead.`,
+    );
+  }
+}
+
+/**
+ * Register a passkey and derive both identity roots.
+ *
+ * PRF platforms (Windows Hello / Google Password Manager) derive the Nostr
+ * key from the PRF output. Platforms without PRF (e.g. iCloud Keychain) fall
+ * back to "unlock" mode (the web-passkey branch's shipped posture): the
+ * passkey gates the browser identity with a plain assertion instead of
+ * deriving it — the r1 owner root is captured either way.
+ */
+export async function setupPasskey(displayName: string): Promise<{
+  mode: PasskeyMode;
+  pubkey: string;
+  identity: PasskeyIdentity | null;
+}> {
+  // The salt is generated here (not inside createPasskey) so the unlock-mode
+  // fallback keeps it for the stored record either way.
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  try {
+    const created = await createPasskey({
+      rpName: "Creaton",
+      userLabel: displayName,
+      prfSalt: salt,
+    });
+    const state: PasskeyState = {
+      credentialId: created.credentialId,
+      salt: created.prfSalt,
+      pubkey: created.identity.nostr.pubkeyHex,
+      mode: "prf",
+      r1UncompressedHex: created.identity.evmOwner.r1UncompressedHex,
+      secretKey: created.nostrSecretKey,
+    };
+    current = state;
+    persist(state);
+    return { mode: "prf", pubkey: state.pubkey, identity: created.identity };
   } catch (error) {
-    if (!(error instanceof PrfUnavailableError)) throw error;
-    // Unlock mode: keep the current identity (or a fresh nsec) and use the
-    // passkey purely as a biometric gate.
+    if (!(error instanceof PrfUnavailableError) || !error.created) throw error;
+    // Unlock mode: keep the current identity (or a fresh nsec) as the Nostr
+    // root and use the passkey purely as a biometric gate.
     const { getOrCreateIdentity, userPubkey } = await import(
       "@/shared/lib/identity"
     );
     getOrCreateIdentity();
     const pubkey = userPubkey();
     const state: PasskeyState = {
-      credentialId,
+      credentialId: error.created.credentialId,
       salt,
       pubkey,
       mode: "unlock",
+      r1UncompressedHex: error.created.r1UncompressedHex ?? null,
       secretKey: null,
     };
     current = state;
     persist(state);
-    return { mode: "unlock", pubkey };
+    return { mode: "unlock", pubkey, identity: passkeyIdentity() };
   }
 }
 
-/** Sign in with the existing passkey; PRF mode re-derives, unlock mode
- * performs a plain assertion and keeps the browser identity. */
+/**
+ * Sign in with the existing passkey; PRF mode re-derives the Nostr key (and
+ * refuses a mismatch), unlock mode performs a plain assertion and keeps the
+ * browser identity.
+ */
 export async function signInPasskeyIdentity(): Promise<{ pubkey: string }> {
   const stored = loadStored();
   if (!stored) throw new Error("No passkey identity on this browser");
-  const provider = prfProvider();
   if (stored.mode === "unlock") {
-    await provider.assert(stored.credentialId);
+    await getPasskeyAssertion({ credentialId: stored.credentialId });
     current = { ...stored };
     return { pubkey: stored.pubkey };
   }
-  const { okm } = await provider.get(stored.salt, stored.credentialId);
-  return signInWithOkm(stored.credentialId, stored.salt, okm, "prf");
-}
-
-async function signInWithOkm(
-  credentialId: string,
-  salt: Uint8Array,
-  okm: ArrayBuffer,
-  mode: PasskeyMode = "prf",
-): Promise<{ mode: PasskeyMode; pubkey: string }> {
-  const secretKey = await hkdfSha256(new Uint8Array(okm), HKDF_INFO);
-  const pubkey = getPublicKey(secretKey);
-  const state: PasskeyState = { credentialId, salt, pubkey, mode, secretKey };
-  current = state;
-  persist(state);
-  return { mode, pubkey };
+  const assertion = await getPasskeyAssertion({
+    credentialId: stored.credentialId,
+    prfSalt: stored.salt,
+  });
+  const prfOutput = assertion.prfOutput;
+  if (!prfOutput) throw new PrfUnavailableError();
+  const secretKey = await deriveNostrSecretKey(prfOutput);
+  ensureSamePubkey(stored.pubkey, nostrPubkeyHex(secretKey));
+  current = { ...stored, secretKey };
+  return { pubkey: stored.pubkey };
 }
 
 /** Alias used by earlier call sites. */
-export async function createPasskeyIdentity(
-  displayName: string,
-): Promise<{ mode: PasskeyMode; pubkey: string }> {
+export async function createPasskeyIdentity(displayName: string): Promise<{
+  mode: PasskeyMode;
+  pubkey: string;
+  identity: PasskeyIdentity | null;
+}> {
   return setupPasskey(displayName);
 }
 
-/** Sign in with the existing passkey; returns the re-derived pubkey. */
+/** The in-memory Nostr secret key while signed in (never persisted). */
 export function passkeySecretKey(): Uint8Array | null {
   return current?.secretKey ?? null;
 }
@@ -212,35 +293,25 @@ export function removePasskeyIdentity(): void {
     localStorage.removeItem(CRED_KEY);
     localStorage.removeItem(SALT_KEY);
     localStorage.removeItem(PUBKEY_KEY);
+    localStorage.removeItem(MODE_KEY);
+    localStorage.removeItem(R1_KEY);
   } catch {
     // ignore
   }
 }
 
-/** Export the active nsec for manual backup. PRF mode: the derived key.
- * Unlock mode: the browser identity key. */
+/** Export the active nsec (hex) for the one-time manual backup. PRF mode:
+ * the derived key. Unlock mode: the browser identity key. */
 export function exportPasskeyNsec(): string | null {
   const sk = passkeySecretKey();
   if (sk) {
-    return Array.from(sk)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    return bytesToHex(sk);
   }
   try {
     return localStorage.getItem("buzz.identity.nsec");
   } catch {
     return null;
   }
-}
-
-/**
- * The passkey identity's pubkey as stored on this browser, or null.
- *
- * Available before this session unlocks the credential, so "who am I" answers
- * consistently and nothing mints a second identity in the meantime.
- */
-export function passkeyStoredPubkey(): string | null {
-  return loadStored()?.pubkey ?? null;
 }
 
 /** Register our signer override (keeps identity.ts dependency-free). */

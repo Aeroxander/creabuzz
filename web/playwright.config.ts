@@ -27,6 +27,7 @@ export default defineConfig({
         "**/sandbox.spec.ts",
         "**/multi-user.spec.ts",
         "**/browser-agent.spec.ts",
+        "**/passkey.spec.ts",
         "**/screenshots.spec.ts",
         "**/usernames.spec.ts",
         "**/org-chart.spec.ts",
