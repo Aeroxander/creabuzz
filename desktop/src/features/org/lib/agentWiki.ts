@@ -19,8 +19,12 @@ export const AGENT_WIKI_FETCH_LIMIT = 100;
 /** The standup page the distillation loop rewrites each run. */
 export const AGENT_WIKI_STANDUP_D = "default/standup";
 
-export const AGENT_WIKI_EMPTY_HINT =
-  "Run `buzz agwiki distill` to generate the first standup.";
+/**
+ * The CLI invocation the self-service "Distill now" button drives. Kept as the
+ * small secondary note for terminal-first users; the button is the primary
+ * affordance.
+ */
+export const AGENT_WIKI_CLI_HINT = "buzz agwiki distill --publish";
 
 export type AgentWikiEventLike = {
   id: string;
@@ -163,4 +167,175 @@ export function newestAgentWikiPages(
   return [...winners.values()].sort(
     (a, b) => b.updatedAt - a.updatedAt || a.d.localeCompare(b.d),
   );
+}
+
+// ── Distill run status mapping (pure; bound by agentWiki.test.mjs) ─────────
+//
+// The "Distill now" button runs the bundled `buzz` sidecar
+// (`agwiki distill --space <space> --publish`, see ../agentWikiHooks.ts) and
+// classifies the run from its actual CLI output. The matched strings are the
+// CLI's real output, verified against crates/buzz-cli/src:
+//
+// - skip (exit 0, stdout):
+//   "no new done tasks or contribution records since cursor <n>; nothing to
+//   distill" — commands/agent_wiki.rs (run_distill_inner prints it and returns
+//   before any LLM call).
+// - publish confirmation (exit 0, stdout): the normalized write response
+//   `{"accepted":true,"event_id":"…","message":"…"}` printed by
+//   run_distill_inner via normalize_write_response (client.rs).
+// - failure (non-zero exit, stderr): print_error's JSON envelope
+//   `{"error":"…","message":"…","retryable":…}` (error.rs) — its `message`
+//   field is the human-readable detail surfaced inline.
+// - harness timeout: "… timed out after <n>s and was stopped" (the timeout
+//   string format used by desktop/src-tauri/src/commands/org_classify.rs and
+//   this feature's sidecar contract).
+//
+// Rule: an exit-0 run without a recognized publish confirmation is a FAILURE,
+// never a silent success — nothing is guessed from partial output.
+
+/** Wall-clock cap for one distill run (the sidecar owns the process kill). */
+export const AGENT_WIKI_DISTILL_TIMEOUT_SECONDS = 180;
+
+/** Char cap for the inline failure excerpt surfaced to the user. */
+export const AGENT_WIKI_DISTILL_ERROR_EXCERPT_CHARS = 300;
+
+/** Printed when a run fails with no output at all (mirrors the sidecar UX). */
+const AGENT_WIKI_DISTILL_NO_OUTPUT_TEXT =
+  "buzz agwiki distill failed with no output";
+
+/** Attached when exit 0 came back without a publish confirmation. */
+const AGENT_WIKI_DISTILL_UNCONFIRMED_TEXT =
+  "distill exited without a publish confirmation";
+
+/** Raw result of one `agwiki distill --publish` sidecar run. */
+export type AgentWikiDistillRun = {
+  /** Process exit code was 0. */
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+};
+
+/** Terminal outcome of one distill run — surfaced distinctly by the UI. */
+export type AgentWikiDistillOutcome =
+  | { status: "published"; eventId: string }
+  | { status: "nothing-new" }
+  | { status: "timeout" }
+  | { status: "failed"; message: string };
+
+// commands/agent_wiki.rs (run_distill_inner) prints exactly this stdout line
+// when the cursor window holds nothing new; exit stays 0 and no LLM call runs.
+const SKIP_LINE_PATTERN =
+  /^no new done tasks or contribution records since cursor \d+; nothing to distill$/m;
+
+// Harness timeout string format: "… timed out after <n>s and was stopped".
+const TIMEOUT_PATTERN = /timed out after \d+s and was stopped/i;
+
+function boundedExcerpt(
+  text: string,
+  max = AGENT_WIKI_DISTILL_ERROR_EXCERPT_CHARS,
+): string {
+  const trimmed = text.trim();
+  const chars = [...trimmed];
+  return chars.length <= max ? trimmed : `${chars.slice(0, max).join("")}…`;
+}
+
+/** Extract `message` from a print_error JSON envelope line (error.rs). */
+function cliErrorMessage(text: string): string | null {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        "message" in parsed
+      ) {
+        const message = (parsed as { message?: unknown }).message;
+        if (typeof message === "string" && message.trim().length > 0) {
+          return message.trim();
+        }
+      }
+    } catch {
+      // Not the error envelope line; keep scanning.
+    }
+  }
+  return null;
+}
+
+/** The event id from the normalized write response line, or null. */
+function publishedEventId(stdout: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed !== null && typeof parsed === "object") {
+        const record = parsed as { accepted?: unknown; event_id?: unknown };
+        if (
+          record.accepted === true &&
+          typeof record.event_id === "string" &&
+          record.event_id.length > 0
+        ) {
+          return record.event_id;
+        }
+      }
+    } catch {
+      // Not a JSON line; keep scanning.
+    }
+  }
+  return null;
+}
+
+function distillFailureMessage(stderr: string, stdout: string): string {
+  const detail = cliErrorMessage(stderr) ?? cliErrorMessage(stdout);
+  if (detail) return boundedExcerpt(detail);
+  const raw = boundedExcerpt(`${stderr}\n${stdout}`);
+  return raw.length > 0 ? raw : AGENT_WIKI_DISTILL_NO_OUTPUT_TEXT;
+}
+
+/**
+ * Classify a finished sidecar run into its terminal outcome. Pure — this is
+ * the seam the unit tests bind; the mutation hook calls exactly this.
+ */
+export function classifyAgentWikiDistillRun(
+  run: AgentWikiDistillRun,
+): AgentWikiDistillOutcome {
+  const combined = `${run.stderr}\n${run.stdout}`;
+  if (TIMEOUT_PATTERN.test(combined)) return { status: "timeout" };
+  if (!run.ok) {
+    return {
+      status: "failed",
+      message: distillFailureMessage(run.stderr, run.stdout),
+    };
+  }
+  if (SKIP_LINE_PATTERN.test(run.stdout)) return { status: "nothing-new" };
+  const eventId = publishedEventId(run.stdout);
+  if (eventId !== null) return { status: "published", eventId };
+  // Exit 0 without a publish confirmation (e.g. a preview-only draft) is a
+  // failure: never report a standup update the CLI did not confirm.
+  return {
+    status: "failed",
+    message: boundedExcerpt(
+      `${AGENT_WIKI_DISTILL_UNCONFIRMED_TEXT}\n${combined}`,
+    ),
+  };
+}
+
+/**
+ * Classify a rejected sidecar invocation (env/spawn errors, harness timeout).
+ * Timeout strings match the `… timed out after <n>s and was stopped` format;
+ * everything else surfaces as a bounded inline failure — including the
+ * missing-classifier-env errors, exactly as the classify mutation surfaces
+ * them.
+ */
+export function classifyAgentWikiDistillError(
+  message: string,
+): AgentWikiDistillOutcome {
+  if (TIMEOUT_PATTERN.test(message)) return { status: "timeout" };
+  const excerpt = boundedExcerpt(message);
+  return {
+    status: "failed",
+    message: excerpt.length > 0 ? excerpt : AGENT_WIKI_DISTILL_NO_OUTPUT_TEXT,
+  };
 }

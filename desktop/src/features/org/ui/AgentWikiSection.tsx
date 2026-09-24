@@ -18,12 +18,15 @@ import { Spinner } from "@/shared/ui/spinner";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import {
-  AGENT_WIKI_EMPTY_HINT,
+  AGENT_WIKI_CLI_HINT,
+  AGENT_WIKI_DISTILL_TIMEOUT_SECONDS,
   AGENT_WIKI_STANDUP_D,
+  type AgentWikiDistillOutcome,
   type AgentWikiPage,
 } from "../lib/agentWiki";
 import { relativeTimeLabel } from "../lib/dashboard";
 import { fetchAgentWikiPage, useAgentWikiPagesQuery } from "../hooks";
+import { useAgentWikiDistillMutation } from "../agentWikiHooks";
 
 type AgentWikiSectionProps = {
   /** Shared dashboard clock so relative labels stay live. */
@@ -35,6 +38,75 @@ function provenanceLabel(page: AgentWikiPage, nowSeconds: number): string {
   // none, fall back to the author's truncated pubkey — never "unknown".
   const author = page.model ?? truncatePubkey(page.authorPubkey);
   return `Updated ${relativeTimeLabel(page.updatedAt, nowSeconds)} by ${author}`;
+}
+
+// Distill feedback copy. The pending state is honest about the cost: the run
+// makes one LLM call, so it is labeled as such instead of a bare spinner.
+const DISTILL_PENDING_COPY =
+  "Distilling the standup — running one LLM call. This can take a couple of minutes.";
+const DISTILL_SUCCESS_COPY = "Standup updated.";
+const DISTILL_NOTHING_NEW_COPY =
+  "Nothing new to distill — no done tasks or contribution records since the last run.";
+const DISTILL_TIMEOUT_COPY = `Distill timed out after ${AGENT_WIKI_DISTILL_TIMEOUT_SECONDS} seconds and was stopped.`;
+
+/** The "Distill now" affordance: explicit name, disabled + busy while running. */
+function DistillButton({
+  pending,
+  onDistill,
+}: {
+  pending: boolean;
+  onDistill: () => void;
+}) {
+  return (
+    <Button
+      aria-busy={pending}
+      data-testid="org-wiki-distill"
+      disabled={pending}
+      onClick={onDistill}
+      size="xs"
+      type="button"
+      variant="outline"
+    >
+      {pending ? "Distilling the standup…" : "Distill now"}
+    </Button>
+  );
+}
+
+/** Inline outcome feedback: success / nothing-new are status, failures alert. */
+function DistillFeedback({
+  outcome,
+  pending,
+}: {
+  outcome: AgentWikiDistillOutcome | null;
+  pending: boolean;
+}) {
+  let text: string | null = null;
+  let isError = false;
+  if (pending) {
+    text = DISTILL_PENDING_COPY;
+  } else if (outcome?.status === "published") {
+    text = DISTILL_SUCCESS_COPY;
+  } else if (outcome?.status === "nothing-new") {
+    text = DISTILL_NOTHING_NEW_COPY;
+  } else if (outcome?.status === "timeout") {
+    text = DISTILL_TIMEOUT_COPY;
+    isError = true;
+  } else if (outcome?.status === "failed") {
+    text = outcome.message;
+    isError = true;
+  }
+  if (text === null) return null;
+  return (
+    <p
+      className={`mb-2 text-2xs ${isError ? "text-destructive" : "text-muted-foreground"}`}
+      data-testid={
+        isError ? "org-wiki-distill-error" : "org-wiki-distill-status"
+      }
+      role={isError ? "alert" : "status"}
+    >
+      {text}
+    </p>
+  );
 }
 
 /** Full-page markdown view for one wiki page head, re-fetched by d. */
@@ -93,10 +165,17 @@ function AgentWikiPageSheet({
  */
 export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
   const wikiQuery = useAgentWikiPagesQuery();
+  const distill = useAgentWikiDistillMutation();
   const pages = wikiQuery.data ?? [];
   const standup = pages.find((page) => page.d === AGENT_WIKI_STANDUP_D);
   const others = pages.filter((page) => page.d !== AGENT_WIKI_STANDUP_D);
   const [selectedD, setSelectedD] = React.useState<string | null>(null);
+  const distillFeedback = (
+    <DistillFeedback
+      outcome={distill.data ?? null}
+      pending={distill.isPending}
+    />
+  );
 
   if (wikiQuery.isPending) {
     return (
@@ -139,12 +218,26 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
       <div data-testid="org-wiki-section">
         <h3 className="mb-2 text-sm font-semibold">Agent wiki</h3>
         <EmptyState
+          action={
+            <div className="flex flex-col items-center gap-1.5">
+              <DistillButton
+                onDistill={() => distill.mutate()}
+                pending={distill.isPending}
+              />
+              {distillFeedback}
+            </div>
+          }
           description={
             <>
-              No agent wiki pages yet.{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-2xs">
-                {AGENT_WIKI_EMPTY_HINT}
-              </code>
+              No agent wiki pages yet. Distilling the standup rewrites it from
+              recent done tasks and contribution records with one LLM call.{" "}
+              <span className="whitespace-nowrap text-2xs">
+                Or run{" "}
+                <code className="rounded bg-muted px-1 py-0.5">
+                  {AGENT_WIKI_CLI_HINT}
+                </code>{" "}
+                in a terminal.
+              </span>
             </>
           }
           icon={<BookOpen aria-hidden="true" className="h-5 w-5" />}
@@ -157,7 +250,14 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
 
   return (
     <div data-testid="org-wiki-section">
-      <h3 className="mb-2 text-sm font-semibold">Agent wiki</h3>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Agent wiki</h3>
+        <DistillButton
+          onDistill={() => distill.mutate()}
+          pending={distill.isPending}
+        />
+      </div>
+      {distillFeedback}
       <div className="space-y-2">
         {standup ? (
           <Card className="p-3" data-testid="org-wiki-standup">

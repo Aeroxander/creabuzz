@@ -1,16 +1,7 @@
 import * as React from "react";
 
-import {
-  BookOpen,
-  Check,
-  Copy,
-  FileJson,
-  Play,
-  RefreshCw,
-  Sparkles,
-} from "lucide-react";
+import { BookOpen, Check, Play, Plus, RefreshCw, Sparkles } from "lucide-react";
 
-import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { cn } from "@/shared/lib/cn";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -54,13 +45,16 @@ import {
   type TeamStrategy,
   type TeamTurn,
 } from "../lib/teamTypes";
+import { useStrategySeedMutation } from "../strategyHooks";
 import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
+import {
+  StrategyFormDialog,
+  type StrategyFormInitial,
+} from "./StrategyFormDialog";
 
 /** Runs can take minutes — labeled honestly, never a bare spinner. */
 const RUN_PROGRESS_LABEL =
   "Conducting the strategy's phases — this runs several LLM turns and can take a few minutes";
-
-const SEED_HINT = "buzz team strategies seed-examples --publish";
 
 type TranscriptTurn = {
   phase: number;
@@ -302,180 +296,103 @@ function RunStrategyDialog({
   );
 }
 
-// ── New strategy (JSON paste, validate + CLI command) ─────────────────────
+// ── Seed example strategies (buzz team strategies seed-examples) ──────────
 
-function validateStrategyJson(
-  raw: string,
-): { ok: true; id: string } | { ok: false; errors: string[] } {
-  const errors: string[] = [];
-  let parsed: unknown = null;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    errors.push(
-      `Not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+/**
+ * Publishes the paper's Appendix A strategies to the relay under the user's
+ * key — gated behind an explicit confirmation because it writes to the
+ * shared bank. Honest lifecycle: pending shows a labeled spinner, failures
+ * surface the sidecar's error text verbatim.
+ */
+function SeedExamplesButton() {
+  const seedMutation = useStrategySeedMutation();
+  const [phase, setPhase] = React.useState<
+    "idle" | "confirm" | "running" | "done"
+  >("idle");
+
+  if (phase === "done") {
+    return (
+      <p
+        className="text-xs text-emerald-700 dark:text-emerald-300"
+        data-testid="org-seed-done"
+        role="status"
+      >
+        <Check aria-hidden="true" className="mr-1 inline h-3.5 w-3.5" />
+        Example strategies published to the bank.
+      </p>
     );
-    return { ok: false, errors };
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { ok: false, errors: ["Strategy must be a JSON object."] };
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (obj.v !== 1) errors.push("`v` must be 1.");
-  if (typeof obj.name !== "string" || !obj.name.trim()) {
-    errors.push("`name` is required.");
-  }
-  if (typeof obj.description !== "string") {
-    errors.push("`description` must be a string.");
-  }
-  if (typeof obj.teamworkPrompt !== "string" || !obj.teamworkPrompt.trim()) {
-    errors.push("`teamworkPrompt` is required.");
-  }
-  const roles = obj.roles;
-  if (!roles || typeof roles !== "object" || Array.isArray(roles)) {
-    errors.push("`roles` must be an object keyed by roster slot.");
-  } else {
-    const entries = Object.entries(roles as Record<string, unknown>);
-    if (entries.length < 1 || entries.length > 6) {
-      errors.push("`roles` needs 1..=6 slots.");
-    } else if (
-      entries.some(([, prompt]) => typeof prompt !== "string" || !prompt.trim())
-    ) {
-      errors.push("Every role prompt must be a non-empty string.");
-    }
-  }
-  const steps = obj.steps;
-  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 6) {
-    errors.push("`steps` must be an array of 1..=6 phases.");
-  }
-  if (typeof obj.finalWriter !== "string" || !obj.finalWriter.trim()) {
-    errors.push("`finalWriter` must be a roster slot.");
-  }
-  if (errors.length > 0) return { ok: false, errors };
-  const name = typeof obj.name === "string" ? obj.name.trim() : "";
-  // Light client-side id derivation for the CLI command — the CLI validates
-  // strictly; this is just a suggestion.
-  const id = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-  return { ok: true, id: id || "my-strategy" };
-}
-
-function NewStrategyDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [raw, setRaw] = React.useState("");
-  const [result, setResult] = React.useState<
-    { ok: true; id: string } | { ok: false; errors: string[] } | null
-  >(null);
-  const [copied, setCopied] = React.useState(false);
-
-  React.useEffect(() => {
-    if (open) {
-      setRaw("");
-      setResult(null);
-      setCopied(false);
-    }
-  }, [open]);
-
-  const cliCommand =
-    result?.ok === true
-      ? `buzz team strategy put --id ${result.id} --file strategy.json --publish`
-      : "";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="org-new-strategy-dialog">
-        <DialogHeader>
-          <DialogTitle className="text-sm">New strategy</DialogTitle>
-          <DialogDescription className="text-xs">
-            Paste the strategy JSON. The CLI validates strictly and signs +
-            publishes it under your key — this dialog only previews.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <Textarea
-            className="min-h-56 resize-y font-mono text-2xs"
-            data-testid="org-new-strategy-json"
-            onChange={(event) => setRaw(event.target.value)}
-            placeholder={
-              '{\n  "v": 1,\n  "name": "…",\n  "roles": { … },\n  "steps": [ … ],\n  "finalWriter": "…"\n}'
-            }
-            spellCheck={false}
-            value={raw}
-          />
-          {result && !result.ok ? (
-            <div
-              className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
-              data-testid="org-new-strategy-errors"
-            >
-              {result.errors.map((error) => (
-                <p className="text-xs text-destructive" key={error}>
-                  {error}
-                </p>
-              ))}
-            </div>
-          ) : null}
-          {result?.ok === true ? (
-            <div
-              className="space-y-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-              data-testid="org-new-strategy-command"
-            >
-              <p className="text-xs text-muted-foreground">
-                Passes the light check. Publish with the CLI:
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 font-mono text-2xs">
-                  {cliCommand}
-                </code>
-                <Button
-                  aria-label="Copy publish command"
-                  onClick={() => {
-                    copyTextToClipboard(cliCommand, "Publish command copied");
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1500);
-                  }}
-                  size="icon"
-                  variant="ghost"
-                >
-                  {copied ? (
-                    <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy aria-hidden="true" className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <div className="flex justify-end gap-2">
+    <div className="space-y-2">
+      {phase === "idle" ? (
+        <Button
+          data-testid="org-seed"
+          onClick={() => setPhase("confirm")}
+          size="sm"
+          type="button"
+        >
+          <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+          Seed example strategies
+        </Button>
+      ) : null}
+      {phase === "confirm" ? (
+        <div
+          className="flex flex-wrap items-center justify-center gap-2"
+          data-testid="org-seed-confirm"
+        >
+          <p className="w-full text-xs text-muted-foreground">
+            Publishes 3 example strategies (arXiv 2609.22682 Appendix A) to the
+            relay under your key. Continue?
+          </p>
           <Button
-            onClick={() => onOpenChange(false)}
+            data-testid="org-seed-confirm-publish"
+            onClick={() => {
+              setPhase("running");
+              seedMutation.mutate(undefined, {
+                onSuccess: () => setPhase("done"),
+                onError: () => setPhase("idle"),
+              });
+            }}
+            size="sm"
+            type="button"
+          >
+            Publish seeds
+          </Button>
+          <Button
+            onClick={() => setPhase("idle")}
             size="sm"
             type="button"
             variant="ghost"
           >
-            Close
-          </Button>
-          <Button
-            data-testid="org-new-strategy-validate"
-            disabled={!raw.trim()}
-            onClick={() => setResult(validateStrategyJson(raw))}
-            size="sm"
-            type="button"
-          >
-            <FileJson aria-hidden="true" className="h-3.5 w-3.5" />
-            Validate
+            Cancel
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      ) : null}
+      {phase === "running" ? (
+        <div
+          className="flex items-center justify-center gap-2"
+          data-testid="org-seed-progress"
+          role="status"
+        >
+          <Spinner aria-hidden="true" className="h-4 w-4" />
+          <p className="text-xs text-muted-foreground">
+            Validating and publishing 3 example strategies…
+          </p>
+        </div>
+      ) : null}
+      {seedMutation.isError ? (
+        <p
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          data-testid="org-seed-error"
+          role="alert"
+        >
+          {seedMutation.error instanceof Error
+            ? seedMutation.error.message
+            : "Seeding failed."}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -837,10 +754,17 @@ export function OrgTeamsView() {
 
   const [runDialogOpen, setRunDialogOpen] = React.useState(false);
   const [newStrategyOpen, setNewStrategyOpen] = React.useState(false);
+  const [editTarget, setEditTarget] = React.useState<TeamStrategy | null>(null);
   const [selectedRunId, setSelectedRunId] = React.useState<string | null>(null);
   const bankRef = React.useRef<HTMLDivElement>(null);
 
   const turnsByRun = React.useMemo(() => groupTurnsByRun(turns), [turns]);
+  // Stable per target so the edit dialog's reset effect fires only on open.
+  const editInitial = React.useMemo<StrategyFormInitial | null>(
+    () =>
+      editTarget ? { id: editTarget.id, content: editTarget.content } : null,
+    [editTarget],
+  );
   const strategiesById = React.useMemo(
     () => new Map(strategies.map((strategy) => [strategy.id, strategy])),
     [strategies],
@@ -929,7 +853,7 @@ export function OrgTeamsView() {
               type="button"
               variant="outline"
             >
-              <FileJson aria-hidden="true" className="h-3.5 w-3.5" />
+              <Plus aria-hidden="true" className="h-3.5 w-3.5" />
               New strategy
             </Button>
             <Button
@@ -946,14 +870,8 @@ export function OrgTeamsView() {
         </div>
         {strategies.length === 0 ? (
           <EmptyState
-            description={
-              <>
-                No strategies yet. Seed the bank or paste one below.{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-2xs">
-                  {SEED_HINT}
-                </code>
-              </>
-            }
+            action={<SeedExamplesButton />}
+            description="No strategies yet. Seed the bank with the paper's example strategies, or publish your own."
             icon={<BookOpen aria-hidden="true" className="h-5 w-5" />}
             testId="org-bank-empty"
             title="No strategies in the bank"
@@ -985,15 +903,27 @@ export function OrgTeamsView() {
                         </p>
                       ) : null}
                     </div>
-                    <Button
-                      data-testid={`org-run-${strategy.id}`}
-                      onClick={() => setRunDialogOpen(true)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Run
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        aria-label={`Edit strategy ${strategy.id}`}
+                        data-testid={`org-edit-${strategy.id}`}
+                        onClick={() => setEditTarget(strategy)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        data-testid={`org-run-${strategy.id}`}
+                        onClick={() => setRunDialogOpen(true)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Run
+                      </Button>
+                    </div>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <LineageChip
@@ -1085,9 +1015,17 @@ export function OrgTeamsView() {
         open={runDialogOpen}
         strategies={strategies}
       />
-      <NewStrategyDialog
+      <StrategyFormDialog
         onOpenChange={setNewStrategyOpen}
         open={newStrategyOpen}
+      />
+      <StrategyFormDialog
+        initial={editInitial}
+        key={editTarget?.id ?? "create"}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
+        open={editTarget !== null}
       />
       <RunDetailSheet
         key={selectedRunId ?? "closed"}

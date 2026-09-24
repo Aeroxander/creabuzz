@@ -57,6 +57,8 @@ export type TeamStrategy = {
   rev: number | null;
   /** Provenance `model` tag (rare on strategies; runs carry the model). */
   model: string | null;
+  /** The parsed kind:44020 content object — the edit form's seed. */
+  content: Record<string, unknown>;
   eventId: string;
   authorPubkey: string;
   updatedAt: number;
@@ -227,6 +229,7 @@ export function eventToTeamStrategy(event: TeamEventLike): TeamStrategy | null {
     parentStrategy,
     rev: parseStrategyRev(id),
     model: singleTagValue(event.tags, "model"),
+    content,
     eventId: event.id,
     authorPubkey: event.pubkey,
     updatedAt: event.created_at,
