@@ -53,9 +53,13 @@
  *     keccak256(abi.encode(userOp.hash(), address(this), block.chainid))`
  *     (https://raw.githubusercontent.com/eth-infinitism/account-abstraction/
  *     v0.7.0/contracts/core/EntryPoint.sol lines 363-368) where
- *     `userOp.hash()` is the SAME struct hash `hashPackedUserOperation`
- *     computes (v0.7/v0.8 `UserOperationLib.encode` field parity). The
- *     computed hash is CHECKED AGAINST THE LIVE EntryPoint via
+ *     `userOp.hash()` is `keccak256(UserOperationLib.encode(userOp))` — the
+ *     PLAIN 8-word `abi.encode(...)` of v0.7.0 `UserOperationLib.sol`, with
+ *     NO `PACKED_USEROP_TYPEHASH` prefix (that word is the v0.8 EIP-712
+ *     struct hash computed by `hashPackedUserOperation` in userop.ts — NOT
+ *     interchangeable with v0.7; live-proven 2026-09-24 against the real
+ *     Sepolia EntryPoint: only the 8-word form byte-matches `getUserOpHash`).
+ *     The computed hash is CHECKED AGAINST THE LIVE EntryPoint via
  *     `eth_call getUserOpHash(...)` before signing — if they ever differ the
  *     smoke aborts rather than sign the wrong bytes.
  *   - Signature: deterministic fixture P-256 key (pinned JWK ported from
@@ -83,10 +87,7 @@ import {
   functionSelector,
   hexToBytes,
 } from "../web/src/features/identity/lib/userop-abi.ts";
-import {
-  hashPackedUserOperation,
-  keccak256,
-} from "../web/src/features/identity/lib/userop.ts";
+import { keccak256 } from "../web/src/features/identity/lib/userop.ts";
 import {
   derToRs,
   encodeZeroDevWebAuthnSignature,
@@ -221,14 +222,44 @@ function word32(value) {
 }
 
 /**
+ * EntryPoint v0.7 `UserOperationLib.hash` — `keccak256(encode(userOp))`
+ * where `encode` (v0.7.0 `UserOperationLib.sol`) is the PLAIN 8-word
+ * `abi.encode(sender, nonce, keccak(initCode), keccak(callData),
+ * accountGasLimits, preVerificationGas, gasFees, keccak(paymasterAndData))`
+ * — NO `PACKED_USEROP_TYPEHASH` prefix.
+ * (https://raw.githubusercontent.com/eth-infinitism/account-abstraction/
+ * v0.7.0/contracts/core/UserOperationLib.sol, `encode`/`hash`.)
+ *
+ * The typehash-prefixed variant is the EntryPoint v0.8 EIP-712 struct hash
+ * (`hashPackedUserOperation` in userop.ts) and does NOT belong in the v0.7
+ * hash chain — live-proven 2026-09-24: against the real Sepolia EntryPoint
+ * v0.7 only this 8-word form byte-matches `getUserOpHash`; the earlier
+ * typehash-prefixed port mismatched (`hash mismatch` abort in `checkedHash`).
+ */
+function hashPackedUserOperationV07(packed) {
+  return keccak256(
+    abiEncode([
+      { kind: "address", value: packed.sender },
+      { kind: "uint", value: BigInt(packed.nonce) },
+      { kind: "bytes32", value: keccak256(packed.initCode) },
+      { kind: "bytes32", value: keccak256(packed.callData) },
+      { kind: "bytes32", value: packed.accountGasLimits },
+      { kind: "uint", value: BigInt(packed.preVerificationGas) },
+      { kind: "bytes32", value: packed.gasFees },
+      { kind: "bytes32", value: keccak256(packed.paymasterAndData) },
+    ]),
+  );
+}
+
+/**
  * EntryPoint v0.7 final hash: `keccak256(abi.encode(userOp.hash(),
- * entryPoint, chainId))` (v0.7.0 EntryPoint.sol:363-368) over the SAME
- * struct hash the v0.8.0 core computes.
+ * entryPoint, chainId))` (v0.7.0 EntryPoint.sol:363-368) over the v0.7
+ * struct hash above.
  */
 function hashUserOpV07(packed, entryPoint, chainId) {
   return keccak256(
     abiEncode([
-      { kind: "bytes32", value: hashPackedUserOperation(packed) },
+      { kind: "bytes32", value: hashPackedUserOperationV07(packed) },
       { kind: "address", value: entryPoint },
       { kind: "bytes32", value: word32(chainId) },
     ]),
@@ -453,9 +484,15 @@ async function main() {
   }
 
   // ------------------------------------------------------- summary ------
+  // `eth_getUserOperationReceipt` nests the standard transaction receipt
+  // under `receipt` (ERC-4337 bundler RPC spec; live-verified 2026-09-24).
   step("C", "summary");
   out(`      op hash     ${result.opHash}`);
-  out(`      tx hash     ${result.receipt.transactionHash}`);
+  out(`      tx hash     ${result.receipt.receipt.transactionHash}`);
+  out(
+    `      block       ${BigInt(result.receipt.receipt.blockNumber)} ` +
+      `(tx status ${result.receipt.receipt.status}, userOp success ${result.receipt.success})`,
+  );
   out(`      sender      ${sender}${alreadyDeployed ? " (pre-deployed)" : " (deployed this run)"}`);
   out(`      gas used    ${BigInt(result.receipt.actualGasUsed).toString()} (sponsored)`);
   out(`      gas cost    ${BigInt(result.receipt.actualGasCost).toString()} wei (paid by paymaster)`);

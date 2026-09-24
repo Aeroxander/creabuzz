@@ -249,14 +249,36 @@ export interface UserOperationGasEstimate {
   paymasterPostOpGasLimit?: string;
 }
 
-/** Result shape of `eth_getUserOperationReceipt` (`null` while pending). */
-export interface UserOperationReceipt {
-  userOpHash: string;
+/** The standard `eth_getTransactionReceipt` object nested under `receipt`. */
+export interface UserOperationTransactionReceipt {
   transactionHash: string;
   blockNumber: string;
   blockHash: string;
+  status?: string;
+  gasUsed?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Result shape of `eth_getUserOperationReceipt` (`null` while pending):
+ * `userOpHash, sender, nonce, actualGasCost, actualGasUsed, paymaster,
+ * receipt, logs` where `receipt` is the standard `eth_getTransactionReceipt`
+ * object of the BUNDLE transaction — the transaction hash / block live under
+ * that nested `receipt`, NOT at the top level (ERC-4337 bundler RPC spec:
+ * https://www.erc4337.io/docs/bundler/specification; live-verified against
+ * ZeroDev's hosted bundler 2026-09-24 — top-level `transactionHash` is
+ * `undefined` on the real wire). Provider extras (e.g. ZeroDev's `success`
+ * and `entryPoint`) pass through the index signature.
+ */
+export interface UserOperationReceipt {
+  userOpHash: string;
+  sender: string;
+  nonce: string;
   actualGasCost: string;
   actualGasUsed: string;
+  paymaster: string;
+  receipt: UserOperationTransactionReceipt;
+  logs: unknown[];
   [key: string]: unknown;
 }
 

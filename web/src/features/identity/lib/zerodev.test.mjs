@@ -319,13 +319,24 @@ test("sendSponsoredUserOp: sponsor → sign final hash → submit → receipt (p
     maxFeePerGas: "0x3b9aca00",
     maxPriorityFeePerGas: "0x1",
   };
+  // Real wire shape (ERC-4337 bundler RPC spec; live-verified against
+  // ZeroDev's bundler 2026-09-24): the transaction hash / block live under
+  // the NESTED `receipt` (standard eth_getTransactionReceipt object).
   const receipt = {
     userOpHash: "0x00",
-    transactionHash: "0x99",
-    blockNumber: "0x10",
-    blockHash: "0x11",
+    sender: SENDER,
+    nonce: "0x0",
     actualGasCost: "0x12",
     actualGasUsed: "0x13",
+    paymaster: PAYMASTER,
+    logs: [],
+    receipt: {
+      transactionHash: "0x99",
+      blockNumber: "0x10",
+      blockHash: "0x11",
+      status: "0x1",
+    },
+    success: true,
   };
   // The signer asserts it receives the FINAL (post-sponsorship) hash; the
   // send mock returns exactly that hash so the transport check passes.
@@ -368,6 +379,9 @@ test("sendSponsoredUserOp: sponsor → sign final hash → submit → receipt (p
   assert.equal(result.opHash, expectedHash);
   assert.equal(result.rpcUserOperation.signature, "0xaabbccdd");
   assert.deepEqual(result.receipt, receipt);
+  // Consumers (e.g. zerodev-smoke.mjs) read the tx hash from the NESTED
+  // receipt — pin that seam so a wire-shape drift fails here first.
+  assert.equal(result.receipt.receipt.transactionHash, "0x99");
 
   // Method order pinned to the discovered RPC method names.
   assert.deepEqual(
