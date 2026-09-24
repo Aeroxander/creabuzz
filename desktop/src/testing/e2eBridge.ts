@@ -12833,6 +12833,65 @@ export function maybeInstallE2eTauriMocks() {
           },
         };
       }
+      case "agwiki_distill": {
+        const request = (payload ?? null) as { space?: string } | null;
+        const space = request?.space ?? "default";
+        // A published run: exit 0 + the normalized write response line the
+        // frontend's `publishedEventId` seam parses.
+        return {
+          ok: true,
+          stdout: `{"event_id":"mock-agwiki-${space}","accepted":true,"message":""}\npublished ${space}/standup`,
+          stderr: "",
+        };
+      }
+      case "team_strategy_put": {
+        const request = (payload ?? null) as { id?: string } | null;
+        if (!request?.id) {
+          throw new Error("team_strategy_put requires id");
+        }
+        return {
+          eventId: `mock-strategy-${request.id}`,
+          accepted: true,
+          message: "",
+        };
+      }
+      case "team_strategies_seed": {
+        return {
+          published: 3,
+          ids: [
+            "mechanistic_step_audit",
+            "independent_solve_then_synthesis",
+            "suspicious_consensus_challenger",
+          ],
+        };
+      }
+      case "evm_wallet_status": {
+        // The e2e mock always holds a wallet so the send affordances render
+        // (tests cover the no-wallet path by overriding the response).
+        return {
+          hasWallet: true,
+          address: `0x${"42".repeat(20)}`,
+        };
+      }
+      case "evm_wallet_create":
+      case "evm_wallet_import": {
+        return { address: `0x${"42".repeat(20)}` };
+      }
+      case "evm_chain_status": {
+        return { chainId: 31337 };
+      }
+      case "evm_call": {
+        return { returnData: "0x" };
+      }
+      case "evm_send_transaction": {
+        return {
+          txHash: `0x${"cd".repeat(32)}`,
+          status: "success",
+          blockNumber: 1,
+          gasUsed: "21000",
+          contractAddress: null,
+        };
+      }
       case "org_ragequit": {
         const request = (payload ?? null) as {
           dao?: string;
