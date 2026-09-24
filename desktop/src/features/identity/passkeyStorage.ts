@@ -15,6 +15,7 @@ const SALT_KEY = "buzz.passkey.salt";
 const PUBKEY_KEY = "buzz.passkey.pubkey";
 const MODE_KEY = "buzz.passkey.mode";
 const R1_KEY = "buzz.passkey.r1";
+const CEREMONY_KEY = "buzz.passkey.ceremony";
 
 export type PasskeyMode = "prf" | "unlock";
 
@@ -27,6 +28,15 @@ export interface PasskeyState {
   mode: PasskeyMode;
   /** secp256r1 owner root (public), when known. */
   r1UncompressedHex: string | null;
+  /**
+   * The ceremony's RP id/origin coupling record (see
+   * `passkeyContract.ts` `CeremonyProvenance`): the in-contract WebAuthn
+   * validator must use `expectedRPID === ceremony.rpId` and an
+   * `expectedOrigin` containing `ceremony.origin` when verifying this
+   * identity's assertions. Null for legacy records stored before this
+   * existed.
+   */
+  ceremony: { rpId: string; origin: string } | null;
 }
 
 /** Minimal storage surface (localStorage-compatible) — injectable for tests. */
@@ -77,6 +87,11 @@ export function savePasskeyState(
   } else {
     storage.removeItem(R1_KEY);
   }
+  if (state.ceremony) {
+    storage.setItem(CEREMONY_KEY, JSON.stringify(state.ceremony));
+  } else {
+    storage.removeItem(CEREMONY_KEY);
+  }
 }
 
 /** Load the non-secret record, or null when none is stored. */
@@ -93,7 +108,25 @@ export function loadPasskeyState(
     pubkey,
     mode: storage.getItem(MODE_KEY) === "unlock" ? "unlock" : "prf",
     r1UncompressedHex: storage.getItem(R1_KEY),
+    ceremony: readCeremony(storage.getItem(CEREMONY_KEY)),
   };
+}
+
+/**
+ * Parse the persisted ceremony coupling record. Unparseable legacy values
+ * degrade to `null` (the record is then treated as unknown, never invented).
+ */
+function readCeremony(raw: string | null): PasskeyState["ceremony"] {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as { rpId?: unknown; origin?: unknown };
+    if (typeof value.rpId === "string" && typeof value.origin === "string") {
+      return { rpId: value.rpId, origin: value.origin };
+    }
+  } catch {
+    // fall through — never fail a load on a corrupt provenance record
+  }
+  return null;
 }
 
 export function hasPasskeyIdentity(
@@ -111,4 +144,5 @@ export function clearPasskeyState(
   storage.removeItem(PUBKEY_KEY);
   storage.removeItem(MODE_KEY);
   storage.removeItem(R1_KEY);
+  storage.removeItem(CEREMONY_KEY);
 }

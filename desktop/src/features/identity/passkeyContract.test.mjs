@@ -40,6 +40,7 @@ test("rawCreatedToTyped restores web's Uint8Array shapes", () => {
       },
     },
     nostrSecretKey: [1, 2, 3],
+    ceremony: { rpId: "app.buzz.example", origin: "https://app.buzz.example" },
   });
   assert.equal(typed.credentialId, "AAECAwQFBgcICQoLDA0ODw");
   assert.deepEqual([...typed.prfSalt], [42, 42]);
@@ -50,6 +51,32 @@ test("rawCreatedToTyped restores web's Uint8Array shapes", () => {
       r1UncompressedHex: G_UNCOMPRESSED_HEX,
       addressPreview: EXPECTED_G_ADDRESS,
     },
+  });
+});
+
+test("the ceremony provenance record crosses the wire with stable names", () => {
+  // Fixture is exactly the JSON `CeremonyProvenance` serializes to in Rust
+  // (`desktop/src-tauri/src/commands/passkey.rs`, `rename_all = "camelCase"`).
+  // The in-contract WebAuthn validator reads this record for
+  // expectedRPID/expectedOrigin (the coupling contract), so the wire names
+  // are part of the contract — the Rust test `created_passkey_wire_names_are_stable`
+  // locks the other side of this pair.
+  const typed = rawCreatedToTyped({
+    credentialId: "AAECAwQFBgcICQoLDA0ODw",
+    prfSalt: [42, 42],
+    identity: {
+      nostr: { pubkeyHex: EXPECTED_NOSTR_PUB_HEX },
+      evmOwner: {
+        r1UncompressedHex: G_UNCOMPRESSED_HEX,
+        addressPreview: EXPECTED_G_ADDRESS,
+      },
+    },
+    nostrSecretKey: [1, 2, 3],
+    ceremony: { rpId: "app.buzz.example", origin: "https://app.buzz.example" },
+  });
+  assert.deepEqual(typed.ceremony, {
+    rpId: "app.buzz.example",
+    origin: "https://app.buzz.example",
   });
 });
 

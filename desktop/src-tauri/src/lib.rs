@@ -34,6 +34,8 @@ mod native_websocket_batch;
 mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;
+#[cfg(target_os = "macos")]
+mod passkey_ceremony;
 mod passkey_derive;
 mod persona_catalog;
 mod prevent_sleep;

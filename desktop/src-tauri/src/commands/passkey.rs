@@ -66,32 +66,25 @@
 //!    - `authenticationservices-rs` exists but is early-stage;
 //!      `window-passkey` is Electron-only (not Tauri).
 //!
-//! # Verdict and recommended architecture
+//! # Verdict and status
 //!
-//! There is no maintained, drop-in Tauri passkey plugin, and every viable
-//! macOS path (webview OR native) needs deployment artifacts this build does
-//! not have (signed app + `webcredentials` entitlement + AASA on the RP
-//! domain). So this module ships the honest fallback seam (per the spike
-//! brief): a real capability probe, the web-mirroring command surface, the
-//! tested derivation engine, and a typed `PasskeyUnsupportedPlatformError`
-//! where the ceremony bridge would run. NOTHING is faked.
+//! The spike's verdict (keep the record): there is no maintained, drop-in
+//! Tauri passkey plugin, and every viable macOS path (webview OR native) needs
+//! deployment artifacts (signed app + `webcredentials` entitlement + AASA on
+//! the RP domain — see `desktop/src-tauri/Entitlements.plist` and
+//! `desktop/src-tauri/aasa.example.json`, prepared but NOT live).
 //!
-//! To reach parity with the web ceremony, pick ONE (both need the same
-//! deployment setup):
-//! - In-webview: signed build + AASA on the Buzz web domain +
-//!   `com.apple.developer.webcredentials` entitlement, then `rp.id = <web
-//!   domain>` reuses `web/src/features/identity/lib/passkey.ts` verbatim.
-//!   OPEN QUESTION: whether the WKWebView bridge forwards the WebAuthn `prf`
-//!   extension (Safari/WebKit PRF support is an existing open question on the
-//!   identity roadmap) — verify on hardware before relying on it.
-//! - Native bridge: implement `PasskeyCeremony` with `objc2-authentication-services`
-//!   (`ASAuthorizationPlatformPublicKeyCredentialProvider`, PRF input on
-//!   macOS 15+); PRF is guaranteed on the native API where the OS provides it.
+//! RESOLVED since the spike (user decision: macOS 15+ as the floor is fine,
+//! PRF the default ceremony on Mac): the native bridge is implemented in
+//! `src/passkey_ceremony.rs` — `objc2-authentication-services`, PRF-first on
+//! macOS 15.0+, replacing the `PasskeyUnsupportedPlatformError` stub there.
+//! The webview path stays abandoned (the spike's WebKit findings stand).
 //!
-//! Either way the on-chain/web verification policy must accept the desktop
-//! webview's `clientDataJSON.origin` (`tauri://localhost` / `http://tauri.localhost`)
-//! alongside the web origins, or the desktop UserOp will verify its challenge
-//! but fail an origin allow-list.
+//! RP-id/origin coupling: the native platform synthesizes `clientDataJSON`;
+//! the ceremony records its `origin` + the RP id it ran under on the identity
+//! record (`CeremonyProvenance`), and the in-contract WebAuthn validator must
+//! check `expectedOrigin`/`expectedRPID` against that recorded pair (or the
+//! desktop UserOp will verify its challenge but fail an origin allow-list).
 
 use serde::{Deserialize, Serialize};
 
@@ -100,14 +93,68 @@ use crate::passkey_derive::{
     parse_attested_credential_data, passkey_identity_from, DeriveError,
 };
 
-/// The native ceremony bridge is not compiled into this build — see the
-/// platform ledger above. When a real `PasskeyCeremony` implementation lands,
-/// flip this so `passkey_capability` reports the bridge as wired.
+/// Whether this build ships a native `PasskeyCeremony` bridge
+/// (`src/passkey_ceremony.rs` — macOS 15.0+ via AuthenticationServices; see
+/// the platform ledger above). `passkey_capability` reports this honestly.
+#[cfg(target_os = "macos")]
+pub(crate) const CEREMONY_BRIDGE_WIRED: bool = true;
+#[cfg(not(target_os = "macos"))]
 pub(crate) const CEREMONY_BRIDGE_WIRED: bool = false;
 
 /// Environment variable naming the app's `webcredentials` associated domain
 /// (the WebAuthn RP id). Without it no Apple passkey ceremony can succeed.
 pub(crate) const RP_ID_ENV: &str = "BUZZ_PASSKEY_RP_ID";
+
+/// The RP id used when no real domain is configured. RFC 2606 reserves the
+/// `.invalid` TLD, so this can never match a real associated domain: a
+/// request carrying it fails loudly at the platform boundary (and
+/// [`require_real_rp_id`] refuses it before any request is built) instead of
+/// minting a credential bound to a wrong-but-plausible RP id.
+pub(crate) const RP_ID_PLACEHOLDER: &str = "passkey-rp-id-unset.invalid";
+
+/// Resolve the RP id a ceremony should use: explicit option → `BUZZ_PASSKEY_RP_ID`
+/// → the clearly-invalid [`RP_ID_PLACEHOLDER`] (which [`require_real_rp_id`]
+/// then refuses — the "fails loudly, never a wrong-RP credential" contract).
+pub(crate) fn resolve_rp_id(explicit: Option<&str>, env_value: Option<String>) -> String {
+    explicit
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            env_value
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| RP_ID_PLACEHOLDER.to_string())
+}
+
+/// Refuse anything but a real configured domain — loudly, before any
+/// ceremony runs — so no credential is ever minted under the wrong RP id.
+pub(crate) fn require_real_rp_id(rp_id: &str) -> Result<(), PasskeyCommandError> {
+    if rp_id.trim().is_empty() || rp_id == RP_ID_PLACEHOLDER {
+        return Err(PasskeyCommandError::Environment {
+            message: format!(
+                "no passkey RP id is configured — set {RP_ID_ENV} to the app's webcredentials associated domain (it must match the signed associated-domains entitlement and the AASA served at its domain). Nothing was created; the placeholder RP id {RP_ID_PLACEHOLDER} is refused rather than minting a credential under the wrong RP."
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Whether the native passkey API exists at all on this OS version
+/// (`ASAuthorizationPlatformPublicKeyCredentialProvider`, macOS 12.0+).
+pub(crate) fn os_supported_for_version(version: Option<(u32, u32, u32)>) -> bool {
+    version.is_some_and(|(major, _, _)| major >= 12)
+}
+
+/// Whether the native passkey API can request the WebAuthn PRF extension
+/// (`ASAuthorizationPublicKeyCredentialPRF*`, macOS 15.0+ — the ledger §2).
+/// Conservative on unknown versions: never claim PRF the build cannot prove.
+pub(crate) fn prf_supported_for_version(version: Option<(u32, u32, u32)>) -> bool {
+    version.is_some_and(|(major, _, _)| major >= 15)
+}
 
 // ---------------------------------------------------------------------------
 // API shapes — camelCase JSON mirrors of `web/src/features/identity/lib/passkey.ts`.
@@ -163,7 +210,25 @@ pub struct CreatePasskeyOptions {
     pub prf_salt: Option<Vec<u8>>,
 }
 
-/// Web `CreatedPasskey`.
+/// Ceremony provenance recorded with each created identity.
+///
+/// **Coupling contract (wave 4b):** the in-contract WebAuthn validator that
+/// later verifies this identity's assertions must use
+/// `expectedRPID == rp_id` and an `expectedOrigin` containing `origin` —
+/// exactly the pair this ceremony bound. A mismatch must reject the UserOp;
+/// the recorded values are what the platform actually used (the native
+/// AuthenticationServices flow synthesizes `clientDataJSON` itself), so the
+/// validator checks against ceremony truth, not assumptions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CeremonyProvenance {
+    /// The RP id the ceremony ran under (web `rp.id`).
+    pub rp_id: String,
+    /// `clientDataJSON.origin` as the platform reported it.
+    pub origin: String,
+}
+
+/// Web `CreatedPasskey` (plus the desktop-only ceremony provenance record).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatedPasskey {
@@ -173,6 +238,8 @@ pub struct CreatedPasskey {
     pub identity: PasskeyIdentity,
     /// The Nostr secret key — kept in memory only, never persisted.
     pub nostr_secret_key: Vec<u8>,
+    /// The RP id/origin this ceremony bound — see [`CeremonyProvenance`].
+    pub ceremony: CeremonyProvenance,
 }
 
 /// Web `GetPasskeyAssertionOptions`.
@@ -214,10 +281,9 @@ pub struct PasskeyAssertion {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "code", rename_all = "snake_case")]
 pub enum PasskeyCommandError {
-    /// Web `PasskeyEnvironmentError` — no ceremony API at all. Part of the
-    /// serialized error contract (the TS layer maps it); constructed by
-    /// future webview/bridge ceremonies, not by today's stub.
-    #[allow(dead_code)]
+    /// Web `PasskeyEnvironmentError` — no ceremony API/config at all (the
+    /// native bridge raises it for an OS without the platform passkey API or
+    /// a missing/placeholder RP id).
     Environment { message: String },
     /// Web `PrfUnavailableError` — the platform withheld the PRF output.
     PrfUnavailable {
@@ -230,6 +296,10 @@ pub enum PasskeyCommandError {
         created: Option<CreatedPasskeyRef>,
     },
     /// Desktop-only: this build cannot run the ceremony (see the ledger).
+    /// Constructed by the non-macOS stub impl only; kept on every platform
+    /// because the code is part of the serialized error contract the TS
+    /// layer maps (`PasskeyUnsupportedPlatformError`).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     UnsupportedPlatform { message: String, detail: String },
     /// Stand-in for web's plain `Error` (e.g. a cancelled ceremony).
     Failed { message: String },
@@ -263,10 +333,11 @@ impl std::error::Error for PasskeyCommandError {}
 // The native ceremony seam.
 //
 // Everything a platform authenticator returns raw crosses exactly this
-// boundary; everything below it is pure, tested composition. A future
-// `objc2-authentication-services` bridge implements `PasskeyCeremony` and
-// nothing else changes. Tests bind the composition through this same trait
-// with a mock authenticator (see `tests` below).
+// boundary; everything below it is pure, tested composition. The macOS
+// `objc2-authentication-services` bridge (`src/passkey_ceremony.rs`)
+// implements `PasskeyCeremony` and nothing else changes. Tests bind the
+// composition through this same trait with a mock authenticator (see
+// `tests` below).
 // ---------------------------------------------------------------------------
 
 /// Raw registration material from one platform ceremony.
@@ -277,6 +348,12 @@ pub(crate) struct RawRegistration {
     pub prf_output_at_create: Option<Vec<u8>>,
     /// WebAuthn `attestationObject` — carries the attested secp256r1 key.
     pub attestation_object: Vec<u8>,
+    /// The RP id the ceremony actually used — recorded on the identity
+    /// record (the coupled `expectedRPID`, see [`CeremonyProvenance`]).
+    pub rp_id: String,
+    /// The platform-synthesized `clientDataJSON`; its `origin` is recorded on
+    /// the identity record (the coupled `expectedOrigin`).
+    pub client_data_json: Vec<u8>,
 }
 
 /// Raw assertion material from one platform ceremony.
@@ -288,6 +365,22 @@ pub(crate) struct RawAssertion {
 }
 
 pub(crate) trait PasskeyCeremony {
+    /// Typed pre-flight refusal for platforms where no ceremony can run at
+    /// all (the desktop-only `UnsupportedPlatform` stub, or an OS too old for
+    /// the platform API). Runs BEFORE the PRF gate so "no ceremony in this
+    /// build" is never misreported as "the platform withheld PRF".
+    fn ensure_available(&self) -> Result<(), PasskeyCommandError>;
+
+    /// Whether this platform can request the WebAuthn PRF extension at all.
+    ///
+    /// PRF is the default ceremony: the create composition refuses up front
+    /// when this is `false` (`PrfUnavailableError`, `created: false` — nothing
+    /// registered) instead of minting a half identity whose Nostr root can
+    /// never be derived on this OS. Web discovers PRF absence only after
+    /// registration; the desktop capability matrix knows it up front, so the
+    /// desktop refuses earlier — same typed error, honest `created` field.
+    fn prf_supported(&self) -> bool;
+
     fn register(
         &self,
         options: &CreatePasskeyOptions,
@@ -300,10 +393,61 @@ pub(crate) trait PasskeyCeremony {
     ) -> Result<RawAssertion, PasskeyCommandError>;
 }
 
-/// The production ceremony: honestly unsupported in this build.
+/// The production ceremony seam.
+///
+/// On macOS this is the native `AuthenticationServices` bridge
+/// (`src/passkey_ceremony.rs`, macOS 15.0+ PRF-first); everywhere else this
+/// build has no ceremony and says so honestly.
 pub(crate) struct PlatformCeremony;
 
+#[cfg(target_os = "macos")]
 impl PasskeyCeremony for PlatformCeremony {
+    fn ensure_available(&self) -> Result<(), PasskeyCommandError> {
+        let version = macos_product_version();
+        if os_supported_for_version(version) {
+            Ok(())
+        } else {
+            Err(PasskeyCommandError::Environment {
+                message: format!(
+                    "Apple's passkey APIs need macOS 12.0 or later — this Mac reports {}. Nothing was created.",
+                    version
+                        .map(|(a, b, c)| format!("{a}.{b}.{c}"))
+                        .unwrap_or_else(|| "an unknown version".to_string())
+                ),
+            })
+        }
+    }
+
+    fn prf_supported(&self) -> bool {
+        prf_supported_for_version(macos_product_version())
+    }
+
+    fn register(
+        &self,
+        options: &CreatePasskeyOptions,
+        prf_salt: &[u8],
+    ) -> Result<RawRegistration, PasskeyCommandError> {
+        crate::passkey_ceremony::register(options, prf_salt)
+    }
+
+    fn assert(
+        &self,
+        options: &GetPasskeyAssertionOptions,
+    ) -> Result<RawAssertion, PasskeyCommandError> {
+        crate::passkey_ceremony::assert(options)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl PasskeyCeremony for PlatformCeremony {
+    fn ensure_available(&self) -> Result<(), PasskeyCommandError> {
+        Err(unsupported_platform_error())
+    }
+
+    fn prf_supported(&self) -> bool {
+        false
+    }
+
     fn register(
         &self,
         _options: &CreatePasskeyOptions,
@@ -320,6 +464,8 @@ impl PasskeyCeremony for PlatformCeremony {
     }
 }
 
+/// The non-macOS stub's typed refusal (used by tests on every platform).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub(crate) fn unsupported_platform_error() -> PasskeyCommandError {
     PasskeyCommandError::UnsupportedPlatform {
         message: "Passkey sign-in is not available in this desktop build yet — no passkey ceremony was run and nothing was created. The web app supports passkeys today.".to_string(),
@@ -327,7 +473,7 @@ pub(crate) fn unsupported_platform_error() -> PasskeyCommandError {
     }
 }
 
-fn base64url(bytes: &[u8]) -> String {
+pub(crate) fn base64url(bytes: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
@@ -347,6 +493,16 @@ pub(crate) fn create_passkey_with_ceremony<C: PasskeyCeremony + ?Sized>(
     ceremony: &C,
     options: CreatePasskeyOptions,
 ) -> Result<CreatedPasskey, PasskeyCommandError> {
+    // PRF-first pre-flight, in refusal order:
+    // 1. platforms with no ceremony at all report their honest typed error;
+    // 2. platforms without PRF (macOS 12–14) refuse BEFORE registering —
+    //    web's typed `PrfUnavailableError` with `created: false`, nothing
+    //    created — instead of minting a half identity whose Nostr root can
+    //    never be derived here (refuse-wrong-derivation discipline).
+    ceremony.ensure_available()?;
+    if !ceremony.prf_supported() {
+        return Err(PasskeyCommandError::prf_unavailable(None));
+    }
     let prf_salt = match options.prf_salt.clone() {
         Some(salt) => salt,
         None => random_salt()?,
@@ -395,8 +551,18 @@ pub(crate) fn create_passkey_with_ceremony<C: PasskeyCeremony + ?Sized>(
                 .prf_output
         }
     };
-    let prf_output =
-        prf_output.ok_or_else(|| PasskeyCommandError::prf_unavailable(Some(created_ref)))?;
+    let prf_output = prf_output
+        .ok_or_else(|| PasskeyCommandError::prf_unavailable(Some(created_ref.clone())))?;
+    // Provenance record: the ceremony's RP id + the platform's
+    // `clientDataJSON.origin`. Without them the identity cannot be validated
+    // in-contract later (`expectedOrigin`/`expectedRPID` must match this
+    // pair), so an unusable record fails loudly with the credential ref.
+    let origin = client_data_origin(&registration.client_data_json).map_err(|message| {
+        PasskeyCommandError::Attestation {
+            message,
+            created: Some(created_ref),
+        }
+    })?;
     let nostr_secret_key = derive_nostr_secret_key(&prf_output);
     let identity = passkey_identity_from(&nostr_secret_key, &r1_uncompressed)
         .map_err(derive_error_to_command)?;
@@ -413,7 +579,28 @@ pub(crate) fn create_passkey_with_ceremony<C: PasskeyCeremony + ?Sized>(
             },
         },
         nostr_secret_key: nostr_secret_key.to_vec(),
+        ceremony: CeremonyProvenance {
+            rp_id: registration.rp_id,
+            origin,
+        },
     })
+}
+
+/// Extract `clientDataJSON.origin` — the platform-synthesized ceremony
+/// provenance that the in-contract WebAuthn validator must later accept as
+/// `expectedOrigin` (see [`CeremonyProvenance`]).
+fn client_data_origin(client_data_json: &[u8]) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_slice(client_data_json)
+        .map_err(|error| format!("the ceremony's clientDataJSON is not valid JSON: {error}"))?;
+    let origin = value
+        .get("origin")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .ok_or_else(|| {
+            "the ceremony's clientDataJSON carries no origin, so the identity record cannot record the WebAuthn validation coupling — the credential was created but is not usable as an identity.".to_string()
+        })?;
+    Ok(origin.to_string())
 }
 
 /// Signed assertion by the passkey's secp256r1 key plus the second PRF
@@ -422,6 +609,14 @@ pub(crate) fn get_passkey_assertion_with_ceremony<C: PasskeyCeremony + ?Sized>(
     ceremony: &C,
     options: GetPasskeyAssertionOptions,
 ) -> Result<PasskeyAssertion, PasskeyCommandError> {
+    ceremony.ensure_available()?;
+    // A PRF re-derivation cannot run where the platform has no PRF — refuse
+    // with web's typed `PrfUnavailableError` before prompting. A plain
+    // assertion (UserOp signing, no `prf_salt`) still runs on macOS 12–14:
+    // the EVM/wallet root has no PRF dependency.
+    if options.prf_salt.is_some() && !ceremony.prf_supported() {
+        return Err(PasskeyCommandError::prf_unavailable(None));
+    }
     let result = ceremony.assert(&options)?;
     if options.prf_salt.is_some() && result.prf_output.is_none() {
         return Err(PasskeyCommandError::prf_unavailable(None));
@@ -431,7 +626,10 @@ pub(crate) fn get_passkey_assertion_with_ceremony<C: PasskeyCeremony + ?Sized>(
         signature: result.signature,
         authenticator_data: result.authenticator_data,
         client_data_json: result.client_data_json,
-        prf_output: result.prf_output,
+        // Web's shape guarantee: `prfOutput` is present IFF `prfSalt` was
+        // passed (a platform that returns one anyway must not leak it into
+        // an assertion that never asked for it).
+        prf_output: options.prf_salt.and(result.prf_output),
     })
 }
 
@@ -512,17 +710,26 @@ pub(crate) fn capability_for(inputs: &CapabilityInputs) -> PasskeyCapability {
             )),
         )
     };
-    let prf_supported = macos && inputs.os_version.is_some_and(|(major, _, _)| major >= 15);
+    let prf_supported = macos && prf_supported_for_version(inputs.os_version);
     let prf_min_os = macos.then(|| "macOS 15.0".to_string());
 
     let blocker = backend_blocker.or_else(|| {
+        if macos && !os_supported_for_version(inputs.os_version) {
+            let version = inputs
+                .os_version
+                .map(|(a, b, c)| format!("{a}.{b}.{c}"))
+                .unwrap_or_else(|| "an unknown version".to_string());
+            return Some(format!(
+                "Apple's passkey APIs need macOS 12.0 or later (this Mac reports {version}) — no passkey ceremony can run here."
+            ));
+        }
         if macos && !prf_supported {
             let version = inputs
                 .os_version
                 .map(|(a, b, c)| format!("{a}.{b}.{c}"))
                 .unwrap_or_else(|| "an unknown version".to_string());
             return Some(format!(
-                "passkey identity needs the PRF extension, which the native platform authenticator exposes from macOS 15.0 (this Mac reports {version})."
+                "passkey identity is PRF-first: the Nostr key derives from the WebAuthn PRF extension, which Apple's native passkey API exposes from macOS 15.0 (this Mac reports {version}). The EVM wallet root alone would work on macOS 12+, but this build will not mint a half identity — nothing was created; run this flow on macOS 15+."
             ));
         }
         if !inputs.bridge_wired {
@@ -553,17 +760,23 @@ pub(crate) fn capability_for(inputs: &CapabilityInputs) -> PasskeyCapability {
 
 /// The machine's macOS `ProductVersion` (e.g. 26.3 → (26, 3, 0)), read from
 /// `/System/Library/CoreServices/SystemVersion.plist` — no `unsafe`, cached.
-fn macos_product_version() -> Option<(u32, u32, u32)> {
+pub(crate) fn macos_product_version() -> Option<(u32, u32, u32)> {
     static VERSION: std::sync::OnceLock<Option<(u32, u32, u32)>> = std::sync::OnceLock::new();
     *VERSION.get_or_init(|| {
         let plist =
             std::fs::read_to_string("/System/Library/CoreServices/SystemVersion.plist").ok()?;
-        let start = plist.find("<key>ProductVersion</key>")?;
-        let rest = &plist[start..];
-        let version_start = rest.find("<string>")? + "<string>".len();
-        let version_end = rest.find("</string>")?;
-        parse_version(&rest[version_start..version_end])
+        parse_system_version_plist(&plist)
     })
+}
+
+/// Parse the `ProductVersion` out of a `SystemVersion.plist` body (factored
+/// out of [`macos_product_version`] so tests can pin 14.x / 15.x fixtures).
+pub(crate) fn parse_system_version_plist(plist: &str) -> Option<(u32, u32, u32)> {
+    let start = plist.find("<key>ProductVersion</key>")?;
+    let rest = &plist[start..];
+    let version_start = rest.find("<string>")? + "<string>".len();
+    let version_end = rest.find("</string>")?;
+    parse_version(&rest[version_start..version_end])
 }
 
 /// `"26.3"` → (26, 3, 0). Non-numeric tails parse as 0.
@@ -606,13 +819,21 @@ pub fn passkey_capability() -> PasskeyCapability {
 }
 
 /// Web `createPasskey` — one registration, both identity roots. Wires to the
-/// platform ceremony seam; this build returns the typed
-/// `PasskeyUnsupportedPlatformError` (nothing is faked).
+/// platform ceremony seam; on macOS 15+ the native AuthenticationServices
+/// ceremony runs (PRF-first), elsewhere the typed refusal (nothing is faked).
 #[tauri::command]
 pub async fn passkey_create(
     options: CreatePasskeyOptions,
 ) -> Result<CreatedPasskey, PasskeyCommandError> {
-    create_passkey_with_ceremony(&PlatformCeremony, options)
+    // The ceremony blocks on an interactive platform prompt — run it on the
+    // blocking pool so no async worker is held for the duration.
+    tauri::async_runtime::spawn_blocking(move || {
+        create_passkey_with_ceremony(&PlatformCeremony, options)
+    })
+    .await
+    .map_err(|error| PasskeyCommandError::Failed {
+        message: format!("the passkey ceremony task failed: {error}"),
+    })?
 }
 
 /// Web `getPasskeyAssertion` — signed assertion (+ PRF re-evaluation).
@@ -620,7 +841,13 @@ pub async fn passkey_create(
 pub async fn passkey_get(
     options: GetPasskeyAssertionOptions,
 ) -> Result<PasskeyAssertion, PasskeyCommandError> {
-    get_passkey_assertion_with_ceremony(&PlatformCeremony, options)
+    tauri::async_runtime::spawn_blocking(move || {
+        get_passkey_assertion_with_ceremony(&PlatformCeremony, options)
+    })
+    .await
+    .map_err(|error| PasskeyCommandError::Failed {
+        message: format!("the passkey assertion task failed: {error}"),
+    })?
 }
 
 #[cfg(test)]
@@ -661,7 +888,15 @@ mod tests {
     struct MockCeremony {
         prf_at_create: bool,
         prf_on_assert: bool,
+        /// Whether the PLATFORM can request PRF at all (macOS 15.0+). The
+        /// withholding flags above model an authenticator that can but does
+        /// not; this models the OS-level split.
+        prf_supported: bool,
         attestation: Vec<u8>,
+        client_data_json: Vec<u8>,
+        /// When set, any call reaching `register`/`assert` panics — the
+        /// falsifiable "nothing was created and no prompt ran" guard.
+        panic_if_reached: bool,
     }
 
     impl MockCeremony {
@@ -669,7 +904,10 @@ mod tests {
             MockCeremony {
                 prf_at_create,
                 prf_on_assert,
+                prf_supported: true,
                 attestation: hex::decode(attestation_hex()).expect("attestation hex"),
+                client_data_json: client_data_json_fixture(),
+                panic_if_reached: false,
             }
         }
 
@@ -678,20 +916,47 @@ mod tests {
             self.prf_on_assert = false;
             self
         }
+
+        /// The macOS 12–14 posture: a working ceremony platform with no PRF.
+        fn prf_incapable() -> Self {
+            MockCeremony {
+                prf_supported: false,
+                panic_if_reached: true,
+                ..MockCeremony::web_vector(true, true)
+            }
+        }
+    }
+
+    /// The web `performGet`/`performCreate` `clientDataJSON` shape; only the
+    /// `origin` is consumed (the provenance record).
+    fn client_data_json_fixture() -> Vec<u8> {
+        br#"{"type":"webauthn.create","challenge":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","origin":"https://app.buzz.example","crossOrigin":false}"#
+            .to_vec()
     }
 
     impl PasskeyCeremony for MockCeremony {
+        fn ensure_available(&self) -> Result<(), PasskeyCommandError> {
+            Ok(())
+        }
+
+        fn prf_supported(&self) -> bool {
+            self.prf_supported
+        }
+
         fn register(
             &self,
             _options: &CreatePasskeyOptions,
             _prf_salt: &[u8],
         ) -> Result<RawRegistration, PasskeyCommandError> {
+            assert!(!self.panic_if_reached, "register must not be reached");
             Ok(RawRegistration {
                 raw_id: hex::decode("000102030405060708090a0b0c0d0e0f").expect("raw id"),
                 prf_output_at_create: self
                     .prf_at_create
                     .then(|| hex::decode(FIXED_PRF_HEX).expect("prf")),
                 attestation_object: self.attestation.clone(),
+                rp_id: "app.buzz.example".to_string(),
+                client_data_json: self.client_data_json.clone(),
             })
         }
 
@@ -699,6 +964,7 @@ mod tests {
             &self,
             _options: &GetPasskeyAssertionOptions,
         ) -> Result<RawAssertion, PasskeyCommandError> {
+            assert!(!self.panic_if_reached, "assert must not be reached");
             Ok(RawAssertion {
                 signature: vec![0x30],
                 authenticator_data: vec![0u8; 37],
@@ -744,6 +1010,110 @@ mod tests {
                 created.identity.evm_owner.address_preview.as_deref(),
                 Some(EXPECTED_G_ADDRESS)
             );
+            // The identity record carries the ceremony provenance the
+            // in-contract WebAuthn validator must match later.
+            assert_eq!(created.ceremony.rp_id, "app.buzz.example");
+            assert_eq!(created.ceremony.origin, "https://app.buzz.example");
+        }
+    }
+
+    #[test]
+    fn create_on_a_prf_incapable_platform_refuses_before_creating() {
+        // macOS 12–14 (and any platform without PRF): the create composition
+        // refuses BEFORE registering — web's typed `PrfUnavailableError` with
+        // `created: false` (nothing registered), never a Nostr root from a
+        // wrong KDF and never a half identity. The mock panics if the
+        // ceremony seam is reached at all.
+        let error = create_passkey_with_ceremony(&MockCeremony::prf_incapable(), create_options())
+            .expect_err("no PRF on this platform");
+        let PasskeyCommandError::PrfUnavailable { created, message } = error else {
+            panic!("expected PrfUnavailable, got {error:?}");
+        };
+        // "created: false" discipline: nothing was created.
+        assert!(created.is_none(), "must not claim a created credential");
+        assert!(message.contains("PRF"), "{message}");
+    }
+
+    #[test]
+    fn get_on_a_prf_incapable_platform_splits_prf_from_plain_assertions() {
+        // The EVM/wallet root has no PRF dependency: the plain assertion
+        // (UserOp signing) still runs on macOS 12–14, while a PRF
+        // re-derivation is refused before any prompt.
+        let mut mock = MockCeremony::prf_incapable();
+        mock.panic_if_reached = true;
+        let error = get_passkey_assertion_with_ceremony(
+            &mock,
+            GetPasskeyAssertionOptions {
+                credential_id: "abc".to_string(),
+                prf_salt: Some(vec![0x2a; 32]),
+                rp_id: None,
+                challenge: None,
+            },
+        )
+        .expect_err("PRF re-derivation cannot run here");
+        let PasskeyCommandError::PrfUnavailable { created, .. } = error else {
+            panic!("expected PrfUnavailable, got {error:?}");
+        };
+        assert!(created.is_none(), "nothing was created on an assertion");
+
+        let mut mock = MockCeremony::prf_incapable();
+        mock.panic_if_reached = false; // the plain assertion MAY run
+        let assertion = get_passkey_assertion_with_ceremony(
+            &mock,
+            GetPasskeyAssertionOptions {
+                credential_id: "abc".to_string(),
+                prf_salt: None,
+                rp_id: None,
+                challenge: None,
+            },
+        )
+        .expect("plain assertion runs on macOS 12+");
+        assert_eq!(assertion.credential_id, "abc");
+        assert!(assertion.prf_output.is_none());
+    }
+
+    #[test]
+    fn create_without_usable_client_data_origin_fails_unorphaned() {
+        // The identity record must carry the validation coupling (RP id +
+        // clientDataJSON origin); if the ceremony cannot supply it the record
+        // is unusable and the failure carries the credential ref.
+        let mut mock = MockCeremony::web_vector(true, true);
+        mock.client_data_json = br#"{"type":"webauthn.create"}"#.to_vec();
+        let error = create_passkey_with_ceremony(&mock, create_options()).expect_err("no origin");
+        let PasskeyCommandError::Attestation { created, message } = error else {
+            panic!("expected Attestation, got {error:?}");
+        };
+        assert!(message.contains("origin"), "{message}");
+        assert_eq!(
+            created.expect("created ref").credential_id,
+            "AAECAwQFBgcICQoLDA0ODw"
+        );
+    }
+
+    #[test]
+    fn rp_id_policy_never_mints_a_wrong_rp_credential() {
+        // Explicit option wins; env is the fallback; anything unset or the
+        // documented placeholder resolves to the placeholder and is refused.
+        assert_eq!(
+            resolve_rp_id(Some("app.buzz.example"), Some("env.example".to_string())),
+            "app.buzz.example"
+        );
+        assert_eq!(
+            resolve_rp_id(None, Some("env.example".to_string())),
+            "env.example"
+        );
+        assert_eq!(resolve_rp_id(Some("  "), None), RP_ID_PLACEHOLDER);
+        assert_eq!(resolve_rp_id(None, Some("".to_string())), RP_ID_PLACEHOLDER);
+        assert_eq!(resolve_rp_id(None, None), RP_ID_PLACEHOLDER);
+
+        require_real_rp_id("app.buzz.example").expect("real domain accepted");
+        for refused in [RP_ID_PLACEHOLDER, "", "   "] {
+            let error = require_real_rp_id(refused).expect_err("must refuse");
+            let PasskeyCommandError::Environment { message } = error else {
+                panic!("expected Environment, got {error:?}");
+            };
+            assert!(message.contains(RP_ID_ENV), "{message}");
+            assert!(message.contains("Nothing was created"), "{message}");
         }
     }
 
@@ -808,30 +1178,53 @@ mod tests {
     }
 
     #[test]
-    fn the_production_platform_seam_reports_unsupported_not_fake_success() {
-        // Falsifiable guard on the seam `passkey_create` actually calls: if a
-        // fake ceremony ever replaces PlatformCeremony, this fails.
-        let error = create_passkey_with_ceremony(&PlatformCeremony, create_options())
-            .expect_err("no ceremony in this build");
-        let PasskeyCommandError::UnsupportedPlatform { message, detail } = error else {
-            panic!("expected UnsupportedPlatform, got {error:?}");
-        };
-        assert!(message.contains("nothing was created"), "{message}");
-        assert!(detail.contains("commands/passkey.rs"), "{detail}");
+    fn the_production_platform_seam_refuses_loudly_never_fake_success() {
+        // Falsifiable guard on the seam `passkey_create` actually calls
+        // (`PlatformCeremony`): if a fake ceremony ever replaces it with one
+        // that fabricates identity material, this fails. The options carry
+        // the documented placeholder RP id so the refusal is deterministic on
+        // every OS and never launches a real prompt even when the developer's
+        // shell has BUZZ_PASSKEY_RP_ID set.
+        let mut options = create_options();
+        options.rp_id = Some(RP_ID_PLACEHOLDER.to_string());
+        let error = create_passkey_with_ceremony(&PlatformCeremony, options)
+            .expect_err("the production seam must not fabricate identity material");
+        match &error {
+            // macOS 12–14 (PRF-less) pre-flight: nothing created.
+            PasskeyCommandError::PrfUnavailable { created, .. } => assert!(created.is_none()),
+            // macOS 15+ reaches the bridge, which refuses the placeholder
+            // RP id loudly before any Objective-C is touched.
+            PasskeyCommandError::Environment { message } => {
+                assert!(message.contains(RP_ID_ENV), "{message}");
+                assert!(message.contains("Nothing was created"), "{message}");
+            }
+            // Non-macOS builds: the honest typed stub.
+            PasskeyCommandError::UnsupportedPlatform { message, detail } => {
+                assert!(message.contains("nothing was created"), "{message}");
+                assert!(detail.contains("commands/passkey.rs"), "{detail}");
+            }
+            other => panic!("unexpected error from the production seam: {other:?}"),
+        }
+
         let error = get_passkey_assertion_with_ceremony(
             &PlatformCeremony,
             GetPasskeyAssertionOptions {
                 credential_id: "abc".to_string(),
                 prf_salt: None,
-                rp_id: None,
+                rp_id: Some(RP_ID_PLACEHOLDER.to_string()),
                 challenge: None,
             },
         )
-        .expect_err("no ceremony in this build");
-        assert!(matches!(
-            error,
-            PasskeyCommandError::UnsupportedPlatform { .. }
-        ));
+        .expect_err("the production seam must not fabricate signatures");
+        assert!(
+            matches!(
+                error,
+                PasskeyCommandError::PrfUnavailable { .. }
+                    | PasskeyCommandError::Environment { .. }
+                    | PasskeyCommandError::UnsupportedPlatform { .. }
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -841,6 +1234,36 @@ mod tests {
         let json =
             serde_json::to_string(&PasskeyCommandError::prf_unavailable(None)).expect("json");
         assert!(json.contains(r#""code":"prf_unavailable""#), "{json}");
+    }
+
+    #[test]
+    fn created_passkey_wire_names_are_stable() {
+        // The IPC wire names are contract: `passkeyContract.test.mjs` mirrors
+        // exactly these keys (`ceremony.rpId`/`ceremony.origin` is the
+        // expectedRPID/expectedOrigin coupling record the in-contract WebAuthn
+        // validator will read — a rename here silently breaks it).
+        let created =
+            create_passkey_with_ceremony(&MockCeremony::web_vector(true, true), create_options())
+                .expect("created");
+        let json = serde_json::to_value(&created).expect("json");
+        for key in [
+            "credentialId",
+            "prfSalt",
+            "identity",
+            "nostrSecretKey",
+            "ceremony",
+        ] {
+            assert!(json.get(key).is_some(), "missing {key}: {json}");
+        }
+        let ceremony = json.get("ceremony").expect("ceremony");
+        assert_eq!(
+            ceremony,
+            &serde_json::json!({
+                "rpId": "app.buzz.example",
+                "origin": "https://app.buzz.example",
+            }),
+            "{ceremony}"
+        );
     }
 
     #[test]
@@ -920,9 +1343,51 @@ mod tests {
         } else {
             assert!(capability.blocker.is_some());
         }
-        // This build ships no bridge, so the probe can never claim available.
-        const _: () = assert!(!CEREMONY_BRIDGE_WIRED);
-        assert!(!capability.available);
+        // The macOS build ships the native bridge; other builds do not.
+        #[cfg(target_os = "macos")]
+        assert!(inputs.bridge_wired);
+        #[cfg(not(target_os = "macos"))]
+        assert!(!inputs.bridge_wired);
+    }
+
+    #[test]
+    fn system_version_plist_fixtures_pin_the_macos_14_15_split() {
+        // Fixtures in the real `SystemVersion.plist` shape (the file the
+        // probe parses — see `macos_product_version`).
+        let macos14 = r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>ProductBuildVersion</key>
+	<string>23H311</string>
+	<key>ProductName</key>
+	<string>macOS</string>
+	<key>ProductVersion</key>
+	<string>14.7.1</string>
+</dict>
+</plist>"#;
+        let macos15 = macos14.replace("14.7.1", "15.0");
+        let macos26 = macos14.replace("14.7.1", "26.3");
+
+        let v14 = parse_system_version_plist(macos14);
+        assert_eq!(v14, Some((14, 7, 1)));
+        // macOS 14: the passkey API exists, PRF does not (the EVM/Nostr split).
+        assert!(os_supported_for_version(v14));
+        assert!(!prf_supported_for_version(v14));
+
+        let v15 = parse_system_version_plist(&macos15);
+        assert_eq!(v15, Some((15, 0, 0)));
+        assert!(os_supported_for_version(v15));
+        assert!(prf_supported_for_version(v15));
+
+        let v26 = parse_system_version_plist(&macos26);
+        assert_eq!(v26, Some((26, 3, 0)));
+        assert!(prf_supported_for_version(v26));
+
+        // Unknown versions never claim PRF (conservative refusal).
+        assert!(!prf_supported_for_version(parse_system_version_plist(
+            "garbage"
+        )));
+        assert!(!prf_supported_for_version(None));
     }
 
     #[test]

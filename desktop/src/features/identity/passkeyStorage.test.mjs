@@ -37,6 +37,7 @@ test("the non-secret record round-trips through storage", () => {
     pubkey: "489e1b47933dfababa9842058b3a19e2f15cc7f6da0c6f1983688aabe66c2353",
     mode: "prf",
     r1UncompressedHex: G_UNCOMPRESSED_HEX,
+    ceremony: { rpId: "app.buzz.example", origin: "https://app.buzz.example" },
   };
   savePasskeyState(state, storage);
   assert.equal(hasPasskeyIdentity(storage), true);
@@ -53,6 +54,7 @@ test("a record without the r1 root clears the stale r1 key", () => {
       pubkey: "pub",
       mode: "unlock",
       r1UncompressedHex: G_UNCOMPRESSED_HEX,
+      ceremony: null,
     },
     storage,
   );
@@ -63,12 +65,35 @@ test("a record without the r1 root clears the stale r1 key", () => {
       pubkey: "pub",
       mode: "unlock",
       r1UncompressedHex: null,
+      ceremony: null,
     },
     storage,
   );
   const loaded = loadPasskeyState(storage);
   assert.equal(loaded.r1UncompressedHex, null);
   assert.equal(loaded.mode, "unlock");
+});
+
+test("the ceremony coupling record is persisted, never invented", () => {
+  const storage = fakeStorage();
+  // A legacy record (stored before the provenance key existed) loads with
+  // `ceremony: null` — the coupling is unknown, not fabricated.
+  savePasskeyState(
+    {
+      credentialId: "abc",
+      salt: new Uint8Array([1]),
+      pubkey: "pub",
+      mode: "prf",
+      r1UncompressedHex: null,
+      ceremony: null,
+    },
+    storage,
+  );
+  assert.equal(loadPasskeyState(storage).ceremony, null);
+
+  // A corrupt provenance value degrades to null too, never a wrong record.
+  storage.setItem("buzz.passkey.ceremony", "{not json");
+  assert.equal(loadPasskeyState(storage).ceremony, null);
 });
 
 test("storage holds only non-secret material", () => {
@@ -80,12 +105,17 @@ test("storage holds only non-secret material", () => {
       pubkey: "pub",
       mode: "prf",
       r1UncompressedHex: null,
+      ceremony: {
+        rpId: "app.buzz.example",
+        origin: "https://app.buzz.example",
+      },
     },
     storage,
   );
   // The persisted surface is exactly these five keys — no secret-key slot
   // exists, so nothing can leak a secret through this module.
   assert.deepEqual([...storage.map.keys()].sort(), [
+    "buzz.passkey.ceremony",
     "buzz.passkey.credentialId",
     "buzz.passkey.mode",
     "buzz.passkey.pubkey",
@@ -102,6 +132,10 @@ test("clearing removes the whole record", () => {
       pubkey: "pub",
       mode: "prf",
       r1UncompressedHex: G_UNCOMPRESSED_HEX,
+      ceremony: {
+        rpId: "app.buzz.example",
+        origin: "https://app.buzz.example",
+      },
     },
     storage,
   );

@@ -1,0 +1,44 @@
+{
+  "_README": [
+    "EXAMPLE Apple App Site Association (AASA) file for Buzz passkeys.",
+    "",
+    "WHAT THIS IS: the signed app's passkey ceremonies (src/passkey_ceremony.rs)",
+    "are bound to a relying-party domain; Apple verifies that binding against",
+    "this file, served by the RP domain over HTTPS. Nothing here is live — this",
+    "is a template for the RELEASE-REPO deployment work (buzz-releases signs",
+    "the app; the RP domain serves this file).",
+    "",
+    "WHERE TO SERVE IT:",
+    "  https://<RP-DOMAIN>/.well-known/apple-app-site-association",
+    "  - Content-Type: application/json (no file extension; do NOT redirect)",
+    "  - served over HTTPS with a valid certificate",
+    "  - both with and without the 'www' host prefix should reach the same",
+    "    content if either host is used as the RP id",
+    "",
+    "WHAT TO REPLACE:",
+    "  <TEAMID>   - the Apple Developer Team ID that signs the Buzz app",
+    "  <BUNDLEID> - the Buzz app bundle identifier (CFBundleIdentifier),",
+    "               e.g. app.buzz.desktop (matches tauri.conf.json)",
+    "  The resulting entry is '<TEAMID>.<BUNDLEID>'.",
+    "",
+    "MUST MATCH (all three, exactly):",
+    "  1. this file's webcredentials.apps entry, on the RP domain",
+    "  2. the com.apple.developer.associated-domains entitlement in",
+    "     Entitlements.plist: 'webcredentials:<RP-DOMAIN>'",
+    "  3. BUZZ_PASSKEY_RP_ID=<RP-DOMAIN> in the app's runtime environment",
+    "If they diverge, passkey ceremonies fail loudly (ASAuthorizationError)",
+    "or bind the credential to the wrong RP — the in-contract WebAuthn",
+    "validator checks the recorded rpId/origin against exactly these.",
+    "",
+    "VERIFY after deployment (from a Mac signed with the same team):",
+    "  curl -s https://<RP-DOMAIN>/.well-known/apple-app-site-association",
+    "  (Apple caches AASA fetches; allow up to ~24h after a change)"
+  ],
+  "applinks": {
+    "apps": [],
+    "details": []
+  },
+  "webcredentials": {
+    "apps": ["<TEAMID>.<BUNDLEID>"]
+  }
+}

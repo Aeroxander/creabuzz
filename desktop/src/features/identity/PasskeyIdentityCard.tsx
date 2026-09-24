@@ -19,10 +19,11 @@ type CardPhase = "loading" | "ready" | "working";
 
 /**
  * Passkey identity card — the desktop face of the web ceremony
- * (`web/src/features/identity/lib/passkey.ts`): "Create passkey" / "Continue
- * with Touch ID" when this build can actually run a ceremony, and honest
- * explanatory copy when it cannot (today's builds cannot — the platform
- * ledger lives in `desktop/src-tauri/src/commands/passkey.rs`).
+ * (`web/src/features/identity/lib/passkey.ts`). "Create passkey" launches the
+ * native PRF-first ceremony when `passkeyCapability()` says this Mac can run
+ * one (macOS 15.0+, a configured `BUZZ_PASSKEY_RP_ID`); the typed refusal
+ * path shows honest explanatory copy when it cannot. The platform ledger
+ * lives in `desktop/src-tauri/src/commands/passkey.rs`.
  *
  * Only NON-SECRET material is persisted (`passkeyStorage`); the Nostr secret
  * key stays in memory per docs/identity-token-architecture.md.
@@ -68,6 +69,7 @@ export function PasskeyIdentityCard({ userLabel }: { userLabel?: string }) {
           pubkey: result.identity.nostr.pubkeyHex,
           mode: "prf",
           r1UncompressedHex: result.identity.evmOwner.r1UncompressedHex,
+          ceremony: result.ceremony,
         };
         savePasskeyState(state);
         setCreated(state);
@@ -86,6 +88,9 @@ export function PasskeyIdentityCard({ userLabel }: { userLabel?: string }) {
       <p className="mt-1 text-sm text-muted-foreground">
         One Touch ID derives your Nostr key and smart-wallet owner key — the
         same passkey identity as the web app.
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Nostr key derives from this passkey via PRF (macOS 15+)
       </p>
 
       {phase === "loading" ? (
@@ -117,14 +122,15 @@ export function PasskeyIdentityCard({ userLabel }: { userLabel?: string }) {
       {available && !created ? (
         <div className="mt-3">
           <Button
+            aria-busy={phase === "working"}
             data-testid="passkey-create"
             disabled={phase === "working"}
             onClick={onCreate}
             type="button"
           >
             {phase === "working"
-              ? "Waiting for Touch ID…"
-              : "Continue with Touch ID"}
+              ? "Touch ID to create your passkey…"
+              : "Create passkey"}
           </Button>
         </div>
       ) : null}

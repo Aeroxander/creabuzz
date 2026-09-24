@@ -91,6 +91,22 @@ export interface CreatePasskeyOptions {
   prfSalt?: Uint8Array;
 }
 
+/**
+ * Ceremony provenance recorded with each created identity (desktop extension
+ * of web's `CreatedPasskey`).
+ *
+ * Coupling contract (wave 4b): the in-contract WebAuthn validator that later
+ * verifies this identity's assertions must use `expectedRPID === rpId` and an
+ * `expectedOrigin` containing `origin` — exactly the pair this ceremony
+ * bound. A mismatch must reject the UserOp.
+ */
+export interface CeremonyProvenance {
+  /** The RP id the ceremony ran under (web `rp.id`). */
+  rpId: string;
+  /** `clientDataJSON.origin` as the platform reported it. */
+  origin: string;
+}
+
 export interface CreatedPasskey {
   credentialId: string;
   prfSalt: Uint8Array;
@@ -101,6 +117,8 @@ export interface CreatedPasskey {
    * Wipe it on sign-out.
    */
   nostrSecretKey: Uint8Array;
+  /** The RP id/origin this ceremony bound — see {@link CeremonyProvenance}. */
+  ceremony: CeremonyProvenance;
 }
 
 export interface GetPasskeyAssertionOptions {
@@ -154,6 +172,7 @@ export interface RawCreatedPasskey {
   prfSalt: number[];
   identity: PasskeyIdentity;
   nostrSecretKey: number[];
+  ceremony: CeremonyProvenance;
 }
 
 export interface RawPasskeyAssertion {
@@ -188,6 +207,7 @@ export function rawCreatedToTyped(raw: RawCreatedPasskey): CreatedPasskey {
     prfSalt: toBytes(raw.prfSalt),
     identity: raw.identity,
     nostrSecretKey: toBytes(raw.nostrSecretKey),
+    ceremony: raw.ceremony,
   };
 }
 

@@ -9,5 +9,27 @@
     <!-- MeshLLM installs versioned native runtimes outside the app bundle. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <!--
+      Passkeys (src/passkey_ceremony.rs): Apple's passkey APIs require the app
+      to be entitled for the credential's relying-party domain.
+
+      *** RELEASE SETUP REQUIRED ***
+      The plist is static, so the domain cannot be parameterized at build
+      time: REPLACE `passkey-rp-id-unset.invalid` with the real webcredentials
+      domain BEFORE signing, and make sure BOTH of these match exactly:
+        1. this entitlement value (webcredentials:<domain>)
+        2. BUZZ_PASSKEY_RP_ID=<domain> at runtime
+      The placeholder is an RFC 2606 `.invalid` domain on purpose — with it
+      still in place every passkey ceremony fails loudly at the platform
+      boundary (and `require_real_rp_id` refuses it before any request) instead
+      of minting a credential bound to the wrong RP. The domain must also
+      serve the AASA at /.well-known/apple-app-site-association — see
+      aasa.example.json in this directory for the exact file and hosting
+      instructions.
+    -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>webcredentials:passkey-rp-id-unset.invalid</string>
+    </array>
 </dict>
 </plist>
