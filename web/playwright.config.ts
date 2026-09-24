@@ -36,6 +36,16 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      // Opt-in only: gated on E2E_SPONSORED_OPS=1 + ZERODEV_API_KEY and NEVER
+      // part of the default smoke — it spends real sponsorship (see
+      // tests/e2e/sponsored-op.spec.ts for the runbook).
+      name: "sponsored-op",
+      testMatch: ["**/sponsored-op.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+      },
+    },
   ],
   webServer: {
     command: "pnpm exec vite preview --port 4173 --strictPort --host 127.0.0.1",
