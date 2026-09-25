@@ -24,6 +24,8 @@ type OrgGrantChainViewProps = {
   grants: OrgGrant[];
   /** Needed to resolve `via` node names in the drawer and root standing. */
   nodes: OrgNode[];
+  /** Grant d-tag a caller (the audit view's object link) wants opened. */
+  focusDtag?: string;
 };
 
 /**
@@ -34,7 +36,11 @@ type OrgGrantChainViewProps = {
  * history (P2 item 11). Every row opens a detail Sheet; the shelf only exists
  * when there is history to show.
  */
-export function OrgGrantChainView({ grants, nodes }: OrgGrantChainViewProps) {
+export function OrgGrantChainView({
+  grants,
+  nodes,
+  focusDtag,
+}: OrgGrantChainViewProps) {
   const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
   // Keep the expired grouping truthful while the view sits open.
   React.useEffect(() => {
@@ -50,6 +56,9 @@ export function OrgGrantChainView({ grants, nodes }: OrgGrantChainViewProps) {
   );
   const roots = React.useMemo(() => buildGrantTree(active), [active]);
   const [openDtag, setOpenDtag] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (focusDtag) setOpenDtag(focusDtag);
+  }, [focusDtag]);
   const openGrant = React.useMemo(
     () => grants.find((grant) => grant.dtag === openDtag) ?? null,
     [grants, openDtag],

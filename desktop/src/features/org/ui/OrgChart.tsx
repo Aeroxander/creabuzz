@@ -59,12 +59,24 @@ type ChartViewMode = "canvas" | "list";
 
 type OrgChartProps = {
   query: UseQueryResult<OrgChartType, Error>;
+  /**
+   * Object a caller (the audit view's "affected object" links) wants opened:
+   * the node is selected, the grant's detail sheet opens, the budgets section
+   * scrolls into view. `null` means "no focus requested".
+   */
+  focus?: OrgChartFocus | null;
+};
+
+/** Where an audit row's object link should land inside the chart tab. */
+export type OrgChartFocus = {
+  kind: "node" | "grant" | "budget";
+  id: string;
 };
 
 /** Liveness decays even without new events, so re-derive it on a timer. */
 const LIVENESS_TICK_MS = 30_000;
 
-export function OrgChart({ query }: OrgChartProps) {
+export function OrgChart({ query, focus }: OrgChartProps) {
   const { data, isLoading, error } = query;
   const livenessQuery = useAgentLivenessQuery();
   const [nowTick, setNowTick] = React.useState(() =>
@@ -102,6 +114,16 @@ export function OrgChart({ query }: OrgChartProps) {
     });
     budgetsHeadingRef.current?.focus({ preventScroll: true });
   }, []);
+  // Audit-row deep links: select the node, or scroll to the budgets block.
+  // Grant focus is threaded to OrgGrantChainView (its sheet owns that state).
+  React.useEffect(() => {
+    if (!focus) return;
+    if (focus.kind === "node") {
+      setSelectedNodeDtag(focus.id);
+    } else if (focus.kind === "budget") {
+      focusBudgets();
+    }
+  }, [focus, focusBudgets]);
 
   // Liveness derivation must live before the early returns (rules of hooks).
   const agentSeats = React.useMemo(
@@ -255,7 +277,11 @@ export function OrgChart({ query }: OrgChartProps) {
 
       {/* Grants */}
       {data.grants.length > 0 && (
-        <OrgGrantChainView grants={data.grants} nodes={data.nodes} />
+        <OrgGrantChainView
+          focusDtag={focus?.kind === "grant" ? focus.id : undefined}
+          grants={data.grants}
+          nodes={data.nodes}
+        />
       )}
 
       {/* Budgets */}

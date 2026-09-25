@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { relayClient } from "@/shared/api/relayClient";
 import { invokeTauri, signRelayEvent } from "@/shared/api/tauri";
@@ -46,6 +51,11 @@ import {
   KIND_APPROVAL_DENY,
 } from "./lib/dashboard";
 import { AUDIT_EVENT_KINDS, AUDIT_FETCH_LIMIT } from "./lib/audit";
+import {
+  KIND_AUDIT_ENTRY,
+  parseChainEntryBatch,
+  type AuditChainEntry,
+} from "./lib/auditChain";
 import {
   AGENT_WIKI_FETCH_LIMIT,
   newestAgentWikiPages,
@@ -299,33 +309,95 @@ export function useOrgActivityExtrasQuery(enabled = true) {
 // ── Audit log (the evidence spine) ────────────────────────────────────────
 
 /**
- * Raw structural org events (kinds 37010–37014 + 46010/46030/46031), newest
- * first in the view layer. The event stream IS the evidence — every
- * structural change is a signed, community-level event on the relay, and
- * every revision is kept (no LWW folding): an audit view shows history, not
- * the current head. Bounded at AUDIT_FETCH_LIMIT; the caller surfaces the
- * truncation honestly.
+ * One page of structural org events (kinds 37010–37014 + 46010/46030/46031).
+ * The event stream IS the evidence — every structural change is a signed,
+ * community-level event on the relay, and every revision is kept (no LWW
+ * folding): an audit view shows history, not the current head.
  *
- * NOTE (future upgrade): the relay also maintains a hash-chain audit log
- * with an operator-side verification path (buzz-admin). Exact cryptographic
- * chain verification is that operator view's job; this query provides the
- * community-visible presence evidence.
+ * The chain is append-only, so older history is reached by walking the relay's
+ * composite `(until, before_id)` cursor: `until` bounds the timestamp and
+ * `before_id` breaks ties inside a dense second, which is exactly the relay's
+ * `created_at DESC, id ASC` scan order. Each page is bounded by
+ * AUDIT_FETCH_LIMIT and pages are deduplicated in the view.
  */
-async function fetchAuditEvents(_signal?: AbortSignal): Promise<RelayEvent[]> {
+async function fetchAuditPage(
+  cursor?: AuditPageCursor,
+): Promise<{ events: RelayEvent[]; nextCursor?: AuditPageCursor }> {
   const events = await relayClient.fetchEvents({
     kinds: [...AUDIT_EVENT_KINDS],
     limit: AUDIT_FETCH_LIMIT,
+    ...(cursor ? { until: cursor.until, before_id: cursor.beforeId } : {}),
   });
-  // Newest first so the view can rely on page order even before rendering.
-  return events.sort(
+  // Relay scan order: newest first, id ascending inside a tied second.
+  const sorted = [...events].sort(
     (a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id),
   );
+  const oldest = sorted.at(-1);
+  const nextCursor =
+    sorted.length >= AUDIT_FETCH_LIMIT && oldest
+      ? { until: oldest.created_at, beforeId: oldest.id }
+      : undefined;
+  return { events: sorted, nextCursor };
 }
 
+/** Keyset cursor for the next older audit page. */
+export type AuditPageCursor = { until: number; beforeId: string };
+
 export function useOrgAuditQuery(enabled = true) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...orgQueryKey, "audit"],
-    queryFn: ({ signal }) => fetchAuditEvents(signal),
+    queryFn: ({ pageParam }) => fetchAuditPage(pageParam),
+    initialPageParam: undefined as AuditPageCursor | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    staleTime: ORG_STALE_TIME_MS,
+    gcTime: ORG_GC_TIME_MS,
+    enabled,
+  });
+}
+
+// ── Hash-chain entries (kind:48001) ─────────────────────────────────────────
+
+/**
+ * The relay's hash-chain entries, published as `KIND_AUDIT_ENTRY` events and
+ * verified client-side by `lib/auditChain.ts`.
+ *
+ * Honest expectation: the relay writes every entry to its `audit_log` chain
+ * but does not publish kind:48001 events yet, so this query usually returns
+ * an empty set — the view then says so instead of claiming verification it
+ * did not perform. Explicit kinds (relay p-gate) and a bounded limit.
+ */
+async function fetchAuditChain(): Promise<OrgAuditChainPage> {
+  const events = await relayClient.fetchEvents({
+    kinds: [KIND_AUDIT_ENTRY],
+    limit: AUDIT_CHAIN_FETCH_LIMIT,
+  });
+  const { entries, malformed } = parseChainEntryBatch(
+    events.map((event) => event.content),
+  );
+  entries.sort((a, b) => a.seq - b.seq);
+  return {
+    entries,
+    malformed,
+    hitLimit: events.length >= AUDIT_CHAIN_FETCH_LIMIT,
+  };
+}
+
+/** Bounded read of the chain: never more than this many entries per page. */
+export const AUDIT_CHAIN_FETCH_LIMIT = 200;
+
+export type OrgAuditChainPage = {
+  /** Entries parsed from kind:48001 envelopes, ascending by seq. */
+  entries: AuditChainEntry[];
+  /** Envelopes that did not parse — reported, never silently dropped. */
+  malformed: number;
+  /** The fetch hit its bound: older chain history exists beyond it. */
+  hitLimit: boolean;
+};
+
+export function useOrgAuditChainQuery(enabled = true) {
+  return useQuery({
+    queryKey: [...orgQueryKey, "audit-chain"],
+    queryFn: fetchAuditChain,
     staleTime: ORG_STALE_TIME_MS,
     gcTime: ORG_GC_TIME_MS,
     enabled,

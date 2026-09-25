@@ -809,6 +809,18 @@ test.describe("org UI screenshots", () => {
     await page.getByTestId("org-tab-audit").click();
     await expect(page.getByTestId("org-audit-view")).toBeVisible();
     await expect(page.getByTestId("org-audit-row").first()).toBeVisible();
+    // Every row carries a chain position, and the header states the chain
+    // verdict (served / not served / broken) instead of a silent green.
+    await expect(page.getByTestId("org-audit-chain-status")).toBeVisible();
+    await expect(
+      page.getByTestId("org-audit-chain-badge").first(),
+    ).toBeVisible();
+    // Grouping + filtering are one screen: "what changed, who did it".
+    await page.getByTestId("org-audit-group-kind").click();
+    await expect(
+      page.getByTestId("org-audit-group-heading").first(),
+    ).toBeVisible();
+    await page.getByTestId("org-audit-group-none").click();
     // The verify modal re-checks presence/recency of the same events.
     await page.getByTestId("org-audit-verify").click();
     await expect(page.getByTestId("org-audit-verify-modal")).toBeVisible();

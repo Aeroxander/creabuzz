@@ -69,6 +69,65 @@ export type AuditRow = {
   description: string;
   /** Author pubkey (identity resolved by the view). */
   actorPubkey: string;
+  /** The object this change touched, with the view that details it. */
+  object: AuditObjectRef | null;
+};
+
+/**
+ * Where the affected object lives. `target` is `null` when no detail view
+ * exists for that object yet — the row still shows the machine identity, it
+ * just does not promise a link it cannot keep.
+ */
+export type AuditObjectRef = {
+  target: "node" | "grant" | "budget" | "record" | null;
+  /** Machine identity: d-tag, seat pubkey, or approval token. */
+  id: string;
+};
+
+/** One name per object kind (Paperclip's "task not issue" rule). */
+export function auditKindLabel(kind: number): string {
+  switch (kind) {
+    case KIND_ORG_NODE:
+      return "Node";
+    case KIND_ORG_GRANT:
+      return "Grant";
+    case KIND_ORG_BUDGET:
+      return "Budget";
+    case KIND_CONTRIBUTION_RECORD:
+      return "Contribution record";
+    case KIND_BUDGET_SPEND_RECEIPT:
+      return "Spend receipt";
+    case KIND_APPROVAL_REQUEST:
+      return "Approval request";
+    case KIND_APPROVAL_GRANT:
+      return "Approval granted";
+    case KIND_APPROVAL_DENY:
+      return "Approval denied";
+    default:
+      return `Unknown kind (${kind})`;
+  }
+}
+
+/** Grouping axis for the timeline: flat, by actor, or by kind. */
+export type AuditGroupBy = "none" | "actor" | "kind";
+
+export type AuditFilters = {
+  /** Actor pubkey (lowercased) or `null` for all actors. */
+  actor?: string | null;
+  /** Kind or `null` for all kinds. */
+  kind?: number | null;
+};
+
+export type AuditGroup = {
+  key: string;
+  label: string;
+  rows: AuditRow[];
+};
+
+export type AuditOption = {
+  value: string;
+  label: string;
+  count: number;
 };
 
 export type AuditInput = {
@@ -303,6 +362,7 @@ export function deriveAuditRows(input: AuditInput): AuditRow[] {
       tone,
       description,
       actorPubkey: event.pubkey ?? "",
+      object: auditObjectRef(event),
     });
   }
   rows.sort(
@@ -310,6 +370,135 @@ export function deriveAuditRows(input: AuditInput): AuditRow[] {
       b.createdAt - a.createdAt || a.kind - b.kind || (a.key < b.key ? -1 : 1),
   );
   return rows;
+}
+
+/**
+ * The object one audit event touched: its machine identity plus the view
+ * that details it (`null` where no detail view exists yet). Derived from the
+ * event itself, so it survives filtering and grouping unchanged.
+ */
+function auditObjectRef(event: AuditEventLike): AuditObjectRef | null {
+  const dtag = tagValue(event.tags, "d");
+  switch (event.kind) {
+    case KIND_ORG_NODE: {
+      const node = eventToOrgNode(event as never);
+      return node.dtag ? { target: "node", id: node.dtag } : null;
+    }
+    case KIND_ORG_GRANT: {
+      const grant = eventToOrgGrant(event as never);
+      return grant.dtag ? { target: "grant", id: grant.dtag } : null;
+    }
+    case KIND_ORG_BUDGET: {
+      const budget = eventToOrgBudget(event as never);
+      return budget.subject ? { target: "budget", id: budget.subject } : null;
+    }
+    case KIND_CONTRIBUTION_RECORD: {
+      const record = eventToContributionRecord(event as never);
+      return record.dtag ? { target: "record", id: record.dtag } : null;
+    }
+    case KIND_BUDGET_SPEND_RECEIPT: {
+      const parsed = parseJsonObject(event.content);
+      const subject = parsed ? stringField(parsed, "subject") : null;
+      return subject ? { target: "budget", id: subject } : null;
+    }
+    case KIND_APPROVAL_REQUEST:
+    case KIND_APPROVAL_GRANT:
+    case KIND_APPROVAL_DENY:
+      // The approval token has no detail view of its own yet — show the
+      // machine identity, do not link to a screen that does not exist.
+      return dtag ? { target: null, id: dtag } : null;
+    default:
+      return null;
+  }
+}
+
+// ── Filtering and grouping ──────────────────────────────────────────────────
+
+/** Rows matching the active actor/kind filters; unchanged rows pass through. */
+export function filterAuditRows(
+  rows: ReadonlyArray<AuditRow>,
+  filters: AuditFilters,
+): AuditRow[] {
+  const actor = filters.actor ?? null;
+  const kind = filters.kind ?? null;
+  if (!actor && kind === null) return [...rows];
+  return rows.filter(
+    (row) =>
+      (actor ? row.actorPubkey.trim().toLowerCase() === actor : true) &&
+      (kind !== null ? row.kind === kind : true),
+  );
+}
+
+/**
+ * Group filtered rows by actor or kind. Groups appear in first-appearance
+ * order, which for the newest-first row order means "group of the most
+ * recent change first"; rows keep their order inside each group.
+ */
+export function groupAuditRows(
+  rows: ReadonlyArray<AuditRow>,
+  groupBy: AuditGroupBy,
+  namesByPubkey: ReadonlyMap<string, string>,
+): AuditGroup[] {
+  if (groupBy === "none") return [];
+  const groups = new Map<string, AuditGroup>();
+  for (const row of rows) {
+    const key =
+      groupBy === "actor"
+        ? row.actorPubkey.trim().toLowerCase()
+        : String(row.kind);
+    let group = groups.get(key);
+    if (!group) {
+      const label =
+        groupBy === "actor"
+          ? (namesByPubkey.get(key) ?? truncatePubkey(key))
+          : auditKindLabel(Number(key));
+      group = { key, label, rows: [] };
+      groups.set(key, group);
+    }
+    group.rows.push(row);
+  }
+  return [...groups.values()];
+}
+
+/** Filter choices for the actor menu, most recent actor first. */
+export function auditActorOptions(
+  rows: ReadonlyArray<AuditRow>,
+  namesByPubkey: ReadonlyMap<string, string>,
+): AuditOption[] {
+  const options = new Map<string, AuditOption>();
+  for (const row of rows) {
+    const key = row.actorPubkey.trim().toLowerCase();
+    if (!key) continue;
+    const existing = options.get(key);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    options.set(key, {
+      value: key,
+      label: namesByPubkey.get(key) ?? truncatePubkey(key),
+      count: 1,
+    });
+  }
+  return [...options.values()];
+}
+
+/** Filter choices for the kind menu, in the order kinds first appear. */
+export function auditKindOptions(rows: ReadonlyArray<AuditRow>): AuditOption[] {
+  const options = new Map<number, AuditOption>();
+  for (const row of rows) {
+    const existing = options.get(row.kind);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    options.set(row.kind, {
+      value: String(row.kind),
+      label: auditKindLabel(row.kind),
+      count: 1,
+    });
+  }
+  return [...options.values()];
 }
 
 // ── Full timestamp ─────────────────────────────────────────────────────────

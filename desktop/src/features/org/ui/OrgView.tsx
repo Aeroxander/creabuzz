@@ -7,9 +7,10 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs";
 import { OrgDashboard } from "./OrgDashboard";
-import { OrgChart } from "./OrgChart";
+import { OrgChart, type OrgChartFocus } from "./OrgChart";
 import { ContributionRecordsTable } from "./ContributionRecordsTable";
 import { OrgAuditView } from "./OrgAuditView";
+import type { AuditObjectRef } from "../lib/audit";
 import { OrgTeamsView } from "./OrgTeamsView";
 import { OrgWizard } from "./OrgWizard";
 
@@ -61,6 +62,19 @@ export function OrgView() {
   // stops appearing once a root exists (paperclip-ux-reference.md §3). It
   // owns its own open state after that so the walk survives the root's
   // publish; onFinish/onOpenCanvas land back on the canvas tab.
+  // Deep-link target from the audit view's "affected object" chips.
+  const [chartFocus, setChartFocus] = React.useState<OrgChartFocus | null>(
+    null,
+  );
+  const openAuditObject = (object: AuditObjectRef) => {
+    if (object.target === "record") {
+      setActiveTab("contributions");
+      return;
+    }
+    if (!object.target) return;
+    setChartFocus({ kind: object.target, id: object.id });
+    setActiveTab("chart");
+  };
   const wizardAutoOpen =
     !query.isPending && !query.isError && (query.data?.nodes.length ?? 0) === 0;
 
@@ -116,7 +130,7 @@ export function OrgView() {
           <OrgDashboard onOpenTab={(tab) => setActiveTab(tab)} query={query} />
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="chart">
-          <OrgChart query={query} />
+          <OrgChart focus={chartFocus} query={query} />
         </TabsContent>
         <TabsContent
           className="min-h-0 flex-1 overflow-y-auto"
@@ -125,7 +139,10 @@ export function OrgView() {
           <ContributionRecordsTab />
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="audit">
-          <OrgAuditView onOpenTab={() => setActiveTab("chart")} />
+          <OrgAuditView
+            onOpenObject={openAuditObject}
+            onOpenTab={() => setActiveTab("chart")}
+          />
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="teams">
           <OrgTeamsView />

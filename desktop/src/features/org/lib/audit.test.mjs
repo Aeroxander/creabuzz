@@ -5,11 +5,16 @@ import assert from "node:assert/strict";
 import {
   AUDIT_EVENT_KINDS,
   AUDIT_FETCH_LIMIT,
+  auditActorOptions,
   auditDescription,
+  auditKindLabel,
+  auditKindOptions,
   auditKindTone,
   deriveAuditRows,
   deriveVerifySummary,
+  filterAuditRows,
   fullTimestampLabel,
+  groupAuditRows,
 } from "./audit.ts";
 
 const ALICE = "a".repeat(64);
@@ -242,5 +247,281 @@ describe("deriveVerifySummary", () => {
 
   it("keeps the bounded fetch constant honest", () => {
     assert.equal(AUDIT_FETCH_LIMIT, 200);
+  });
+});
+
+// ── Object refs, labels, filtering, grouping ────────────────────────────────
+
+describe("auditKindLabel", () => {
+  it("names every structural kind once", () => {
+    assert.deepEqual(
+      [37010, 37011, 37012, 37013, 37014, 46010, 46030, 46031].map(
+        auditKindLabel,
+      ),
+      [
+        "Node",
+        "Grant",
+        "Budget",
+        "Contribution record",
+        "Spend receipt",
+        "Approval request",
+        "Approval granted",
+        "Approval denied",
+      ],
+    );
+  });
+
+  it("labels an unknown kind as unknown rather than as a known one", () => {
+    assert.equal(auditKindLabel(1), "Unknown kind (1)");
+  });
+});
+
+describe("deriveAuditRows — affected object refs", () => {
+  it("links a node to its chart detail", () => {
+    const rows = deriveAuditRows({
+      events: [
+        auditEvent({
+          kind: 37010,
+          dtag: "eng",
+          content: { name: "Engineering" },
+        }),
+      ],
+      namesByPubkey: new Map(),
+      namesByDtag: new Map(),
+    });
+    assert.deepEqual(rows[0].object, { target: "node", id: "eng" });
+  });
+
+  it("links a grant to its detail sheet by d-tag", () => {
+    const rows = deriveAuditRows({
+      events: [
+        auditEvent({
+          kind: 37011,
+          dtag: "g-7",
+          content: { grantee: BOB, verbs: ["read:#eng"] },
+        }),
+      ],
+      namesByPubkey: new Map(),
+      namesByDtag: new Map(),
+    });
+    assert.deepEqual(rows[0].object, { target: "grant", id: "g-7" });
+  });
+
+  it("links a budget to its subject, and a spend receipt to the same subject", () => {
+    const rows = deriveAuditRows({
+      events: [
+        auditEvent({
+          kind: 37012,
+          content: { subject: BOB, window: "day", limits: { runs: 1 } },
+        }),
+        auditEvent({
+          kind: 37014,
+          content: { amount: 10, unit: "usd-cents", subject: BOB },
+        }),
+      ],
+      namesByPubkey: new Map(),
+      namesByDtag: new Map(),
+    });
+    assert.deepEqual(rows[0].object, { target: "budget", id: BOB });
+    assert.deepEqual(rows[1].object, { target: "budget", id: BOB });
+  });
+
+  it("shows an approval token without promising a detail view", () => {
+    const rows = deriveAuditRows({
+      events: [
+        auditEvent({
+          kind: 46010,
+          dtag: "tok-1",
+          content: "please approve the spend",
+        }),
+      ],
+      namesByPubkey: new Map(),
+      namesByDtag: new Map(),
+    });
+    assert.deepEqual(rows[0].object, { target: null, id: "tok-1" });
+  });
+
+  it("links a contribution record to the contributions tab", () => {
+    const rows = deriveAuditRows({
+      events: [
+        auditEvent({
+          kind: 37013,
+          dtag: "rec-1",
+          content: { action: "shipped parser", reviewStatus: "accepted" },
+        }),
+      ],
+      namesByPubkey: new Map(),
+      namesByDtag: new Map(),
+    });
+    assert.deepEqual(rows[0].object, { target: "record", id: "rec-1" });
+  });
+});
+
+describe("filterAuditRows", () => {
+  const rows = deriveAuditRows({
+    events: [
+      auditEvent({
+        id: "a1",
+        kind: 37010,
+        pubkey: ALICE,
+        content: { name: "Root" },
+      }),
+      auditEvent({
+        id: "b1",
+        kind: 37011,
+        pubkey: BOB,
+        content: { grantee: BOB, verbs: ["read"] },
+      }),
+      auditEvent({
+        id: "a2",
+        kind: 37012,
+        pubkey: ALICE,
+        content: { subject: BOB, window: "day", limits: {} },
+      }),
+    ],
+    namesByPubkey: new Map(),
+    namesByDtag: new Map(),
+  });
+
+  it("returns every row when no filter is active", () => {
+    assert.equal(filterAuditRows(rows, {}).length, 3);
+    assert.equal(filterAuditRows(rows, { actor: null, kind: null }).length, 3);
+  });
+
+  it("filters by actor (case-insensitive)", () => {
+    assert.deepEqual(
+      filterAuditRows(rows, { actor: ALICE }).map((row) => row.key),
+      ["a1", "a2"],
+    );
+    assert.deepEqual(
+      filterAuditRows(rows, { actor: BOB }).map((row) => row.key),
+      ["b1"],
+    );
+  });
+
+  it("filters by kind and by both at once", () => {
+    assert.deepEqual(
+      filterAuditRows(rows, { kind: 37011 }).map((row) => row.key),
+      ["b1"],
+    );
+    assert.deepEqual(
+      filterAuditRows(rows, { actor: ALICE, kind: 37012 }).map(
+        (row) => row.key,
+      ),
+      ["a2"],
+    );
+    assert.deepEqual(filterAuditRows(rows, { actor: ALICE, kind: 46010 }), []);
+  });
+});
+
+describe("groupAuditRows", () => {
+  const rows = deriveAuditRows({
+    events: [
+      auditEvent({
+        id: "newest",
+        kind: 37010,
+        pubkey: BOB,
+        content: { name: "Root" },
+      }),
+      auditEvent({
+        id: "older",
+        kind: 37012,
+        pubkey: ALICE,
+        content: { subject: BOB, window: "day", limits: {} },
+      }),
+      auditEvent({
+        id: "oldest",
+        kind: 37012,
+        pubkey: BOB,
+        content: { subject: ALICE, window: "day", limits: {} },
+      }),
+    ],
+    namesByPubkey: new Map([[ALICE, "Alice"]]),
+    namesByDtag: new Map(),
+  });
+
+  it("returns no groups on the flat axis", () => {
+    assert.deepEqual(groupAuditRows(rows, "none", new Map()), []);
+  });
+
+  it("groups by actor, newest actor first, resolving display names", () => {
+    const groups = groupAuditRows(rows, "actor", new Map([[ALICE, "Alice"]]));
+    assert.deepEqual(
+      groups.map((group) => [group.key, group.label, group.rows.length]),
+      [
+        [BOB, `${BOB.slice(0, 8)}…${BOB.slice(-4)}`, 2],
+        [ALICE, "Alice", 1],
+      ],
+    );
+    assert.deepEqual(
+      groups[0].rows.map((row) => row.key),
+      ["newest", "oldest"],
+    );
+  });
+
+  it("groups by kind with the kind's one name", () => {
+    const groups = groupAuditRows(rows, "kind", new Map());
+    assert.deepEqual(
+      groups.map((group) => [group.label, group.rows.length]),
+      [
+        ["Node", 1],
+        ["Budget", 2],
+      ],
+    );
+  });
+});
+
+describe("filter options", () => {
+  const rows = deriveAuditRows({
+    events: [
+      auditEvent({
+        id: "x1",
+        kind: 37010,
+        pubkey: ALICE,
+        content: { name: "Root" },
+      }),
+      auditEvent({
+        id: "x2",
+        kind: 37010,
+        pubkey: BOB,
+        content: { name: "Other" },
+      }),
+      auditEvent({
+        id: "x3",
+        kind: 37011,
+        pubkey: BOB,
+        content: { grantee: ALICE, verbs: ["read"] },
+      }),
+    ],
+    namesByPubkey: new Map([[ALICE, "Alice"]]),
+    namesByDtag: new Map(),
+  });
+
+  it("lists actors with counts, in first-appearance order", () => {
+    assert.deepEqual(
+      auditActorOptions(rows, new Map([[ALICE, "Alice"]])).map((option) => [
+        option.value,
+        option.label,
+        option.count,
+      ]),
+      [
+        [ALICE, "Alice", 1],
+        [BOB, `${BOB.slice(0, 8)}…${BOB.slice(-4)}`, 2],
+      ],
+    );
+  });
+
+  it("lists kinds with counts", () => {
+    assert.deepEqual(
+      auditKindOptions(rows).map((option) => [
+        option.value,
+        option.label,
+        option.count,
+      ]),
+      [
+        ["37010", "Node", 2],
+        ["37011", "Grant", 1],
+      ],
+    );
   });
 });
