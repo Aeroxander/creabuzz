@@ -1831,7 +1831,7 @@ test("empty channel shows intro actions", async ({ page }) => {
   await expect(page.getByTestId("chat-title")).toHaveText("random");
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the channel.",
   );
   await expect(
     page.getByTestId("channel-intro-action-create-channel"),
@@ -1896,7 +1896,7 @@ test("short channel with messages shows intro actions on open", async ({
   await expect(page.getByTestId("message-timeline")).toContainText(message);
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the channel.",
   );
   await expect(
     page.getByTestId("channel-intro-action-create-agent"),

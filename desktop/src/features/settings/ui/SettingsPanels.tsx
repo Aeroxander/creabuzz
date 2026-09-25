@@ -10,6 +10,7 @@ import {
   FlaskConical,
   Keyboard,
   LayoutTemplate,
+  ListChecks,
   MessagesSquare,
   MonitorCog,
   Moon,
@@ -63,6 +64,7 @@ import {
 } from "./AppearanceSettingsControls";
 import { ChannelTemplatesSettingsCard } from "./ChannelTemplatesSettingsCard";
 import { ExperimentalFeaturesCard } from "./ExperimentalFeaturesCard";
+import { GettingStartedSettingsCard } from "./GettingStartedSettingsCard";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { MeshComputeSettingsCard } from "@/features/mesh-compute/ui/MeshComputeSettingsCard";
 import { MobilePairingCard } from "./MobilePairingCard";
@@ -82,6 +84,7 @@ import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
 
 export type SettingsSection =
+  | "getting-started"
   | "profile"
   | "notifications"
   | "voice"
@@ -102,6 +105,7 @@ export type SettingsSection =
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
+  "getting-started",
   "profile",
   "notifications",
   "voice",
@@ -151,6 +155,11 @@ export type SettingsPanelProps = {
 };
 
 export const settingsSections: SettingsSectionDescriptor[] = [
+  {
+    value: "getting-started",
+    label: "Getting started",
+    icon: ListChecks,
+  },
   {
     value: "appearance",
     label: "Appearance",
@@ -804,6 +813,8 @@ export function renderSettingsSection(
   props: SettingsPanelProps,
 ): React.ReactNode {
   switch (section) {
+    case "getting-started":
+      return <GettingStartedSettingsCard currentPubkey={props.currentPubkey} />;
     case "profile":
       return (
         <ProfileSettingsCard

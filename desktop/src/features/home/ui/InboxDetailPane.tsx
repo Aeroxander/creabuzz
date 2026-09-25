@@ -339,7 +339,10 @@ function InboxMessageDetailPane({
         detailPaneRef.current?.querySelector<HTMLTextAreaElement>(
           '[data-testid="message-input"]',
         );
-      textarea?.focus();
+      // preventScroll: focusing must not scroll the app surface (the
+      // overflow-hidden shell scrolls 1px on content shifts otherwise,
+      // misaligning the community rail from the surface).
+      textarea?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -464,7 +467,8 @@ function InboxMessageDetailPane({
           </div>
           <p className="mt-4 text-base font-semibold">Select a message</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick an inbox item to see the full message and react to it.
+            Pick something from the list to read the full message and react to
+            it.
           </p>
         </div>
       </section>

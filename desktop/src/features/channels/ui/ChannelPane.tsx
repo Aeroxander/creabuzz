@@ -58,6 +58,7 @@ import {
 } from "@/features/channels/ui/ChannelPane.helpers";
 import { HuddleStartingView, HuddleTranscriptIntro } from "@/features/huddle";
 import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
+import { insertTextIntoComposer } from "@/features/channels/ui/composerTextInsert";
 import { useSearchHighlightProps } from "@/features/channels/ui/useSearchHighlightProps";
 import { useChannelIntro } from "@/features/channels/ui/useChannelIntro";
 import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types";
@@ -362,12 +363,21 @@ export const ChannelPane = React.memo(function ChannelPane({
         messageTimelineRef.current?.scrollToBottomOnNextUpdate(),
     });
   }, [onAddAgent]);
+  // Empty-channel "Mention an agent" affordance: drop a `@` into the main
+  // composer, which opens the mention picker exactly like typing it.
+  const handleMentionAgent = React.useCallback(() => {
+    insertTextIntoComposer(composerWrapperRef.current, "@");
+  }, []);
   const standardChannelIntro = useChannelIntro({
     activeChannel,
     onAddAgent,
     onAddFiles,
     onBrowseChannels,
     onCreateChannel,
+    onMentionAgent:
+      knownAgentPubkeys.size > 0 && activeChannel?.isMember
+        ? handleMentionAgent
+        : undefined,
     onOpenMembers,
     onWelcomeAddAgent: onAddAgent ? handleWelcomeAddAgent : undefined,
   });
@@ -651,13 +661,13 @@ export const ChannelPane = React.memo(function ChannelPane({
               unfollowThreadById={unfollowThreadById}
               emptyDescription={
                 activeChannel?.channelType === "forum"
-                  ? "Select a stream or DM to load real message history in this first integration pass."
-                  : "Messages and sub-replies will appear here once the relay has history for this channel."
+                  ? "Forum channels are on the way — open a channel or DM to read messages for now."
+                  : `This is #${activeChannel?.name ?? "channel"}'s canvas — @mention an agent or drop a file to get moving.`
               }
               emptyTitle={
                 activeChannel
                   ? activeChannel.channelType === "forum"
-                    ? "Forum channels are next"
+                    ? "Forum view isn't ready yet"
                     : "No messages yet"
                   : "No channel selected"
               }
@@ -786,12 +796,14 @@ export const ChannelPane = React.memo(function ChannelPane({
                           : activeChannel?.archivedAt
                             ? "Archived channels are read-only."
                             : activeChannel?.channelType === "forum"
-                              ? "Forum posting is not wired in this pass."
+                              ? "Forum posting is coming soon."
                               : activeChannel
                                 ? activeChannel.channelType === "dm" &&
                                   directMessageIntro
                                   ? `Message ${directMessageIntro.displayName}`
-                                  : `Message #${activeChannel.name}`
+                                  : knownAgentPubkeys.size > 0
+                                    ? `Message #${activeChannel.name} — @ to mention an agent`
+                                    : `Message #${activeChannel.name}`
                                 : "Select a channel"
                     }
                     showTopBorder={false}

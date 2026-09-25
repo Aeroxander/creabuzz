@@ -831,7 +831,10 @@ export function TopbarSearch({
             currentChannelSearchAction ? "pb-5" : "py-5",
           )}
         >
-          <p>No recent activity yet.</p>
+          <p>
+            No recent activity yet — search for people, channels, or words from
+            a message.
+          </p>
         </div>
       </div>
     ) : (
@@ -906,7 +909,7 @@ export function TopbarSearch({
             in <span className="font-semibold">{scopeLabel}</span>
           </>
         ) : null}
-        .
+        . Try fewer or different words.
       </p>
     </div>
   ) : (

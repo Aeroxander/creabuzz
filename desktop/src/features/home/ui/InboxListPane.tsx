@@ -816,7 +816,7 @@ export function InboxListPane({
                   {unreadOnly
                     ? "Turn off Show unread only to see read activity."
                     : filter === "all"
-                      ? "New activity will appear here."
+                      ? "Mentions, replies, and agent updates land here."
                       : filter === "needs_action"
                         ? "When an agent hits a budget or a workflow needs a decision, it appears here."
                         : "Switch back to All to see other activity."}

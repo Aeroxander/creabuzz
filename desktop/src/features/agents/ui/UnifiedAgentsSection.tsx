@@ -132,6 +132,17 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
 
       {!isLoading ? (
         <div className="space-y-3" data-testid="unified-agents-groups">
+          {groups.length === 0 &&
+          ungrouped.length === 0 &&
+          unknown.length === 0 ? (
+            <p
+              className="text-sm leading-5 text-muted-foreground"
+              data-testid="agents-empty-hint"
+            >
+              No agents yet. Create one to answer questions and run work in your
+              channels.
+            </p>
+          ) : null}
           <div className={IDENTITY_CARD_GRID_CLASS}>
             <CreateIdentityCard
               ariaLabel="New agent"

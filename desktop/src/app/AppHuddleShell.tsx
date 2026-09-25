@@ -81,7 +81,12 @@ export function AppHuddleShell({
             />
             <div
               className={cn(
-                "buzz-huddle-app-surface z-10 flex min-h-0 flex-row overflow-hidden bg-background",
+                // `overflow-clip` (not `hidden`): the surface must never
+                // scroll. `hidden` stays programmatically scrollable, so any
+                // descendant `scrollIntoView` (e.g. sidebar unread overflow)
+                // shifts the whole app — including the community rail's
+                // traffic-light alignment — by a clamped pixel.
+                "buzz-huddle-app-surface z-10 flex min-h-0 flex-row overflow-clip bg-background",
                 isDrawerOpen &&
                   (isRoom
                     ? "buzz-huddle-app-surface-room-open"

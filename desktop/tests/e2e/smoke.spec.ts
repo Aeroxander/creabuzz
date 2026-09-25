@@ -928,7 +928,7 @@ test("replaces the channel pane when switching channels", async ({ page }) => {
   await expect(page.getByTestId("chat-title")).toHaveText("random");
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the channel.",
   );
   await expect(page.getByTestId("message-timeline")).not.toContainText(
     "Welcome to general",
