@@ -12,6 +12,7 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
   KIND_BUDGET_SPEND_RECEIPT,
+  KIND_CONTRIBUTION_RECORD,
   KIND_LAUNCH_BID,
   type KIND_LAUNCH_PROPOSAL,
   type KIND_LAUNCH_RECEIPT,
@@ -22,6 +23,12 @@ import {
   type KIND_LAUNCH_UPDATE,
   LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
+import {
+  KIND_APPROVAL_DENY,
+  KIND_APPROVAL_GRANT,
+  summarizeCommunityTrustSignals,
+  type CommunityTrustRecord,
+} from "./lib/trust-signals";
 import {
   parseOrgBinding,
   parseOrgBudget,
@@ -158,6 +165,35 @@ export function useOrgMoney() {
   return useQuery({
     queryKey: orgMoneyQueryKey,
     queryFn: fetchOrgMoney,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+const trustSignalsQueryKey = ["launchpad", "trust-signals"];
+
+/**
+ * The community's contribution reviews (kind 37013) and workflow approval
+ * outcomes (kinds 46030/46031) — the community half of the trust surface.
+ *
+ * Bounded and explicitly kinded (the relay's p-gate) exactly like
+ * `fetchOrgMoney`/`fetchScoreRoots`; the parsing, NIP-ORG canonical
+ * resolution and approval linking live in `lib/trust-signals.ts`. A failed
+ * read rejects here so the card can say "unavailable" instead of rendering an
+ * empty ledger (Review-Proven Rule 1).
+ */
+export async function fetchTrustSignals(): Promise<CommunityTrustRecord> {
+  const events = await queryEvents(relayWsUrl(), {
+    kinds: [KIND_CONTRIBUTION_RECORD, KIND_APPROVAL_GRANT, KIND_APPROVAL_DENY],
+    limit: 300,
+  });
+  return summarizeCommunityTrustSignals(events);
+}
+
+export function useTrustSignals() {
+  return useQuery({
+    queryKey: trustSignalsQueryKey,
+    queryFn: fetchTrustSignals,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });

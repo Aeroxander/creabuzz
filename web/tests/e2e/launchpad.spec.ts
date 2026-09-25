@@ -95,6 +95,12 @@ const published: Array<{ kind: number; content: string; tags: string[][] }> =
 let servedAuction = "";
 /** Stage served for the fixture record (defaults to the wizard's live). */
 let servedStage = "live";
+/**
+ * Milestone mirrors (kind 47005) served for the detail page. Empty by
+ * default, so every existing test still sees a launch with no recorded
+ * outcomes; a track-record test seeds it before navigating.
+ */
+let servedMilestones: unknown[] = [];
 
 async function mockRelay(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
@@ -150,6 +156,11 @@ async function mockRelay(page: import("@playwright/test").Page) {
       }
       if (kinds.includes(47003))
         ws.send(JSON.stringify(["EVENT", subId, update()]));
+      if (kinds.includes(47005)) {
+        for (const receipt of servedMilestones) {
+          ws.send(JSON.stringify(["EVENT", subId, receipt]));
+        }
+      }
       if (kinds.includes(37006)) {
         ws.send(JSON.stringify(["EVENT", subId, scoreRoot()]));
       }
@@ -159,6 +170,7 @@ async function mockRelay(page: import("@playwright/test").Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  servedMilestones = [];
   await mockRelay(page);
   await page.addInitScript(
     ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
@@ -792,6 +804,99 @@ test("milestone claims and verdicts mirror to the feed with a closed vocabulary"
         content: expect.stringContaining('"verdict":"approve"'),
       }),
     );
+});
+
+const MILESTONE_TX = `0x${"ef".repeat(32)}`;
+
+/** One claim + its approve verdict, shaped exactly as the producers write them. */
+function milestoneMirrors() {
+  const coord = `37001:${FOUNDER}:nebula`;
+  return [
+    {
+      id: "mirror-claim-1",
+      pubkey: FOUNDER,
+      created_at: 410,
+      kind: 47005,
+      tags: [
+        ["a", coord],
+        ["kind", "claim"],
+        ["claim", "milestone-1"],
+        ["evidence", "ab".repeat(32)],
+        ["tx", MILESTONE_TX],
+      ],
+      content: JSON.stringify({
+        table: "claim",
+        claim: "milestone-1",
+        evidenceHash: "ab".repeat(32),
+      }),
+      sig: "sig",
+    },
+    {
+      id: "mirror-verdict-1",
+      pubkey: FOUNDER,
+      created_at: 420,
+      kind: 47005,
+      tags: [
+        ["a", coord],
+        ["kind", "verdict"],
+        ["claim", "milestone-1"],
+        ["tx", MILESTONE_TX],
+      ],
+      content: JSON.stringify({
+        table: "verdict",
+        claim: "milestone-1",
+        verdict: "approve",
+      }),
+      sig: "sig",
+    },
+  ];
+}
+
+test("the track record says what was recorded — or that nothing was", async ({
+  page,
+}) => {
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  const card = page.getByTestId("launch-track-record");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  // No 47005 mirrors for this launch: the honest empty copy, and no
+  // zero-filled outcome history rendered next to it.
+  await expect(card).toContainText("No verdicts or receipts yet.");
+  await expect(card).not.toContainText("Milestones approved");
+  // The community query resolves with zero 37013 records — an empty ledger,
+  // never the "unavailable" notice that a *failed* read must show instead.
+  await expect(card).toContainText("No contribution records yet.");
+  await expect(
+    page.getByTestId("track-record-contributions-unavailable"),
+  ).toHaveCount(0);
+});
+
+test("a recorded verdict renders a timeline bound to its claim and derivation", async ({
+  page,
+}) => {
+  servedMilestones = milestoneMirrors();
+  await page.getByText("Nebula DAO").click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  const card = page.getByTestId("launch-track-record");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).not.toContainText("No verdicts or receipts yet.");
+  // The breakdown cites its inputs — the source line the tests bind.
+  await expect(card).toContainText(
+    "kind 47005 · tag kind=verdict · verdict=approve",
+  );
+  const approvedValue = card
+    .locator("dt", { hasText: "Milestones approved" })
+    .locator("xpath=../dd");
+  // One approve verdict on the page means one in the count beside it.
+  await expect(approvedValue).toHaveText("1");
+  // The timeline pairs the verdict with its claim by milestone id and keeps
+  // the settlement tx the mirror names.
+  const milestone = card.getByTestId("track-record-milestone");
+  await expect(milestone).toHaveCount(1);
+  await expect(milestone).toContainText("milestone-1");
+  await expect(milestone).toContainText("approve");
+  await expect(milestone).toContainText("settled on-chain");
+  await expect(milestone).toContainText("efef");
 });
 
 test("the sandbox walks a full raise, clearly badged as simulated", async ({

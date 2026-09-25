@@ -52,6 +52,7 @@ import {
 import { ManagePanel } from "./ManagePanel";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
+import { TrackRecordCard } from "./TrackRecordCard";
 
 type Tab =
   | "overview"
@@ -555,6 +556,10 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
       </Card>
       <LaunchContractsCard record={record} />
       <ProvenCommitmentsCard launch={launch} />
+      {/* The outcome half of the trust surface: verdicts, claims, receipts and
+          contribution reviews, each figure shown with its derivation
+          (`lib/trust-signals.ts`). */}
+      <TrackRecordCard launch={launch} />
       <ScoreRootsCard />
     </div>
   );
