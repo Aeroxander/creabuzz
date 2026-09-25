@@ -96,6 +96,22 @@ async function expectBuzzSidebarPalette(page: Page, mode: "light" | "dark") {
   );
   expect(pinnedSpacerColor).toBe("rgba(0, 0, 0, 0)");
   await expect(sidebarScroller.getByTestId("open-agents-view")).toBeVisible();
+  // Pin the sidebar to its resting state before measuring vertical gaps.
+  // Clicking the active channel focus-scrolls `.buzz-sidebar-scrollbar`
+  // (whose height at that moment races font/data arrival), and the search
+  // bar sits OUTSIDE the scroller — so a leftover scrollTop shifts every
+  // vertical gap below by exactly scrollTop (observed: gap = -328 instead
+  // of 8, i.e. scrollTop = 336). Blur first so nothing re-scrolls, then
+  // reset and verify the pin stuck before reading geometry.
+  await sidebarScroller.evaluate((element) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    element.scrollTop = 0;
+  });
+  await expect
+    .poll(() => sidebarScroller.evaluate((element) => element.scrollTop))
+    .toBe(0);
   const searchBox = await search.boundingBox();
   const pinnedHeaderBox = await pinnedHeader.boundingBox();
   const primaryMenuBox = await primaryMenu.boundingBox();

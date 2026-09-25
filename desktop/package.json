@@ -17,9 +17,9 @@
     "test": "node --import ./test-loader.mjs --experimental-strip-types --test \"src/**/*.test.mjs\" \"scripts/*.test.mjs\"",
     "preview": "vite preview",
     "tauri": "node ./scripts/tauri-command.mjs",
-    "test:e2e": "pnpm build:e2e && playwright test",
-    "test:e2e:smoke": "pnpm build:e2e && playwright test --project=smoke",
-    "test:e2e:integration": "pnpm build:e2e && playwright test --project=integration",
+    "test:e2e": "node ./scripts/e2e-run.mjs",
+    "test:e2e:smoke": "node ./scripts/e2e-run.mjs --project=smoke",
+    "test:e2e:integration": "node ./scripts/e2e-run.mjs --project=integration",
     "test:e2e:release-smoke": "pnpm build:e2e && playwright test --config=playwright.release-smoke.config.ts",
     "test:e2e:report": "playwright show-report",
     "tauri:build": "node ./scripts/tauri-command.mjs build"

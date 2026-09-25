@@ -33,8 +33,12 @@ test("thread-scoped ACP sessions is default-off, persists, and applies on reload
   ).toBeVisible();
   await expect(page.getByText(DESCRIPTION, { exact: true })).toBeVisible();
   await expect(toggle).not.toBeChecked();
-  await expect(page.getByTestId("feature-toggle-projects")).not.toBeChecked();
-  await expect(page.getByTestId("feature-toggle-workflows")).not.toBeChecked();
+  // Workflows and Projects ship ENABLED by default since 88eef9336 ("ship
+  // Workflows/Projects/Forum enabled by default"): with no overrides seeded
+  // (`seedPreviewFeatures: false`), `defaultEnabled` in preview-features.json
+  // is what the toggles reflect. Only Thread Scoped ACP Sessions is off here.
+  await expect(page.getByTestId("feature-toggle-projects")).toBeChecked();
+  await expect(page.getByTestId("feature-toggle-workflows")).toBeChecked();
 
   await toggle.click();
   await expect(toggle).toBeChecked();
