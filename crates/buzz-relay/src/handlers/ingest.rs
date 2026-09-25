@@ -30,14 +30,14 @@ use buzz_core::kind::{
     KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
     KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
     KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
-    KIND_ORG_NODE, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT,
-    KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
-    KIND_USER_STATUS, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST,
+    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
+    KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_SCORE_ROOT, KIND_SKILL,
+    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN,
+    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_PAGE,
+    KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -544,11 +544,18 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
         // scopes them to their community via the `h` tag.
+        //
+        // The Project Board kinds join the same arm: a pitch (37015) and a
+        // join request (37016) are coordination records, not authority — the
+        // equity claim they describe is recorded by a 37011 grant and only
+        // becomes enforceable when the project adopts a DAO (NIP-LP).
         KIND_ORG_NODE
         | KIND_ORG_GRANT
         | KIND_ORG_BUDGET
         | KIND_CONTRIBUTION_RECORD
-        | KIND_BUDGET_SPEND_RECEIPT => Ok(Scope::MessagesWrite),
+        | KIND_BUDGET_SPEND_RECEIPT
+        | KIND_ORG_PITCH
+        | KIND_ORG_JOIN_REQUEST => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -720,6 +727,12 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_ORG_BUDGET
             | KIND_CONTRIBUTION_RECORD
             | KIND_BUDGET_SPEND_RECEIPT
+            // Project Board (NIP-ORG extension): a pitch (37015) and a join
+            // request (37016) describe the same community-level project the
+            // org node does — addressed by `(pubkey, kind, d)`, so a stray
+            // `h` must never channel-scope them either.
+            | KIND_ORG_PITCH
+            | KIND_ORG_JOIN_REQUEST
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -1607,6 +1620,13 @@ const LAUNCH_CONTENT_MAX_LEN: usize = 65536;
 const ORG_CONTENT_MAX_LEN: usize = 16384;
 const ORG_SEAT_TAG_CAP: usize = 256;
 const ORG_NAME_MAX_LEN: usize = 128;
+// Project Board caps (kinds 37015/37016 and the ownership tags they put on a
+// 37011 grant): a role slug is the middle segment of a `d` tag bounded to 64
+// chars, a role label is short display text, and a percentage is 1..=100 —
+// so no single event can declare or claim more than a whole project.
+const ORG_ROLE_TAG_CAP: usize = 64;
+const ORG_ROLE_SLUG_MAX_LEN: usize = 12;
+const ORG_ROLE_LABEL_MAX_LEN: usize = 64;
 
 /// Validate a lowercase-64-hex pubkey string (a NIP-ORG seat / grantee tag).
 fn is_lower_hex_pubkey(value: &str) -> bool {
@@ -1616,19 +1636,97 @@ fn is_lower_hex_pubkey(value: &str) -> bool {
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
-/// Validate the shared envelope of a NIP-ORG event (37010–37012).
+/// Validate a bounded whole-percentage value: ASCII digits only, 1..=100.
 ///
-/// All three are parameterized-replaceable, **community-level** records (the
+/// Digit-only keeps the canonical form (no `+5`, `50%`, or `050x` can ride a
+/// claim the board renders), and the range keeps one event from asserting more
+/// than the entire equity pool.
+fn is_org_percentage(value: &str) -> bool {
+    value.bytes().all(|b| b.is_ascii_digit())
+        && value
+            .parse::<u32>()
+            .map(|n| (1..=100).contains(&n))
+            .unwrap_or(false)
+}
+
+/// Validate a Project Board `["role", <slug>, <label>?, <pct>?]` tag.
+///
+/// Two legal shapes: `["role", <slug>]` (a grant naming the role it fills)
+/// and `["role", <slug>, <label>, <pct>]` (a manifest declaring a role and
+/// its equity target). The slug is the role's identity across events — it
+/// keys the join request's `d` and the grant's `d` — so it is bounded to a
+/// short lowercase slug shape.
+fn validate_org_role_tag(parts: &[String], label: &str) -> Result<(), String> {
+    let slug = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+    if slug.is_empty()
+        || slug.len() > ORG_ROLE_SLUG_MAX_LEN
+        || !slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err(format!(
+            "{label} `role` tag slug must be 1..={ORG_ROLE_SLUG_MAX_LEN} chars of [a-z0-9-]"
+        ));
+    }
+    match parts.len() {
+        2 => Ok(()),
+        4 => {
+            let role_label = parts[2].as_str();
+            if role_label.is_empty() || role_label.chars().count() > ORG_ROLE_LABEL_MAX_LEN {
+                return Err(format!(
+                    "{label} `role` tag label must be 1..={ORG_ROLE_LABEL_MAX_LEN} chars"
+                ));
+            }
+            if !is_org_percentage(parts[3].as_str()) {
+                return Err(format!(
+                    "{label} `role` tag percentage must be a whole number 1..=100"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "{label} `role` tag must be [slug] or [slug, label, pct] (got {} values)",
+            parts.len().saturating_sub(1)
+        )),
+    }
+}
+
+/// The NIP-ORG kind that shares the org envelope, with the label its errors
+/// carry. `None` for every non-org kind.
+///
+/// This is the single map from kind to envelope validation, used by ingest
+/// and enumerated by tests: registering a new org kind here (and in
+/// `required_scope_for_kind` / `is_global_only_kind`) is what makes the
+/// relay both accept and bound it.
+pub(crate) fn org_envelope_label(kind: u32) -> Option<&'static str> {
+    match kind {
+        KIND_ORG_NODE => Some("org node event"),
+        KIND_ORG_GRANT => Some("org grant event"),
+        KIND_ORG_BUDGET => Some("org budget event"),
+        KIND_CONTRIBUTION_RECORD => Some("contribution record event"),
+        KIND_BUDGET_SPEND_RECEIPT => Some("budget spend receipt event"),
+        KIND_ORG_PITCH => Some("project pitch event"),
+        KIND_ORG_JOIN_REQUEST => Some("project join request event"),
+        _ => None,
+    }
+}
+
+/// Validate the shared envelope of a NIP-ORG event (37010–37016).
+///
+/// All of them are parameterized-replaceable, **community-level** records (the
 /// same shape as a project `30621` or a launch record `37001`): exactly one
 /// bounded `d` (node/grant/subject id) and a JSON-object content body.
 /// `seat`/`grantee` tags, when present, must hold a lowercase 64-hex pubkey,
-/// and the `seat` list is capped. Malformed org records must not pollute the
-/// org chart, so the envelope is checked at ingest.
+/// and the `seat` list is capped. Project Board records add bounded `role`
+/// tags (a declared/filled role with its equity target) and a bounded `org`
+/// ownership percentage on a grant. Malformed org records must not pollute
+/// the org chart, so the envelope is checked at ingest.
 ///
 /// Deliberately absent: any authority. A node asserts a seat; a grant asserts
-/// a delegation. Neither is a permission the relay acts on here — chain
-/// verification is layered on top, and a stray `h` tag never channel-scopes
-/// these (see [`is_global_only_kind`]).
+/// a delegation; a pitch or join request asserts a *claim about* equity that
+/// only a 37011 grant records. None is a permission the relay acts on here —
+/// chain verification is layered on top, and a stray `h` tag never
+/// channel-scopes these (see [`is_global_only_kind`]).
 fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
     let d = single_bounded_d_tag(event, label)?;
     if d.len() > 64 {
@@ -1637,6 +1735,7 @@ fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
 
     let mut seat_count = 0usize;
     let mut name_count = 0usize;
+    let mut role_count = 0usize;
     for tag in event.tags.iter() {
         let parts = tag.as_slice();
         let Some(name) = parts.first().map(|s| s.as_str()) else {
@@ -1665,12 +1764,28 @@ fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
                     ));
                 }
             }
+            "role" => {
+                role_count += 1;
+                validate_org_role_tag(parts, label)?;
+            }
+            // Ownership marker on an approval grant: `["org", <pct>]` claims
+            // a percentage of the project named by the grant's `via`.
+            "org" if !is_org_percentage(value) => {
+                return Err(format!(
+                    "{label} `org` tag must be a whole percentage 1..=100"
+                ));
+            }
             _ => {}
         }
     }
     if seat_count > ORG_SEAT_TAG_CAP {
         return Err(format!(
             "{label} must have at most {ORG_SEAT_TAG_CAP} `seat` tags (got {seat_count})"
+        ));
+    }
+    if role_count > ORG_ROLE_TAG_CAP {
+        return Err(format!(
+            "{label} must have at most {ORG_ROLE_TAG_CAP} `role` tags (got {role_count})"
         ));
     }
     if name_count > 1 {
@@ -3437,9 +3552,16 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
-    if kind_u32 == KIND_ORG_NODE {
-        validate_org_envelope(&event, "org node event")
+    // Shared NIP-ORG envelope (37010–37016): exactly one bounded `d`, a
+    // JSON-object body, bounded `seat`/`grantee`/`name`/`role`/`org` tags —
+    // one call site for every org kind, so a newly registered kind cannot
+    // skip the envelope unnoticed (tests enumerate `org_envelope_label`).
+    if let Some(label) = org_envelope_label(kind_u32) {
+        validate_org_envelope(&event, label)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_ORG_NODE {
         // The `onchain` binding on the org root is a governance act: only the
         // root's holders or the community owner may publish it, and only on
         // a root node. Always on — a forged binding must never store.
@@ -3447,8 +3569,6 @@ async fn ingest_event_inner(
     }
 
     if kind_u32 == KIND_ORG_GRANT {
-        validate_org_envelope(&event, "org grant event")
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
         // NIP-ORG grant-chain enforcement is opt-in (`ORG_GRANT_ENFORCEMENT`).
         // Off (default): store and forward, byte-identical to a relay with
         // no grant logic. On: verify attenuation, root standing, and expiry
@@ -3459,21 +3579,9 @@ async fn ingest_event_inner(
     }
 
     if kind_u32 == KIND_ORG_BUDGET {
-        validate_org_envelope(&event, "org budget event")
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
         // Budget-specific content contract (camelCase keys, `window` enum)
         // and the publication rule: subject agent itself or community owner.
         super::budget_enforcement::validate_budget_publication(state, tenant, &event).await?;
-    }
-
-    if kind_u32 == KIND_BUDGET_SPEND_RECEIPT {
-        validate_org_envelope(&event, "budget spend receipt event")
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
-    }
-
-    if kind_u32 == KIND_CONTRIBUTION_RECORD {
-        validate_org_envelope(&event, "contribution record event")
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
     if kind_u32 == KIND_AGENT_WIKI_PAGE {
@@ -6258,6 +6366,169 @@ mod postgres_tests {
         let ev = make_event_with_tags(KIND_ORG_NODE, "not json", &[&["d", "cto"]]);
         let err = validate_org_envelope(&ev, "org node event").unwrap_err();
         assert!(err.contains("JSON object"), "got: {err}");
+    }
+
+    // ---- Project Board (37015 pitch / 37016 join request) ----
+
+    #[test]
+    fn project_board_kinds_are_org_plane_records() {
+        // The Project Board rides the org plane: registered member writes,
+        // global-only, NIP-33 addressed, and routed through the shared
+        // envelope so an unbounded record never stores. Removing any of
+        // these legs makes this test fail.
+        let dummy = make_dummy_event();
+        for (kind, label) in [
+            (KIND_ORG_PITCH, "project pitch event"),
+            (KIND_ORG_JOIN_REQUEST, "project join request event"),
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must be global-only (never channel-scoped)"
+            );
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h-tag channel scope"
+            );
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be NIP-33 addressed"
+            );
+            assert_eq!(
+                org_envelope_label(kind),
+                Some(label),
+                "kind {kind} must route through the org envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_label_covers_exactly_the_org_kinds() {
+        // Enumerating the map is what makes the single envelope call site
+        // falsifiable: a registered org kind missing here would store
+        // unvalidated, and a non-org kind added here would be rejected as
+        // malformed for records the relay never bounds.
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
+            KIND_ORG_PITCH,
+            KIND_ORG_JOIN_REQUEST,
+        ] {
+            assert!(
+                org_envelope_label(kind).is_some(),
+                "kind {kind} must use the org envelope"
+            );
+        }
+        for kind in [KIND_PROJECT, KIND_LAUNCH_RECORD, KIND_WIKI_PAGE] {
+            assert!(
+                org_envelope_label(kind).is_none(),
+                "kind {kind} is not an org kind"
+            );
+        }
+    }
+
+    #[test]
+    fn project_pitch_envelope_accepts_declared_roles() {
+        let ev = make_org_event(
+            KIND_ORG_PITCH,
+            &[
+                &["d", "nebula"],
+                &["name", "Nebula"],
+                &["role", "founder", "The founder", "40"],
+                &["role", "writer", "The writer", "12"],
+            ],
+        );
+        assert!(
+            validate_org_envelope(&ev, "project pitch event").is_ok(),
+            "a manifest of bounded role tags must pass the shared envelope"
+        );
+    }
+
+    #[test]
+    fn join_request_envelope_accepts_role_reference() {
+        let founder = "a".repeat(64);
+        let ev = make_org_event(
+            KIND_ORG_JOIN_REQUEST,
+            &[
+                &["d", "nebula/writer/abcdef0123456789"],
+                &["role", "writer"],
+                &["p", founder.as_str()],
+            ],
+        );
+        assert!(
+            validate_org_envelope(&ev, "project join request event").is_ok(),
+            "a join request naming its role must pass the shared envelope"
+        );
+    }
+
+    #[test]
+    fn org_envelope_rejects_malformed_role_tags() {
+        // Every shape that would let a claim exceed the declared pool or
+        // carry an unrenderable role identity.
+        let cases: [&[&str]; 7] = [
+            &["role", "Writer"],
+            &["role", "a-very-long-role-slug"],
+            &["role", "writer", "The writer", "0"],
+            &["role", "writer", "The writer", "150"],
+            &["role", "writer", "The writer", "12%"],
+            &["role", "writer", "The writer"],
+            &["role", "writer", "The writer", "12", "extra"],
+        ];
+        for role in cases {
+            let tags: Vec<&[&str]> = vec![&["d", "nebula"], role];
+            let ev = make_event_with_tags(KIND_ORG_PITCH, "{\"v\":1}", &tags);
+            let err = validate_org_envelope(&ev, "project pitch event")
+                .expect_err(&format!("role tag {role:?} must be rejected"));
+            assert!(err.contains("`role`"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn org_envelope_caps_role_tags() {
+        let slugs: Vec<String> = (0..=64).map(|i| format!("r{i}")).collect();
+        let mut tag_refs: Vec<Vec<&str>> = vec![vec!["d", "nebula"]];
+        tag_refs.extend(slugs.iter().map(|slug| vec!["role", slug.as_str()]));
+        let borrowed: Vec<&[&str]> = tag_refs.iter().map(|t| t.as_slice()).collect();
+        let ev = make_event_with_tags(KIND_ORG_PITCH, "{\"v\":1}", &borrowed);
+        let err = validate_org_envelope(&ev, "project pitch event").unwrap_err();
+        assert!(err.contains("`role` tags"), "got: {err}");
+    }
+
+    #[test]
+    fn ownership_grant_envelope_bounds_the_org_percentage() {
+        // `["org", <pct>]` is the ownership claim on an approval grant: the
+        // relay bounds it to a whole percentage of one project, so a single
+        // grant can never assert more than the entire pool.
+        let grantee = "d".repeat(64);
+        let ok = make_org_event(
+            KIND_ORG_GRANT,
+            &[
+                &["d", "nebula/writer"],
+                &["grantee", &grantee],
+                &["org", "12"],
+            ],
+        );
+        assert!(validate_org_envelope(&ok, "org grant event").is_ok());
+        for pct in ["0", "150", "12%", "abc", ""] {
+            let ev = make_org_event(
+                KIND_ORG_GRANT,
+                &[
+                    &["d", "nebula/writer"],
+                    &["grantee", &grantee],
+                    &["org", pct],
+                ],
+            );
+            let err = validate_org_envelope(&ev, "org grant event")
+                .expect_err(&format!("org tag {pct:?} must be rejected"));
+            assert!(err.contains("`org`"), "got: {err}");
+        }
     }
 
     // ---- Agent Wiki (44002) ----

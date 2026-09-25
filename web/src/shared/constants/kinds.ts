@@ -40,6 +40,10 @@ export const KIND_ORG_BUDGET = 37012;
 export const KIND_CONTRIBUTION_RECORD = 37013;
 /** NIP-ORG: budget spend receipt — Nostr mirror of a spend settled against an onchain allowance (addressable, d = spend id). */
 export const KIND_BUDGET_SPEND_RECEIPT = 37014;
+/** NIP-ORG: project pitch / team manifest — board-facing pitch + declared roles (addressable, d = the project's org-node id). */
+export const KIND_ORG_PITCH = 37015;
+/** NIP-ORG: project join request — request a declared role for a stated % (addressable, d = `<node>/<role>/<requester-16>`); a decline republishes the same d under the founder's key. */
+export const KIND_ORG_JOIN_REQUEST = 37016;
 /** All NIP-ORG event kinds. */
 export const ORG_EVENT_KINDS = [
   KIND_ORG_NODE,
@@ -47,6 +51,8 @@ export const ORG_EVENT_KINDS = [
   KIND_ORG_BUDGET,
   KIND_CONTRIBUTION_RECORD,
   KIND_BUDGET_SPEND_RECEIPT,
+  KIND_ORG_PITCH,
+  KIND_ORG_JOIN_REQUEST,
 ] as const;
 /** All NIP-LP event kinds. */
 export const LAUNCHPAD_EVENT_KINDS = [

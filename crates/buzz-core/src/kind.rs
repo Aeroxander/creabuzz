@@ -816,6 +816,26 @@ pub const KIND_CONTRIBUTION_RECORD: u32 = 37013;
 /// See `docs/nips/NIP-ORG.md`.
 pub const KIND_BUDGET_SPEND_RECEIPT: u32 = 37014;
 
+/// NIP-ORG (Project Board): project pitch / team manifest — the board-facing
+/// pitch of a project (one-line summary, description, and the declared roles
+/// with their equity targets as `["role", <slug>, <label>, <pct>]` tags).
+/// Parameterized replaceable, `d` = the project's org-node id (same id as its
+/// kind:37010 node), so node and pitch replace together under one address.
+/// Community-level and global-only, no routing tag — a stray `h` never
+/// channel-scopes it. The org node carries the seat structure; this record
+/// carries the prose and the ownership declaration the board renders.
+pub const KIND_ORG_PITCH: u32 = 37015;
+/// NIP-ORG (Project Board): project join request — a signed request from a
+/// member to fill one declared role for a stated equity percentage.
+/// Parameterized replaceable, `d` = `<node>/<role>/<requester-16>` so each
+/// requester's thread has its own coordinate. The founder records a decline
+/// by republishing the same `d` under their own key with
+/// `content.decision = "declined"` — the NIP-ORG kind:37013 parallel-record
+/// pattern; approval is *not* an event here, it is the kind:37011 ownership
+/// grant (`["org", <pct>]` + `["role", <slug>]`), which is the canonical
+/// equity record. Community-level and global-only, no routing tag.
+pub const KIND_ORG_JOIN_REQUEST: u32 = 37016;
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -959,6 +979,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ORG_BUDGET,
     KIND_CONTRIBUTION_RECORD,
     KIND_BUDGET_SPEND_RECEIPT,
+    KIND_ORG_PITCH,
+    KIND_ORG_JOIN_REQUEST,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -1066,6 +1088,8 @@ const _: () = assert!(is_parameterized_replaceable(KIND_ORG_GRANT)); // 37011 �
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_BUDGET)); // 37012 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_CONTRIBUTION_RECORD)); // 37013 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_BUDGET_SPEND_RECEIPT)); // 37014 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_PITCH)); // 37015 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_JOIN_REQUEST)); // 37016 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

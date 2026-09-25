@@ -6,10 +6,12 @@
 
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as reposRouteImport } from "./routes/repos";
+import { Route as projectsRouteImport } from "./routes/projects";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
+import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as cDothostRouteImport } from "./routes/c.$host";
@@ -18,6 +20,11 @@ import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repo
 const reposRoute = reposRouteImport.update({
   id: "/repos",
   path: "/repos",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const projectsRoute = projectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
   getParentRoute: () => rootRouteImport,
 } as any);
 const launchpadRoute = launchpadRouteImport.update({
@@ -38,6 +45,11 @@ const indexRoute = indexRouteImport.update({
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
   id: "/repos/$repoId",
   path: "/repos/$repoId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
+  id: "/projects/$projectId",
+  path: "/projects/$projectId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
@@ -66,10 +78,12 @@ export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -77,10 +91,12 @@ export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -89,10 +105,12 @@ export interface FileRoutesById {
   "/": typeof indexRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -102,10 +120,12 @@ export interface FileRouteTypes {
     | "/"
     | "/identity-demo"
     | "/launchpad"
+    | "/projects"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
@@ -113,10 +133,12 @@ export interface FileRouteTypes {
     | "/"
     | "/identity-demo"
     | "/launchpad"
+    | "/projects"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   id:
@@ -124,10 +146,12 @@ export interface FileRouteTypes {
     | "/"
     | "/identity-demo"
     | "/launchpad"
+    | "/projects"
     | "/repos"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
@@ -136,10 +160,12 @@ export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
+  projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
   cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
   launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
+  projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
@@ -151,6 +177,13 @@ declare module "@tanstack/react-router" {
       path: "/repos";
       fullPath: "/repos";
       preLoaderRoute: typeof reposRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof projectsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/launchpad": {
@@ -179,6 +212,13 @@ declare module "@tanstack/react-router" {
       path: "/repos/$repoId";
       fullPath: "/repos/$repoId";
       preLoaderRoute: typeof reposDotrepoIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/projects/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof projectsDotprojectIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/launchpad/$launchId": {
@@ -216,10 +256,12 @@ const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
+  projectsRoute: projectsRoute,
   reposRoute: reposRoute,
   cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
   launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
+  projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };
