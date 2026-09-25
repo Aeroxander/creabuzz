@@ -162,8 +162,43 @@ pub(super) fn prepare_persona_publication_at(
     persona: &AgentDefinition,
     shared_override: Option<bool>,
 ) -> Result<(nostr::Event, RetainedEvent, AgentDefinition), String> {
+    prepare_persona_publication_stage(db_path, keys, persona, shared_override, None)
+}
+
+/// Explicit-tag-intent sibling of [`prepare_persona_publication_at`].
+///
+/// Same stage-2 contract (scope-free build/sign/retain over `db_path`), but the
+/// carried tag set is *supplied* instead of derived by carry-forward: the
+/// caller has computed the desired set — e.g. `carried_forward_tags(head)`
+/// minus the one binding a deliberate unbind removes — and this writes exactly
+/// that intent into the retained head. An empty `Vec` is the explicit clear
+/// (only `d`, plus `shared` when the record says so, survives).
+///
+/// Both variants read the retained head here (for `shared`, the strict
+/// parse-failure guard, and the monotonic `created_at`), so the caller must
+/// have derived `carried_tags` from *this same* head while holding the store
+/// lock — `commands::personas::skills::set_persona_skill_binding` does.
+pub(super) fn prepare_persona_publication_at_with_tags(
+    db_path: &std::path::Path,
+    keys: &nostr::Keys,
+    persona: &AgentDefinition,
+    shared_override: Option<bool>,
+    carried_tags: Vec<nostr::Tag>,
+) -> Result<(nostr::Event, RetainedEvent, AgentDefinition), String> {
+    prepare_persona_publication_stage(db_path, keys, persona, shared_override, Some(carried_tags))
+}
+
+fn prepare_persona_publication_stage(
+    db_path: &std::path::Path,
+    keys: &nostr::Keys,
+    persona: &AgentDefinition,
+    shared_override: Option<bool>,
+    carried_tags: Option<Vec<nostr::Tag>>,
+) -> Result<(nostr::Event, RetainedEvent, AgentDefinition), String> {
     use crate::managed_agents::{
-        persona_events::{build_persona_event, monotonic_created_at, persona_d_tag},
+        persona_events::{
+            build_persona_event, build_persona_event_with_tags, monotonic_created_at, persona_d_tag,
+        },
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
     use buzz_core_pkg::kind::{event_is_shared, KIND_PERSONA};
@@ -197,13 +232,17 @@ pub(super) fn prepare_persona_publication_at(
     }
     // Prior head passed so its `skill` bindings and template marker survive
     // the rebuild (only `d`/`shared` are recomputed) — see
-    // `build_persona_event`'s carry-forward contract.
-    let event = build_persona_event(&scoped_persona, prior_head.as_ref())?
-        .custom_created_at(monotonic_created_at(
-            existing.as_ref().map(|row| row.created_at),
-        ))
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign persona event: {e}"))?;
+    // `build_persona_event`'s carry-forward contract. Explicit tag intent
+    // overrides that carry-forward with exactly the set the caller computed.
+    let event = match carried_tags {
+        Some(tags) => build_persona_event_with_tags(&scoped_persona, tags)?,
+        None => build_persona_event(&scoped_persona, prior_head.as_ref())?,
+    }
+    .custom_created_at(monotonic_created_at(
+        existing.as_ref().map(|row| row.created_at),
+    ))
+    .sign_with_keys(keys)
+    .map_err(|e| format!("failed to sign persona event: {e}"))?;
     let retained = RetainedEvent {
         kind: KIND_PERSONA,
         pubkey,
