@@ -35,6 +35,7 @@ import { POOL_PCT, type RoleDeclaration } from "../lib/manifest";
 import { canApprove, type ProjectState, type RequestState } from "../lib/state";
 import { useProject, usePublishProjectEvent } from "../use-projects";
 import { JoinDialog, STAKE_DISCLAIMER } from "./JoinDialog";
+import { SummonDialog } from "./SummonDialog";
 
 function StatusPill({ status }: { status: RequestState["status"] }) {
   const copy: Record<
@@ -255,17 +256,28 @@ function RequestRow({
   );
 }
 
-function LaunchpadBridge({ projectId }: { projectId: string }) {
+function LaunchpadBridge({
+  isFounder,
+  nameOf,
+  project,
+  projectId,
+}: {
+  isFounder: boolean;
+  nameOf: (pubkey: string) => string;
+  project: ProjectState;
+  projectId: string;
+}) {
   const launches = useLaunches();
   const launch = launches.data?.find(
     (record) => record.record.id === projectId,
   );
+  const [summonOpen, setSummonOpen] = useState(false);
   const linkClass =
     "inline-flex w-fit items-center gap-1 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 dark:bg-white dark:text-black";
   return (
     <Card className="flex flex-col gap-3 p-4" data-testid="dao-bridge">
       <div>
-        <h2 className="text-base font-semibold">Next: form the DAO</h2>
+        <h2 className="text-base font-semibold">Form the DAO</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This map — recorded grants plus the founder's declared stake — is what
           seeds your TGE allocation. The launchpad holds it inside the budget
@@ -281,33 +293,58 @@ function LaunchpadBridge({ projectId }: { projectId: string }) {
           one.
         </p>
       </div>
-      {launch ? (
-        <Link
-          className={linkClass}
-          data-testid="dao-bridge-link"
-          params={{ launchId: projectId }}
-          search={{ action: undefined, author: launch.record.author }}
-          to="/launchpad/$launchId"
-        >
-          Open this project's launch
-          <ArrowRight className="h-4 w-4" aria-hidden />
-        </Link>
-      ) : (
-        <Link
-          className={linkClass}
-          data-testid="dao-bridge-link"
-          search={{ action: undefined, author: undefined }}
-          to="/launchpad"
-        >
-          Open the launchpad
-          <ArrowRight className="h-4 w-4" aria-hidden />
-        </Link>
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        {isFounder ? (
+          <Button
+            className={linkClass}
+            data-testid="form-dao"
+            onClick={() => setSummonOpen(true)}
+            type="button"
+          >
+            Form the DAO
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Button>
+        ) : (
+          <p className="text-2xs text-black/50 dark:text-white/50">
+            The founder forms the DAO from this map.
+          </p>
+        )}
+        {launch ? (
+          <Link
+            className={linkClass}
+            data-testid="dao-bridge-link"
+            params={{ launchId: projectId }}
+            search={{ action: undefined, author: launch.record.author }}
+            to="/launchpad/$launchId"
+          >
+            Open this project's launch
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        ) : (
+          <Link
+            className={linkClass}
+            data-testid="dao-bridge-link"
+            search={{ action: undefined, author: undefined }}
+            to="/launchpad"
+          >
+            Open the launchpad
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        )}
+      </div>
       <p className="text-2xs text-black/50 dark:text-white/50">
         {launch
           ? "A launch record already exists for this project id."
           : `No launch record for “${projectId}” yet — start one there; the ids line up.`}
       </p>
+      {summonOpen ? (
+        <SummonDialog
+          launch={launch}
+          nameOf={nameOf}
+          onOpenChange={setSummonOpen}
+          project={project}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -594,7 +631,12 @@ export function ProjectDetailPage({
         </Card>
       ) : null}
 
-      <LaunchpadBridge projectId={projectId} />
+      <LaunchpadBridge
+        isFounder={isFounder}
+        nameOf={nameOf}
+        project={project}
+        projectId={projectId}
+      />
 
       {joinRole ? (
         <JoinDialog

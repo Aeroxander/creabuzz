@@ -118,6 +118,31 @@ function requestEvent() {
   };
 }
 
+/** A launch record for `nebula` — the summon preview's cap figures live here. */
+function launchEvent() {
+  return {
+    id: "launch-1",
+    pubkey: FOUNDER,
+    created_at: 1_400,
+    kind: 37001,
+    tags: [
+      ["d", "nebula"],
+      ["name", "Nebula"],
+      ["t", "dao-launchpad"],
+      ["chain", "11155111"],
+    ],
+    content: JSON.stringify({
+      pitch: "Telescopes, meet timelines.",
+      stage: "draft",
+      currency: "USDC",
+      // 1 USDC/mo against a 6 USDC threshold: budget × 6 == threshold.
+      budget: "1000000",
+      requiredRaised: "6000000",
+    }),
+    sig: "sig",
+  };
+}
+
 function seedBoard(relay: ReturnType<typeof createMockRelay>) {
   relay.seed(nodeEvent());
   relay.seed(pitchEvent());
@@ -182,7 +207,7 @@ test("approval records one ownership grant and the map says which is which", asy
 
   // The launchpad bridge states the cap story.
   const bridge = page.getByTestId("dao-bridge");
-  await expect(bridge).toContainText("Next: form the DAO");
+  await expect(bridge).toContainText("Form the DAO");
   await expect(bridge).toContainText("1/6 of the graduation threshold");
   await expect(bridge).toContainText("3× that budget");
 
@@ -263,4 +288,75 @@ test("an over-pool pitch is refused before anything reaches the relay", async ({
       (event) => event.kind === 37010 || event.kind === 37015,
     ),
   ).toHaveLength(0);
+});
+
+test("the summon preview maps the board to shares and refuses what it must", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  const founderAddress = "0x" + "11".repeat(20);
+  // The viewer's own SIWE binding — the one binding source this build reads
+  // (`identity/lib/siwe.ts` `readWalletBinding`); the relay has no read path
+  // for anyone else's, so the other seats must come back unbound.
+  await page.addInitScript(
+    ([nsec, address, pubkey]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem(
+        "buzz.siwe.binding",
+        JSON.stringify({ address, pubkey, boundAt: 1_000 }),
+      );
+    },
+    [FOUNDER_NSEC, founderAddress, FOUNDER],
+  );
+  await relay.install(page);
+  seedBoard(relay);
+  relay.seed(launchEvent());
+
+  await page.goto("/projects/nebula?author=" + FOUNDER);
+  await expect(page.getByTestId("dao-bridge")).toContainText(
+    "A launch record already exists",
+  );
+  await page.getByTestId("form-dao").click();
+
+  const dialog = page.getByRole("dialog", { name: "Form the DAO" });
+  await expect(dialog).toBeVisible();
+
+  // The cap line names both sides of the 1/6 rule: a year at the cap
+  // (1 USDC/mo × 6) against the graduation threshold — within at exactly 6×.
+  await expect(page.getByTestId("summon-cap-line")).toHaveText(
+    /Budget cap: 6 USDC of 6 USDC — within/,
+  );
+  await expect(
+    page.getByText("Large spends default-pass up to 3 USDC"),
+  ).toBeVisible();
+
+  // The founder's seat resolves to a bound address, at pct × 10^18 shares.
+  const founderRow = page.getByTestId("summon-seat-founder");
+  // truncatePubkey: first 8 chars ("0x111111") … last 4.
+  await expect(founderRow).toContainText("0x111111…1111");
+  await expect(founderRow).toContainText("40%");
+  await expect(founderRow).toContainText("40000000000000000000");
+
+  // The granted seat has no binding: refused loudly, with the fix named.
+  await expect(page.getByTestId("summon-seat-designer")).toContainText("—");
+  await expect(page.getByTestId("summon-seat-designer")).toContainText(
+    "8000000000000000000",
+  );
+  const unbound = page.getByTestId("summon-unbound");
+  await expect(unbound).toContainText("The designer");
+  await expect(unbound).toContainText("Ask them to bind an address");
+
+  const blockers = page.getByTestId("summon-blockers");
+  await expect(blockers).toContainText("no bound EVM address");
+  await expect(blockers).toContainText("No Summoner contract address");
+
+  // The §9 stance stays where the map is read and taken.
+  await expect(page.getByTestId("summon-disclaimer")).toContainText(
+    "not a legal contract",
+  );
+
+  // One action, and it is not armed while a seat cannot be minted.
+  await expect(page.getByTestId("summon-run")).toBeDisabled();
+  await expect(page.getByTestId("summon-step-send")).toHaveText("pending");
+  await expect(page.getByTestId("summon-disabled-reason")).toBeVisible();
 });
