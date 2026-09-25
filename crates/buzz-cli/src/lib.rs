@@ -2195,9 +2195,9 @@ sha256-pinned; a re-apply never refetches a skill whose recorded source is \
 unchanged.\n\n\
 Examples:\n  \
 buzz templates list\n  \
-buzz templates show ai-movie-studio\n  \
-buzz templates apply ai-movie-studio\n  \
-buzz templates apply ai-movie-studio --resume"
+buzz templates show ai-media-studio\n  \
+buzz templates apply ai-media-studio\n  \
+buzz templates apply ai-media-studio --resume"
     )]
     Apply {
         /// Template id (from 'buzz templates list')

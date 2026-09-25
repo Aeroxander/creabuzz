@@ -7,8 +7,8 @@
 //! parser the relay's ingest uses — reuse, never re-validate loosely).
 //!
 //! ```yaml
-//! id: ai-movie-studio          # kebab, matches dir name
-//! name: AI Movie Studio        # ≤60
+//! id: ai-media-studio          # kebab, matches dir name
+//! name: AI Media Studio        # ≤60
 //! description: ...             # ≤280, shown in the picker
 //! channels:                    # 1..8
 //!   - id: writers-room         # kebab

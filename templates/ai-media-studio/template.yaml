@@ -1,0 +1,54 @@
+id: ai-media-studio
+name: "AI Media Studio"
+description: "A six-agent crew for film, series, music video, brand film, and audio drama — story, schedule, visual prompts, sound cues, and canon in one studio. Mention an agent to wake it, approve briefs in the queue, and wake up to a standup that writes itself."
+channels:
+  - id: writers-room
+    name: writers-room
+    purpose: "The writing table. Kick around premises, beats, episodes, treatments, and dialogue for any format — mention @The Writer and the story gets better."
+    seed: seeds/writers-room.md
+  - id: production
+    name: production
+    purpose: "The producer's board: schedules, cuts, decisions across every format. Ask @The Producer for a breakdown or a straight answer on where things stand."
+    seed: seeds/production.md
+  - id: scene-gen
+    name: scene-gen
+    purpose: "Post a scene or sound brief, get an approved, ready-to-paste visual or audio prompt. Briefs go through the producer's approval queue."
+    seed: seeds/scene-gen.md
+  - id: standup
+    name: standup
+    purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+    seed: seeds/standup.md
+personas:
+  - id: writer
+    name: "The Writer"
+    prompt: personas/writer.md
+  - id: producer
+    name: "The Producer"
+    prompt: personas/producer.md
+  - id: scene-gen
+    name: "The Scene Generator"
+    prompt: personas/scene-gen.md
+  - id: script-editor
+    name: "The Script Editor"
+    prompt: personas/script-editor.md
+  - id: continuity-keeper
+    name: "The Continuity Keeper"
+    prompt: personas/continuity-keeper.md
+  - id: sound-music
+    name: "The Sound & Music"
+    prompt: personas/sound-music.md
+workflows:
+  - file: workflows/nightly-standup.yaml
+  - file: workflows/scene-review.yaml
+docs:
+  - file: docs/role-catalog.md
+    title: "Role Catalog"
+  - file: docs/story-bible.md
+    title: "Story Bible"
+  - file: docs/production-guide.md
+    title: "Production Guide"
+skills:
+  - name: visual-prompt-craft
+    source: skills/visual-prompt-craft/SKILL.md
+    applies_to: developers
+welcome: welcome.md

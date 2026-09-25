@@ -1,4 +1,4 @@
-This is the producer's board: schedules, status, decisions.
+This is the producer's board: schedules, cuts, decisions — for whatever format the studio is making this week.
 
 **@The Producer** keeps it honest — task breakdowns on the Work Board, digests of what moved and what's stuck, and a decision log the team can trust. Mention them any time:
 

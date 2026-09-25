@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn validation_failure_reports_the_named_error() {
         let v = report_to_json(&validation_failure_report(
-            "ai-movie-studio",
+            "ai-media-studio",
             false,
             "skill is missing frontmatter name/description".into(),
         ));
