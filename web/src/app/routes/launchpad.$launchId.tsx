@@ -1,11 +1,16 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
+import { parseLaunchAction } from "@/features/launchpad/lib/deep-link";
+
 export const Route = createFileRoute("/launchpad/$launchId")({
   validateSearch: (search: Record<string, unknown>) => ({
     author:
       typeof search.author === "string" && search.author.length > 0
         ? search.author
         : undefined,
+    // Desktop handoff: `?action=bid|exit|claim` opens the matching flow.
+    // Unknown values are ignored (forward-compat).
+    action: parseLaunchAction(search.action) ?? undefined,
   }),
   component: LaunchDetailRoute,
 });
@@ -19,9 +24,14 @@ const LaunchDetailPage = lazyRouteComponent(
 
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
-  const { author } = Route.useSearch();
+  const { author, action } = Route.useSearch();
   const sandbox = launchId === "nebula-sandbox";
   return (
-    <LaunchDetailPage launchId={launchId} author={author} sandbox={sandbox} />
+    <LaunchDetailPage
+      action={action}
+      author={author}
+      launchId={launchId}
+      sandbox={sandbox}
+    />
   );
 }

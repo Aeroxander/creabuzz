@@ -38,12 +38,15 @@ export const KIND_ORG_GRANT = 37011;
 export const KIND_ORG_BUDGET = 37012;
 /** NIP-ORG: contribution record — verified action with multi-dimensional profile (addressable, d = action id, h = community). */
 export const KIND_CONTRIBUTION_RECORD = 37013;
+/** NIP-ORG: budget spend receipt — Nostr mirror of a spend settled against an onchain allowance (addressable, d = spend id). */
+export const KIND_BUDGET_SPEND_RECEIPT = 37014;
 /** All NIP-ORG event kinds. */
 export const ORG_EVENT_KINDS = [
   KIND_ORG_NODE,
   KIND_ORG_GRANT,
   KIND_ORG_BUDGET,
   KIND_CONTRIBUTION_RECORD,
+  KIND_BUDGET_SPEND_RECEIPT,
 ] as const;
 /** All NIP-LP event kinds. */
 export const LAUNCHPAD_EVENT_KINDS = [

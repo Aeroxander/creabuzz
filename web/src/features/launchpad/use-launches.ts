@@ -11,14 +11,25 @@ import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
+  KIND_BUDGET_SPEND_RECEIPT,
   KIND_LAUNCH_BID,
   type KIND_LAUNCH_PROPOSAL,
   type KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
+  KIND_ORG_BUDGET,
+  KIND_ORG_NODE,
   KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
   type KIND_LAUNCH_UPDATE,
   LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
+import {
+  parseOrgBinding,
+  parseOrgBudget,
+  parseSpendReceipt,
+  type OrgBinding,
+  type OrgBudget,
+  type SpendReceipt,
+} from "./lib/org-money";
 import {
   buildLaunches,
   launchCoordinate,
@@ -96,6 +107,57 @@ export function useScoreRoots() {
   return useQuery({
     queryKey: scoreRootsQueryKey,
     queryFn: fetchScoreRoots,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+const orgMoneyQueryKey = ["launchpad", "org-money"];
+
+/** What `fetchOrgMoney` reads off the relay in one pass. */
+export interface OrgMoney {
+  bindings: OrgBinding[];
+  budgets: OrgBudget[];
+  spends: SpendReceipt[];
+}
+
+/**
+ * The community's org money plane — bound DAO roots (37010 carrying
+ * `content.onchain`), budgets (37012), and spend receipts (37014) — read
+ * through the same relay query surface as `fetchScoreRoots`. Parsing and the
+ * binding/allowance semantics live in `lib/org-money.ts` (cited there).
+ */
+export async function fetchOrgMoney(): Promise<OrgMoney> {
+  const events = await queryEvents(relayWsUrl(), {
+    kinds: [KIND_ORG_NODE, KIND_ORG_BUDGET, KIND_BUDGET_SPEND_RECEIPT],
+    limit: 500,
+  });
+  const bindings: OrgBinding[] = [];
+  const budgets: OrgBudget[] = [];
+  const spends: SpendReceipt[] = [];
+  for (const event of events) {
+    const binding = parseOrgBinding(event);
+    if (binding) {
+      bindings.push(binding);
+      continue;
+    }
+    const budget = parseOrgBudget(event);
+    if (budget) {
+      budgets.push(budget);
+      continue;
+    }
+    const spend = parseSpendReceipt(event);
+    if (spend) spends.push(spend);
+  }
+  budgets.sort((a, b) => b.createdAt - a.createdAt);
+  spends.sort((a, b) => b.createdAt - a.createdAt);
+  return { bindings, budgets, spends };
+}
+
+export function useOrgMoney() {
+  return useQuery({
+    queryKey: orgMoneyQueryKey,
+    queryFn: fetchOrgMoney,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });

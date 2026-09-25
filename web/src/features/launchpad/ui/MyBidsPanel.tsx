@@ -104,9 +104,16 @@ async function discoverOwners(): Promise<OwnerGroup[]> {
 export function MyBidsPanel({
   record,
   rpcEndpoint,
+  autoAction,
 }: {
   record: LaunchRecord;
   rpcEndpoint: string;
+  /**
+   * Desktop → web handoff (`?action=exit|claim`): open the first matching
+   * bid's action dialog once the snapshot is in. Opening is never destructive
+   * — the dialog still needs its own explicit Run (deep-link contract).
+   */
+  autoAction?: "exit" | "claim" | null;
 }) {
   const auction = record.auction;
   const [groups, setGroups] = useState<OwnerGroup[]>([]);
@@ -114,6 +121,8 @@ export function MyBidsPanel({
   const [action, setAction] = useState<Action | null>(null);
   const picker = useSenderPicker();
   const epochRef = useRef(0);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const autoConsumedRef = useRef(false);
 
   // One load pass: owner discovery (the injected wallet when already
   // connected, plus the passkey account's counterfactual derivation) then one
@@ -170,6 +179,42 @@ export function MyBidsPanel({
     void reload();
   }, [reload]);
 
+  // Deep-link `?action=exit|claim`: scroll here and expand the first bid
+  // whose requested action is actually available (nothing runs without the
+  // user's explicit confirm in the dialog).
+  useEffect(() => {
+    if (!autoAction || autoConsumedRef.current || action) return;
+    for (const group of groups) {
+      const snap = snapshots[group.address];
+      if (snap?.status !== "ready") continue;
+      for (const entry of snap.snapshot.bids) {
+        if (autoAction === "exit") {
+          const plan = entry.actions.exit;
+          if (plan.kind === "unavailable") continue;
+          autoConsumedRef.current = true;
+          setAction({
+            mode: "exit",
+            owner: group.address,
+            ownerKind: group.kind,
+            bidId: entry.bidId,
+            plan,
+          });
+        } else {
+          if (entry.actions.claim.kind !== "claim") continue;
+          autoConsumedRef.current = true;
+          setAction({
+            mode: "claim",
+            owner: group.address,
+            ownerKind: group.kind,
+            bidIds: [entry.bidId],
+          });
+        }
+        rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+    }
+  }, [autoAction, action, groups, snapshots]);
+
   const refresh = useCallback(() => {
     void reload();
   }, [reload]);
@@ -177,7 +222,11 @@ export function MyBidsPanel({
   if (!auction) return null;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section
+      className="flex flex-col gap-4"
+      data-testid="mybids-panel"
+      ref={rootRef}
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold text-black dark:text-white">

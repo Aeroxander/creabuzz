@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -23,29 +22,12 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, type Launch } from "../models";
+import type { LaunchAction } from "../lib/deep-link";
+import { TreasuryTab } from "./TreasuryTab";
 
 type TabLaunch = Launch;
 
-/** The launchpad raises in USDC by default; a native-coin sale says so. */
-const CURRENCY = "USDC";
-
-/**
- * Money at the precision people use. Atomic units go to six decimals, which is
- * noise on a raise figure; two decimals and rounding is what a treasury screen
- * shows, so a threshold of 299999.999998 reads as 300,000.
- */
-function formatMoney(value: string | bigint | null | undefined): string {
-  return formatAtomic(value, USDC_DECIMALS, {
-    symbol: CURRENCY,
-    maxFractionDigits: 2,
-  });
-}
-import {
-  erc20BalanceOf,
-  getRpcEndpoint,
-  isContractDeployed,
-  setRpcEndpoint,
-} from "../chain";
+import { getRpcEndpoint, isContractDeployed, setRpcEndpoint } from "../chain";
 import { useScoreRoots } from "../use-launches";
 import { useAuctionProgress, ProgressBar, StageBadge } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
@@ -60,9 +42,9 @@ import { sandboxRecord } from "../lib/sandbox";
 import {
   SETTLEMENT_TERMS,
   toAtomic,
-  USDC_DECIMALS,
   formatAtomic,
   formatBlocks,
+  formatMoney,
   formatQ96PerToken,
   percentOfGoal,
   remainingToGraduate,
@@ -82,10 +64,17 @@ type Tab =
 export function LaunchDetailPage({
   launchId,
   author,
+  action,
   sandbox,
 }: {
   launchId: string;
   author: string | undefined;
+  /**
+   * Desktop → web handoff (`?action=bid|exit|claim`): open the matching flow
+   * on load. Unknown values were already dropped by the route's
+   * `validateSearch`; opening a flow is never destructive on its own.
+   */
+  action?: LaunchAction | null;
   /** Render the deterministic sandbox launch instead of a relay launch. */
   sandbox?: boolean;
 }) {
@@ -105,8 +94,24 @@ export function LaunchDetailPage({
   const [tab, setTab] = useState<Tab>("overview");
   const [bidOpen, setBidOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [mybidsAutoAction, setMybidsAutoAction] = useState<
+    "exit" | "claim" | null
+  >(null);
   const [followed, setFollowed] = useState(false);
   const navigate = useNavigate();
+
+  // Consume the deep link once: `bid` opens the bid dialog (sender picker);
+  // `exit`/`claim` land on the My-bids section and expand the matching bid's
+  // action there.
+  useEffect(() => {
+    if (!action) return;
+    if (action === "bid") {
+      setBidOpen(true);
+      return;
+    }
+    setMybidsAutoAction(action);
+    setTab("mybids");
+  }, [action]);
 
   if (isLoading || !launch) {
     return (
@@ -261,7 +266,11 @@ export function LaunchDetailPage({
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
       {tab === "proposals" ? <ProposalsTab launch={launch} /> : null}
       {tab === "mybids" && launch.record.auction ? (
-        <MyBidsPanel record={launch.record} rpcEndpoint={getRpcEndpoint()} />
+        <MyBidsPanel
+          record={launch.record}
+          rpcEndpoint={getRpcEndpoint()}
+          autoAction={mybidsAutoAction}
+        />
       ) : null}
       {tab === "treasury" ? (
         <TreasuryTab
@@ -799,174 +808,5 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function TreasuryTab({
-  launch,
-  onProposeReturn,
-}: {
-  launch: TabLaunch;
-  onProposeReturn: (title: string) => void;
-}) {
-  const streams = launch.receipts.filter((r) => r.table === "stream");
-  const { record } = launch;
-  const [returnTitle, setReturnTitle] = useState("");
-  const [proposed, setProposed] = useState(false);
-  const [balance, setBalance] = useState<{
-    state: "idle" | "loading" | "done";
-    value: bigint | null;
-  }>({ state: "idle", value: null });
-
-  /**
-   * What the raise splits into, from the terms the founder set.
-   *
-   * These are commitments, not a balance: the panel says which is which, because
-   * a treasury screen that mixes planned figures with measured ones is how people
-   * misread a treasury.
-   */
-  const plan = useMemo(() => {
-    const floorPrice = toAtomic(record.floorPrice);
-    const threshold = toAtomic(record.requiredRaised);
-    if (floorPrice === null) return null;
-    const saleTokens = toAtomic(launch.record.tokenPlan?.supply ?? null);
-    if (saleTokens === null) return null;
-    const saleTokensAtomic = saleTokens * 10n ** 18n;
-    const floorRaise = (saleTokensAtomic * floorPrice) / (1n << 96n);
-    return { floorRaise, threshold, saleTokensAtomic };
-  }, [
-    record.floorPrice,
-    record.requiredRaised,
-    launch.record.tokenPlan?.supply,
-  ]);
-
-  const readBalance = async () => {
-    if (!record.token || !record.treasury) return;
-    setBalance({ state: "loading", value: null });
-    const value = await erc20BalanceOf(
-      getRpcEndpoint(),
-      record.token,
-      record.treasury,
-    );
-    setBalance({ state: "done", value });
-  };
-
-  return (
-    <div className="grid max-w-3xl grid-cols-1 gap-4">
-      <Card className="p-4" data-testid="launch-treasury-plan">
-        <h2 className="text-base font-semibold">Treasury plan</h2>
-        <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          From the published terms — commitments, not a measured balance.
-        </p>
-        <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
-          {[
-            [
-              "Raise if it clears at the floor",
-              plan ? formatMoney(plan.floorRaise) : "—",
-            ],
-            [
-              "Graduation threshold",
-              record.requiredRaised ? formatMoney(record.requiredRaised) : "—",
-            ],
-            ...(record.budget
-              ? [["Monthly budget", formatMoney(record.budget)] as const]
-              : []),
-            [
-              "Treasury",
-              record.treasury ? truncatePubkey(record.treasury) : "Not set",
-            ],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-2 py-1.5">
-              <dt className="text-black/60 dark:text-white/60">{label}</dt>
-              <dd className="tabular-nums">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-          Liquidity is seeded from the clearing price at graduation; the
-          remainder is the treasury&apos;s. Allowances, streams and the
-          wind-down path are agreed by proposal, not configured here.
-        </p>
-      </Card>
-      <Card className="p-4" data-testid="launch-treasury-balance">
-        <h2 className="text-base font-semibold">Token balance</h2>
-        {!record.token || !record.treasury ? (
-          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            Link the token and treasury addresses to read a balance.
-          </p>
-        ) : (
-          <>
-            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-              {balance.state === "idle"
-                ? "Read the treasury's balance of the launch token over RPC."
-                : balance.state === "loading"
-                  ? "Reading…"
-                  : balance.value === null
-                    ? "The chain could not be read, so the balance is unknown."
-                    : formatAtomic(balance.value, 18, { symbol: "tokens" })}
-            </p>
-            <Button
-              className="mt-2"
-              disabled={balance.state === "loading"}
-              onClick={() => void readBalance()}
-              size="sm"
-              variant="outline"
-            >
-              Read balance
-            </Button>
-          </>
-        )}
-      </Card>
-      <Card className="p-4">
-        <h2 className="text-base font-semibold">Funding streams</h2>
-        {streams.length === 0 ? (
-          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            No streams yet. SubDAOs receive revocable streams against milestones
-            — continuation, top-up, or cancel follows a budget vote.
-          </p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1 text-sm">
-            {streams.map((s) => (
-              <li key={s.id} className="font-mono text-xs">
-                {s.tx.slice(0, 18)}…
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card className="p-4" data-testid="treasury-return">
-        <h2 className="text-base font-semibold">Exit</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          The credible threat of taking money back is what disciplines a
-          treasury. Anyone can raise a proposal to return capital — before
-          graduation this is a signal on Nostr (the onchain refund path is the
-          auction contract itself); after graduation it is a real DAO decision.
-        </p>
-        <div className="mt-2 flex gap-2">
-          <Input
-            data-testid="return-title"
-            onChange={(e) => setReturnTitle(e.target.value)}
-            placeholder="e.g. Return the remaining treasury pro-rata"
-            value={returnTitle}
-          />
-          <Button
-            data-testid="propose-return"
-            disabled={proposed || returnTitle.trim() === ""}
-            onClick={() => {
-              onProposeReturn(
-                returnTitle.trim() || "Return the remaining treasury pro-rata",
-              );
-              setProposed(true);
-            }}
-            size="sm"
-            variant="outline"
-            type="button"
-          >
-            {proposed ? "Proposed" : "Propose capital return"}
-          </Button>
-        </div>
-      </Card>
-    </div>
   );
 }

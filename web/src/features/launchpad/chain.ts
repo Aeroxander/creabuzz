@@ -158,6 +158,16 @@ export async function ethBlockNumber(endpoint: string): Promise<bigint> {
   return decodeQuantity((await rpc(endpoint, "eth_blockNumber", [])) as string);
 }
 
+/** `eth_getBalance` — an ETH pool read (e.g. a DAO's ETH balance). */
+export async function ethGetBalance(
+  endpoint: string,
+  address: string,
+): Promise<bigint> {
+  return decodeQuantity(
+    (await rpc(endpoint, "eth_getBalance", [address, "latest"])) as string,
+  );
+}
+
 /** One log entry as `eth_getLogs` returns it (hex quantity fields). */
 export interface RpcLog {
   address: string;

@@ -180,3 +180,15 @@ export const SETTLEMENT_TERMS = [
       "Bids are committed on chain and cannot be withdrawn early. Your budget is your maximum: you pay the clearing price for whatever fill you get, not your maximum price.",
   },
 ] as const;
+
+/**
+ * Money at the precision people use. Atomic units go to six decimals, which is
+ * noise on a raise figure; two decimals and rounding is what a treasury screen
+ * shows, so a threshold of 299999.999998 reads as 300,000.
+ */
+export function formatMoney(value: string | bigint | null | undefined): string {
+  return formatAtomic(value, USDC_DECIMALS, {
+    symbol: "USDC",
+    maxFractionDigits: 2,
+  });
+}

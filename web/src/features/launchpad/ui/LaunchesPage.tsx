@@ -159,7 +159,7 @@ export function LaunchesPage() {
             className="mb-4 flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 transition-colors hover:bg-violet-500/10"
             to="/launchpad/$launchId"
             params={{ launchId: SANDBOX_ID }}
-            search={{ author: undefined }}
+            search={{ action: undefined, author: undefined }}
             data-testid="sandbox-entry"
           >
             <span>
@@ -183,7 +183,10 @@ export function LaunchesPage() {
                       <Link
                         to="/launchpad/$launchId"
                         params={{ launchId: launch.record.id }}
-                        search={{ author: launch.record.author }}
+                        search={{
+                          action: undefined,
+                          author: launch.record.author,
+                        }}
                         className="min-w-0 flex-1"
                       >
                         <span className="block truncate text-base font-semibold hover:underline">
