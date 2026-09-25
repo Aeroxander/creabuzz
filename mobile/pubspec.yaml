@@ -25,9 +25,6 @@ dependencies:
   web_socket_channel: ^3.0.1
   connectivity_plus: ^7.0.0
   nostr: ^2.0.0
-  # Rust shared core (crates/buzz-client-core) via flutter_rust_bridge.
-  # Pinned exactly: generated bindings require codegen/runtime version match.
-  flutter_rust_bridge: 2.13.0
   pointycastle: ^4.0.0
   url_launcher: ^6.3.2
   gpt_markdown: ^1.1.6
