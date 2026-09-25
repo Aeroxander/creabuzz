@@ -39,7 +39,9 @@ personas:
     prompt: personas/sound-music.md
 workflows:
   - file: workflows/nightly-standup.yaml
+    channel: standup
   - file: workflows/scene-review.yaml
+    channel: scene-gen
 docs:
   - file: docs/role-catalog.md
     title: "Role Catalog"

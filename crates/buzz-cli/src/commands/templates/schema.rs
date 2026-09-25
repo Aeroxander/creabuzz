@@ -19,8 +19,17 @@
 //!   - id: writer
 //!     name: The Writer
 //!     prompt: personas/writer.md
+//!     skills: [ethereum-dev]   # OPTIONAL — skill names this persona inherits;
+//!                               # absent ⇒ every template skill (historical
+//!                               # default) — this is the per-persona scope
+//!                               # selector `applies_to` cannot express
 //! workflows:                   # 0..6 — created via the workflow create path
 //!   - file: workflows/nightly-standup.yaml
+//!     channel: standup         # OPTIONAL — a channel `id` from THIS file;
+//!                               # the workflow's channel binding (its h-tag),
+//!                               # so a `message_posted` trigger fires only for
+//!                               # messages in that channel. Defaults to
+//!                               # `channels[0]` when absent (backward compat).
 //! docs:                        # 0..8 — seeded as NIP-23 notes (team KB)
 //!   - file: docs/story-bible.md
 //!     title: Story Bible
@@ -33,6 +42,43 @@
 //!
 //! All referenced files live under `templates/<id>/`. Referenced paths must be
 //! relative and stay inside the template directory (no `..`, no absolute).
+//!
+//! # Channel binding semantics
+//!
+//! Every channel-scoped item the apply engine writes resolves a channel id the
+//! same way: the item's declared `channel` id, else — when it declares none —
+//! `channels[0]`.
+//!
+//! * `workflows[].channel` is OPTIONAL and validated against the declared
+//!   channel ids; an unknown id is a named validation error. The resolved id
+//!   becomes the workflow definition's `["h", <uuid>]` tag at apply time, and
+//!   the relay only evaluates a workflow against messages **in its own
+//!   channel** (`buzz_workflow::WorkflowEngine::on_event` →
+//!   `list_enabled_channel_workflows(community, channel_id)`), so this field —
+//!   not the workflow YAML — is what decides where a `message_posted` trigger
+//!   fires. Binding here (rather than inside the workflow file) keeps shared
+//!   workflow files byte-identical across templates.
+//! * `welcome` has no override and by design posts to `channels[0]` — that is
+//!   the welcome's designed home, and the reason a template that wants the
+//!   welcome in a specific room lists that room first (or binds its
+//!   `message_posted` workflows elsewhere).
+//!
+//! # `applies_to` is metadata; per-persona scoping is `personas[].skills`
+//!
+//! By default the apply engine writes one `["skill", <id>, <applies_to>]`
+//! binding tag per template skill onto **every** persona event it publishes,
+//! and the consumer (`buzz-acp::project_skills`) keys on tag *presence* and
+//! records the scope verbatim — it does not filter personas by role. So
+//! `applies_to: developers` alone never limits a skill to "developer"
+//! personas: it is honest metadata about who the skill is written for, not a
+//! runtime access boundary.
+//!
+//! The declarative scoping seam is `personas[].skills`: an explicit list of
+//! skill names a persona inherits. The apply engine honours it end-to-end
+//! (the persona event carries exactly those `skill` tags; the desktop hands
+//! the persona's own tags to the harness and the harness injects per persona),
+//! so a template scopes skills by naming recipients — never by inferring a
+//! persona's role from its name.
 
 use std::collections::BTreeMap;
 
@@ -121,12 +167,27 @@ pub struct TemplatePersona {
     pub id: String,
     pub name: String,
     pub prompt: String,
+    /// Optional skill-scope override: the exact template skill names this
+    /// persona inherits. Absent ⇒ every template skill binds to this persona
+    /// (the historical behavior, unchanged for existing templates). Each id
+    /// must name a skill declared in this same file — this is the declarative
+    /// per-persona scoping that `applies_to` alone cannot express (see the
+    /// module docs), and the only sanctioned way to scope skills per persona.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateWorkflow {
     pub file: String,
+    /// Channel binding: a channel `id` declared in this same template.
+    /// Absent ⇒ `channels[0]` (the pre-`channel` behavior, kept for backward
+    /// compatibility). Resolved to a UUID at apply time and written as the
+    /// workflow definition's `h` tag — the relay evaluates a `message_posted`
+    /// trigger only against messages in that channel.
+    #[serde(default)]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -308,6 +369,31 @@ pub fn validate_template(
             return Err(format!("{what}: name must not be empty"));
         }
         read_ref(files, &format!("{what}.prompt"), &p.prompt)?;
+        // Optional per-persona skill scope: every id must name a skill
+        // declared in THIS file (the struct is fully parsed before validation,
+        // so declaration order in the YAML does not matter).
+        if let Some(ids) = &p.skills {
+            if ids.is_empty() {
+                return Err(format!(
+                    "{what}: skills must not be empty (omit the field to bind every skill)"
+                ));
+            }
+            let mut seen = std::collections::HashSet::new();
+            for id in ids {
+                if !template.skills.iter().any(|s| &s.name == id) {
+                    let mut declared: Vec<&str> =
+                        template.skills.iter().map(|s| s.name.as_str()).collect();
+                    declared.sort_unstable();
+                    return Err(format!(
+                        "{what}: unknown skill id '{id}' (declared skill names: {})",
+                        declared.join(", ")
+                    ));
+                }
+                if !seen.insert(id.as_str()) {
+                    return Err(format!("{what}: duplicate skill id '{id}'"));
+                }
+            }
+        }
     }
 
     // Workflows: 0..6, each parsing via buzz-workflow's schema types.
@@ -322,6 +408,18 @@ pub fn validate_template(
         let what = format!("workflows[{i}]");
         if !seen_workflow_files.insert(w.file.clone()) {
             return Err(format!("{what}: duplicate workflow file '{}'", w.file));
+        }
+        // Optional channel binding must name a channel declared in THIS file;
+        // absent means `channels[0]` (resolved at apply time).
+        if let Some(ch) = &w.channel {
+            if !seen_channel_ids.contains(ch.as_str()) {
+                let mut declared: Vec<&str> = seen_channel_ids.iter().map(String::as_str).collect();
+                declared.sort_unstable();
+                return Err(format!(
+                    "{what}: unknown channel id '{ch}' (declared channel ids: {})",
+                    declared.join(", ")
+                ));
+            }
         }
         let content = read_ref(files, &what, &w.file)?;
         buzz_workflow::schema::parse_yaml(content)
@@ -603,6 +701,121 @@ mod tests {
         assert!(check(&yaml, &f)
             .unwrap_err()
             .contains("invalid workflow YAML"));
+    }
+
+    /// `workflows[].channel` binding field: valid id validates, an unknown id
+    /// is a named validation error, absent keeps the `channels[0]` default, and
+    /// `deny_unknown_fields` still rejects unknown keys on the entry.
+    #[test]
+    fn workflow_channel_binding_field_table() {
+        const WF: &str = "name: Nightly\ntrigger:\n  on: schedule\n  cron: '0 9 * * *'\nsteps:\n  - id: s1\n    action: send_message\n    text: hi\n";
+        // Two channels so binding to a NON-default channel is meaningful.
+        let two = base_yaml().replace(
+            "channels:\n  - id: general\n    name: general\n    purpose: chat\n",
+            "channels:\n  - id: general\n    name: general\n    purpose: chat\n  - id: random\n    name: random\n    purpose: off-topic\n",
+        );
+        let entry = |channel: &str| {
+            two.replace(
+                "workflows: []\n",
+                &format!("workflows:\n  - file: workflows/w.yaml\n{channel}"),
+            )
+        };
+        let f = files(&[("welcome.md", "# W"), ("workflows/w.yaml", WF)]);
+
+        // valid declared id
+        let ok = entry("    channel: random\n");
+        let parsed = parse(&ok);
+        assert_eq!(parsed.workflows[0].channel.as_deref(), Some("random"));
+        assert!(check(&ok, &f).is_ok());
+
+        // absent → default (binds channels[0] at apply time), still valid
+        let defaulted = entry("");
+        let parsed = parse(&defaulted);
+        assert_eq!(parsed.workflows[0].channel, None);
+        assert!(check(&defaulted, &f).is_ok());
+
+        // unknown id → named validation error (binds nothing)
+        let unknown = entry("    channel: nope\n");
+        let err = check(&unknown, &f).unwrap_err();
+        assert!(
+            err.contains("workflows[0]: unknown channel id 'nope'"),
+            "{err}"
+        );
+        assert!(err.contains("general, random"), "{err}");
+
+        // deny_unknown_fields still holds on the workflow entry
+        let extra = entry("    channels: random\n");
+        let err = serde_yaml::from_str::<Template>(&extra).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected deny_unknown_fields rejection, got: {err}"
+        );
+    }
+
+    /// `personas[].skills` — the declarative per-persona scope override that
+    /// makes `applies_to` honest: a declared list selects exactly those
+    /// skills, an unknown id is a named validation error, an empty list and
+    /// duplicates are rejected, absence keeps the historical bind-every-skill
+    /// default, and `deny_unknown_fields` still holds on the persona entry.
+    #[test]
+    fn personas_skills_override_table() {
+        let y = |persona_block: &str| {
+            base_yaml()
+                .replace(
+                    "skills: []\n",
+                    "skills:\n  - name: alpha\n    source: https://example.com/a/SKILL.md\n    applies_to: all\n  - name: beta\n    source: https://example.com/b/SKILL.md\n    applies_to: developers\n",
+                )
+                .replace("personas: []\n", persona_block)
+        };
+        let persona = |skills: &str| {
+            format!(
+                "personas:\n  - id: writer\n    name: The Writer\n    prompt: personas/writer.md\n{skills}"
+            )
+        };
+        let f = files(&[("welcome.md", "# W"), ("personas/writer.md", "prompt")]);
+
+        // declared list → parsed verbatim and valid
+        let ok = y(&persona("    skills: [alpha]\n"));
+        let parsed = parse(&ok);
+        assert_eq!(
+            parsed.personas[0].skills,
+            Some(vec!["alpha".to_string()]),
+            "declared list must parse verbatim"
+        );
+        assert!(check(&ok, &f).is_ok());
+
+        // absent → None (apply binds every template skill), still valid
+        let defaulted = y(&persona(""));
+        let parsed = parse(&defaulted);
+        assert_eq!(parsed.personas[0].skills, None);
+        assert!(check(&defaulted, &f).is_ok());
+
+        // unknown id → named validation error (binds nothing)
+        let unknown = y(&persona("    skills: [gamma]\n"));
+        let err = check(&unknown, &f).unwrap_err();
+        assert!(
+            err.contains("personas[0]: unknown skill id 'gamma'"),
+            "{err}"
+        );
+        assert!(err.contains("alpha, beta"), "{err}");
+
+        // empty override is rejected — omit the field to bind everything
+        let empty = y(&persona("    skills: []\n"));
+        let err = check(&empty, &f).unwrap_err();
+        assert!(err.contains("skills must not be empty"), "{err}");
+
+        // duplicates are rejected (one binding tag per skill, no repeats)
+        let dup = y(&persona("    skills: [alpha, alpha]\n"));
+        let err = check(&dup, &f).unwrap_err();
+        assert!(err.contains("duplicate skill id 'alpha'"), "{err}");
+
+        // deny_unknown_fields still holds on the persona entry
+        let extra = y(&persona("    skill: alpha\n"));
+        let err = serde_yaml::from_str::<Template>(&extra).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected deny_unknown_fields rejection, got: {err}"
+        );
     }
 
     #[test]

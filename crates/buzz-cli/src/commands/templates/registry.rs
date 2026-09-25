@@ -201,4 +201,48 @@ mod tests {
             assert!(msg.contains(t.dir), "{msg}");
         }
     }
+
+    /// The shared `nightly-standup.yaml` is pinned byte-identical across every
+    /// template that ships it, at the recorded digest. Per-template state (the
+    /// workflow's channel binding) lives in `template.yaml`'s
+    /// `workflows[].channel` — never inside the workflow file — so the shared
+    /// file stays one byte-identical copy. Editing the workflow file to carry
+    /// template-specific data, or letting copies drift, fails here.
+    #[test]
+    fn nightly_standup_workflow_is_pinned_byte_identical_across_templates() {
+        use crate::commands::templates::apply::sha256_hex;
+
+        /// sha256 of the pinned `workflows/nightly-standup.yaml` bytes.
+        const PIN_SHA256: &str = "c001a7b295b7b7261036d5c99c87a176e027c5b91c151e02ce23194b16f4d0d3";
+
+        let disk = disk_templates();
+        let copies: Vec<(String, &str)> = disk
+            .iter()
+            .flat_map(|(name, files)| {
+                files
+                    .get("workflows/nightly-standup.yaml")
+                    .map(|content| (name.clone(), content))
+            })
+            .collect();
+        assert!(
+            copies.len() >= 2,
+            "expected the shared nightly-standup.yaml in at least two templates, found {}",
+            copies.len()
+        );
+
+        let (first_dir, first) = &copies[0];
+        let digest = sha256_hex(first);
+        assert_eq!(
+            digest, PIN_SHA256,
+            "templates/{first_dir}/workflows/nightly-standup.yaml no longer matches the pinned \
+             bytes — if the change is intentional, update PIN_SHA256 (and every other copy)"
+        );
+        for (name, content) in &copies[1..] {
+            assert_eq!(
+                *content, *first,
+                "templates/{name}/workflows/nightly-standup.yaml drifted from \
+                 templates/{first_dir}/workflows/nightly-standup.yaml (must stay byte-identical)"
+            );
+        }
+    }
 }

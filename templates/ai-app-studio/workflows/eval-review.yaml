@@ -2,10 +2,13 @@ name: eval-review
 description: Send each new eval change to the product lead for approval, then post the verdict in-thread
 trigger:
   on: message_posted
-  # Loop-bound: replies never re-trigger (the verdict posts in-thread), and the
-  # template's own welcome message — posted to this channel after workflows
-  # exist — must not file an approval for itself.
-  filter: '!trigger_is_reply && !str_starts_with(trigger_text, "Welcome to")'
+  # Loop-bound: replies never re-trigger (the verdict posts in-thread). No
+  # welcome filter is needed: the template's welcome message posts to
+  # channels[0] (#dev) while this workflow is bound to #evals (template.yaml
+  # `workflows[].channel`), and the relay evaluates a message_posted trigger
+  # only against workflows bound to the message's own channel — a #dev message
+  # can never reach this definition.
+  filter: '!trigger_is_reply'
 steps:
   - id: request
     name: Product review

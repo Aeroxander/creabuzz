@@ -29,7 +29,9 @@ personas:
     prompt: personas/deploy-ops.md
 workflows:
   - file: workflows/nightly-standup.yaml
+    channel: standup
   - file: workflows/security-review.yaml
+    channel: dev
 docs:
   - file: docs/protocol-bible.md
     title: "Protocol Bible"

@@ -2,17 +2,18 @@ id: ai-app-studio
 name: "AI App Studio"
 description: "A four-agent crew for building AI-powered apps — models, evals, product surface, and scope in one studio. Mention an agent to wake it, post eval changes for approval, and wake up to a standup that writes itself."
 channels:
-  # Order matters: template workflows attach to the FIRST channel (and so does
-  # welcome), so #evals leads — the eval-review approval queue must live where
-  # eval changes are actually posted.
-  - id: evals
-    name: evals
-    purpose: "The quality loop: model, dataset, and prompt experiments. Post an eval change as a new message — it goes to @The Product Lead's approval queue, and the verdict lands in your thread."
-    seed: seeds/evals.md
+  # #dev leads so the welcome message lands in the build room (welcome always
+  # posts to channels[0]). Workflows no longer inherit channels[0] — each one
+  # declares its own `channel` below — so channel order is a presentation
+  # choice, not a binding.
   - id: dev
     name: dev
     purpose: "Where the app gets built: features, architecture, and plumbing. Mention @The App Developer to build the surface or @The ML Engineer when the model is in the way."
     seed: seeds/dev.md
+  - id: evals
+    name: evals
+    purpose: "The quality loop: model, dataset, and prompt experiments. Post an eval change as a new message — it goes to @The Product Lead's approval queue, and the verdict lands in your thread."
+    seed: seeds/evals.md
   - id: standup
     name: standup
     purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
@@ -36,7 +37,9 @@ personas:
     prompt: personas/product-lead.md
 workflows:
   - file: workflows/nightly-standup.yaml
+    channel: standup
   - file: workflows/eval-review.yaml
+    channel: evals
 docs:
   - file: docs/model-card.md
     title: "Model Card"

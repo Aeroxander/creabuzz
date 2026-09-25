@@ -627,9 +627,32 @@ pub(crate) fn build_step_event(
             let mut tags = vec![Tag::parse(["d", persona.id.as_str()])
                 .map_err(|e| CliError::Other(format!("invalid persona d-tag: {e}")))?];
             // Durable skill bindings for the injection worker: one
-            // ["skill", "<skill-id>", "<applies_to>"] tag per template skill,
-            // scope recorded verbatim.
-            for s in &template.skills {
+            // ["skill", "<skill-id>", "<applies_to>"] tag per skill this
+            // persona inherits, scope recorded verbatim. A persona's
+            // declarative `skills` override selects exactly those skills;
+            // absent ⇒ every template skill (the historical default). The
+            // schema validator rejects unknown ids — re-check here so a
+            // hand-built template fails with a named error, not a silent gap.
+            let bound: Vec<&TemplateSkill> =
+                match &persona.skills {
+                    Some(ids) => {
+                        let mut out = Vec::with_capacity(ids.len());
+                        for id in ids {
+                            let skill = template.skills.iter().find(|s| &s.name == id).ok_or_else(
+                                || {
+                                    CliError::Other(format!(
+                                        "persona '{}' declares unknown skill '{id}'",
+                                        persona.id
+                                    ))
+                                },
+                            )?;
+                            out.push(skill);
+                        }
+                        out
+                    }
+                    None => template.skills.iter().collect(),
+                };
+            for s in bound {
                 tags.push(
                     Tag::parse(["skill", s.name.as_str(), s.applies_to.as_str()])
                         .map_err(|e| CliError::Other(format!("invalid skill binding tag: {e}")))?,
@@ -652,13 +675,31 @@ pub(crate) fn build_step_event(
             let content = files
                 .get(&w.file)
                 .ok_or_else(|| CliError::Other("workflow content missing".into()))?;
-            let first = template
-                .channels
-                .first()
-                .ok_or_else(|| CliError::Other("template has no channels".into()))?;
-            let channel_uuid = parse_channel_uuid(channel_ids, &first.id)?;
-            // Workflows attach to the template's FIRST channel (the same rule
-            // the contract uses for `welcome`).
+            // Channel binding: the entry's declared `channel` id, else the
+            // template's FIRST channel (the same rule `welcome` uses). The id
+            // is validated by the schema validator; re-check it here so a
+            // hand-built template fails with a named error instead of a
+            // missing-map lookup.
+            let channel_ref = match &w.channel {
+                Some(id) => {
+                    if !template.channels.iter().any(|c| &c.id == id) {
+                        return Err(CliError::Other(format!(
+                            "workflow '{}' declares channel '{id}' which is not a template channel",
+                            w.file
+                        )));
+                    }
+                    id.clone()
+                }
+                None => template
+                    .channels
+                    .first()
+                    .ok_or_else(|| CliError::Other("template has no channels".into()))?
+                    .id
+                    .clone(),
+            };
+            let channel_uuid = parse_channel_uuid(channel_ids, &channel_ref)?;
+            // The binding is the workflow definition's `h` tag: the relay only
+            // evaluates this workflow against messages posted in that channel.
             let builder = buzz_sdk::build_workflow_def(channel_uuid, uuid::Uuid::new_v4(), content)
                 .map_err(|e| CliError::Other(format!("build_workflow_def failed: {e}")))?;
             Ok(builder.tag(marker).custom_created_at(ts))
@@ -1017,9 +1058,11 @@ mod tests {
                 id: "writer".into(),
                 name: "The Writer".into(),
                 prompt: "personas/writer.md".into(),
+                skills: None,
             }],
             workflows: vec![TemplateWorkflow {
                 file: "workflows/w.yaml".into(),
+                channel: None,
             }],
             docs: vec![TemplateDoc {
                 file: "docs/story-bible.md".into(),
@@ -1400,5 +1443,161 @@ mod tests {
         assert!(tags.contains(&"d|writer".to_string()));
         assert!(tags.contains(&"skill|prompt-craft|all".to_string()));
         assert!(tags.contains(&"t|demo-template|writer".to_string()));
+    }
+
+    /// The workflow channel binding — the production seam is
+    /// `build_step_event` → `buzz_sdk::build_workflow_def`, whose `h` tag is
+    /// the channel the relay evaluates the trigger against. An entry with no
+    /// declared `channel` keeps the historical `channels[0]` binding; a
+    /// declared id binds that channel.
+    #[test]
+    fn workflow_binding_uses_declared_channel_and_defaults_to_first() {
+        let mut template = template();
+        template.workflows.push(TemplateWorkflow {
+            file: "workflows/w2.yaml".into(),
+            channel: Some("random".into()),
+        });
+        let files = TemplateFiles::from_pairs(
+            [
+                ("seeds/general.md", "seed"),
+                ("personas/writer.md", "prompt"),
+                ("workflows/w.yaml", "yaml-1"),
+                ("workflows/w2.yaml", "yaml-2"),
+                ("docs/story-bible.md", "doc"),
+                ("welcome.md", "welcome"),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string())),
+        );
+        let general = "11111111-1111-1111-1111-111111111111";
+        let random = "22222222-2222-2222-2222-222222222222";
+        let mut channel_ids = BTreeMap::new();
+        channel_ids.insert("general".to_string(), general.to_string());
+        channel_ids.insert("random".to_string(), random.to_string());
+
+        let plan = plan_apply(&template, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let mut bound: Vec<(String, String)> = Vec::new();
+        for step in plan.iter().filter(|s| s.kind == StepKind::Workflow) {
+            let builder = build_step_event(
+                "demo-template",
+                &template,
+                &files,
+                step,
+                &channel_ids,
+                None,
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            let event = builder.sign_with_keys(&keys).unwrap();
+            bound.push((step.item.clone(), extract_h_tag(&event)));
+        }
+        assert_eq!(
+            bound,
+            vec![
+                // no `channel` → channels[0] (general): the old default
+                ("workflows/w.yaml".to_string(), general.to_string()),
+                // declared `channel: random` → the declared channel
+                ("workflows/w2.yaml".to_string(), random.to_string()),
+            ]
+        );
+    }
+
+    /// Defense in depth: a channel id that is not a declared template channel
+    /// fails with a named error instead of a map-lookup miss (the schema
+    /// validator already rejects it).
+    #[test]
+    fn workflow_declaring_an_undeclared_channel_fails_with_a_named_error() {
+        let mut template = template();
+        template.workflows[0].channel = Some("nope".into());
+        let plan = plan_apply(&template, &ExistingState::default());
+        let step = plan.iter().find(|s| s.kind == StepKind::Workflow).unwrap();
+        let err = build_step_event(
+            "demo-template",
+            &template,
+            &files(),
+            step,
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("declares channel 'nope' which is not a template channel"),
+            "{msg}"
+        );
+    }
+
+    /// `personas[].skills` at the production seam (`build_step_event` →
+    /// kind:30175 persona event tags): a declared override binds exactly the
+    /// named skills — `applies_to` stops being cosmetic — while a persona
+    /// without the field keeps the historical bind-every-skill set (asserted
+    /// by `planned_persona_events_carry_skill_bindings_and_marker`).
+    #[test]
+    fn persona_skills_override_binds_only_declared_skills() {
+        let mut template = template();
+        template.skills.push(TemplateSkill {
+            name: "extra".into(),
+            source: "https://example.com/extra/SKILL.md".into(),
+            applies_to: SkillScope::Developers,
+        });
+        template.personas[0].skills = Some(vec!["extra".into()]);
+        let plan = plan_apply(&template, &ExistingState::default());
+        let step = plan.iter().find(|s| s.kind == StepKind::Persona).unwrap();
+        let builder = build_step_event(
+            "demo-template",
+            &template,
+            &files(),
+            step,
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let keys = nostr::Keys::generate();
+        let event = builder.sign_with_keys(&keys).unwrap();
+        let skill_tags: Vec<Vec<String>> = event
+            .tags
+            .iter()
+            .filter(|t| t.as_slice().first().map(String::as_str) == Some("skill"))
+            .map(|t| t.as_slice().iter().map(String::to_string).collect())
+            .collect();
+        assert_eq!(
+            skill_tags,
+            vec![vec![
+                "skill".to_string(),
+                "extra".to_string(),
+                "developers".to_string()
+            ]],
+            "override must bind exactly the declared skill; the unbound \
+             skill ('prompt-craft') must not appear"
+        );
+    }
+
+    /// Defense in depth: an unknown skill id in a persona's override fails
+    /// with a named error instead of silently dropping the binding (the schema
+    /// validator already rejects it).
+    #[test]
+    fn persona_declaring_an_unknown_skill_fails_with_a_named_error() {
+        let mut template = template();
+        template.personas[0].skills = Some(vec!["nope".into()]);
+        let plan = plan_apply(&template, &ExistingState::default());
+        let step = plan.iter().find(|s| s.kind == StepKind::Persona).unwrap();
+        let err = build_step_event(
+            "demo-template",
+            &template,
+            &files(),
+            step,
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("persona 'writer' declares unknown skill 'nope'"),
+            "{msg}"
+        );
     }
 }

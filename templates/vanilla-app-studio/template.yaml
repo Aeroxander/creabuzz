@@ -26,6 +26,7 @@ personas:
     prompt: personas/product-lead.md
 workflows:
   - file: workflows/nightly-standup.yaml
+    channel: standup
 docs:
   - file: docs/product-brief.md
     title: "Product Brief"

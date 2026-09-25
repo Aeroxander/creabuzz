@@ -1,6 +1,6 @@
 # Protocol Bible
 
-Fill this in with the team. It is the canon @The Contract Developer, @The App Developer, @The Security Reviewer, and @The Deploy Ops all work from: anything here is true for this protocol, anything not here is still open — say so rather than assuming.
+Fill this in with the team. It is the canon @The Contract Developer, @The App Developer, @The Security Reviewer, and @Deploy Ops all work from: anything here is true for this protocol, anything not here is still open — say so rather than assuming.
 
 ## What we're building
 

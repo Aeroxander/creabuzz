@@ -7,7 +7,7 @@ steps:
   - id: request
     name: Security review
     action: request_approval
-    from: "@Security Reviewer"
+    from: "@The Security Reviewer"
     message: "Audit request: {{trigger.text | truncate(200)}}"
     timeout: 24h
   - id: verdict
@@ -16,7 +16,7 @@ steps:
     action: send_message
     reply_in_thread: true
     text: |
-      🔒 Security review — approved by @Security Reviewer
+      🔒 Security review — approved by @The Security Reviewer
 
       {{trigger.text}}
 
