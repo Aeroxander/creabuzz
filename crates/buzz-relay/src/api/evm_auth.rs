@@ -15,6 +15,13 @@
 //!   On success the npub becomes a relay member (`added_by = 'evm_siwe'`) and
 //!   the npub ↔ EVM binding is recorded in `evm_identities`.
 //!
+//!   The response also carries `binding_event` — the **unsigned** kind:37017
+//!   EVM binding record (the discovery-plane record for "which address holds
+//!   this seat") for this bind, or `null` when no attestation accompanied it.
+//!   The bound npub signs it and publishes it through the normal event door;
+//!   the relay cannot, because authorship by that npub is exactly what ingest
+//!   verifies.
+//!
 //! The whole module is feature-gated on `config.evm_auth` (BUZZ_EVM_AUTH).
 //! The routes are always registered; each handler returns 404
 //! `SIWE auth not enabled` while the feature is off.
@@ -258,7 +265,12 @@ pub async fn register(
 
     // 3c. If an attestation was supplied, verify it binds this npub to the
     //     SIWE address before storing. Malformed/unexpired/foreign attestations
-    //     are rejected rather than silently dropped.
+    //     are rejected rather than silently dropped. The verified envelope is
+    //     kept — it is the authenticity proof of the kind:37017 binding record
+    //     this handler hands back for the caller to sign (ingest re-verifies it
+    //     against that record's author, so an unverifiable record would never
+    //     land: see `handlers::ingest::validate_evm_binding_envelope`).
+    let mut verified_attestation: Option<buzz_evm_auth::AttestationEnvelope> = None;
     if let Some(attestation_json) = &request.attestation {
         let envelope: buzz_evm_auth::AttestationEnvelope =
             serde_json::from_value(attestation_json.clone()).map_err(|e| {
@@ -280,6 +292,7 @@ pub async fn register(
                 "attestation account does not match siwe address",
             ));
         }
+        verified_attestation = Some(envelope);
     }
 
     // 3d. If a NIP-05 alias was claimed, validate it against the tenant host
@@ -343,6 +356,24 @@ pub async fn register(
         }
     }
 
+    // 5c. Hand the caller the unsigned kind:37017 binding record for the
+    //     binding this call just created. The record must be AUTHORED BY THE
+    //     BOUND NPUB — authorship is the proof ingest checks — and the relay
+    //     holds no user secret key (unlike the NIP-43 membership list it signs
+    //     with `relay_keypair`), so publishing it internally is not an option:
+    //     the client signs this skeleton and publishes it through the normal
+    //     event door. `null` when no attestation accompanied the bind: ingest
+    //     requires it for a live record, so emitting one would hand the client
+    //     an event that can only be rejected.
+    let binding_event = binding_event_skeleton(
+        siwe.address,
+        &request.message,
+        verified_attestation
+            .as_ref()
+            .zip(request.attestation.as_ref()),
+        Utc::now().timestamp(),
+    );
+
     Ok(Json(json!({
         "status": if was_inserted { "joined" } else { "already_member" },
         "community_id": tenant.community().to_string(),
@@ -350,7 +381,58 @@ pub async fn register(
         "npub": npub_hex,
         "evm_address": siwe.address.to_hex(),
         "role": "member",
+        "binding_event": binding_event,
     })))
+}
+
+/// Build the unsigned kind:37017 EVM binding record for a successful
+/// `POST /auth/siwe/register`, or `None` when no verified attestation came
+/// with the bind.
+///
+/// **Why the relay returns an unsigned skeleton instead of publishing**: the
+/// record claims "this npub holds this address", and ingest verifies the
+/// EIP-712 attestation against the event's signer — so the bound npub itself
+/// must sign it. The relay never holds that secret key (its `relay_keypair`
+/// only signs relay-authored events such as the NIP-43 membership list), so an
+/// internally published record would fail the very check that makes the record
+/// worth reading. The client signs `kind`/`created_at`/`tags`/`content` as-is
+/// and publishes; a signed copy passes
+/// `handlers::ingest::validate_evm_binding_envelope` (exercised by
+/// `signed_binding_event_lands_at_ingest` below).
+///
+/// `siweMessageHash` is the EIP-191 `personal_sign` digest of the SIWE message
+/// the relay just verified — a commitment a client holding the message can
+/// re-derive; ingest checks its shape, not its provenance.
+fn binding_event_skeleton(
+    address: EvmAddress,
+    siwe_message: &str,
+    attestation: Option<(&buzz_evm_auth::AttestationEnvelope, &Value)>,
+    created_at: i64,
+) -> Option<Value> {
+    let (envelope, attestation_json) = attestation?;
+    let address_hex = address.to_hex();
+    let siwe_message_hash = format!(
+        "0x{}",
+        hex::encode(buzz_evm_auth::personal_sign_digest(siwe_message.as_bytes(),))
+    );
+    let content = json!({
+        "v": 1,
+        "address": address_hex,
+        "siweMessageHash": siwe_message_hash,
+        "attestation": attestation_json,
+    });
+    let content = serde_json::to_string(&content).ok()?;
+    Some(json!({
+        // Unsigned: the client's signer fills in `pubkey`, `id`, and `sig`.
+        "kind": buzz_core::kind::KIND_EVM_BINDING,
+        "created_at": created_at,
+        "tags": [
+            ["d", &address_hex],
+            ["address", &address_hex],
+            ["chain", envelope.domain.chain_id.to_string()],
+        ],
+        "content": content,
+    }))
 }
 
 /// `POST /auth/siwe/revoke` — soft-revoke an EVM identity binding.
@@ -547,4 +629,191 @@ fn host_domain(host: &str) -> String {
         .next()
         .unwrap_or(without_scheme)
         .to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k256::ecdsa::SigningKey;
+    use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+    /// Checksum-cased anvil account #0 — the address `register` verified.
+    const TEST_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+    /// anvil account #0's private key: its address *is* [`TEST_ADDRESS`], so
+    /// attestations signed with it recover to the bound account.
+    const TEST_EVM_KEY: &str = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    /// A canonical SIWE message (the relay verified it before reaching 3c).
+    const TEST_SIWE_MESSAGE: &str =
+        "example.com wants you to sign in with your Ethereum account:\n\nSign in to Buzz\n\nChain ID: 8453";
+    /// Far-future expiry so fixtures never age out from under the test.
+    const NOT_EXPIRED: u64 = 4_102_444_800;
+
+    /// The secp256k1 key behind [`TEST_ADDRESS`].
+    fn test_evm_key() -> SigningKey {
+        SigningKey::from_slice(&hex::decode(TEST_EVM_KEY).expect("hex")).expect("secp256k1 key")
+    }
+
+    /// An EIP-712 `NostrSigner` attestation for `npub`, signed by `key`, in
+    /// both forms register sees it: the typed envelope and the raw JSON the
+    /// record carries.
+    fn attestation_for(
+        key: &SigningKey,
+        npub: &nostr::PublicKey,
+        account: &str,
+        chain_id: u64,
+    ) -> (buzz_evm_auth::AttestationEnvelope, Value) {
+        let attestation = buzz_evm_auth::NostrSignerAttestation {
+            account: EvmAddress::parse(account).expect("address parses"),
+            npub: npub.to_bytes(),
+            expires: NOT_EXPIRED,
+            nonce: 0,
+        };
+        let domain = buzz_evm_auth::Eip712Domain {
+            name: "creabuzz".into(),
+            version: "1".into(),
+            chain_id,
+            verifying_contract: EvmAddress::from_bytes([0u8; 20]),
+        };
+        let digest = attestation.digest(&domain);
+        let (signature, recid) = key
+            .sign_prehash_recoverable(&digest)
+            .expect("attestation signs");
+        let mut bytes = signature.to_bytes().to_vec();
+        bytes.push(if recid.is_y_odd() { 28 } else { 27 });
+        let envelope = buzz_evm_auth::AttestationEnvelope {
+            attestation,
+            domain,
+            signature: hex::encode(bytes),
+        };
+        let raw = serde_json::to_value(&envelope).expect("envelope serializes");
+        (envelope, raw)
+    }
+
+    /// Sign the returned skeleton exactly the way a client would.
+    fn sign_skeleton(skeleton: &Value, keys: &Keys) -> nostr::Event {
+        let kind = skeleton["kind"].as_u64().expect("kind") as u16;
+        let created_at = skeleton["created_at"].as_i64().expect("created_at") as u64;
+        let content = skeleton["content"]
+            .as_str()
+            .expect("content is the Nostr content string")
+            .to_string();
+        let tags: Vec<Tag> = skeleton["tags"]
+            .as_array()
+            .expect("tags array")
+            .iter()
+            .map(|row| {
+                Tag::parse(
+                    row.as_array()
+                        .expect("tag row")
+                        .iter()
+                        .map(|cell| cell.as_str().expect("tag cell")),
+                )
+                .expect("tag parses")
+            })
+            .collect();
+        EventBuilder::new(Kind::Custom(kind), content)
+            .tags(tags)
+            .custom_created_at(Timestamp::from_secs(created_at))
+            .sign_with_keys(keys)
+            .expect("client signs the skeleton")
+    }
+
+    /// The register → record path: whatever `register` hands back must be
+    /// publishable as-is (bind the production seam — the same function the
+    /// relay runs at ingest), and signing it with any other key must not be.
+    #[test]
+    fn signed_binding_event_lands_at_ingest() {
+        let keys = Keys::generate();
+        let evm_key = test_evm_key();
+        let address = EvmAddress::parse(TEST_ADDRESS).expect("address");
+        let (envelope, raw) = attestation_for(&evm_key, &keys.public_key(), TEST_ADDRESS, 8453);
+
+        let skeleton = binding_event_skeleton(
+            address,
+            TEST_SIWE_MESSAGE,
+            Some((&envelope, &raw)),
+            1_790_000_000,
+        )
+        .expect("an attested bind yields a skeleton");
+
+        // The contract a client consumes: kind, canonical `d`, a chain tag
+        // matching the attestation domain, and content the relay verified.
+        assert_eq!(
+            skeleton["kind"].as_u64(),
+            Some(u64::from(buzz_core::kind::KIND_EVM_BINDING))
+        );
+        assert_eq!(
+            skeleton["tags"][0],
+            serde_json::json!(["d", address.to_hex()]),
+            "`d` must be the lowercase address (the NIP-33 coordinate)"
+        );
+        assert_eq!(
+            skeleton["tags"][2],
+            serde_json::json!(["chain", "8453"]),
+            "the chain tag must equal the signed attestation domain chain"
+        );
+        let content: Value =
+            serde_json::from_str(skeleton["content"].as_str().expect("content string"))
+                .expect("content is JSON");
+        assert_eq!(content["v"], serde_json::json!(1));
+        assert_eq!(content["address"], serde_json::json!(address.to_hex()));
+        assert_eq!(
+            content["siweMessageHash"],
+            serde_json::json!(format!(
+                "0x{}",
+                hex::encode(buzz_evm_auth::personal_sign_digest(
+                    TEST_SIWE_MESSAGE.as_bytes()
+                ))
+            )),
+            "siweMessageHash is the EIP-191 digest of the verified message"
+        );
+        assert_eq!(content["attestation"], raw);
+
+        let event = sign_skeleton(&skeleton, &keys);
+        assert!(
+            crate::handlers::ingest::validate_evm_binding_envelope(&event).is_ok(),
+            "the signed skeleton must pass the ingest envelope"
+        );
+
+        // The spoof the seam exists for: another npub signing the same
+        // skeleton inherits an attestation that authorizes a different key.
+        let other = Keys::generate();
+        let spoofed = sign_skeleton(&skeleton, &other);
+        let err = crate::handlers::ingest::validate_evm_binding_envelope(&spoofed)
+            .expect_err("a foreign signer must not be able to publish the binding");
+        assert!(
+            err.contains("npub"),
+            "the rejection must name the authorship failure, got {err:?}"
+        );
+    }
+
+    /// Without a verified attestation there is nothing to publish: emitting a
+    /// record anyway would hand the client an event ingest must reject.
+    #[test]
+    fn no_attestation_means_no_binding_event() {
+        let address = EvmAddress::parse(TEST_ADDRESS).expect("address");
+        assert!(
+            binding_event_skeleton(address, TEST_SIWE_MESSAGE, None, 1_790_000_000).is_none(),
+            "register must return a null binding_event when no attestation came with the bind"
+        );
+    }
+
+    /// Register can only hand back a record that will land — including when
+    /// the caller is about to revoke rather than activate.
+    #[test]
+    fn a_skeleton_never_carries_a_revocation() {
+        let keys = Keys::generate();
+        let evm_key = test_evm_key();
+        let address = EvmAddress::parse(TEST_ADDRESS).expect("address");
+        let (envelope, raw) = attestation_for(&evm_key, &keys.public_key(), TEST_ADDRESS, 8453);
+        let skeleton =
+            binding_event_skeleton(address, TEST_SIWE_MESSAGE, Some((&envelope, &raw)), 1)
+                .expect("skeleton");
+        let content: Value = serde_json::from_str(skeleton["content"].as_str().expect("content"))
+            .expect("content is JSON");
+        assert!(
+            content.get("revoked").is_none(),
+            "a fresh bind publishes a live record; revocation is a separate republication"
+        );
+    }
 }

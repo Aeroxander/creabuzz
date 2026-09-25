@@ -1554,6 +1554,43 @@ pub enum LaunchpadCmd {
         #[arg(long)]
         tx: String,
     },
+    /// Discovery-plane deployment records (kind:37018)
+    #[command(name = "deployment")]
+    Deployment {
+        #[command(subcommand)]
+        cmd: DeploymentCmd,
+    },
+}
+
+/// `buzz launchpad deployment …` — kind:37018 records that answer "where is
+/// the Summoner" from signed events alone.
+///
+/// The deployer authors these, never the relay: `DeployOrgDao.s.sol` writes
+/// `deployments/org-dao-<chainid>.json` and prints the `record` command below.
+#[derive(Subcommand)]
+pub enum DeploymentCmd {
+    /// Publish one kind:37018 record per role in a deployments manifest
+    ///
+    /// Reads the manifest the forge script wrote (`--file`) and publishes one
+    /// record per role with `d = <chainId>:<role>`. Idempotent through NIP-33:
+    /// a re-run replaces the same coordinate instead of duplicating it, and
+    /// tags/content are rebuilt deterministically from the manifest.
+    ///
+    /// `tx` and `block` come from the manifest when it carries them; forge
+    /// cannot expose the current run's transaction hashes from inside `run()`
+    /// (broadcast artifacts are written *after* the script finishes), so a
+    /// manifest without them points at forge's `run-latest.json` through its
+    /// `broadcast` field — or pass `--broadcast` explicitly.
+    #[command(name = "record")]
+    Record {
+        /// Deployments JSON written by `DeployOrgDao.s.sol`
+        #[arg(long)]
+        file: String,
+        /// Forge broadcast artifact (`broadcast/<script>/<chainid>/run-latest.json`),
+        /// used when the manifest does not carry `tx`/`block`
+        #[arg(long)]
+        broadcast: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3325,6 +3362,7 @@ mod tests {
                 "compose-bid",
                 "curate",
                 "delete",
+                "deployment",
                 "list",
                 "mint-token",
                 "post-update",
@@ -3364,7 +3402,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 12),
+            ("launchpad", 13),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

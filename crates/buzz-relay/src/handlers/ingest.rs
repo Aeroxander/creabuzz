@@ -16,11 +16,12 @@ use buzz_core::kind::{
     KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
     KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
     KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD,
-    KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
-    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
-    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
+    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET,
+    KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
+    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+    KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
     KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
     KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
     KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
@@ -42,6 +43,7 @@ use buzz_core::kind::{
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
 use buzz_core::CommunityId;
+use buzz_evm_auth::{AttestationEnvelope, EvmAddress};
 use nostr::Event;
 
 use crate::state::AppState;
@@ -549,13 +551,21 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // join request (37016) are coordination records, not authority — the
         // equity claim they describe is recorded by a 37011 grant and only
         // becomes enforceable when the project adopts a DAO (NIP-LP).
+        //
+        // The Discovery plane kinds (37017 EVM binding / 37018 deployment
+        // record) are member writes too: 37017 self-verifies at ingest (the
+        // EIP-712 attestation must match the signer) and 37018 is verifiable
+        // on-chain through its required `tx` tag — neither grants the relay
+        // anything to act on.
         KIND_ORG_NODE
         | KIND_ORG_GRANT
         | KIND_ORG_BUDGET
         | KIND_CONTRIBUTION_RECORD
         | KIND_BUDGET_SPEND_RECEIPT
         | KIND_ORG_PITCH
-        | KIND_ORG_JOIN_REQUEST => Ok(Scope::MessagesWrite),
+        | KIND_ORG_JOIN_REQUEST
+        | KIND_EVM_BINDING
+        | KIND_DEPLOYMENT_RECORD => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -733,6 +743,12 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // `h` must never channel-scope them either.
             | KIND_ORG_PITCH
             | KIND_ORG_JOIN_REQUEST
+            // Discovery plane (NIP-ORG extension): a binding (37017) keys on
+            // the EVM address and a deployment record (37018) on
+            // `<chainId>:<role>` — both community-level, addressed by
+            // `(pubkey, kind, d)`, so a stray `h` never channel-scopes them.
+            | KIND_EVM_BINDING
+            | KIND_DEPLOYMENT_RECORD
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -1800,6 +1816,364 @@ fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
         Ok(serde_json::Value::Object(_)) => Ok(()),
         _ => Err(format!("{label} content must be a JSON object")),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Discovery plane (NIP-ORG extension): kind:37017 EVM binding + kind:37018
+// deployment record.
+//
+// These two are the queryable half of the discovery plane — "which address
+// holds this seat" and "where is the Summoner" — answerable from signed
+// events alone. Both are community-level and global-only member writes, but
+// neither rides the shared org envelope: its `role` tag shape
+// (name/description/equity) describes neither record, so each carries its own
+// envelope, checked at the single ingest call site below.
+// ---------------------------------------------------------------------------
+
+/// Max `content` bytes for a kind:37017 EVM binding record. The EIP-712
+/// envelope is a few hundred bytes — this is headroom, not a budget.
+const EVM_BINDING_CONTENT_MAX_LEN: usize = 8192;
+/// Max `content` bytes for a kind:37018 deployment record.
+const DEPLOYMENT_CONTENT_MAX_LEN: usize = 4096;
+/// Max chars in the optional deployment-record `note`.
+const DEPLOYMENT_NOTE_MAX_CHARS: usize = 256;
+/// Max chars in the optional deployment-record `project` slug.
+const DEPLOYMENT_PROJECT_MAX_LEN: usize = 64;
+
+/// True when `value` is a lowercase `0x` + 40-hex EVM address — the
+/// canonical `d` form of kind:37017.
+fn is_lower_0x_address(value: &str) -> bool {
+    is_0x_address(value) && value.chars().all(|c| !c.is_ascii_uppercase())
+}
+
+/// True when `value` is `0x` + 64 hex — a 32-byte hash (deploy tx hash or
+/// the SIWE `personal_sign` digest).
+fn is_0x_hash32(value: &str) -> bool {
+    value.len() == 66
+        && value.starts_with("0x")
+        && value.as_bytes()[2..].iter().all(|b| b.is_ascii_hexdigit())
+}
+
+/// True when `value` is a canonical decimal `u64` (digits only, no leading
+/// zero, at most 20 digits) — chain ids, block numbers, `d` prefixes.
+fn is_canonical_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 20
+        && value.bytes().all(|b| b.is_ascii_digit())
+        && (value.len() == 1 || !value.starts_with('0'))
+}
+
+/// Verify the EIP-712 attestation carried by a kind:37017 record against the
+/// event's signer and the claimed address — fully offline (one `ecrecover`).
+///
+/// `require_fresh` is `false` only for a revocation: a signature that once
+/// authorized the binding still authorizes withdrawing it, so an expired
+/// attestation may revoke but may never activate (a live record always goes
+/// through [`AttestationEnvelope::verify_for_npub`] — expiry, npub, and
+/// signature — exactly as `POST /auth/siwe/register` does).
+fn verify_binding_attestation(
+    label: &str,
+    envelope: &AttestationEnvelope,
+    author: &nostr::PublicKey,
+    address: &EvmAddress,
+    require_fresh: bool,
+) -> Result<(), String> {
+    if envelope.attestation.npub != author.to_bytes() {
+        return Err(format!(
+            "{label} attestation authorizes a different npub than the event signer"
+        ));
+    }
+    if envelope.attestation.account != *address {
+        return Err(format!(
+            "{label} attestation account must equal the bound `address`"
+        ));
+    }
+    if require_fresh {
+        let now = Utc::now().timestamp() as u64;
+        envelope
+            .verify_for_npub(&author.to_hex(), now)
+            .map_err(|e| format!("{label} attestation rejected: {e}"))?;
+        return Ok(());
+    }
+    envelope
+        .attestation
+        .verify(&envelope.domain, &envelope.signature)
+        .map_err(|e| format!("{label} attestation rejected: {e}"))
+}
+
+/// Validate the envelope of a kind:37017 EVM binding record **and enforce its
+/// authenticity claim** — the anti-spoof seam of the discovery plane.
+///
+/// What ingest verifies, offline (no RPC), and what it does not:
+///
+/// * **Authorship** — `attestation.npub` must equal the event signer, so a
+///   record can only ever claim *the author's own* address; with the
+///   transport-level event signature (`verify_event`), npub ↔ address is a
+///   two-link chain ending in an `ecrecover`.
+/// * **Address** — `d`, the `address` tag, and `content.address` must all be
+///   the same 20 bytes (`d` lowercase — the NIP-33 coordinate).
+/// * **EIP-712 attestation** — required whenever the record is live
+///   (`content.revoked` is not `true`): signature, npub, and expiry, via the
+///   same `verify_for_npub` call `POST /auth/siwe/register` makes. An
+///   unverifiable claim never lands; the worst case is a rejected event.
+/// * **SIWE** — *not* re-verifiable here, and ingest does not pretend
+///   otherwise: the record carries only `siweMessageHash` (a commitment to
+///   the EIP-4361 message), not the message + signature, so only its shape is
+///   checked. A client holding the original message can re-derive the digest
+///   (`buzz_evm_auth::personal_sign_digest`) and compare.
+/// * **Revocation** — `content.revoked: true` (same `(author, d)`
+///   republication as NIP-ORG kind:37011 §Revocation) needs no attestation:
+///   withdrawal requires only control of the npub, mirroring
+///   `POST /auth/siwe/revoke`. An attestation that *is* present must still
+///   verify signature/npub/account (expiry excluded).
+///
+/// Readers resolve per `(author, d)` (NIP-33 is author-keyed): a foreign
+/// author's record for the same address never suppresses an author's own head.
+pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "EVM binding event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    if !is_lower_0x_address(d) {
+        return Err(format!(
+            "{LABEL} `d` tag must be a lowercase `0x` + 40-hex EVM address (got {d:?})"
+        ));
+    }
+    let d_address = EvmAddress::parse(d)
+        .map_err(|_| format!("{LABEL} `d` tag must be a lowercase `0x` + 40-hex EVM address"))?;
+
+    let mut address_tag: Option<&str> = None;
+    let mut chain_tag: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "address" if address_tag.is_none() => address_tag = Some(value),
+            "address" => return Err(format!("{LABEL} must have at most one `address` tag")),
+            "chain" if chain_tag.is_none() => chain_tag = Some(value),
+            "chain" => return Err(format!("{LABEL} must have at most one `chain` tag")),
+            _ => {}
+        }
+    }
+    let address_tag =
+        address_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `address` tag"))?;
+    let tag_address = EvmAddress::parse(address_tag).map_err(|_| {
+        format!("{LABEL} `address` tag must be an `0x` + 40-hex EVM address (got {address_tag:?})")
+    })?;
+    if tag_address != d_address {
+        return Err(format!(
+            "{LABEL} `address` tag must equal the `d` address (got {address_tag:?})"
+        ));
+    }
+    if let Some(chain) = chain_tag {
+        if !is_canonical_decimal(chain) || chain.parse::<u64>().is_err() {
+            return Err(format!(
+                "{LABEL} `chain` tag must be a decimal EIP-155 chain id (got {chain:?})"
+            ));
+        }
+    }
+
+    if event.content.len() > EVM_BINDING_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {EVM_BINDING_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    let content: serde_json::Value = serde_json::from_str(&event.content)
+        .map_err(|_| format!("{LABEL} content must be a JSON object"))?;
+    let body = content
+        .as_object()
+        .ok_or_else(|| format!("{LABEL} content must be a JSON object"))?;
+    if body.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err(format!("{LABEL} content `v` must be 1"));
+    }
+    let raw_address = body
+        .get("address")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{LABEL} content must carry an `address`"))?;
+    let content_address = EvmAddress::parse(raw_address)
+        .map_err(|_| format!("{LABEL} content `address` must be an `0x` + 40-hex EVM address"))?;
+    if content_address != d_address {
+        return Err(format!(
+            "{LABEL} content `address` must equal the `d` address (got {raw_address:?})"
+        ));
+    }
+    let siwe_hash = body
+        .get("siweMessageHash")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{LABEL} content must carry a `siweMessageHash`"))?;
+    if !is_0x_hash32(siwe_hash) {
+        return Err(format!(
+            "{LABEL} content `siweMessageHash` must be `0x` + 64 hex"
+        ));
+    }
+    let revoked = match body.get("revoked") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Bool(flag)) => *flag,
+        Some(_) => return Err(format!("{LABEL} content `revoked` must be a boolean")),
+    };
+
+    let envelope = match body.get("attestation") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            serde_json::from_value::<AttestationEnvelope>(value.clone()).map_err(|_| {
+                format!("{LABEL} content `attestation` must be an EIP-712 NostrSigner envelope")
+            })?,
+        ),
+    };
+    match &envelope {
+        None if !revoked => {
+            return Err(format!(
+                "{LABEL} content `attestation` is required: a live binding must carry a \
+                 verifiable EIP-712 NostrSigner attestation (the SIWE message is not part \
+                 of the record, so ingest cannot verify it instead)"
+            ));
+        }
+        // Npub-only revocation: control of the event signer is the proof.
+        None => {}
+        Some(envelope) => {
+            verify_binding_attestation(LABEL, envelope, &event.pubkey, &content_address, !revoked)?;
+        }
+    }
+    // A `chain` tag may not contradict the signed attestation domain.
+    if let (Some(chain), Some(envelope)) = (chain_tag, &envelope) {
+        if chain.parse::<u64>() != Ok(envelope.domain.chain_id) {
+            return Err(format!(
+                "{LABEL} `chain` tag ({chain}) must equal the attestation domain chain id ({})",
+                envelope.domain.chain_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Validate the envelope of a kind:37018 deployment record.
+///
+/// An advisory record with on-chain verifiability: `d` is `<chainId>:<role>`,
+/// every tag must agree with `d` and each other, and the required `tx` tag
+/// (32-byte deploying transaction hash — the kind:47005 receipt rule, see
+/// [`validate_launch_mirror_envelope`]) lets a client verify the deployment
+/// against the chain instead of trusting the claim. Authored by whoever holds
+/// `BUZZ_PRIVATE_KEY` — the relay never signs deployment records.
+pub(crate) fn validate_deployment_record_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "deployment record event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    let Some((chain_part, role_part)) = d.split_once(':') else {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<chainId>:<role>` (got {d:?})"
+        ));
+    };
+    if !is_canonical_decimal(chain_part) {
+        return Err(format!(
+            "{LABEL} `d` chain id must be a canonical decimal (got {chain_part:?})"
+        ));
+    }
+    if !matches!(role_part, "summoner" | "factory" | "implementation") {
+        return Err(format!(
+            "{LABEL} `d` role must be summoner|factory|implementation (got {role_part:?})"
+        ));
+    }
+
+    let mut chain_tag: Option<&str> = None;
+    let mut role_tag: Option<&str> = None;
+    let mut address_tag: Option<&str> = None;
+    let mut tx_tag: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        let slot = match name {
+            "chain" => &mut chain_tag,
+            "role" => &mut role_tag,
+            "address" => &mut address_tag,
+            "tx" => &mut tx_tag,
+            _ => continue,
+        };
+        if slot.is_some() {
+            return Err(format!("{LABEL} must have at most one `{name}` tag"));
+        }
+        *slot = Some(value);
+    }
+
+    let chain = chain_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `chain` tag"))?;
+    if chain != chain_part {
+        return Err(format!(
+            "{LABEL} `chain` tag ({chain}) must equal the chain id in `d` ({chain_part})"
+        ));
+    }
+    let role = role_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `role` tag"))?;
+    if role != role_part {
+        return Err(format!(
+            "{LABEL} `role` tag ({role}) must equal the role in `d` ({role_part})"
+        ));
+    }
+    let address =
+        address_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `address` tag"))?;
+    if !is_0x_address(address) {
+        return Err(format!(
+            "{LABEL} `address` tag must be an `0x` + 40-hex EVM address (got {address:?})"
+        ));
+    }
+    let tx = tx_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `tx` tag"))?;
+    if !is_0x_hash32(tx) {
+        return Err(format!(
+            "{LABEL} `tx` tag must be the 32-byte deploy tx hash (`0x` + 64 hex), verifiable \
+             against the chain (got {tx:?})"
+        ));
+    }
+
+    if event.content.len() > DEPLOYMENT_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {DEPLOYMENT_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    let content: serde_json::Value = serde_json::from_str(&event.content)
+        .map_err(|_| format!("{LABEL} content must be a JSON object"))?;
+    let body = content
+        .as_object()
+        .ok_or_else(|| format!("{LABEL} content must be a JSON object"))?;
+    if body.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err(format!("{LABEL} content `v` must be 1"));
+    }
+    if body
+        .get("block")
+        .and_then(serde_json::Value::as_u64)
+        .is_none_or(|block| block == 0)
+    {
+        return Err(format!(
+            "{LABEL} content must carry a non-zero decimal `block`"
+        ));
+    }
+    if let Some(project) = body.get("project") {
+        let project = project
+            .as_str()
+            .ok_or_else(|| format!("{LABEL} content `project` must be a slug"))?;
+        let valid_first = project
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        let valid_rest = project
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-'));
+        if !valid_first || !valid_rest || project.len() > DEPLOYMENT_PROJECT_MAX_LEN {
+            return Err(format!(
+                "{LABEL} content `project` must match [a-z0-9][a-z0-9_-]{{0,{DEPLOYMENT_PROJECT_MAX_LEN}}}"
+            ));
+        }
+    }
+    if let Some(note) = body.get("note") {
+        let note = note
+            .as_str()
+            .ok_or_else(|| format!("{LABEL} content `note` must be a string"))?;
+        if note.chars().count() > DEPLOYMENT_NOTE_MAX_CHARS {
+            return Err(format!(
+                "{LABEL} content `note` too long (max {DEPLOYMENT_NOTE_MAX_CHARS} chars)"
+            ));
+        }
+    }
+    Ok(())
 }
 
 // Agent Wiki caps: pages are markdown (no JSON envelope), so the content cap
@@ -3573,6 +3947,22 @@ async fn ingest_event_inner(
     // skip the envelope unnoticed (tests enumerate `org_envelope_label`).
     if let Some(label) = org_envelope_label(kind_u32) {
         validate_org_envelope(&event, label)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    // Discovery plane: the EVM binding record (37017) carries its
+    // authenticity proof inline and is verified at ingest (offline
+    // `ecrecover` over the EIP-712 attestation — the anti-spoof seam); the
+    // deployment record (37018) is cross-checked against its `d`. Neither
+    // uses the shared org envelope above — its `role` tag shape
+    // (name/description/equity) describes neither record.
+    if kind_u32 == KIND_EVM_BINDING {
+        validate_evm_binding_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_DEPLOYMENT_RECORD {
+        validate_deployment_record_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -7092,5 +7482,655 @@ mod postgres_tests {
             counts.get(&("ws".to_owned(), "invalid".to_owned())),
             Some(&1)
         );
+    }
+
+    // ---- Discovery plane: kind:37017 EVM binding / kind:37018 deployment ----
+
+    use k256::ecdsa::SigningKey;
+
+    /// Checksum-cased anvil account #0 — a known-good EIP-55 address.
+    const BINDING_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+    /// The same address as the `d` tag must spell it (lowercase).
+    const BINDING_ADDRESS_LOWER: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+    /// anvil account #0's private key: paired with [`BINDING_ADDRESS`] (its
+    /// EIP-55 address), so an attestation signed with it recovers to the
+    /// bound address — a fixture whose signature recovers elsewhere proves
+    /// nothing except that the mismatch check fires.
+    const BINDING_EVM_KEY: &str =
+        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    /// Anvil account #1 — a second address that is *not* the bound one.
+    const OTHER_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+    /// The same address, lowercase (the `d` coordinate of a record claiming it).
+    const OTHER_ADDRESS_LOWER: &str = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+    const BINDING_SIWE_HASH: &str =
+        "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const DEPLOY_TX: &str = "0x2222222222222222222222222222222222222222222222222222222222222222";
+
+    /// The secp256k1 key behind [`BINDING_ADDRESS`].
+    fn binding_evm_key() -> SigningKey {
+        SigningKey::from_slice(&hex::decode(BINDING_EVM_KEY).expect("hex")).expect("secp256k1 key")
+    }
+
+    /// An EIP-712 `NostrSigner` attestation authorizing `npub` from `account`,
+    /// signed by `key` — the exact envelope `POST /auth/siwe/register` stores
+    /// and kind:37017 ingest verifies.
+    fn binding_attestation(
+        key: &SigningKey,
+        npub: &nostr::PublicKey,
+        account: &str,
+        expires: u64,
+        chain_id: u64,
+    ) -> AttestationEnvelope {
+        let attestation = buzz_evm_auth::NostrSignerAttestation {
+            account: EvmAddress::parse(account).expect("address parses"),
+            npub: npub.to_bytes(),
+            expires,
+            nonce: 0,
+        };
+        let domain = buzz_evm_auth::Eip712Domain {
+            name: "creabuzz".into(),
+            version: "1".into(),
+            chain_id,
+            verifying_contract: EvmAddress::from_bytes([0u8; 20]),
+        };
+        let digest = attestation.digest(&domain);
+        let (signature, recid) = key
+            .sign_prehash_recoverable(&digest)
+            .expect("attestation signs");
+        let mut bytes = signature.to_bytes().to_vec();
+        bytes.push(if recid.is_y_odd() { 28 } else { 27 });
+        AttestationEnvelope {
+            attestation,
+            domain,
+            signature: hex::encode(bytes),
+        }
+    }
+
+    /// Kind:37017 content; `envelope: None` omits the `attestation` key.
+    fn binding_content(
+        address: &str,
+        envelope: Option<&AttestationEnvelope>,
+        revoked: bool,
+    ) -> String {
+        let mut content = serde_json::json!({
+            "v": 1,
+            "address": address,
+            "siweMessageHash": BINDING_SIWE_HASH,
+        });
+        if let Some(envelope) = envelope {
+            content["attestation"] =
+                serde_json::to_value(envelope).expect("attestation serializes");
+        }
+        if revoked {
+            content["revoked"] = serde_json::json!(true);
+        }
+        content.to_string()
+    }
+
+    fn binding_tags(d: &str, address: &str, chain: Option<&str>) -> Vec<nostr::Tag> {
+        let mut tags = vec![
+            nostr::Tag::parse(["d", d]).expect("d tag"),
+            nostr::Tag::parse(["address", address]).expect("address tag"),
+        ];
+        if let Some(chain) = chain {
+            tags.push(nostr::Tag::parse(["chain", chain]).expect("chain tag"));
+        }
+        tags
+    }
+
+    fn binding_event(keys: &nostr::Keys, content: &str, tags: Vec<nostr::Tag>) -> Event {
+        nostr::EventBuilder::new(
+            nostr::Kind::Custom(KIND_EVM_BINDING as u16),
+            content.to_string(),
+        )
+        .tags(tags)
+        .sign_with_keys(keys)
+        .expect("signed binding event")
+    }
+
+    /// The happy path: `d` lowercase, checksummed `address` tag, chain tag
+    /// agreeing with the attestation domain.
+    fn live_binding(keys: &nostr::Keys, envelope: &AttestationEnvelope) -> Event {
+        let content = binding_content(BINDING_ADDRESS, Some(envelope), false);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        binding_event(keys, &content, tags)
+    }
+
+    #[test]
+    fn evm_binding_envelope_accepts_an_attested_live_binding() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let event = live_binding(&keys, &envelope);
+        if let Err(err) = validate_evm_binding_envelope(&event) {
+            panic!("an attested, unexpired binding signed by the bound npub must store: {err}");
+        }
+        // The `chain` tag is optional; the address tag may also be lowercase.
+        let content = binding_content(BINDING_ADDRESS_LOWER, Some(&envelope), false);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS_LOWER, None);
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "lowercase-only spelling and a missing chain tag must store"
+        );
+    }
+
+    #[test]
+    fn evm_binding_envelope_rejects_every_spoof_path() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let good_content = || binding_content(BINDING_ADDRESS, Some(&envelope), false);
+        let good_tags = || binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+
+        let mut rejects: Vec<(&str, Event)> = Vec::new();
+
+        // 1. Wrong author: the attestation authorizes a different npub than
+        //    the event signer — the spoof that would let anyone claim any seat.
+        let other = nostr::Keys::generate();
+        let foreign = binding_attestation(
+            &evm_key,
+            &other.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        rejects.push((
+            "attestation npub != event signer",
+            live_binding(&keys, &foreign),
+        ));
+
+        // 2. No attestation at all on a live record.
+        rejects.push((
+            "attestation omitted",
+            binding_event(
+                &keys,
+                &binding_content(BINDING_ADDRESS, None, false),
+                good_tags(),
+            ),
+        ));
+
+        // 3. `attestation: null` — same claim, spelled out.
+        let mut null_attestation: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        null_attestation["attestation"] = serde_json::Value::Null;
+        rejects.push((
+            "attestation null",
+            binding_event(&keys, &null_attestation.to_string(), good_tags()),
+        ));
+
+        // 4. Expired attestation: an old proof must not activate a new claim.
+        let expired = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now.saturating_sub(60),
+            8453,
+        );
+        rejects.push(("expired attestation", live_binding(&keys, &expired)));
+
+        // 5. The attestation proves the bound account, but the record claims
+        //    a *different* address — valid signature, wrong subject.
+        let mismatched = binding_content(OTHER_ADDRESS, Some(&envelope), false);
+        let mismatched_tags = binding_tags(OTHER_ADDRESS_LOWER, OTHER_ADDRESS, Some("8453"));
+        rejects.push((
+            "attestation account != address",
+            binding_event(&keys, &mismatched, mismatched_tags),
+        ));
+
+        // 6. Tampered signature over an otherwise-valid attestation (same
+        //    length, different `s` — so it parses and still must fail).
+        let mut tampered = envelope.clone();
+        let mut flipped = tampered.signature.clone().into_bytes();
+        let last = flipped.last_mut().expect("signature is non-empty");
+        *last = if *last == b'0' { b'1' } else { b'0' };
+        tampered.signature = String::from_utf8(flipped).expect("hex stays hex");
+        rejects.push(("tampered signature", live_binding(&keys, &tampered)));
+
+        // 7. `d` not lowercase — the NIP-33 coordinate must be canonical.
+        rejects.push((
+            "uppercase d",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS, BINDING_ADDRESS, Some("8453")),
+            ),
+        ));
+
+        // 8. `address` tag names another address than `d`.
+        rejects.push((
+            "address tag != d",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS_LOWER, OTHER_ADDRESS, Some("8453")),
+            ),
+        ));
+
+        // 9. Missing `address` tag.
+        rejects.push((
+            "address tag omitted",
+            binding_event(
+                &keys,
+                &good_content(),
+                vec![
+                    nostr::Tag::parse(["d", BINDING_ADDRESS_LOWER]).expect("d tag"),
+                    nostr::Tag::parse(["chain", "8453"]).expect("chain tag"),
+                ],
+            ),
+        ));
+
+        // 10. `content.address` names another address than `d`.
+        rejects.push((
+            "content address != d",
+            binding_event(
+                &keys,
+                &binding_content(OTHER_ADDRESS, Some(&envelope), false),
+                good_tags(),
+            ),
+        ));
+
+        // 11. Malformed `siweMessageHash`.
+        let mut bad_hash: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        bad_hash["siweMessageHash"] = serde_json::json!("0xdeadbeef");
+        rejects.push((
+            "malformed siweMessageHash",
+            binding_event(&keys, &bad_hash.to_string(), good_tags()),
+        ));
+
+        // 12. Wrong content version.
+        let mut bad_version: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        bad_version["v"] = serde_json::json!(2);
+        rejects.push((
+            "v != 1",
+            binding_event(&keys, &bad_version.to_string(), good_tags()),
+        ));
+
+        // 13. `chain` tag contradicting the signed attestation domain.
+        rejects.push((
+            "chain tag != attestation chain",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("1")),
+            ),
+        ));
+
+        // 14. Content is not a JSON object.
+        rejects.push((
+            "non-JSON content",
+            binding_event(&keys, "not json", good_tags()),
+        ));
+
+        // 15. Two `d` tags — no unbounded coordinate.
+        let mut two_d = good_tags();
+        two_d.push(nostr::Tag::parse(["d", BINDING_ADDRESS_LOWER]).expect("d tag"));
+        rejects.push(("two d tags", binding_event(&keys, &good_content(), two_d)));
+
+        for (label, event) in rejects {
+            let err = validate_evm_binding_envelope(&event)
+                .expect_err(&format!("{label} must be rejected"));
+            if label.contains("attestation omitted") {
+                assert!(
+                    err.contains("attestation"),
+                    "{label}: error must name the missing proof, got {err:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn evm_binding_revocation_needs_npub_only_and_keeps_the_coordinate() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+
+        // Withdrawal with no attestation: control of the npub is the proof,
+        // mirroring `POST /auth/siwe/revoke` (which requires no EVM signature).
+        let content = binding_content(BINDING_ADDRESS, None, true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "a npub-only revocation must store"
+        );
+
+        // A fresh attestation may accompany a revocation too — the common
+        // case where the owner republishes the head with `revoked: true`.
+        let content = binding_content(BINDING_ADDRESS, Some(&envelope), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "a revocation carrying the owner's fresh attestation must store"
+        );
+
+        // An expired attestation may still accompany a revocation: a proof
+        // that once authorized the binding authorizes withdrawing it.
+        let expired = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now.saturating_sub(60),
+            8453,
+        );
+        let content = binding_content(BINDING_ADDRESS, Some(&expired), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        let event = binding_event(&keys, &content, tags);
+        if let Err(err) = validate_evm_binding_envelope(&event) {
+            panic!("an expired attestation may revoke, never activate: {err}");
+        }
+
+        // …but a revocation carrying an attestation for someone else's npub
+        // is still a spoof: present means verified.
+        let other = nostr::Keys::generate();
+        let foreign = binding_attestation(
+            &evm_key,
+            &other.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let content = binding_content(BINDING_ADDRESS, Some(&foreign), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_err(),
+            "a revocation carrying a foreign attestation must be rejected"
+        );
+    }
+
+    #[test]
+    fn discovery_kinds_are_member_writes_global_only_and_replaceable() {
+        let dummy = make_dummy_event();
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must never be channel-scoped"
+            );
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be NIP-33 addressed"
+            );
+        }
+        // …and neither rides the shared org envelope: its `role` tag shape
+        // (name/description/equity) describes neither record, so routing them
+        // through it would reject valid records.
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert!(
+                org_envelope_label(kind).is_none(),
+                "kind {kind} has its own envelope, not the org one"
+            );
+        }
+    }
+
+    /// Tags/content of a kind:37018 record exactly as `buzz launchpad
+    /// deployment record` builds them (the producer half of this contract).
+    fn deployment_event(
+        content: &str,
+        d: &str,
+        chain: Option<&str>,
+        role: Option<&str>,
+        address: Option<&str>,
+        tx: Option<&str>,
+    ) -> Event {
+        let mut tags = vec![nostr::Tag::parse(["d", d]).expect("d tag")];
+        for (name, value) in [
+            ("chain", chain),
+            ("role", role),
+            ("address", address),
+            ("tx", tx),
+        ] {
+            if let Some(value) = value {
+                tags.push(nostr::Tag::parse([name, value]).expect("tag"));
+            }
+        }
+        nostr::EventBuilder::new(
+            nostr::Kind::Custom(KIND_DEPLOYMENT_RECORD as u16),
+            content.to_string(),
+        )
+        .tags(tags)
+        .sign_with_keys(&nostr::Keys::generate())
+        .expect("signed deployment record")
+    }
+
+    #[test]
+    fn deployment_record_envelope_accepts_the_published_shape() {
+        let content = r#"{"v":1,"block":42,"project":"nebula","note":"forge script"}"#;
+        let event = deployment_event(
+            content,
+            "8453:summoner",
+            Some("8453"),
+            Some("summoner"),
+            Some(BINDING_ADDRESS),
+            Some(DEPLOY_TX),
+        );
+        assert!(
+            validate_deployment_record_envelope(&event).is_ok(),
+            "the CLI's golden shape must store"
+        );
+
+        // Optional fields stay optional: no project, no note.
+        let bare = deployment_event(
+            r#"{"v":1,"block":7}"#,
+            "1:factory",
+            Some("1"),
+            Some("factory"),
+            Some(BINDING_ADDRESS),
+            Some(DEPLOY_TX),
+        );
+        assert!(
+            validate_deployment_record_envelope(&bare).is_ok(),
+            "a bare deployment record must store"
+        );
+    }
+
+    #[test]
+    fn deployment_record_envelope_rejects_inconsistent_claims() {
+        let content = r#"{"v":1,"block":42,"project":"nebula","note":"forge script"}"#;
+        let default = |d: &str,
+                       chain: Option<&str>,
+                       role: Option<&str>,
+                       address: Option<&str>,
+                       tx: Option<&str>| {
+            deployment_event(content, d, chain, role, address, tx)
+        };
+        let rejects: Vec<(&str, Event)> = vec![
+            (
+                "d without a colon",
+                default(
+                    "8453",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "unknown role",
+                default(
+                    "8453:deployer",
+                    Some("8453"),
+                    Some("deployer"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "role tag != d role",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("factory"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "chain tag != d chain",
+                default(
+                    "8453:summoner",
+                    Some("1"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "leading-zero chain id in d",
+                default(
+                    "08453:summoner",
+                    Some("08453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "missing tx tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    None,
+                ),
+            ),
+            (
+                "malformed tx tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some("0xdead"),
+                ),
+            ),
+            (
+                "missing address tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    None,
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "malformed address tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some("0xnope"),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "chain tag omitted",
+                default(
+                    "8453:summoner",
+                    None,
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "role tag omitted",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    None,
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "zero block",
+                deployment_event(
+                    r#"{"v":1,"block":0}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "missing block",
+                deployment_event(
+                    r#"{"v":1}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "wrong content version",
+                deployment_event(
+                    r#"{"v":2,"block":42}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "bad project slug",
+                deployment_event(
+                    r#"{"v":1,"block":42,"project":"Nebula!"}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "oversized note",
+                deployment_event(
+                    &format!(r#"{{"v":1,"block":42,"note":"{}"}}"#, "x".repeat(257)),
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+        ];
+        for (label, event) in rejects {
+            assert!(
+                validate_deployment_record_envelope(&event).is_err(),
+                "{label} must be rejected"
+            );
+        }
     }
 }

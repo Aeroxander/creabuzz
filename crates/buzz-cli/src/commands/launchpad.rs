@@ -5,8 +5,8 @@
 //! mirrors. Mirror commands never move money — settlement is onchain.
 
 use buzz_core::kind::{
-    KIND_DELETION, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD,
-    KIND_LAUNCH_UPDATE,
+    KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE,
 };
 use nostr::{Event, EventBuilder, Kind, Tag, Timestamp};
 
@@ -667,6 +667,11 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             )
             .await
         }
+        LaunchpadCmd::Deployment { cmd } => match cmd {
+            crate::DeploymentCmd::Record { file, broadcast } => {
+                cmd_deployment_record(client, &file, broadcast.as_deref()).await
+            }
+        },
     }
 }
 
@@ -768,7 +773,7 @@ fn cmd_compose_bid(
 /// and dropped by the web feed parser, so a claim or verdict mirrored without
 /// one reached nobody. Validated before signing so a bad hash fails here.
 fn receipt_tx_tag(tx: &str) -> Result<Tag, CliError> {
-    if tx.len() != 66 || !tx.starts_with("0x") || !tx[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !is_tx_hash(tx) {
         return Err(CliError::Usage(
             "tx must be a 0x-prefixed 32-byte tx hash (0x + 64 hex chars)".into(),
         ));
@@ -878,6 +883,384 @@ async fn cmd_verdict(
     .await
 }
 
+// ---------------------------------------------------------------------------
+// Discovery plane: kind:37018 deployment records
+// (`buzz launchpad deployment record`).
+//
+// The chain is the ledger; Nostr is the record (NIP-LP rule). The deployer —
+// never the relay — authors these: `DeployOrgDao.s.sol` writes the
+// deployments manifest and prints this command, and the CLI publishes one
+// record per role so a client resolves "where is the Summoner" from signed
+// events alone. The relay enforces the same envelope at ingest
+// (`validate_deployment_record_envelope`), including the required `tx` tag.
+// ---------------------------------------------------------------------------
+
+/// Roles a kind:37018 record may name (the contract grammar).
+const DEPLOYMENT_ROLES: [&str; 3] = ["summoner", "factory", "implementation"];
+/// Cap on roles in one manifest: a deployment names a handful of contracts.
+const DEPLOYMENT_ROLE_CAP: usize = 8;
+/// Bound on manifests and broadcast artifacts read from disk (a forge
+/// `run-latest.json` is a few hundred KB; 8 MiB is generous headroom).
+const DEPLOYMENT_FILE_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// Max chars in the optional `note` (matches the relay's cap).
+const DEPLOYMENT_NOTE_MAX_CHARS: usize = 256;
+
+/// True when `value` is a `0x`-prefixed 32-byte tx hash.
+fn is_tx_hash(value: &str) -> bool {
+    value.len() == 66
+        && value.starts_with("0x")
+        && value[2..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// One role entry of a deployments manifest.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct DeploymentRoleEntry {
+    /// One of [`DEPLOYMENT_ROLES`].
+    pub role: String,
+    /// Deployed contract address (`0x` + 40 hex).
+    pub address: String,
+}
+
+/// `contracts/deployments/org-dao-<chainid>.json` — the shape
+/// `DeployOrgDao.s.sol` writes (the `apptoken-latest.json` convention: one
+/// JSON file per deployment, read by this command and nothing else).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct DeploymentManifest {
+    /// EIP-155 chain the contracts were deployed on (JSON key `chainId`).
+    #[serde(rename = "chainId")]
+    pub chain_id: u64,
+    /// Launch/org slug the records are filed under (optional).
+    #[serde(default)]
+    pub project: Option<String>,
+    /// Free-text provenance note (optional, ≤ [`DEPLOYMENT_NOTE_MAX_CHARS`]).
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Deploying tx hash (optional — see [`resolve_deployment_tx`]).
+    #[serde(default)]
+    pub tx: Option<String>,
+    /// Deploy block (optional — see [`resolve_deployment_tx`]).
+    #[serde(default)]
+    pub block: Option<u64>,
+    /// Forge broadcast artifact path, relative to the manifest's directory,
+    /// consulted only when `tx`/`block` are absent.
+    #[serde(default)]
+    pub broadcast: Option<String>,
+    /// The deployed contracts, one entry per role.
+    pub roles: Vec<DeploymentRoleEntry>,
+}
+
+/// Parse and validate a deployments manifest.
+///
+/// This is the CLI half of the kind:37018 contract; the relay re-checks every
+/// shape it is given at ingest, so a manifest that slips past here still
+/// cannot produce a record the relay rejects silently — it fails as a write.
+pub(crate) fn parse_deployment_manifest(raw: &str) -> Result<DeploymentManifest, CliError> {
+    if raw.len() as u64 > DEPLOYMENT_FILE_MAX_BYTES {
+        return Err(CliError::Usage(format!(
+            "deployments manifest too large (max {DEPLOYMENT_FILE_MAX_BYTES} bytes)"
+        )));
+    }
+    let manifest: DeploymentManifest = serde_json::from_str(raw)
+        .map_err(|e| CliError::Usage(format!("invalid deployments JSON: {e}")))?;
+    if manifest.chain_id == 0 {
+        return Err(CliError::Usage("chainId must be non-zero".into()));
+    }
+    if manifest.roles.is_empty() || manifest.roles.len() > DEPLOYMENT_ROLE_CAP {
+        return Err(CliError::Usage(format!(
+            "roles must hold 1..={DEPLOYMENT_ROLE_CAP} entries (got {})",
+            manifest.roles.len()
+        )));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for (index, entry) in manifest.roles.iter().enumerate() {
+        if !DEPLOYMENT_ROLES.contains(&entry.role.as_str()) {
+            return Err(CliError::Usage(format!(
+                "roles[{index}].role must be one of {} (got {:?})",
+                DEPLOYMENT_ROLES.join("|"),
+                entry.role
+            )));
+        }
+        if !seen.insert(entry.role.as_str()) {
+            return Err(CliError::Usage(format!(
+                "roles[{index}] duplicates role {:?}",
+                entry.role
+            )));
+        }
+        validate_0x_address(&entry.address, &format!("roles[{index}].address"))?;
+    }
+    if let Some(project) = &manifest.project {
+        validate_deployment_slug(project, "project")?;
+    }
+    if let Some(note) = &manifest.note {
+        if note.chars().count() > DEPLOYMENT_NOTE_MAX_CHARS {
+            return Err(CliError::Usage(format!(
+                "note must be at most {DEPLOYMENT_NOTE_MAX_CHARS} chars"
+            )));
+        }
+    }
+    if let Some(tx) = &manifest.tx {
+        receipt_tx_tag(tx)?;
+    }
+    Ok(manifest)
+}
+
+/// `project` slugs use the same shape as launch ids.
+fn validate_deployment_slug(value: &str, what: &str) -> Result<(), CliError> {
+    let ok = !value.is_empty() && value.len() <= 64 && {
+        let bytes = value.as_bytes();
+        (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+            && bytes[1..]
+                .iter()
+                .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(CliError::Usage(format!(
+            "{what} must match [a-z0-9][a-z0-9_-]{{0,63}} (got {value:?})"
+        )))
+    }
+}
+
+/// Resolve `(tx, block)` for a manifest: explicit manifest fields win;
+/// anything missing is read from forge's broadcast artifact.
+///
+/// Why the artifact exists at all: forge **cannot** expose the current run's
+/// transaction hashes from inside `run()` — broadcast artifacts are written
+/// only after the script finishes (verified against forge 1.4.3:
+/// `vm.getBroadcast` reverts with "broadcast dir does not exist" mid-run).
+/// The manifest's `broadcast` field (or `--broadcast`) points at
+/// `broadcast/<script>.s.sol/<chainid>/run-latest.json`, which carries both
+/// the tx hash and the receipt's block number.
+pub(crate) fn resolve_deployment_tx(
+    manifest: &DeploymentManifest,
+    broadcast_raw: Option<&str>,
+) -> Result<(String, u64), CliError> {
+    let explicit_tx = manifest.tx.clone();
+    let explicit_block = manifest.block;
+    if let (Some(tx), Some(block)) = (&explicit_tx, explicit_block) {
+        receipt_tx_tag(tx)?;
+        if block == 0 {
+            return Err(CliError::Usage("block must be non-zero".into()));
+        }
+        return Ok((tx.clone(), block));
+    }
+
+    let raw = broadcast_raw.ok_or_else(|| {
+        CliError::Usage(
+            "manifest carries no `tx`/`block`; point its `broadcast` field at forge's \
+             run-latest.json (or pass --broadcast)"
+                .into(),
+        )
+    })?;
+    let (artifact_tx, artifact_block) = broadcast_tx_and_block(raw, manifest)?;
+
+    let tx = match explicit_tx {
+        Some(tx) => {
+            receipt_tx_tag(&tx)?;
+            tx
+        }
+        None => artifact_tx,
+    };
+    let block = match explicit_block {
+        Some(0) => return Err(CliError::Usage("block must be non-zero".into())),
+        Some(block) => block,
+        None => artifact_block,
+    };
+    Ok((tx, block))
+}
+
+/// Pull the deploying tx hash and its block out of a forge broadcast artifact.
+///
+/// The artifact records the script's *top-level* broadcasts, so the match is
+/// the `CREATE` transaction whose `contractAddress` is one of the manifest's
+/// role addresses. For `DeployOrgDao` that single transaction also creates the
+/// Summoner and its Moloch implementation (both are constructed inside
+/// `OrgBinding`'s constructor), which is why one tx serves every role.
+fn broadcast_tx_and_block(
+    raw: &str,
+    manifest: &DeploymentManifest,
+) -> Result<(String, u64), CliError> {
+    let artifact: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|e| CliError::Usage(format!("invalid broadcast artifact JSON: {e}")))?;
+    let addresses: Vec<String> = manifest
+        .roles
+        .iter()
+        .map(|entry| entry.address.to_lowercase())
+        .collect();
+
+    let tx_hash = artifact
+        .get("transactions")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|transactions| {
+            transactions.iter().find(|tx| {
+                let is_create = tx
+                    .get("transactionType")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("CREATE");
+                let address = tx
+                    .get("contractAddress")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_lowercase);
+                is_create && address.is_some_and(|address| addresses.contains(&address))
+            })
+        })
+        .and_then(|tx| tx.get("hash").and_then(serde_json::Value::as_str))
+        .ok_or_else(|| {
+            CliError::Usage(format!(
+                "broadcast artifact has no CREATE tx for any manifest role address ({})",
+                addresses.join(", ")
+            ))
+        })?;
+    if !is_tx_hash(tx_hash) {
+        return Err(CliError::Usage(
+            "broadcast artifact tx hash is not a 32-byte hash".into(),
+        ));
+    }
+
+    let block = artifact
+        .get("receipts")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|receipts| {
+            receipts.iter().find(|receipt| {
+                receipt
+                    .get("transactionHash")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|hash| hash.eq_ignore_ascii_case(tx_hash))
+            })
+        })
+        .and_then(|receipt| receipt.get("blockNumber"))
+        .and_then(json_u64)
+        .ok_or_else(|| {
+            CliError::Usage(
+                "broadcast artifact has no receipt with a block number for the deploy tx".into(),
+            )
+        })?;
+    if block == 0 {
+        return Err(CliError::Usage(
+            "broadcast artifact block must be non-zero".into(),
+        ));
+    }
+    Ok((tx_hash.to_string(), block))
+}
+
+/// Read a `u64` from JSON that may be a number, a decimal string, or a
+/// `0x`-prefixed hex string (forge writes receipt `blockNumber` as hex).
+fn json_u64(value: &serde_json::Value) -> Option<u64> {
+    match value {
+        serde_json::Value::Number(number) => number.as_u64(),
+        serde_json::Value::String(raw) => match raw.strip_prefix("0x") {
+            Some(hex) => u64::from_str_radix(hex, 16).ok(),
+            None => raw.parse::<u64>().ok(),
+        },
+        _ => None,
+    }
+}
+
+/// Build one kind:37018 record (`d`, tags, content) from a manifest — pure,
+/// deterministic, and independent of the clock, so re-running the command
+/// rebuilds byte-identical records and NIP-33 LWW replaces the coordinate
+/// instead of duplicating it (idempotency).
+pub(crate) fn deployment_record_parts(
+    manifest: &DeploymentManifest,
+    entry: &DeploymentRoleEntry,
+    tx: &str,
+    block: u64,
+) -> Result<(String, Vec<Tag>, serde_json::Value), CliError> {
+    if block == 0 {
+        return Err(CliError::Usage("block must be non-zero".into()));
+    }
+    let d = format!("{}:{}", manifest.chain_id, entry.role);
+    let tags = vec![
+        Tag::parse(["chain", manifest.chain_id.to_string().as_str()])
+            .map_err(|e| CliError::Other(format!("bad chain tag: {e}")))?,
+        Tag::parse(["role", entry.role.as_str()])
+            .map_err(|e| CliError::Other(format!("bad role tag: {e}")))?,
+        Tag::parse(["address", entry.address.as_str()])
+            .map_err(|e| CliError::Other(format!("bad address tag: {e}")))?,
+        receipt_tx_tag(tx)?,
+    ];
+    let mut content = serde_json::json!({ "v": 1, "block": block });
+    if let Some(project) = &manifest.project {
+        content["project"] = serde_json::json!(project);
+    }
+    if let Some(note) = &manifest.note {
+        content["note"] = serde_json::json!(note);
+    }
+    Ok((d, tags, content))
+}
+
+/// Read a manifest/artifact from disk with the size bound applied first.
+fn read_deployment_file(path: &std::path::Path) -> Result<String, CliError> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| CliError::Usage(format!("cannot read {}: {e}", path.display())))?;
+    if meta.len() > DEPLOYMENT_FILE_MAX_BYTES {
+        return Err(CliError::Usage(format!(
+            "{} too large (max {DEPLOYMENT_FILE_MAX_BYTES} bytes)",
+            path.display()
+        )));
+    }
+    std::fs::read_to_string(path)
+        .map_err(|e| CliError::Usage(format!("cannot read {}: {e}", path.display())))
+}
+
+/// `buzz launchpad deployment record --file <manifest> [--broadcast <artifact>]`.
+async fn cmd_deployment_record(
+    client: &BuzzClient,
+    file: &str,
+    broadcast: Option<&str>,
+) -> Result<(), CliError> {
+    let manifest_path = std::path::Path::new(file);
+    let manifest = parse_deployment_manifest(&read_deployment_file(manifest_path)?)?;
+
+    // Only reach for forge's artifact when the manifest cannot answer itself.
+    let broadcast_raw = if manifest.tx.is_none() || manifest.block.is_none() {
+        let path = match broadcast {
+            Some(path) => std::path::PathBuf::from(path),
+            None => {
+                let base = manifest_path.parent().unwrap_or(std::path::Path::new("."));
+                let relative = manifest.broadcast.as_deref().ok_or_else(|| {
+                    CliError::Usage(
+                        "manifest carries no `tx`/`block` and no `broadcast` field to \
+                         resolve them from (pass --broadcast)"
+                            .into(),
+                    )
+                })?;
+                base.join(relative)
+            }
+        };
+        Some(read_deployment_file(&path)?)
+    } else {
+        None
+    };
+
+    let (tx, block) = resolve_deployment_tx(&manifest, broadcast_raw.as_deref())?;
+
+    let mut published = Vec::with_capacity(manifest.roles.len());
+    for entry in &manifest.roles {
+        let (d, tags, content) = deployment_record_parts(&manifest, entry, &tx, block)?;
+        let builder = EventBuilder::new(
+            Kind::Custom(KIND_DEPLOYMENT_RECORD as u16),
+            content.to_string(),
+        )
+        .tags(tags);
+        let event = client.sign_event(builder)?;
+        let raw = client.submit_event(event).await?;
+        parse_write_response(&raw, &format!("deployment record {d} was dominated; retry"))?;
+        published.push(d);
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "event": "deployment-records",
+            "chain_id": manifest.chain_id,
+            "records": published,
+            "status": "ok",
+        })
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,5 +1326,237 @@ mod tests {
     fn an_unknown_verdict_word_is_refused() {
         let err = verdict_receipt_parts("milestone-1", "maybe", TX).unwrap_err();
         assert!(matches!(err, CliError::Usage(_)));
+    }
+
+    // ---- Discovery plane: kind:37018 deployment records ----
+
+    const DEPLOY_ADDRESS: &str = "0x1550141d1bcba032262413ead1c0ce24373382b6";
+
+    /// A well-formed manifest, with `tx`/`block` included only when asked for.
+    fn manifest_json(tx: Option<&str>, block: Option<u64>) -> String {
+        let mut manifest = serde_json::json!({
+            "chainId": 8453,
+            "project": "nebula",
+            "note": "forge script script/DeployOrgDao.s.sol",
+            "broadcast": "../broadcast/DeployOrgDao.s.sol/8453/run-latest.json",
+            "roles": [
+                { "role": "summoner", "address": DEPLOY_ADDRESS },
+                { "role": "factory", "address": "0xE7F1725E7734ce288F8367e1bb143e90BB3f0512" },
+                { "role": "implementation", "address": "0x9f7250d94297279596c31979ae916d9707a9fc49" },
+            ],
+        });
+        if let Some(tx) = tx {
+            manifest["tx"] = serde_json::json!(tx);
+        }
+        if let Some(block) = block {
+            manifest["block"] = serde_json::json!(block);
+        }
+        manifest.to_string()
+    }
+
+    /// A forge `run-latest.json` reduced to the fields the resolver reads.
+    /// `contractAddress` is checksum-cased while the manifest is lowercase —
+    /// the match must be case-insensitive.
+    fn broadcast_artifact_json() -> String {
+        serde_json::json!({
+            "transactions": [
+                { "transactionType": "CREATE", "contractName": "OrgAllowance",
+                  "contractAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+                  "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+                { "transactionType": "CREATE", "contractName": "OrgBinding",
+                  "contractAddress": "0xE7F1725E7734ce288F8367e1bb143e90BB3f0512",
+                  "hash": TX },
+            ],
+            "receipts": [
+                { "transactionHash": TX, "blockNumber": "0xb45" },
+            ],
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn deployment_records_carry_the_golden_tags_and_content() {
+        let manifest = parse_deployment_manifest(&manifest_json(Some(TX), Some(1234)))
+            .expect("valid manifest");
+        let entry = &manifest.roles[0];
+        let (d, tags, content) =
+            deployment_record_parts(&manifest, entry, TX, 1234).expect("parts");
+        assert_eq!(d, "8453:summoner", "`d` is <chainId>:<role>");
+        assert_eq!(
+            tag_pairs(&tags),
+            vec![
+                vec!["chain".to_string(), "8453".to_string()],
+                vec!["role".to_string(), "summoner".to_string()],
+                vec!["address".to_string(), DEPLOY_ADDRESS.to_string()],
+                vec!["tx".to_string(), TX.to_string()],
+            ],
+            "the relay requires exactly chain/role/address/tx, in this order"
+        );
+        assert_eq!(
+            content,
+            serde_json::json!({
+                "v": 1,
+                "block": 1234,
+                "project": "nebula",
+                "note": "forge script script/DeployOrgDao.s.sol",
+            })
+        );
+
+        // Every role gets its own coordinate and nothing else changes.
+        let roles: Vec<String> = manifest
+            .roles
+            .iter()
+            .map(|entry| {
+                deployment_record_parts(&manifest, entry, TX, 1234)
+                    .expect("parts")
+                    .0
+            })
+            .collect();
+        assert_eq!(
+            roles,
+            vec!["8453:summoner", "8453:factory", "8453:implementation"]
+        );
+    }
+
+    #[test]
+    fn rebuilding_the_same_manifest_rebuilds_identical_records() {
+        // Idempotency: publishing twice rewrites the same (chainId, role)
+        // NIP-33 coordinates with byte-identical tags and content, so a
+        // re-run replaces the head instead of creating a parallel record.
+        let first = parse_deployment_manifest(&manifest_json(Some(TX), Some(1234)))
+            .expect("valid manifest");
+        let second = parse_deployment_manifest(&manifest_json(Some(TX), Some(1234)))
+            .expect("valid manifest");
+        for (a, b) in first.roles.iter().zip(second.roles.iter()) {
+            let left = deployment_record_parts(&first, a, TX, 1234).expect("parts");
+            let right = deployment_record_parts(&second, b, TX, 1234).expect("parts");
+            assert_eq!(left.0, right.0, "d coordinate must be stable");
+            assert_eq!(
+                tag_pairs(&left.1),
+                tag_pairs(&right.1),
+                "tags must be stable"
+            );
+            assert_eq!(left.2, right.2, "content must be stable");
+        }
+    }
+
+    #[test]
+    fn tx_and_block_resolve_from_the_forge_broadcast_artifact() {
+        let manifest =
+            parse_deployment_manifest(&manifest_json(None, None)).expect("valid manifest");
+        let (tx, block) =
+            resolve_deployment_tx(&manifest, Some(&broadcast_artifact_json())).expect("resolved");
+        assert_eq!(tx, TX, "the CREATE tx whose contractAddress matches a role");
+        assert_eq!(block, 0xb45, "receipt blockNumber is hex");
+    }
+
+    #[test]
+    fn manifest_tx_and_block_skip_the_artifact() {
+        let manifest =
+            parse_deployment_manifest(&manifest_json(Some(TX), Some(7))).expect("valid manifest");
+        let (tx, block) = resolve_deployment_tx(&manifest, None).expect("resolved");
+        assert_eq!((tx.as_str(), block), (TX, 7));
+    }
+
+    #[test]
+    fn unresolvable_tx_or_block_is_refused_with_a_pointer_to_the_artifact() {
+        // No tx, no block, no artifact: the command must say how to fix it
+        // rather than publish a record the relay would reject (no `tx` tag).
+        let manifest =
+            parse_deployment_manifest(&manifest_json(None, None)).expect("valid manifest");
+        let err = resolve_deployment_tx(&manifest, None).expect_err("must refuse");
+        assert!(matches!(err, CliError::Usage(_)), "got {err:?}");
+
+        // A `CREATE` tx that matches none of the manifest's role addresses
+        // cannot be attributed to this deployment.
+        let artifact = serde_json::json!({
+            "transactions": [
+                { "transactionType": "CREATE", "contractName": "SomethingElse",
+                  "contractAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+                  "hash": TX },
+            ],
+            "receipts": [{ "transactionHash": TX, "blockNumber": "0xb45" }],
+        })
+        .to_string();
+        let err = resolve_deployment_tx(&manifest, Some(&artifact)).expect_err("must refuse");
+        assert!(matches!(err, CliError::Usage(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn malformed_manifests_are_refused_before_signing() {
+        let cases: Vec<(&str, String)> = vec![
+            ("unknown role", manifest_json_replace_role("summoner-summoner")),
+            (
+                "duplicate role",
+                r#"{"chainId":8453,"roles":[
+                    {"role":"summoner","address":"0x1550141d1bcba032262413ead1c0ce24373382b6"},
+                    {"role":"summoner","address":"0x1550141d1bcba032262413ead1c0ce24373382b6"}]}"#
+                    .into(),
+            ),
+            (
+                "no roles",
+                r#"{"chainId":8453,"roles":[]}"#.into(),
+            ),
+            (
+                "bad address",
+                r#"{"chainId":8453,"roles":[{"role":"summoner","address":"0xnope"}]}"#.into(),
+            ),
+            ("chainId zero", r#"{"chainId":0,"roles":[{"role":"summoner","address":"0x1550141d1bcba032262413ead1c0ce24373382b6"}]}"#.into()),
+            ("bad tx", manifest_json(Some("0xdead"), Some(1))),
+            (
+                "bad project slug",
+                manifest_json_with_project("Nebula!"),
+            ),
+            (
+                "oversized note",
+                serde_json::json!({
+                    "chainId": 8453,
+                    "note": "x".repeat(257),
+                    "roles": [{ "role": "summoner", "address": DEPLOY_ADDRESS }],
+                })
+                .to_string(),
+            ),
+            ("not JSON", "{".into()),
+        ];
+        for (label, raw) in cases {
+            let err = parse_deployment_manifest(&raw).expect_err(label);
+            assert!(
+                matches!(err, CliError::Usage(_)),
+                "{label} must fail as usage, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_zero_block_is_refused_even_when_everything_else_is_valid() {
+        let manifest =
+            parse_deployment_manifest(&manifest_json(Some(TX), Some(1))).expect("valid manifest");
+        let err = deployment_record_parts(&manifest, &manifest.roles[0], TX, 0)
+            .expect_err("block 0 must refuse");
+        assert!(matches!(err, CliError::Usage(_)));
+
+        let manifest =
+            parse_deployment_manifest(&manifest_json(Some(TX), Some(0))).expect("parsed");
+        let err = resolve_deployment_tx(&manifest, None).expect_err("block 0 must refuse");
+        assert!(matches!(err, CliError::Usage(_)));
+    }
+
+    /// Swap in a bad `role` while keeping the rest of the manifest valid.
+    fn manifest_json_replace_role(role: &str) -> String {
+        serde_json::json!({
+            "chainId": 8453,
+            "roles": [{ "role": role, "address": DEPLOY_ADDRESS }],
+        })
+        .to_string()
+    }
+
+    /// Same as [`manifest_json`] with a different `project` slug.
+    fn manifest_json_with_project(project: &str) -> String {
+        serde_json::json!({
+            "chainId": 8453,
+            "project": project,
+            "roles": [{ "role": "summoner", "address": DEPLOY_ADDRESS }],
+        })
+        .to_string()
     }
 }

@@ -836,6 +836,107 @@ pub const KIND_ORG_PITCH: u32 = 37015;
 /// equity record. Community-level and global-only, no routing tag.
 pub const KIND_ORG_JOIN_REQUEST: u32 = 37016;
 
+/// NIP-ORG (Discovery plane): EVM binding record — "which address holds this
+/// seat", answerable from signed events alone (parameterized replaceable,
+/// `d` = the bound address). Community-level and global-only, no routing tag.
+///
+/// # Wire contract (CONSUMED BY CLIENTS — do not change without updating
+/// producers)
+///
+/// ```json
+/// {
+///   "v": 1,
+///   "address": "0x…",
+///   "siweMessageHash": "0x…",
+///   "attestation": <EIP-712 envelope> | null,
+///   "revoked": true
+/// }
+/// ```
+///
+/// - `d` — exactly one tag, lowercase `0x` + 40 hex of the bound EVM address.
+/// - Tags — exactly one `["address", "0x…"]` (checksummed or lowercase;
+///   must equal `d` case-insensitively), and optionally exactly one
+///   `["chain", "<EIP-155 chain id>"]` (decimal; when an attestation is
+///   present it MUST equal `attestation.domain.chain_id`).
+/// - `content.v` — `1`.
+/// - `content.address` — same address as `d` (any case; compared as bytes).
+/// - `content.siweMessageHash` — `0x` + 64 hex: the EIP-191
+///   `personal_sign` digest of the SIWE message the relay verified at bind
+///   time (`buzz_evm_auth::personal_sign_digest`). A commitment/pointer a
+///   client that holds the message can re-derive; ingest checks its shape
+///   only (see below).
+/// - `content.attestation` — the EIP-712 `NostrSigner` envelope exactly as
+///   `POST /auth/siwe/register` stores it (`buzz_evm_auth::AttestationEnvelope`:
+///   `{"attestation":{"account","npub","expires","nonce"},"domain":{…},"signature"}`),
+///   or `null` on a revocation.
+/// - `content.revoked` — optional boolean. `true` revokes the binding.
+///
+/// **Authorship**: the event MUST be signed by the bound npub itself — the
+/// record claims *the author* holds `d`, never a third party.
+///
+/// **Ingest enforcement (anti-spoof, fully offline — no RPC)**: for a live
+/// (non-revoked) record the `attestation` is REQUIRED and verified with
+/// `AttestationEnvelope::verify_for_npub(author, now)` — EIP-712 signature
+/// over the domain-separated digest, `attestation.npub` == event signer,
+/// not expired — and `attestation.account` MUST equal `content.address`
+/// (== `d`). A claim without that proof never lands. The SIWE leg
+/// (`siweMessageHash`) CANNOT be re-verified at ingest: the record carries
+/// only a hash, not the EIP-4361 message + `personal_sign` signature, so
+/// ingest does not pretend to check it — the attestation is the proof.
+///
+/// **Revocation**: same `(author, d)` republished with `content.revoked:
+/// true` (NIP-ORG kind:37011 §Revocation — "republication of the same
+/// `(issuer, d)` with `revoked: true`"). NIP-33 LWW makes it the head. A
+/// revoked record needs no attestation — withdrawal requires only control
+/// of the npub, mirroring `POST /auth/siwe/revoke` (a kind:27235 npub
+/// proof, no EVM signature). When an attestation IS present on a revoked
+/// record it must still verify signature/npub/account; expiry is not
+/// enforced on withdrawal.
+///
+/// **Reader rule**: resolve per `(author, d)` — the newest event of that
+/// coordinate wins (ties → lowest id); a foreign author's record for the
+/// same `d` never suppresses or replaces an author's own head.
+pub const KIND_EVM_BINDING: u32 = 37017;
+
+/// NIP-ORG (Discovery plane): deployment record — "where is the Summoner"
+/// (parameterized replaceable, `d` = `<chainId>:<role>`). Community-level
+/// and global-only, no routing tag — a stray `h` never channel-scopes it.
+///
+/// # Wire contract (CONSUMED BY CLIENTS — do not change without updating
+/// producers)
+///
+/// ```json
+/// { "v": 1, "block": 123, "project": "<slug>", "note": "…" }
+/// ```
+///
+/// - `d` — exactly one tag, `<chainId>:<role>`: decimal `chainId` (no
+///   leading zeros, ≤20 digits) `:` one of `summoner` | `factory` |
+///   `implementation`.
+/// - Tags — exactly one of each: `["chain", "<chainId>"]` (equal to the
+///   `d` chain segment), `["role", …]` (equal to the `d` role segment),
+///   `["address", "0x…"]` (40-hex), `["tx", "0x…"]` (32-byte deploying tx
+///   hash — required, exactly as kind:47005 receipts require theirs, so a
+///   client can verify the deployment on-chain).
+/// - `content.v` — `1`; `content.block` — non-zero decimal block number the
+///   contract was deployed in; `content.project` (optional) — launch/org slug
+///   `[a-z0-9][a-z0-9_-]{0,63}`; `content.note` (optional) — ≤256 chars.
+///
+/// **Authored by the deployer** (whoever signs with `BUZZ_PRIVATE_KEY`) —
+/// the relay never holds keys. `DeployOrgDao.s.sol` writes the
+/// `deployments/org-dao-<chainid>.json` input (roles + addresses + a
+/// `broadcast` pointer at forge's `run-latest.json`, from which the CLI fills
+/// `tx`/`block` — forge cannot expose the current run's tx hashes inside
+/// `run()`) and prints the exact
+/// `buzz launchpad deployment record --file …` command; the chain is the
+/// ledger, Nostr the record (NIP-LP rule).
+///
+/// Roles, for a `DeployOrgDao` run: `summoner` = the majeur `Summoner`
+/// CREATE2 factory (`OrgBinding.summoner()`), `factory` = the `OrgBinding`
+/// summon-and-bind entry point, `implementation` = the `Moloch`
+/// implementation the Summoner clones (emitted as `NewDAO` in the
+/// Summoner's constructor).
+pub const KIND_DEPLOYMENT_RECORD: u32 = 37018;
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -981,6 +1082,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_BUDGET_SPEND_RECEIPT,
     KIND_ORG_PITCH,
     KIND_ORG_JOIN_REQUEST,
+    KIND_EVM_BINDING,
+    KIND_DEPLOYMENT_RECORD,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -1090,6 +1193,8 @@ const _: () = assert!(is_parameterized_replaceable(KIND_CONTRIBUTION_RECORD)); /
 const _: () = assert!(is_parameterized_replaceable(KIND_BUDGET_SPEND_RECEIPT)); // 37014 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_PITCH)); // 37015 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_JOIN_REQUEST)); // 37016 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_EVM_BINDING)); // 37017 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_DEPLOYMENT_RECORD)); // 37018 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 
@@ -1159,6 +1264,22 @@ mod tests {
         assert!(is_parameterized_replaceable(39000)); // NIP-29 group metadata
         assert!(is_parameterized_replaceable(39999));
         assert!(!is_parameterized_replaceable(40000));
+    }
+
+    #[test]
+    fn discovery_plane_kinds_join_all_kinds() {
+        // The discovery plane (37017 EVM binding / 37018 deployment record)
+        // must be registered, not merely defined: `ALL_KINDS` is what
+        // duplicate-detection and kind iteration walk, and the compile-time
+        // range asserts below only guard the NIP-33 window. Removing either
+        // kind from the list fails here.
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert!(ALL_KINDS.contains(&kind), "kind {kind} must join ALL_KINDS");
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be parameterized-replaceable"
+            );
+        }
     }
 
     #[test]

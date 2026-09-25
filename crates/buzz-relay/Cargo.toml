@@ -95,6 +95,9 @@ mesh-llm-host-runtime = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag 
 # keys use for binding verification.
 buzz-test-client = { path = "../buzz-test-client" }
 ed25519-dalek = "=3.0.0-rc.0"
+# Sign EIP-712 NostrSigner attestations for the kind:37017 ingest fixtures
+# (the same envelope `POST /auth/siwe/register` verifies).
+k256 = { workspace = true }
 buzz-core = { workspace = true, features = ["test-utils"] }
 buzz-auth = { workspace = true, features = ["dev"] }
 reqwest = { workspace = true }

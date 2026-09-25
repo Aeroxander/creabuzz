@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {OrgAllowance} from "../src/OrgAllowance.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
 import {Moloch} from "majeur/src/Moloch.sol";
@@ -21,6 +22,16 @@ import {Moloch} from "majeur/src/Moloch.sol";
 /// mint happens ONLY at bind time. Later seat changes are governance
 /// proposals, never auto-mutations of share supply.
 ///
+/// It also writes the discovery-plane handoff:
+/// `deployments/org-dao-<chainid>.json` — one `role` entry each for the
+/// Summoner (the majeur CREATE2 factory that deploys DAOs), the OrgBinding
+/// summon-and-bind entry point ("factory"), and the Moloch implementation the
+/// Summoner clones — plus the `broadcast` field pointing at forge's
+/// `run-latest.json`. `buzz launchpad deployment record --file <that json>`
+/// turns it into kind:37018 records; forge cannot expose the current run's tx
+/// hashes from inside `run()` (broadcast artifacts are written *after* the
+/// script finishes), which is why the tx/block provenance lives there.
+///
 /// NDOC — local anvil flow:
 ///
 /// ```bash
@@ -36,6 +47,10 @@ import {Moloch} from "majeur/src/Moloch.sol";
 ///
 /// # 3. publish the Nostr side of the binding
 /// buzz org bind --root <node-d> --chain anvil-31337 --dao 0x<DAO>
+///
+/// # 4. publish the deployment records (kind:37018; tx/block are read from
+/// #    the broadcast artifact the manifest points at)
+/// buzz launchpad deployment record --file deployments/org-dao-31337.json
 /// ```
 contract DeployOrgDao is Script {
     /// @notice Broadcast deployment log.
@@ -49,6 +64,12 @@ contract DeployOrgDao is Script {
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address ownerAddr = vm.addr(pk);
+
+        // Captured before the broadcast so the Summoner constructor's
+        // `NewDAO(summoner, implementation)` log (both args indexed) tells us
+        // the cloned Moloch implementation — it is `immutable`, so there is no
+        // getter and no storage slot to read.
+        vm.recordLogs();
 
         vm.startBroadcast(pk);
 
@@ -88,13 +109,82 @@ contract DeployOrgDao is Script {
         vm.stopBroadcast();
 
         emit OrgDaoBound(rootId, address(binding), dao, shares, allowanceAddr);
+
+        address summoner = address(binding.summoner());
+        address implementation = _implementationFromLog(summoner);
+
+        string memory manifest = _writeDeploymentManifest(binding, summoner, implementation);
+
         console2.log("rootId:", vm.toString(rootId));
         console2.log("OrgBinding:", address(binding));
-        console2.log("Summoner:", address(binding.summoner()));
+        console2.log("Summoner:", summoner);
+        console2.log("Moloch implementation:", implementation);
         console2.log("DAO:", dao);
         console2.log("Shares:", shares);
         console2.log("OrgAllowance:", allowanceAddr);
         console2.log("OrgAllowance.owner (now the DAO):", allowance.owner());
         console2.log("chain: anvil-31337");
+        console2.log("deployment manifest:", manifest);
+        // The relay never holds keys: the deployer publishes the records.
+        console2.log("publish the kind:37018 deployment records with:");
+        console2.log(
+            string.concat("  buzz launchpad deployment record --file ", manifest, "  # after a --broadcast run")
+        );
+    }
+
+    /// @notice The Moloch the Summoner's constructor cloned, read back out of
+    /// its `NewDAO` log — both event arguments are indexed, so they live in
+    /// `topics[1]` (the Summoner itself) and `topics[2]` (the implementation).
+    /// The summon-time `NewDAO` carries a different `topics[1]`, so the pair
+    /// of the emitter and `topics[1]` identifies the constructor emission.
+    function _implementationFromLog(address summoner) internal view returns (address implementation) {
+        bytes32 newDaoTopic = keccak256("NewDAO(address,address)");
+        VmSafe.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].emitter == summoner && logs[i].topics.length == 3 && logs[i].topics[0] == newDaoTopic
+                    && address(uint160(uint256(logs[i].topics[1]))) == summoner
+            ) {
+                return address(uint160(uint256(logs[i].topics[2])));
+            }
+        }
+        revert("DeployOrgDao: Moloch implementation not found in Summoner NewDAO log");
+    }
+
+    /// @notice Write `deployments/org-dao-<chainid>.json` — the shape
+    /// `buzz launchpad deployment record --file` reads — and return its path.
+    ///
+    /// `tx`/`block` are deliberately absent: forge writes broadcast artifacts
+    /// only after `run()` returns (verified against forge 1.4.3 — an in-run
+    /// `vm.getBroadcast` reverts with "broadcast dir does not exist"), so the
+    /// manifest points at `run-latest.json` through `broadcast` and the CLI
+    /// resolves the deploy tx + receipt block from there.
+    function _writeDeploymentManifest(
+        OrgBinding binding,
+        address summoner,
+        address implementation
+    ) internal returns (string memory path) {
+        uint64 chainId = uint64(block.chainid);
+        path = string.concat("deployments/org-dao-", vm.toString(chainId), ".json");
+
+        string memory broadcast =
+            string.concat("../broadcast/DeployOrgDao.s.sol/", vm.toString(chainId), "/run-latest.json");
+        string memory json = string.concat(
+            '{"chainId":',
+            vm.toString(chainId),
+            ',"project":"',
+            vm.envOr("ORG_PROJECT", string("buzz-org")),
+            '","note":"forge script script/DeployOrgDao.s.sol --broadcast","broadcast":"',
+            broadcast,
+            '","roles":[',
+            '{"role":"summoner","address":"',
+            vm.toString(summoner),
+            '"},{"role":"factory","address":"',
+            vm.toString(address(binding)),
+            '"},{"role":"implementation","address":"',
+            vm.toString(implementation),
+            '"}]}'
+        );
+        vm.writeFile(path, json);
     }
 }
