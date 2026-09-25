@@ -38,6 +38,7 @@ mod runtime;
 mod runtime_commands;
 mod runtime_types;
 mod session_policy;
+pub(crate) mod skill_bindings;
 pub(crate) mod snapshot_avatar;
 pub(crate) mod spawn_snapshot;
 pub(crate) mod storage;

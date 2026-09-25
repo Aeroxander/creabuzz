@@ -8,6 +8,7 @@ mod observer;
 mod pi_launcher;
 mod pool;
 mod pool_lifecycle;
+mod project_skills;
 mod prompt_framing;
 mod prompt_project;
 mod queue;
@@ -2810,6 +2811,7 @@ async fn tokio_main() -> Result<()> {
         turn_liveness_interval: Duration::from_secs(config.turn_liveness_secs),
         dedup_mode: config.dedup_mode,
         system_prompt: config.system_prompt.clone(),
+        skill_bindings: config.skill_bindings.clone(),
         session_title: config.session_title.clone(),
         team_instructions: config.team_instructions.clone(),
         base_prompt,
@@ -9068,6 +9070,7 @@ mod build_mcp_servers_tests {
             turn_liveness_secs: 10,
             heartbeat_prompt: None,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             team_instructions: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
@@ -9294,6 +9297,7 @@ mod error_outcome_emission_tests {
             turn_liveness_secs: 10,
             heartbeat_prompt: None,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             team_instructions: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,

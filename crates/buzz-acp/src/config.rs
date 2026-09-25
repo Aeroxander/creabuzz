@@ -294,6 +294,13 @@ pub struct CliArgs {
     )]
     pub system_prompt_file: Option<PathBuf>,
 
+    /// Persona skill bindings handed over at spawn time: a JSON array of raw
+    /// `["skill", "<skill-id>", "<scope>"]` tags from the linked kind:30175
+    /// persona event. Written by the desktop (`managed_agents/skill_bindings.rs`);
+    /// see `crate::project_skills` for parsing and injection.
+    #[arg(long, env = "BUZZ_ACP_SKILL_BINDINGS", hide = true)]
+    pub skill_bindings: Option<String>,
+
     /// Number of parallel agent subprocesses.
     #[arg(long, env = "BUZZ_ACP_AGENTS", default_value_t = 1,
           value_parser = clap::value_parser!(u32).range(1..=32))]
@@ -553,6 +560,10 @@ pub struct Config {
     pub turn_liveness_secs: u64,
     pub heartbeat_prompt: Option<String>,
     pub system_prompt: Option<String>,
+    /// Validated persona skill bindings (kind:30175 `["skill", …]` tags).
+    /// Empty for personas without bindings; malformed tags are dropped at
+    /// parse time (fail-closed) — see `crate::project_skills`.
+    pub skill_bindings: Vec<crate::project_skills::SkillBinding>,
     /// Team-owned instructions layered separately from the agent system prompt.
     pub team_instructions: Option<String>,
     pub initial_message: Option<String>,
@@ -946,6 +957,24 @@ impl Config {
             None
         };
 
+        // Persona skill bindings: JSON array of raw tags. Fail-closed — an
+        // unparsable payload means no bindings (the agent still runs; see
+        // `crate::project_skills` for per-tag validation and logging).
+        let skill_bindings = match args.skill_bindings.as_deref() {
+            None => Vec::new(),
+            Some(raw) => match serde_json::from_str::<Vec<Vec<String>>>(raw) {
+                Ok(raw_tags) => crate::project_skills::parse_bindings(&raw_tags),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "project_skills",
+                        %error,
+                        "skill-binding payload is not a JSON array of tags — ignoring"
+                    );
+                    Vec::new()
+                }
+            },
+        };
+
         if args.heartbeat_interval > 0 && args.heartbeat_interval < 10 {
             return Err(ConfigError::ConfigFile(
                 "heartbeat interval must be 0 (disabled) or ≥10 seconds".into(),
@@ -1163,6 +1192,7 @@ impl Config {
             turn_liveness_secs,
             heartbeat_prompt,
             system_prompt,
+            skill_bindings,
             team_instructions: args
                 .team_instructions
                 .as_deref()
@@ -1547,6 +1577,7 @@ mod tests {
             turn_liveness_secs: 10,
             heartbeat_prompt: None,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             team_instructions: None,
             initial_message: None,
             subscribe_mode: mode,

@@ -772,6 +772,9 @@ pub struct PromptContext {
     pub turn_liveness_interval: Duration,
     pub dedup_mode: DedupMode,
     pub system_prompt: Option<String>,
+    /// Validated persona → skill bindings handed over at spawn. Drives the
+    /// `<project-skills>` section; see `crate::project_skills`.
+    pub skill_bindings: Vec<crate::project_skills::SkillBinding>,
     /// Sanitized agent name used to compose `_meta.sessionTitle` on session/new.
     /// Channel sessions add the channel name; thread sessions also add the root
     /// ID prefix. Never part of the prompt.
@@ -1358,14 +1361,28 @@ async fn create_session_and_apply_model(
     // its own `<core-memory>` boundary, and canvas carries its own
     // `<channel-canvas>` boundary; both are appended with a blank-line separator.
     let is_goose = agent.agent_name == "goose";
+    // Resolve bound skills once for this session creation, and only when the
+    // system prompt being built here is what the agent actually receives.
+    // Legacy agents (protocol < 2, non-Claude) get the section from the
+    // standing context of their first user message instead — see
+    // `run_prompt_task` — so each prompt task resolves skills at most once and
+    // never along a path that drops them.
+    let project_skills = if agent.has_system_prompt_support() {
+        crate::project_skills::resolve_project_skills(ctx).await
+    } else {
+        None
+    };
     let combined_system_prompt = with_canvas(
         with_huddle_instructions(
             with_core(
                 with_team(
-                    framed_system_prompt(
-                        &ctx.cwd,
-                        ctx.base_prompt.as_deref(),
-                        ctx.system_prompt.as_deref(),
+                    with_project_skills(
+                        framed_system_prompt(
+                            &ctx.cwd,
+                            ctx.base_prompt.as_deref(),
+                            ctx.system_prompt.as_deref(),
+                        ),
+                        project_skills.as_deref(),
                     ),
                     ctx.team_instructions.as_deref(),
                 ),
@@ -2013,6 +2030,23 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
     }
 }
 
+/// Append the already-framed `<project-skills>` section directly after the
+/// base/persona prompt and before `<team-instructions>`.
+///
+/// `section` arrives fully framed from `project_skills::assemble_project_skills_section`
+/// (bound bytes, `<project-skills>` boundary), so it is joined verbatim — the
+/// skill bodies are the model-facing contract and are never re-labeled or
+/// re-wrapped here. Skills alone still yield a section, so a persona with no
+/// prompt of its own still inherits its bindings.
+fn with_project_skills(prompt: Option<String>, section: Option<&str>) -> Option<String> {
+    match (prompt, section) {
+        (Some(prompt), Some(section)) => Some(format!("{prompt}\n\n{section}")),
+        (None, Some(section)) => Some(section.to_string()),
+        (Some(prompt), None) => Some(prompt),
+        (None, None) => None,
+    }
+}
+
 /// Append the agent's core memory section onto the framed system prompt.
 ///
 /// Core already carries its own `<core-memory>` boundary from
@@ -2509,14 +2543,7 @@ pub async fn run_prompt_task(
     // `is_new_session` comes from the session registry, which is cleared
     // whenever a session is invalidated — so the replacement session re-delivers
     // rather than leaving the agent unbriefed.
-    let standing = crate::queue::StandingContext {
-        base_prompt: ctx.base_prompt.as_deref(),
-        system_prompt: ctx.system_prompt.as_deref(),
-        team_instructions: ctx.team_instructions.as_deref(),
-        agent_core: agent_core.as_deref(),
-        huddle_instructions: huddle_instructions.as_deref(),
-        agent_canvas: agent_canvas.as_deref(),
-    };
+    //
     // Delivery state is committed only after ACP confirms success. Existing
     // sessions created before this field existed fail safe by behaving as
     // undelivered once, rather than silently omitting standing context.
@@ -2527,6 +2554,27 @@ pub async fn run_prompt_task(
             .get(scope)
             .is_some_and(|delivery| delivery.standing_context_sent),
         PromptSource::Heartbeat => agent.state.heartbeat_standing_context_sent,
+    };
+
+    // Bound skills ride with whichever side of this session actually carries
+    // the standing context. Modern agents resolved the same bindings inside
+    // `create_session_and_apply_model` for their `session/new` system prompt;
+    // legacy agents resolve them here, on the message that delivers standing
+    // context. The two gates are mutually exclusive, so a prompt task resolves
+    // a skill at most once — and never along a path that drops it.
+    let project_skills = if !agent.has_system_prompt_support() && !standing_context_sent {
+        crate::project_skills::resolve_project_skills(&ctx).await
+    } else {
+        None
+    };
+    let standing = crate::queue::StandingContext {
+        base_prompt: ctx.base_prompt.as_deref(),
+        system_prompt: ctx.system_prompt.as_deref(),
+        project_skills: project_skills.as_deref(),
+        team_instructions: ctx.team_instructions.as_deref(),
+        agent_core: agent_core.as_deref(),
+        huddle_instructions: huddle_instructions.as_deref(),
+        agent_canvas: agent_canvas.as_deref(),
     };
 
     if is_new_session {
@@ -2785,6 +2833,7 @@ pub async fn run_prompt_task(
                 has_system_prompt_support: agent.has_system_prompt_support(),
                 base_prompt: standing.base_prompt,
                 system_prompt: standing.system_prompt,
+                project_skills: standing.project_skills,
                 team_instructions: standing.team_instructions,
                 agent_canvas: standing.agent_canvas,
                 standing_context_sent,
@@ -5432,6 +5481,9 @@ mod tests {
         crate::queue::StandingContext {
             base_prompt: Some("be helpful"),
             system_prompt: Some("you are Eva"),
+            project_skills: Some(
+                "<project-skills>\nProject skills — how this work should be done\n</project-skills>",
+            ),
             team_instructions: Some("ship small"),
             agent_core: Some("[Agent Memory — core]\nremember this"),
             huddle_instructions: Some("reply immediately"),
@@ -5448,6 +5500,7 @@ mod tests {
         let positions: Vec<usize> = [
             "<base>",
             "<agent-instructions>",
+            "<project-skills>",
             "<team-instructions>",
             "<core-memory>",
             "<huddle-instructions>",
@@ -5547,6 +5600,52 @@ mod tests {
     #[test]
     fn test_framed_system_prompt_neither_is_none() {
         assert!(framed_system_prompt("/workspace", None, None).is_none());
+    }
+
+    // ── with_project_skills ──────────────────────────────────────────────────
+
+    const SKILLS_SECTION: &str =
+        "<project-skills>\nProject skills — how this work should be done\n</project-skills>";
+
+    #[test]
+    fn test_project_skills_sit_between_persona_and_team_in_the_system_prompt() {
+        // The production composition in `create_session_and_apply_model`:
+        // framed persona → project skills → team. Order is the contract — a
+        // reviewer of the assembled context must be able to find each boundary.
+        let framed =
+            framed_system_prompt("/workspace", Some("base"), Some("persona")).expect("framed");
+        let combined = with_team(
+            with_project_skills(Some(framed), Some(SKILLS_SECTION)),
+            Some("ship small"),
+        )
+        .expect("team layer");
+        let persona_at = combined
+            .find("<agent-instructions>")
+            .expect("persona section");
+        let skills_at = combined.find("<project-skills>").expect("skills section");
+        let team_at = combined.find("<team-instructions>").expect("team section");
+        assert!(
+            persona_at < skills_at && skills_at < team_at,
+            "expected persona < skills < team, got: {combined}"
+        );
+    }
+
+    #[test]
+    fn test_project_skills_alone_still_deliver_the_section() {
+        // A persona with no prompt of its own still inherits its bindings.
+        assert_eq!(
+            with_project_skills(None, Some(SKILLS_SECTION)).as_deref(),
+            Some(SKILLS_SECTION)
+        );
+    }
+
+    #[test]
+    fn test_project_skills_absent_is_a_passthrough() {
+        assert_eq!(
+            with_project_skills(Some("persona text".to_string()), None).as_deref(),
+            Some("persona text")
+        );
+        assert!(with_project_skills(None, None).is_none());
     }
 
     #[test]
@@ -8942,6 +9041,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             turn_liveness_interval: Duration::ZERO,
             dedup_mode: DedupMode::Drop,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             session_title: None,
             team_instructions: None,
             heartbeat_prompt: None,

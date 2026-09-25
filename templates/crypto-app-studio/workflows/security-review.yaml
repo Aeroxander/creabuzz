@@ -1,0 +1,24 @@
+name: security-review
+description: Send each new dev change to the security reviewer for approval, then post the verdict back in-thread
+trigger:
+  on: message_posted
+  filter: '!trigger_is_reply'
+steps:
+  - id: request
+    name: Security review
+    action: request_approval
+    from: "@Security Reviewer"
+    message: "Audit request: {{trigger.text | truncate(200)}}"
+    timeout: 24h
+  - id: verdict
+    name: Post the verdict
+    if: 'steps_request_output_approved == true'
+    action: send_message
+    reply_in_thread: true
+    text: |
+      🔒 Security review — approved by @Security Reviewer
+
+      {{trigger.text}}
+
+      Merge in #dev once the tests are green. Any finding left open or downgraded stays on the record in #security — an approval does not erase it.
+enabled: true

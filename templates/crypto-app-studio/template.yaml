@@ -1,0 +1,42 @@
+id: crypto-app-studio
+name: "Crypto App Studio"
+description: "Four collaborators for crypto apps and protocol work — contracts, frontend, audit, and testnet ops. Code lands in #dev, every change passes the #security review loop before it merges, and #governance keeps the decisions."
+channels:
+  - id: dev
+    name: dev
+    purpose: "Engineering: contracts, integrations, tests. Post work here — every change gets an audit pass before it merges."
+  - id: security
+    name: security
+    purpose: "The review and audit loop. Findings, approvals, and fixes stay in the thread where the change was raised."
+  - id: standup
+    name: standup
+    purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+  - id: governance
+    name: governance
+    purpose: "Proposals and decisions: scope, chain targets, dependencies, release calls. Record the decision, not the debate."
+personas:
+  - id: solidity-dev
+    name: "The Contract Developer"
+    prompt: personas/solidity-dev.md
+  - id: app-dev
+    name: "The App Developer"
+    prompt: personas/app-dev.md
+  - id: security-reviewer
+    name: "The Security Reviewer"
+    prompt: personas/security-reviewer.md
+  - id: deploy-ops
+    name: "Deploy Ops"
+    prompt: personas/deploy-ops.md
+workflows:
+  - file: workflows/nightly-standup.yaml
+  - file: workflows/security-review.yaml
+docs:
+  - file: docs/protocol-bible.md
+    title: "Protocol Bible"
+  - file: docs/security-checklist.md
+    title: "Security Checklist"
+skills:
+  - name: ethereum-dev
+    source: https://ethskills.com/SKILL.md
+    applies_to: developers
+welcome: welcome.md
