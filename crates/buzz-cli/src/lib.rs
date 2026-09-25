@@ -255,6 +255,9 @@ enum Cmd {
     /// Self-organizing agent teams — teamwork strategies and runs (arXiv 2609.22682)
     #[command(subcommand)]
     Team(TeamCmd),
+    /// Project templates — turn an empty community into a working project
+    #[command(subcommand)]
+    Templates(TemplatesCmd),
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -2166,6 +2169,45 @@ pub enum PackCmd {
     },
 }
 
+/// Project-template commands. `list`/`show` read the build-time embedded
+/// registry (local, no relay connection); `apply` writes to the relay.
+#[derive(Subcommand)]
+pub enum TemplatesCmd {
+    /// List embedded project templates (ids, names, descriptions)
+    List,
+    /// Show one embedded project template
+    Show {
+        /// Template id (from 'buzz templates list')
+        id: String,
+    },
+    /// Apply a project template to the community
+    #[command(
+        after_help = "Idempotent: re-applying skips everything that already exists (channels by \
+name, everything else by a template-managed marker tag), so a partially-applied \
+template is safe to re-run.\n\n\
+Execution is ordered (channels → seeds → skills → personas → workflows → docs → \
+welcome) and stops at the first failure. The JSON report is printed to stdout in \
+ALL outcomes and enumerates every step: created, skipped (already-exists / \
+unchanged), failed, or not-attempted. On partial failure re-run with --resume to \
+complete the remainder from the durable relay state.\n\n\
+https skill sources are fetched bounded (https-only, 10s timeout, 64KiB cap) and \
+sha256-pinned; a re-apply never refetches a skill whose recorded source is \
+unchanged.\n\n\
+Examples:\n  \
+buzz templates list\n  \
+buzz templates show ai-movie-studio\n  \
+buzz templates apply ai-movie-studio\n  \
+buzz templates apply ai-movie-studio --resume"
+    )]
+    Apply {
+        /// Template id (from 'buzz templates list')
+        id: String,
+        /// Complete a previously interrupted apply (same plan; skips what exists)
+        #[arg(long, default_value_t = false)]
+        resume: bool,
+    },
+}
+
 /// Community moderation commands.
 ///
 /// The community (tenant) is selected by the relay host in `--relay` /
@@ -2782,6 +2824,17 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         };
     }
 
+    // Template browsing is local-only — the registry is embedded at build
+    // time (like `pack`, no relay connection or key needed). `templates
+    // apply` falls through to the relay path below.
+    if let Cmd::Templates(ref sub) = cli.command {
+        match sub {
+            TemplatesCmd::List => return commands::templates::cmd_list(&cli.format),
+            TemplatesCmd::Show { id } => return commands::templates::cmd_show(id),
+            TemplatesCmd::Apply { .. } => {}
+        }
+    }
+
     // Onchain allowance checks are local-only — no relay connection and no
     // Nostr key needed (the check is an EVM read). The spend path goes
     // through the normal dispatch below: it publishes a kind:37014 receipt.
@@ -2869,6 +2922,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
         Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
         Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
+        Cmd::Templates(sub) => commands::templates::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
     }
 }
@@ -3060,6 +3114,7 @@ mod tests {
             "repos",
             "social",
             "team",
+            "templates",
             "upload",
             "users",
             "workflows",

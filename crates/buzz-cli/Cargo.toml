@@ -29,6 +29,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# YAML parsing — template.yaml schema deserialization
+serde_yaml = { workspace = true }
+
 # Structured error types with exit code mapping
 thiserror = { workspace = true }
 
@@ -82,6 +85,11 @@ url = { workspace = true }
 
 # Persona pack parsing, validation, and resolution
 buzz-persona = { path = "../buzz-persona" }
+
+# Workflow definition schema types — `templates apply` validates template
+# workflow YAML with the SAME parser the relay's ingest uses
+# (`buzz_workflow::schema::parse_yaml`), never a loose re-validation
+buzz-workflow = { workspace = true }
 
 # Platform app-data dir resolution — locates the desktop app's
 # channel-templates.json store for `channels create --template`

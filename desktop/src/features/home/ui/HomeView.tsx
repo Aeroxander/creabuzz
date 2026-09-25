@@ -43,7 +43,9 @@ import {
 } from "@/features/home/useResizableInboxListWidth";
 import { getHomePaneLayout } from "@/features/home/lib/homePaneLayout";
 import { getHomeMessageCapabilities } from "@/features/home/lib/homeMessageCapabilities";
+import { GettingStartedChecklist } from "@/features/home/ui/GettingStartedChecklist";
 import { HomeLoadingState } from "@/features/home/ui/HomeLoadingState";
+import { useGettingStartedDismissal } from "@/features/home/useGettingStartedDismissal";
 import { InboxDetailPane } from "@/features/home/ui/InboxDetailPane";
 import { InboxListPane } from "@/features/home/ui/InboxListPane";
 import { HomePersonalInboxDetail } from "@/features/home/ui/HomePersonalInboxDetail";
@@ -73,6 +75,7 @@ import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/Aux
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { ProfilePanelProvider } from "@/shared/context/ProfilePanelContext";
 import { Button } from "@/shared/ui/button";
+import { StartProjectSection } from "@/features/templates/ui/StartProjectSection";
 import { HomeMembersSidebarOverlay } from "./HomeMembersSidebarOverlay";
 
 const INBOX_SEARCH_KEYS = [
@@ -110,6 +113,7 @@ export function HomeView({
   onRefresh,
 }: HomeViewProps) {
   const relaySelfPubkey = useRelaySelfQuery().data;
+  const gettingStartedDismissal = useGettingStartedDismissal(currentPubkey);
   const [homeInboxRef, homeInboxWidthPx] = useElementWidth<HTMLDivElement>();
   const isNarrowHomeViewport =
     homeInboxWidthPx > 0 &&
@@ -595,16 +599,39 @@ export function HomeView({
         <div className="flex w-full max-w-3xl flex-col gap-4">
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-5">
             <p className="text-base font-semibold tracking-tight">
-              Home feed unavailable
+              Couldn't load Home
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {errorMessage ?? "The relay did not return a feed response."}
+              {errorMessage ?? "Something went wrong while loading your feed."}
             </p>
             <Button className="mt-5" onClick={onRefresh} type="button">
               <RefreshCcw className="h-4 w-4" />
               Try again
             </Button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // A truly empty community (no messages, drafts, or reminders; nothing
+  // selected; no unread-only filter) gets the "Start a project" affordance
+  // instead of an empty inbox. Anything else keeps the full inbox machinery.
+  const showStartProject =
+    isMessagesMode &&
+    !unreadOnly &&
+    inboxItems.length === 0 &&
+    draftItems.length === 0 &&
+    pendingReminders.length === 0 &&
+    selectedEventId === null &&
+    selectedDraftItem == null &&
+    selectedReminder == null;
+
+  if (showStartProject) {
+    return (
+      <div className="flex-1 overflow-hidden px-4 pb-3 pt-4 sm:px-6">
+        <div className="flex w-full max-w-3xl flex-col gap-4">
+          <StartProjectSection />
         </div>
       </div>
     );
@@ -664,6 +691,12 @@ export function HomeView({
         open={emptyDeleteId !== null}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {gettingStartedDismissal.dismissed ? null : (
+          <GettingStartedChecklist
+            currentPubkey={currentPubkey}
+            onDismiss={gettingStartedDismissal.dismiss}
+          />
+        )}
         <div
           className={cn(
             "relative grid min-h-0 w-full flex-1",

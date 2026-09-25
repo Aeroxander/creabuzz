@@ -25,6 +25,7 @@ pub mod reactions;
 pub mod repos;
 pub mod social;
 pub mod team_run;
+pub mod templates;
 pub mod upload;
 pub mod users;
 pub mod workflows;
