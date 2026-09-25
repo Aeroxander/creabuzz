@@ -178,10 +178,85 @@ pub fn monotonic_created_at(prior_head_created_at: Option<i64>) -> nostr::Timest
     nostr::Timestamp::from(now.max(floor) as u64)
 }
 
-/// Build a kind:30175 event from a `AgentDefinition`.
+/// Tag names [`build_persona_event`] recomputes from the record itself on
+/// every rebuild, and which are therefore NEVER carried forward from a
+/// retained head.
+///
+/// `d` is re-derived from the record's slug (`persona_d_tag`) and `shared`
+/// from `record.shared`, which each rebuild site resolves from the head or an
+/// explicit override. Carrying either would either duplicate the tag (the
+/// relay's `validate_persona_envelope` requires exactly one `d`, and
+/// `event_is_shared` fails closed on a duplicate `shared`) or freeze a stale
+/// projection.
+const RECOMPUTED_TAG_NAMES: [&str; 2] = ["d", "shared"];
+
+/// Collect the retained head's tags that a rebuild must carry forward.
+///
+/// Everything except [`RECOMPUTED_TAG_NAMES`] is carried verbatim, in head
+/// order: `["skill", <id>, <scope>]` bindings (the ONLY durable record of
+/// which skills a persona inherits — `skill_bindings` reads them off this
+/// very head at spawn time) and the template idempotence marker, plus any
+/// tag another surface puts on a kind:30175 head. The desktop's record
+/// cannot re-derive them, so a rebuild that dropped them would silently
+/// unbind the persona's project skills — the exact regression this function
+/// exists to prevent.
+///
+/// The carried set can never grow across rebuilds: each new head's tags are
+/// `[d, shared?, ..carried ⊆ prior head's tags]`, so successive
+/// republishes are monotonically non-increasing (rule 4 — bounded).
+pub fn carried_forward_tags(head: &nostr::Event) -> Vec<Tag> {
+    head.tags
+        .iter()
+        .filter(|tag| {
+            let name = tag.as_slice().first().map(String::as_str);
+            !RECOMPUTED_TAG_NAMES
+                .iter()
+                .any(|recomputed| Some(*recomputed) == name)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Build a kind:30175 event from a `AgentDefinition`, carrying forward the
+/// prior retained head's non-content tags.
+///
+/// `prior_head` is the signed head currently retained at this coordinate
+/// (`retention::get_retained_event` → parse), or `None` when no head exists.
+/// Its `skill` bindings and template marker tags are re-attached verbatim by
+/// [`carried_forward_tags`]; `d` and `shared` are recomputed from `record`
+/// (see [`RECOMPUTED_TAG_NAMES`]). Returns an unsigned `EventBuilder` — the
+/// caller signs and submits.
+///
+/// # Deliberate binding removal
+///
+/// Carry-forward never removes a tag, so a *deliberate* edit (dropping a
+/// binding, clearing a marker) must express full tag intent instead of
+/// relying on the rebuild to drop: the editor computes the desired carried
+/// set — e.g. [`carried_forward_tags`] of the current head minus the removed
+/// binding — and passes it to [`build_persona_event_with_tags`]. The desktop
+/// edit UI cannot express binding edits today, which is why carry-forward
+/// (never drop) is the safe default for this path.
+pub fn build_persona_event(
+    record: &AgentDefinition,
+    prior_head: Option<&nostr::Event>,
+) -> Result<EventBuilder, String> {
+    let carried = prior_head.map(carried_forward_tags).unwrap_or_default();
+    build_persona_event_with_tags(record, carried)
+}
+
+/// Build a kind:30175 event with an explicit set of carried tags.
+///
+/// `carried_tags` is the complete tag intent for everything the builder does
+/// not recompute: pass `prior_head`'s [`carried_forward_tags`] for the usual
+/// rebuild, or a hand-computed set to apply a deliberate binding edit. An
+/// empty `Vec` is the explicit clear path — the resulting head carries only
+/// `d` (and `shared` when `record.shared`), publishing the removal.
 ///
 /// Returns an unsigned `EventBuilder` — the caller signs and submits.
-pub fn build_persona_event(record: &AgentDefinition) -> Result<EventBuilder, String> {
+pub fn build_persona_event_with_tags(
+    record: &AgentDefinition,
+    carried_tags: Vec<Tag>,
+) -> Result<EventBuilder, String> {
     // Single projection point — persona_event_content owns the field mapping
     // (and the hash-stability rules that come with it).
     let content = persona_event_content(record);
@@ -195,6 +270,10 @@ pub fn build_persona_event(record: &AgentDefinition) -> Result<EventBuilder, Str
     if record.shared {
         tags.push(Tag::parse(["shared", "true"]).map_err(|e| format!("invalid shared tag: {e}"))?);
     }
+    // `EventBuilder::tags` EXTENDS the current list (nostr 0.44.7
+    // `event/builder.rs`: "This method extends the current tags"), so the
+    // recomputed `d`/`shared` above are never overwritten by carried tags.
+    tags.extend(carried_tags);
 
     Ok(EventBuilder::new(Kind::Custom(KIND_PERSONA as u16), content_json).tags(tags))
 }

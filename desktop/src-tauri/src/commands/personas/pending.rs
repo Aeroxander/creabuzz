@@ -166,16 +166,26 @@ pub(super) fn prepare_persona_publication_at(
         persona_events::{build_persona_event, monotonic_created_at, persona_d_tag},
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
-    use buzz_core_pkg::kind::KIND_PERSONA;
+    use buzz_core_pkg::kind::{event_is_shared, KIND_PERSONA};
     use nostr::JsonUtil;
 
     let d_tag = persona_d_tag(persona);
     let pubkey = keys.public_key().to_hex();
     let conn = open_retention_db(db_path)?;
     let existing = get_retained_event(&conn, KIND_PERSONA, &pubkey, &d_tag)?;
+    // Parse the retained head STRICTLY for the same reason as the boot
+    // reconcile in `migrate_personas_in_dir_at`: its `skill` bindings and
+    // template marker cannot be re-derived from the record, so an
+    // unparsable head must fail this enqueue (row untouched, bindings
+    // intact) instead of being overwritten by a tag-stripped rebuild.
+    let prior_head = existing
+        .as_ref()
+        .map(|row| nostr::Event::from_json(&row.raw_event))
+        .transpose()
+        .map_err(|e| format!("failed to parse retained persona head '{d_tag}': {e}"))?;
     let mut scoped_persona = persona.clone();
     scoped_persona.shared =
-        shared_override.unwrap_or_else(|| retained_persona_is_shared(existing.as_ref()));
+        shared_override.unwrap_or_else(|| prior_head.as_ref().is_some_and(event_is_shared));
     if scoped_persona.shared {
         crate::managed_agents::validate_agent_definition_text(
             &scoped_persona.display_name,
@@ -185,7 +195,10 @@ pub(super) fn prepare_persona_publication_at(
             scoped_persona.description.as_deref(),
         )?;
     }
-    let event = build_persona_event(&scoped_persona)?
+    // Prior head passed so its `skill` bindings and template marker survive
+    // the rebuild (only `d`/`shared` are recomputed) — see
+    // `build_persona_event`'s carry-forward contract.
+    let event = build_persona_event(&scoped_persona, prior_head.as_ref())?
         .custom_created_at(monotonic_created_at(
             existing.as_ref().map(|row| row.created_at),
         ))
@@ -375,6 +388,185 @@ mod tests {
         ));
     }
 
+    /// Seed a retained kind:30175 head at `db_path` carrying exactly `tags`
+    /// with `content`, built by HAND (never through the production builder) so
+    /// a carry-forward regression cannot make the seed agree with an
+    /// assertion.
+    fn seed_binding_head(
+        db_path: &std::path::Path,
+        keys: &nostr::Keys,
+        tags: Vec<nostr::Tag>,
+        content: &str,
+    ) -> nostr::Event {
+        use crate::managed_agents::retention::retain_event;
+        use nostr::{EventBuilder, JsonUtil, Kind};
+
+        let event = EventBuilder::new(Kind::Custom(KIND_PERSONA as u16), content)
+            .tags(tags)
+            .sign_with_keys(keys)
+            .expect("signed seed head");
+        let conn = open_retention_db(db_path).unwrap();
+        retain_event(
+            &conn,
+            &RetainedEvent {
+                kind: KIND_PERSONA,
+                pubkey: keys.public_key().to_hex(),
+                d_tag: "catalog-reviewer".to_string(),
+                content: content.to_string(),
+                created_at: event.created_at.as_secs() as i64,
+                raw_event: event.as_json(),
+                pending_sync: false,
+            },
+        )
+        .expect("seed head retained");
+        event
+    }
+
+    fn tag_shape(event: &nostr::Event) -> Vec<Vec<&str>> {
+        event
+            .tags
+            .iter()
+            .map(|t| t.as_slice().iter().map(String::as_str).collect())
+            .collect()
+    }
+
+    /// Re-publish seam (`prepare_persona_publication_at` → `build_persona_event`):
+    /// the desktop record cannot re-derive the retained head's
+    /// `["skill", <id>, <scope>]` bindings or the template `["marker", …]` tag
+    /// — `skill_bindings` reads them off this very head at spawn — so a
+    /// desktop edit must carry both forward byte-identically while content
+    /// updates and `d` is recomputed exactly once.
+    #[test]
+    fn republish_carries_binding_tags_and_marker_forward() {
+        use nostr::{JsonUtil, Tag};
+
+        let dir = tempfile::tempdir().unwrap();
+        let keys = nostr::Keys::generate();
+        let owner = keys.public_key().to_hex();
+        let db_path = scoped_retention_db_path(dir.path(), "wss://a.example", &owner);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+
+        const HEAD_CONTENT: &str =
+            r#"{"display_name":"Catalog Reviewer","system_prompt":"Review the catalog."}"#;
+        let head = seed_binding_head(
+            &db_path,
+            &keys,
+            vec![
+                Tag::parse(["d", "catalog-reviewer"]).expect("d tag"),
+                Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+                Tag::parse(["marker", "template"]).expect("marker tag"),
+            ],
+            HEAD_CONTENT,
+        );
+
+        // Desktop edit: content changes; the record still knows nothing about
+        // the bindings it never carried.
+        let mut edited = persona();
+        edited.system_prompt = "Review the latest catalog.".to_string();
+        let (event, _, _) = prepare_persona_publication_at(&db_path, &keys, &edited, None)
+            .expect("republish over the seeded binding head");
+
+        assert_eq!(
+            tag_shape(&event),
+            vec![
+                vec!["d", "catalog-reviewer"],
+                vec!["skill", "ethereum-dev", "developers"],
+                vec!["marker", "template"],
+            ],
+            "binding + marker carried verbatim; d recomputed exactly once"
+        );
+        // Byte-identity against the seeded head's own tags, not just shape.
+        let head_event: nostr::Event = JsonUtil::from_json(head.as_json()).unwrap();
+        assert_eq!(event.tags.as_slice()[1], head_event.tags.as_slice()[1]);
+        assert_eq!(event.tags.as_slice()[2], head_event.tags.as_slice()[2]);
+        // ...while the content actually updates.
+        assert!(event.content.contains("Review the latest catalog."));
+        assert_ne!(event.content, HEAD_CONTENT, "content must change");
+    }
+
+    /// Inverse: a head with no binding tags stays exactly `d` — carry-forward
+    /// must neither invent tags nor duplicate the recomputed ones.
+    #[test]
+    fn republish_of_a_tag_free_head_stays_tag_free() {
+        use nostr::Tag;
+
+        let dir = tempfile::tempdir().unwrap();
+        let keys = nostr::Keys::generate();
+        let owner = keys.public_key().to_hex();
+        let db_path = scoped_retention_db_path(dir.path(), "wss://a.example", &owner);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+
+        const HEAD_CONTENT: &str =
+            r#"{"display_name":"Catalog Reviewer","system_prompt":"Review the catalog."}"#;
+        seed_binding_head(
+            &db_path,
+            &keys,
+            vec![Tag::parse(["d", "catalog-reviewer"]).expect("d tag")],
+            HEAD_CONTENT,
+        );
+
+        let mut edited = persona();
+        edited.system_prompt = "Review the latest catalog.".to_string();
+        let (event, _, _) = prepare_persona_publication_at(&db_path, &keys, &edited, None)
+            .expect("republish over the tag-free head");
+
+        assert_eq!(
+            tag_shape(&event),
+            vec![vec!["d", "catalog-reviewer"]],
+            "a tag-free head must not gain tags on republish"
+        );
+        assert!(event.content.contains("Review the latest catalog."));
+    }
+
+    /// Review-Proven Rules 1+2 at this call site: the retained head is the
+    /// only source of the bindings, so a head this rebuild cannot parse must
+    /// fail the enqueue LOUD and leave the row byte-for-byte untouched — never
+    /// be overwritten by a tag-stripped rebuild.
+    #[test]
+    fn republish_fails_loud_on_unparsable_head_and_leaves_it_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let keys = nostr::Keys::generate();
+        let owner = keys.public_key().to_hex();
+        let db_path = scoped_retention_db_path(dir.path(), "wss://a.example", &owner);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+
+        const HEAD_CONTENT: &str = r#"{"display_name":"Catalog Reviewer"}"#;
+        seed_binding_head(
+            &db_path,
+            &keys,
+            vec![
+                nostr::Tag::parse(["d", "catalog-reviewer"]).expect("d tag"),
+                nostr::Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+            ],
+            HEAD_CONTENT,
+        );
+        // Corrupt the stored head AFTER seeding, so the row exists but its
+        // `raw_event` no longer parses.
+        let conn = open_retention_db(&db_path).unwrap();
+        conn.execute(
+            "UPDATE persona_events SET raw_event = 'not-a-json-event'
+             WHERE kind = ?1 AND pubkey = ?2 AND d_tag = ?3",
+            (KIND_PERSONA, owner.clone(), "catalog-reviewer".to_string()),
+        )
+        .expect("corrupt head");
+        drop(conn);
+
+        let err = prepare_persona_publication_at(&db_path, &keys, &persona(), None)
+            .expect_err("an unparsable head must block the rebuild");
+        assert!(
+            err.contains("failed to parse retained persona head"),
+            "error must name the head parse failure; got: {err}"
+        );
+
+        // Row untouched: bindings intact for the next attempt.
+        let conn = open_retention_db(&db_path).unwrap();
+        let row = get_retained_event(&conn, KIND_PERSONA, &owner, "catalog-reviewer")
+            .unwrap()
+            .expect("head row survives");
+        assert_eq!(row.raw_event, "not-a-json-event");
+        assert_eq!(row.content, HEAD_CONTENT);
+    }
+
     /// A `shared = true` persona plus the scope that says so.
     fn shared_persona_scope(dir: &std::path::Path) -> (RetentionScope, Vec<AgentDefinition>) {
         let keys = nostr::Keys::generate();
@@ -476,7 +668,7 @@ mod tests {
         use nostr::JsonUtil;
         let mut shared = persona();
         shared.shared = true;
-        let event = build_persona_event(&shared)
+        let event = build_persona_event(&shared, None)
             .unwrap()
             .custom_created_at(nostr::Timestamp::from(created_at as u64))
             .sign_with_keys(keys)

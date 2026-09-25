@@ -239,6 +239,212 @@ fn migrate_personas_supersedes_future_dated_head() {
     assert!(row.pending_sync, "superseding row must be pending_sync");
 }
 
+fn tag_shape(event: &nostr::Event) -> Vec<Vec<&str>> {
+    event
+        .tags
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect()
+}
+
+/// Seed a retained kind:30175 head at `base/retention.db` carrying exactly
+/// `tags` and `content`, built by HAND (never through the production builder)
+/// so a carry-forward regression cannot make the seed agree with an assertion.
+fn seed_migration_head(
+    base: &Path,
+    keys: &nostr::Keys,
+    tags: Vec<nostr::Tag>,
+    content: &str,
+) -> nostr::Event {
+    use crate::managed_agents::retention::{open_retention_db, retain_event, RetainedEvent};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::{EventBuilder, JsonUtil, Kind};
+
+    let event = EventBuilder::new(Kind::Custom(KIND_PERSONA as u16), content)
+        .tags(tags)
+        .sign_with_keys(keys)
+        .expect("signed seed head");
+    let conn = open_retention_db(&base.join("retention.db")).unwrap();
+    retain_event(
+        &conn,
+        &RetainedEvent {
+            kind: KIND_PERSONA,
+            pubkey: keys.public_key().to_hex(),
+            d_tag: "code-reviewer".to_string(),
+            content: content.to_string(),
+            created_at: event.created_at.as_secs() as i64,
+            raw_event: event.as_json(),
+            pending_sync: false,
+        },
+    )
+    .expect("seed head retained");
+    event
+}
+
+/// Boot-reconcile seam (`migrate_personas_in_dir_at` → `build_persona_event`):
+/// the disk record cannot re-derive the retained head's
+/// `["skill", <id>, <scope>]` bindings or the template `["marker", …]` tag —
+/// `skill_bindings` reads them off this head at spawn — so a content edit on
+/// disk must carry both forward byte-identically while content updates and
+/// `d` is recomputed exactly once.
+#[test]
+fn migrate_republish_carries_binding_tags_and_marker_forward() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::{JsonUtil, Tag};
+
+    let base = tempfile::tempdir().unwrap();
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    const HEAD_CONTENT: &str =
+        r#"{"display_name":"Code Reviewer","system_prompt":"You review code."}"#;
+    let head = seed_migration_head(
+        base.path(),
+        &keys,
+        vec![
+            Tag::parse(["d", "code-reviewer"]).expect("d tag"),
+            Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+            Tag::parse(["marker", "template"]).expect("marker tag"),
+        ],
+        HEAD_CONTENT,
+    );
+
+    // Desktop edit to the template-applied persona: content changes, and the
+    // record still knows nothing about the bindings it never carried.
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+
+    assert_eq!(
+        migrate_personas_in_dir(base.path(), &keys).unwrap(),
+        1,
+        "changed content over the binding head must re-retain"
+    );
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head retained");
+    assert!(
+        row.content.contains("carefully"),
+        "content must update on the rebuild"
+    );
+    assert_ne!(row.content, HEAD_CONTENT, "content must change");
+    assert!(row.pending_sync, "rebuilt head is queued for publish");
+
+    let event: nostr::Event = JsonUtil::from_json(&row.raw_event).unwrap();
+    assert_eq!(
+        tag_shape(&event),
+        vec![
+            vec!["d", "code-reviewer"],
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "binding + marker carried verbatim; d recomputed exactly once"
+    );
+    // Byte-identity against the seeded head's own tags, not just shape.
+    assert_eq!(event.tags.as_slice()[1], head.tags.as_slice()[1]);
+    assert_eq!(event.tags.as_slice()[2], head.tags.as_slice()[2]);
+}
+
+/// Inverse at the boot-reconcile seam: a head with no binding tags stays
+/// exactly `d` on a content edit — carry-forward must neither invent tags nor
+/// duplicate the recomputed ones.
+#[test]
+fn migrate_republish_of_a_tag_free_head_stays_tag_free() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::JsonUtil;
+
+    let base = tempfile::tempdir().unwrap();
+    write_base_personas(base.path(), &one_persona());
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    // First reconcile writes the natural tag-free head (`d` only).
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head retained");
+    let event: nostr::Event = JsonUtil::from_json(&row.raw_event).unwrap();
+    assert_eq!(
+        tag_shape(&event),
+        vec![vec!["d", "code-reviewer"]],
+        "a tag-free head must not gain tags on republish"
+    );
+}
+
+/// Review-Proven Rules 1+2 at the boot-reconcile seam: the retained head is
+/// the only source of its bindings, so a head that no longer parses must fail
+/// the reconcile LOUD and leave the row byte-for-byte untouched — never be
+/// overwritten by a tag-stripped rebuild.
+#[test]
+fn migrate_fails_loud_on_unparsable_head_and_leaves_it_intact() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::Tag;
+
+    let base = tempfile::tempdir().unwrap();
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    const HEAD_CONTENT: &str =
+        r#"{"display_name":"Code Reviewer","system_prompt":"You review code."}"#;
+    seed_migration_head(
+        base.path(),
+        &keys,
+        vec![
+            Tag::parse(["d", "code-reviewer"]).expect("d tag"),
+            Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+        ],
+        HEAD_CONTENT,
+    );
+
+    // Corrupt the stored head AFTER seeding: the row exists but no longer
+    // parses.
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    conn.execute(
+        "UPDATE persona_events SET raw_event = 'not-a-json-event'
+         WHERE kind = ?1 AND pubkey = ?2 AND d_tag = ?3",
+        (KIND_PERSONA, pubkey.clone(), "code-reviewer".to_string()),
+    )
+    .expect("corrupt head");
+    drop(conn);
+
+    // Changed content would normally re-retain; the unparsable head must stop it.
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+
+    let err = migrate_personas_in_dir(base.path(), &keys)
+        .expect_err("an unparsable head must block the rebuild");
+    assert!(
+        err.contains("failed to parse retained persona head"),
+        "error must name the head parse failure; got: {err}"
+    );
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head row survives");
+    assert_eq!(row.raw_event, "not-a-json-event");
+    assert_eq!(
+        row.content, HEAD_CONTENT,
+        "bindings stay for the next attempt"
+    );
+}
+
 fn write_base_teams(base_dir: &Path, records: &serde_json::Value) {
     std::fs::write(
         base_dir.join("teams.json"),
