@@ -1,0 +1,27 @@
+name: eval-review
+description: Send each new eval change to the product lead for approval, then post the verdict in-thread
+trigger:
+  on: message_posted
+  # Loop-bound: replies never re-trigger (the verdict posts in-thread), and the
+  # template's own welcome message — posted to this channel after workflows
+  # exist — must not file an approval for itself.
+  filter: '!trigger_is_reply && !str_starts_with(trigger_text, "Welcome to")'
+steps:
+  - id: request
+    name: Product review
+    action: request_approval
+    from: "@The Product Lead"
+    message: "Eval change for review: {{trigger.text | truncate(200)}}"
+    timeout: 24h
+  - id: publish
+    name: Post approved verdict
+    if: 'steps_request_output_approved == true'
+    action: send_message
+    reply_in_thread: true
+    text: |
+      ✅ Eval change — approved by @The Product Lead
+
+      {{trigger.text}}
+
+      Record the result in the Eval Plan doc (results log) so the next change starts from numbers. To argue the call, reply in this thread — replies don't start a new review. For a second opinion on the eval itself, ask @The Eval Writer here.
+enabled: true

@@ -1,0 +1,32 @@
+id: vanilla-app-studio
+name: "Vanilla App Studio"
+description: "Plain web and app work without the ceremony — a builder, a test-first reviewer, and a scope-honest lead. Mention an agent to wake it, and wake up to a standup that writes itself."
+channels:
+  - id: dev
+    name: dev
+    purpose: "Where the app gets built: features, bugs, and plumbing. Mention @The App Developer to build, or @The QA Reviewer when a change needs a checklist first."
+    seed: seeds/dev.md
+  - id: product
+    name: product
+    purpose: "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs."
+    seed: seeds/product.md
+  - id: standup
+    name: standup
+    purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+    seed: seeds/standup.md
+personas:
+  - id: app-dev
+    name: "The App Developer"
+    prompt: personas/app-dev.md
+  - id: qa-reviewer
+    name: "The QA Reviewer"
+    prompt: personas/qa-reviewer.md
+  - id: product-lead
+    name: "The Product Lead"
+    prompt: personas/product-lead.md
+workflows:
+  - file: workflows/nightly-standup.yaml
+docs:
+  - file: docs/product-brief.md
+    title: "Product Brief"
+welcome: welcome.md
