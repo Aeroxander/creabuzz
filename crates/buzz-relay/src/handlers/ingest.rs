@@ -14,7 +14,7 @@ use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
     KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
-    KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
+    KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
     KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD,
     KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
     KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
@@ -2906,6 +2906,21 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_MEMBER_ADDED_NOTIFICATION || kind_u32 == KIND_MEMBER_REMOVED_NOTIFICATION {
         return Err(IngestError::Rejected(
             "invalid: membership notifications are relay-signed only".into(),
+        ));
+    }
+
+    // Kind:48001 is the relay's own publication of a `buzz-audit` chain entry.
+    // The relay is the single writer: envelopes are built and signed inside the
+    // audit worker (`crate::audit::publish_audit_entry`) and inserted directly
+    // into the event store through the internal dispatch path — never through
+    // client ingest. Rejecting here bounds every envelope at ingest (no client
+    // can submit arbitrarily large "audit" content) and keeps the served chain
+    // single-writer: a client-signed 48001 could never chain-verify (its
+    // content would not match any `audit_log` row), but serving it would make
+    // the desktop's verifier report the chain as broken.
+    if kind_u32 == KIND_AUDIT_ENTRY {
+        return Err(IngestError::Rejected(
+            "restricted: audit entries are relay-authored only".into(),
         ));
     }
 

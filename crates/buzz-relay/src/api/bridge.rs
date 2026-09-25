@@ -882,6 +882,21 @@ async fn submit_event_authed(
     // Admission and replay checks fire before body parse — a 429 or replay
     // reject on a malformed body must still be attributed.
     if let Err(e) = enforce_http_admission(state, tenant, &pubkey).await {
+        // This is the HTTP ingest door's `rate_limit_exceeded` — `POST /events`
+        // is "the same path the WebSocket uses" (see AGENTS.md § Nostr HTTP
+        // surface), so a quota breach here is an ingest rejection exactly like
+        // the WS door's (recorded in `rejection.rs`). Only a real quota breach
+        // (429) is that fact: `Unavailable` (503) says nothing about the
+        // client's quota. Enqueued with the load-shedding policy, so a storm
+        // cannot backpressure the very door that is shedding load.
+        if e.0 == StatusCode::TOO_MANY_REQUESTS {
+            crate::audit::record_audit_nonblocking(
+                state,
+                crate::audit::AuditRecord::new(crate::audit::AuditSite::RateLimitExceeded, tenant)
+                    .actor(Some(pubkey.to_bytes().to_vec()))
+                    .detail(serde_json::json!({ "limit": "http_events" })),
+            );
+        }
         return SubmitOutcome::Err {
             status: e.0,
             response: e,

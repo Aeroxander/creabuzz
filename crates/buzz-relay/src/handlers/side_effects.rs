@@ -1330,6 +1330,17 @@ async fn handle_put_user(
 
     let actor_hex = hex::encode(&actor_bytes);
     let target_hex = hex::encode(&target_pubkey);
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::MemberAdded, tenant)
+            .actor(Some(actor_bytes.clone()))
+            .object_id(channel_id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "target": target_hex,
+            })),
+    )
+    .await;
     emit_system_message(
         tenant,
         state,
@@ -1395,6 +1406,17 @@ async fn handle_remove_user(
 
     let actor_hex = hex::encode(&actor_bytes);
     let target_hex = hex::encode(&target_pubkey);
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::MemberRemoved, tenant)
+            .actor(Some(actor_bytes.clone()))
+            .object_id(channel_id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "target": target_hex,
+            })),
+    )
+    .await;
     let msg_type = if target_pubkey == actor_bytes {
         "member_left"
     } else {
@@ -1659,6 +1681,19 @@ async fn handle_edit_metadata(
         }
     }
 
+    // The metadata loop above completed without error, so every requested
+    // channel write landed — record the channel update once per kind:9002.
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::ChannelUpdated, tenant)
+            .actor(Some(actor_bytes))
+            .object_id(channel_id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+            })),
+    )
+    .await;
+
     if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
         warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
     }
@@ -1743,6 +1778,23 @@ async fn handle_delete_event_side_effect(
         warn!(target_event = %hex::encode(&target_id), "event already deleted or not found");
         return Ok(()); // No-op: skip system message to avoid false audit records.
     }
+
+    // The soft-delete transaction committed — record it before the cosmetic
+    // emits below, so a system-message failure can never leave a landed
+    // deletion unaudited. `object_id` is the *deleted* event's id so the
+    // desktop's chain badges join back to that timeline row.
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
+            .actor(Some(event.pubkey.to_bytes().to_vec()))
+            .object_id(hex::encode(&target_id))
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "channel_id": channel_id,
+                "moderation": true,
+            })),
+    )
+    .await;
 
     // Thread counters were decremented in the same transaction — push a fresh
     // relay-signed 39005 so live badge counts also count *down*.
@@ -1861,6 +1913,21 @@ async fn handle_create_group(
         state.invalidate_all_accessible_channels(tenant);
     }
 
+    // The channel row exists (or was pre-created by ingest) and membership is
+    // settled — record the creation before the cosmetic emits below so a
+    // system-message failure cannot leave an untracked channel.
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::ChannelCreated, tenant)
+            .actor(Some(actor_bytes.clone()))
+            .object_id(channel.id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "name": name.as_str(),
+            })),
+    )
+    .await;
+
     let actor_hex = hex::encode(&actor_bytes);
     emit_system_message(
         tenant,
@@ -1912,6 +1979,19 @@ async fn handle_delete_group(
 
     if !deleted {
         warn!(channel = %channel_id, "channel already deleted or not found");
+    } else {
+        // Only a soft-delete that actually flipped a row is a channel deletion
+        // — an already-deleted or missing channel must not fabricate one.
+        crate::audit::record_audit(
+            state,
+            crate::audit::AuditRecord::new(crate::audit::AuditSite::ChannelDeleted, tenant)
+                .actor(Some(actor_bytes.clone()))
+                .object_id(channel_id.to_string())
+                .detail(serde_json::json!({
+                    "event_id": event.id.to_hex(),
+                })),
+        )
+        .await;
     }
 
     // Clean up NIP-29 discovery events for the deleted group.
@@ -1991,6 +2071,20 @@ async fn handle_join_request(
         .await?;
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
 
+    // Membership row landed (the "already a member" path returned above) —
+    // record the join before the cosmetic emits.
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::MemberAdded, tenant)
+            .actor(Some(actor_bytes.clone()))
+            .object_id(channel_id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "target": hex::encode(&actor_bytes),
+            })),
+    )
+    .await;
+
     let actor_hex = hex::encode(&actor_bytes);
     emit_system_message(
         tenant,
@@ -2052,6 +2146,20 @@ async fn handle_leave_request(
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
     evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes).await;
     disable_departed_member_workflows(tenant, state, channel_id, &actor_bytes).await;
+
+    // The removal (and its subscription/workflow cleanup) completed — record
+    // the leave before the cosmetic emits.
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::MemberRemoved, tenant)
+            .actor(Some(actor_bytes.clone()))
+            .object_id(channel_id.to_string())
+            .detail(serde_json::json!({
+                "event_id": event.id.to_hex(),
+                "target": hex::encode(&actor_bytes),
+            })),
+    )
+    .await;
 
     let actor_hex = hex::encode(&actor_bytes);
     emit_system_message(
@@ -2204,6 +2312,32 @@ async fn handle_a_tag_deletion(
                     )
                 })?;
             if deleted {
+                // A live row left the store — the same `event_deleted` fact the
+                // e-tag loop records, just keyed by coordinate instead of event
+                // id, so a NIP-09 deletion of an addressable event (kind:30023,
+                // kind:39000, …) cannot land unaudited while its `e`-tag
+                // sibling is recorded. `actor_bytes` is the effective author
+                // resolved above: for a self-signed kind:5 that is the signer,
+                // and for a relay-signed one it keeps the relay key from being
+                // recorded as the actor behind a human's deletion. Recorded
+                // before the log line so the evidence lands while we still know
+                // the delete succeeded. (The workflow branch above deletes a
+                // workflow definition rather than an event row, and the closed
+                // action set has no workflow action, so it deliberately does
+                // not produce a row here.)
+                crate::audit::record_audit(
+                    state,
+                    crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
+                        .actor(Some(actor_bytes.clone()))
+                        .object_id(a_value.clone())
+                        .detail(serde_json::json!({
+                            "event_id": event.id.to_hex(),
+                            "kind": k,
+                            "d_tag": d_tag,
+                            "moderation": false,
+                        })),
+                )
+                .await;
                 tracing::info!(
                     kind = k,
                     d_tag = d_tag,
@@ -2279,6 +2413,23 @@ async fn handle_standard_deletion_event(
         if !deleted {
             continue;
         }
+
+        // Deletion committed for this target — record it before the cosmetic
+        // emits so a system-message failure cannot leave a landed deletion
+        // unaudited. One row per deleted event; `object_id` is the deleted
+        // event's id so the desktop's chain badges join back to that row.
+        crate::audit::record_audit(
+            state,
+            crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
+                .actor(Some(event.pubkey.to_bytes().to_vec()))
+                .object_id(hex::encode(&target_id))
+                .detail(serde_json::json!({
+                    "event_id": event.id.to_hex(),
+                    "channel_id": target_event.channel_id,
+                    "moderation": false,
+                })),
+        )
+        .await;
 
         // Thread counters were decremented in the same transaction — push a
         // fresh relay-signed 39005 so live badge counts also count *down*.

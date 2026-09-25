@@ -269,4 +269,66 @@ mod tests {
         let b = serde_json::json!({"a": 2, "m": 3, "z": 1});
         assert_eq!(canonical_json(&a).unwrap(), canonical_json(&b).unwrap());
     }
+
+    /// Cross-language digest binding: the v1 vector pinned in the desktop's
+    /// committed TypeScript verifier must equal what this crate computes.
+    ///
+    /// `desktop/src/features/org/lib/auditChain.test.mjs` documents that its
+    /// vectors were produced by this crate's `compute_hash` (the v1 fixture *is*
+    /// `sample_entry()` above, `hash.rs:125-139`). The desktop recomputes every
+    /// kind:48001 digest client-side from the published envelope, so if either
+    /// implementation drifts, `verifyChain` rejects a chain this crate still
+    /// appends — or worse, accepts one it would reject. This test reads the
+    /// pinned hex out of the TS file at test time and re-derives it here, so
+    /// *any* change to the TS vectors or to `compute_hash` reds until both are
+    /// reconciled deliberately.
+    #[test]
+    fn ts_pinned_vector_v1_matches_compute_hash() {
+        let ts_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../desktop/src/features/org/lib/auditChain.test.mjs");
+        let ts = std::fs::read_to_string(&ts_path)
+            .unwrap_or_else(|e| panic!("cannot read TS vector file {} ({e})", ts_path.display()));
+
+        // Isolate the v1 block: from `it("v1:` to the start of the v2 block.
+        let v1_start = ts
+            .find("it(\"v1:")
+            .expect("TS vector file must still pin a v1 vector");
+        let v1_end = ts[v1_start..]
+            .find("it(\"v2:")
+            .map(|off| v1_start + off)
+            .expect("TS vector file must still pin a v2 vector after v1");
+        let v1_block = &ts[v1_start..v1_end];
+
+        // The expected digest is the 64-hex-digit literal in that block.
+        let ts_digest = (0..v1_block.len())
+            .find_map(|i| {
+                let candidate = &v1_block[i..];
+                let len = candidate
+                    .find(|c: char| !c.is_ascii_hexdigit())
+                    .unwrap_or(candidate.len());
+                if len == 64 && candidate.is_char_boundary(len) {
+                    let hex = &candidate[..len];
+                    if hex
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+                    {
+                        return Some(hex.to_owned());
+                    }
+                }
+                None
+            })
+            .expect("v1 block must contain a 64-hex-digit digest");
+
+        let rust_digest: String = compute_hash(&sample_entry())
+            .expect("sample_entry hashes")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+
+        assert_eq!(
+            rust_digest, ts_digest,
+            "Rust compute_hash and the TS verifier's pinned v1 vector diverged — \
+             the desktop would reject chains this crate appends"
+        );
+    }
 }

@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use buzz_core::event::StoredEvent;
 use buzz_core::kind::{
     event_kind_u32, is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS,
-    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
+    KIND_AGENT_OBSERVER_FRAME, KIND_AUDIT_ENTRY, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
 };
 use buzz_core::observer::{
     content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -530,6 +530,11 @@ async fn dispatch_persistent_event_inner(
         && !buzz_core::kind::is_command_kind(kind_u32)
         && !is_relay_workflow_msg
         && kind_u32 != KIND_GIFT_WRAP
+        // No-recursion/amplification fence: kind:48001 audit envelopes are
+        // evidence, never workflow triggers. A workflow matching 48001 could
+        // post messages whose own `event_created` audit rows publish more
+        // envelopes — an unbounded self-amplifying loop.
+        && kind_u32 != KIND_AUDIT_ENTRY
     {
         let workflow_engine = Arc::clone(&state.workflow_engine);
         let workflow_event = stored_event.clone();
@@ -569,36 +574,36 @@ async fn enqueue_event_created_audit(
     actor_pubkey_hex: &str,
     event_id_hex: &str,
 ) {
-    let Some(audit_tx) = &state.audit_tx else {
+    // No-recursion fence: kind:48001 events ARE the audit chain's projection,
+    // so recording `event_created` for one would append an audit row for every
+    // published row, forever. Every `event_created` enqueue funnels through
+    // `event_created_audit_site`, which returns `None` for audit publications.
+    let Some(site) = crate::audit::event_created_audit_site(kind_u32) else {
+        metrics::counter!("buzz_audit_recursion_fences_total").increment(1);
         return;
     };
-    // Audit via bounded channel (capacity 1000). Uses .send().await so entries
-    // are never silently dropped — backpressure propagates to the event handler
-    // if the queue is full. This is intentional: the audit advisory lock already
-    // serializes writes (at most 1 in-flight), so a full queue means the audit
-    // DB is genuinely overloaded and the relay should slow down rather than
-    // accumulate unbounded in-memory state. DB write failures in the worker are
-    // logged but not retried (same as the previous per-event tokio::spawn).
-    let audit_entry = buzz_audit::NewAuditEntry {
-        community_id: tenant.community(),
-        action: buzz_audit::AuditAction::EventCreated,
+    // Enqueue via the shared audit seam (bounded channel, capacity 1000):
+    // structural sites `.send().await` so entries are never silently dropped —
+    // backpressure propagates to the event handler if the queue is full. This
+    // is intentional: the audit advisory lock already serializes writes (at
+    // most 1 in-flight), so a full queue means the audit DB is genuinely
+    // overloaded and the relay should slow down rather than accumulate
+    // unbounded in-memory state. Write failures in the worker preserve the
+    // entry and retry (see `state::log_audit_entry`).
+    let record = crate::audit::AuditRecord::new(site, tenant)
         // Record the *actor* the caller resolved (authenticated principal for
         // ingest, triggering user for workflow posts), not `stored_event.event
         // .pubkey`. For relay-signed events (workflow sink, side-effect emits)
         // the claimed author is the relay key, so deriving from the event would
         // erase the human behind the action from the audit trail. This mirrors
         // the pre-rewrite semantics, ported to the raw-bytes column.
-        actor_pubkey: hex::decode(actor_pubkey_hex).ok(),
-        object_id: Some(event_id_hex.to_owned()),
-        detail: serde_json::json!({
+        .actor(hex::decode(actor_pubkey_hex).ok())
+        .object_id(event_id_hex)
+        .detail(serde_json::json!({
             "event_kind": kind_u32,
             "channel_id": stored_event.channel_id,
-        }),
-    };
-    if let Err(e) = audit_tx.send(audit_entry).await {
-        error!(event_id = %event_id_hex, "Audit channel closed — entry lost: {e}");
-        metrics::counter!("buzz_audit_send_errors_total").increment(1);
-    }
+        }));
+    crate::audit::record_audit(state, record).await;
 }
 
 /// Handle an EVENT message from a WebSocket connection.

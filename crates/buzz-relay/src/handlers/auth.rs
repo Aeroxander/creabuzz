@@ -35,6 +35,29 @@ pub fn extract_auth_tag_json(event: &nostr::Event) -> Option<String> {
     serde_json::to_string(first.as_slice()).ok()
 }
 
+/// Record one NIP-42 auth outcome on the audit chain.
+///
+/// `actor` is only ever passed once the pubkey is cryptographically proven
+/// (i.e. inside the `Ok` branch of `verify_auth_event`); a verification
+/// failure records no actor — an unverified claim must not land on the chain.
+/// The bounded enqueue backpressures the AUTH handler under audit overload,
+/// same as every structural producer (see [`crate::audit::AuditSite`]).
+async fn record_auth_audit(
+    state: &AppState,
+    conn: &ConnectionState,
+    site: crate::audit::AuditSite,
+    actor: Option<nostr::PublicKey>,
+    detail: serde_json::Value,
+) {
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(site, &conn.tenant)
+            .actor(actor.map(|pk| pk.to_bytes().to_vec()))
+            .detail(detail),
+    )
+    .await;
+}
+
 /// Handle a NIP-42 AUTH message: verify the challenge response and transition
 /// the connection to authenticated state.
 ///
@@ -172,6 +195,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     metrics::counter!("buzz_auth_failures_total", "reason" => metric_reason)
                         .increment(1);
                     *conn.auth_state.write().await = AuthState::Failed;
+                    record_auth_audit(
+                        &state,
+                        &conn,
+                        crate::audit::AuditSite::AuthFailure,
+                        Some(pubkey),
+                        serde_json::json!({
+                            "event_id": event_id_hex.as_str(),
+                            "reason": metric_reason,
+                        }),
+                    )
+                    .await;
                     // Decision 4: banned ⇒ OK false + immediate WebSocket close.
                     // Route the reason frame on the control channel (not `send`,
                     // which uses the data channel and would race the cancel), so
@@ -206,6 +240,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     metrics::counter!("buzz_auth_failures_total", "reason" => "allowlist_denied")
                         .increment(1);
                     *conn.auth_state.write().await = AuthState::Failed;
+                    record_auth_audit(
+                        &state,
+                        &conn,
+                        crate::audit::AuditSite::AuthFailure,
+                        Some(pubkey),
+                        serde_json::json!({
+                            "event_id": event_id_hex.as_str(),
+                            "reason": "allowlist_denied",
+                        }),
+                    )
+                    .await;
                     conn.send(RelayMessage::ok(
                         &event_id_hex,
                         false,
@@ -231,6 +276,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     metrics::counter!("buzz_auth_failures_total", "reason" => "not_relay_member")
                         .increment(1);
                     *conn.auth_state.write().await = AuthState::Failed;
+                    record_auth_audit(
+                        &state,
+                        &conn,
+                        crate::audit::AuditSite::AuthFailure,
+                        Some(pubkey),
+                        serde_json::json!({
+                            "event_id": event_id_hex.as_str(),
+                            "reason": "not_relay_member",
+                        }),
+                    )
+                    .await;
                     conn.send(RelayMessage::ok(
                         &event_id_hex,
                         false,
@@ -279,6 +335,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             }
 
             info!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), "NIP-42 auth successful");
+            record_auth_audit(
+                &state,
+                &conn,
+                crate::audit::AuditSite::AuthSuccess,
+                Some(pubkey),
+                serde_json::json!({
+                    "event_id": event_id_hex.as_str(),
+                    "method": "nip42",
+                }),
+            )
+            .await;
             *conn.auth_state.write().await = AuthState::Authenticated(auth_ctx);
             state
                 .conn_manager
@@ -289,6 +356,20 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             warn!(conn_id = %conn_id, error = %e, "NIP-42 auth failed");
             metrics::counter!("buzz_auth_failures_total", "reason" => "nip42_invalid").increment(1);
             *conn.auth_state.write().await = AuthState::Failed;
+            // The event's signature never verified, so its claimed pubkey is
+            // not an actor — record the failure with no actor rather than
+            // pinning an unproven key on the chain.
+            record_auth_audit(
+                &state,
+                &conn,
+                crate::audit::AuditSite::AuthFailure,
+                None,
+                serde_json::json!({
+                    "event_id": event_id_hex.as_str(),
+                    "reason": "nip42_invalid",
+                }),
+            )
+            .await;
             conn.send(RelayMessage::ok(
                 &event_id_hex,
                 false,

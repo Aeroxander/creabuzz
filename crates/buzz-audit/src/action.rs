@@ -61,6 +61,16 @@ impl AuditAction {
         Self::RateLimitExceeded,
         Self::MediaUploaded,
     ];
+
+    /// Every action in the closed set, in declaration order.
+    ///
+    /// This is the completeness seam for producers: the relay's audit mapping
+    /// test iterates this slice and asserts a produce call site exists for each
+    /// action, so a variant added here without a relay call site reds the
+    /// relay's test suite rather than shipping as a never-produced action.
+    pub fn all() -> &'static [Self] {
+        Self::ALL
+    }
 }
 
 impl fmt::Display for AuditAction {
