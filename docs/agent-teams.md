@@ -79,6 +79,14 @@ start):
   added to every member's context for the rest of the run.
 - `perAgentPrompts` keys must be participants of that phase.
 - `finalWriter` must be a roster slot.
+- `_source` (optional): provenance for a strategy transcribed from a source
+  document — paper, arXiv id, URL, appendix section, bank, authors, license
+  note, ISO retrieval date, and one note per deviating field mapping.
+  Present on every `strategies/` bank file (and rejected by `bank seed` when
+  missing or pointing at another bank); absent on hand-authored strategies.
+  Bounded like every other field: paper/arxiv/section/bank/license/date
+  ≤512 chars, url ≤256, authors ≤16 entries ×128 chars, conversion notes
+  ≤16 entries ×512 chars.
 - Size bounds: name ≤128, description ≤1024, teamworkPrompt ≤8192, role/step
   prompts ≤4096 chars each.
 
@@ -143,6 +151,64 @@ budgets).
   a role prompt per roster slot, so seed roles are derived from the
   strategy's own per-agent instructions where given, and otherwise a neutral
   independent-solver prompt.
+
+### Starter banks (`strategies/` + `bank` verbs)
+
+The full **deployed** banks from Appendix A are authored as
+`strategies/<bank>/<slug>.json` — 10 strategies in `aime-2024` (Appendix A.1)
+and 10 in `gpqa-diamond` (Appendix A.2). Every file carries its own
+`_source` provenance (paper, arXiv id, URL, appendix section, bank, authors,
+license note, retrieval date, and one note per field mapping that deviates
+from a verbatim transcription), and `strategies/index.json` holds the
+repo-level provenance plus the bank → strategy-id index.
+
+- `buzz team strategies bank list [--dir strategies]` — one row per seedable
+  bank (`bank`, file count, appendix section, paper subsection title, roster
+  note), then the shared source provenance (paper, arXiv id, URL, license,
+  authors, retrieval date) and the unconverted/excluded counts. Disk and
+  `index.json` must agree on both counts and ids; drift fails loud rather
+  than printing stale data.
+- `buzz team strategies bank seed <bank> [--dir strategies] [--publish]` —
+  loads one bank, runs every file through the same strict
+  `TeamStrategy::validate` used by `strategy put` (bounds, roster/phase
+  shape, and required `_source` provenance whose `bank` matches the
+  directory), then publishes each as kind:44020 with `d` = file stem.
+  **Idempotent**: a strategy whose `d` tag is already on the relay is
+  skipped and reported (`skip <id>: already on the relay`), followed by
+  `bank <bank>: N published, M skipped` — re-running a seed never creates a
+  second copy. Without `--publish` nothing is queried or signed; the
+  validated strategies print for review.
+
+Strategies that violate a product bound (roles/phases/rounds/size caps) go
+to `strategies/_unconverted/` **with a note — never silently trimmed**. None
+of the 20 Appendix A strategies needed holding back (largest observed: 5 of
+6 phases, 3 of 6 roles); `_unconverted/README.md` carries the bounds table
+and the two Appendix A Figure 8 strategies that were excluded because the
+paper states they were never deployed.
+
+## When a team beats an individual (§5 demonstrability)
+
+Section 5 of the paper asks *when* learned organization helps, and the answer
+is **demonstrability** — the organizational-psychology construct of whether a
+team can tell correct from incorrect reasoning once it appears. Across eight
+benchmarks, demonstrability strongly tracks how much the team improves over
+its strongest member (**Spearman ρ ≈ 0.90, p = 0.005**); the association
+survives dropping any one benchmark (ρ = 0.86–0.96, Appendix E). Teams beat
+individuals most when correct reasoning is *recognizable once it appears*,
+and least when it is not.
+
+Practical read for Buzz: prefer a **team round for reviewable work** — script
+and PR review, audits, checking a result against a spec, anything where a
+reviewer can point at the specific step that is wrong — and prefer an
+individual agent for open-ended brainstorming and generative work, where
+"correct" is not yet decidable from the artifact. Most shipped bank
+strategies are audit/review-shaped (step audits, contradiction audits,
+minority-evidence challenges) — the recognizable-correctness regime the
+paper measures — and a brainstorming prompt run through a 3-agent strategy
+is spending tokens on a case that evidence does not cover.
+
+Source: §5 "When Does Learned Organization Improve Team Performance?" and
+Appendix E, arXiv [2609.22682](https://arxiv.org/html/2609.22682v1).
 
 ## Relay envelope validation
 

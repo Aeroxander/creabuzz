@@ -1,0 +1,77 @@
+{
+  "v": 1,
+  "name": "Final auditor claim recovery",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: a final auditor resurfaces well-supported claims omitted from the provisional consensus for explicit integration or refutation.",
+  "teamworkPrompt": "Independently derive, then collaboratively consolidate. A designated expert auditor will perform a final review to ensure no materially distinct or well-supported individual claims are lost. Subsequently, the team must formally adjudicate all unique individual claims, integrating valid ones and scientifically refuting invalid ones, to prevent collaboration-induced loss of valuable insights.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "You are the final auditor. Your role is critical in preventing collaboration-induced loss of well-supported individual claims. Review the provisional consensus and all individual attempts. Specifically identify and re-present any materially distinct or well-supported individual claims (especially from Agents 0 and 1) that were overlooked or not sufficiently addressed. Prompt Agents 0 and 1 to respond with supporting evidence or revised reasoning. Your goal is to ensure all valid insights are brought to the team’s attention for final adjudication."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently derives a solution and identifies the key scientific claims, assumptions, and supporting evidence for their conclusion."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "All agents share their solutions and derivations. The team discusses to arrive at a provisional consensus solution, explicitly documenting any discrepancies or unresolved scientific issues and any unique, well-supported individual claims."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "summary",
+      "prompt": "Agent 2, as the designated final auditor, must review the provisional consensus solution and all individual attempts, paying close attention to previously documented unique or dissenting well-supported claims. If Agent 2 identifies any materially distinct or well-supported individual claims that were overlooked or not sufficiently addressed, Agent 2 must re-present the reasoning and evidence for these claims. Agents 0 and 1 respond to this audit with supporting evidence or revised reasoning. The team then collectively decides whether to integrate the overlooked claim or formally reject it with scientific justification."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Final Adjudication: The team must now revisit ALL distinct, well-supported individual claims that were not fully integrated into the provisional consensus or were initially set aside. For each such claim, the team must explicitly discuss its scientific validity. If a claim is deemed scientifically valid based on evidence, it must be integrated into the final solution, even if it requires revising the consensus. If a claim is deemed invalid, the team must provide a clear, scientific refutation. The final team solution must represent a comprehensive adjudication of all individual insights, ensuring no well-supported individual claim is lost without thorough, explicit scientific justification."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles only for Agent 2; kind:44020 requires a prompt per roster slot, so agent-0, agent-1 carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

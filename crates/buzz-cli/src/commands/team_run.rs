@@ -25,7 +25,8 @@
 //! A mid-run LLM failure never publishes anything partial — the partial
 //! transcript is printed with a note and the command fails loudly.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -84,11 +85,42 @@ const STEP_PROMPT_MAX_CHARS: usize = 4096;
 const SLOT_NAME_MAX_CHARS: usize = 32;
 const PROBLEM_MAX_CHARS: usize = 16_384;
 
+/// Bounds for `_source` provenance (the `strategies/` bank transcription
+/// metadata). Provenance rides in the event content, so it is bounded like
+/// every other field — an oversized or empty attribution is never published.
+const SOURCE_TEXT_MAX_CHARS: usize = 512;
+const SOURCE_URL_MAX_CHARS: usize = 256;
+const SOURCE_AUTHOR_MAX_CHARS: usize = 128;
+const SOURCE_NOTE_MAX_CHARS: usize = 512;
+/// Max authors / conversion notes carried in one `_source`.
+const SOURCE_LIST_MAX: usize = 16;
+/// Max strategy files read from one bank directory (bounded filesystem read).
+const BANK_STRATEGY_MAX: usize = 64;
+/// Default bank root for `buzz team strategies bank …`: `strategies/`
+/// relative to the current working directory.
+pub const DEFAULT_BANK_DIR: &str = "strategies";
+
 /// Strategy schema version accepted by slice 1.
 pub const STRATEGY_SCHEMA_VERSION: u32 = 1;
 
 /// arXiv id the seeded strategies are transcribed from (Appendix A).
 pub const PAPER_ARXIV_ID: &str = "2609.22682";
+
+/// Canonical paper URL the seeded/banked strategies cite (Appendix A HTML).
+pub const PAPER_URL: &str = "https://arxiv.org/html/2609.22682v1";
+
+/// Paper authors, in order — carried in every seeded/banked strategy's
+/// `_source` so the attribution survives a strategy round-trip.
+pub const PAPER_AUTHORS: [&str; 8] = [
+    "Aneesh Pappu",
+    "Mirac Suzgun",
+    "Yongchan Kwon",
+    "Federico Bianchi",
+    "Batu El",
+    "Mykel J. Kochenderfer",
+    "Hancheng Cao",
+    "James Zou",
+];
 
 // ── Strategy DSL ──────────────────────────────────────────────────────────
 
@@ -144,6 +176,41 @@ pub struct TeamStrategy {
         rename = "parentStrategy"
     )]
     pub parent_strategy: Option<String>,
+    /// Provenance for strategies transcribed from a source document (the
+    /// deployed banks in arXiv 2609.22682 Appendix A). Optional: hand-authored
+    /// strategies omit it; every `strategies/` bank file carries it so the
+    /// attribution survives `strategy put`, `strategy get`, and `bank seed`
+    /// round-trips onto the relay.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "_source")]
+    pub source: Option<StrategySource>,
+}
+
+/// Provenance metadata carried in [`TeamStrategy::source`] (`_source`).
+///
+/// Bounded by [`TeamStrategy::validate`] like every other field — a strategy
+/// with oversized or empty provenance is never published.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StrategySource {
+    /// Paper title.
+    pub paper: String,
+    /// arXiv id (e.g. `2609.22682`).
+    pub arxiv: String,
+    /// Canonical paper URL.
+    pub url: String,
+    /// Appendix section the transcription came from (e.g. `Appendix A.1`).
+    pub section: String,
+    /// Bank directory the strategy belongs to (e.g. `aime-2024`).
+    pub bank: String,
+    /// Paper authors, in order.
+    pub authors: Vec<String>,
+    /// License note for the source document.
+    pub license: String,
+    /// ISO date the source was retrieved.
+    pub retrieved: String,
+    /// One note per field mapping that deviates from a verbatim transcription
+    /// (derived role prompts, assigned `finalWriter`, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conversions: Vec<String>,
 }
 
 impl TeamStrategy {
@@ -255,8 +322,61 @@ impl TeamStrategy {
                 ));
             }
         }
+        if let Some(source) = &self.source {
+            nonempty_bounded(&source.paper, SOURCE_TEXT_MAX_CHARS, "_source.paper")?;
+            nonempty_bounded(&source.arxiv, SOURCE_TEXT_MAX_CHARS, "_source.arxiv")?;
+            nonempty_bounded(&source.url, SOURCE_URL_MAX_CHARS, "_source.url")?;
+            nonempty_bounded(&source.section, SOURCE_TEXT_MAX_CHARS, "_source.section")?;
+            nonempty_bounded(&source.bank, SLOT_NAME_MAX_CHARS, "_source.bank")?;
+            nonempty_bounded(&source.license, SOURCE_TEXT_MAX_CHARS, "_source.license")?;
+            if !is_iso_date(&source.retrieved) {
+                return Err(format!(
+                    "'_source.retrieved' must be an ISO date YYYY-MM-DD (got {:?})",
+                    source.retrieved
+                ));
+            }
+            if source.authors.is_empty() || source.authors.len() > SOURCE_LIST_MAX {
+                return Err(format!(
+                    "'_source.authors' must have 1..={SOURCE_LIST_MAX} entries (got {})",
+                    source.authors.len()
+                ));
+            }
+            for (idx, author) in source.authors.iter().enumerate() {
+                nonempty_bounded(
+                    author,
+                    SOURCE_AUTHOR_MAX_CHARS,
+                    &format!("_source.authors[{idx}]"),
+                )?;
+            }
+            if source.conversions.len() > SOURCE_LIST_MAX {
+                return Err(format!(
+                    "'_source.conversions' must have at most {SOURCE_LIST_MAX} entries (got {})",
+                    source.conversions.len()
+                ));
+            }
+            for (idx, note) in source.conversions.iter().enumerate() {
+                nonempty_bounded(
+                    note,
+                    SOURCE_NOTE_MAX_CHARS,
+                    &format!("_source.conversions[{idx}]"),
+                )?;
+            }
+        }
         Ok(())
     }
+}
+
+/// Minimal `YYYY-MM-DD` shape check for [`StrategySource::retrieved`] (the
+/// date the source document was fetched — provenance must be checkable).
+fn is_iso_date(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| b.is_ascii_digit() || i == 4 || i == 7)
 }
 
 // ── Run model ─────────────────────────────────────────────────────────────
@@ -1823,6 +1943,27 @@ async fn cmd_team_run_with_config(
 
 // ── Seed strategies (arXiv 2609.22682, Appendix A) ────────────────────────
 
+/// Provenance for the three inline `seed-examples` strategies: the same
+/// source metadata the canonical `strategies/aime-2024/` bank files carry
+/// (Appendix A.1), so a seed preview and the bank file of the same id agree
+/// on where the strategy came from.
+fn seed_source() -> StrategySource {
+    StrategySource {
+        paper: "Self-Organizing Agent Teams Learn to Reason Together".to_string(),
+        arxiv: PAPER_ARXIV_ID.to_string(),
+        url: PAPER_URL.to_string(),
+        section: "Appendix A.1".to_string(),
+        bank: "aime-2024".to_string(),
+        authors: PAPER_AUTHORS.iter().map(|a| a.to_string()).collect(),
+        license: "arXiv.org perpetual non-exclusive license".to_string(),
+        retrieved: "2026-09-25".to_string(),
+        conversions: vec![
+            "`seed-examples` transcription of Appendix A.1; the canonical bank file strategies/aime-2024/<id>.json carries the same roles, phases, and finalWriter."
+                .to_string(),
+        ],
+    }
+}
+
 /// The three seeded strategies, transcribed from the paper's Appendix A
 /// (AIME-2024 bank). The paper leaves most AIME roles unset ("shown when
 /// set"); the SAT DSL requires a role prompt per roster slot, so slot roles
@@ -1863,6 +2004,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                 ],
                 final_writer: "agent-2".to_string(),
                 parent_strategy: None,
+                source: Some(seed_source()),
             },
         ),
         (
@@ -1897,6 +2039,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                 ],
                 final_writer: "agent-0".to_string(),
                 parent_strategy: None,
+                source: Some(seed_source()),
             },
         ),
         (
@@ -1940,6 +2083,7 @@ pub fn seed_strategies() -> Vec<(String, TeamStrategy)> {
                 ],
                 final_writer: "agent-1".to_string(),
                 parent_strategy: None,
+                source: Some(seed_source()),
             },
         ),
     ]
@@ -1978,6 +2122,423 @@ pub async fn cmd_strategies_seed(client: &BuzzClient, publish: bool) -> Result<(
     Ok(())
 }
 
+// ── Strategy banks (`strategies/<bank>/<slug>.json`) ──────────────────────
+
+/// One bank strategy read from disk: the file stem is the strategy id (the
+/// kind:44020 `d` tag the seed publishes under).
+#[derive(Debug, Clone)]
+pub struct BankStrategy {
+    /// File stem → `d` tag.
+    pub id: String,
+    /// Parsed and strictly validated strategy document.
+    pub strategy: TeamStrategy,
+}
+
+/// Repo-level provenance index (`strategies/index.json`): the paper the banks
+/// were transcribed from plus one entry per seedable bank directory.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BankIndex {
+    /// Source document metadata shared by every bank.
+    pub source: BankIndexSource,
+    /// One entry per seedable bank directory.
+    pub banks: Vec<BankIndexBank>,
+    /// Paper strategies held back in `strategies/_unconverted/` because they
+    /// violate product bounds — never silently trimmed.
+    #[serde(default)]
+    pub unconverted: Vec<serde_json::Value>,
+    /// Paper strategies deliberately not converted (Appendix A Figure 8:
+    /// the paper states they were never deployed).
+    #[serde(default)]
+    pub excluded: Vec<serde_json::Value>,
+}
+
+/// Source document metadata carried in [`BankIndex::source`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct BankIndexSource {
+    /// Paper title.
+    pub paper: String,
+    /// arXiv id.
+    pub arxiv: String,
+    /// Canonical paper URL.
+    pub url: String,
+    /// Paper authors, in order.
+    pub authors: Vec<String>,
+    /// License note for the source document.
+    pub license: String,
+    /// ISO date the source was retrieved.
+    pub retrieved: String,
+    /// Appendix the banks were transcribed from.
+    pub section: String,
+    /// Free-form note about the index's own role.
+    #[serde(default)]
+    pub note: String,
+}
+
+/// One bank's entry in [`BankIndex::banks`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct BankIndexBank {
+    /// Bank directory name (e.g. `aime-2024`).
+    pub id: String,
+    /// Appendix subsection (e.g. `Appendix A.1`).
+    pub section: String,
+    /// Paper's subsection title.
+    #[serde(default)]
+    pub title: String,
+    /// Paper's roster note for this bank.
+    #[serde(default)]
+    pub roster: String,
+    /// Number of strategy files the bank ships.
+    pub count: usize,
+    /// Strategy ids (= file stems), sorted.
+    pub strategies: Vec<String>,
+}
+
+/// Directory names that are seedable banks. The holding pen
+/// (`_unconverted/`, strategies that violate product bounds) and
+/// dot-directories are never seedable.
+fn is_bank_dir_name(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('_') && !name.starts_with('.')
+}
+
+/// Bank id guard for `bank seed <bank>`: the id becomes a path component, so
+/// it must be a plain lowercase slug — no separators, no `..`, no hidden or
+/// holding-pen directories.
+fn bank_id_ok(bank: &str) -> bool {
+    !bank.is_empty()
+        && bank.len() <= SLOT_NAME_MAX_CHARS
+        && bank != "."
+        && !bank.contains("..")
+        && is_bank_dir_name(bank)
+        && bank
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '.' | '_'))
+}
+
+/// `<root>/<bank>` — every bank path goes through [`bank_id_ok`] first.
+fn bank_dir_path(root: &Path, bank: &str) -> PathBuf {
+    root.join(bank)
+}
+
+/// The `*.json` strategy files of one bank directory, sorted. Bounded: a
+/// directory holding more than [`BANK_STRATEGY_MAX`] files fails closed
+/// instead of seeding a truncated set.
+fn strategy_files(dir: &Path) -> Result<Vec<PathBuf>, CliError> {
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        CliError::Usage(format!("cannot read bank directory {}: {e}", dir.display()))
+    })?;
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    if files.len() > BANK_STRATEGY_MAX {
+        return Err(CliError::Other(format!(
+            "bank directory {} holds {} strategy files; the bounded read accepts at most {BANK_STRATEGY_MAX}",
+            dir.display(),
+            files.len()
+        )));
+    }
+    Ok(files)
+}
+
+/// List the seedable banks under `root`: `(bank id, strategy file count)`,
+/// sorted by id. Holding-pen directories are excluded.
+pub fn bank_entries(root: &Path) -> Result<Vec<(String, usize)>, CliError> {
+    let entries = std::fs::read_dir(root).map_err(|e| {
+        CliError::Usage(format!(
+            "cannot read bank directory {}: {e}",
+            root.display()
+        ))
+    })?;
+    let mut dirs: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(is_bank_dir_name)
+        })
+        .collect();
+    dirs.sort();
+    let mut out = Vec::with_capacity(dirs.len());
+    for dir in dirs {
+        let name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        out.push((name, strategy_files(&dir)?.len()));
+    }
+    Ok(out)
+}
+
+/// Load every strategy of one bank from `<root>/<bank>/*.json`, sorted by id.
+///
+/// Fail closed: the bank name must pass [`bank_id_ok`], every file must parse
+/// as a [`TeamStrategy`], pass the product's own strict `validate()`, and
+/// carry `_source` provenance whose `bank` matches the directory. One bad
+/// file aborts the whole bank, so `bank seed` never publishes a partial or
+/// unattributed set.
+pub fn load_bank(root: &Path, bank: &str) -> Result<Vec<BankStrategy>, CliError> {
+    if !bank_id_ok(bank) {
+        return Err(CliError::Usage(format!(
+            "invalid bank name {bank:?}: expected a lowercase slug such as `aime-2024` (no path components, no holding-pen directories)"
+        )));
+    }
+    let dir = bank_dir_path(root, bank);
+    let mut out = Vec::new();
+    for path in strategy_files(&dir)? {
+        let id = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if id.is_empty() || id.len() > 64 {
+            return Err(CliError::Other(format!(
+                "bank {bank}: {} is not a valid 1..=64-char strategy id",
+                path.display()
+            )));
+        }
+        let raw = std::fs::read_to_string(&path).map_err(|e| {
+            CliError::Other(format!("bank {bank}: cannot read {}: {e}", path.display()))
+        })?;
+        let strategy: TeamStrategy = serde_json::from_str(&raw).map_err(|e| {
+            CliError::Other(format!(
+                "bank {bank}: {} is not a valid strategy JSON: {e}",
+                path.display()
+            ))
+        })?;
+        strategy.validate().map_err(|e| {
+            CliError::Other(format!("bank {bank}: {} is invalid: {e}", path.display()))
+        })?;
+        let source = strategy.source.as_ref().ok_or_else(|| {
+            CliError::Other(format!(
+                "bank {bank}: {} has no `_source` provenance; bank strategies must carry paper/section/bank attribution",
+                path.display()
+            ))
+        })?;
+        if source.bank != bank {
+            return Err(CliError::Other(format!(
+                "bank {bank}: {} declares `_source.bank` {:?}, which does not match its directory",
+                path.display(),
+                source.bank
+            )));
+        }
+        out.push(BankStrategy { id, strategy });
+    }
+    Ok(out)
+}
+
+/// Read + parse `<root>/index.json` (the bank provenance index).
+pub fn load_bank_index(root: &Path) -> Result<BankIndex, CliError> {
+    let path = root.join("index.json");
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| CliError::Other(format!("cannot read bank index {}: {e}", path.display())))?;
+    serde_json::from_str(&raw).map_err(|e| {
+        CliError::Other(format!(
+            "bank index {} is not valid JSON: {e}",
+            path.display()
+        ))
+    })
+}
+
+/// Marker dedup for `bank seed` (idempotency): a strategy whose `d` tag
+/// already exists on the relay is skipped, the rest are published. Returns
+/// `(to_publish, skipped ids)` in bank order.
+fn partition_seed<'a>(
+    entries: &'a [BankStrategy],
+    existing: &BTreeSet<String>,
+) -> (Vec<&'a BankStrategy>, Vec<String>) {
+    let mut pending = Vec::new();
+    let mut skipped = Vec::new();
+    for entry in entries {
+        if existing.contains(&entry.id) {
+            skipped.push(entry.id.clone());
+        } else {
+            pending.push(entry);
+        }
+    }
+    (pending, skipped)
+}
+
+/// Which of `ids` already exist on the relay as a kind:44020 `d` tag.
+///
+/// Chunked at [`STRATEGY_QUERY_BOUND`] ids per request so one seed never
+/// issues an unbounded query; the per-request read is bounded by
+/// [`STRATEGY_LIST_BOUND`] and a response past that bound fails loud rather
+/// than guessing (a false "missing" would publish a duplicate revision).
+async fn existing_strategy_ids(
+    client: &BuzzClient,
+    ids: &[String],
+) -> Result<BTreeSet<String>, CliError> {
+    let mut existing = BTreeSet::new();
+    for chunk in ids.chunks(STRATEGY_QUERY_BOUND as usize) {
+        let filter = serde_json::json!({ "kinds": [KIND_TEAM_STRATEGY], "#d": chunk });
+        let events: Vec<Event> = client
+            .query_all_bounded(filter, STRATEGY_LIST_BOUND)
+            .await?
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect();
+        for event in &events {
+            for d in tag_values(event, "d") {
+                if chunk.contains(&d) {
+                    existing.insert(d);
+                }
+            }
+        }
+    }
+    Ok(existing)
+}
+
+/// Strategy ids (= file stems) of one bank directory, sorted, without
+/// parsing the files — used by `bank list` to diff disk against the index.
+fn bank_strategy_ids(root: &Path, bank: &str) -> Result<Vec<String>, CliError> {
+    Ok(strategy_files(&bank_dir_path(root, bank))?
+        .iter()
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()))
+        .map(str::to_string)
+        .collect())
+}
+
+/// `buzz team strategies bank list [--dir <path>]`
+///
+/// Prints one row per seedable bank (`bank<TAB>files<TAB>section`) with the
+/// paper's subsection title and roster note, then the shared source
+/// provenance (paper, arXiv id, URL, appendix, authors, license, retrieval
+/// date). Disk and `index.json` must agree on both counts and strategy ids —
+/// drift is a provenance failure and fails loud rather than printing stale
+/// data.
+pub fn cmd_bank_list(dir: &str) -> Result<(), CliError> {
+    let root = Path::new(dir);
+    let index = load_bank_index(root)?;
+    let entries = bank_entries(root)?;
+    if entries.is_empty() {
+        return Err(CliError::Usage(format!(
+            "no strategy banks under {} (expected <bank>/<slug>.json)",
+            root.display()
+        )));
+    }
+    let disk: BTreeMap<String, usize> = entries.iter().cloned().collect();
+    let indexed: BTreeMap<String, usize> = index
+        .banks
+        .iter()
+        .map(|b| (b.id.clone(), b.count))
+        .collect();
+    if disk != indexed {
+        return Err(CliError::Other(format!(
+            "bank index drift: disk {disk:?} vs index.json {indexed:?}"
+        )));
+    }
+    for (bank, count) in &entries {
+        let ids = bank_strategy_ids(root, bank)?;
+        let meta = index.banks.iter().find(|b| b.id == *bank);
+        if let Some(meta) = meta {
+            if meta.strategies != ids {
+                return Err(CliError::Other(format!(
+                    "bank index drift for {bank}: disk {ids:?} vs index.json {:?}",
+                    meta.strategies
+                )));
+            }
+            println!("{bank}\t{count}\t{}\t{}", meta.section, meta.title);
+            if !meta.roster.is_empty() {
+                println!("\troster: {}", meta.roster);
+            }
+        } else {
+            println!("{bank}\t{count}\tsection unknown");
+        }
+    }
+    let total: usize = entries.iter().map(|(_, c)| c).sum();
+    let source = &index.source;
+    println!(
+        "source: {} — arXiv {} ({}), {}; appendix: {}; retrieved {}; authors: {}",
+        source.paper,
+        source.arxiv,
+        source.url,
+        source.license,
+        source.section,
+        source.retrieved,
+        source.authors.join(", ")
+    );
+    if !source.note.is_empty() {
+        println!("note: {}", source.note);
+    }
+    println!(
+        "{} bank(s), {total} strateg(ies); {} unconverted, {} excluded (see _unconverted/README.md)",
+        entries.len(),
+        index.unconverted.len(),
+        index.excluded.len()
+    );
+    Ok(())
+}
+
+/// `buzz team strategies bank seed <bank> [--dir <path>] [--publish]`
+///
+/// Loads and validates every file of one bank, then publishes each as a
+/// kind:44020 with `d` = file stem. Idempotent by marker: a strategy whose
+/// `d` tag is already on the relay is skipped and reported, so re-running a
+/// seed never creates a second copy. Without `--publish` nothing is queried
+/// or signed — the validated strategies are printed for review.
+pub async fn cmd_bank_seed(
+    client: &BuzzClient,
+    dir: &str,
+    bank: &str,
+    publish: bool,
+) -> Result<(), CliError> {
+    let root = Path::new(dir);
+    let entries = load_bank(root, bank)?;
+    if entries.is_empty() {
+        return Err(CliError::Usage(format!(
+            "bank {bank:?} has no strategy files under {}",
+            bank_dir_path(root, bank).display()
+        )));
+    }
+
+    if !publish {
+        println!(
+            "--- bank {bank}: {} validated strateg(ies) from {} ---",
+            entries.len(),
+            root.display()
+        );
+        for entry in &entries {
+            let pretty = serde_json::to_string_pretty(&entry.strategy)
+                .map_err(|e| CliError::Other(format!("failed to serialize {}: {e}", entry.id)))?;
+            println!("--- {} ---\n{}", entry.id, pretty);
+        }
+        println!(
+            "preview only; pass --publish to sign and publish (ids already on the relay are skipped)"
+        );
+        return Ok(());
+    }
+
+    let ids: Vec<String> = entries.iter().map(|e| e.id.clone()).collect();
+    let existing = existing_strategy_ids(client, &ids).await?;
+    let (pending, skipped) = partition_seed(&entries, &existing);
+    for id in &skipped {
+        println!("skip {id}: already on the relay");
+    }
+    for entry in &pending {
+        let content = serde_json::to_string(&entry.strategy)
+            .map_err(|e| CliError::Other(format!("failed to serialize {}: {e}", entry.id)))?;
+        let builder = EventBuilder::new(Kind::Custom(KIND_TEAM_STRATEGY as u16), content)
+            .tags(vec![Tag::parse(["d", &entry.id]).map_err(|e| {
+                CliError::Other(format!("invalid d tag: {e}"))
+            })?]);
+        let event = client.sign_event(builder)?;
+        let response = client.submit_event(event).await?;
+        let normalized = parse_write_response(&response, "seed strategy was superseded; re-seed")?;
+        println!("publish {}: {normalized}", entry.id);
+    }
+    println!(
+        "bank {bank}: {} published, {} skipped (already on the relay)",
+        pending.len(),
+        skipped.len()
+    );
+    Ok(())
+}
+
 /// Route `buzz team` subcommands.
 pub async fn dispatch(cmd: crate::TeamCmd, client: &BuzzClient) -> Result<(), CliError> {
     use crate::{TeamCmd, TeamStrategiesCmd, TeamStrategyCmd};
@@ -2011,6 +2572,12 @@ pub async fn dispatch(cmd: crate::TeamCmd, client: &BuzzClient) -> Result<(), Cl
             TeamStrategiesCmd::SeedExamples { publish } => {
                 cmd_strategies_seed(client, publish).await
             }
+            TeamStrategiesCmd::Bank(sub) => match sub {
+                crate::BankCmd::List { dir } => cmd_bank_list(&dir),
+                crate::BankCmd::Seed { bank, dir, publish } => {
+                    cmd_bank_seed(client, &dir, &bank, publish).await
+                }
+            },
         },
     }
 }
@@ -2048,6 +2615,8 @@ mod tests {
             }],
             final_writer: "agent-0".to_string(),
             parent_strategy: None,
+            // Hand-authored test strategy: no paper provenance, by design.
+            source: None,
         }
     }
 
@@ -2797,7 +3366,364 @@ mod tests {
                 strategy.description.contains(PAPER_ARXIV_ID),
                 "seed {id} must cite arXiv {PAPER_ARXIV_ID}"
             );
+            assert_eq!(
+                strategy.source.as_ref().map(|s| s.arxiv.as_str()),
+                Some(PAPER_ARXIV_ID),
+                "seed {id} must carry `_source` provenance"
+            );
         }
+    }
+
+    // ── Strategy banks (strategies/<bank>/<slug>.json) ────────────────────
+
+    /// Repo-root `strategies/` authoring directory.
+    fn strategies_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("strategies")
+    }
+
+    /// Content guard: every shipped bank file parses, passes the product's
+    /// own strict validator, is unique across banks, and matches
+    /// `strategies/index.json` exactly. This is the gate that keeps the
+    /// paper's Appendix A transcription honest — a bound tightening or a
+    /// hand-edited file fails here.
+    #[test]
+    fn bank_files_validate_strictly() {
+        let dir = strategies_dir();
+        let index = load_bank_index(&dir).expect("strategies/index.json is readable");
+        assert!(!index.banks.is_empty(), "index must list at least one bank");
+
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        let mut total = 0usize;
+        for bank in &index.banks {
+            let entries = load_bank(&dir, &bank.id)
+                .unwrap_or_else(|e| panic!("bank {} must load: {e}", bank.id));
+            assert_eq!(entries.len(), bank.count, "bank {} count drift", bank.id);
+            let ids: Vec<String> = entries.iter().map(|e| e.id.clone()).collect();
+            assert_eq!(
+                ids, bank.strategies,
+                "bank {} must list exactly its files, in order",
+                bank.id
+            );
+            for entry in &entries {
+                entry
+                    .strategy
+                    .validate()
+                    .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
+                assert!(
+                    seen.insert(entry.id.clone()),
+                    "duplicate strategy id across banks: {}",
+                    entry.id
+                );
+            }
+            total += entries.len();
+        }
+        assert_eq!(total, 20, "Appendix A ships 10 + 10 deployed strategies");
+        // The holding pen is never a seedable bank.
+        assert_eq!(
+            bank_entries(&dir).expect("banks are readable").len(),
+            index.banks.len(),
+            "no directory outside index.json may be seedable"
+        );
+    }
+
+    /// Provenance completeness: every bank file carries full `_source`
+    /// metadata consistent with `strategies/index.json`.
+    #[test]
+    fn bank_files_carry_complete_provenance() {
+        let dir = strategies_dir();
+        let index = load_bank_index(&dir).expect("index is readable");
+        assert_eq!(index.source.arxiv, PAPER_ARXIV_ID);
+        assert_eq!(index.source.url, PAPER_URL);
+        assert_eq!(
+            index.source.authors,
+            PAPER_AUTHORS.to_vec(),
+            "index authors must be the paper's author list"
+        );
+        assert!(!index.source.license.is_empty());
+        assert!(is_iso_date(&index.source.retrieved));
+
+        for bank in &index.banks {
+            for id in &bank.strategies {
+                let path = dir.join(&bank.id).join(format!("{id}.json"));
+                let raw = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                let strategy: TeamStrategy = serde_json::from_str(&raw)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                strategy
+                    .validate()
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                let source = strategy
+                    .source
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{id} has no `_source` provenance"));
+                assert_eq!(source.paper, index.source.paper, "{id}");
+                assert_eq!(source.arxiv, index.source.arxiv, "{id}");
+                assert_eq!(source.url, index.source.url, "{id}");
+                assert_eq!(source.license, index.source.license, "{id}");
+                assert_eq!(source.retrieved, index.source.retrieved, "{id}");
+                assert_eq!(source.authors, index.source.authors, "{id}");
+                assert_eq!(source.bank, bank.id, "{id}");
+                assert_eq!(source.section, bank.section, "{id}");
+            }
+        }
+    }
+
+    /// `_unconverted/` is the holding pen for strategies that violate product
+    /// bounds; every file in it must be declared in `index.json`. Nothing is
+    /// held back today (all 20 fit the bounds), so both sides start empty —
+    /// an undeclared file fails this test.
+    #[test]
+    fn unconverted_pen_matches_the_index() {
+        let dir = strategies_dir();
+        let index = load_bank_index(&dir).expect("index is readable");
+
+        let mut held: BTreeSet<String> = BTreeSet::new();
+        if let Ok(entries) = std::fs::read_dir(dir.join("_unconverted")) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    let stem = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    assert!(!stem.is_empty(), "held-back file needs a strategy id");
+                    held.insert(stem);
+                }
+            }
+        }
+        let listed: BTreeSet<String> = index
+            .unconverted
+            .iter()
+            .filter_map(|v| v.get("id")?.as_str().map(str::to_string))
+            .collect();
+        assert_eq!(
+            held, listed,
+            "every _unconverted strategy file must be listed in index.json `unconverted`, and vice versa"
+        );
+    }
+
+    /// Marker dedup for `bank seed`: only ids already on the relay are
+    /// skipped, and a fully-present bank publishes nothing.
+    #[test]
+    fn partition_seed_skips_only_the_markers_already_present() {
+        let entries = load_bank(&strategies_dir(), "aime-2024").expect("bank loads");
+        assert_eq!(entries.len(), 10);
+
+        let (pending, skipped) = partition_seed(&entries, &BTreeSet::new());
+        assert_eq!(pending.len(), 10, "empty relay publishes the whole bank");
+        assert!(skipped.is_empty());
+
+        let marker = entries[0].id.clone();
+        let (pending, skipped) = partition_seed(&entries, &BTreeSet::from([marker.clone()]));
+        assert_eq!(pending.len(), 9, "only the marked id is skipped");
+        assert_eq!(skipped, vec![marker]);
+
+        let all: BTreeSet<String> = entries.iter().map(|e| e.id.clone()).collect();
+        let (pending, skipped) = partition_seed(&entries, &all);
+        assert!(pending.is_empty(), "a seeded bank must publish nothing new");
+        assert_eq!(skipped.len(), 10);
+    }
+
+    /// The bank id becomes a path component: path traversal, hidden
+    /// directories, and the `_unconverted` holding pen are never seedable.
+    #[test]
+    fn bank_names_fail_closed_on_path_components_and_holding_pen() {
+        for bad in [
+            "",
+            ".",
+            "..",
+            "_unconverted",
+            "a/b",
+            "../etc",
+            "AIME-2024",
+            "aime 2024",
+        ] {
+            assert!(!bank_id_ok(bad), "{bad:?} must not be seedable");
+        }
+        for good in ["aime-2024", "gpqa-diamond", "bank2"] {
+            assert!(bank_id_ok(good), "{good:?} must be seedable");
+        }
+        assert!(load_bank(&strategies_dir(), "../..").is_err());
+        assert!(load_bank(&strategies_dir(), "_unconverted").is_err());
+    }
+
+    /// Fail-closed provenance at the production seam: `load_bank` rejects a
+    /// file without `_source` and a file whose `_source.bank` disagrees with
+    /// its directory, so a bank can never seed an unattributed strategy.
+    #[test]
+    fn load_bank_fails_closed_without_matching_provenance() {
+        let root =
+            std::env::temp_dir().join(format!("buzz-bank-provenance-{}", std::process::id()));
+        let bank_dir = root.join("demo-bank");
+        std::fs::create_dir_all(&bank_dir).expect("temp bank dir");
+
+        let mut no_source = basic_strategy();
+        no_source.source = None;
+        let path = bank_dir.join("alpha.json");
+        std::fs::write(&path, serde_json::to_string(&no_source).expect("json")).expect("write");
+        let err = load_bank(&root, "demo-bank")
+            .expect_err("a file without `_source` must be rejected")
+            .to_string();
+        assert!(err.contains("_source"), "unhelpful error: {err}");
+
+        let mut wrong_bank = basic_strategy();
+        wrong_bank.source = Some(StrategySource {
+            bank: "other-bank".to_string(),
+            ..seed_source()
+        });
+        std::fs::write(&path, serde_json::to_string(&wrong_bank).expect("json")).expect("write");
+        let err = load_bank(&root, "demo-bank")
+            .expect_err("a mismatched `_source.bank` must be rejected")
+            .to_string();
+        assert!(err.contains("does not match"), "unhelpful error: {err}");
+
+        // Out-of-schema strategies fail closed too, before any publish
+        // decision is even made.
+        let mut invalid = basic_strategy();
+        invalid.v = 99;
+        invalid.source = Some(seed_source());
+        std::fs::write(&path, serde_json::to_string(&invalid).expect("json")).expect("write");
+        let err = load_bank(&root, "demo-bank")
+            .expect_err("an out-of-schema strategy must be rejected")
+            .to_string();
+        assert!(err.contains("is invalid"), "unhelpful error: {err}");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `_source` is bounded like every other strategy field: oversized or
+    /// malformed provenance never validates (and therefore never publishes),
+    /// while hand-authored strategies without provenance still do.
+    #[test]
+    fn validate_rejects_bad_provenance() {
+        let good = seed_strategies()
+            .into_iter()
+            .next()
+            .expect("three inline seeds")
+            .1;
+        good.validate()
+            .expect("inline seeds cite the paper validly");
+
+        let mut bad_date = good.clone();
+        bad_date.source.as_mut().expect("source").retrieved = "Sept 25 2026".into();
+        assert!(bad_date
+            .validate()
+            .unwrap_err()
+            .contains("_source.retrieved"));
+
+        let mut no_authors = good.clone();
+        no_authors.source.as_mut().expect("source").authors.clear();
+        assert!(no_authors
+            .validate()
+            .unwrap_err()
+            .contains("_source.authors"));
+
+        let mut long_url = good.clone();
+        long_url.source.as_mut().expect("source").url = "u".repeat(SOURCE_URL_MAX_CHARS + 1);
+        assert!(long_url.validate().unwrap_err().contains("_source.url"));
+
+        let mut no_source = good.clone();
+        no_source.source = None;
+        no_source
+            .validate()
+            .expect("provenance stays optional for hand-authored strategies");
+    }
+
+    /// `bank list` must agree with disk and `index.json` (drift fails loud).
+    #[test]
+    fn bank_list_agrees_with_disk_and_index() {
+        let dir = strategies_dir();
+        cmd_bank_list(dir.to_str().expect("utf-8 path")).expect("strategies/ and index.json agree");
+    }
+
+    /// The drift guard in `bank list`: a stale count and a stale strategy-id
+    /// list are both provenance failures, not warnings.
+    #[test]
+    fn bank_list_fails_loud_on_index_drift() {
+        let root = std::env::temp_dir().join(format!("buzz-bank-drift-{}", std::process::id()));
+        let bank_dir = root.join("demo-bank");
+        std::fs::create_dir_all(&bank_dir).expect("temp bank dir");
+        std::fs::write(bank_dir.join("alpha.json"), "{}").expect("write file");
+
+        let write_index = |banks: serde_json::Value| {
+            let index = serde_json::json!({
+                "source": {
+                    "paper": "P", "arxiv": "1", "url": "u", "authors": ["a"],
+                    "license": "l", "retrieved": "2026-09-25", "section": "s"
+                },
+                "banks": banks,
+                "unconverted": [],
+                "excluded": []
+            });
+            std::fs::write(root.join("index.json"), index.to_string()).expect("write index");
+        };
+
+        // Disk holds one file; the index claims two.
+        write_index(serde_json::json!([
+            { "id": "demo-bank", "section": "Appendix A.1", "count": 2,
+              "strategies": ["alpha", "beta"] }
+        ]));
+        let err = cmd_bank_list(root.to_str().expect("utf-8"))
+            .expect_err("a stale count must fail loud")
+            .to_string();
+        assert!(err.contains("drift"), "unhelpful error: {err}");
+
+        // Counts agree; the id list does not.
+        write_index(serde_json::json!([
+            { "id": "demo-bank", "section": "Appendix A.1", "count": 1,
+              "strategies": ["gamma"] }
+        ]));
+        let err = cmd_bank_list(root.to_str().expect("utf-8"))
+            .expect_err("a stale id list must fail loud")
+            .to_string();
+        assert!(err.contains("drift"), "unhelpful error: {err}");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// End-to-end idempotency on the production command: the first
+    /// `bank seed --publish` writes the whole bank, the second writes
+    /// nothing (every `d` marker is present), and a preview signs nothing.
+    #[tokio::test]
+    async fn bank_seed_publishes_once_then_skips_everything() {
+        let state = std::sync::Arc::new(MockState::default());
+        let base_url = spawn_mock(state.clone()).await;
+        let client = BuzzClient::new(base_url, Keys::generate(), None, None).unwrap();
+        let dir = strategies_dir();
+        let dir = dir.to_str().expect("utf-8 path");
+
+        cmd_bank_seed(&client, dir, "aime-2024", false)
+            .await
+            .expect("preview validates");
+        assert!(
+            state.event_posts.lock().unwrap().is_empty(),
+            "preview must not sign or publish"
+        );
+
+        cmd_bank_seed(&client, dir, "aime-2024", true)
+            .await
+            .expect("first seed");
+        assert_eq!(
+            state.event_posts.lock().unwrap().len(),
+            10,
+            "the first seed publishes every bank strategy"
+        );
+
+        // The relay now answers with exactly what we published: marker dedup
+        // skips all ten, so the re-run is a no-op.
+        *state.query_response.lock().unwrap() = state.event_posts.lock().unwrap().clone();
+        cmd_bank_seed(&client, dir, "aime-2024", true)
+            .await
+            .expect("second seed");
+        assert_eq!(
+            state.event_posts.lock().unwrap().len(),
+            10,
+            "an idempotent re-run must publish nothing new"
+        );
     }
 
     // ── Reflection (slice 2, paper §2.2) ───────────────────────────────────

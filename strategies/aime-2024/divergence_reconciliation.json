@@ -1,0 +1,65 @@
+{
+  "v": 1,
+  "name": "Divergence reconciliation",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents identify persistently divergent derivations, independently verify the disputed steps, and either reconcile them or reduce their influence.",
+  "teamworkPrompt": "Introduce a reconciliation step dedicated to reviewing any persistent divergences. If an agent’s contributions are repeatedly inconsistent with the group, their influence is reduced through independent verification.",
+  "roles": {
+    "agent-0": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-1": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-2": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent lists their full derivation. Specifically flag any steps from agents whose computations systematically differ from the majority.",
+      "perAgentPrompts": {
+        "agent-0": "Review and note any discrepancies in the reasoning contributed by any agent showing divergence.",
+        "agent-1": "Cross-verify computations from any agent identified with divergence using your own reasoning.",
+        "agent-2": "If you are the agent with divergent reasoning, provide detailed explanations for each step."
+      }
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Initiate an independent re-calculation of the disputed steps provided by the identified divergent agent, comparing them with the computations from the other agents. Conclude by either reconciling the inconsistent result or reducing its influence.",
+      "perAgentPrompts": {
+        "agent-0": "Independently re-calculate the disputed steps and share your verified results.",
+        "agent-1": "Compare your verification results with those from the divergent input and note any differences."
+      }
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

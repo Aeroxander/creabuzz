@@ -2510,6 +2510,41 @@ pub enum TeamStrategiesCmd {
         #[arg(long)]
         publish: bool,
     },
+    /// Strategy banks transcribed from arXiv 2609.22682 Appendix A
+    ///
+    /// `list` prints every seedable bank under strategies/ with its strategy
+    /// count and appendix section. `seed` validates a whole bank with the
+    /// product's strict strategy schema and publishes each file as kind:44020
+    /// (`d` = file stem), skipping ids whose `d` tag already exists on the
+    /// relay — so a re-run is idempotent and never creates a second copy.
+    #[command(subcommand)]
+    Bank(BankCmd),
+}
+
+/// `buzz team strategies bank …` — the repo-root `strategies/` banks.
+#[derive(Subcommand)]
+pub enum BankCmd {
+    /// List strategy banks, their strategy counts, and appendix section
+    List {
+        /// Bank root directory (default: ./strategies)
+        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
+        dir: String,
+    },
+    /// Validate and publish one bank's strategies (idempotent by `d` tag)
+    ///
+    /// Without --publish, prints every validated strategy for review. With
+    /// --publish, each strategy reports `publish <id>` or `skip <id>: already
+    /// on the relay`, followed by a per-bank total.
+    Seed {
+        /// Bank directory name (e.g. aime-2024, gpqa-diamond)
+        bank: String,
+        /// Bank root directory (default: ./strategies)
+        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
+        dir: String,
+        /// Sign and publish instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
 }
 
 /// Org contribution record subcommands — kind:37013.

@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Weighted derivation consensus",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents independently recalculate disputed steps and reduce the influence of derivations that remain inconsistent.",
+  "teamworkPrompt": "Apply a weighted consensus mechanism during discussion: if one agent’s answer (notably agent 2) consistently deviates, reduce its weight in forming the final answer.",
+  "roles": {
+    "agent-0": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-1": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-2": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent lists its full detailed derivation. Flag any steps that deviate from the majority computation.",
+      "perAgentPrompts": {
+        "agent-0": "Provide your complete derivation and highlight any steps that differ from the expected methodology.",
+        "agent-1": "Present your full computation and note any differences compared to others.",
+        "agent-2": "Detail your derivation; if any step diverges, elaborate on your reasoning."
+      }
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Independently re-calculate disputed steps. Weight the contributions: assign higher influence to agents whose past derivations align with the majority (agents 0 and 1) and lower influence to agent 2 if divergence persists.",
+      "perAgentPrompts": {
+        "agent-0": "Re-calculate and confirm your steps; compare with others to validate consistency.",
+        "agent-1": "Verify the disputed computations, emphasizing consistency with the majority.",
+        "agent-2": "Review your derivation in light of the group’s feedback and adjust if discrepancies are found."
+      }
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

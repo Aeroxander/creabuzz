@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "name": "Independent solve then synthesis",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents compare independent solutions, identify disagreements, and synthesize.",
+  "teamworkPrompt": "Preserve independent reasoning. Do not converge until each agent’s solution has been compared against the others.",
+  "roles": {
+    "agent-0": "Independent solver. Name the answer you got, the main method you used, and one possible weakness in your own solution.",
+    "agent-1": "Independent solver. Name the answer you got, the main method you used, and one possible weakness in your own solution.",
+    "agent-2": "Independent solver. Name the answer you got, the main method you used, and one possible weakness in your own solution."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Compare the independent reasoning chains. Each agent should name the answer they got, the main method they used, and one possible weakness in their own solution."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Synthesize the strongest supported reasoning into a shared answer. If answers differ, resolve the disagreement using specific mathematical steps from the discussion."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "roles + finalWriter preserved from Buzz's shipped seed-examples transcription of this strategy.",
+      "description phrasing matches the shipped seed-examples transcription."
+    ]
+  }
+}
