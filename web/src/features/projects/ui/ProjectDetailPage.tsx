@@ -19,7 +19,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -352,9 +352,12 @@ function LaunchpadBridge({
 export function ProjectDetailPage({
   projectId,
   author,
+  action,
 }: {
   projectId: string;
   author?: string;
+  /** `?action=join` from the Discover directory: open the join dialog. */
+  action?: "join";
 }) {
   const { project, hasNode, isLoading, error, refetch } = useProject(
     projectId,
@@ -363,6 +366,19 @@ export function ProjectDetailPage({
   const publish = usePublishProjectEvent();
   const me = existingUserPubkey();
   const [joinRole, setJoinRole] = useState<RoleDeclaration | null>(null);
+
+  // Directory handoff: `?action=join` opens the join dialog for the first
+  // open role, exactly as clicking "Request to join" on a card would — the
+  // dialog itself is not rebuilt here. Latched so closing it cannot re-open
+  // it, and never for the founder, who has nothing to request.
+  const joinDeepLinkTried = useRef(false);
+  useEffect(() => {
+    if (action !== "join" || !project || joinDeepLinkTried.current) return;
+    joinDeepLinkTried.current = true;
+    if (project.founder === me) return;
+    const first = project.roles.find((roleState) => roleState.open);
+    if (first) setJoinRole(first.role);
+  }, [action, me, project]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{
     key: string;

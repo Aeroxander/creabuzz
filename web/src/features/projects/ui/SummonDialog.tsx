@@ -14,6 +14,10 @@
  *   `pct × 10^18` (`summon-composer.ts`, Shares `decimals = 18`,
  *   `Moloch.sol:1064`). A seat with no bound address shows an em dash and is
  *   refused; nothing is guessed.
+ * - **the binding sources** — the viewer's local SIWE mirror merged with the
+ *   relay's kind:37017 records (`lib/bindings.ts`, `use-bindings.ts`): local
+ *   wins for this wallet, records fill the teammates' seats, and a seat with
+ *   neither stays a named blocker instead of a guess.
  * - **the cap line** — `budget × 6 vs the graduation threshold` (the 1/6
  *   rule, `launch-params.ts:140-155`) with the 3× default-pass figure next to
  *   it. `over` blocks the send; a record with no figures reads `unknown`,
@@ -69,6 +73,7 @@ import {
   type SummonStepId,
 } from "../lib/summon-flow";
 import type { ProjectState } from "../lib/state";
+import { useBindingRecords } from "../use-bindings";
 import { STAKE_DISCLAIMER } from "./JoinDialog";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -122,8 +127,17 @@ export function SummonDialog({
     }),
     [project.manifest.nodeId, project.manifest.name],
   );
+  // The team's kind:37017 binding records, read once per dialog over the
+  // seat-holders' pubkeys (`use-bindings.ts` — bounded, one REQ). While this
+  // loads or after it fails, the map below is the local-only one: an
+  // unreachable lookup can only *keep* a seat refused, never approve it.
+  const teamPubkeys = useMemo(
+    () => project.team.map((member) => member.pubkey),
+    [project.team],
+  );
+  const records = useBindingRecords(teamPubkeys);
   const composition = useMemo(() => {
-    const bindings = localBindingMap(binding, project.team);
+    const bindings = localBindingMap(binding, project.team, records.data ?? []);
     return composeSummon(
       project.team,
       bindings,
@@ -136,7 +150,7 @@ export function SummonDialog({
       },
       org,
     );
-  }, [binding, launch, org, project.team]);
+  }, [binding, launch, org, project.team, records.data]);
 
   const summonerOk = ADDRESS_RE.test(summoner.trim());
   const chainId =
@@ -338,11 +352,31 @@ export function SummonDialog({
           </ul>
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
             Ask them to bind an address: they sign in with the wallet that holds
-            their seat (SIWE) and the relay records the binding. Until then
-            their seat is refused — a share is never minted to an address nobody
-            proved.
+            their seat (SIWE) and the relay records the binding. This seat has
+            no binding record yet — they can bind one from Settings/sign-in, and
+            this list updates on its own. Until then their seat is refused — a
+            share is never minted to an address nobody proved.
           </p>
+          {teamPubkeys.length > 0 && records.isPending ? (
+            <p
+              className="mt-1 text-xs text-black/50 dark:text-white/50"
+              data-testid="summon-records-loading"
+            >
+              Checking this relay for binding records…
+            </p>
+          ) : null}
         </div>
+      ) : null}
+
+      {records.isError && teamPubkeys.length > 0 ? (
+        <p
+          className="mt-3 text-xs text-amber-800 dark:text-amber-300"
+          data-testid="summon-records-error"
+        >
+          Binding records could not be read from this relay — seats may show as
+          unbound even where a record exists. Ask each seat-holder to bind from
+          Settings/sign-in, or retry when the relay is reachable.
+        </p>
       ) : null}
 
       {composition.warnings.length > 0 ? (

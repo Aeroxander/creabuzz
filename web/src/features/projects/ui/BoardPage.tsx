@@ -24,7 +24,12 @@ import type { ProjectSummary } from "../lib/state";
 import { useBoard } from "../use-projects";
 import { PitchDialog } from "./PitchDialog";
 
-function RoleChip({
+/**
+ * The open/filled role chip. Exported for `features/discover` so the
+ * directory prints the same `%` chip the board does — one component, one
+ * label owner, no drift between two views of the same role.
+ */
+export function RoleChip({
   role,
   filled,
 }: {
@@ -62,7 +67,7 @@ function ProjectCard({
           <Link
             className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
             data-testid="board-card-title"
-            search={{ author: card.founder }}
+            search={{ action: undefined, author: card.founder }}
             to="/projects/$projectId"
             params={{ projectId: card.projectId }}
           >

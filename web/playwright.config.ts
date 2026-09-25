@@ -32,6 +32,7 @@ export default defineConfig({
         "**/usernames.spec.ts",
         "**/org-chart.spec.ts",
         "**/projects.spec.ts",
+        "**/discover.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -9,6 +9,7 @@ import { Route as reposRouteImport } from "./routes/repos";
 import { Route as projectsRouteImport } from "./routes/projects";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
+import { Route as discoverRouteImport } from "./routes/discover";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
@@ -35,6 +36,11 @@ const launchpadRoute = launchpadRouteImport.update({
 const identityDemoRoute = identityDemoRouteImport.update({
   id: "/identity-demo",
   path: "/identity-demo",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const discoverRoute = discoverRouteImport.update({
+  id: "/discover",
+  path: "/discover",
   getParentRoute: () => rootRouteImport,
 } as any);
 const indexRoute = indexRouteImport.update({
@@ -76,6 +82,7 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/projects": typeof projectsRoute;
@@ -89,6 +96,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/projects": typeof projectsRoute;
@@ -103,6 +111,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/projects": typeof projectsRoute;
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/discover"
     | "/identity-demo"
     | "/launchpad"
     | "/projects"
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/discover"
     | "/identity-demo"
     | "/launchpad"
     | "/projects"
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/discover"
     | "/identity-demo"
     | "/launchpad"
     | "/projects"
@@ -158,6 +170,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  discoverRoute: typeof discoverRoute;
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
   projectsRoute: typeof projectsRoute;
@@ -198,6 +211,13 @@ declare module "@tanstack/react-router" {
       path: "/identity-demo";
       fullPath: "/identity-demo";
       preLoaderRoute: typeof identityDemoRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/discover": {
+      id: "/discover";
+      path: "/discover";
+      fullPath: "/discover";
+      preLoaderRoute: typeof discoverRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/": {
@@ -254,6 +274,7 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  discoverRoute: discoverRoute,
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
   projectsRoute: projectsRoute,

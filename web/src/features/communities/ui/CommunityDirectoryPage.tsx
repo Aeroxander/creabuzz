@@ -4,6 +4,7 @@ import {
   Globe,
   LayoutGrid,
   Rocket,
+  Search,
   Users,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -133,7 +134,18 @@ export function CommunityDirectoryPage() {
           <Compass className="h-5 w-5" /> Communities
         </h1>
         <AddCommunityForm />
-        <span className="flex gap-2">
+        {/* flex-wrap: four entries must still fit a 390px viewport without
+            forcing page-level horizontal overflow. */}
+        <span className="flex flex-wrap gap-2">
+          <Link to="/discover">
+            <Button
+              variant="outline"
+              size="sm"
+              className="dark:border-white/15"
+            >
+              <Search aria-hidden /> Discover
+            </Button>
+          </Link>
           <Link to="/repos">
             <Button
               variant="outline"

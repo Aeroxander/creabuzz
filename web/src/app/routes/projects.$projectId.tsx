@@ -8,6 +8,10 @@ export const Route = createFileRoute("/projects/$projectId")({
       typeof search.author === "string" && search.author.length > 0
         ? search.author
         : undefined,
+    // Directory handoff: `?action=join` opens the join dialog for the first
+    // open role (Discover's "Request to join" / "Join"). Unknown values are
+    // ignored, forward-compat with the launchpad's deep-link shape.
+    action: search.action === "join" ? ("join" as const) : undefined,
   }),
   component: ProjectDetailRoute,
 });
@@ -21,6 +25,8 @@ const ProjectDetailPage = lazyRouteComponent(
 
 function ProjectDetailRoute() {
   const { projectId } = Route.useParams();
-  const { author } = Route.useSearch();
-  return <ProjectDetailPage author={author} projectId={projectId} />;
+  const { author, action } = Route.useSearch();
+  return (
+    <ProjectDetailPage action={action} author={author} projectId={projectId} />
+  );
 }

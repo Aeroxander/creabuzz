@@ -50,6 +50,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { truncatePubkey } from "../../../shared/lib/pubkey.ts";
 import { abiEncodeCall, type AbiField } from "../../identity/lib/userop-abi.ts";
 import { formatAtomic, USDC_DECIMALS } from "../../launchpad/lib/amounts.ts";
+import { canonicalBindingByPubkey, type BindingRecord } from "./bindings.ts";
 import { POOL_PCT } from "./manifest.ts";
 import type { TeamMember } from "./state.ts";
 
@@ -523,29 +524,47 @@ export function buildSummonTx(summoner: string, data: string): SummonTx {
 }
 
 /**
- * The local wallet binding as a pubkey → address map.
+ * The seat map: local wallet binding, merged with the relay's kind:37017
+ * binding records.
  *
- * This is the one binding source this build can actually read: the relay
- * records `npub ↔ address` in `evm_identities`
- * (`migrations/0045_evm_identities.sql`, written by `POST /auth/siwe/register`,
- * `crates/buzz-relay/src/api/evm_auth.rs:298-312`) and mirrors it into this
- * browser (`features/identity/lib/siwe.ts:30` `readWalletBinding`). There is
- * no read path for *other* members' bindings today — no HTTP GET, no Nostr
- * kind (the NIP-43 member list, kind 13534, carries only `["member",
- * pubkey, role]`) — so every other seat resolves to "unbound" and is refused
- * rather than guessed. A future relay lookup plugs in as another source
- * without touching this composer.
+ * Two sources, one precedence (tested in `bindings.test.mjs`):
+ *
+ * 1. **Records fill the team** — a teammate's seat resolves from the
+ *    binding record *they* authored (`lib/bindings.ts`, `authors:[pubkey]`),
+ *    which is what lets a team summon without everyone signing into this
+ *    browser. Revoked, malformed, or absent records leave the seat out of
+ *    the map, so `resolveSeat` still refuses it — a blocker is never
+ *    downgraded to a guess.
+ * 2. **Local wins for the viewer** — the browser mirror
+ *    (`features/identity/lib/siwe.ts:30` `readWalletBinding`) is this
+ *    wallet's freshest proof and overrides any record the relay holds for
+ *    the same pubkey.
+ *
+ * Records are bounded to `map` — the project's declared team (state.ts):
+ * a binding for an npub that holds no seat is never pulled into a
+ * composition. `records` is optional, so every existing caller and test
+ * keeps the exact local-only behavior it had before the relay read existed.
  */
 export function localBindingMap(
   binding: { pubkey: string; address: string } | null,
   map: readonly TeamMember[],
+  records: readonly BindingRecord[] = [],
 ): Map<string, string> {
   const out = new Map<string, string>();
-  if (!binding) return out;
-  if (!ADDRESS_RE.test(binding.address)) return out;
-  const holds = map.some((member) => member.pubkey === binding.pubkey);
-  if (!holds) return out;
-  out.set(binding.pubkey, binding.address);
+  const holds = new Set(map.map((member) => member.pubkey));
+  for (const record of canonicalBindingByPubkey(records).values()) {
+    if (!holds.has(record.pubkey)) continue;
+    if (record.revoked) continue;
+    if (!ADDRESS_RE.test(record.address)) continue;
+    out.set(record.pubkey, record.address);
+  }
+  if (
+    binding &&
+    ADDRESS_RE.test(binding.address) &&
+    holds.has(binding.pubkey)
+  ) {
+    out.set(binding.pubkey, binding.address);
+  }
   return out;
 }
 

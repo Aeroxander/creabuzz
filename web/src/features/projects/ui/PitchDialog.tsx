@@ -293,7 +293,7 @@ export function PitchDialog({
         void navigate({
           to: "/projects/$projectId",
           params: { projectId: result.nodeId },
-          search: { author: userPubkey() },
+          search: { action: undefined, author: userPubkey() },
         });
       },
       onError: (error) => {
