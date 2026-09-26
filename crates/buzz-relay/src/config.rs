@@ -442,7 +442,24 @@ pub struct Config {
     /// (e.g. Trystero over Nostr signaling) rendezvous through the relay.
     /// Defaults to off; the relay's read/write auth posture is unchanged.
     pub p2p_signaling: bool,
+
+    /// Apple Developer Team ID that signs the desktop app, paired with
+    /// [`Config::passkey_bundle_id`] in the AASA served at
+    /// `GET /.well-known/apple-app-site-association` (`BUZZ_PASSKEY_TEAM_ID`).
+    /// Unset (or empty) → that route 404s: no AASA means Apple refuses every
+    /// `webcredentials` passkey ceremony bound to this relay's host. A Team ID
+    /// is public (it ships inside any signed build), so it is config, not a
+    /// secret.
+    pub passkey_team_id: Option<String>,
+    /// Desktop bundle identifier used in the AASA `webcredentials.apps` entry
+    /// (`BUZZ_PASSKEY_BUNDLE_ID`). Defaults to [`DEFAULT_PASSKEY_BUNDLE_ID`].
+    pub passkey_bundle_id: String,
 }
+
+/// Default bundle identifier in the AASA `webcredentials.apps` entry — the
+/// `identifier` of `desktop/src-tauri/tauri.conf.json`. Pinned to that file by
+/// `router::tests::passkey_bundle_default_matches_the_desktop_identifier`.
+pub const DEFAULT_PASSKEY_BUNDLE_ID: &str = "xyz.block.buzz.app";
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
     raw.parse::<SocketAddr>()
@@ -1304,6 +1321,19 @@ impl Config {
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
 
+        // Apple passkey activation — the two halves of the AASA document this
+        // relay serves at /.well-known/apple-app-site-association. No team id
+        // means the route 404s instead of advertising an app nobody signed.
+        let passkey_team_id = std::env::var("BUZZ_PASSKEY_TEAM_ID")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let passkey_bundle_id = std::env::var("BUZZ_PASSKEY_BUNDLE_ID")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| DEFAULT_PASSKEY_BUNDLE_ID.to_string());
+
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
                 return Err(ConfigError::InvalidValue(format!(
@@ -1386,6 +1416,8 @@ impl Config {
             serve_git_web_gui,
             web_spa_full,
             p2p_signaling,
+            passkey_team_id,
+            passkey_bundle_id,
         })
     }
 }

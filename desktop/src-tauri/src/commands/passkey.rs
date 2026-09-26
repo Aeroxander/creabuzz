@@ -85,6 +85,45 @@
 //! record (`CeremonyProvenance`), and the in-contract WebAuthn validator must
 //! check `expectedOrigin`/`expectedRPID` against that recorded pair (or the
 //! desktop UserOp will verify its challenge but fail an origin allow-list).
+//!
+//! # Activation runbook — turning the built bridge into a working ceremony
+//!
+//! The bridge is built (PRF-default, macOS 15+, derivation byte-parity proven);
+//! what remains is configuration + signing. Steps in order — **step 0** is the
+//! check script, which verifies every link this repo can verify and prints the
+//! exact fix per broken link plus the manual steps that remain:
+//!
+//! 0. `bash scripts/passkey-activation-check.sh` — checks `BUZZ_PASSKEY_RP_ID`
+//!    (set, not `*.invalid`), the AASA actually served at
+//!    `https://<rp>/.well-known/apple-app-site-association` (status, content
+//!    type, `webcredentials.apps` app id), and the entitlement's domain.
+//! 1. DOMAIN — the relay's public host (`BUZZ_RELAY_URL`'s host) is the RP id:
+//!    own it over HTTPS with a valid certificate; Apple fetches it, and WebAuthn
+//!    refuses IP/loopback RP ids.
+//! 2. AASA — the relay serves it from config (`BUZZ_PASSKEY_TEAM_ID` +
+//!    `BUZZ_PASSKEY_BUNDLE_ID`, default = tauri.conf.json's `identifier`) with
+//!    `Content-Type: application/json` + `Cache-Control: no-cache`; the served
+//!    body and `aasa.example.json` are pinned together. Apple caches AASA
+//!    fetches ~24h — expect up to a day of propagation after any change.
+//! 3. ENTITLEMENT + PROFILE — replace the `.invalid` placeholder in
+//!    `desktop/src-tauri/Entitlements.plist` with `webcredentials:<rp-domain>`,
+//!    and sign with a provisioning profile that includes the
+//!    associated-domains capability (that profile is release-repo work:
+//!    `squareup/buzz-releases`).
+//! 4. `BUZZ_PASSKEY_RP_ID=<rp-domain>` in the app's runtime environment — it
+//!    must equal the entitlement domain and the AASA host exactly
+//!    (`require_real_rp_id` refuses the placeholder loudly rather than minting
+//!    a credential under the wrong RP).
+//! 5. SIGNED BUILD — a Block-signed macOS build from `buzz-releases`; an
+//!    ad-hoc/debug-signed app cannot satisfy associated domains.
+//! 6. HARDWARE VERIFICATION — on macOS 15+ with Touch ID, run
+//!    `passkey_capability` (this module's capability-matrix report): it must
+//!    report `available: true`, `rpId` set, no `blocker`; then create and
+//!    assert a passkey and confirm the recorded `CeremonyProvenance` (`origin` +
+//!    `rpId`) matches steps 1–4.
+//!
+//! Steps 3 and 5 are the only ones outside this repo (Apple developer tooling +
+//! the buzz-releases pipeline); everything else is in-repo config or a fetch.
 
 use serde::{Deserialize, Serialize};
 

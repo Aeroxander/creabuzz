@@ -8,7 +8,7 @@ use axum::{
     extract::{ConnectInfo, FromRequest, State, WebSocketUpgrade},
     http::{header, HeaderMap, HeaderValue, Request, StatusCode},
     middleware,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::{get, post, put},
     Router,
 };
@@ -70,6 +70,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/info", get(relay_info_handler))
         .route("/communities", get(api::communities::directory))
         .route("/.well-known/nostr.json", get(api::nip05::nostr_nip05))
+        // Apple App Site Association — desktop passkey activation (static).
+        .route(AASA_PATH, get(app_site_association))
         // Health endpoints
         .route("/health", get(health_handler))
         .route("/_liveness", get(liveness_handler))
@@ -363,6 +365,49 @@ pub fn build_health_router(state: Arc<AppState>) -> Router {
         .route("/_status", get(status_handler))
         .route("/_mesh", get(mesh_status_handler))
         .with_state(state)
+}
+
+/// Where the Apple App Site Association file is served. Apple fetches it over
+/// HTTPS (no redirect, no file extension) to authorize the `webcredentials`
+/// association between this host and the signed desktop app.
+pub const AASA_PATH: &str = "/.well-known/apple-app-site-association";
+
+/// Build the AASA body: the `webcredentials.apps` entry Apple checks against
+/// the signed app's `com.apple.developer.associated-domains` entitlement before
+/// it allows a passkey ceremony bound to this relay's host.
+///
+/// Single source of truth for the served shape — `desktop/src-tauri/aasa.example.json`
+/// is pinned to it by `aasa_example_matches_the_served_aasa`.
+pub fn aasa_body(team_id: &str, bundle_id: &str) -> serde_json::Value {
+    json!({ "webcredentials": { "apps": [format!("{team_id}.{bundle_id}")] } })
+}
+
+/// `GET /.well-known/apple-app-site-association` — the AASA file that makes a
+/// desktop passkey (`webcredentials`) ceremony on this host possible at all.
+///
+/// Static and deployment-global: the body depends only on config
+/// (`BUZZ_PASSKEY_TEAM_ID` + `BUZZ_PASSKEY_BUNDLE_ID`), never on the request,
+/// so every Host receives the same document — only the host set as the app's
+/// `BUZZ_PASSKEY_RP_ID` (and named in the signed entitlement) is meaningful to
+/// Apple.
+///
+/// Headers: `Content-Type: application/json` (the path carries no extension)
+/// and `Cache-Control: no-cache`, so HTTP intermediaries must revalidate on
+/// every fetch. Apple applies its own ~24h AASA cache on top — expect up to a
+/// day of propagation after any change.
+///
+/// Without a configured Team ID the route 404s rather than advertising an app
+/// nobody signed (the "unconfigured surface is absent" convention, same as the
+/// SIWE routes).
+async fn app_site_association(State(state): State<Arc<AppState>>) -> Response {
+    let Some(team_id) = state.config.passkey_team_id.as_deref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut response = Json(aasa_body(team_id, &state.config.passkey_bundle_id)).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    response
 }
 
 /// Content-negotiated: NIP-11 JSON for plain HTTP, WebSocket upgrade otherwise.
@@ -738,6 +783,7 @@ mod tests {
             "/media/abc123",
             "/upload",
             "/.well-known/nostr.json",
+            "/.well-known/apple-app-site-association",
             "/_liveness",
             "/events",
             "/query",
@@ -753,18 +799,13 @@ mod tests {
         }
     }
 
-    /// Relay state serving both bundles: the admin SPA on `admin.example` and
-    /// the public SPA on any other host.
-    async fn spa_state(admin_dir: &std::path::Path, web_dir: &std::path::Path) -> Arc<AppState> {
+    /// Build relay state with config applied before construction: default
+    /// config, no membership requirement, unreachable Redis (pools are lazy).
+    async fn state_with(configure: impl FnOnce(&mut crate::config::Config)) -> Arc<AppState> {
         let mut config = crate::config::Config::from_env().expect("default config loads");
         config.require_relay_membership = false;
         config.redis_url = "redis://127.0.0.1:1".to_string();
-        config.web_dir = Some(web_dir.to_path_buf());
-        config.admin = Some(crate::config::AdminConfig {
-            host: "admin.example".to_string(),
-            auth: crate::config::AdminAuth::Disabled,
-            web_dir: Some(admin_dir.to_path_buf()),
-        });
+        configure(&mut config);
         let pool = sqlx::PgPool::connect_lazy(&config.database_url).expect("lazy pg pool");
         let db = buzz_db::Db::from_pool(pool.clone());
         let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
@@ -796,6 +837,20 @@ mod tests {
             media_storage,
         );
         Arc::new(state)
+    }
+
+    /// Relay state serving both bundles: the admin SPA on `admin.example` and
+    /// the public SPA on any other host.
+    async fn spa_state(admin_dir: &std::path::Path, web_dir: &std::path::Path) -> Arc<AppState> {
+        state_with(|config| {
+            config.web_dir = Some(web_dir.to_path_buf());
+            config.admin = Some(crate::config::AdminConfig {
+                host: "admin.example".to_string(),
+                auth: crate::config::AdminAuth::Disabled,
+                web_dir: Some(admin_dir.to_path_buf()),
+            });
+        })
+        .await
     }
 
     async fn readiness_state(evaluator: Arc<dyn readiness::ReadinessEvaluator>) -> Arc<AppState> {
@@ -1338,6 +1393,179 @@ mod tests {
                 "{path} on the public host must keep its own headers"
             );
         }
+    }
+
+    /// One GET against the AASA route through the real router.
+    async fn aasa_response(state: Arc<AppState>) -> axum::response::Response {
+        build_router(state)
+            .oneshot(
+                Request::get(AASA_PATH)
+                    .header(axum::http::header::HOST, "relay.example")
+                    .body(Body::empty())
+                    .expect("AASA request"),
+            )
+            .await
+            .expect("AASA response")
+    }
+
+    async fn aasa_reply(
+        response: axum::response::Response,
+    ) -> (StatusCode, HeaderMap, serde_json::Value) {
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("AASA body");
+        let payload = serde_json::from_slice(&body).expect("AASA JSON body");
+        (status, headers, payload)
+    }
+
+    #[tokio::test]
+    async fn the_aasa_route_serves_the_configured_app_as_uncacheable_json() {
+        let state = state_with(|config| {
+            config.passkey_team_id = Some("ABCDE12345".to_string());
+            config.passkey_bundle_id = crate::config::DEFAULT_PASSKEY_BUNDLE_ID.to_string();
+        })
+        .await;
+
+        let (status, headers, payload) = aasa_reply(aasa_response(state).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json"),
+            "the path has no extension — Apple keys on the content type"
+        );
+        assert_eq!(
+            headers
+                .get(header::CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache"),
+            "Apple's own ~24h AASA cache is long enough; intermediaries must revalidate"
+        );
+        assert_eq!(
+            payload,
+            aasa_body("ABCDE12345", crate::config::DEFAULT_PASSKEY_BUNDLE_ID)
+        );
+        assert_eq!(
+            payload["webcredentials"]["apps"][0],
+            format!("ABCDE12345.{}", crate::config::DEFAULT_PASSKEY_BUNDLE_ID),
+            "the app id is TEAMID.bundle-id, driven by config"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_aasa_route_is_absent_without_a_team_id() {
+        let state = state_with(|_| {}).await;
+
+        let response = aasa_response(state).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "an unconfigured deployment must not advertise an app nobody signed"
+        );
+    }
+
+    #[tokio::test]
+    async fn other_well_known_paths_are_never_served_and_never_the_spa_shell() {
+        // Deployment shape that serves a bundle: the fallback decides, and the
+        // server-owned `/.well-known/` prefix must keep 404ing — no sibling of
+        // the AASA route may start answering, and none may fall through to HTML.
+        let web_dir = tempfile::tempdir().expect("public bundle dir");
+        write_bundle(web_dir.path());
+        let state = state_with(|config| {
+            config.web_dir = Some(web_dir.path().to_path_buf());
+        })
+        .await;
+
+        for path in ["/.well-known/security.txt", "/.well-known/change-password"] {
+            let response = build_router(state.clone())
+                .oneshot(
+                    Request::get(path)
+                        .header(axum::http::header::HOST, "relay.example")
+                        .body(Body::empty())
+                        .expect("well-known request"),
+                )
+                .await
+                .expect("well-known response");
+            let status = response.status();
+            let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("well-known body");
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+            assert!(
+                !String::from_utf8_lossy(&body).contains("<!doctype html>"),
+                "{path} must not fall through to the SPA shell"
+            );
+        }
+    }
+
+    #[test]
+    fn aasa_body_is_exactly_the_webcredentials_document() {
+        let body = aasa_body("ABCDE12345", "xyz.block.buzz.app");
+        let object = body.as_object().expect("AASA is a JSON object");
+        assert_eq!(
+            object.keys().collect::<Vec<_>>(),
+            vec!["webcredentials"],
+            "the served AASA carries no other top-level section"
+        );
+        assert_eq!(
+            body["webcredentials"]["apps"],
+            json!(["ABCDE12345.xyz.block.buzz.app"])
+        );
+    }
+
+    /// The desktop example file must describe exactly what the relay serves —
+    /// one source of truth for the activation chain.
+    #[test]
+    fn aasa_example_matches_the_served_aasa() {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../desktop/src-tauri/aasa.example.json"
+        ))
+        .expect("aasa.example.json is readable");
+        let mut example: serde_json::Value = serde_json::from_str(&raw).expect("example JSON");
+        let readme = example
+            .as_object_mut()
+            .expect("example is a JSON object")
+            .remove("_README");
+        assert!(
+            readme.is_some(),
+            "the example keeps its hosting instructions in _README"
+        );
+        assert_eq!(
+            example,
+            aasa_body("<TEAMID>", "<BUNDLEID>"),
+            "aasa.example.json must be the served body with its placeholders unsubstituted"
+        );
+
+        let concrete = example
+            .to_string()
+            .replace("<TEAMID>", "ABCDE12345")
+            .replace("<BUNDLEID>", crate::config::DEFAULT_PASSKEY_BUNDLE_ID);
+        let concrete: serde_json::Value = serde_json::from_str(&concrete).expect("substituted");
+        assert_eq!(
+            concrete,
+            aasa_body("ABCDE12345", crate::config::DEFAULT_PASSKEY_BUNDLE_ID)
+        );
+    }
+
+    /// The relay's default AASA bundle id is the desktop app's real
+    /// `identifier` — the two must never drift apart.
+    #[test]
+    fn passkey_bundle_default_matches_the_desktop_identifier() {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../desktop/src-tauri/tauri.conf.json"
+        ))
+        .expect("tauri.conf.json is readable");
+        let config: serde_json::Value = serde_json::from_str(&raw).expect("tauri.conf.json JSON");
+        assert_eq!(
+            config["identifier"].as_str(),
+            Some(crate::config::DEFAULT_PASSKEY_BUNDLE_ID),
+            "DEFAULT_PASSKEY_BUNDLE_ID must equal tauri.conf.json's identifier"
+        );
     }
 
     #[test]

@@ -8,6 +8,19 @@
     "is a template for the RELEASE-REPO deployment work (buzz-releases signs",
     "the app; the RP domain serves this file).",
     "",
+    "SERVED BY THE RELAY (single source of truth): the relay serves exactly the",
+    "document below — everything except this _README key — at",
+    "  GET /.well-known/apple-app-site-association",
+    "when BUZZ_PASSKEY_TEAM_ID is configured (BUZZ_PASSKEY_BUNDLE_ID defaults to",
+    "the desktop identifier in tauri.conf.json), with",
+    "  Content-Type: application/json",
+    "  Cache-Control: no-cache",
+    "The body is built by `aasa_body` in crates/buzz-relay/src/router.rs; the",
+    "test `aasa_example_matches_the_served_aasa` pins this file to that builder,",
+    "and `scripts/passkey-activation-check.sh` (activation step 0) fetches the",
+    "live URL and checks it against this shape. Use this file only to host the",
+    "AASA on a domain NOT served by the relay (CDN / static host).",
+    "",
     "WHERE TO SERVE IT:",
     "  https://<RP-DOMAIN>/.well-known/apple-app-site-association",
     "  - Content-Type: application/json (no file extension; do NOT redirect)",
@@ -17,8 +30,9 @@
     "",
     "WHAT TO REPLACE:",
     "  <TEAMID>   - the Apple Developer Team ID that signs the Buzz app",
+    "               (BUZZ_PASSKEY_TEAM_ID on the relay)",
     "  <BUNDLEID> - the Buzz app bundle identifier (CFBundleIdentifier),",
-    "               e.g. app.buzz.desktop (matches tauri.conf.json)",
+    "               app identifier xyz.block.buzz.app (matches tauri.conf.json)",
     "  The resulting entry is '<TEAMID>.<BUNDLEID>'.",
     "",
     "MUST MATCH (all three, exactly):",
@@ -30,14 +44,10 @@
     "or bind the credential to the wrong RP — the in-contract WebAuthn",
     "validator checks the recorded rpId/origin against exactly these.",
     "",
-    "VERIFY after deployment (from a Mac signed with the same team):",
-    "  curl -s https://<RP-DOMAIN>/.well-known/apple-app-site-association",
+    "VERIFY after deployment (step 0 of the activation runbook):",
+    "  bash scripts/passkey-activation-check.sh",
     "  (Apple caches AASA fetches; allow up to ~24h after a change)"
   ],
-  "applinks": {
-    "apps": [],
-    "details": []
-  },
   "webcredentials": {
     "apps": ["<TEAMID>.<BUNDLEID>"]
   }

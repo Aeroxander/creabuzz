@@ -72,6 +72,22 @@
 //! across the FFI boundary and refuses loudly before it (RP id / OS floor);
 //! the wait is bounded (`recv_timeout`) so a stuck platform prompt can never
 //! hang a Tauri command (Review-Proven Rule 4: bound every wait).
+//!
+//! # Activation requirements (the in-repo half of the chain)
+//!
+//! A ceremony only starts when three exact matches hold for one domain:
+//! 1. the AASA is served at
+//!    `https://<rp-domain>/.well-known/apple-app-site-association` — the relay
+//!    builds it from `BUZZ_PASSKEY_TEAM_ID` + `BUZZ_PASSKEY_BUNDLE_ID`
+//!    (`aasa_body` in `crates/buzz-relay/src/router.rs`, pinned to
+//!    `desktop/src-tauri/aasa.example.json`; Apple caches it ~24h);
+//! 2. `com.apple.developer.associated-domains` carries
+//!    `webcredentials:<rp-domain>` in the **signed** build
+//!    (`desktop/src-tauri/Entitlements.plist` + a provisioning profile with
+//!    associated-domains, release-repo work in `buzz-releases`);
+//! 3. `BUZZ_PASSKEY_RP_ID=<rp-domain>` at runtime.
+//! The ordered checklist — with step 0 `bash scripts/passkey-activation-check.sh`
+//! verifying all three plus the live fetch — lives in `commands/passkey.rs`.
 
 #![allow(unsafe_code)]
 

@@ -22,10 +22,17 @@
       The placeholder is an RFC 2606 `.invalid` domain on purpose — with it
       still in place every passkey ceremony fails loudly at the platform
       boundary (and `require_real_rp_id` refuses it before any request) instead
-      of minting a credential bound to the wrong RP. The domain must also
-      serve the AASA at /.well-known/apple-app-site-association — see
-      aasa.example.json in this directory for the exact file and hosting
-      instructions.
+      of minting a credential bound to the wrong RP.
+
+      STEP 0 of the activation runbook (the ordered checklist lives in
+      src/commands/passkey.rs):
+        bash scripts/passkey-activation-check.sh
+      It fails on this placeholder with the exact substitution, and then
+      verifies the whole chain: BUZZ_PASSKEY_RP_ID, the AASA actually served at
+      /.well-known/apple-app-site-association (the relay builds it from
+      BUZZ_PASSKEY_TEAM_ID + this app's identifier), and this entitlement.
+      A plist carries no comments Apple reads, so the domain truth lives in
+      this comment plus that script — keep them in sync when substituting.
     -->
     <key>com.apple.developer.associated-domains</key>
     <array>
