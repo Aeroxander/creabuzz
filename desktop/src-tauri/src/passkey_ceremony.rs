@@ -86,6 +86,7 @@
 //!    (`desktop/src-tauri/Entitlements.plist` + a provisioning profile with
 //!    associated-domains, release-repo work in `buzz-releases`);
 //! 3. `BUZZ_PASSKEY_RP_ID=<rp-domain>` at runtime.
+//!
 //! The ordered checklist — with step 0 `bash scripts/passkey-activation-check.sh`
 //! verifying all three plus the live fetch — lives in `commands/passkey.rs`.
 

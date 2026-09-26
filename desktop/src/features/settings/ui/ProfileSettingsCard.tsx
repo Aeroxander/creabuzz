@@ -23,6 +23,7 @@ import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { Textarea } from "@/shared/ui/textarea";
 import { PasskeyIdentityCard } from "@/features/identity/PasskeyIdentityCard";
+import { WebIdentityHandoffCard } from "@/features/identity/WebIdentityHandoffCard";
 import { PrivateKeyBackupRow } from "./PrivateKeyBackupRow";
 import {
   SettingsOptionGroup,
@@ -802,6 +803,7 @@ export function ProfileSettingsCard({
                               />
                               <PrivateKeyBackupRow />
                               <PasskeyIdentityCard />
+                              <WebIdentityHandoffCard />
                             </div>
                           </details>
                         </SettingsOptionGroup>

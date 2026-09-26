@@ -565,6 +565,7 @@ pub fn run() {
             verify_ncryptsec_backup,
             save_ncryptsec_copy,
             import_identity,
+            preview_identity_import,
             persist_current_identity,
             get_profile,
             update_profile,

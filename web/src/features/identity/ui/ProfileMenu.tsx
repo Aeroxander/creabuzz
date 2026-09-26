@@ -27,6 +27,7 @@ import {
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { publishProfile } from "../lib/profile";
+import { passkeyModeCopy } from "../lib/mode-copy";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import {
   useTypography,
@@ -384,22 +385,40 @@ export function ProfileMenu() {
                   ))}
                 </div>
               </div>
+              {passkeySetUp ? (
+                <div
+                  className="mt-1 flex items-start gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
+                  data-testid="passkey-mode-note"
+                >
+                  <Fingerprint className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>
+                    {passkeyModeCopy(passkeyModeNow)}
+                    {passkeyActive ? "" : " — locked for this session."}
+                  </span>
+                </div>
+              ) : null}
               {passkeyActive ? (
                 <>
-                  <div className="mt-1 flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60">
-                    <Fingerprint className="h-3 w-3" />
-                    {passkeyModeNow === "unlock"
-                      ? "Passkey unlock (Touch ID) — key stays in browser"
-                      : "Signed in with passkey"}
-                  </div>
                   <MenuItem
                     icon={<KeyRound className="h-3.5 w-3.5" />}
-                    label="Back up passkey key"
+                    label="Copy recovery key"
                     onClick={() => {
                       if (passkeyNsec)
-                        copyNsec(passkeyNsec, "Passkey key copied");
+                        copyNsec(passkeyNsec, "Recovery key copied");
                     }}
                   />
+                  <p
+                    className="mb-1 px-2 text-2xs leading-4 text-black/55 dark:text-white/55"
+                    data-testid="recovery-export-note"
+                  >
+                    Copy recovery key to set up another device (the desktop
+                    app's Settings → Identity). This nsec is the full account —
+                    anyone holding it can sign as you, so store it somewhere
+                    safe. Passkey-native sharing (same Touch ID on web and
+                    desktop) arrives with app signing activation; until then
+                    this key handoff is the interim path, and the passkey itself
+                    never leaves your device.
+                  </p>
                   <MenuItem
                     icon={<LogOut className="h-3.5 w-3.5" />}
                     label="Remove passkey sign-in"

@@ -333,42 +333,158 @@ pub async fn save_ncryptsec_copy(
     Ok(Some(dest.display().to_string()))
 }
 
+/// Public-only preview of an identity import: what the device would switch to,
+/// without switching anything.
+///
+/// Parses the pasted key through the same router `import_identity` uses
+/// ([`crate::key_backup::recover_keys_from_input`] — bech32 `nsec1…`, raw hex,
+/// or passphrase-protected `ncryptsec1…`), derives the candidate pubkey/npub,
+/// and reports the identity currently live on this device plus whether the
+/// candidate matches it. Deliberately read-only: nothing is persisted, no
+/// state is swapped, so the replace-confirmation UI can show both identities
+/// before any mutation can happen.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityImportPreview {
+    /// Candidate identity derived from the pasted key (hex).
+    pub pubkey: String,
+    /// Candidate identity as npub bech32 — what the device would sign as.
+    pub npub: String,
+    /// The identity live on this device now (npub bech32), for the
+    /// "this replaces <npub>" confirmation and the import fence.
+    pub current_npub: String,
+    pub matches_current_identity: bool,
+}
+
+/// Core of [`preview_identity_import`], factored so tests can drive it with a
+/// bare `AppState` (and an `ncryptsec` input without a KDF) — the same
+/// seam-splitting pattern as [`create_backup_with_log_n`].
+pub(crate) fn preview_identity_import_inner(
+    state: &AppState,
+    nsec: &str,
+    password: Option<&str>,
+) -> Result<IdentityImportPreview, String> {
+    let keys = crate::key_backup::recover_keys_from_input(nsec, password)?;
+    let pubkey = keys.public_key();
+    let current = state.keys.lock().map_err(|e| e.to_string())?.public_key();
+    Ok(IdentityImportPreview {
+        pubkey: pubkey.to_hex(),
+        npub: pubkey
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?,
+        current_npub: current
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?,
+        matches_current_identity: pubkey == current,
+    })
+}
+
+/// Validate a pasted recovery key and show what an import would switch this
+/// device to — without importing it. Never mutates the stored identity.
+#[tauri::command]
+pub async fn preview_identity_import(
+    nsec: String,
+    password: Option<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<IdentityImportPreview, String> {
+    tokio::task::spawn_blocking(move || {
+        // NIP-49 backups require a passphrase and decrypt entirely in Rust,
+        // exactly as `import_identity` would — preview and import must parse
+        // identically or the confirmed identity is not the committed one.
+        let password = password.map(zeroize::Zeroizing::new);
+        let state = app_handle.state::<AppState>();
+        preview_identity_import_inner(&state, &nsec, password.as_ref().map(|value| value.as_str()))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {e}"))?
+}
+
+/// Core of [`import_identity`], factored so tests can drive the full
+/// parse → fence → persist → swap path against a bare `AppState`, a temp dir,
+/// and an injected persist backend (the same pattern as
+/// [`create_backup_with_log_n`]).
+///
+/// `expected_current_npub`, when present, is the compare-and-swap fence: the
+/// identity the caller was shown at preview time. If the device identity has
+/// changed since (a racing import, a pairing adoption), the import is refused
+/// instead of silently clobbering an identity the user never confirmed. The
+/// check runs under `identity_mutation`, so nothing can change between the
+/// check and the swap.
+///
+/// Persist ordering is [`commit_imported_identity`]'s contract: a failing
+/// `persist` leaves the previous identity live in memory and on disk.
+pub(crate) fn import_identity_inner(
+    state: &AppState,
+    data_dir: &std::path::Path,
+    nsec: &str,
+    password: Option<&str>,
+    expected_current_npub: Option<&str>,
+    persist: impl FnOnce(&nostr::Keys) -> Result<crate::app_state::IdentityStorage, String>,
+) -> Result<(nostr::PublicKey, crate::app_state::IdentityStorage), String> {
+    // NIP-49 backups require a passphrase and decrypt entirely in Rust.
+    // Raw nsec/hex input follows the existing parser path unchanged.
+    let keys = crate::key_backup::recover_keys_from_input(nsec, password)?;
+
+    // Serialize against persist_current_identity: hold this guard for the
+    // full function body so a concurrent stale persist can't overwrite
+    // this import.
+    let _mutation_guard = state.identity_mutation.lock().map_err(|e| e.to_string())?;
+
+    if let Some(expected) = expected_current_npub {
+        let expected = expected.trim();
+        let current = state
+            .keys
+            .lock()
+            .map_err(|e| e.to_string())?
+            .public_key()
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?;
+        if !current.eq_ignore_ascii_case(expected) {
+            return Err(
+                "The identity on this device changed since you reviewed this replacement. \
+                 Check the current identity, then try again."
+                    .to_string(),
+            );
+        }
+    }
+
+    std::fs::create_dir_all(data_dir).map_err(|e| format!("create app data dir: {e}"))?;
+
+    commit_imported_identity(state, data_dir, keys, persist)
+}
+
 #[tauri::command]
 pub async fn import_identity(
     nsec: String,
     password: Option<String>,
+    expected_current_npub: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<IdentityInfo, String> {
     tokio::task::spawn_blocking(move || {
-        // NIP-49 backups require a passphrase and decrypt entirely in Rust.
-        // Raw nsec/hex input follows the existing parser path unchanged.
         let password = password.map(zeroize::Zeroizing::new);
-        let keys = crate::key_backup::recover_keys_from_input(
-            &nsec,
-            password.as_ref().map(|value| value.as_str()),
-        )?;
 
-        // Serialize against persist_current_identity: hold this guard for the
-        // full function body so a concurrent stale persist can't overwrite
-        // this import.
         let state = app_handle.state::<AppState>();
-        let _mutation_guard = state.identity_mutation.lock().map_err(|e| e.to_string())?;
-
         let data_dir = app_handle
             .path()
             .app_data_dir()
             .map_err(|e| format!("app data dir: {e}"))?;
-        std::fs::create_dir_all(&data_dir).map_err(|e| format!("create app data dir: {e}"))?;
         let key_path = data_dir.join("identity.key");
 
-        let (pubkey, storage) = commit_imported_identity(&state, &data_dir, keys, |keys| {
-            // Persist into the OS keyring first (store → read-back verify →
-            // marker → delete file). Falls back to the 0o600 file when the
-            // keyring is unavailable; returns Err only when both backends fail.
-            let store =
-                crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
-            crate::app_state::persist_imported_identity(store, keys, &key_path, &data_dir)
-        })?;
+        let (pubkey, storage) = import_identity_inner(
+            &state,
+            &data_dir,
+            &nsec,
+            password.as_ref().map(|value| value.as_str()),
+            expected_current_npub.as_deref(),
+            |keys| {
+                // Persist into the OS keyring first (store → read-back verify →
+                // marker → delete file). Falls back to the 0o600 file when the
+                // keyring is unavailable; returns Err only when both backends fail.
+                let store =
+                    crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
+                crate::app_state::persist_imported_identity(store, keys, &key_path, &data_dir)
+            },
+        )?;
 
         let pubkey_hex = pubkey.to_hex();
         let display_name = truncated_display_name(&pubkey)?;
@@ -788,3 +904,7 @@ mod nostr_identity_binding_tests {
 #[cfg(test)]
 #[path = "identity_key_backup_tests.rs"]
 mod identity_key_backup_tests;
+
+#[cfg(test)]
+#[path = "identity_import_tests.rs"]
+mod identity_import_tests;
