@@ -73,7 +73,7 @@ export class PasskeyEnvironmentError extends PasskeyError {
 export class PrfUnavailableError extends PasskeyError {
   constructor(created?: CreatedPasskeyRef) {
     super(
-      "This platform did not provide a PRF output for the passkey — passkey identity needs PRF support (Windows Hello / Google Password Manager).",
+      "This platform did not provide a PRF output for the passkey. On macOS, Safari and Chrome support PRF through the platform authenticator — Firefox generally doesn't — and Windows Hello or Google Password Manager support it elsewhere. This browser can't run the PRF ceremony, so try Safari or Chrome.",
       created,
     );
     this.name = "PrfUnavailableError";

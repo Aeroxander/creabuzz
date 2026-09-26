@@ -3,6 +3,7 @@ import { Link, useParams, useSearch } from "@tanstack/react-router";
 
 import {
   normalizeRelayWsUrl,
+  relayWsUrl,
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
@@ -10,6 +11,7 @@ import { useCommunities } from "../use-communities";
 import { useChannels } from "@/features/channels/use-channels";
 import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { desktopConnectDeepLink } from "@/shared/lib/desktop-deep-link";
 import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
@@ -19,13 +21,19 @@ import { CommunityShell } from "@/features/channels/ui/CommunityShell";
  * Loading and failure are distinct states, not empty ones: a channel query that
  * fails must not be presented as "this community has no channels", because that
  * sends the visitor to the join button instead of letting them retry.
+ *
+ * The failure itself is also typed: a locked passkey cannot sign this relay's
+ * NIP-42 challenge, and the page says so with the sign-in action inline
+ * instead of reporting a private relay as a dead one.
  */
 function CommunityLoadState({
   host,
+  error,
   message,
   onRetry,
 }: {
   host: string;
+  error: unknown;
   message: string;
   onRetry: () => void;
 }) {
@@ -34,8 +42,17 @@ function CommunityLoadState({
       <div className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 dark:border-white/10 dark:bg-white/5">
         <QueryError
           description={`${host} did not answer the channel query.`}
+          error={error}
           message={message}
           onRetry={onRetry}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="community-load-error"
           title="Couldn't load this community"
         />
@@ -87,6 +104,7 @@ export function CommunityHomePage() {
     return (
       <CommunityLoadState
         host={host}
+        error={channels.error}
         message={
           // An archived community fails its reads by design; saying so turns a
           // mysterious error into an explanation.

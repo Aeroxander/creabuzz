@@ -13,13 +13,13 @@
  * to storage.
  */
 
-import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { existingUserPubkey, signAsUser } from "./identity.ts";
 import {
   hasNip07Provider,
   signNostrEvent,
   type SignedNostrEvent,
   type UnsignedNostrEvent,
-} from "@/shared/lib/nostr-signer";
+} from "./nostr-signer.ts";
 
 export async function signForRelay(
   template: Omit<UnsignedNostrEvent, "created_at"> & { created_at?: number },

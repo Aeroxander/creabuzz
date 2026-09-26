@@ -9,6 +9,7 @@
 
 import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
+import { relayAnswered } from "./relay-failure.ts";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 export async function queryEventsHttp(
@@ -33,7 +34,9 @@ export async function queryEventsHttp(
     } catch {
       // non-JSON error body — keep status detail
     }
-    throw new Error(detail);
+    // Tagged so a `missing Nostr auth` body classifies as auth-required and
+    // every other body as an answered refusal — never as "did not answer".
+    throw relayAnswered(detail);
   }
   return (await response.json()) as NostrEvent[];
 }

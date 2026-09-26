@@ -35,6 +35,44 @@ export class Nip07UnavailableError extends Error {
   }
 }
 
+/**
+ * The one sentence a registered-but-locked passkey answers with.
+ *
+ * Shared as a constant because every surface that renders it also has to
+ * render the recovery beside it (Review-Proven Rule 6), and that check has to
+ * survive message wrapping (`PitchPublishError` prefixes it, mutation layers
+ * re-throw it) — see `isSigningBlockedError`.
+ */
+export const SIGNING_BLOCKED_MESSAGE =
+  "Unlock your passkey before this browser can sign.";
+
+/**
+ * Thrown when the durable identity exists but is not usable right now — the
+ * registered passkey has not been unlocked this session.
+ *
+ * A typed error so callers can tell "this reader cannot sign *yet*, here is
+ * the unlock action" apart from "the relay refused this" without matching on
+ * prose. The fall-through it prevents stays real: signing as a fresh key here
+ * would mint a second durable identity while the passkey is who the reader is.
+ */
+export class SigningBlockedError extends Error {
+  constructor(reason: string = SIGNING_BLOCKED_MESSAGE) {
+    super(reason);
+    this.name = "SigningBlockedError";
+  }
+}
+
+/**
+ * True when `error` means "the passkey identity is locked", however it was
+ * wrapped on the way up (`instanceof` fails across message boundaries and
+ * after `Error` subclass re-wrapping, so the prose is a second signal).
+ */
+export function isSigningBlockedError(error: unknown): boolean {
+  if (error instanceof SigningBlockedError) return true;
+  if (!(error instanceof Error)) return false;
+  return error.message.includes(SIGNING_BLOCKED_MESSAGE);
+}
+
 let ephemeralSecretKey: Uint8Array | null = null;
 
 /**

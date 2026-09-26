@@ -22,9 +22,11 @@ import { AlertTriangle, ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -33,7 +35,11 @@ import { buildDeclineTemplate } from "../lib/join-request";
 import { buildOwnershipGrantTemplate } from "../lib/grant";
 import { POOL_PCT, type RoleDeclaration } from "../lib/manifest";
 import { canApprove, type ProjectState, type RequestState } from "../lib/state";
-import { useProject, usePublishProjectEvent } from "../use-projects";
+import {
+  PROJECT_EVENT_KINDS,
+  useProject,
+  usePublishProjectEvent,
+} from "../use-projects";
 import { JoinDialog, STAKE_DISCLAIMER } from "./JoinDialog";
 import { SummonDialog } from "./SummonDialog";
 
@@ -244,13 +250,12 @@ function RequestRow({
         </div>
       ) : null}
       {error ? (
-        <p
-          className="text-xs text-red-600 dark:text-red-400"
-          data-testid="request-error"
-          role="alert"
-        >
-          {error}
-        </p>
+        <SignRecovery
+          className="text-xs"
+          message={error}
+          messageTestId="request-error"
+          testId="request-sign-recovery"
+        />
       ) : null}
     </li>
   );
@@ -445,8 +450,18 @@ export function ProjectDetailPage({
       <div className="mx-auto w-full max-w-3xl px-4 py-8">
         <QueryError
           description="The relay did not answer the project query, so this page cannot show a team map."
+          error={error}
+          kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}
           onRetry={refetch}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="project-load-error"
           title="Couldn't load this project"
         />

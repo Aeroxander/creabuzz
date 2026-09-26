@@ -15,6 +15,7 @@ import {
   isPasskeyUnlocked,
   markPasskeyUnlocked,
 } from "../lib/passkey-identity";
+import { passkeyModeCopy } from "../lib/mode-copy";
 
 export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   const [unlocking, setUnlocking] = useState(false);
@@ -58,6 +59,12 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Touch is required to unlock your identity for this session.
+        </p>
+        <p
+          className="mt-2 text-2xs text-black/60 dark:text-white/60"
+          data-testid="passkey-unlock-mode-note"
+        >
+          {passkeyModeCopy(passkeyMode())}
         </p>
         {error ? (
           <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>

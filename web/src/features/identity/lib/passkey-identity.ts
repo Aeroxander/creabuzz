@@ -45,6 +45,29 @@ export interface PasskeyState {
 
 let current: PasskeyState | null = null;
 
+/**
+ * Session-change listeners: sign-in, sign-out, registration, removal.
+ *
+ * A gated surface that failed while locked has to notice when the reader
+ * unlocks *somewhere else* — the profile menu's boot prompt, the unlock gate —
+ * and resume its pending action instead of waiting for a second click.
+ */
+type PasskeySessionListener = () => void;
+const sessionListeners = new Set<PasskeySessionListener>();
+
+export function onPasskeySessionChange(
+  listener: PasskeySessionListener,
+): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+function notifyPasskeySessionChange(): void {
+  for (const listener of sessionListeners) listener();
+}
+
 export function b64ToBytes(value: string): Uint8Array {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
@@ -218,6 +241,7 @@ export async function setupPasskey(displayName: string): Promise<{
     };
     current = state;
     persist(state);
+    notifyPasskeySessionChange();
     return { mode: "prf", pubkey: state.pubkey, identity: created.identity };
   } catch (error) {
     if (!(error instanceof PrfUnavailableError) || !error.created) throw error;
@@ -238,6 +262,7 @@ export async function setupPasskey(displayName: string): Promise<{
     };
     current = state;
     persist(state);
+    notifyPasskeySessionChange();
     return { mode: "unlock", pubkey, identity: passkeyIdentity() };
   }
 }
@@ -253,6 +278,7 @@ export async function signInPasskeyIdentity(): Promise<{ pubkey: string }> {
   if (stored.mode === "unlock") {
     await getPasskeyAssertion({ credentialId: stored.credentialId });
     current = { ...stored };
+    notifyPasskeySessionChange();
     return { pubkey: stored.pubkey };
   }
   const assertion = await getPasskeyAssertion({
@@ -264,6 +290,7 @@ export async function signInPasskeyIdentity(): Promise<{ pubkey: string }> {
   const secretKey = await deriveNostrSecretKey(prfOutput);
   ensureSamePubkey(stored.pubkey, nostrPubkeyHex(secretKey));
   current = { ...stored, secretKey };
+  notifyPasskeySessionChange();
   return { pubkey: stored.pubkey };
 }
 
@@ -284,6 +311,7 @@ export function passkeySecretKey(): Uint8Array | null {
 /** Sign out: drop the in-memory key (nothing persisted to wipe). */
 export function clearPasskeySession(): void {
   current = null;
+  notifyPasskeySessionChange();
 }
 
 /** Forget the passkey identity entirely on this browser. */
@@ -298,6 +326,7 @@ export function removePasskeyIdentity(): void {
   } catch {
     // ignore
   }
+  notifyPasskeySessionChange();
 }
 
 /** Export the active nsec (hex) for the one-time manual backup. PRF mode:
@@ -321,16 +350,17 @@ export function registerPasskeySigner(): void {
       setUserPubkeyOverride,
       setUserSignerOverride,
       setUserSigningBlockedReason,
+      SIGNING_BLOCKED_MESSAGE,
     }) => {
       // The derived key is who the reader is, so `userPubkey()` must report it:
       // filters and own-message checks compare against that value.
       setUserPubkeyOverride(passkeyStoredPubkey);
       // Before this session unlocked the credential, signing has to fail: the
-      // fall-through would create a second durable identity.
+      // fall-through would create a second durable identity. The sentence is
+      // the shared constant so every surface that can hit it renders the same
+      // words next to its unlock action (`isSigningBlockedError`).
       setUserSigningBlockedReason(() =>
-        loadStored() && !isPasskeyActive()
-          ? "Unlock your passkey before this browser can sign."
-          : null,
+        loadStored() && !isPasskeyActive() ? SIGNING_BLOCKED_MESSAGE : null,
       );
       setUserSignerOverride(async (template) => {
         const sk = passkeySecretKey();

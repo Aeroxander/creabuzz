@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
   hasFounderCommitments,
   isEvmAddress,
@@ -433,6 +434,23 @@ export function ManagePanel({
     treasury: record.treasury ?? "",
     admission: record.admission,
     channels: record.channels,
+    // Preserve everything the record already holds that this editor does not
+    // control: the founder commitments, the money fields, the split, the
+    // signer, and (from the wizard) the window, the unlock plan and the
+    // DAO-at-graduation choice. A save that drops any of them silently
+    // rewrites what investors were shown (Review-Proven Rule 1).
+    longPitch: record.longPitch ?? "",
+    ipList: record.ipList,
+    updateCadence: record.updateCadence ?? "",
+    budget: record.budget ?? "",
+    allocation: record.allocation,
+    startBlock: record.startBlock ?? undefined,
+    endBlock: record.endBlock ?? undefined,
+    claimBlock: record.claimBlock ?? undefined,
+    ...(record.unlocks ? { unlocks: record.unlocks } : {}),
+    ...(record.daoAtGraduation !== null
+      ? { daoAtGraduation: record.daoAtGraduation }
+      : {}),
     ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
     ...(record.vesting ? { vesting: record.vesting } : {}),
     ...overrides,
@@ -729,7 +747,12 @@ export function ManagePanel({
               </Button>
             </div>
             {milestoneError ? (
-              <p className="text-sm text-red-600">{milestoneError}</p>
+              <SignRecovery
+                className="mt-1"
+                message={milestoneError}
+                messageTestId="milestone-error"
+                testId="milestone-sign-recovery"
+              />
             ) : null}
           </div>
         </div>
@@ -866,6 +889,11 @@ export function ManagePanel({
                   auction: "",
                   token: "",
                   treasury: "",
+                  // A relaunch is a NEW auction: the old window belongs to the
+                  // dead deployment, so it is dropped rather than inherited.
+                  startBlock: undefined,
+                  endBlock: undefined,
+                  claimBlock: undefined,
                 }
               : toInput()
           }

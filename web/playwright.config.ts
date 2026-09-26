@@ -33,6 +33,7 @@ export default defineConfig({
         "**/org-chart.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
+        "**/signing-recovery.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

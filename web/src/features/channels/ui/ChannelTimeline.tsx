@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 
 import type { Channel } from "../use-channels";
 import {
@@ -651,8 +652,17 @@ export function ChannelTimeline({
         ) : roots.length === 0 && messages.error ? (
           <QueryError
             description={`The relay did not answer the history query for #${channel.name}, so this channel is not known to be empty.`}
+            error={messages.error}
             message={errorMessage(messages.error)}
             onRetry={messages.refetch}
+            recovery={(onUnlocked) => (
+              <SignRecovery
+                autoResume
+                onUnlocked={onUnlocked}
+                showHeadline={false}
+              />
+            )}
+            relayUrl={relayWsUrl()}
             testId="timeline-load-error"
             title="Couldn't load messages"
           />

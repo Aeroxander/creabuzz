@@ -18,9 +18,10 @@ import {
   getUserPubkeyOverride,
   getUserSignerOverride,
   getUserSigningBlockedReason,
+  SigningBlockedError,
   type UnsignedNostrEvent,
   type SignedNostrEvent,
-} from "@/shared/lib/nostr-signer";
+} from "./nostr-signer.ts";
 
 const IDENTITY_STORAGE_KEY = "buzz.identity.nsec";
 
@@ -50,7 +51,7 @@ export async function signAsUser(
   // including the key the next line would create — is how the app ends up
   // filtering by one identity and posting as another.
   const blocked = getUserSigningBlockedReason();
-  if (blocked) throw new Error(blocked);
+  if (blocked) throw new SigningBlockedError(blocked);
   const nsec = getOrCreateIdentity();
   const secretKey = nsecToBytes(nsec);
   const signed = finalizeEvent(unsigned, secretKey);

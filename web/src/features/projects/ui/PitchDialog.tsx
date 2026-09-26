@@ -21,6 +21,7 @@ import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -554,9 +555,13 @@ export function PitchDialog({
           <div
             className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300"
             data-testid="pitch-error"
-            role="alert"
           >
-            {publishError.message}
+            <SignRecovery
+              message={publishError.message}
+              messageTestId="pitch-error-message"
+              onUnlocked={() => lastInput && create.mutate(lastInput)}
+              testId="pitch-sign-recovery"
+            />
           </div>
         ) : null}
 

@@ -20,8 +20,10 @@ import { Link } from "@tanstack/react-router";
 import { Plus, Search } from "lucide-react";
 
 import { PitchDialog } from "@/features/projects/ui/PitchDialog";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
@@ -29,6 +31,7 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import {
   directoryNotice,
   visibleSections,
+  DISCOVER_EVENT_KINDS,
   type DiscoverFilter,
 } from "../lib/directory";
 import { useDiscover } from "../use-discover";
@@ -172,8 +175,18 @@ export function DiscoverPage() {
       ) : error ? (
         <QueryError
           description="The relay did not answer the directory query — an empty grid here would claim there is nothing on this relay, so nothing is rendered instead."
+          error={error}
+          kinds={DISCOVER_EVENT_KINDS}
           message={errorMessage(error)}
           onRetry={refetch}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="discover-load-error"
           title="Couldn't read this relay"
         />

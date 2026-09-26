@@ -29,7 +29,12 @@ type TabLaunch = Launch;
 
 import { getRpcEndpoint, isContractDeployed, setRpcEndpoint } from "../chain";
 import { useScoreRoots } from "../use-launches";
-import { useAuctionProgress, ProgressBar, StageBadge } from "./widgets";
+import {
+  useAuctionProgress,
+  OwnershipOnlyNote,
+  ProgressBar,
+  StageBadge,
+} from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { floorPricePerToken } from "../lib/launch-params";
@@ -203,36 +208,41 @@ export function LaunchDetailPage({
         }
         description={launch.record.pitch || "No pitch yet."}
         action={
-          <span className="flex gap-2">
-            <button
-              aria-label={followed ? "Unfollow launch" : "Follow launch"}
-              aria-pressed={followed}
-              onClick={() => setFollowed((f) => !f)}
-              className={cn(
-                "rounded-lg border p-2",
-                followed
-                  ? "border-amber-500/50 text-amber-500"
-                  : "border-black/15 dark:border-white/15",
-              )}
-              type="button"
-            >
-              <Star
-                className="h-4 w-4"
-                fill={followed ? "currentColor" : "none"}
-              />
-            </button>
-            <Button onClick={() => setBidOpen(true)} size="sm">
-              Back this launch
-            </Button>
-            {isFounder ? (
-              <Button
-                onClick={() => setUpdateOpen(true)}
-                size="sm"
-                variant="outline"
+          <span className="flex flex-col items-end gap-2">
+            {/* §7 "Launch page copy": what a buyer acquires, said before the
+                bid button — ownership only, never a yield. */}
+            <OwnershipOnlyNote className="max-w-60 text-right" />
+            <span className="flex gap-2">
+              <button
+                aria-label={followed ? "Unfollow launch" : "Follow launch"}
+                aria-pressed={followed}
+                onClick={() => setFollowed((f) => !f)}
+                className={cn(
+                  "rounded-lg border p-2",
+                  followed
+                    ? "border-amber-500/50 text-amber-500"
+                    : "border-black/15 dark:border-white/15",
+                )}
+                type="button"
               >
-                Post update
+                <Star
+                  className="h-4 w-4"
+                  fill={followed ? "currentColor" : "none"}
+                />
+              </button>
+              <Button onClick={() => setBidOpen(true)} size="sm">
+                Back this launch
               </Button>
-            ) : null}
+              {isFounder ? (
+                <Button
+                  onClick={() => setUpdateOpen(true)}
+                  size="sm"
+                  variant="outline"
+                >
+                  Post update
+                </Button>
+              ) : null}
+            </span>
           </span>
         }
       />

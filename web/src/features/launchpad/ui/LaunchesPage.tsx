@@ -8,6 +8,8 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { LAUNCHPAD_EVENT_KINDS } from "@/shared/constants/kinds";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
   useCreateLaunch,
   useLaunches,
@@ -15,6 +17,7 @@ import {
 } from "../use-launches";
 import { effectiveStage, type Launch } from "../models";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { ProgressBar, StageBadge } from "./widgets";
 import { cn } from "@/shared/lib/cn";
@@ -76,8 +79,10 @@ export function LaunchesPage() {
       await create.mutateAsync(input);
       toast.success("Launch published.");
       setCreateOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Publishing failed.");
+    } catch {
+      // The dialog stays open and renders the failure beside its publish
+      // button — including the unlock action when the passkey is locked — so
+      // the refusal is never a toast that disappears with no way forward.
     }
   };
 
@@ -131,8 +136,18 @@ export function LaunchesPage() {
       ) : error ? (
         <QueryError
           description="The relay did not answer the launch query, so nothing can be listed."
+          error={error}
+          kinds={LAUNCHPAD_EVENT_KINDS}
           message={errorMessage(error)}
           onRetry={() => void refetch()}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="launchpad-load-error"
           title="Couldn't load the launchpad"
         />
@@ -248,6 +263,7 @@ export function LaunchesPage() {
           isCreating={create.isPending}
           onCreate={handleCreate}
           onClose={() => setCreateOpen(false)}
+          publishError={create.isError ? errorMessage(create.error) : null}
         />
       ) : null}
     </div>

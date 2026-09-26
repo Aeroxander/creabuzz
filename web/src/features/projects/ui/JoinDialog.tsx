@@ -15,6 +15,7 @@ import { userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -164,15 +165,13 @@ export function JoinDialog({
           {STAKE_DISCLAIMER}
         </p>
 
-        {error ? (
-          <p
-            className="text-xs text-red-600 dark:text-red-400"
-            data-testid="join-error"
-            role="alert"
-          >
-            {error}
-          </p>
-        ) : null}
+        <SignRecovery
+          className="text-xs"
+          message={error}
+          messageTestId="join-error"
+          onUnlocked={submit}
+          testId="join-sign-recovery"
+        />
 
         <AlertDialogFooter>
           <AlertDialogCancel type="button">Cancel</AlertDialogCancel>

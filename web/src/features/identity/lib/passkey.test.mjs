@@ -273,7 +273,7 @@ test("explainPasskeyError maps ceremony failures to honest copy", () => {
     { error: "string failure", expect: /string failure/ },
     {
       error: new PrfUnavailableError(),
-      expect: /PRF support/,
+      expect: /can't run the PRF ceremony/,
     },
     {
       error: new PasskeyAttestationError("no P-256 key here"),
@@ -283,4 +283,19 @@ test("explainPasskeyError maps ceremony failures to honest copy", () => {
   for (const c of table) {
     assert.match(explainPasskeyError(c.error), c.expect);
   }
+});
+
+test("PrfUnavailableError names macOS browser reality and the consequence", () => {
+  // The old copy named only Windows Hello / Google Password Manager, which
+  // left a Mac user whose Firefox has no PRF with no idea which browser to
+  // open — and no statement that the ceremony cannot run here at all.
+  const message = new PrfUnavailableError().message;
+  assert.match(
+    message,
+    /Safari and Chrome support PRF through the platform authenticator/,
+  );
+  assert.match(message, /Firefox generally doesn't/);
+  assert.match(message, /Windows Hello or Google Password Manager/);
+  assert.match(message, /This browser can't run the PRF ceremony/);
+  assert.match(message, /try Safari or Chrome/);
 });

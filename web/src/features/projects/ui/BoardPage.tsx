@@ -15,13 +15,15 @@ import { useState } from "react";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { errorMessage, QueryError } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import type { RoleDeclaration } from "../lib/manifest";
 import type { ProjectSummary } from "../lib/state";
-import { useBoard } from "../use-projects";
+import { PROJECT_EVENT_KINDS, useBoard } from "../use-projects";
 import { PitchDialog } from "./PitchDialog";
 
 /**
@@ -149,8 +151,18 @@ export function BoardPage() {
       ) : error ? (
         <QueryError
           description="The relay did not answer the project query, so nothing can be listed."
+          error={error}
+          kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}
           onRetry={refetch}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="projects-load-error"
           title="Couldn't load the board"
         />

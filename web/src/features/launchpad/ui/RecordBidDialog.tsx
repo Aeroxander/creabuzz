@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "./Modal";
 import { clearingPrice } from "../chain";
@@ -24,6 +25,8 @@ import {
   zerodevConfigFromEnv,
 } from "@/features/identity/lib/zerodev";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+
+import { OwnershipOnlyNote } from "./widgets";
 
 interface BidInput {
   bucket: string;
@@ -64,6 +67,11 @@ export function RecordBidDialog({
   onPublish: (input: BidInput) => Promise<void>;
 }) {
   const [asAgent, setAsAgent] = useState(false);
+  /**
+   * The action that failed, kept so a successful passkey unlock can resume it
+   * (Rule 6: the recovery must lead back to the thing the reader was doing).
+   */
+  const resumeRef = useRef<(() => void) | null>(null);
   const [bucket, setBucket] = useState("bucket-0");
   const [budget, setBudget] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -213,6 +221,7 @@ export function RecordBidDialog({
 
   const sendBid = async () => {
     if (!auction || !plan) return;
+    resumeRef.current = () => void sendBid();
     setError(null);
     setSending(true);
     try {
@@ -264,6 +273,7 @@ export function RecordBidDialog({
       return;
     }
     setError(null);
+    resumeRef.current = submit;
     void onPublish({
       bucket: bucket.trim() || "bucket-0",
       budget: budget.trim(),
@@ -397,7 +407,14 @@ export function RecordBidDialog({
             ))}
           </ul>
         ) : null}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <SignRecovery
+          message={error}
+          onUnlocked={() => {
+            const resume = resumeRef.current;
+            resume?.();
+          }}
+          testId="bid-sign-recovery"
+        />
         <div>
           <label className="text-sm font-medium" htmlFor="bid-tx">
             Transaction hash
@@ -412,16 +429,37 @@ export function RecordBidDialog({
           />
         </div>
       </div>
-      <label className="mt-3 flex items-center gap-2 text-sm text-black/60 dark:text-white/60">
-        <input
-          checked={asAgent}
-          data-testid="bid-as-agent"
-          onChange={(e) => setAsAgent(e.target.checked)}
-          type="checkbox"
-        />
-        Record this bid as an agent (NIP-OA attested).
-      </label>
-      <div className="mt-4 flex justify-end gap-2">
+      <details
+        className="mt-3 rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+        data-testid="bid-advanced"
+      >
+        <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+          Advanced
+          <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+            who records this bid
+          </span>
+        </summary>
+        <label className="mt-2 flex items-start gap-2 text-sm text-black/60 dark:text-white/60">
+          <input
+            checked={asAgent}
+            data-testid="bid-as-agent"
+            onChange={(e) => setAsAgent(e.target.checked)}
+            type="checkbox"
+          />
+          Sign as agent instead of me
+        </label>
+        <p
+          className="mt-1 text-xs text-black/60 dark:text-white/60"
+          data-testid="bid-as-agent-explainer"
+        >
+          The bid record will be signed by this browser&apos;s agent key (an
+          attested AI-agent identity) instead of your personal key — useful when
+          an agent manages the bid&apos;s follow-up.
+        </p>
+      </details>
+      {/* §7 "Launch page copy": said before the bid button, every time. */}
+      <OwnershipOnlyNote className="mt-4" />
+      <div className="mt-2 flex justify-end gap-2">
         <Button
           data-testid="bid-send"
           disabled={!canSend}

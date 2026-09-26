@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import {
   auctionProgress,
@@ -93,6 +94,25 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * The launch-page ownership disclaimer (docs/token-lifecycle-design.md §7
+ * "Launch page copy"): buyers acquire ownership only — governance and exit —
+ * and no dividends or revenue share unless they contribute and earn one.
+ * One component so every bid surface says the same thing, placed before the
+ * bid action ("say it before the bid button").
+ */
+export function OwnershipOnlyNote({ className }: { className?: string }) {
+  return (
+    <p
+      className={cn("text-2xs text-black/50 dark:text-white/50", className)}
+      data-testid="ownership-only-note"
+    >
+      Buyers acquire ownership only — governance and exit. No dividends or
+      revenue share, ever, unless they contribute and earn one.
+    </p>
   );
 }
 
