@@ -82,6 +82,29 @@ ps:
 logs *ARGS:
     docker compose logs -f {{ARGS}}
 
+# ─── Local Dev Chain (Anvil) ─────────────────────────────────────────────────
+
+# Boot a fully-loaded local dev chain on :8545 (chain id 31337): apptoken
+# infra, the OrgBinding/DAO for org formation, a USDC-like currency mock, and
+# the funded DEV-ONLY dev accounts printed to stdout. Idempotent: re-running
+# detects the chain and skips what is already deployed. `--dry-run` prints the
+# plan without touching anything.
+dev-chain *ARGS:
+    ./scripts/dev-chain.sh {{ARGS}}
+
+# Stop the dev chain `just dev-chain` started (only the PID it recorded)
+dev-chain-down:
+    ./scripts/dev-chain.sh down
+
+# What is deployed at which address: reads contracts/deployments/*.json and
+# probes the live chain on :8545
+dev-chain-status:
+    ./scripts/dev-chain.sh status
+
+# Tests for the dev-chain plan/refusal logic — no chain, no foundry deploys
+dev-chain-test:
+    node --test scripts/dev-chain.test.mjs
+
 # ─── Build & Check ───────────────────────────────────────────────────────────
 
 # Build the Rust workspace

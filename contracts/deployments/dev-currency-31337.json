@@ -1,0 +1,1 @@
+{"chainId":31337,"project":"buzz-dev-chain","note":"scripts/dev-chain.sh — forge build MockPairedTokenERC20(Dev USDC, dUSDC, 6)","tx":"0xad89119d439dd91c1127a28c0f1ba1153f1452c8aa844f87bdc3e97f6fd71aed","block":44,"roles":[{"role":"currency","address":"0x1613beb3b2c4f22ee086b2b38c1476a3ce7f78e8"}]}

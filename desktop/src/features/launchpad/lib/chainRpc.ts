@@ -146,12 +146,166 @@ function endpointKey(relayUrl: string | null | undefined): string {
 
 export const DEFAULT_RPC_ENDPOINT = "http://127.0.0.1:8545";
 
-export function getRpcEndpoint(relayUrl: string | null | undefined): string {
-  try {
-    return localStorage.getItem(endpointKey(relayUrl)) ?? DEFAULT_RPC_ENDPOINT;
-  } catch {
-    return DEFAULT_RPC_ENDPOINT;
+// ─── Chain presets ───────────────────────────────────────────────────────────
+//
+// The picker's single source of truth for this app. The web client renders the
+// very same list (`web/src/features/launchpad/chain.ts`); `chainRpc.test.mjs`
+// imports both and pins them equal, so the two lists cannot drift apart. Add a
+// chain there AND here, in the same change.
+//
+// Paperclip machine-values rule: `label` is plain language for humans;
+// `chainId` and `rpcUrl` are machine values and belong in small mono type in
+// any UI that shows them.
+
+/** One selectable chain for launchpad reads and writes. */
+export interface ChainPreset {
+  /** Stable machine id — safe for storage keys, tests, and analytics. */
+  id: string;
+  /** Plain-language name shown in pickers (e.g. "Local Anvil"). */
+  label: string;
+  /** EVM chain id as a number — render it in mono type, never as prose. */
+  chainId: number;
+  /** JSON-RPC HTTP endpoint for this chain. */
+  rpcUrl: string;
+  /** Block-explorer base URL, when the chain has one. */
+  explorer?: string;
+  /**
+   * Expected seconds between blocks on a public network. Omitted for local
+   * Anvil: it mines on demand, so there is no interval to promise.
+   */
+  blockTimeSeconds?: number;
+  /** Native gas symbol (all current presets are ETH). */
+  nativeSymbol: string;
+}
+
+/** Local dev chain booted by `just dev-chain` (`scripts/dev-chain.sh`). */
+export const LOCAL_ANVIL_PRESET: ChainPreset = {
+  id: "anvil",
+  label: "Local Anvil",
+  chainId: 31337,
+  rpcUrl: "http://127.0.0.1:8545",
+  nativeSymbol: "ETH",
+};
+
+/**
+ * The configured default chain outside dev builds — `launchRecord.ts`'s
+ * `chainId` default, which predates this picker.
+ */
+export const CONFIGURED_DEFAULT_CHAIN_ID = 11155111;
+
+/** Every selectable chain, local first. */
+export const CHAIN_PRESETS: readonly ChainPreset[] = [
+  LOCAL_ANVIL_PRESET,
+  {
+    id: "sepolia",
+    label: "Sepolia",
+    chainId: 11155111,
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    explorer: "https://sepolia.etherscan.io",
+    blockTimeSeconds: 12,
+    nativeSymbol: "ETH",
+  },
+  {
+    id: "base",
+    label: "Base",
+    chainId: 8453,
+    rpcUrl: "https://mainnet.base.org",
+    explorer: "https://basescan.org",
+    blockTimeSeconds: 2,
+    nativeSymbol: "ETH",
+  },
+  {
+    id: "base-sepolia",
+    label: "Base Sepolia",
+    chainId: 84532,
+    rpcUrl: "https://sepolia.base.org",
+    explorer: "https://sepolia.basescan.org",
+    blockTimeSeconds: 2,
+    nativeSymbol: "ETH",
+  },
+];
+
+/** Build-time env this module reads. Both keys are optional and public. */
+export interface ChainEnv {
+  /** Overrides the default preset's chain id in every build. */
+  VITE_LAUNCHPAD_CHAIN_ID?: string;
+  /** Overrides the default RPC endpoint in every build. */
+  VITE_CHAIN_RPC_URL?: string;
+}
+
+function viteEnv(): ChainEnv | undefined {
+  return (import.meta as { env?: ChainEnv }).env;
+}
+
+/** Whether this build is a dev build (`vite dev`; false when packaged). */
+export function isDevBuild(): boolean {
+  return Boolean(import.meta.env?.DEV);
+}
+
+/** The preset with this chain id, or null when the id is not preset-backed. */
+export function chainPresetByChainId(
+  chainId: number | string,
+): ChainPreset | null {
+  const id = typeof chainId === "number" ? chainId : Number(chainId.trim());
+  if (!Number.isInteger(id)) return null;
+  return CHAIN_PRESETS.find((preset) => preset.chainId === id) ?? null;
+}
+
+/** The preset a saved endpoint belongs to (trailing-slash tolerant), or null. */
+export function chainPresetForEndpoint(endpoint: string): ChainPreset | null {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, "");
+  const target = normalize(endpoint);
+  return (
+    CHAIN_PRESETS.find((preset) => normalize(preset.rpcUrl) === target) ?? null
+  );
+}
+
+/**
+ * The preset a picker should start on when nothing is saved yet.
+ *
+ * Order: `VITE_LAUNCHPAD_CHAIN_ID` (build-time config, wins in every build) →
+ * Local Anvil in a dev build → the configured production default (Sepolia).
+ * An unrecognized configured id falls through to the same rule rather than
+ * leaving the picker with no chain at all.
+ *
+ * `dev` is the injection seam: production callers omit it and get this build's
+ * real mode; the table test drives both modes through THIS function rather
+ * than a test-only copy of the rule.
+ */
+export function defaultChainPreset(
+  env: ChainEnv | undefined = viteEnv(),
+  dev: boolean = isDevBuild(),
+): ChainPreset {
+  const configured = env?.VITE_LAUNCHPAD_CHAIN_ID?.trim();
+  if (configured) {
+    const preset = chainPresetByChainId(configured);
+    if (preset) return preset;
   }
+  if (dev) return LOCAL_ANVIL_PRESET;
+  return (
+    chainPresetByChainId(CONFIGURED_DEFAULT_CHAIN_ID) ?? LOCAL_ANVIL_PRESET
+  );
+}
+
+/**
+ * The endpoint chain reads go to for this relay.
+ *
+ * Saved choice first (per-relay, one action = one durable persist), then the
+ * build-time `VITE_CHAIN_RPC_URL`, then the configured default (local Anvil —
+ * `just dev-chain` boots what it points at).
+ */
+export function getRpcEndpoint(
+  relayUrl: string | null | undefined,
+  env: ChainEnv | undefined = viteEnv(),
+): string {
+  try {
+    const saved = localStorage.getItem(endpointKey(relayUrl));
+    if (saved) return saved;
+  } catch {
+    // Storage unavailable — the configured default below still applies.
+  }
+  const fromEnv = env?.VITE_CHAIN_RPC_URL?.trim();
+  return fromEnv ? fromEnv : DEFAULT_RPC_ENDPOINT;
 }
 
 export function setRpcEndpoint(

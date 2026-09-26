@@ -1,4 +1,10 @@
 import type { LaunchRecord } from "./models";
+import {
+  DEFAULT_SECONDS_PER_BLOCK,
+  SAMPLE_BLOCKS,
+  secondsPerBlockFrom,
+  type BlockSample,
+} from "./lib/time-blocks.ts";
 
 // CCA selectors proven against the pinned sources
 // (contracts/test/PinnedInterfaces.t.sol).
@@ -10,6 +16,155 @@ export const TOPIC_BID_SUBMITTED =
 
 export const DEFAULT_RPC_ENDPOINT = "http://127.0.0.1:8545";
 const ENDPOINT_KEY = "buzz.launchpad.rpc";
+
+// ─── Chain presets ───────────────────────────────────────────────────────────
+//
+// The picker's single source of truth. The desktop control renders the very
+// same list (`desktop/src/features/launchpad/lib/chainRpc.ts`, pinned equal by
+// `chainRpc.test.mjs`), so a new chain is added ONCE here and once there.
+//
+// Paperclip machine-values rule: `label` is plain language for humans;
+// `chainId` and `rpcUrl` are machine values and belong in small mono type in
+// any UI that shows them.
+
+/** One selectable chain for launchpad reads and writes. */
+export interface ChainPreset {
+  /** Stable machine id — safe for storage keys, tests, and analytics. */
+  id: string;
+  /** Plain-language name shown in pickers (e.g. "Local Anvil"). */
+  label: string;
+  /** EVM chain id as a number — render it in mono type, never as prose. */
+  chainId: number;
+  /** JSON-RPC HTTP endpoint for this chain. */
+  rpcUrl: string;
+  /** Block-explorer base URL, when the chain has one. */
+  explorer?: string;
+  /**
+   * Expected seconds between blocks on a public network. Omitted for local
+   * Anvil: it mines on demand, so there is no interval to promise.
+   */
+  blockTimeSeconds?: number;
+  /** Native gas symbol (all current presets are ETH). */
+  nativeSymbol: string;
+}
+
+/** Local dev chain booted by `just dev-chain` (`scripts/dev-chain.sh`). */
+export const LOCAL_ANVIL_PRESET: ChainPreset = {
+  id: "anvil",
+  label: "Local Anvil",
+  chainId: 31337,
+  rpcUrl: "http://127.0.0.1:8545",
+  nativeSymbol: "ETH",
+};
+
+/**
+ * The app's configured default chain in production —
+ * `LAUNCH_DEFAULTS.chainId` in `models.ts`, which predates this picker.
+ */
+export const CONFIGURED_DEFAULT_CHAIN_ID = 11155111;
+
+/** Every selectable chain, local first. */
+export const CHAIN_PRESETS: readonly ChainPreset[] = [
+  LOCAL_ANVIL_PRESET,
+  {
+    id: "sepolia",
+    label: "Sepolia",
+    chainId: 11155111,
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    explorer: "https://sepolia.etherscan.io",
+    blockTimeSeconds: 12,
+    nativeSymbol: "ETH",
+  },
+  {
+    id: "base",
+    label: "Base",
+    chainId: 8453,
+    rpcUrl: "https://mainnet.base.org",
+    explorer: "https://basescan.org",
+    blockTimeSeconds: 2,
+    nativeSymbol: "ETH",
+  },
+  {
+    id: "base-sepolia",
+    label: "Base Sepolia",
+    chainId: 84532,
+    rpcUrl: "https://sepolia.base.org",
+    explorer: "https://sepolia.basescan.org",
+    blockTimeSeconds: 2,
+    nativeSymbol: "ETH",
+  },
+];
+
+/** Build-time env this module reads. Both keys are optional and public. */
+export interface ChainEnv {
+  /** Overrides the default preset's chain id in every build. */
+  VITE_LAUNCHPAD_CHAIN_ID?: string;
+  /** Overrides the default RPC endpoint in every build. */
+  VITE_CHAIN_RPC_URL?: string;
+}
+
+function viteEnv(): ChainEnv | undefined {
+  return (import.meta as { env?: ChainEnv }).env;
+}
+
+/** The preset with this chain id, or null when the id is not preset-backed. */
+export function chainPresetByChainId(
+  chainId: number | string,
+): ChainPreset | null {
+  const id = typeof chainId === "number" ? chainId : Number(chainId.trim());
+  if (!Number.isInteger(id)) return null;
+  return CHAIN_PRESETS.find((preset) => preset.chainId === id) ?? null;
+}
+
+/** The preset a saved endpoint belongs to (trailing-slash tolerant), or null. */
+export function chainPresetForEndpoint(endpoint: string): ChainPreset | null {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, "");
+  const target = normalize(endpoint);
+  return (
+    CHAIN_PRESETS.find((preset) => normalize(preset.rpcUrl) === target) ?? null
+  );
+}
+
+/**
+ * The documented seconds-per-block for a chain, for the time → block fallback.
+ *
+ * `CHAIN_PRESETS` is the picker's single source of truth for chain facts, so
+ * the fallback and the picker can never disagree; a chain without a preset (or
+ * a preset that omits the interval, like on-demand local Anvil) gets the app's
+ * default — one block every 2 seconds, the same number `BLOCKS_PER_DAY` is
+ * computed from.
+ */
+export function documentedBlockTimeSeconds(chainId?: string | null): number {
+  const preset = chainId ? chainPresetByChainId(chainId) : null;
+  return preset?.blockTimeSeconds ?? DEFAULT_SECONDS_PER_BLOCK;
+}
+
+/**
+ * The preset a picker should start on when nothing is saved yet.
+ *
+ * Order: `VITE_LAUNCHPAD_CHAIN_ID` (build-time config, wins in every build) →
+ * Local Anvil in a dev build → the configured production default (Sepolia).
+ * An unrecognized configured id falls through to the same rule rather than
+ * leaving the picker with no chain at all.
+ *
+ * `dev` is the injection seam: production callers omit it and get this build's
+ * real mode; the table test drives both modes through THIS function rather
+ * than a test-only copy of the rule.
+ */
+export function defaultChainPreset(
+  env: ChainEnv | undefined = viteEnv(),
+  dev: boolean = isDevBuild(),
+): ChainPreset {
+  const configured = env?.VITE_LAUNCHPAD_CHAIN_ID?.trim();
+  if (configured) {
+    const preset = chainPresetByChainId(configured);
+    if (preset) return preset;
+  }
+  if (dev) return LOCAL_ANVIL_PRESET;
+  return (
+    chainPresetByChainId(CONFIGURED_DEFAULT_CHAIN_ID) ?? LOCAL_ANVIL_PRESET
+  );
+}
 
 export interface AuctionProgress {
   raised: bigint;
@@ -44,12 +199,22 @@ export function isDevBuild(): boolean {
   return Boolean(import.meta.env?.DEV);
 }
 
-export function getRpcEndpoint(): string {
+/**
+ * The endpoint chain reads go to.
+ *
+ * Saved choice first (one action = one durable persist), then the build-time
+ * `VITE_CHAIN_RPC_URL`, then the configured default (local Anvil —
+ * `just dev-chain` boots what it points at).
+ */
+export function getRpcEndpoint(env: ChainEnv | undefined = viteEnv()): string {
   try {
-    return window.localStorage.getItem(ENDPOINT_KEY) ?? DEFAULT_RPC_ENDPOINT;
+    const saved = window.localStorage.getItem(ENDPOINT_KEY);
+    if (saved) return saved;
   } catch {
-    return DEFAULT_RPC_ENDPOINT;
+    // Storage unavailable — the configured default below still applies.
   }
+  const fromEnv = env?.VITE_CHAIN_RPC_URL?.trim();
+  return fromEnv ? fromEnv : DEFAULT_RPC_ENDPOINT;
 }
 
 export function setRpcEndpoint(endpoint: string): void {
@@ -166,6 +331,99 @@ export async function ethGetBalance(
   return decodeQuantity(
     (await rpc(endpoint, "eth_getBalance", [address, "latest"])) as string,
   );
+}
+
+/**
+ * Timestamps for explicit block numbers — the sample the block-time
+ * conversion runs on. Bounded by the caller (`SAMPLE_BLOCKS`) and best-effort:
+ * a block that cannot be fetched is dropped, never invented.
+ */
+export async function ethBlockTimestamps(
+  endpoint: string,
+  blocks: readonly number[],
+): Promise<BlockSample[]> {
+  const results = await Promise.allSettled(
+    blocks.map(async (block) => {
+      const tag = `0x${Math.trunc(block).toString(16)}`;
+      const result = await rpc(endpoint, "eth_getBlockByNumber", [tag, false]);
+      if (result === null || typeof result !== "object") {
+        throw new Error("bad eth_getBlockByNumber return");
+      }
+      const body = result as { number?: unknown; timestamp?: unknown };
+      if (
+        typeof body.number !== "string" ||
+        typeof body.timestamp !== "string"
+      ) {
+        throw new Error("block without number/timestamp");
+      }
+      return {
+        block: Number(decodeQuantity(body.number)),
+        timestampSeconds: Number(decodeQuantity(body.timestamp)),
+      } satisfies BlockSample;
+    }),
+  );
+  const samples: BlockSample[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") samples.push(result.value);
+  }
+  return samples;
+}
+
+/** What the create wizard converts calendar dates with. */
+export interface ChainBlockTime {
+  /** Seconds per block: sampled median, or the documented chain default. */
+  secondsPerBlock: number;
+  source: "measured" | "default";
+  /** Chain head, `null` when the chain could not be read at all. */
+  head: number | null;
+  /** Blocks whose timestamps actually answered (0 when nothing was read). */
+  sampleSize: number;
+}
+
+/**
+ * Measure this chain's block time for the time → block conversion.
+ *
+ * Reads the head, then at most `SAMPLE_BLOCKS` consecutive block timestamps
+ * (bounded: rule 4) and takes the median gap. Any failure — unreachable RPC,
+ * a node that answers `eth_blockNumber` but not block bodies, a sample with
+ * no usable gap — falls back to the documented per-chain default and says so
+ * through `source`; `head` stays `null` rather than being guessed, because a
+ * fabricated head would silently misplace the auction's start.
+ */
+export async function measureChainBlockTime(
+  endpoint: string,
+  chainId?: string,
+  sampleBlocks: number = SAMPLE_BLOCKS,
+): Promise<ChainBlockTime> {
+  const fallback: ChainBlockTime = {
+    secondsPerBlock: documentedBlockTimeSeconds(chainId),
+    source: "default",
+    head: null,
+    sampleSize: 0,
+  };
+  let head: number;
+  try {
+    head = Number(await ethBlockNumber(endpoint));
+    if (!Number.isSafeInteger(head) || head < 0) return fallback;
+  } catch {
+    return fallback;
+  }
+  const wanted: number[] = [];
+  const count = Math.min(Math.max(2, Math.trunc(sampleBlocks)), SAMPLE_BLOCKS);
+  for (let i = 0; i < count && i <= head; i++) wanted.push(head - i);
+  try {
+    const samples = await ethBlockTimestamps(endpoint, wanted);
+    const secondsPerBlock = secondsPerBlockFrom(samples);
+    if (secondsPerBlock === null) return { ...fallback, head };
+    return {
+      secondsPerBlock,
+      source: "measured",
+      head,
+      sampleSize: samples.length,
+    };
+  } catch {
+    return { ...fallback, head };
+  }
 }
 
 /** One log entry as `eth_getLogs` returns it (hex quantity fields). */
