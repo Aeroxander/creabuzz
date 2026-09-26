@@ -42,7 +42,7 @@ const DRAFT_MAX_TOKENS: u32 = 4096;
 const DRAFT_TEMPERATURE: f64 = 0.2;
 const ACTION_MAX_CHARS: usize = 512;
 const HUMAN_AI_SUM_TOLERANCE: f64 = 0.01;
-const DEFAULT_MODEL: &str = "umans-deepseek-v4-flash-0731";
+const DEFAULT_MODEL: &str = "mimo-v2.6-flash";
 
 const ENV_LLM_URL: &str = "BUZZ_FLEET_WORKER_LLM_URL";
 const ENV_LLM_API_KEY: &str = "BUZZ_FLEET_WORKER_LLM_API_KEY";
