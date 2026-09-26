@@ -51,6 +51,8 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     startBlock: null,
     endBlock: null,
     claimBlock: null,
+    unlocks: null,
+    daoAtGraduation: null,
     paramsHash: "0x" + "ca".repeat(32),
     website: null,
     docs: ["https://example.com/docs"],

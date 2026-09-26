@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
 
 /**
@@ -219,12 +220,14 @@ test("the create form refuses parameters the auction contract would reject", asy
   await page.getByRole("button", { name: "New launch" }).first().click();
   // Name and slug first: the form is invalid without them, which would make the
   // enabled/disabled assertion below prove nothing.
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-two");
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Two");
 
   await expect(page.getByTestId("launch-param-issues")).toBeHidden();
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
@@ -236,6 +239,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   const issues = page.getByTestId("launch-param-issues");
   await expect(issues).toBeVisible();
   await expect(issues).toContainText("floorPrice");
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeDisabled();
@@ -243,6 +247,7 @@ test("the create form refuses parameters the auction contract would reject", asy
 
 test("recommended terms fill in deployable numbers", async ({ page }) => {
   await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-three");
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -257,6 +262,7 @@ test("recommended terms fill in deployable numbers", async ({ page }) => {
   // hand: the two numbers the contract is strictest about.
   expect(BigInt(floor)).toBeGreaterThanOrEqual((1n << 32n) + 1n);
   expect(BigInt(floor) % BigInt(spacing)).toBe(0n);
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
@@ -370,19 +376,21 @@ test("an allocation that does not add up blocks the launch", async ({
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Four");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-four");
-
   const sale = page.getByTestId("launch-allocation-sale");
   await sale.fill("30");
   await expect(page.getByTestId("launch-allocation-issue")).toContainText(
     "110%",
   );
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeDisabled();
 
   await page.getByTestId("launch-allocation-standard").click();
   await expect(page.getByTestId("launch-allocation-issue")).toHaveCount(0);
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
@@ -464,6 +472,7 @@ test("an oversized monthly budget warns but never blocks", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Five");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-five");
   await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByTestId("launch-budget").fill("1000000000000");
@@ -471,6 +480,7 @@ test("an oversized monthly budget warns but never blocks", async ({ page }) => {
     "Monthly budget",
   );
   // Warned, not blocked: publish stays enabled.
+  await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
   ).toBeEnabled();
@@ -497,6 +507,7 @@ test("a founder can commit the longer story on create", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Six");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-six");
   await page.getByTestId("launch-advanced-founder").locator("summary").click();
   await page
@@ -507,6 +518,7 @@ test("a founder can commit the longer story on create", async ({ page }) => {
   await page
     .getByTestId("launch-ip-list")
     .fill("https://github.com/example/repo\nhttps://docs.example.com/");
+  await wizardToPublish(page);
   await page.getByTestId("launch-update-cadence").fill("monthly with KPIs");
   // Publish carries the commitments. Scope to this launch: `published` is
   // shared across the file, so an earlier test's 37001 is still in it.
@@ -622,6 +634,7 @@ test("performance vesting is validated and published", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Seven");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-seven");
   // A tranche at 1x warns (raise price is not performance); descending plus a
   // bad sum blocks.
@@ -636,6 +649,7 @@ test("performance vesting is validated and published", async ({ page }) => {
   await page
     .getByTestId("launch-tranches")
     .fill("2:20\n4:20\n8:20\n16:20\n32:20");
+  await wizardToPublish(page);
   await expect(page.getByTestId("launch-vesting-issue")).toBeHidden();
   await page.getByRole("button", { name: /Publish launch/ }).click();
   await expect
@@ -660,6 +674,7 @@ test("the liquidity minimum is shown before a thin pool ships", async ({
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Eight");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-eight");
   // Standard allocation: 20% sale, 15% liquidity = 15% of the raise at the
   // floor, above the 4% minimum for a 20%-of-raise pool.
@@ -684,7 +699,11 @@ test("an agent-run launch is badged and attested", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Nine");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-nine");
+  // The toggle moved behind the Advanced disclosure — the shared prelude
+  // opened it the way a reader would; reach the checkbox inside.
+  await wizardToPublish(page);
   await page.getByTestId("launch-as-agent").check();
   await page.getByRole("button", { name: /Publish launch/ }).click();
   await expect

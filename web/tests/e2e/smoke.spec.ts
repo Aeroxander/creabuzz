@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
 
@@ -1675,9 +1676,14 @@ test("a launch can be bound to a discussion channel", async ({ page }) => {
     .getByRole("button", { name: /New launch/ })
     .first()
     .click();
+  await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("channel-bound");
-  await page.getByLabel("Name", { exact: true }).fill("Channel Bound DAO");
+  await page
+    .getByTestId("wizard-step-token")
+    .getByLabel("Name", { exact: true })
+    .fill("Channel Bound DAO");
 
+  await wizardToPublish(page);
   await page.getByTestId("launch-channel-general").click();
   await expect(page.getByTestId("launch-channel-general")).toHaveAttribute(
     "aria-pressed",

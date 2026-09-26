@@ -6,6 +6,7 @@ import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
 import { signLaunchpadEventAsAgent } from "./lib/agent-launchpad";
 import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import type { SupplyAllocation } from "./lib/allocation";
+import type { UnlockPlan } from "./lib/unlock-plans";
 import type { VestingConfig } from "./models";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -21,8 +22,8 @@ import {
   KIND_ORG_NODE,
   KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
   type KIND_LAUNCH_UPDATE,
-  LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
+import { launchQueryFilter } from "./lib/launch-query";
 import {
   KIND_APPROVAL_DENY,
   KIND_APPROVAL_GRANT,
@@ -68,10 +69,7 @@ async function fetchTombstones(coords: string[]): Promise<Set<string>> {
 }
 
 export async function fetchLaunches(): Promise<Launch[]> {
-  const events = await queryEvents(relayWsUrl(), {
-    kinds: [...LAUNCHPAD_EVENT_KINDS],
-    limit: 500,
-  });
+  const events = await queryEvents(relayWsUrl(), launchQueryFilter());
   const coords = events
     .filter((e) => e.kind === KIND_LAUNCH_RECORD)
     .map((e) => {
@@ -290,6 +288,18 @@ export interface CreateLaunchInput {
   tokenPlan?: TokenPlan;
   allocation?: SupplyAllocation;
   vesting?: VestingConfig;
+  /**
+   * The sale window, derived from the founder's dates at publish time
+   * (`lib/time-blocks.ts`). Optional: the legacy form never wrote one, and a
+   * chain that could not be read leaves it unset rather than guessed.
+   */
+  startBlock?: number;
+  endBlock?: number;
+  claimBlock?: number;
+  /** What the project's allocation unlocks against (`lib/unlock-plans.ts`). */
+  unlocks?: UnlockPlan;
+  /** Whether a DAO is to be formed at graduation. */
+  daoAtGraduation?: boolean;
 }
 
 export function useCreateLaunch() {
@@ -324,6 +334,12 @@ export function useCreateLaunch() {
       if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
       if (input.allocation) content.allocation = input.allocation;
       if (input.vesting) content.vesting = input.vesting;
+      if (input.startBlock !== undefined) content.startBlock = input.startBlock;
+      if (input.endBlock !== undefined) content.endBlock = input.endBlock;
+      if (input.claimBlock !== undefined) content.claimBlock = input.claimBlock;
+      if (input.unlocks) content.unlocks = input.unlocks;
+      if (input.daoAtGraduation !== undefined)
+        content.daoAtGraduation = input.daoAtGraduation;
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

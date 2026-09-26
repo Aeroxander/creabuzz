@@ -4,6 +4,7 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 // Extension included on purpose: this module is driven by `models.test.mjs`
 // under `node --test`, which does not resolve extensionless specifiers.
 import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
+import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
@@ -83,6 +84,18 @@ export interface LaunchRecord {
    * is deferred (plan §7.4 — verifier milestones primary, TWAP backstop).
    */
   vesting: VestingConfig | null;
+  /**
+   * What the project's own allocation releases against: milestone rows
+   * (tracked by the kind:47005 claim/verdict id), a short dated vesting
+   * window, or an explicit "nothing locks". See `lib/unlock-plans.ts` — the
+   * parse refuses a malformed plan rather than showing a guessed one.
+   */
+  unlocks: UnlockPlan | null;
+  /**
+   * Whether a DAO is to be formed at graduation. Null when the record never
+   * said (anything published before the wizard, or the legacy edit form).
+   */
+  daoAtGraduation: boolean | null;
   tokenPlan: {
     mode: "mint";
     name: string;
@@ -237,6 +250,9 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
       tagValue(event, "admission") === "community" ? "community" : "curated",
     allocation: parseAllocation(contentObject(event).allocation),
     vesting: parseVesting(contentObject(event).vesting),
+    unlocks: parseUnlockPlan(body.unlocks),
+    daoAtGraduation:
+      typeof body.daoAtGraduation === "boolean" ? body.daoAtGraduation : null,
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }
