@@ -199,7 +199,8 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
   "limits": {
     "spend": { "amount": 100000, "unit": "usd-cents" },
     "runs": 50,
-    "tasks": { "create": 20, "approve": 0 }
+    "tasks": { "create": 20, "approve": 0 },
+    "governance": { "proposal": 2, "vote": 10, "execute": 2 }
   },
   "onchain": {
     "chain": "eip155:8453",
@@ -210,6 +211,22 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
 }
 ```
 
+Governance-action caps (the S3 supervision gate): `limits.governance` ceilings
+bind the **observable governance actions** an agent takes — `proposal` counts
+kind:47004 records the agent authors; `vote` and `execute` count kind:47005
+receipts with `table` `vote` / `execute`. Over a ceiling with
+`onExceed: "require-approval"` the action is rejected and becomes a 46010
+approval request — HITL, and OAv2 §4.6's supervision rate limit in the same
+mechanism. Humans pass untouched (rule 5: budgets never apply to a human's
+own actions — the subject binding sees no budget).
+
+Delegation (kind:47005, `table: "delegate"`) is deliberately **not** a gated
+class: it is the owner's assignment of their own voting power — revocable by
+re-delegating (majeur's `delegates()` defaults to self) — and rule 5 keeps it
+outside budget supervision. The gate covers an agent's ACTIONS
+(proposal/vote/execute); the owner's control of their own votes is not an
+action to approve.
+
 - `window` is `"epoch" | "day" | "week" | "month"`.
 - Budgets apply to **agents and delegated scopes, never to a human's own
   actions** (design rule 5). A human's spending is a governance act (a vote,
@@ -218,7 +235,11 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
   workflow approval kinds (`46010` request → `46011`/`46012` grant/deny), so
   a budget overrun becomes a durable, auditable approval request rather than
   a silent stop or a silent spend. `approve: 0` (as above) means every
-  approval needs a human.
+  approval needs a human. Vocabulary note (WEF Foundations): the approval
+  cards are **HITL** (human-in-the-loop — final decisions need explicit
+  approval), while budget-bounded autonomous execution is **HOTL**
+  (human-on-the-loop — agents act within bounds, humans monitor and can
+  override). The distinction is worth naming so panels stop inventing words.
 - The relay enforces budgets it can observe (event-kind ceilings, run
   counts); spend ceilings are enforced where value actually moves (the
   harness's signing path, or onchain allowances for a bound DAO). A budget a
@@ -334,6 +355,10 @@ Counting rules (deterministic; all inputs are signed events):
 
 - A record counts for the subject when the kind:37013 event's signer is
   the budget `subject` (or the record's `p` tag names the subject).
+- **Self-review prohibition** (ERC-8004's rule): a reviewer or feedback
+  submitter MUST NOT be the subject's owner or an approved operator for the
+  agent. A founder cannot grade their own agent — otherwise the signal is a
+  self-report and every consumer must treat it as one.
 - Only `reviewStatus: "accepted"` counts toward `minAccepted`; only
   `reviewStatus: "rejected"` counts toward the violation threshold.
   `pending` and `appealed` records count as neither.

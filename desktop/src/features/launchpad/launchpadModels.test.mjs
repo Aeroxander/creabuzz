@@ -137,6 +137,67 @@ test("parseLaunchProposalEvent parses futarchy-budget proposals", () => {
   assert.ok(proposal);
   assert.equal(proposal.kind, "futarchy-budget");
   assert.equal(proposal.state, "open");
+  assert.equal(proposal.grant, null);
+  assert.equal(proposal.onchain, null);
+  assert.equal(proposal.intent, null);
+});
+
+test("parseLaunchProposalEvent reads the S0 onchain binding, grant, and intent", () => {
+  const nonce = `0x${"11".repeat(32)}`;
+  const proposal = parseLaunchProposalEvent({
+    id: "p-2",
+    kind: 47004,
+    pubkey: FOUNDER,
+    created_at: 401,
+    content: JSON.stringify({
+      kind: "plain",
+      title: "Raise quorum",
+      proposalId: "42",
+      grant: "grant-1",
+      onchain: { chain: "11155111", dao: `0x${"ab".repeat(20)}` },
+      intent: {
+        op: 0,
+        to: `0x${"cd".repeat(20)}`,
+        value: "0",
+        data: "0x123456",
+        nonce,
+      },
+    }),
+    tags: [["a", launchCoordinate(FOUNDER, "nebula")]],
+    sig: "sig",
+  });
+  assert.ok(proposal);
+  assert.equal(proposal.proposalId, "42");
+  assert.equal(proposal.grant, "grant-1");
+  assert.deepEqual(proposal.onchain, {
+    chain: "11155111",
+    dao: `0x${"ab".repeat(20)}`,
+  });
+  assert.deepEqual(proposal.intent, {
+    op: 0,
+    to: `0x${"cd".repeat(20)}`,
+    value: "0",
+    data: "0x123456",
+    nonce,
+  });
+});
+
+test("parseLaunchProposalEvent reads proposalId from the onchain binding too", () => {
+  const proposal = parseLaunchProposalEvent({
+    id: "p-3",
+    kind: 47004,
+    pubkey: FOUNDER,
+    created_at: 402,
+    content: JSON.stringify({
+      kind: "plain",
+      title: "Bound",
+      onchain: { chain: "1", dao: `0x${"ab".repeat(20)}`, proposalId: "7" },
+    }),
+    tags: [["a", launchCoordinate(FOUNDER, "nebula")]],
+    sig: "sig",
+  });
+  assert.ok(proposal);
+  assert.equal(proposal.proposalId, "7");
 });
 
 test("parseLaunchReceiptEvent requires a tx tag", () => {
@@ -152,6 +213,33 @@ test("parseLaunchReceiptEvent requires a tx tag", () => {
     }),
     null,
   );
+});
+
+test("parseLaunchReceiptEvent reads the §5 governance linkage tags", () => {
+  const receipt = parseLaunchReceiptEvent({
+    id: "r-2",
+    kind: 47005,
+    pubkey: FOUNDER,
+    created_at: 501,
+    content: JSON.stringify({ table: "vote" }),
+    tags: [
+      ["a", launchCoordinate(FOUNDER, "nebula")],
+      ["kind", "vote"],
+      ["tx", "0xabc"],
+      ["proposal", "p-1"],
+      ["onchain", "42"],
+      ["vote", "for"],
+      ["grant", "grant-1"],
+    ],
+    sig: "sig",
+  });
+  assert.ok(receipt);
+  assert.equal(receipt.table, "vote");
+  assert.equal(receipt.tx, "0xabc");
+  assert.equal(receipt.proposal, "p-1");
+  assert.equal(receipt.onchain, "42");
+  assert.equal(receipt.vote, "for");
+  assert.equal(receipt.grant, "grant-1");
 });
 
 test("buildLaunchesFromEvents reduces heads and attaches mirrors", () => {

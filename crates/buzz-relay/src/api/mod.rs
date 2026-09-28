@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod bridge;
 pub mod communities;
+pub mod dao_json;
 pub mod events;
 pub mod evm_auth;
 pub mod gifs;

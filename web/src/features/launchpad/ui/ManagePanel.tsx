@@ -38,12 +38,19 @@ import {
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { Input } from "@/shared/ui/input";
+import { autoFill, milestoneChoices } from "../lib/claim-choices";
+import { HashPicker } from "./HashPicker";
 import {
   resolveSender,
   SenderPickerControls,
   senderErrorMessage,
   useSenderPicker,
 } from "./SenderPicker";
+import {
+  type OnchainCall,
+  planClaimSubmit,
+  planVerdictSubmit,
+} from "../lib/claim-submit";
 
 /**
  * One-click "Deploy token": the `DeployAppToken.s.sol` sequence through the
@@ -400,6 +407,15 @@ export function ManagePanel({
   const [claimId, setClaimId] = useState("");
   const [evidenceHash, setEvidenceHash] = useState("");
   const [txHash, setTxHash] = useState("");
+  // The "no manual hashes" layer: every choice on this panel is derived
+  // from the wizard's plan rows and this launch's receipts.
+  const milestoneChoicesList = milestoneChoices(
+    launch?.record.unlocks ?? null,
+    launch?.receipts ?? [],
+  );
+  const [onchainSending, setOnchainSending] = useState(false);
+  // The milestone panel's own sender picker (the deploy card keeps its own).
+  const milestoneSender = useSenderPicker();
   const [milestoneError, setMilestoneError] = useState<string | null>(null);
   /** Destructive stage change: confirmed inline, like the delete below. */
   const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
@@ -510,6 +526,59 @@ export function ManagePanel({
       setMilestoneError(
         err instanceof Error ? err.message : "Failed to record the verdict.",
       );
+    }
+  };
+
+  /**
+   * The onchain half of the record flow (token-lifecycle-design.md): submit
+   * the claim or the verdict to the launch's ClaimStake / VerifierSet through
+   * the resolved sender, then prefill the settlement hash for the receipt.
+   * Falls back to plain error copy when the launch is not wired onchain yet —
+   * the mirror-only flow still applies then.
+   */
+  const submitOnchain = async (
+    kind: "claim" | "verdict-approve" | "verdict-reject",
+  ) => {
+    setMilestoneError(null);
+    setOnchainSending(true);
+    try {
+      let call: OnchainCall | null = null;
+      if (kind === "claim") {
+        const row = record.unlocks?.milestones.find(
+          (m) => m.claim === claimId.trim(),
+        );
+        call = row
+          ? (planClaimSubmit({
+              record,
+              row,
+              evidenceHash: evidenceHash.trim(),
+            })?.call ?? null)
+          : null;
+      } else {
+        call = planVerdictSubmit(
+          record,
+          claimId.trim(),
+          kind === "verdict-approve",
+        );
+      }
+      if (!call) {
+        setMilestoneError(
+          "This launch is not wired onchain yet (deploy the enforcer and link ClaimStake/VerifierSet on the record).",
+        );
+        return;
+      }
+      const sender = resolveSender(milestoneSender);
+      const result = await sender.sendCalls([call]);
+      if (!isTxHash(result.txHash)) {
+        throw new Error("The sender returned an invalid hash.");
+      }
+      setTxHash(result.txHash); // prefill for the receipt
+    } catch (err) {
+      setMilestoneError(
+        senderErrorMessage(err, "The onchain submit was not sent."),
+      );
+    } finally {
+      setOnchainSending(false);
     }
   };
 
@@ -676,34 +745,38 @@ export function ManagePanel({
             refuses a receipt without one. The chain is the ledger.
           </p>
           <div className="mt-3 flex flex-col gap-2">
-            <label className="text-sm font-medium" htmlFor="claim-id">
-              Claim id
-            </label>
-            <Input
+            <HashPicker
               id="claim-id"
-              data-testid="claim-id"
-              onChange={(e) => setClaimId(e.target.value)}
+              label="Claim id"
+              onValueChange={(v) => {
+                setClaimId(v);
+                // One dropdown drives the rest: known evidence + tx follow
+                // the claim; unknown values stay empty (never guessed).
+                const fill = autoFill(milestoneChoicesList, v);
+                if (fill.evidenceHash) setEvidenceHash(fill.evidenceHash);
+                if (fill.txHash) setTxHash(fill.txHash);
+              }}
+              options={milestoneChoicesList.claimOptions}
               placeholder="milestone-1"
+              testId="claim-id"
               value={claimId}
             />
-            <label className="text-sm font-medium" htmlFor="evidence-hash">
-              Evidence hash
-            </label>
-            <Input
+            <HashPicker
               id="evidence-hash"
-              data-testid="evidence-hash"
-              onChange={(e) => setEvidenceHash(e.target.value)}
+              label="Evidence hash"
+              onValueChange={setEvidenceHash}
+              options={milestoneChoicesList.evidenceByClaim[claimId] ?? []}
               placeholder="64 hex chars of the canonical claim"
+              testId="evidence-hash"
               value={evidenceHash}
             />
-            <label className="text-sm font-medium" htmlFor="milestone-tx">
-              Settlement tx hash
-            </label>
-            <Input
+            <HashPicker
               id="milestone-tx"
-              data-testid="milestone-tx"
-              onChange={(e) => setTxHash(e.target.value)}
+              label="Settlement tx hash"
+              onValueChange={setTxHash}
+              options={milestoneChoicesList.txByClaim[claimId] ?? []}
               placeholder="0x + 64 hex chars of the onchain tx"
+              testId="milestone-tx"
               value={txHash}
             />
             <div className="mt-1 flex flex-wrap gap-2">
@@ -744,6 +817,48 @@ export function ManagePanel({
                 type="button"
               >
                 Verdict: reject
+              </Button>
+            </div>
+            <div className="mt-1">
+              <SenderPickerControls
+                state={milestoneSender}
+                testIdPrefix="milestone-"
+              />
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <Button
+                data-testid="submit-claim-onchain"
+                disabled={
+                  onchainSending ||
+                  claimId.trim() === "" ||
+                  !EVIDENCE_HASH_RE.test(evidenceHash.trim())
+                }
+                onClick={() => void submitOnchain("claim")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Submit claim onchain
+              </Button>
+              <Button
+                data-testid="attest-approve"
+                disabled={onchainSending || claimId.trim() === ""}
+                onClick={() => void submitOnchain("verdict-approve")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Attest approve
+              </Button>
+              <Button
+                data-testid="attest-reject"
+                disabled={onchainSending || claimId.trim() === ""}
+                onClick={() => void submitOnchain("verdict-reject")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Attest reject
               </Button>
             </div>
             {milestoneError ? (

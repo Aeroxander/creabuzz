@@ -23,6 +23,7 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { peekAgentPubkey } from "@/shared/lib/agent-identity";
 import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { OrgDiagnosticCard } from "@/features/launchpad/ui/OrgDiagnosticCard";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 const TEAM_SUGGESTIONS = [
@@ -273,10 +274,16 @@ export function OrgView() {
   // loading with an empty roster, show the chart shell (the fallback would
   // flash an empty "Unassigned" group first). Once the chart is known-empty,
   // the pre-org roster fallback renders exactly as before.
-  return forest.length > 0 || (chartLoading && agents.length === 0) ? (
-    <OrgChartView forest={forest} loading={chartLoading} />
-  ) : (
-    <OrgRosterFallback agents={agents} loading={loading} />
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      {/* The Phase 4 instrument (OA.md §6) — recomputable via `buzz diag`. */}
+      <OrgDiagnosticCard />
+      {forest.length > 0 || (chartLoading && agents.length === 0) ? (
+        <OrgChartView forest={forest} loading={chartLoading} />
+      ) : (
+        <OrgRosterFallback agents={agents} loading={loading} />
+      )}
+    </div>
   );
 }
 

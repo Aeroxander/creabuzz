@@ -74,3 +74,105 @@ export function verdictReceiptParts(input: {
     },
   };
 }
+
+/**
+ * Tags + content of a proposal-lifecycle mirror (47005, `kind=proposal`) —
+ * the governance slice's receipt vocabulary
+ * (`docs/agentic-governance-design.md` section 5). The `onchain` id (majeur's
+ * proposal id) rides along only when the record is actually bound; a
+ * record-only proposal says so by its absence (D8).
+ */
+export function proposalReceiptParts(input: {
+  proposal: string;
+  onchain: string | null;
+  tx: string;
+}): { extraTags: ReceiptTag[]; content: Record<string, string> } {
+  const extraTags: ReceiptTag[] = [
+    ["kind", "proposal"],
+    ["proposal", input.proposal],
+  ];
+  const content: Record<string, string> = {
+    table: "proposal",
+    proposal: input.proposal,
+  };
+  if (input.onchain !== null) {
+    extraTags.push(["onchain", input.onchain]);
+    content.onchain = input.onchain;
+  }
+  extraTags.push(["tx", input.tx]);
+  return { extraTags, content };
+}
+
+/**
+ * Tags + content of a vote mirror (47005, `kind=vote`). The content carries
+ * the vote *word* (`for|against|abstain` — the same closed-vocabulary rule as
+ * `approve|reject`). An agent voting under delegation carries its grant id
+ * (D3/D5: the authority chain stays visible).
+ */
+export function voteReceiptParts(input: {
+  proposal: string;
+  vote: "for" | "against" | "abstain";
+  tx: string;
+  grant?: string;
+}): { extraTags: ReceiptTag[]; content: Record<string, string> } {
+  const extraTags: ReceiptTag[] = [
+    ["kind", "vote"],
+    ["proposal", input.proposal],
+    ["vote", input.vote],
+  ];
+  const content: Record<string, string> = {
+    table: "vote",
+    proposal: input.proposal,
+    vote: input.vote,
+  };
+  if (input.grant !== undefined) {
+    extraTags.push(["grant", input.grant]);
+    content.grant = input.grant;
+  }
+  extraTags.push(["tx", input.tx]);
+  return { extraTags, content };
+}
+
+/** Tags + content of an execution mirror (47005, `kind=execute`). */
+export function executeReceiptParts(input: { proposal: string; tx: string }): {
+  extraTags: ReceiptTag[];
+  content: Record<string, string>;
+} {
+  return {
+    extraTags: [
+      ["kind", "execute"],
+      ["proposal", input.proposal],
+      ["tx", input.tx],
+    ],
+    content: {
+      table: "execute",
+      proposal: input.proposal,
+    },
+  };
+}
+
+/**
+ * Tags + content of a delegation mirror (47005, `kind=delegate`) — D4: every
+ * governance action gets a receipt. Delegation is the OWNER's assignment of
+ * their own voting power (revocable by re-delegating to oneself), so it is
+ * deliberately NOT a budget-gated class: the S3 gate supervises an agent's
+ * ACTIONS (proposal/vote/execute), never an owner's control of their own
+ * votes. Table `delegate` is a closed vocabulary word alongside
+ * `proposal`/`vote`/`execute`.
+ */
+export function delegateReceiptParts(input: { delegate: string; tx: string }): {
+  extraTags: ReceiptTag[];
+  content: Record<string, string>;
+} {
+  return {
+    extraTags: [
+      ["kind", "delegate"],
+      ["delegate", input.delegate],
+      ["tx", input.tx],
+    ],
+    content: {
+      table: "delegate",
+      delegate: input.delegate,
+    },
+  };
+}

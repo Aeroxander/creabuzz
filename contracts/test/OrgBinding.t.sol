@@ -264,7 +264,7 @@ contract OrgBindingTest is Test {
     function test_BindDaoRecordsExistingDao() public {
         bytes32 rid = keccak256("canonical");
         vm.expectEmit(true, true, true, true, address(binding));
-        emit OrgBinding.DaoBound(rid, attacker, uint64(block.timestamp));
+        emit OrgBinding.DaoBound(rid, attacker, uint64(block.timestamp), "");
         binding.bindDao(rid, attacker);
         (address boundDao, uint64 at) = binding.bindingOf(rid);
         assertEq(boundDao, attacker);

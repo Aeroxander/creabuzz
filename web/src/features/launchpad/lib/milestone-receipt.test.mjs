@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseLaunchReceipt } from "../models.ts";
-import { claimReceiptParts, verdictReceiptParts } from "./milestone-receipt.ts";
+import {
+  claimReceiptParts,
+  delegateReceiptParts,
+  executeReceiptParts,
+  proposalReceiptParts,
+  verdictReceiptParts,
+  voteReceiptParts,
+} from "./milestone-receipt.ts";
 
 const ALICE = "a".repeat(64);
 const TX = `0x${"b".repeat(64)}`;
@@ -72,4 +79,53 @@ test("dropping the tx tag is what made these receipts invisible", () => {
     extraTags: parts.extraTags.filter(([n]) => n !== "tx"),
   };
   assert.equal(parseLaunchReceipt(receiptEvent(withoutTx)), null);
+});
+
+test("governance mirrors carry exactly one tx tag (relay envelope)", () => {
+  for (const parts of [
+    proposalReceiptParts({ proposal: "p1", onchain: "123", tx: TX }),
+    voteReceiptParts({ proposal: "p1", vote: "for", tx: TX }),
+    executeReceiptParts({ proposal: "p1", tx: TX }),
+  ]) {
+    assert.equal(parts.extraTags.filter(([n]) => n === "tx").length, 1);
+  }
+});
+
+test("a vote mirror uses the closed word vocabulary and the grant tag", () => {
+  const parts = voteReceiptParts({
+    proposal: "p1",
+    vote: "against",
+    tx: TX,
+    grant: "g1",
+  });
+  assert.equal(parts.content.table, "vote");
+  assert.equal(parts.content.vote, "against");
+  assert.ok(parts.extraTags.some(([n, v]) => n === "grant" && v === "g1"));
+  const bare = voteReceiptParts({ proposal: "p1", vote: "abstain", tx: TX });
+  assert.ok(!bare.extraTags.some(([n]) => n === "grant"));
+});
+
+test("a proposal mirror says record-only by omitting onchain (D8)", () => {
+  const bound = proposalReceiptParts({ proposal: "p1", onchain: "99", tx: TX });
+  assert.ok(bound.extraTags.some(([n, v]) => n === "onchain" && v === "99"));
+  const bare = proposalReceiptParts({ proposal: "p1", onchain: null, tx: TX });
+  assert.ok(!bare.extraTags.some(([n]) => n === "onchain"));
+  assert.equal(bare.content.onchain, undefined);
+});
+
+test("an execute mirror names its proposal and tx", () => {
+  const parts = executeReceiptParts({ proposal: "p1", tx: TX });
+  assert.equal(parts.content.table, "execute");
+  assert.equal(parts.content.proposal, "p1");
+  assert.ok(parts.extraTags.some(([n, v]) => n === "tx" && v === TX));
+});
+
+test("a delegate mirror records the authority assignment (and its tx)", () => {
+  const parts = delegateReceiptParts({ delegate: "0xabc", tx: TX });
+  assert.equal(parts.content.table, "delegate");
+  assert.equal(parts.content.delegate, "0xabc");
+  assert.equal(parts.extraTags.filter(([n]) => n === "tx").length, 1);
+  // D4 closed vocabulary: delegate sits alongside proposal/vote/execute —
+  // and is NOT a budget-gated class (see the parts doc).
+  assert.ok(parts.extraTags.some(([n, v]) => n === "kind" && v === "delegate"));
 });

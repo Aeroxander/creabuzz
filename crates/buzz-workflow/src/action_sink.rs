@@ -139,4 +139,22 @@ pub trait ActionSink: Send + Sync {
         community_id: CommunityId,
         space: &str,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>>;
+
+    /// Recompute the org diagnostic (OA.md Phase 4 — `buzz-core::org_diag`)
+    /// over the community's recent signed events and return the report as the
+    /// step output (recorded in run history, so drift across runs is
+    /// observable). Deterministic — no LLM, nothing published, no new wire
+    /// vocabulary. The default fails visibly: a sink that does not instrument
+    /// must surface a run failure (Review-Proven Rule 1), never silently skip.
+    fn run_org_diag(
+        &self,
+        community_id: CommunityId,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        let _ = community_id;
+        Box::pin(async {
+            Err(ActionSinkError::InvalidInput(
+                "run_org_diag is not implemented by this action sink".to_string(),
+            ))
+        })
+    }
 }

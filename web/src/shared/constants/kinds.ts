@@ -28,6 +28,10 @@ export const KIND_LAUNCH_UPDATE = 47003;
 export const KIND_LAUNCH_PROPOSAL = 47004;
 /** NIP-LP: chain-state receipt mirror. */
 export const KIND_LAUNCH_RECEIPT = 47005;
+/** NIP-LP: royalty schedule mirror (chain authoritative; token-lifecycle-design.md). */
+export const KIND_ROYALTY_SCHEDULE = 47006;
+/** NIP-LP: royalty settlement-close mirror (one per closed window). */
+export const KIND_ROYALTY_CLOSE = 47007;
 /** NIP-LP (reserved): trustgraph score root published by an operator. */
 export const KIND_SCORE_ROOT = 37006;
 /** NIP-ORG: org node — a role/team seat in the community org chart (addressable, d = node id, h = community). */

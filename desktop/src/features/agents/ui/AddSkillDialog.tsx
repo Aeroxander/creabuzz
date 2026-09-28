@@ -5,6 +5,7 @@ import {
   SKILL_SCOPES,
   type SkillScope,
 } from "@/features/agents/lib/skillLibrary";
+import { olderRelayGuidance } from "@/features/agents/lib/relayNotice";
 import type { PublishSkillInput } from "@/features/agents/lib/useSkillLibrary";
 import { Button } from "@/shared/ui/button";
 import {
@@ -121,9 +122,23 @@ export function AddSkillDialog({
             </select>
           </div>
           {shownError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {shownError}
-            </p>
+            <div className="space-y-1.5">
+              <p
+                className="text-sm text-destructive"
+                data-testid="skill-publish-error"
+                role="alert"
+              >
+                {shownError}
+              </p>
+              {olderRelayGuidance(shownError) ? (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="skill-publish-guidance"
+                >
+                  {olderRelayGuidance(shownError)}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <DialogFooter>
             <Button

@@ -440,7 +440,16 @@ async fn cmd_budget_create(
         v: 1,
         subject: subject.to_string(),
         window: budget_window,
-        limits: BudgetLimits { spend, runs, tasks },
+        // `governance` caps (proposal/vote/execute — the S3 HITL gate) exist
+        // on BudgetLimits but this setter has no flags for them yet; None
+        // means unset, never "unlimited by promise" — the record says what it
+        // knows and omits the rest.
+        limits: BudgetLimits {
+            spend,
+            runs,
+            tasks,
+            governance: None,
+        },
         on_exceed: OnExceed::RequireApproval,
         onchain: onchain.map(parse_onchain_binding).transpose()?,
         performance_link: None,

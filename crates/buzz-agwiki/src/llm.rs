@@ -92,8 +92,25 @@ pub async fn chat_completion(
     user: &str,
     max_tokens: u32,
 ) -> Result<serde_json::Value, LlmError> {
+    chat_completion_effort(http, target, system, user, max_tokens, None).await
+}
+
+/// [`chat_completion`] with an optional `reasoning_effort` knob
+/// (`low`/`medium`/`high`) — SkillOpt's own `model.reasoning_effort`
+/// parameter (default `medium`), verified accepted by our gateway. Reasoning
+/// models otherwise vary in how much they think before writing content, and
+/// page-generation rollouts can exhaust the budget entirely (`finish_reason:
+/// "length"`, no content — observed live).
+pub async fn chat_completion_effort(
+    http: &reqwest::Client,
+    target: &LlmTarget,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+) -> Result<serde_json::Value, LlmError> {
     let url = format!("{}/chat/completions", target.api_url.trim_end_matches('/'));
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": target.model,
         "temperature": AGWIKI_TEMPERATURE,
         "max_tokens": max_tokens,
@@ -102,6 +119,9 @@ pub async fn chat_completion(
             { "role": "user", "content": user },
         ],
     });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = serde_json::json!(effort);
+    }
     for attempt in 0..2 {
         let resp = http
             .post(&url)

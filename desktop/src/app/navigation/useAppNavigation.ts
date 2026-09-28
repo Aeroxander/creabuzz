@@ -222,6 +222,12 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goWiki = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation({ to: "/wiki" }, behavior),
+    [commitNavigation],
+  );
+
   const goWorkflow = React.useCallback(
     (workflowId: string, behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -512,6 +518,7 @@ export function useAppNavigation() {
     goPulse,
     goProfile,
     goSettings,
+    goWiki,
     goWorkflow,
     goWorkflows,
     openSearchHit,

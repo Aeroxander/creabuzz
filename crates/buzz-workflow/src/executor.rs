@@ -467,6 +467,9 @@ pub fn resolve_step_templates(
             duration: duration.clone(),
         }),
         DistillAgentWiki { space } => Ok(DistillAgentWiki { space: t(space)? }),
+        // No fields to resolve — the instrument is deterministic and
+        // parameterless.
+        RunOrgDiag => Ok(RunOrgDiag),
     }
 }
 
@@ -779,6 +782,20 @@ pub async fn dispatch_action(
                     let output = engine
                         .action_sink()?
                         .distill_agent_wiki(community_id, space)
+                        .await
+                        .map_err(WorkflowError::from)?;
+                    Ok(StepResult::Completed(output))
+                }
+
+                RunOrgDiag => {
+                    // The Phase 4 instrument (OA.md §6) recomputes over the
+                    // community's recent signed events — deterministic, no
+                    // LLM, nothing published. Failures surface as visible run
+                    // failures (Review-Proven Rule 1).
+                    info!(run_id = %run_id, step = step_id, "RunOrgDiag");
+                    let output = engine
+                        .action_sink()?
+                        .run_org_diag(community_id)
                         .await
                         .map_err(WorkflowError::from)?;
                     Ok(StepResult::Completed(output))

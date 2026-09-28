@@ -21,14 +21,15 @@
  *   performance ladder (`models.ts`'s `vesting`, whose own comment records
  *   that the onchain enforcer is deferred).
  *
- * The named gap, stated once and reused in the dialog: **nothing onchain moves
- * a token tranche when a verdict arrives.** `ClaimStake.settle` releases an
- * escrowed *currency* payout to a contributor (`contracts/src/ClaimStake.sol`),
- * `VerifierSet.attest` records the quorum (`VerifierSet.sol`), and NIP-LP §7.4
- * says the onchain enforcer for these milestones is deferred — so until a
- * tranche-release call exists, an "approved" milestone unlocks through the
- * treasury acting on the recorded verdict. This module encodes and tracks; it
- * never claims to enforce.
+ * Enforcement status, stated once and reused in the dialog: the enforcer now
+ * EXISTS — `ClaimStake` is currency-agnostic, so a launch that escrows its
+ * milestone tranches in the PROJECT TOKEN and submits each row as a claim
+ * gets tranche release on the VerifierSet's approval quorum
+ * (`contracts/src/ClaimStake.sol`; the join is `tranche-claims.ts` +
+ * `claim-tx.ts`). It is opt-in per launch (the NIP-LP section 7.4 enforcer
+ * wiring): a launch that has not escrowed its tranches still releases
+ * through the treasury acting on the recorded verdict. This module encodes
+ * and tracks; it never claims to enforce by itself.
  *
  * Alias-free on purpose: `unlock-plans.test.mjs` drives it under `node --test`.
  */
@@ -62,9 +63,9 @@ export interface UnlockPlan {
   months: number | null;
 }
 
-/** The exact gap the dialog prints, so copy and report cannot drift. */
+/** The exact wording the dialog prints, so copy and report cannot drift. */
 export const UNLOCK_ENFORCEMENT_GAP =
-  "A verifier's approve is recorded and tracked here (kind 47005), but no contract call moves a token tranche on that verdict yet — NIP-LP keeps the enforcer deferred. Until it ships, the release is a treasury action against the recorded verdict, not an automatic one.";
+  "The enforcer exists: escrow the milestone tranches in ClaimStake and submit each row as a claim (tranche-claims.ts), and a verifier's approve quorum releases the tranche onchain — capital against attested delivery. It is opt-in per launch: until these tranches are escrowed and claimed, release stays a treasury action against the recorded verdict (kind 47005).";
 
 export const MIN_MILESTONES = 2;
 export const MAX_MILESTONES = 4;

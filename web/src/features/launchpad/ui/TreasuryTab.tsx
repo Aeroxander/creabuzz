@@ -17,6 +17,10 @@ import { formatAtomic, formatMoney, toAtomic } from "../lib/amounts";
 import { resolveDaoBinding } from "../lib/org-money";
 import { useOrgMoney } from "../use-launches";
 import { RagequitPanel } from "./RagequitPanel";
+import { RoyaltyStatementCard } from "./RoyaltyStatementCard";
+import { EnforcementCard } from "./EnforcementCard";
+import { DelegationCard } from "./DelegationCard";
+import { milestoneChoices } from "../lib/claim-choices";
 import { TreasuryFlowsPanel } from "./TreasuryFlowsPanel";
 
 export function TreasuryTab({
@@ -89,6 +93,36 @@ export function TreasuryTab({
         chainId={chainId}
         daoBinding={daoBinding}
         record={record}
+      />
+      {record.distributor && record.claimStake ? (
+        <RoyaltyStatementCard
+          claimStake={record.claimStake}
+          distributor={record.distributor}
+          scheduleIds={
+            milestoneChoices(record.unlocks, launch.receipts).scheduleIds
+          }
+        />
+      ) : null}
+      {daoBinding ? <EnforcementCard dao={daoBinding.dao} /> : null}
+      <DelegationCard
+        author={launch.record.author}
+        dao={daoBinding?.dao ?? null}
+        launchId={launch.record.id}
+        members={(() => {
+          // Delegate candidates = the DAO's equity map (summon-receipt
+          // holders — where agent wallets appear) — addresses, never npubs.
+          const summon = [...launch.receipts]
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .find((r) => r.table === "summon");
+          const holders = summon?.payload.holders;
+          if (!Array.isArray(holders)) return [];
+          return holders
+            .filter(
+              (h): h is string =>
+                typeof h === "string" && /^0x[0-9a-fA-F]{40}$/.test(h),
+            )
+            .map((h) => ({ value: h, label: truncatePubkey(h) }));
+        })()}
       />
       <Card className="p-4" data-testid="launch-treasury-plan">
         <h2 className="text-base font-semibold">Treasury plan</h2>

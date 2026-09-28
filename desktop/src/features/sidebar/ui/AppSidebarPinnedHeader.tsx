@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  BookOpen,
   Folders,
   Inbox,
   Rocket,
@@ -33,7 +34,8 @@ type SidebarSelectedView =
   | "projects"
   | "launchpad"
   | "paperclip"
-  | "org";
+  | "org"
+  | "wiki";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -61,6 +63,7 @@ type AppSidebarPrimaryMenuProps = {
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   onSelectPaperclip: () => void;
+  onSelectWiki: () => void;
   projectsOverviewActive: boolean;
   selectedView: SidebarSelectedView;
 };
@@ -114,6 +117,7 @@ export function AppSidebarPrimaryMenu({
   onSelectPulse,
   onSelectWorkflows,
   onSelectPaperclip,
+  onSelectWiki,
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
@@ -239,6 +243,19 @@ export function AppSidebarPrimaryMenu({
             >
               <Network className="h-4 w-4" />
               <SidebarMenuLabel>Org</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-current={selectedView === "wiki" ? "page" : undefined}
+              data-testid="open-wiki-view"
+              isActive={selectedView === "wiki"}
+              onClick={onSelectWiki}
+              tooltip="Wiki"
+              type="button"
+            >
+              <BookOpen className="h-4 w-4" />
+              <SidebarMenuLabel>Wiki</SidebarMenuLabel>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

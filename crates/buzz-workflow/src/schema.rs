@@ -173,6 +173,16 @@ pub enum ActionDef {
         #[serde(default = "default_space")]
         space: String,
     },
+    /// Recompute the org diagnostic (OA.md Phase 4 — `buzz-core::org_diag`)
+    /// over the community's recent signed events: Pentland time signal,
+    /// Tomasello's three layers, the WEF five failure modes, Cursor's
+    /// thrash-vs-work scoreboard, drift probes, and supervision saturation.
+    ///
+    /// Deterministic and pure (no LLM, nothing published, no new wire
+    /// vocabulary) — the report is the step output, recorded in run history
+    /// so drift across runs is observable. Scheduled fires share the engine's
+    /// exactly-once run machinery.
+    RunOrgDiag,
 }
 
 impl WorkflowDef {
@@ -1076,5 +1086,31 @@ mod tests {
             trigger,
             TriggerDef::DiffPosted { filter: Some(_) }
         ));
+    }
+}
+
+#[cfg(test)]
+mod run_org_diag_schema_tests {
+    use super::{ActionDef, Step};
+
+    #[test]
+    fn run_org_diag_parses_as_the_action_tag() {
+        let action: ActionDef =
+            serde_json::from_value(serde_json::json!({ "action": "run_org_diag" }))
+                .expect("action parses");
+        assert!(matches!(action, ActionDef::RunOrgDiag));
+    }
+
+    #[test]
+    fn run_org_diag_round_trips_through_the_flattened_step_shape() {
+        // The YAML step shape: `{"id": "diag", "action": "run_org_diag"}`.
+        let step: Step = serde_json::from_value(serde_json::json!({
+            "id": "diag",
+            "action": "run_org_diag",
+        }))
+        .expect("step parses");
+        assert!(matches!(step.action, ActionDef::RunOrgDiag));
+        let round_trip = serde_json::to_value(&step).expect("serializable");
+        assert_eq!(round_trip.get("action").and_then(|a| a.as_str()), Some("run_org_diag"));
     }
 }

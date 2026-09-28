@@ -787,13 +787,13 @@ export function CreateLaunchDialog({
             </details>
           </>
         )}
-      <SignRecovery
-        className="mt-4"
-        message={publishError ?? error}
-        onUnlocked={() => submit()}
-        showHeadline
-        testId="launch-sign-recovery"
-      />
+        <SignRecovery
+          className="mt-4"
+          message={publishError ?? error}
+          onUnlocked={() => submit()}
+          showHeadline
+          testId="launch-sign-recovery"
+        />
         {paramIssues.length > 0 ? (
           <ul
             className="mt-2 space-y-0.5 text-xs"

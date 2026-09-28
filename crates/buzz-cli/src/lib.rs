@@ -249,9 +249,29 @@ enum Cmd {
     /// Community org graph — roles, grants, and budgets (NIP-ORG)
     #[command(subcommand)]
     Org(OrgCmd),
+    /// Contributor royalty ledger — read, claim, settle, mirrors (token-lifecycle-design.md)
+    #[command(subcommand)]
+    Royalty(RoyaltyCmd),
+    /// The trustgraph scoring operator — score roots + gate rotation (NIP-LP 37006)
+    #[command(subcommand)]
+    Trustgraph(TrustgraphCmd),
     /// Agent Wiki — agent-maintained knowledge base (kind:44002)
     #[command(subcommand)]
     Agwiki(AgwikiCmd),
+    /// Organizational diagnostic — the Phase 4 instrument (OA.md §6)
+    ///
+    /// Runs the differentiated instrument over the recent signed event
+    /// stream: Pentland time-signal correlation (timing-only — safe even when
+    /// identities are synonymous), Tomasello's three layers, the WEF five
+    /// multi-agent failure modes, the Cursor thrash-vs-work scoreboard,
+    /// per-actor drift probes, and supervision saturation. Deterministic and
+    /// recomputable; insufficient data reads "insufficient", never zeroed
+    /// scores.
+    Diag {
+        /// Max events to scan (default 500, cap 2000)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
     /// Self-organizing agent teams — teamwork strategies and runs (arXiv 2609.22682)
     #[command(subcommand)]
     Team(TeamCmd),
@@ -1326,6 +1346,70 @@ impl ProjectVisibility {
 
 #[derive(Subcommand)]
 pub enum LaunchpadCmd {
+    /// Open a majeur proposal on a bound DAO (chain-local, opt-in via
+    /// BUZZ_EVM_*; prints the proposal id for `vote`/`process`)
+    Propose {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Operation: 0 = call, 1 = delegatecall
+        #[arg(long, default_value_t = 0)]
+        op: u8,
+        /// Target of the operation (`0x…`)
+        #[arg(long)]
+        to: String,
+        /// ETH value of the operation (decimal; default 0)
+        #[arg(long, default_value = "0")]
+        value: String,
+        /// 0x calldata of the proposed operation
+        #[arg(long)]
+        data: String,
+        /// Caller-chosen nonce (0x + 64 hex); part of the proposal id
+        #[arg(long)]
+        nonce: String,
+    },
+    /// Cast a majeur vote (for | against | abstain)
+    Vote {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Proposal id (0x + 64 hex; `propose` prints it)
+        #[arg(long)]
+        id: String,
+        /// for | against | abstain
+        #[arg(long)]
+        support: String,
+    },
+    /// Execute a passed proposal after votes + timelock
+    Process {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Operation: 0 = call, 1 = delegatecall
+        #[arg(long, default_value_t = 0)]
+        op: u8,
+        /// Target of the operation (`0x…`)
+        #[arg(long)]
+        to: String,
+        /// ETH value of the operation (decimal; default 0)
+        #[arg(long, default_value = "0")]
+        value: String,
+        /// 0x calldata of the operation
+        #[arg(long)]
+        data: String,
+        /// The same nonce `propose` used
+        #[arg(long)]
+        nonce: String,
+    },
+    /// Read a proposal's state (the D6 quorum-math input)
+    ProposalState {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Proposal id (0x + 64 hex)
+        #[arg(long)]
+        id: String,
+    },
     /// List launches (NIP-LP kind:37001 directory)
     List {
         /// Maximum number of results
@@ -2341,6 +2425,261 @@ pub enum ModerationCmd {
     },
 }
 
+/// Contributor royalty ledger commands — docs/token-lifecycle-design.md.
+///
+/// Local-only (EVM value layer; no relay connection, no Nostr key). The
+/// mirror subcommands print UNSIGNED kind:47006/47007 event templates
+/// (advisory; the chain is authoritative).
+#[derive(Subcommand)]
+pub enum RoyaltyCmd {
+    /// Read the ledger state (credited balance, carry, window clock)
+    Show {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Pull the credited royalty balance (credited-is-owned: never expires)
+    Claim {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Close the current settlement window (permissionless)
+    Settle {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Print an unsigned kind:47006 royalty-schedule mirror (JSON)
+    MirrorSchedule {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The ClaimStake claim id (0x-prefixed bytes32)
+        #[arg(long)]
+        claim_id: String,
+        /// The claim's evidence hash (0x-prefixed bytes32)
+        #[arg(long)]
+        evidence_hash: String,
+        /// The contributor's bound EVM address (`0x…`)
+        #[arg(long)]
+        contributor: String,
+        /// Schedule weight (tier band caps apply)
+        #[arg(long)]
+        weight: u32,
+        /// Schedule term in seconds
+        #[arg(long)]
+        term: u64,
+        /// Milestone badge tier (1, 2, or 3)
+        #[arg(long)]
+        band: u8,
+        /// Earned token allocation (decimal)
+        #[arg(long)]
+        allocation: u128,
+    },
+    /// Print an unsigned kind:47007 settlement-close mirror (JSON)
+    MirrorClose {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The closed window id
+        #[arg(long)]
+        window_id: u64,
+        /// Window revenue (decimal, currency units)
+        #[arg(long)]
+        revenue: u128,
+        /// Buyback share (decimal)
+        #[arg(long)]
+        buyback_share: u128,
+        /// Treasury share (decimal)
+        #[arg(long)]
+        treasury_share: u128,
+        /// Contributor pool (decimal)
+        #[arg(long)]
+        pool: u128,
+        /// Carried into the next pool (decimal)
+        #[arg(long)]
+        carried: u128,
+    },
+    /// Sign and publish the kind:47006 schedule mirror (the attestation
+    /// feed's record; the chain is authoritative). Needs a relay identity.
+    PublishSchedule {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The ClaimStake claim id (0x-prefixed bytes32)
+        #[arg(long)]
+        claim_id: String,
+        /// The claim's evidence hash (0x-prefixed bytes32)
+        #[arg(long)]
+        evidence_hash: String,
+        /// The contributor's bound EVM address (`0x…`)
+        #[arg(long)]
+        contributor: String,
+        /// Schedule weight (tier band caps apply)
+        #[arg(long)]
+        weight: u32,
+        /// Schedule term in seconds
+        #[arg(long)]
+        term: u64,
+        /// Milestone badge tier (1, 2, or 3)
+        #[arg(long)]
+        band: u8,
+        /// Earned token allocation (decimal)
+        #[arg(long)]
+        allocation: u128,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+    },
+    /// Sign and publish the kind:47007 settlement-close mirror (the
+    /// attestation feed's per-window record). Needs a relay identity.
+    PublishClose {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The closed window id
+        #[arg(long)]
+        window_id: u64,
+        /// Window revenue (decimal, currency units)
+        #[arg(long)]
+        revenue: u128,
+        /// Buyback share (decimal)
+        #[arg(long)]
+        buyback_share: u128,
+        /// Treasury share (decimal)
+        #[arg(long)]
+        treasury_share: u128,
+        /// Contributor pool (decimal)
+        #[arg(long)]
+        pool: u128,
+        /// Carried into the next pool (decimal)
+        #[arg(long)]
+        carried: u128,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+    },
+    /// Watch a RoyaltyDistributor and publish kind:47007 close mirrors as
+    /// windows close (the attestation feed, unattended). Needs a relay
+    /// identity and BUZZ_EVM_RPC_URL. `--once` for a single pass.
+    Watch {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+        /// Poll interval in seconds (default 30)
+        #[arg(long)]
+        interval: Option<u64>,
+        /// Single pass then exit (cron-style)
+        #[arg(long)]
+        once: bool,
+        /// Scan from this block (default 0; feed dedupe prevents doubles)
+        #[arg(long)]
+        from_block: Option<u64>,
+    },
+}
+
+/// The trustgraph scoring operator (NIP-LP kind 37006). The scoring ENGINE
+/// is external and replaceable; this is the bridge that turns any engine's
+/// scores into the roots + proofs the launchpad and `TrustGatedHook` consume.
+#[derive(Subcommand)]
+pub enum TrustgraphCmd {
+    /// Scores file -> Merkle root + per-member proofs (local; the workspace
+    /// data stays private — only the root ships)
+    ComposeRoot {
+        /// Program id (default: the launchpad community program)
+        #[arg(long)]
+        program: Option<String>,
+        /// Epoch/checkpoint the root covers
+        #[arg(long)]
+        epoch: String,
+        /// Scores JSON ([{"member": "0x..", "score": n}]; "-" = stdin)
+        #[arg(long)]
+        scores: String,
+        /// Also write just the proofs map here (the file the indexer hosts)
+        #[arg(long)]
+        proofs_out: Option<String>,
+        /// Where the full score file + proofs live (recorded in the record)
+        #[arg(long)]
+        indexer_url: Option<String>,
+        /// Block at which the root is anchored onchain, if known
+        #[arg(long)]
+        anchor_block: Option<u64>,
+    },
+    /// Sign and publish the 37006 score-root record (relay auth)
+    PublishRoot {
+        /// Program id (default: the launchpad community program)
+        #[arg(long)]
+        program: Option<String>,
+        /// Epoch the root covers
+        #[arg(long)]
+        epoch: Option<String>,
+        /// The Merkle root (0x + 64 hex)
+        #[arg(long)]
+        root: Option<String>,
+        /// Publish from a compose-root bundle JSON instead
+        #[arg(long)]
+        from_bundle: Option<String>,
+        /// Proof file location (recorded as `indexerUrl`)
+        #[arg(long)]
+        indexer_url: Option<String>,
+        /// Onchain anchor block, if known
+        #[arg(long)]
+        anchor_block: Option<u64>,
+    },
+    /// Rotate TrustGatedHook's score root (chain opt-in: the hook owner's key)
+    RotateGate {
+        /// TrustGatedHook address (`0x…`)
+        #[arg(long)]
+        hook: String,
+        /// The new Merkle root (0x + 64 hex)
+        #[arg(long)]
+        root: String,
+        /// Minimum score for community-track admission
+        #[arg(long)]
+        min_score: u128,
+        /// Print the calldata instead of sending
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
 /// Community org graph commands — NIP-ORG kinds:37010–37013.
 #[derive(Subcommand)]
 pub enum OrgCmd {
@@ -2436,6 +2775,10 @@ pub enum AgwikiCmd {
         /// Sign and publish the standup page instead of previewing
         #[arg(long)]
         publish: bool,
+        /// Use a trained skill file (a SkillOpt `best_skill.md`) as the
+        /// system prompt instead of the built-in one
+        #[arg(long)]
+        skill_file: Option<String>,
     },
     /// Show one agent wiki page by coordinate `<space>/<slug>`
     Show {
@@ -2450,6 +2793,62 @@ pub enum AgwikiCmd {
         /// Max events to scan (default 200, cap 512)
         #[arg(long)]
         limit: Option<u32>,
+    },
+    /// Compose `agent-draft` proposal records (47004) from wiki decision blocks
+    ///
+    /// The persona drafting loop's CLI host (docs/persona-drafting-loop.md):
+    /// scans the human wiki (44001) and agent wiki (44002) for fenced
+    /// `decision` blocks and composes one kind:47004 `agent-draft` record per
+    /// honest block — the verbatim-evidence rule strictly enforced, malformed
+    /// blocks skipped and reported, never repaired. Deterministic (no LLM in
+    /// this step). Dry-run by default; `--publish` signs and lands each draft
+    /// (agent drafts are `governance.proposal` actions at the S3 budget gate
+    /// and never broadcast onchain without a human counter-sign). Dedupe by
+    /// the `wiki` anchor tag means re-runs on unchanged pages draft nothing.
+    Draft {
+        /// Launch coordinate (`37001:<founder-hex>:<launch-id>`) drafts bind to
+        #[arg(long)]
+        launch: String,
+        /// Only scan pages in this space (d prefix `<space>/`)
+        #[arg(long)]
+        space: Option<String>,
+        /// Only scan one page (exact d match, e.g. `default/standup`)
+        #[arg(long)]
+        page: Option<String>,
+        /// Max page events to scan (default 200, cap 512)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Sign and publish the drafts instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Train the distill skill with SkillOpt (arXiv:2605.23904 port)
+    ///
+    /// The trainable artifact is the distill system prompt. Rollouts
+    /// generate standup pages from the fixture corpus under the candidate
+    /// skill; our validators are the held-out score (page validates,
+    /// decision blocks extract, evidence verbatim). Strict held-out gate —
+    /// only improvements are kept. See docs/skillopt-port.md.
+    TrainSkill {
+        /// Fixture corpus root with train/, sel/, test/ subdirs of .md prompts
+        #[arg(long)]
+        data: Option<String>,
+        /// Epochs (the paper default is 4; the CLI defaults to 1 as a cost guard)
+        #[arg(long)]
+        epochs: Option<usize>,
+        /// Where to write the trained skill
+        #[arg(long)]
+        out: Option<String>,
+        /// Reasoning effort for all LLM stages (SkillOpt's model.reasoning_effort:
+        /// low | medium | high; default medium)
+        #[arg(long)]
+        reasoning_effort: Option<String>,
+        /// Per-role override for the optimizer stages (reflection/merges/rank)
+        #[arg(long)]
+        optimizer_effort: Option<String>,
+        /// Per-role override for target rollouts (page generation)
+        #[arg(long)]
+        target_effort: Option<String>,
     },
 }
 
@@ -2930,6 +3329,146 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         return commands::org_ragequit::cmd_ragequit(dao, *shares, tokens.clone()).await;
     }
 
+    // Royalty ledger local commands are local-only (token-lifecycle-design.md);
+    // the publish commands fall through to the relay auth below.
+    if let Cmd::Royalty(ref royalty_cmd) = cli.command {
+        if !matches!(
+            royalty_cmd,
+            RoyaltyCmd::PublishSchedule { .. }
+                | RoyaltyCmd::PublishClose { .. }
+                | RoyaltyCmd::Watch { .. }
+        ) {
+            use RoyaltyCmd::*;
+            return match royalty_cmd {
+            Show { distributor } => commands::royalty::cmd_show(distributor).await,
+            Claim { distributor } => commands::royalty::cmd_claim(distributor).await,
+            Settle { distributor } => commands::royalty::cmd_settle(distributor).await,
+            MirrorSchedule {
+                chain,
+                distributor,
+                claim_id,
+                evidence_hash,
+                contributor,
+                weight,
+                term,
+                band,
+                allocation,
+            } => {
+                commands::royalty::cmd_mirror_schedule(
+                    chain,
+                    distributor,
+                    claim_id,
+                    evidence_hash,
+                    contributor,
+                    *weight,
+                    *term,
+                    *band,
+                    *allocation,
+                )
+            }
+            MirrorClose {
+                chain,
+                distributor,
+                window_id,
+                revenue,
+                buyback_share,
+                treasury_share,
+                pool,
+                carried,
+            } => {
+                commands::royalty::cmd_mirror_close(
+                    chain,
+                    distributor,
+                    *window_id,
+                    *revenue,
+                    *buyback_share,
+                    *treasury_share,
+                    *pool,
+                    *carried,
+                )
+            }
+            PublishSchedule { .. } | PublishClose { .. } | Watch { .. } => {
+                unreachable!("publish runs after auth")
+            }
+        };
+        }
+    }
+
+    // Trustgraph operator: compose and gate rotation run before auth;
+    // publish-root falls through to the relay auth below.
+    if let Cmd::Trustgraph(ref tg_cmd) = cli.command {
+        if !matches!(tg_cmd, TrustgraphCmd::PublishRoot { .. }) {
+            use TrustgraphCmd::*;
+            return match tg_cmd {
+                ComposeRoot {
+                    program,
+                    epoch,
+                    scores,
+                    proofs_out,
+                    indexer_url,
+                    anchor_block,
+                } => commands::trustgraph::cmd_compose_root(
+                    program
+                        .as_deref()
+                        .unwrap_or(commands::trustgraph::DEFAULT_PROGRAM),
+                    epoch,
+                    scores,
+                    proofs_out.as_deref(),
+                    indexer_url.as_deref(),
+                    *anchor_block,
+                ),
+                RotateGate {
+                    hook,
+                    root,
+                    min_score,
+                    dry_run,
+                } => {
+                    commands::trustgraph::cmd_rotate_gate(hook, root, *min_score, *dry_run).await
+                }
+                PublishRoot { .. } => unreachable!("publish runs after auth"),
+            };
+        }
+    }
+
+    // Governance chain commands (agentic-governance-design.md S1) are
+    // chain-local like ragequit: they run before relay auth.
+    if let Cmd::Launchpad(ref gov_cmd) = cli.command {
+        if matches!(
+            gov_cmd,
+            LaunchpadCmd::Propose { .. }
+                | LaunchpadCmd::Vote { .. }
+                | LaunchpadCmd::Process { .. }
+                | LaunchpadCmd::ProposalState { .. }
+        ) {
+            use LaunchpadCmd::*;
+            return match gov_cmd {
+                Propose {
+                    dao,
+                    op,
+                    to,
+                    value,
+                    data,
+                    nonce,
+                } => commands::launchpad_gov::cmd_propose(dao, *op, to, value, data, nonce).await,
+                Vote { dao, id, support } => {
+                    commands::launchpad_gov::cmd_vote(dao, id, support).await
+                }
+                Process {
+                    dao,
+                    op,
+                    to,
+                    value,
+                    data,
+                    nonce,
+                } => commands::launchpad_gov::cmd_process(dao, *op, to, value, data, nonce).await,
+                ProposalState { dao, id } => {
+                    commands::launchpad_gov::cmd_proposal_state(dao, id).await
+                }
+                _ => unreachable!("only chain-local variants matched"),
+            };
+        }
+    }
+
     // Auth: private key is required for all relay operations.
     // The keypair IS the identity — no tokens, no other auth.
     let private_key_str = cli.private_key.ok_or_else(|| {
@@ -2993,9 +3532,12 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
         Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
         Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
+        Cmd::Diag { limit } => commands::diag::cmd_diag(&client, limit).await,
         Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
         Cmd::Templates(sub) => commands::templates::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
+        Cmd::Royalty(sub) => commands::royalty::dispatch(sub, &client).await,
+        Cmd::Trustgraph(sub) => commands::trustgraph::dispatch(sub, &client).await,
     }
 }
 
@@ -3184,9 +3726,11 @@ mod tests {
             "projects",
             "reactions",
             "repos",
+            "royalty",
             "social",
             "team",
             "templates",
+            "trustgraph",
             "upload",
             "users",
             "workflows",
@@ -3366,12 +3910,16 @@ mod tests {
                 "list",
                 "mint-token",
                 "post-update",
+                "process",
+                "proposal-state",
+                "propose",
                 "record-bid",
                 "record-claim",
                 "record-proposal",
                 "record-receipt",
                 "record-verdict",
-                "show"
+                "show",
+                "vote"
             ]
         );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
@@ -3402,7 +3950,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 13),
+            ("launchpad", 17),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

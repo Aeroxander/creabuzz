@@ -53,6 +53,10 @@ import {Call, Summoner} from "majeur/src/Moloch.sol";
 ///   tightening would pass the `setOwner` call as a `Summoner.summon`
 ///   `initCall`, which `Moloch.init` executes from the DAO's own context
 ///   before returning the dao address.
+interface IMolochMetadata {
+    function contractURI() external view returns (string memory);
+}
+
 contract OrgBinding {
     // ------------------------------------------------------------------
     // Types
@@ -104,8 +108,11 @@ contract OrgBinding {
     // Events / Errors
     // ------------------------------------------------------------------
 
-    /// @notice A DAO binding was recorded for org root `rootId`.
-    event DaoBound(bytes32 indexed rootId, address indexed dao, uint64 boundAt);
+    /// @notice A DAO binding was recorded for org root `rootId`. The `uri` is
+    ///         the DAO's `dao.json` document URL (ERC-4824 `DAOURIRegistered`
+    ///         parity) — empty when the DAO predates the field or exposes
+    ///         none; readers MUST treat empty as "unknown", never as a value.
+    event DaoBound(bytes32 indexed rootId, address indexed dao, uint64 boundAt, string uri);
 
     error EmptyHolders();
     error HoldersSharesMismatch();
@@ -146,7 +153,7 @@ contract OrgBinding {
 
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});
         bindingOf[rootId] = b;
-        emit DaoBound(rootId, dao, b.boundAt);
+        emit DaoBound(rootId, dao, b.boundAt, p.uri);
     }
 
     /// @notice Record an EXISTING DAO as the binding of org root `rootId` —
@@ -156,6 +163,17 @@ contract OrgBinding {
     function bindDao(bytes32 rootId, address dao) external {
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});
         bindingOf[rootId] = b;
-        emit DaoBound(rootId, dao, b.boundAt);
+        // Best-effort read of the existing DAO's own metadata. The
+        // `code.length` gate matters: Solidity's "non-contract return" check
+        // is NOT catchable by try/catch (it fires in THIS frame), so EOAs
+        // must skip the call entirely. A griefing *contract* target can only
+        // revert calls that name it — self-harm on a recording-only path.
+        string memory uri = "";
+        if (dao.code.length > 0) {
+            try IMolochMetadata(dao).contractURI() returns (string memory u) {
+                uri = u;
+            } catch {}
+        }
+        emit DaoBound(rootId, dao, b.boundAt, uri);
     }
 }

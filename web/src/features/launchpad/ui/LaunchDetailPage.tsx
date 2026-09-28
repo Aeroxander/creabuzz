@@ -9,7 +9,6 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import { relativeTime } from "@/shared/lib/relative-time";
 import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
@@ -58,6 +57,12 @@ import { ManagePanel } from "./ManagePanel";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
 import { TrackRecordCard } from "./TrackRecordCard";
+import { ProposalCard } from "./ProposalCard";
+import { WikiDraftComposer } from "./WikiDraftComposer";
+import { TrustGateCard } from "./TrustGateCard";
+import { launchCoordinate } from "../models";
+import { resolveDaoBinding } from "../lib/org-money";
+import { useOrgMoney } from "../use-launches";
 
 type Tab =
   | "overview"
@@ -273,9 +278,17 @@ export function LaunchDetailPage({
           ))}
       </div>
 
-      {tab === "overview" ? <OverviewTab launch={launch} /> : null}
+      {tab === "overview" ? (
+        <>
+          {/* The TrustGraph surface: gate state, published roots, the graph. */}
+          <TrustGateCard launch={launch} />
+          <OverviewTab launch={launch} />
+        </>
+      ) : null}
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
-      {tab === "proposals" ? <ProposalsTab launch={launch} /> : null}
+      {tab === "proposals" ? (
+        <ProposalsTab launch={launch} onDissent={() => setTab("treasury")} />
+      ) : null}
       {tab === "mybids" && launch.record.auction ? (
         <MyBidsPanel
           record={launch.record}
@@ -763,7 +776,14 @@ function UpdatesTab({ launch }: { launch: TabLaunch }) {
   );
 }
 
-function ProposalsTab({ launch }: { launch: TabLaunch }) {
+function ProposalsTab({
+  launch,
+  onDissent,
+}: {
+  launch: TabLaunch;
+  /** D2: the dissent door — jump to the treasury tab's ragequit. */
+  onDissent: () => void;
+}) {
   // One batched lookup for every proposer this tab renders, rather than a query
   // per proposal row.
   const proposers = useMemo(
@@ -771,6 +791,13 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
     [launch.proposals],
   );
   const userNames = useUserNames(proposers);
+  // The bound DAO for onchain actions (D8: record-only when unbound) — the
+  // same resolution the treasury tab uses (`lib/org-money.ts`).
+  const orgMoney = useOrgMoney();
+  const daoBinding = resolveDaoBinding({
+    receipts: launch.receipts,
+    orgBindings: orgMoney.data?.bindings ?? [],
+  });
 
   if (launch.proposals.length === 0) {
     return (
@@ -784,44 +811,26 @@ function ProposalsTab({ launch }: { launch: TabLaunch }) {
     );
   }
   return (
-    <ol className="flex max-w-2xl flex-col gap-2">
-      {launch.proposals.map((p) => (
-        <li key={p.id}>
-          <Card className="p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-black/60 dark:text-white/60">
-                {p.kind === "futarchy-budget" ? "Futarchy · budget" : p.kind}
-              </span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  p.state === "open"
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                    : p.state === "defeated"
-                      ? "bg-red-500/15 text-red-700 dark:text-red-300"
-                      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                }`}
-              >
-                {p.state}
-              </span>
-              {p.proposalId ? (
-                <span className="font-mono text-xs text-black/60 dark:text-white/60">
-                  #{p.proposalId}
-                </span>
-              ) : null}
-            </div>
-            <h3 className="mt-1 text-sm font-semibold">{p.title}</h3>
-            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              Proposed by {userNames(p.author)} · {relativeTime(p.createdAt)}
-              {p.issue ? ` · discussed in issue ${p.issue.slice(0, 8)}` : ""}
-            </p>
-            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              {p.kind === "futarchy-budget"
-                ? "Decided by a market on the budget outcome; execution is on chain after the vote closes."
-                : "Signalled here; the binding vote happens on chain once the launch graduates."}
-            </p>
-          </Card>
-        </li>
-      ))}
-    </ol>
+    <>
+      <WikiDraftComposer
+        launchCoordinate={launchCoordinate(
+          launch.record.author,
+          launch.record.id,
+        )}
+        proposals={launch.proposals}
+      />
+      <ol className="flex max-w-2xl flex-col gap-2">
+        {launch.proposals.map((p) => (
+          <li key={p.id}>
+            <ProposalCard
+              proposal={p}
+              dao={daoBinding?.dao ?? null}
+              displayName={userNames(p.author)}
+              onDissent={onDissent}
+            />
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

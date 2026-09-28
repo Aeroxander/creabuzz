@@ -14,6 +14,7 @@ type ViewLoadingFallbackKind =
   | "paperclip"
   | "projects"
   | "pulse"
+  | "wiki"
   | "workflows";
 
 type ViewLoadingFallbackProps = {
@@ -427,6 +428,7 @@ export function ViewLoadingFallback({
       {kind === "org" ? (
         <BuzzLoadingState fill label="Loading Org Chart" />
       ) : null}
+      {kind === "wiki" ? <BuzzLoadingState fill label="Loading wiki" /> : null}
     </div>
   );
 }

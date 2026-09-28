@@ -17,6 +17,7 @@ import { LaunchManagePanel } from "@/features/launchpad/ui/LaunchManagePanel";
 import { LaunchOverviewPanel } from "@/features/launchpad/ui/LaunchOverviewPanel";
 import { MyBidsPanel } from "@/features/launchpad/ui/MyBidsPanel";
 import { LaunchProposalsPanel } from "@/features/launchpad/ui/LaunchProposalsPanel";
+import { TrustGateCard } from "@/features/launchpad/ui/TrustGateCard";
 import { LaunchStageBadge } from "@/features/launchpad/ui/LaunchStageBadge";
 import { LaunchTreasuryPanel } from "@/features/launchpad/ui/LaunchTreasuryPanel";
 import { LaunchUpdatesPanel } from "@/features/launchpad/ui/LaunchUpdatesPanel";
@@ -174,6 +175,8 @@ export function LaunchDetailScreen({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <TabsContent value="overview">
+            {/* The TrustGraph surface: gate state, published roots, the graph. */}
+            <TrustGateCard launch={launch} />
             <LaunchOverviewPanel launch={launch} />
           </TabsContent>
           <TabsContent value="updates">

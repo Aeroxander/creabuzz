@@ -4,6 +4,7 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 // Extension included on purpose: this module is driven by `models.test.mjs`
 // under `node --test`, which does not resolve extensionless specifiers.
 import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
+import { parseWikiTag } from "./lib/draft-proposal.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
   KIND_LAUNCH_BID,
@@ -33,6 +34,19 @@ const STAGES: readonly string[] = [
 
 export function isLaunchStage(value: unknown): value is LaunchStage {
   return typeof value === "string" && STAGES.includes(value);
+}
+
+/** Strict `["hook", <0x-address>, <bucket>]` parse (NIP-LP chain addresses). */
+export function parseHookTags(
+  tags: string[][],
+): { address: string; bucket: string }[] {
+  const out: { address: string; bucket: string }[] = [];
+  for (const tag of tags) {
+    if (tag[0] !== "hook" || tag.length < 3) continue;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(tag[1]) || tag[2].length === 0) continue;
+    out.push({ address: tag[1], bucket: tag[2] });
+  }
+  return out;
 }
 
 export interface LaunchRecord {
@@ -75,6 +89,21 @@ export interface LaunchRecord {
   auction: string | null;
   token: string | null;
   treasury: string | null;
+  /**
+   * TrustGatedHook wiring (NIP-LP `["hook", <address>, <bucket>]`, one per
+   * gated bucket): the EVM bid gate whose score root the TrustGraph view
+   * shows. Strict parse — malformed entries drop, never guessed.
+   */
+  hooks: { address: string; bucket: string }[];
+  /**
+   * Tranche/royalty enforcer wiring (token-lifecycle-design.md): the launch's
+   * RoyaltyDistributor and ClaimStake, set once deployed. Absent on older
+   * records and pre-deploy launches — the mirror-only flow applies then.
+   */
+  distributor: string | null;
+  claimStake: string | null;
+  /** The launch's VerifierSet (the attest target for verdicts). */
+  verifierSet: string | null;
   admission: "curated" | "community";
   /** How the supply is split. Absent on older records: the standard split. */
   allocation: SupplyAllocation;
@@ -96,6 +125,11 @@ export interface LaunchRecord {
    * said (anything published before the wizard, or the legacy edit form).
    */
   daoAtGraduation: boolean | null;
+  /**
+   * Legal wrapper decision (OAv2 §4.8): "none" (explicitly fine), "dao-llc",
+   * or "own-entity". Null when never stated — NOT the same as "none".
+   */
+  legalWrapper: string | null;
   tokenPlan: {
     mode: "mint";
     name: string;
@@ -131,6 +165,29 @@ export interface LaunchUpdate {
 
 export type ProposalKind = "plain" | "futarchy-budget" | "signal";
 
+/**
+ * The execution intent for majeur's `executeByVotes` (op/to/value/data/nonce)
+ * — what the panel's Execute path needs (desktop parity; `lib/vote-tx.ts`'s
+ * shape).
+ */
+import type { ProposalIntent } from "./lib/vote-tx.ts";
+
+export type { ProposalIntent };
+
+/**
+ * A proposal's execution call in ERC-4824 `CallDataEVM` shape — majeur
+ * proposals ARE call batches (`op` 0 = call, 1 = delegatecall). This is what
+ * `executeByVotes` needs and what the `dao.json` projection renders
+ * (`buzz-core::erc4824`).
+ */
+export interface ProposalCall {
+  operation: "call" | "delegatecall";
+  from: string;
+  to: string;
+  value: string;
+  data: string;
+}
+
 export interface LaunchProposal {
   id: string;
   launchId: string;
@@ -141,8 +198,31 @@ export interface LaunchProposal {
   proposalId: string | null;
   kind: ProposalKind;
   issue: string | null;
-  state: "open" | "passed" | "executed" | "defeated";
+  state: "open" | "passed" | "executed" | "defeated" | "agent-draft";
   title: string;
+  /**
+   * The agent-draft's verbatim justification (persona-drafting-loop D3/D8):
+   * a quote from the wiki block the draft was composed from — absent on
+   * records without one, never paraphrased here.
+   */
+  evidence?: string;
+  /**
+   * The draft's source wiki block (`["wiki", page, anchor]`, D7/D8): the
+   * dedupe key and provenance pointer. Strict parse — malformed = absent.
+   */
+  source?: { page: string; anchor: number };
+  /**
+   * Execution calls (ERC-4824 `CallDataEVM`), absent on records that predate
+   * the field. Strict parse: any malformed entry drops the whole field rather
+   * than being guessed at — a proposal with unparseable calls must not render
+   * as though it had none it could execute.
+   */
+  calls?: ProposalCall[];
+  /**
+   * The exact `executeByVotes` intent (`content.intent`), strictly parsed —
+   * absent or malformed means execution stays record-only (D8).
+   */
+  intent?: ProposalIntent;
 }
 
 export interface LaunchReceipt {
@@ -246,6 +326,10 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     auction: tagValue(event, "auction"),
     token: tagValue(event, "token"),
     treasury: tagValue(event, "treasury"),
+    hooks: parseHookTags(event.tags),
+    distributor: tagValue(event, "distributor"),
+    claimStake: tagValue(event, "claim-stake"),
+    verifierSet: tagValue(event, "verifier-set"),
     admission:
       tagValue(event, "admission") === "community" ? "community" : "curated",
     allocation: parseAllocation(contentObject(event).allocation),
@@ -253,6 +337,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     unlocks: parseUnlockPlan(body.unlocks),
     daoAtGraduation:
       typeof body.daoAtGraduation === "boolean" ? body.daoAtGraduation : null,
+    legalWrapper:
+      typeof body.legalWrapper === "string" ? body.legalWrapper : null,
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }
@@ -406,6 +492,56 @@ function isProposalKind(value: unknown): value is ProposalKind {
   );
 }
 
+/**
+ * Strict `content.intent` parse (desktop's `parseProposalIntent` rules,
+ * byte-compatible): anything malformed returns null — a record without a
+ * valid intent stays record-only for execution (D8), never guessed at.
+ */
+export function parseProposalIntent(value: unknown): ProposalIntent | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.to !== "string" || typeof raw.nonce !== "string") return null;
+  if (typeof raw.data !== "string") return null;
+  if (raw.op !== 0 && raw.op !== 1) return null;
+  const valueField = raw.value;
+  if (typeof valueField !== "bigint" && typeof valueField !== "string") {
+    return null;
+  }
+  return {
+    op: raw.op,
+    to: raw.to,
+    value: valueField,
+    data: raw.data,
+    nonce: raw.nonce,
+  };
+}
+
+export function parseProposalCalls(value: unknown): ProposalCall[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: ProposalCall[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const e = entry as Record<string, unknown>;
+    if (e.operation !== "call" && e.operation !== "delegatecall")
+      return undefined;
+    const row: ProposalCall = {
+      operation: e.operation,
+      from: "",
+      to: "",
+      value: "",
+      data: "",
+    };
+    for (const field of ["from", "to", "value", "data"] as const) {
+      if (typeof e[field] !== "string") return undefined;
+      row[field] = e[field] as string;
+    }
+    out.push(row);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
   if (event.kind !== KIND_LAUNCH_PROPOSAL) return null;
   const ref = launchRefFrom(event);
@@ -414,7 +550,8 @@ export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
   const state =
     body.state === "passed" ||
     body.state === "executed" ||
-    body.state === "defeated"
+    body.state === "defeated" ||
+    body.state === "agent-draft"
       ? body.state
       : "open";
   return {
@@ -428,6 +565,13 @@ export function parseLaunchProposal(event: NostrEvent): LaunchProposal | null {
     issue: str(body.issue),
     state,
     title: typeof body.title === "string" ? body.title : "Proposal",
+    evidence:
+      typeof body.evidence === "string" && body.evidence.length > 0
+        ? body.evidence
+        : undefined,
+    source: parseWikiTag(event.tags) ?? undefined,
+    calls: parseProposalCalls(body.calls),
+    intent: parseProposalIntent(body.intent) ?? undefined,
   };
 }
 
@@ -452,6 +596,7 @@ export function parseLaunchReceipt(event: NostrEvent): LaunchReceipt | null {
 export function buildLaunches(
   events: NostrEvent[],
   tombstoned: ReadonlySet<string> = new Set(),
+  deletedIds: ReadonlySet<string> = new Set(),
 ): Launch[] {
   const records = new Map<string, LaunchRecord>();
   const bids: LaunchBid[] = [];
@@ -459,6 +604,9 @@ export function buildLaunches(
   const proposals: LaunchProposal[] = [];
   const receipts: LaunchReceipt[] = [];
   for (const event of events) {
+    // NIP-09 `e`-tag tombstones hide individual mirrors (an agent-draft's
+    // Reject disposal, D5) — the hash chain keeps the audit.
+    if (deletedIds.has(event.id)) continue;
     if (event.kind === KIND_LAUNCH_RECORD) {
       const record = parseLaunchRecord(event);
       if (!record) continue;

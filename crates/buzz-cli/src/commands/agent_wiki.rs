@@ -171,6 +171,7 @@ pub async fn run_distill_inner(
     space: &str,
     limit: Option<u32>,
     publish: bool,
+    skill_file: Option<&str>,
 ) -> Result<Option<String>, CliError> {
     let space = space.trim().to_lowercase();
     validate_page_coordinate(&format!("{space}/{STANDUP_SLUG}")).map_err(CliError::Other)?;
@@ -191,12 +192,22 @@ pub async fn run_distill_inner(
             model: cfg.model.clone(),
         },
     };
+    // Optional trainable skill (a SkillOpt `best_skill.md`) — loaded instead
+    // of the built-in system prompt; provenance is the caller's.
+    let skill_override = match skill_file {
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .map_err(|e| CliError::Other(format!("read {path}: {e}")))?,
+        ),
+        None => None,
+    };
     let outcome = buzz_agwiki::run::run_distill(
         &ports,
         &DistillOptions {
             space: &space,
             limit,
             publish,
+            system_prompt: skill_override.as_deref(),
         },
         &|msg| eprintln!("{msg}"),
     )
@@ -231,10 +242,11 @@ pub async fn cmd_distill(
     space: &str,
     limit: Option<u32>,
     publish: bool,
+    skill_file: Option<&str>,
 ) -> Result<(), CliError> {
     // Fail closed before any network call: no key/URL, no draft.
     let cfg = classifier_config_from_env()?;
-    run_distill_inner(client, &cfg, space, limit, publish)
+    run_distill_inner(client, &cfg, space, limit, publish, skill_file)
         .await
         .map(|_| ())
 }
@@ -317,6 +329,124 @@ pub async fn cmd_list(
     Ok(())
 }
 
+/// `buzz agwiki train-skill` — SkillOpt training for the distill skill
+/// (docs/skillopt-port.md). The trainable text is the distill system prompt;
+/// rollouts generate pages from the fixture corpus; our validators are the
+/// held-out metric. Reduced-epoch by flag for cost control — the paper's
+/// default is 4 epochs.
+pub async fn cmd_train_skill(
+    _client: &BuzzClient,
+    data: Option<&str>,
+    epochs: Option<usize>,
+    out: Option<&str>,
+    reasoning_effort: Option<&str>,
+    optimizer_effort: Option<&str>,
+    target_effort: Option<&str>,
+) -> Result<(), CliError> {
+    use buzz_agwiki::llm::classifier_target_from_provider;
+    use buzz_agwiki::skill_train::{
+        load_expectations, load_split, DistillScorer, DistillTarget, LlmOptimizer,
+    };
+    use buzz_agwiki::build_system_prompt;
+    use buzz_skillopt::train::{train, TrainConfig};
+
+    let root = std::path::PathBuf::from(
+        data.unwrap_or("crates/buzz-agwiki/data/distill-skill"),
+    );
+    let train_set = load_split(&root.join("train")).map_err(CliError::Other)?;
+    let sel_split = load_split(&root.join("sel")).map_err(CliError::Other)?;
+    let test_split = load_split(&root.join("test")).map_err(CliError::Other)?;
+
+    let target_config = classifier_target_from_provider(|name| {
+        std::env::var(name).ok().filter(|v| !v.is_empty())
+    })
+    .map_err(|e| CliError::Other(format!("classifier target: {e}")))?;
+    let init_skill = buzz_skillopt::SkillDoc::new(build_system_prompt());
+
+    let config = TrainConfig {
+        num_epochs: epochs.unwrap_or(1).max(1),
+        ..TrainConfig::default()
+    };
+    println!(
+        "training the distill skill: {} train / {} sel / {} test fixtures, {} epoch(s), optimizer+target = {}",
+        train_set.len(),
+        sel_split.len(),
+        test_split.len(),
+        config.num_epochs,
+        target_config.model
+    );
+
+    let shared_effort = reasoning_effort.unwrap_or("medium");
+    let optimizer_effort = optimizer_effort.unwrap_or(shared_effort);
+    let target_effort = target_effort.unwrap_or(shared_effort);
+    let mut optimizer = LlmOptimizer {
+        target: target_config.clone(),
+        reasoning_effort: optimizer_effort.to_string(),
+    };
+    let mut rollout_target = DistillTarget {
+        target: target_config,
+        reasoning_effort: target_effort.to_string(),
+    };
+    let mut scorer = DistillScorer::new();
+    scorer.expectations =
+        load_expectations(&root).map_err(CliError::Other)?;
+
+    // The training loop's ports are sync by design (docs/skillopt-port.md);
+    // drive them from the blocking pool so the LLM adapter's per-call runtime
+    // never starts inside the async dispatch ("Cannot start a runtime from
+    // within a runtime").
+    let result = tokio::task::spawn_blocking(move || {
+        train(
+            &config,
+            init_skill,
+            &train_set,
+            &sel_split,
+            &test_split,
+            &mut optimizer,
+            &mut rollout_target,
+            &mut scorer,
+        )
+    })
+    .await
+    .map_err(|e| CliError::Other(format!("training join: {e}")))?
+    .map_err(CliError::Other)?;
+
+    for record in &result.history {
+        println!(
+            "epoch {} step {}: L={} proposed={} selected={} applied={} {} score={:.3}",
+            record.epoch,
+            record.step,
+            record.learning_rate,
+            record.proposed,
+            record.selected,
+            record.applied,
+            if record.accepted { "ACCEPTED" } else { "rejected" },
+            record.score
+        );
+    }
+    println!(
+        "best selection score {:.3}{}",
+        result.best_selection_score,
+        result
+            .test_score
+            .map(|s| format!(", test score {s:.3}"))
+            .unwrap_or_default()
+    );
+    if !result.buffer.is_empty() {
+        println!("== the rejected-edit buffer (do-not-repeat material for the next run)");
+        let mut buffer = buzz_skillopt::RejectedBuffer::default();
+        for entry in &result.buffer {
+            buffer.record(entry.clone());
+        }
+        println!("{}", buffer.prompt_note());
+    }
+    let path = out.unwrap_or("best_skill.md");
+    std::fs::write(path, result.best_skill.as_str())
+        .map_err(|e| CliError::Other(format!("write {path}: {e}")))?;
+    println!("best skill written to {path}");
+    Ok(())
+}
+
 /// Fetch the newest published page for a coordinate (any author), via a
 /// bounded newest-first read + the shared read-side-LWW fold.
 async fn fetch_newest_page(
@@ -333,6 +463,150 @@ async fn fetch_newest_page(
     Ok(buzz_agwiki::newest_page(&events, coordinate))
 }
 
+/// `buzz agwiki draft --launch <37001:…> [--space S | --page S/slug]
+/// [--publish]` — the persona drafting loop's CLI host
+/// (docs/persona-drafting-loop.md).
+///
+/// Scans the human wiki (44001) and agent wiki (44002) for fenced `decision`
+/// blocks and composes one kind:47004 `agent-draft` record per honest block:
+/// verbatim evidence strictly enforced (D3), malformed blocks skipped and
+/// reported, never repaired (D4). Deterministic — no LLM in this step.
+/// Dry-run by default; `--publish` signs and lands each draft (they are
+/// `governance.proposal` actions at the S3 budget gate). Dedupe by the `wiki`
+/// anchor tag (D7): re-runs on unchanged pages draft nothing new.
+pub async fn cmd_draft(
+    client: &BuzzClient,
+    launch: &str,
+    space: Option<&str>,
+    page: Option<&str>,
+    limit: Option<u32>,
+    publish: bool,
+) -> Result<(), CliError> {
+    use buzz_agwiki::draft::{
+        build_proposal_draft_builder, decision_drafts, existing_anchors,
+        validate_launch_coordinate,
+    };
+    use buzz_core::kind::{KIND_LAUNCH_PROPOSAL, KIND_WIKI_PAGE};
+
+    if space.is_some() && page.is_some() {
+        return Err(CliError::Usage(
+            "--space and --page are mutually exclusive".to_string(),
+        ));
+    }
+    validate_launch_coordinate(launch).map_err(CliError::Other)?;
+    if let Some(p) = page {
+        if p.trim().is_empty() {
+            return Err(CliError::Usage("--page must not be empty".to_string()));
+        }
+    }
+    let space_prefix = space.map(|s| format!("{}/", s.trim().to_lowercase()));
+    let bound = limit.unwrap_or(200).min(AGWIKI_PAGE_QUERY_BOUND);
+
+    // Newest revision per (kind, author, d) — read-side LWW — over BOTH wiki
+    // kinds; the fold keeps full coordinates so 44001 and 44002 pages with
+    // the same d never collide (the `wiki` tag points at the full coordinate).
+    let filter = serde_json::json!({ "kinds": [KIND_WIKI_PAGE, KIND_AGENT_WIKI] });
+    let events: Vec<Event> = client
+        .query_pages_bounded(filter, bound)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let mut newest: std::collections::BTreeMap<String, (u64, String)> = std::collections::BTreeMap::new();
+    for event in events {
+        let Some(d) = tag_values(&event, "d").into_iter().next() else {
+            continue;
+        };
+        if d.is_empty() {
+            continue;
+        }
+        if let Some(ref prefix) = space_prefix {
+            if !d.starts_with(prefix.as_str()) {
+                continue;
+            }
+        }
+        if let Some(p) = page {
+            if d != p {
+                continue;
+            }
+        }
+        let kind = event.kind.as_u16();
+        if kind != KIND_WIKI_PAGE as u16 && kind != KIND_AGENT_WIKI as u16 {
+            continue;
+        }
+        let coordinate = format!("{kind}:{}:{d}", event.pubkey.to_hex());
+        let created = event.created_at.as_secs();
+        match newest.get(&coordinate) {
+            Some((prev, _)) if *prev >= created => {}
+            _ => {
+                newest.insert(coordinate, (created, event.content.clone()));
+            }
+        }
+    }
+
+    // D7 dedupe: live (non-tombstoned filtering is the model layer's job —
+    // here any recorded anchor blocks a re-draft) 47004 wiki anchors.
+    let existing_filter = serde_json::json!({ "kinds": [KIND_LAUNCH_PROPOSAL], "#a": [launch] });
+    let existing: Vec<Event> = client
+        .query_all_bounded(existing_filter, 512)
+        .await?
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let anchors = existing_anchors(&existing);
+
+    let mut drafted = 0usize;
+    let mut skipped = 0usize;
+    let mut dupes = 0usize;
+    for (coordinate, (_, content)) in &newest {
+        let body = match extract_page_body(content) {
+            Ok(body) => body,
+            Err(e) => {
+                println!("skipped {coordinate}: corrupt page ({e})");
+                skipped += 1;
+                continue;
+            }
+        };
+        let out = decision_drafts(body);
+        for skip in &out.skipped {
+            println!("skipped {coordinate}#{}: {}", skip.anchor, skip.reason);
+            skipped += 1;
+        }
+        for draft in &out.drafts {
+            if anchors.contains(&(coordinate.clone(), draft.anchor)) {
+                println!(
+                    "already drafted {coordinate}#{}: {}",
+                    draft.anchor, draft.title
+                );
+                dupes += 1;
+                continue;
+            }
+            let builder =
+                build_proposal_draft_builder(launch, coordinate, draft).map_err(CliError::Other)?;
+            if publish {
+                let event = client.sign_event(builder)?;
+                let response = client.submit_event(event).await?;
+                let result =
+                    parse_write_response(&response, "draft write raced a newer record")?;
+                println!("landed {coordinate}#{}: {} ({result})", draft.anchor, draft.title);
+            } else {
+                println!("{coordinate}#{}\t{}\t{}", draft.anchor, draft.title, draft.kind);
+                println!("{}", draft.content);
+            }
+            drafted += 1;
+        }
+    }
+    if publish {
+        println!("landed {drafted} draft(s); skipped {skipped}, already drafted {dupes}");
+    } else {
+        println!(
+            "{drafted} draft(s) ready; skipped {skipped}, already drafted {dupes}; \
+             pass --publish to land them as 47004 agent-drafts"
+        );
+    }
+    Ok(())
+}
+
 /// Route an `agwiki` invocation.
 pub async fn dispatch(cmd: crate::AgwikiCmd, client: &BuzzClient) -> Result<(), CliError> {
     use crate::AgwikiCmd;
@@ -341,9 +615,46 @@ pub async fn dispatch(cmd: crate::AgwikiCmd, client: &BuzzClient) -> Result<(), 
             space,
             limit,
             publish,
-        } => cmd_distill(client, &space, limit, publish).await,
+            skill_file,
+        } => cmd_distill(client, &space, limit, publish, skill_file.as_deref()).await,
         AgwikiCmd::Show { page } => cmd_show(client, &page).await,
         AgwikiCmd::List { space, limit } => cmd_list(client, space.as_deref(), limit).await,
+        AgwikiCmd::Draft {
+            launch,
+            space,
+            page,
+            limit,
+            publish,
+        } => {
+            cmd_draft(
+                client,
+                &launch,
+                space.as_deref(),
+                page.as_deref(),
+                limit,
+                publish,
+            )
+            .await
+        }
+        AgwikiCmd::TrainSkill {
+            data,
+            epochs,
+            out,
+            reasoning_effort,
+            optimizer_effort,
+            target_effort,
+        } => {
+            cmd_train_skill(
+                client,
+                data.as_deref(),
+                epochs,
+                out.as_deref(),
+                reasoning_effort.as_deref(),
+                optimizer_effort.as_deref(),
+                target_effort.as_deref(),
+            )
+            .await
+        }
     }
 }
 

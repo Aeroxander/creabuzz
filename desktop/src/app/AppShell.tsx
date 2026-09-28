@@ -155,6 +155,7 @@ export function AppShell() {
     goProjects,
     goPulse,
     goSettings,
+    goWiki,
     goWorkflows,
     closeSettings,
     openSearchHit,
@@ -894,6 +895,7 @@ export function AppShell() {
                           onSelectLaunchpad={() => void goLaunchpad()}
                           onSelectPaperclip={() => void goPaperclip()}
                           onSelectOrg={() => void goOrg()}
+                          onSelectWiki={() => void goWiki()}
                           onSelectProjects={() => void goProjects()}
                           onSelectPulse={() => void goPulse()}
                           onSelectSettings={handleOpenSettings}

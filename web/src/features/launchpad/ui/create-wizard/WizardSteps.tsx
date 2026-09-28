@@ -470,6 +470,18 @@ function DaoStep({ controller }: { controller: WizardController }) {
         </p>
       </fieldset>
       <Select
+        hint="Recorded on the launch and named in the DAO metadata at summon. Starting with nothing is a choice, not a gap — decide before token launch."
+        id="dao-legal-wrapper"
+        label="Legal wrapper"
+        onChange={(event) => patch({ legalWrapper: event.target.value })}
+        options={[
+          { value: "none", label: "None for now (default)" },
+          { value: "dao-llc", label: "DAO LLC" },
+          { value: "own-entity", label: "Our own entity" },
+        ]}
+        value={wizard.legalWrapper}
+      />
+      <Select
         hint="What the launch can spend each month, as a share of what the sale must raise."
         id="dao-budget"
         label="Operating budget"

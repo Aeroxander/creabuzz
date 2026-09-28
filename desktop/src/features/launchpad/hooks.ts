@@ -56,7 +56,7 @@ export function useIsLaunchFounder(launch: Launch | undefined): boolean {
   return Boolean(launch && pubkey && launch.record.author === pubkey);
 }
 
-async function publishSignedEvent(input: {
+export async function publishSignedEvent(input: {
   kind: number;
   content: string;
   tags: string[][];

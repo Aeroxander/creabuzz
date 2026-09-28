@@ -124,6 +124,7 @@ export function AppSidebar({
   onSelectHome,
   onSelectPaperclip,
   onSelectOrg,
+  onSelectWiki,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
@@ -574,6 +575,7 @@ export function AppSidebar({
                 onSelectHome={onSelectHome}
                 onSelectLaunchpad={onSelectLaunchpad}
                 onSelectOrg={onSelectOrg}
+                onSelectWiki={onSelectWiki}
                 onSelectProjects={onSelectProjects}
                 onSelectPulse={onSelectPulse}
                 onSelectWorkflows={onSelectWorkflows}

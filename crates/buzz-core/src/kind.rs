@@ -781,6 +781,13 @@ pub const KIND_LAUNCH_UPDATE: u32 = 47003;
 pub const KIND_LAUNCH_PROPOSAL: u32 = 47004;
 /// NIP-LP: chain-state receipt mirror (regular). Advisory.
 pub const KIND_LAUNCH_RECEIPT: u32 = 47005;
+/// NIP-LP: royalty schedule mirror (regular). Advisory — the chain is
+/// authoritative. Published when `ClaimStake` mints a schedule in the
+/// launch's RoyaltyDistributor. See `docs/token-lifecycle-design.md`.
+pub const KIND_ROYALTY_SCHEDULE: u32 = 47006;
+/// NIP-LP: royalty settlement-close mirror (regular). Advisory. One event
+/// per closed settlement window (revenue, shares, pool, carry).
+pub const KIND_ROYALTY_CLOSE: u32 = 47007;
 /// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
 /// Published by a scoring operator with its Merkle root and proof pointer;
 /// clients verify individual score claims against the root without a prover.

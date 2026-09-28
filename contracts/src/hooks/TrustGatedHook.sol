@@ -6,7 +6,8 @@ import {IValidationHook} from "../CCA.sol";
 /// @title TrustGatedHook
 /// @notice Community-track bid gate: bidders prove membership in an accepted
 /// trustgraph score root with a Merkle proof. The launch treasury rotates the
-/// root each epoch; proofs bind (bidder, minScore) leaves.
+/// root each epoch; leaves bind (bidder, score) and `minScore` is the
+/// separate acceptance threshold checked alongside the proof.
 contract TrustGatedHook is IValidationHook {
     address public immutable owner;
     bytes32 public scoreRoot;

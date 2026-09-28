@@ -193,8 +193,22 @@ struct ApplicableLimit {
 /// agent's hex pubkey, then checks the relevant counter against the limit.
 ///
 /// Counter types: `"runs"` for agent turn metrics (kind:44200),
-/// `"task_create"`/`"task_approve"` for agent task counters (kind:44011 —
-/// see the TODO on the kind-44200 wiring in `ingest.rs` for why the task
+/// `"task_create"`/`"task_approve"` for agent task counters (kind:44011),
+/// and `"governance_proposal"`/`"governance_vote"`/`"governance_execute"`
+/// for the governance-action classes (kinds 47004/47005 — the S3 HITL gate:
+/// over the ceiling with `onExceed: "require-approval"` the action becomes a
+/// 46010 approval request instead of executing).
+pub(crate) fn counter_limit(limits: &buzz_sdk::BudgetLimits, counter_type: &str) -> Option<u32> {
+    match counter_type {
+        "runs" => limits.runs,
+        "task_create" => limits.tasks.as_ref().and_then(|t| t.create),
+        "task_approve" => limits.tasks.as_ref().and_then(|t| t.approve),
+        "governance_proposal" => limits.governance.as_ref().and_then(|g| g.proposal),
+        "governance_vote" => limits.governance.as_ref().and_then(|g| g.vote),
+        "governance_execute" => limits.governance.as_ref().and_then(|g| g.execute),
+        _ => None,
+    }
+}
 /// counters are not yet enforced).
 #[allow(dead_code)]
 pub(crate) async fn check_agent_budget(
@@ -406,12 +420,7 @@ fn resolve_laddered_limit(
     summary: Option<buzz_sdk::ContributionSummary>,
     counter_type: &str,
 ) -> Option<ResolvedCounterLimit> {
-    let from_limits = |limits: &buzz_sdk::BudgetLimits| match counter_type {
-        "runs" => limits.runs,
-        "task_create" => limits.tasks.as_ref().and_then(|t| t.create),
-        "task_approve" => limits.tasks.as_ref().and_then(|t| t.approve),
-        _ => None,
-    };
+    let from_limits = |limits: &buzz_sdk::BudgetLimits| counter_limit(limits, counter_type);
 
     let base_typed: buzz_sdk::BudgetLimits = match serde_json::from_value(base_limits.clone()) {
         Ok(v) => v,
@@ -696,6 +705,32 @@ async fn emit_budget_approval_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The counter-type vocabulary binds to the typed budget limits — this
+    /// mapping IS the governance-action gate's vocabulary (S3 HITL).
+    #[test]
+    fn counter_limit_maps_every_class() {
+        let mut limits = buzz_sdk::BudgetLimits::default();
+        limits.runs = Some(9);
+        limits.governance = Some(buzz_sdk::GovernanceLimits {
+            proposal: Some(1),
+            vote: Some(3),
+            execute: Some(2),
+        });
+        assert_eq!(counter_limit(&limits, "runs"), Some(9));
+        assert_eq!(counter_limit(&limits, "governance_proposal"), Some(1));
+        assert_eq!(counter_limit(&limits, "governance_vote"), Some(3));
+        assert_eq!(counter_limit(&limits, "governance_execute"), Some(2));
+        assert_eq!(counter_limit(&limits, "task_create"), None);
+        assert_eq!(counter_limit(&limits, "unknown_class"), None);
+    }
+
+    /// Unset governance caps mean "no ceiling" — never a silent zero.
+    #[test]
+    fn counter_limit_never_invents_a_ceiling() {
+        let limits = buzz_sdk::BudgetLimits::default();
+        assert_eq!(counter_limit(&limits, "governance_vote"), None);
+    }
     use chrono::TimeZone;
 
     fn fixed_now() -> DateTime<Utc> {

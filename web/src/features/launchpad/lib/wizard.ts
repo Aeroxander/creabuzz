@@ -154,6 +154,12 @@ export interface WizardState {
   milestones: MilestoneRow[];
   months: number;
   formDao: boolean;
+  /**
+   * Legal wrapper (the entity decision, OAv2 §4.8): "none" (default —
+   * explicitly fine), "dao-llc", or "own-entity". Decided before token
+   * launch; "none" now is a choice, not a gap.
+   */
+  legalWrapper: string;
 }
 
 /**
@@ -232,6 +238,7 @@ export function initialWizardState(
     milestones: initialMilestones(4),
     months: 3,
     formDao: true,
+    legalWrapper: "none",
     ...overrides,
   };
 }
@@ -796,6 +803,7 @@ export function wizardToCreateInput(
         : {}),
     ...(unlocks ? { unlocks } : {}),
     daoAtGraduation: wizard.formDao,
+    legalWrapper: wizard.legalWrapper,
   };
 }
 

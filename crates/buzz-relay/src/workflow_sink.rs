@@ -688,6 +688,7 @@ impl ActionSink for RelayActionSink {
                     space: &space,
                     limit: None,
                     publish: true,
+                    system_prompt: None,
                 },
                 &|msg| tracing::warn!(target: "agwiki", "{msg}"),
             )
@@ -698,6 +699,138 @@ impl ActionSink for RelayActionSink {
             })?;
             Ok(distill_outcome_json(&outcome))
         })
+    }
+
+    fn run_org_diag(
+        &self,
+        community_id: CommunityId,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        Box::pin(async move {
+            // 0. Upgrade weak reference — fails only during shutdown.
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Community-scoped bounded read of the coordination plane — the
+            // same kinds `buzz diag` scans. The lookback is a stated default
+            // (7 days, cap 5000 events), never a claim about the window.
+            let now = chrono::Utc::now().timestamp().max(0) as u64;
+            let since = now.saturating_sub(DIAG_LOOKBACK_S);
+            let query = buzz_db::EventQuery {
+                kinds: Some(DIAG_KINDS.iter().map(|&k| i32::from(k as u16)).collect()),
+                since: chrono::DateTime::from_timestamp(since as i64, 0),
+                limit: Some(DIAG_EVENT_CAP),
+                ..buzz_db::EventQuery::for_community(community_id)
+            };
+            let rows = state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            let events: Vec<nostr::Event> = rows.into_iter().map(|row| row.event).collect();
+
+            let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
+            serde_json::to_value(&report).map_err(|e| ActionSinkError::EventBuild(e.to_string()))
+        })
+    }
+}
+
+// ── Org diagnostic (`run_org_diag`) — OA.md Phase 4 ────────────────────────
+
+/// The kinds the instrument reasons over (the coordination plane) — the same
+/// list `buzz diag` scans, so the CLI and the scheduled run never disagree.
+pub(crate) const DIAG_KINDS: [u32; 10] = [
+    47004, 47005, 37013, 37011, 46010, 44001, 44002, 5, 44011, 40002,
+];
+/// Stated lookback default: one week.
+pub(crate) const DIAG_LOOKBACK_S: u64 = 7 * 24 * 3600;
+/// Stated scan cap.
+pub(crate) const DIAG_EVENT_CAP: i64 = 5_000;
+
+/// Map wire events to instrument rows — conservative: unparseable rows drop,
+/// unknown kinds classify as `Other`, the `kind` tag refines receipt/grant
+/// tables, `d` is the acted-on coordinate. Never guessed at.
+pub(crate) fn diag_events_from_nostr(
+    events: &[nostr::Event],
+) -> Vec<buzz_core::org_diag::DiagEvent> {
+    events
+        .iter()
+        .map(|event| {
+            let table = buzz_agwiki::tag_values(event, "kind");
+            let d = buzz_agwiki::tag_values(event, "d");
+            buzz_core::org_diag::DiagEvent {
+                id: event.id.to_hex(),
+                actor: event.pubkey.to_hex(),
+                at: event.created_at.as_secs(),
+                class: buzz_core::org_diag::class_of_kind(
+                    u32::from(event.kind.as_u16()),
+                    table.first().map(String::as_str),
+                ),
+                coordinate: d.first().map(|d| d.to_string()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod run_org_diag_tests {
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, Tag};
+
+    fn event(kind: u32, tags: Vec<Tag>) -> nostr::Event {
+        EventBuilder::new(Kind::Custom(kind as u16), "{}")
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .expect("event")
+    }
+
+    #[test]
+    fn mapping_is_conservative_and_reads_tables_and_coordinates() {
+        let events = vec![
+            event(47004, vec![]),
+            event(
+                47005,
+                vec![Tag::parse(["kind", "vote"]).expect("tag")],
+            ),
+            event(
+                47005,
+                vec![Tag::parse(["kind", "execute"]).expect("tag")],
+            ),
+            event(37011, vec![Tag::parse(["kind", "revoke"]).expect("tag")]),
+            event(
+                44002,
+                vec![Tag::parse(["d", "default/diag"]).expect("tag")],
+            ),
+            event(12_345, vec![]),
+        ];
+        let rows = diag_events_from_nostr(&events);
+        assert_eq!(rows.len(), 6);
+        use buzz_core::org_diag::DiagClass;
+        assert_eq!(rows[0].class, DiagClass::Proposal);
+        assert_eq!(rows[1].class, DiagClass::Vote);
+        assert_eq!(rows[2].class, DiagClass::Execute);
+        assert_eq!(rows[3].class, DiagClass::Revoke);
+        assert_eq!(rows[4].class, DiagClass::Revision);
+        assert_eq!(rows[4].coordinate.as_deref(), Some("default/diag"));
+        assert_eq!(rows[5].class, DiagClass::Other, "unknown kind → Other");
+    }
+
+    #[test]
+    fn the_step_output_is_the_report_json() {
+        let mut events = Vec::new();
+        for i in 0..25 {
+            events.push(event(40002, vec![]));
+            let _ = i;
+        }
+        let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
+        let value = serde_json::to_value(&report).expect("serializable");
+        assert_eq!(
+            value.get("wefModes").and_then(|m| m.as_array()).map(Vec::len),
+            Some(5),
+            "the five WEF modes travel in the step output"
+        );
+        assert!(value.get("events").is_some());
     }
 }
 

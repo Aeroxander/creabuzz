@@ -672,6 +672,12 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
                 cmd_deployment_record(client, &file, broadcast.as_deref()).await
             }
         },
+        LaunchpadCmd::Propose { .. }
+        | LaunchpadCmd::Vote { .. }
+        | LaunchpadCmd::Process { .. }
+        | LaunchpadCmd::ProposalState { .. } => {
+            unreachable!("chain-local governance commands run before auth")
+        }
     }
 }
 

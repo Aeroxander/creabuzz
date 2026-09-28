@@ -32,6 +32,7 @@ import type { OrgChart } from "../orgModels";
 import { AgentWikiSection } from "./AgentWikiSection";
 import { LivenessBadge } from "./LivenessBadge";
 import { OrgMetricRow } from "./OrgMetricRow";
+import { OrgDiagnosticCard } from "./OrgDiagnosticCard";
 
 type OrgDashboardProps = {
   query: UseQueryResult<OrgChart, Error>;
@@ -258,6 +259,9 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
 
   return (
     <div className="space-y-4 p-4" data-testid="org-dashboard">
+      {/* The Phase 4 instrument (OA.md §6) — recomputable via `buzz diag`. */}
+      <OrgDiagnosticCard />
+
       {/* 1. Blocking banners — cause + consequence + ONE action. */}
       {banners.length > 0 && (
         <div className="space-y-2">

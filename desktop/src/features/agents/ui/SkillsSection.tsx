@@ -21,6 +21,7 @@ import {
   useSkillLibraryQueries,
   type PublishSkillInput,
 } from "@/features/agents/lib/useSkillLibrary";
+import { olderRelayGuidance } from "@/features/agents/lib/relayNotice";
 import { Button } from "@/shared/ui/button";
 import { SectionHeader } from "@/shared/ui/PageHeader";
 
@@ -142,6 +143,14 @@ export function SkillsSection() {
           <p className="text-sm text-destructive">
             Couldn&apos;t load the skill library: {skillsError ?? bindingsError}
           </p>
+          {olderRelayGuidance(skillsError ?? bindingsError) ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="skill-load-guidance"
+            >
+              {olderRelayGuidance(skillsError ?? bindingsError)}
+            </p>
+          ) : null}
           <Button
             onClick={() => {
               void skillsQuery.refetch();

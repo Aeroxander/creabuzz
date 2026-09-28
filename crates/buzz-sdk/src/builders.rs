@@ -2506,6 +2506,26 @@ pub struct TaskLimits {
     pub approve: Option<u32>,
 }
 
+/// Governance-action limits within a budget (agentic-governance S3: the
+/// supervision gate). The observable governance actions an agent takes are
+/// its own mirrors — a proposal record (47004) and vote/execute receipts
+/// (47005) — and each class gets its own per-window ceiling. Over the
+/// ceiling with `onExceed: "require-approval"` the action becomes a 46010
+/// approval request instead of executing (HITL), which is also OAv2 §4.6's
+/// supervision rate limit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GovernanceLimits {
+    /// Maximum proposal records (kind:47004) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<u32>,
+    /// Maximum vote receipts (kind:47005, table `vote`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vote: Option<u32>,
+    /// Maximum execute receipts (kind:47005, table `execute`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execute: Option<u32>,
+}
+
 /// How the budget window resets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2566,6 +2586,9 @@ pub struct BudgetLimits {
     /// Task creation/approval caps.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tasks: Option<TaskLimits>,
+    /// Governance-action caps (proposal / vote / execute — the HITL gate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub governance: Option<GovernanceLimits>,
 }
 
 /// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
@@ -2686,6 +2709,11 @@ fn zeroed_limits() -> BudgetLimits {
         tasks: Some(TaskLimits {
             create: Some(0),
             approve: Some(0),
+        }),
+        governance: Some(GovernanceLimits {
+            proposal: Some(0),
+            vote: Some(0),
+            execute: Some(0),
         }),
     }
 }
@@ -5925,6 +5953,7 @@ mod tests {
                     unit: "usd-cents".into(),
                 }),
                 runs: Some(50),
+                governance: None,
                 tasks: Some(TaskLimits {
                     create: Some(20),
                     approve: Some(0),
@@ -5950,6 +5979,7 @@ mod tests {
                             unit: "usd-cents".into(),
                         }),
                         runs: Some(80),
+                        governance: None,
                         tasks: Some(TaskLimits {
                             create: Some(30),
                             approve: Some(0),
@@ -5964,6 +5994,7 @@ mod tests {
                             unit: "usd-cents".into(),
                         }),
                         runs: Some(200),
+                        governance: None,
                         tasks: Some(TaskLimits {
                             create: Some(60),
                             approve: Some(2),

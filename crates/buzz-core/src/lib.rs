@@ -23,7 +23,9 @@ pub mod git_perms;
 /// Shared invite-link contract constants.
 pub mod invite;
 /// Buzz kind number registry — custom event type constants.
+pub mod erc4824;
 pub mod kind;
+pub mod org_diag;
 /// Network utilities — SSRF-safe IP classification.
 pub mod network;
 /// NIP-10 thread-marker parsing — shared `root`/`reply` marker resolver.

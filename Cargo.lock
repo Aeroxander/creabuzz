@@ -925,6 +925,8 @@ version = "0.1.0"
 dependencies = [
  "buzz-core",
  "buzz-sdk",
+ "buzz-skillopt",
+ "buzz-ws-client",
  "nostr 0.44.7",
  "reqwest 0.13.4",
  "serde",
@@ -1018,6 +1020,7 @@ dependencies = [
  "buzz-evm-allowance",
  "buzz-persona",
  "buzz-sdk",
+ "buzz-skillopt",
  "buzz-workflow",
  "buzz-ws-client",
  "bytes",
@@ -1513,6 +1516,15 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "buzz-skillopt"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

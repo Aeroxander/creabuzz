@@ -10,9 +10,14 @@ description = "Agent Wiki (kind:44002) distillation core — prompts, strict val
 [dependencies]
 buzz-core  = { workspace = true }
 buzz-sdk   = { workspace = true }
+buzz-skillopt = { workspace = true }
 nostr      = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
 reqwest    = { workspace = true }
 tokio      = { workspace = true }
+
+[dev-dependencies]
+buzz-ws-client = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

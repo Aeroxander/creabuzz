@@ -152,6 +152,34 @@ The distill loop writes `<space>/standup`; arbitrary additional pages
 [--space S]` shows the newest revision per page; `buzz agwiki show
 <space>/<slug>` prints a page body.
 
+## Decision blocks (the persona drafting loop)
+
+A page body may carry explicit decision intent as fenced `decision` blocks —
+the input side of the persona drafting loop (docs/persona-drafting-loop.md):
+`buzz agwiki draft` materializes them as `47004 state: "agent-draft"`
+proposal records for human counter-sign. The distill prompt writes blocks
+when a standup resolves into a decision; humans can author them in 44001/44002
+pages directly.
+
+```markdown
+```decision
+title: Raise proposal quorum to 600 bps
+kind: plain
+evidence: The round-2 postmortem asks for a 600 bps quorum.
+intent: {"op":0,"to":"0x…","value":"0","data":"0x…","nonce":"0x…"}
+```
+```
+
+Flat `key: value` lines (first occurrence wins, `#` starts an inline comment)
+— the same deliberately small parser family as the front-matter block. Normative
+rules (full table in persona-drafting-loop.md): `title`, `kind`
+(`plain`|`futarchy-budget`|`signal` — the routing map's own keys) and
+`evidence` are required; `intent`/`calls` are optional strict JSON
+(malformed values drop to record-only, never guessed); unknown keys are
+ignored. The `evidence` line must appear **verbatim** in the page body outside
+decision blocks — the composer's no-invented-facts seam. Blocks the composer
+cannot render honestly are skipped and reported, never repaired.
+
 ## CLI (`buzz agwiki`)
 
 Top-level subcommand (not nested under `org` — the Agent Wiki is a
@@ -162,6 +190,10 @@ knowledge-plane feature, not an org-graph feature):
 - `buzz agwiki show <space>/<slug>` — print the newest revision of a page.
 - `buzz agwiki list [--space <space>] [--limit N]` — list pages, newest
   revision per coordinate.
+- `buzz agwiki draft --launch <id> [--space <space> | --page <space>/<slug>]
+  [--publish]` — compose `agent-draft` proposal records from the pages'
+  decision blocks (dry-run prints; `--publish` signs and lands them; dedupe by
+  `wiki` anchor means re-runs draft nothing new).
 
 Configuration reuses the contribution-classifier env vars (no config sprawl):
 `BUZZ_CLASSIFIER_API_URL`, `BUZZ_CLASSIFIER_API_KEY` (both required — fail

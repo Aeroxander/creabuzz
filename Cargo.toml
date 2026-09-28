@@ -19,6 +19,7 @@ members = [
     "crates/buzz-deletion",
     "crates/buzz-workflow",
     "crates/buzz-agwiki",
+    "crates/buzz-skillopt",
     "crates/buzz-media",
     "crates/buzz-cli",
     "crates/buzz-pairing-cli",
@@ -159,6 +160,7 @@ buzz-media = { path = "crates/buzz-media" }
 buzz-sdk = { path = "crates/buzz-sdk" }
 buzz-evm-allowance = { path = "crates/buzz-evm-allowance" }
 buzz-ws-client = { path = "crates/buzz-ws-client" }
+buzz-skillopt = { path = "crates/buzz-skillopt" }
 buzz-relay-mesh = { path = "crates/buzz-relay-mesh" }
 buzz-datastore-tracing = { path = "crates/buzz-datastore-tracing" }
 

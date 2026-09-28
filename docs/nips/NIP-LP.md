@@ -46,7 +46,7 @@ semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
 | `37001` | Launch record | parameterized replaceable, `d` = launch id | founder key | identity, community link, chain addrs, auction params, stage |
 | `47002` | Bid mirror | regular, `a` = launch coordinate | bidder (or indexer) | auction bid: bucket, budget, max price, tx hash |
 | `47003` | Launch update | regular, `a` = launch coordinate | founder key | signed update: title + markdown body + links |
-| `47004` | Proposal record | regular, `a` = launch coordinate | founder/member | proposal: onchain id if any, plain vs futarchy, issue link, state |
+| `47004` | Proposal record | regular, `a` = launch coordinate | founder/member | proposal: onchain id if any, plain vs futarchy, issue link, state, execution `calls[]` |
 | `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
 | `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
 
@@ -146,11 +146,28 @@ channel message are published together or not at all).
 ## `47004`: proposal records
 
 `a` = launch coordinate. Content JSON
-`{"proposalId": "<onchain-id-or-null>", "kind": "plain | futarchy-budget | signal", "issue": "<1621-coordinate-or-null>", "state": "open | passed | executed | defeated", "title": "…"}`.
-Proposals with no onchain action (`signal`) live as git issues (NIP-34
-`kind:1621`) and are only mirrored here for launch-scoped discovery.
+`{"proposalId": "<onchain-id-or-null>", "kind": "plain | futarchy-budget | signal", "issue": "<1621-coordinate-or-null>", "state": "open | passed | executed | defeated | agent-draft", "title": "…", "evidence": "…", "calls": [{"operation": "call | delegatecall", "from": "0x…", "to": "0x…", "value": "0", "data": "0x…"}]}`.
+The optional `calls` array is the proposal's execution intent in ERC-4824
+`CallDataEVM` shape — majeur proposals are call batches (`op` 0 = call, 1 =
+delegatecall), so this is the exact input `executeByVotes` takes and the
+exact shape the `dao.json` projection renders. Readers MUST ignore (not
+guess at) a `calls` array containing malformed entries; such a record carries
+no executable intent. Proposals with no onchain action (`signal`) live as git
+issues (NIP-34 `kind:1621`) and are only mirrored here for launch-scoped
+discovery.
 Futarchy markets exist only for `futarchy-budget` (budget/subDAO
 allocation); all other proposals are plain votes.
+
+`agent-draft` records (2026-09-28, docs/persona-drafting-loop.md) are
+agent-composed proposals awaiting a human counter-sign: `proposalId` is null,
+`evidence` (optional) is a verbatim quote from the wiki block the draft was
+composed from, and the optional `["wiki", <page-coordinate>, <block-anchor>]`
+tag binds the draft to its source wiki block (the dedupe key — one live
+record per anchor — and the provenance pointer). An agent draft never
+broadcasts onchain without approval: the accepted record (`state: "open"`,
+`proposalId` set, same `wiki` tag) supersedes the draft, and the draft is
+NIP-09 tombstoned. ERC-4824 projections present `agent-draft` as DAOIP-5
+`status: "draft"`.
 
 ## `47005`: receipts
 

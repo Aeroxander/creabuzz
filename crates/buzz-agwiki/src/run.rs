@@ -107,6 +107,10 @@ pub struct DistillOptions<'a> {
     pub limit: Option<u32>,
     /// Publish the composed page when `true`; otherwise return a preview.
     pub publish: bool,
+    /// Optional system-prompt override — the trainable skill (a SkillOpt
+    /// `best_skill.md`), loaded instead of the built-in [`build_system_prompt`].
+    /// The caller owns provenance and review for whatever it passes.
+    pub system_prompt: Option<&'a str>,
 }
 
 /// Facts about a finished (or previewed) distill, for host reporting.
@@ -234,7 +238,10 @@ pub async fn run_distill<P: DistillPorts>(
         existing.as_ref().map(|(c, _)| c.as_str()),
         &search_context,
     );
-    let draft = distill_draft(ports, &system, &user, diag).await?;
+    // The trainable skill override (a SkillOpt `best_skill.md`): the caller
+    // owns provenance and review for whatever it passes.
+    let system = opts.system_prompt.unwrap_or(&system);
+    let draft = distill_draft(ports, system, &user, diag).await?;
     let total_cost = draft.cost_tokens.saturating_add(reflection_cost);
 
     let page = compose_page(&space, &draft.body, ports.llm_model(), new_cursor);
@@ -589,6 +596,7 @@ mod tests {
             space: "default",
             limit: None,
             publish,
+            system_prompt: None,
         }
     }
 

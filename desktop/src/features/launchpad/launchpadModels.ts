@@ -7,6 +7,11 @@ import {
   KIND_LAUNCH_UPDATE,
   LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
+import {
+  parseProposalIntent,
+  type ProposalIntent,
+} from "@/features/launchpad/lib/voteTx";
+import { parseWikiTag } from "@/features/launchpad/lib/draftProposal";
 
 export { LAUNCHPAD_EVENT_KINDS };
 
@@ -59,6 +64,17 @@ export type LaunchRecord = {
   auction: string | null;
   token: string | null;
   treasury: string | null;
+  /** Tranche/royalty enforcer wiring (token-lifecycle-design.md), post-deploy. */
+  distributor: string | null;
+  claimStake: string | null;
+  verifierSet: string | null;
+  /** The wizard's unlock plan (`lib/unlock-plans.ts` on web), strictly parsed. */
+  unlocks: {
+    mode: string;
+    milestones: Array<{ claim: string; label: string }>;
+  } | null;
+  /** Legal wrapper decision (OAv2 §4.8): "none" | "dao-llc" | "own-entity". */
+  legalWrapper: string | null;
   hooks: Array<{ address: string; bucket: string }>;
   admission: "curated" | "community";
   tokenPlan: {
@@ -100,8 +116,24 @@ export type LaunchProposal = {
   proposalId: string | null;
   kind: ProposalKind;
   issue: string | null;
-  state: "open" | "passed" | "executed" | "defeated";
+  state: "open" | "passed" | "executed" | "defeated" | "agent-draft";
   title: string;
+  /**
+   * The agent-draft's verbatim justification (persona-drafting-loop D3/D8) —
+   * null on records without one, never paraphrased here.
+   */
+  evidence: string | null;
+  /** The draft's source wiki block (`["wiki", page, anchor]`, D7/D8). */
+  source: { page: string; anchor: number } | null;
+  /** NIP-ORG delegation-grant reference when the record carries one (D5). */
+  grant: string | null;
+  /**
+   * The S0 onchain binding (`{chain, dao, proposalId}`, mirroring 37010's
+   * `content.onchain` pattern) when the record carries one.
+   */
+  onchain: { chain: string | null; dao: string | null } | null;
+  /** The operation `executeByVotes` needs, when the record carries it. */
+  intent: ProposalIntent | null;
 };
 
 export type LaunchReceipt = {
@@ -111,6 +143,14 @@ export type LaunchReceipt = {
   createdAt: number;
   table: string;
   tx: string;
+  /** §5 linkage tag: the proposal record id. */
+  proposal: string | null;
+  /** §5 linkage tag: the onchain proposalId. */
+  onchain: string | null;
+  /** §5 vote word (`for|against|abstain`) on vote mirrors. */
+  vote: string | null;
+  /** §5 delegation-grant id, for mirrors cast under a grant. */
+  grant: string | null;
   payload: Record<string, unknown>;
 };
 
@@ -172,6 +212,31 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** Strict `content.unlocks` parse — malformed plans become null, never guessed. */
+function parseUnlocks(value: unknown): {
+  mode: string;
+  milestones: Array<{ claim: string; label: string }>;
+} | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.mode !== "string") return null;
+  if (!Array.isArray(raw.milestones)) {
+    return { mode: raw.mode, milestones: [] };
+  }
+  const milestones: Array<{ claim: string; label: string }> = [];
+  for (const row of raw.milestones) {
+    if (row === null || typeof row !== "object") return null;
+    const entry = row as Record<string, unknown>;
+    if (typeof entry.claim !== "string" || typeof entry.label !== "string") {
+      return null;
+    }
+    milestones.push({ claim: entry.claim, label: entry.label });
+  }
+  return { mode: raw.mode, milestones };
+}
+
 function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value)
     ? value
@@ -224,6 +289,12 @@ export function parseLaunchRecordEvent(event: RelayEvent): LaunchRecord | null {
     auction: tagValue(event.tags, "auction"),
     token: tagValue(event.tags, "token"),
     treasury: tagValue(event.tags, "treasury"),
+    distributor: tagValue(event.tags, "distributor"),
+    claimStake: tagValue(event.tags, "claim-stake"),
+    verifierSet: tagValue(event.tags, "verifier-set"),
+    unlocks: parseUnlocks(body.unlocks),
+    legalWrapper:
+      typeof body.legalWrapper === "string" ? body.legalWrapper : null,
     hooks,
     admission,
     tokenPlan: parseTokenPlan(body.tokenPlan),
@@ -296,6 +367,12 @@ function isProposalKind(value: unknown): value is ProposalKind {
   return value === "plain" || value === "futarchy-budget" || value === "signal";
 }
 
+function recordObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 export function parseLaunchProposalEvent(
   event: RelayEvent,
 ): LaunchProposal | null {
@@ -303,10 +380,12 @@ export function parseLaunchProposalEvent(
   const launchId = launchIdFromCoordinate(tagValue(event.tags, "a"));
   if (!launchId) return null;
   const body = parseContentObject(event.content) ?? {};
+  const onchainBody = recordObject(body.onchain);
   const state =
     body.state === "passed" ||
     body.state === "executed" ||
-    body.state === "defeated"
+    body.state === "defeated" ||
+    body.state === "agent-draft"
       ? body.state
       : "open";
   return {
@@ -314,11 +393,23 @@ export function parseLaunchProposalEvent(
     launchId,
     author: event.pubkey,
     createdAt: event.created_at,
-    proposalId: stringOrNull(body.proposalId),
+    proposalId:
+      stringOrNull(body.proposalId) ??
+      (onchainBody ? stringOrNull(onchainBody.proposalId) : null),
     kind: isProposalKind(body.kind) ? body.kind : "plain",
     issue: stringOrNull(body.issue),
     state,
     title: typeof body.title === "string" ? body.title : "Proposal",
+    evidence: stringOrNull(body.evidence),
+    source: parseWikiTag(event.tags),
+    grant: tagValue(event.tags, "grant") ?? stringOrNull(body.grant),
+    onchain: onchainBody
+      ? {
+          chain: stringOrNull(onchainBody.chain),
+          dao: stringOrNull(onchainBody.dao),
+        }
+      : null,
+    intent: parseProposalIntent(body.intent),
   };
 }
 
@@ -336,6 +427,10 @@ export function parseLaunchReceiptEvent(
     createdAt: event.created_at,
     table: tagValue(event.tags, "kind") ?? "unknown",
     tx,
+    proposal: tagValue(event.tags, "proposal"),
+    onchain: tagValue(event.tags, "onchain"),
+    vote: tagValue(event.tags, "vote"),
+    grant: tagValue(event.tags, "grant"),
     payload: parseContentObject(event.content) ?? {},
   };
 }

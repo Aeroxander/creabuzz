@@ -41,6 +41,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     longPitch:
       "The sandbox exists to be played with: create, bid, watch price discovery, graduate. Nothing here is real money.",
     ipList: ["https://example.com/sandbox"],
+    hooks: [],
     updateCadence: "weekly with KPIs",
     stage: fundingStage(now),
     currency: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -53,6 +54,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     claimBlock: null,
     unlocks: null,
     daoAtGraduation: null,
+    legalWrapper: null,
     paramsHash: "0x" + "ca".repeat(32),
     website: null,
     docs: ["https://example.com/docs"],
@@ -67,6 +69,9 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     auction: null,
     token: null,
     treasury: null,
+    distributor: null,
+    claimStake: null,
+    verifierSet: null,
     admission: "curated",
     allocation: {
       sale: 20,

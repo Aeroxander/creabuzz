@@ -49,8 +49,11 @@ import {
 
 export const launchesQueryKey = ["launchpad", "launches"];
 
-async function fetchTombstones(coords: string[]): Promise<Set<string>> {
-  const out = new Set<string>();
+async function fetchTombstones(
+  coords: string[],
+  ids: string[] = [],
+): Promise<{ coordinates: Set<string>; deletedIds: Set<string> }> {
+  const out = { coordinates: new Set<string>(), deletedIds: new Set<string>() };
   for (let i = 0; i < coords.length; i += 100) {
     const group = coords.slice(i, i + 100);
     if (group.length === 0) continue;
@@ -61,7 +64,23 @@ async function fetchTombstones(coords: string[]): Promise<Set<string>> {
     });
     for (const event of events) {
       for (const tag of event.tags) {
-        if (tag[0] === "a" && tag[1]) out.add(tag[1]);
+        if (tag[0] === "a" && tag[1]) out.coordinates.add(tag[1]);
+      }
+    }
+  }
+  // NIP-09 `e`-tag tombstones hide individual mirrors — an agent-draft's
+  // Reject disposal (persona-drafting-loop D5).
+  for (let i = 0; i < ids.length; i += 100) {
+    const group = ids.slice(i, i + 100);
+    if (group.length === 0) continue;
+    const events = await queryEvents(relayWsUrl(), {
+      kinds: [5],
+      "#e": group,
+      limit: 200,
+    });
+    for (const event of events) {
+      for (const tag of event.tags) {
+        if (tag[0] === "e" && tag[1]) out.deletedIds.add(tag[1]);
       }
     }
   }
@@ -77,9 +96,14 @@ export async function fetchLaunches(): Promise<Launch[]> {
       return d ? launchCoordinate(e.pubkey, d) : null;
     })
     .filter((c): c is string => c !== null);
-  const tombstoned =
-    coords.length > 0 ? await fetchTombstones(coords) : new Set<string>();
-  return buildLaunches(events, tombstoned);
+  const mirrorIds = events
+    .filter((e) => e.kind !== KIND_LAUNCH_RECORD)
+    .map((e) => e.id);
+  const tombstones =
+    coords.length + mirrorIds.length > 0
+      ? await fetchTombstones(coords, mirrorIds)
+      : { coordinates: new Set<string>(), deletedIds: new Set<string>() };
+  return buildLaunches(events, tombstones.coordinates, tombstones.deletedIds);
 }
 
 export function useLaunches() {
@@ -221,11 +245,11 @@ export function useIsFounder(launch: Launch | undefined): boolean {
   return Boolean(launch && pubkey && launch.record.author === pubkey);
 }
 
-async function publishMirror(
+export async function publishMirror(
   input: {
     kind: number;
     tags: string[][];
-    content: Record<string, unknown>;
+    content: Record<string, unknown> | string;
   },
   auth?: {
     signEvent: (template: {
@@ -236,16 +260,20 @@ async function publishMirror(
     pubkey: string;
   },
 ): Promise<NostrEvent> {
+  const content =
+    typeof input.content === "string"
+      ? input.content
+      : JSON.stringify(input.content);
   const signed = auth
     ? await auth.signEvent({
         kind: input.kind,
         tags: input.tags,
-        content: JSON.stringify(input.content),
+        content,
       })
     : await signAsUser({
         kind: input.kind,
         tags: input.tags,
-        content: JSON.stringify(input.content),
+        content,
       });
   if (!signed) throw new Error("signing failed");
   const result = await publishEvent(relayWsUrl(), signed, {
@@ -283,6 +311,10 @@ export interface CreateLaunchInput {
   auction: string;
   token: string;
   treasury: string;
+  /** Tranche/royalty enforcer wiring (token-lifecycle-design.md), post-deploy. */
+  distributor?: string;
+  claimStake?: string;
+  verifierSet?: string;
   admission: "curated" | "community";
   channels: string[];
   tokenPlan?: TokenPlan;
@@ -300,6 +332,8 @@ export interface CreateLaunchInput {
   unlocks?: UnlockPlan;
   /** Whether a DAO is to be formed at graduation. */
   daoAtGraduation?: boolean;
+  /** Legal wrapper decision (OAv2 §4.8): "none" | "dao-llc" | "own-entity". */
+  legalWrapper?: string;
 }
 
 export function useCreateLaunch() {
@@ -316,6 +350,9 @@ export function useCreateLaunch() {
       if (input.auction) tags.push(["auction", input.auction]);
       if (input.token) tags.push(["token", input.token]);
       if (input.treasury) tags.push(["treasury", input.treasury]);
+      if (input.distributor) tags.push(["distributor", input.distributor]);
+      if (input.claimStake) tags.push(["claim-stake", input.claimStake]);
+      if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
       for (const channel of input.channels)
         tags.push(["buzz-channel", channel]);
       const content: Record<string, unknown> = {
@@ -340,6 +377,7 @@ export function useCreateLaunch() {
       if (input.unlocks) content.unlocks = input.unlocks;
       if (input.daoAtGraduation !== undefined)
         content.daoAtGraduation = input.daoAtGraduation;
+      if (input.legalWrapper) content.legalWrapper = input.legalWrapper;
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

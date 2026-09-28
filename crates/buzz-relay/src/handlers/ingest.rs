@@ -3916,6 +3916,38 @@ async fn ingest_event_inner(
             .await?;
     }
 
+    // NIP-ORG budget enforcement for GOVERNANCE actions (agentic-governance
+    // S3's HITL gate): the observable governance actions an agent takes are
+    // its own mirrors — a proposal record (47004) is `governance.proposal`;
+    // a receipt whose table is `vote`/`execute` (47005) is
+    // `governance.vote`/`governance.execute`. Same `enforce_counter` path as
+    // the gates above: over the ceiling with `onExceed: "require-approval"`
+    // writes the durable `budget_approvals` row + best-effort kind:46010 and
+    // REJECTS the action — approval is a human decision, never a re-submit.
+    //
+    // Humans pass for free and by design: budgets bind by
+    // `content.subject == author` and humans have no budget records
+    // (NIP-ORG design rule 5: budgets never apply to a human's own actions).
+    if kind_u32 == KIND_LAUNCH_PROPOSAL {
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, "governance_proposal")
+            .await?;
+    }
+    if kind_u32 == KIND_LAUNCH_RECEIPT {
+        let table = serde_json::from_str::<serde_json::Value>(&event.content)
+            .ok()
+            .and_then(|body| body.get("table").and_then(|t| t.as_str().map(|s| s.to_owned())));
+        let class = match table.as_deref() {
+            Some("vote") => Some("governance_vote"),
+            Some("execute") => Some("governance_execute"),
+            _ => None,
+        };
+        if let Some(class) = class {
+            let agent_hex = hex::encode(event.pubkey.to_bytes());
+            super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, class).await?;
+        }
+    }
+
     if kind_u32 == KIND_EVENT_REMINDER {
         validate_event_reminder(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
