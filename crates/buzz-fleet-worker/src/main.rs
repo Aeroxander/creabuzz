@@ -42,8 +42,6 @@ const DRAFT_MAX_TOKENS: u32 = 4096;
 const DRAFT_TEMPERATURE: f64 = 0.2;
 const ACTION_MAX_CHARS: usize = 512;
 const HUMAN_AI_SUM_TOLERANCE: f64 = 0.01;
-const DEFAULT_MODEL: &str = "mimo-v2.6-flash";
-
 const ENV_LLM_URL: &str = "BUZZ_FLEET_WORKER_LLM_URL";
 const ENV_LLM_API_KEY: &str = "BUZZ_FLEET_WORKER_LLM_API_KEY";
 const ENV_LLM_MODEL: &str = "BUZZ_FLEET_WORKER_LLM_MODEL";
@@ -67,7 +65,10 @@ const KIND_CHANNEL_MSG: u32 = 40002;
 struct LlmConfig {
     direct: Option<DirectLlm>,
     gateway: String,
-    gateway_model: String,
+    /// The model to ask the relay gateway for. `None` leaves the choice to the
+    /// operator (`BUZZ_LLM_MODEL` on the relay pins one) — there is no built-in
+    /// default, because a model name only means something on one endpoint.
+    gateway_model: Option<String>,
 }
 
 #[derive(Clone)]
@@ -79,33 +80,30 @@ struct DirectLlm {
 
 impl LlmConfig {
     fn from_env() -> Self {
+        // A direct endpoint needs all of URL, key and model: a model name is
+        // only meaningful for the endpoint it belongs to, so there is no default.
         let direct = match env_trimmed(ENV_LLM_URL) {
-            Some(url) => {
-                let api_key = env_trimmed(ENV_LLM_API_KEY);
-                match api_key {
-                    Some(api_key) => Some(DirectLlm {
-                        url,
-                        api_key,
-                        model: env_trimmed(ENV_LLM_MODEL)
-                            .unwrap_or_else(|| DEFAULT_MODEL.to_string()),
-                    }),
-                    None => {
-                        tracing::error!(
-                            "{ENV_LLM_URL} is set but {ENV_LLM_API_KEY} is missing; \
-                             falling back to the relay gateway"
-                        );
-                        None
-                    }
+            Some(url) => match (env_trimmed(ENV_LLM_API_KEY), env_trimmed(ENV_LLM_MODEL)) {
+                (Some(api_key), Some(model)) => Some(DirectLlm {
+                    url,
+                    api_key,
+                    model,
+                }),
+                _ => {
+                    tracing::error!(
+                        "{ENV_LLM_URL} is set but {ENV_LLM_API_KEY} or {ENV_LLM_MODEL} is \
+                         missing; falling back to the relay gateway"
+                    );
+                    None
                 }
-            }
+            },
             None => None,
         };
         Self {
             direct,
             gateway: env_trimmed(ENV_GATEWAY)
                 .unwrap_or_else(|| "http://localhost:3000/llm/chat/completions".to_string()),
-            gateway_model: env_trimmed(ENV_GATEWAY_MODEL)
-                .unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            gateway_model: env_trimmed(ENV_GATEWAY_MODEL),
         }
     }
 
@@ -113,7 +111,8 @@ impl LlmConfig {
         self.direct
             .as_ref()
             .map(|d| d.model.clone())
-            .unwrap_or_else(|| self.gateway_model.clone())
+            .or_else(|| self.gateway_model.clone())
+            .unwrap_or_else(|| "(chosen by the relay)".to_string())
     }
 }
 
@@ -406,15 +405,17 @@ async fn gateway_chat(
     user: &str,
     params: CallParams,
 ) -> Result<String, String> {
-    let body = json!({
-        "model": cfg.gateway_model,
+    let mut body = json!({
         "messages": [
             { "role": "system", "content": system },
             { "role": "user", "content": user },
         ],
         "max_tokens": params.max_tokens,
-    })
-    .to_string();
+    });
+    if let (Some(model), Some(object)) = (cfg.gateway_model.as_ref(), body.as_object_mut()) {
+        object.insert("model".to_string(), json!(model));
+    }
+    let body = body.to_string();
 
     let payload_sha = {
         use sha2::{Digest, Sha256};

@@ -548,12 +548,13 @@ class BrowserAgent {
     userPrompt: string,
   ): Promise<string> {
     const url = `${relayHttpBaseUrl()}/llm/chat/completions`;
-    // The gateway forwards this body to the relay's configured upstream;
-    // VITE_AGENT_MODEL overrides the deployment default.
-    const model =
-      import.meta.env.VITE_AGENT_MODEL ?? "umans-deepseek-v4-flash-0731";
+    // The gateway forwards this body to the relay's configured upstream. No
+    // model name is built in (one only means something on one endpoint): the
+    // operator pins it with BUZZ_LLM_MODEL on the relay, or a build sets
+    // VITE_AGENT_MODEL.
+    const model = import.meta.env.VITE_AGENT_MODEL;
     const body = JSON.stringify({
-      model,
+      ...(model ? { model } : {}),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

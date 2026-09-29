@@ -230,20 +230,24 @@ fn pick_newest_head(mut candidates: Vec<SkillCandidate>) -> Option<SkillCandidat
 }
 
 /// Restrict candidates to the workspace owner's authorship when the owner is
-/// known.
+/// known, and drop everything when it is not.
 ///
 /// The binding tag is written by the owner (template apply), so the skill body
 /// must come from the same key — otherwise any community member could shadow a
-/// bound skill id with a later `created_at`. When the owner is unknown the
-/// harness logs the trust downgrade and falls back to the newest head from
-/// any author.
+/// bound skill id with a later `created_at` and have their text injected into
+/// the agent's system prompt, where "the skill wins" over the general defaults.
+/// When the owner is unknown there is nobody to trust, so the agent runs
+/// **without** the skill: this is a trust boundary and fails closed.
 fn prefer_owner(candidates: Vec<SkillCandidate>, owner_hex: Option<&str>) -> Vec<SkillCandidate> {
     let Some(owner) = owner_hex else {
-        tracing::warn!(
-            target: "project_skills",
-            "no resolved owner pubkey — accepting bound skills from any community author"
-        );
-        return candidates;
+        if !candidates.is_empty() {
+            tracing::warn!(
+                target: "project_skills",
+                dropped = candidates.len(),
+                "no resolved owner pubkey — not loading bound skills (they can only come from the workspace owner)"
+            );
+        }
+        return Vec::new();
     };
     let owner = owner.to_ascii_lowercase();
     let own: Vec<SkillCandidate> = candidates
@@ -670,13 +674,19 @@ mod tests {
     }
 
     #[test]
-    fn unknown_owner_falls_back_to_the_newest_any_author_head() {
+    fn unknown_owner_loads_no_skills_at_all() {
+        // Fail closed: with no owner to trust, neither the owner-looking nor a
+        // foreign head may reach the prompt — a member must not be able to
+        // inject instructions by publishing a newer head for a bound id.
         let mut own = candidate(100, "aaaa");
         own.author = "OWNER".into();
         let mut foreign = candidate(900, "cccc");
         foreign.author = "someone-else".into();
-        let picked = pick_newest_head(prefer_owner(vec![own, foreign], None)).expect("head");
-        assert_eq!(picked.event_id, "cccc");
+        assert!(prefer_owner(vec![own, foreign], None).is_empty());
+        assert_eq!(
+            pick_newest_head(prefer_owner(vec![candidate(1, "dddd")], None)),
+            None
+        );
     }
 
     // ---- assembly seam ----
