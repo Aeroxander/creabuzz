@@ -1,303 +1,164 @@
-//! NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
+//! NIP-ORG authority gates at ingest (kinds:37010 nodes, 37011 grants).
 //!
-//! NIP-ORG "Relay behavior": grant-chain verification is **opt-in and
-//! scoped**. With `ORG_GRANT_ENFORCEMENT=off` (the default) this module is
-//! never invoked and kind:37011 org grants are stored and forwarded exactly
-//! as before. With `ORG_GRANT_ENFORCEMENT=on`, ingest of a kind:37011 grant
-//! verifies, before acceptance:
+//! The rules themselves live, pure and I/O-free, in
+//! [`buzz_core::org_grant`]; the Postgres reads live in
+//! `buzz_db::store::org_graph` behind the `OrgGraphSource` trait. This module
+//! is the ingest glue: it builds the community's [`PgOrgGraph`] and maps an
+//! authority decision onto an [`IngestError`].
 //!
-//! 1. **Attenuation** — every verb the grant carries is entailed by some
-//!    verb of each ancestor along its `parentGrant` chain (walked through
-//!    the event store, bounded by [`buzz_core::org_grant::MAX_GRANT_CHAIN_DEPTH`]
-//!    hops; a cycle is rejected).
-//! 2. **Root standing** — a root grant's verbs are entailed by the
-//!    `scope.canGrant` of the org node (kind:37010, fetched by its `via`)
-//!    the issuer acts through.
-//! 3. **Expiry** — no link in the chain (including the incoming grant) is
-//!    expired at ingest time.
+//! # Who may write the graph (always on)
 //!
-//! Two additional fail-closed continuity checks bind the chain to its
-//! authors (NIP-ORG addresses grants by `(issuer, 37011, d)`):
+//! [`validate_org_node_publication`] applies the R1 authority anchor to every
+//! kind:37010 write, independent of `ORG_GRANT_ENFORCEMENT`: the community
+//! owner/admin may publish any node; anyone else only a **child** of an
+//! anchored node they hold a seat in, with a `canGrant` no wider than the
+//! parent's, and never under an id another author already uses. Nodes,
+//! grants and budgets are *referenced* by bare `d`, so without this a member
+//! could shadow a legitimate node by publishing a newer record for the same
+//! id.
 //!
-//! - the incoming event's signer must equal its `content.issuer`, and each
-//!   stored ancestor's author must equal its `content.issuer`;
-//! - a non-root grant's issuer must equal its parent grant's `grantee` —
-//!   you can only chain from authority that was delegated *to you*.
+//! # Grant chains (default on, `ORG_GRANT_ENFORCEMENT=off` to disable)
 //!
-//! **Fail closed.** A grant whose chain cannot be fully verified is
-//! rejected, never stored as verified: a missing parent grant or org node,
-//! a malformed stored record, or a database lookup error all reject the
-//! ingest (lookup errors surface as `IngestError::Internal`, which is an
-//! error reply, not a silent accept). Revocations (`"revoked": true`) skip
-//! verification — a revocation only removes authority, so it is always
-//! admissible; the next grant that names the revoked one fails here.
+//! [`enforce_grant_chain`] verifies an incoming kind:37011 grant before
+//! acceptance:
 //!
-//! Enforcement scope: kind:37011 only. A survey of the kind registry found
-//! no other kind carrying a delegated-authority claim (NIP-OA `auth` tags
-//! are provenance, not authority — NIP-ORG design rule 4), so nothing else
-//! is gated.
+//! 1. the signer is the claimed `issuer`;
+//! 2. every `parentGrant` resolves **by signer** (stored author == its own
+//!    `issuer`, grantee == the child's issuer), never to a same-`d` decoy;
+//! 3. every `via` resolves to an **anchored** node the link's issuer holds a
+//!    seat in;
+//! 4. attenuation, root standing, expiry and revocation hold along the chain.
+//!
+//! **Fail closed.** A chain that cannot be fully verified is rejected; a
+//! database error is an error reply ([`IngestError::Internal`]), never an
+//! implicit allow. Revocations (`"revoked": true`) are always admissible — a
+//! revocation only removes authority.
+//!
+//! Equity records (`"type": "equity"`, the Project Board's ownership stake,
+//! `verbs: []`) record a percentage, not a capability; they are exempt from
+//! chain verification and authority views ignore them.
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use buzz_core::kind::{KIND_ORG_GRANT, KIND_ORG_NODE};
 use buzz_core::org_grant::{
-    verify_grant_chain, GrantChainError, OrgGrantContent, OrgScope, ResolvedGrant, ResolvedOrgNode,
-    MAX_GRANT_CHAIN_DEPTH,
+    check_node_publication, is_equity_grant_content, parse_stored_node, verify_incoming_grant,
+    OrgAuthorityError, OrgGrantContent, ResolvedGrant,
 };
 use buzz_core::tenant::TenantContext;
 use chrono::Utc;
 use nostr::Event;
-use serde::Deserialize;
 
 use crate::handlers::ingest::IngestError;
 use crate::state::AppState;
 
-/// Org-node content fields the chain check needs. Parsed leniently —
-/// unknown fields are ignored — but seat and scope fields default to
-/// empty, which fails closed (an unparseable or empty node never grants
-/// standing).
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NodeContent {
-    /// Human seat holders (64-hex pubkeys). Absent → none.
-    #[serde(default)]
-    holders: Vec<String>,
-    /// Agent seat holders (NIP-OA keys, 64-hex). Absent → none.
-    #[serde(default)]
-    agent_seats: Vec<String>,
-    /// Delegation scope. Absent → empty `canGrant` (no standing).
-    #[serde(default)]
-    scope: OrgScope,
-}
-
 /// Extract the single `d` tag value from an event.
 ///
 /// The org envelope validation upstream guarantees exactly one bounded `d`
-/// tag for kind:37011; a missing tag here is a defensive reject.
+/// tag for the org kinds; a missing tag here is a defensive reject.
 fn d_tag_of(event: &Event) -> Result<String, IngestError> {
     event
         .tags
         .iter()
         .find(|t| t.as_slice().first() == Some(&"d".to_string()))
         .and_then(|t| t.as_slice().get(1).map(|v| v.to_string()))
-        .ok_or_else(|| IngestError::Rejected("invalid: org grant must carry a `d` tag".into()))
+        .ok_or_else(|| IngestError::Rejected("invalid: org event must carry a `d` tag".into()))
 }
 
-/// Lowercase-compare two 64-hex pubkeys.
-fn hex_eq(a: &str, b: &str) -> bool {
-    a.eq_ignore_ascii_case(b)
-}
-
-/// Fetch the latest stored event of `kind` with `d` tag `d` in `community`.
+/// Map a failed authority decision onto an ingest error.
 ///
-/// Org kinds are global-only (NIP-ORG "Relay behavior"), so the lookup is
-/// community-scoped and global-only; NIP-33 replacement means the newest
-/// row wins. Bounded with `LIMIT 1`. Soft-deleted rows are excluded by the
-/// store.
-async fn fetch_by_d(
-    state: &Arc<AppState>,
-    tenant: &TenantContext,
-    kind: u32,
-    d: &str,
-) -> Result<Option<Event>, IngestError> {
-    let mut q = buzz_db::EventQuery::for_community(tenant.community());
-    q.kinds = Some(vec![kind as i32]);
-    q.d_tag = Some(d.to_string());
-    q.global_only = true;
-    q.limit = Some(1);
-    let rows = state
-        .db
-        .query_events_for_event_write(&q)
-        .await
-        .map_err(|e| {
-            IngestError::Internal(format!(
-                "error: db error fetching org event (kind {kind}, d {d}): {e}"
-            ))
-        })?;
-    Ok(rows.into_iter().next().map(|stored| stored.event))
-}
-
-/// Parse a stored kind:37011 event into a [`ResolvedGrant`].
-///
-/// The author check binds the stored row to its claimed issuer: NIP-ORG
-/// addresses grants by `(issuer, 37011, d)`, so a stored grant whose
-/// author is not its `content.issuer` is corrupt or forged and fails the
-/// chain (reject, never verify).
-fn stored_grant(stored: &Event) -> Result<ResolvedGrant, IngestError> {
-    let content: OrgGrantContent = serde_json::from_str(&stored.content).map_err(|e| {
-        IngestError::Rejected(format!(
-            "restricted: stored parent grant content is not a valid org grant: {e}"
-        ))
-    })?;
-    let author_hex = stored.pubkey.to_hex();
-    if !hex_eq(&author_hex, &content.issuer) {
-        return Err(IngestError::Rejected(format!(
-            "restricted: stored parent grant {} author does not match its issuer",
-            content.issuer
-        )));
+/// A denial is a rejection (`restricted:`); a store failure is an internal
+/// error, never an implicit allow or deny (Review-Proven Rule 1).
+pub(crate) fn authority_ingest_error(
+    err: OrgAuthorityError<buzz_db::DbError>,
+    what: &str,
+) -> IngestError {
+    match err {
+        OrgAuthorityError::Source(e) => IngestError::Internal(format!(
+            "error: db error resolving org authority for {what}: {e}"
+        )),
+        OrgAuthorityError::Denied(denial) => IngestError::Rejected(format!("restricted: {denial}")),
     }
-    let d = stored
-        .tags
-        .iter()
-        .find(|t| t.as_slice().first() == Some(&"d".to_string()))
-        .and_then(|t| t.as_slice().get(1))
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            IngestError::Rejected("restricted: stored parent grant has no `d` tag".into())
-        })?;
-    Ok(ResolvedGrant {
-        d,
-        issuer: content.issuer,
-        grantee: content.grantee,
-        via: content.via,
-        verbs: content.verbs,
-        parent_grant: content.parent_grant,
-        expires: content.expires,
-        revoked: content.revoked,
-    })
-}
-
-/// Parse a stored kind:37010 event into a [`ResolvedOrgNode`].
-fn stored_node(stored: &Event) -> Result<ResolvedOrgNode, IngestError> {
-    let content: NodeContent = serde_json::from_str(&stored.content).map_err(|e| {
-        IngestError::Rejected(format!(
-            "restricted: stored org node content is not a valid org node: {e}"
-        ))
-    })?;
-    let d = stored
-        .tags
-        .iter()
-        .find(|t| t.as_slice().first() == Some(&"d".to_string()))
-        .and_then(|t| t.as_slice().get(1))
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            IngestError::Rejected("restricted: stored org node has no `d` tag".into())
-        })?;
-    Ok(ResolvedOrgNode {
-        d,
-        holders: content.holders,
-        agent_seats: content.agent_seats,
-        scope: content.scope,
-    })
-}
-
-/// Reject helper for a failed chain verification.
-fn chain_error(err: GrantChainError) -> IngestError {
-    IngestError::Rejected(format!(
-        "restricted: org grant chain verification failed: {err}"
-    ))
 }
 
 /// Enforce the grant chain for an incoming kind:37011 event.
 ///
-/// Called from the ingest pipeline only when `ORG_GRANT_ENFORCEMENT=on`.
-/// See the module docs for the full contract.
+/// Called from the ingest pipeline when `ORG_GRANT_ENFORCEMENT` is on (the
+/// default). See the module docs for the full contract.
 pub(crate) async fn enforce_grant_chain(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: &Event,
 ) -> Result<(), IngestError> {
-    let content: OrgGrantContent = serde_json::from_str(&event.content).map_err(|e| {
+    let raw: serde_json::Value = serde_json::from_str(&event.content).map_err(|e| {
         IngestError::Rejected(format!(
             "invalid: org grant content must be a valid org grant object: {e}"
         ))
     })?;
 
-    // A revocation republication only removes authority — admit it without
-    // chain verification so revocation is always possible. Its effect is
-    // enforced when the next grant that names this `d` fails here.
-    if content.revoked {
+    // Ownership stakes are records, not delegations.
+    if is_equity_grant_content(&raw) {
         return Ok(());
     }
 
-    // The signer must be the claimed issuer (grants are addressed by
-    // `(issuer, 37011, d)`); a signed grant naming someone else as issuer
-    // is a forgery attempt, not a delegation.
-    let author_hex = event.pubkey.to_hex();
-    if !hex_eq(&author_hex, &content.issuer) {
-        return Err(IngestError::Rejected(
-            "restricted: org grant `issuer` must be the event author".into(),
-        ));
-    }
+    let content: OrgGrantContent = serde_json::from_value(raw).map_err(|e| {
+        IngestError::Rejected(format!(
+            "invalid: org grant content must be a valid org grant object: {e}"
+        ))
+    })?;
 
-    let grant_d = d_tag_of(event)?;
-
-    // Collect the chain: the incoming grant plus each ancestor, bounded by
-    // the depth cap, with cycle detection during collection so a cycle
-    // reports as one instead of exhausting the bound.
-    let mut grants: HashMap<String, ResolvedGrant> = HashMap::new();
-    let mut nodes: HashMap<String, ResolvedOrgNode> = HashMap::new();
-
-    let seed = ResolvedGrant {
-        d: grant_d.clone(),
-        issuer: content.issuer,
-        grantee: content.grantee,
+    let incoming = ResolvedGrant {
+        d: d_tag_of(event)?,
+        issuer: content.issuer.to_ascii_lowercase(),
+        grantee: content.grantee.to_ascii_lowercase(),
         via: content.via,
         verbs: content.verbs,
         parent_grant: content.parent_grant,
         expires: content.expires,
         revoked: content.revoked,
     };
-    grants.insert(grant_d.clone(), seed.clone());
 
-    // The incoming grant's own `via` node is part of the verification set
-    // (root standing checks the issuer's seat in it), so fetch it up front.
-    let seed_via = seed.via.clone();
-    match fetch_by_d(state, tenant, KIND_ORG_NODE, &seed_via).await? {
-        Some(stored) => {
-            nodes.insert(seed_via, stored_node(&stored)?);
-        }
-        None => {
-            return Err(chain_error(GrantChainError::NodeNotFound(seed_via)));
-        }
-    }
-
-    let mut visited: HashSet<String> = HashSet::new();
-    visited.insert(grant_d.clone());
-    let mut current = seed;
-    while let Some(parent_d) = current.parent_grant.clone() {
-        if !visited.insert(parent_d.clone()) {
-            return Err(chain_error(GrantChainError::CircularChain(parent_d)));
-        }
-        if visited.len() > MAX_GRANT_CHAIN_DEPTH + 1 {
-            return Err(chain_error(GrantChainError::ChainDepthExceeded(parent_d)));
-        }
-        let Some(stored) = fetch_by_d(state, tenant, KIND_ORG_GRANT, &parent_d).await? else {
-            return Err(chain_error(GrantChainError::ParentGrantNotFound(parent_d)));
-        };
-        let parent = stored_grant(&stored)?;
-
-        // Continuity: authority only chains from what was delegated to you.
-        if !hex_eq(&parent.grantee, &current.issuer) {
-            return Err(IngestError::Rejected(format!(
-                "restricted: org grant issuer {} is not the grantee of parent grant {}",
-                current.issuer, parent_d
-            )));
-        }
-
-        let via = parent.via.clone();
-        grants.insert(parent_d.clone(), parent.clone());
-        current = parent;
-        if !nodes.contains_key(&via) {
-            match fetch_by_d(state, tenant, KIND_ORG_NODE, &via).await? {
-                Some(stored) => {
-                    nodes.insert(via.clone(), stored_node(&stored)?);
-                }
-                None => {
-                    return Err(chain_error(GrantChainError::NodeNotFound(via)));
-                }
-            }
-        }
-    }
-
-    verify_grant_chain(
-        &grant_d,
+    let graph = state.db.org_graph(tenant.community());
+    verify_incoming_grant(
+        &graph,
+        &event.pubkey.to_hex(),
+        incoming,
         Utc::now().timestamp().max(0) as u64,
-        &grants,
-        &nodes,
     )
-    .map_err(chain_error)
+    .await
+    .map_err(|e| authority_ingest_error(e, "org grant"))
+}
+
+/// Enforce the R1 authority anchor on an incoming kind:37010 node: the
+/// owner/admin, or a holder of an anchored parent seat (with a scope no wider
+/// than the parent's and an id nobody else uses). Always on.
+pub(crate) async fn validate_org_node_publication(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let d = d_tag_of(event)?;
+    let author_hex = event.pubkey.to_hex();
+    let node = parse_stored_node(
+        &author_hex,
+        event.created_at.as_secs(),
+        &event.id.to_hex(),
+        &d,
+        &event.content,
+    )
+    .ok_or_else(|| {
+        IngestError::Rejected("invalid: org node content is not a valid org node".into())
+    })?;
+
+    let graph = state.db.org_graph(tenant.community());
+    check_node_publication(
+        &graph,
+        &author_hex,
+        &d,
+        node.parent.as_deref(),
+        &node.node.scope.can_grant,
+    )
+    .await
+    .map_err(|e| authority_ingest_error(e, "org node"))
 }
 
 /// NIP-ORG onchain binding authority (kind:37010).
@@ -467,6 +328,11 @@ mod tests {
             .execute(pool)
             .await
             .expect("delete events");
+        sqlx::query("DELETE FROM relay_members WHERE community_id = $1")
+            .bind(community)
+            .execute(pool)
+            .await
+            .expect("delete relay members");
         sqlx::query("DELETE FROM communities WHERE id = $1")
             .bind(community)
             .execute(pool)
@@ -538,6 +404,21 @@ mod tests {
         // `insert_event` derives it from the tags, and this raw-row helper
         // mirrors that. `d_tag_value` always puts the pair first.
         let d = tags[0][1].as_str().expect("d tag value").to_string();
+        // R1 anchor: a root node (no `parent`) is only anchored when its
+        // author is the community owner/admin, so the fixture's root authors
+        // are seated as admins. Child nodes stay unanchored unless their
+        // parent chain reaches one.
+        if kind == KIND_ORG_NODE && content.get("parent").is_none_or(|p| p.is_null()) {
+            sqlx::query(
+                "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'admin') \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(community)
+            .bind(hex::encode(author))
+            .execute(pool)
+            .await
+            .expect("seat fixture admin");
+        }
         let mut event_id = [0u8; 32];
         event_id[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
         event_id[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());

@@ -1299,21 +1299,15 @@ mod tests {
 
         // Two runs admitted, the third exceeds.
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("first run"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Admitted
         );
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("second run"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Admitted
         );
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("third run"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Exceeded(0),
             "limit-2 budget must block the third run"
         );
@@ -1351,16 +1345,12 @@ mod tests {
         // The grant forgives exactly one overrun: the next run is admitted
         // (counter reaches the effective limit), then blocked again.
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("run after grant"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Admitted,
             "granted tolerance must admit one more run"
         );
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("run after tolerance spent"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Exceeded(0),
             "one grant forgives one overrun, no more"
         );
@@ -1391,9 +1381,7 @@ mod tests {
         .await
         .expect("deny");
         assert_eq!(
-            one_budget(&db, &tenant, agent, "runs", &budget)
-                .await
-                .expect("run after denial"),
+            one_budget(&db, &tenant, agent, "runs", &budget).await,
             BudgetOutcome::Exceeded(0),
             "a denied request must not lift the limit"
         );
@@ -1681,15 +1669,11 @@ mod tests {
         let budget = task_budget(1);
 
         assert_eq!(
-            one_budget(&db, &tenant, agent, "task_create", &budget)
-                .await
-                .expect("first task"),
+            one_budget(&db, &tenant, agent, "task_create", &budget).await,
             BudgetOutcome::Admitted
         );
         assert_eq!(
-            one_budget(&db, &tenant, agent, "task_create", &budget)
-                .await
-                .expect("second task"),
+            one_budget(&db, &tenant, agent, "task_create", &budget).await,
             BudgetOutcome::Exceeded(0),
             "limit-1 budget must block the second task"
         );
@@ -1724,16 +1708,12 @@ mod tests {
         );
 
         assert_eq!(
-            one_budget(&db, &tenant, agent, "task_create", &budget)
-                .await
-                .expect("task after grant"),
+            one_budget(&db, &tenant, agent, "task_create", &budget).await,
             BudgetOutcome::Admitted,
             "granted tolerance must admit one more task_create"
         );
         assert_eq!(
-            one_budget(&db, &tenant, agent, "task_create", &budget)
-                .await
-                .expect("task after tolerance spent"),
+            one_budget(&db, &tenant, agent, "task_create", &budget).await,
             BudgetOutcome::Exceeded(0),
             "one grant forgives one overrun, no more"
         );

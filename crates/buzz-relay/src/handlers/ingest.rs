@@ -3916,6 +3916,17 @@ async fn ingest_event_inner(
             .await?;
     }
 
+    // NIP-ORG budget enforcement for agent CHAT (kinds 9 and 40002): each
+    // message an agent authors consumes one `messages` unit against the
+    // strictest budget covering it (its own, else the community default).
+    // Humans are never metered (design rule 5), so a non-agent author returns
+    // before any budget lookup; overruns become a durable approval request,
+    // exactly like the gates above.
+    if kind_u32 == KIND_STREAM_MESSAGE || kind_u32 == KIND_STREAM_MESSAGE_V2 {
+        let author_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_message_budget(state, tenant, &author_hex).await?;
+    }
+
     // NIP-ORG budget enforcement for GOVERNANCE actions (agentic-governance
     // S3's HITL gate): the observable governance actions an agent takes are
     // its own mirrors — a proposal record (47004) is `governance.proposal`;
@@ -4007,6 +4018,10 @@ async fn ingest_event_inner(
     }
 
     if kind_u32 == KIND_ORG_NODE {
+        // R1 authority anchor: only the community owner/admin, or a holder of
+        // an anchored parent seat, may publish a node — so a member cannot
+        // shadow the owner's node by reusing its `d`. Always on.
+        super::org_grant_enforcement::validate_org_node_publication(state, tenant, &event).await?;
         // The `onchain` binding on the org root is a governance act: only the
         // root's holders or the community owner may publish it, and only on
         // a root node. Always on — a forged binding must never store.
@@ -4014,10 +4029,10 @@ async fn ingest_event_inner(
     }
 
     if kind_u32 == KIND_ORG_GRANT {
-        // NIP-ORG grant-chain enforcement is opt-in (`ORG_GRANT_ENFORCEMENT`).
-        // Off (default): store and forward, byte-identical to a relay with
-        // no grant logic. On: verify attenuation, root standing, and expiry
-        // before acceptance — fail closed (see `org_grant_enforcement`).
+        // NIP-ORG grant-chain enforcement is on by default
+        // (`ORG_GRANT_ENFORCEMENT=off` disables it). On: verify attenuation,
+        // root standing, anchoring and expiry before acceptance — fail closed
+        // (see `org_grant_enforcement`). Equity records are exempt.
         if state.config.org_grant_enforcement {
             super::org_grant_enforcement::enforce_grant_chain(state, tenant, &event).await?;
         }

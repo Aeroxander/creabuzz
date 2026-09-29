@@ -42,10 +42,11 @@ describe("buildOwnershipGrantTemplate", () => {
     ]);
   });
 
-  it("carries a verbatim OrgGrantContent body with no authority verbs", () => {
+  it("carries an equity-marked OrgGrantContent body with no authority verbs", () => {
     const template = buildOwnershipGrantTemplate(INPUT);
     assert.deepEqual(JSON.parse(template.content), {
       v: 1,
+      type: "equity",
       issuer: FOUNDER,
       grantee: REQUESTER,
       via: "nebula",

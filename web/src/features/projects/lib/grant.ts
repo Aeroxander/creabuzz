@@ -179,6 +179,9 @@ export function buildOwnershipGrantTemplate(input: OwnershipGrantInput): {
     ],
     content: JSON.stringify({
       v: 1,
+      // Marks this 37011 as an ownership record, not a delegation: the relay
+      // exempts it from grant-chain verification and authority views ignore it.
+      type: "equity",
       issuer: input.issuer,
       grantee: input.grantee,
       via: nodeId,
