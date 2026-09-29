@@ -169,6 +169,10 @@ export function graduationReadinessText(
       return "The auction is still running. Graduation opens once it ends.";
     case "threshold-missed":
       return "The auction ended below its required raise, so there is nothing to graduate. Bidders can exit and claim their refunds.";
+    case "already-graduated":
+      return "This launch has already been graduated.";
+    case "blocked":
+      return "Graduation cannot run right now. The technical detail below says what the contract objected to.";
     case "misconfigured":
       return "This auction was not deployed with the graduation executor as its funds and tokens recipient, so graduation cannot run. The launch has to be redeployed.";
     default:

@@ -39,8 +39,11 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// address. Without the bind a caller-supplied "auction" could report a
 /// `currency()`/`token()`/`lbpInitializationParams()` of its choosing and make
 /// the executor pay its own escrowed reserve to the treasury on demand.
-/// Native-currency auctions are refused at bind time: the executor has no
-/// `receive()`, so a native raise could never be swept.
+/// Native-currency (ETH) auctions are supported: the raise arrives through
+/// `receive()`, which accepts ETH from the bound auction and from nobody else,
+/// and every payout of the raise (treasury share, reserve release, stuck-reserve
+/// withdrawal) goes through `_pay`, which sends ETH for the zero-address
+/// currency and an ERC-20 transfer otherwise.
 ///
 /// The reserve stays escrowed until the TokenMaster/LBAMM pool deploys and
 /// the treasury records its address (`releaseReserve`). It is NOT the treasury's
@@ -122,8 +125,8 @@ contract GraduationExecutor is ILBPInitializer {
     error AlreadyBound(address bound);
     /// @notice The address handed to `bindAuction` is not a contract.
     error NotAnAuction(address auction);
-    /// @notice The auction raises native currency, which this executor cannot receive.
-    error NativeCurrencyUnsupported(address auction);
+    /// @notice ETH was sent to the executor by anyone but the bound auction.
+    error NativeFromStranger(address sender);
     /// @notice Reserve lock outside `[MIN_RESERVE_LOCK, MAX_RESERVE_LOCK]`.
     error BadReserveLock(uint64 reserveLockSeconds);
     /// @notice The reserve is still locked; withdrawable at `unlockAt`.
@@ -145,16 +148,15 @@ contract GraduationExecutor is ILBPInitializer {
     /// @notice One-shot: bind this executor to the one auction it will settle.
     /// Treasury only, called right after the auction is created (the executor
     /// is deployed first because it must be the auction's recipient).
-    /// @dev Verifies the auction names this executor as BOTH recipients and
-    /// raises an ERC-20 (not native), so a mis-wired launch fails here — while
-    /// a fresh executor can still be deployed — not at graduation.
+    /// @dev Verifies the auction names this executor as BOTH recipients, so a
+    /// mis-wired launch fails here — while a fresh executor can still be
+    /// deployed — not at graduation. The currency may be ERC-20 or native.
     function bindAuction(address auction) external {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
         if (boundAuction != address(0)) revert AlreadyBound(boundAuction);
         if (auction.code.length == 0) revert NotAnAuction(auction);
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
         address currency = cca.currency();
-        if (currency == address(0)) revert NativeCurrencyUnsupported(auction);
         if (cca.fundsRecipient() != address(this)) {
             revert NotFundsRecipient(auction, address(this), cca.fundsRecipient());
         }
@@ -218,7 +220,7 @@ contract GraduationExecutor is ILBPInitializer {
 
         address currency = cca.currency();
         if (treasuryShare > 0) {
-            currency.safeTransfer(treasury, treasuryShare);
+            _pay(currency, treasury, treasuryShare);
         }
         if (unsoldTokens > 0) {
             cca.token().safeTransfer(treasury, unsoldTokens);
@@ -284,7 +286,7 @@ contract GraduationExecutor is ILBPInitializer {
         address currency = IContinuousClearingAuction(auction).currency();
         uint256 amount = g.reserveEscrow;
         g.reserveEscrow = 0;
-        currency.safeTransfer(tokenMasterPool, amount);
+        _pay(currency, tokenMasterPool, amount);
         emit ReserveReleased(auction, tokenMasterPool, amount);
     }
 
@@ -304,7 +306,7 @@ contract GraduationExecutor is ILBPInitializer {
         if (amount == 0) revert NothingToRelease(auction);
         g.reserveEscrow = 0;
         address currency = IContinuousClearingAuction(auction).currency();
-        currency.safeTransfer(treasury, amount);
+        _pay(currency, treasury, amount);
         emit StuckReserveWithdrawn(auction, currency, amount);
     }
 
@@ -312,6 +314,22 @@ contract GraduationExecutor is ILBPInitializer {
     function reserveUnlockAt(address auction) public view returns (uint64) {
         uint64 at = graduatedAt[auction];
         return at == 0 ? 0 : at + reserveLockSeconds;
+    }
+
+    /// @dev Pay `amount` of `currency` to `to`: ETH for the zero address, an
+    /// ERC-20 transfer otherwise. Callers update their accounting first.
+    function _pay(address currency, address to, uint256 amount) internal {
+        if (currency == address(0)) {
+            to.safeTransferETH(amount);
+        } else {
+            currency.safeTransfer(to, amount);
+        }
+    }
+
+    /// @notice Receives the native raise. Only the bound auction may send ETH
+    /// here: a stranger's ETH would be unaccounted for and stuck.
+    receive() external payable {
+        if (msg.sender != boundAuction) revert NativeFromStranger(msg.sender);
     }
 
     function _tokenBalance(address token, address holder) internal view returns (uint256) {

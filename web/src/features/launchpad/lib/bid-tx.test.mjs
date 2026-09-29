@@ -16,6 +16,7 @@ import {
   encodeClaimTokensBatch,
   encodePermit2Approve,
   buildBidTransaction,
+  buildBidCalls,
   bidPlanWithDefaultHint,
 } from "./bid-tx.ts";
 
@@ -286,4 +287,60 @@ test("bidPlanWithDefaultHint keeps an explicit hint and fills the floor otherwis
     floor,
   );
   assert.equal(plan.prevTickPriceQ96, floor);
+});
+
+// ---- buildBidCalls: ERC-20 vs native ---------------------------------------
+
+const BID_PLAN = {
+  maxPriceQ96: 4294967297n * 2n,
+  amount: 5n * 10n ** 18n,
+  owner: "0x1111111111111111111111111111111111111111",
+  hookData: "0x",
+  prevTickPriceQ96: 4294967297n,
+};
+const AUCTION = "0x5555555555555555555555555555555555555555";
+const USDC = "0x6666666666666666666666666666666666666666";
+
+test("a native (ETH) bid is ONE call and carries the bid amount as its value", () => {
+  // submitBid reverts InvalidAmount unless msg.value == amount on a native
+  // auction: a zero-value call would fail every ETH bid.
+  for (const currency of [null, ""]) {
+    const calls = buildBidCalls({
+      auction: AUCTION,
+      plan: BID_PLAN,
+      currency,
+      deadline: 1n,
+    });
+    assert.equal(calls.length, 1, `currency ${JSON.stringify(currency)}`);
+    assert.equal(calls[0].to, AUCTION);
+    assert.equal(calls[0].value, `0x${BID_PLAN.amount.toString(16)}`);
+    assert.equal(calls[0].data, encodeSubmitBid(BID_PLAN));
+  }
+});
+
+test("an ERC-20 bid approves Permit2, then the auction, then bids with NO value", () => {
+  const calls = buildBidCalls({
+    auction: AUCTION,
+    plan: BID_PLAN,
+    currency: USDC,
+    deadline: 1n,
+    underlyingAllowance: 0n,
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].to, USDC, "token approve to Permit2");
+  assert.equal(calls[1].to, PERMIT2_ADDRESS, "Permit2 approve to the auction");
+  assert.equal(calls[2].to, AUCTION);
+  assert.equal(calls[2].value, "0x0", "an ERC-20 bid must not carry ETH");
+});
+
+test("an ERC-20 bid skips the token approve when the allowance already covers it", () => {
+  const calls = buildBidCalls({
+    auction: AUCTION,
+    plan: BID_PLAN,
+    currency: USDC,
+    deadline: 1n,
+    underlyingAllowance: BID_PLAN.amount,
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].to, PERMIT2_ADDRESS);
 });

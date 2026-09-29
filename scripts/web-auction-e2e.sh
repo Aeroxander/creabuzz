@@ -8,15 +8,18 @@
 #   2. boots its own Anvil on a throwaway port (killed on exit)
 #   3. puts the CCA factory's runtime code at its canonical address (the real
 #      factory only exists on forks; this is the same code at the same address)
-#   4. deploys a 6-decimal sale currency ("Dev USDC") and an 18-decimal sale
-#      token, and mints the whole 200M sale supply to Anvil account 0
+#   4. puts Permit2 at its canonical address, deploys a 6-decimal sale currency
+#      ("Dev USDC") and an 18-decimal sale token, and mints the whole 200M sale
+#      supply to Anvil account 0
 #   5. builds the web app and runs the spec with a wallet that forwards to Anvil
 #
 # The spec drives the UI through all seven deploy steps (executor, auction via
 # the factory, fund, open bidding, bind the executor, save the record) and checks
-# the chain afterwards: real code at the auction address, the whole supply
-# (minus the router's 1 wei) held by it. A second test proves a wallet that is
-# not the treasury is stopped before any transaction is sent.
+# the chain afterwards: real code at the auction, the whole supply (minus the
+# router's 1 wei) held by it. It also runs the full journey for an ETH sale and a
+# USDC sale: deploy, a bidder bids in the bid dialog, blocks are mined past the
+# end, the treasury executes graduation, and the chain is checked (raise met,
+# 40% reserve escrowed, the rest paid to the treasury, receipts published).
 #
 # ⚠️  DEV ONLY. Anvil dev keys (public), a local chain, nothing else.
 #
@@ -82,6 +85,18 @@ deploy_mock() { # <name> <symbol> <decimals> -> address
   receipt="$(cast send --json --rpc-url "$RPC" --private-key "$KEY" --create "0x${bytecode#0x}${args#0x}")"
   echo "$receipt" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).contractAddress))'
 }
+# Permit2 at its canonical address, so ERC-20 (USDC) bids can pull the bidder's
+# funds. Deployed normally, then its runtime code (constructor-resolved values
+# included) is copied to the canonical address; only the allowance paths the
+# auction uses are exercised, where the EIP-712 domain does not matter.
+PERMIT2="0x000000000022D473030F116dDEE9F6B43aC78BA3"
+step "placing Permit2 at ${PERMIT2}"
+PERMIT2_BC="$(json_field contracts/out/Permit2.sol/Permit2.json bytecode.object)"
+P2_RECEIPT="$(cast send --json --rpc-url "$RPC" --private-key "$KEY" --create "$PERMIT2_BC")"
+P2_TMP="$(echo "$P2_RECEIPT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).contractAddress))')"
+cast rpc --rpc-url "$RPC" anvil_setCode "$PERMIT2" "$(cast code "$P2_TMP" --rpc-url "$RPC")" >/dev/null
+[[ "$(cast code "$PERMIT2" --rpc-url "$RPC")" != "0x" ]] || { echo "Permit2 code was not set"; exit 2; }
+
 step "deploying the sale currency and the sale token"
 CURRENCY="$(deploy_mock "Dev USDC" dUSDC 6)"
 SALE_TOKEN="$(deploy_mock "Nebula Token" NBL 18)"
@@ -94,7 +109,8 @@ step "currency ${CURRENCY}  sale token ${SALE_TOKEN}"
 cd "$REPO_ROOT/web"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
-  node_modules/.bin/vite build >/dev/null 2>&1 || { echo "web build failed"; exit 2; }
+  # A local chain has no fixed USDC: tell the app which token the dev USDC is.
+  VITE_LOCAL_USDC="$CURRENCY" node_modules/.bin/vite build >/dev/null 2>&1 || { echo "web build failed"; exit 2; }
 fi
 step "running the browser spec"
 E2E_ANVIL_URL="$RPC" E2E_SALE_TOKEN="$SALE_TOKEN" E2E_CURRENCY="$CURRENCY" \

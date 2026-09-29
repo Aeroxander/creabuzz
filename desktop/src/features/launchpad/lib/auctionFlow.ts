@@ -382,16 +382,6 @@ export function deriveAuctionDeployParams(
       : isEvmAddress(currencyInput)
         ? currencyInput.toLowerCase()
         : fail(`the launch's currency is not an address: ${inputs.currency}`);
-  // GraduationExecutor.bindAuction reverts NativeCurrencyUnsupported for a
-  // native-currency auction, and this flow's executor is the auction's funds
-  // recipient — so a native sale could be deployed and funded (the whole supply
-  // moved into it) but never bound, and could never graduate. Refuse it here,
-  // before the first transaction, not at the last step.
-  if (currency === ZERO_ADDRESS) {
-    fail(
-      "the sale currency must be an ERC-20 token such as USDC: the graduation executor cannot settle a native-currency (ETH) sale",
-    );
-  }
   const floorPrice = orFail("floorPrice", () =>
     decimalField(inputs.floorPrice, "floorPrice"),
   );

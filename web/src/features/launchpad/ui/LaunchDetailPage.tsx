@@ -26,7 +26,13 @@ import { TreasuryTab } from "./TreasuryTab";
 
 type TabLaunch = Launch;
 
-import { getRpcEndpoint, isContractDeployed, setRpcEndpoint } from "../chain";
+import {
+  getRpcEndpoint,
+  isContractDeployed,
+  recordSaleCurrency,
+  setRpcEndpoint,
+} from "../chain";
+import { priceFormat, sampleBudget } from "../lib/sale-currency";
 import { useScoreRoots } from "../use-launches";
 import {
   useAuctionProgress,
@@ -365,20 +371,21 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
   const remaining = remainingToGraduate(raised, goal);
   const percent = percentOfGoal(raised, goal);
 
+  const cur = recordSaleCurrency(record);
   const rows: Array<[string, string]> = [
     // An unavailable read reports no amount at all: printing `0` would imply a
     // funded state of zero rather than an unknown one.
-    ["Raised", live ? formatMoney(raised) : "—"],
+    ["Raised", live ? formatMoney(raised, cur) : "—"],
     [
       "Graduation threshold",
       goal
-        ? `${formatMoney(goal)}${percent !== null ? ` · ${percent}% reached` : ""}`
+        ? `${formatMoney(goal, cur)}${percent !== null ? ` · ${percent}% reached` : ""}`
         : "None set — the auction graduates at any raise",
     ],
     [
       "Still to raise",
       remaining !== null
-        ? formatMoney(remaining)
+        ? formatMoney(remaining, cur)
         : live && goal
           ? "Threshold met"
           : "—",
@@ -386,7 +393,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
     [
       "Floor price",
       record.floorPrice
-        ? `${formatQ96PerToken(record.floorPrice)} per token`
+        ? `${formatQ96PerToken(record.floorPrice, priceFormat(cur))} per token`
         : "—",
     ],
     [
@@ -397,9 +404,9 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
     ],
     [
       "Raise currency",
-      record.currency
-        ? `${truncatePubkey(record.currency)} (ERC-20)`
-        : "Native coin",
+      cur.kind === "custom"
+        ? `${truncatePubkey(cur.value)} (ERC-20)`
+        : cur.symbol,
     ],
     [
       "Auction window",
@@ -496,6 +503,8 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
       <Card className="p-4" data-testid="launch-tokenomics">
         <h2 className="text-base font-semibold">Token and supply</h2>
         {(() => {
+          const cur = recordSaleCurrency(record);
+          const sample = sampleBudget(cur);
           const pricePerToken = record.floorPrice
             ? floorPricePerToken(toAtomic(record.floorPrice) ?? 0n)
             : null;
@@ -513,7 +522,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
             pricePerToken !== null && totalSupply !== null
               ? impliedFdv(pricePerToken, totalSupply)
               : null;
-          const perThousand = tokensForBudget(1_000_000_000n, pricePerToken);
+          const perThousand = tokensForBudget(sample.atomic, pricePerToken);
           return (
             <>
               <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
@@ -546,12 +555,12 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
                   Valuation at the floor
                 </span>{" "}
                 <span className="font-medium tabular-nums">
-                  {fdv !== null ? formatMoney(fdv) : "—"}
+                  {fdv !== null ? formatMoney(fdv, cur) : "—"}
                 </span>
               </p>
               <p className="mt-1 text-xs text-black/60 dark:text-white/60">
                 {perThousand !== null
-                  ? `$1,000 buys about ${formatAtomic(perThousand, 0)} tokens at the floor price — less if the sale clears higher.`
+                  ? `${sample.label} buys about ${formatAtomic(perThousand, 0)} tokens at the floor price — less if the sale clears higher.`
                   : "Link a floor price and a token plan to see what a budget buys."}{" "}
                 The sale clears at one uniform price; you pay that, not your
                 maximum.
@@ -639,7 +648,12 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
     ["Auction contract", chainState.auction ?? "checking…"],
     ["Token contract", chainState.token ?? "checking…"],
     ["Treasury contract", chainState.treasury ?? "checking…"],
-    ["Monthly budget", record.budget ? formatMoney(record.budget) : "not set"],
+    [
+      "Monthly budget",
+      record.budget
+        ? formatMoney(record.budget, recordSaleCurrency(record))
+        : "not set",
+    ],
     [
       "Vesting package",
       record.vesting

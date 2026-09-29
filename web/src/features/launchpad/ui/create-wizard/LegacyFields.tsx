@@ -33,6 +33,7 @@ import {
   minimumLiquidityPercent,
   type SupplyAllocation,
 } from "../../lib/allocation";
+import type { SaleCurrency } from "../../lib/sale-currency";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";
 import { Field } from "./fields";
@@ -80,6 +81,8 @@ export interface LegacyFieldsState {
   setAdmission(value: "curated" | "community"): void;
   currency: string;
   setCurrency(value: string): void;
+  /** What `currency` means: symbol and decimals. */
+  saleCurrency: SaleCurrency;
   allocation: SupplyAllocation;
   /** One allocation input changed — the dialog re-derives the tranche too. */
   setAllocationValue(key: keyof SupplyAllocation, value: number): void;
@@ -154,8 +157,7 @@ export function legacyFields(
     setChainId,
     admission,
     setAdmission,
-    currency,
-    setCurrency,
+    saleCurrency,
     allocation,
     setAllocationValue,
     resetAllocation,
@@ -428,18 +430,18 @@ export function legacyFields(
         </Field>
       </div>
       <div className="flex flex-col gap-3">
-        <Field
-          id="launch-currency"
-          label="Raise currency"
-          hint="0x address, e.g. USDC. Empty = native coin."
+        <p
+          className="text-sm text-black/60 dark:text-white/60"
+          data-testid="launch-currency"
         >
-          <Input
-            id="launch-currency"
-            onChange={(e) => setCurrency(e.target.value)}
-            placeholder="Native coin"
-            value={currency}
-          />
-        </Field>
+          Raised in{" "}
+          <span className="font-medium text-black dark:text-white">
+            {saleCurrency.kind === "custom"
+              ? `token ${saleCurrency.value}`
+              : saleCurrency.symbol}
+          </span>
+          . The choice between ETH and USDC is made on the sale step.
+        </p>
         <div
           className="rounded-lg border border-black/10 p-3 dark:border-white/10"
           data-testid="launch-allocation"

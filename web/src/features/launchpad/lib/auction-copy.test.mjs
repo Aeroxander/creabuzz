@@ -355,6 +355,8 @@ test("graduation readiness reads in plain words for every status", () => {
     "ready",
     "running",
     "threshold-missed",
+    "already-graduated",
+    "blocked",
     "misconfigured",
   ]) {
     const text = graduationReadinessText({

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Rewrites the two embedded creation-bytecode constants in
-// desktop/src/features/launchpad/lib/graduationArtifact.ts from the forge
-// artifacts. Run after ANY change to contracts/src/GraduationExecutor.sol,
+// Rewrites the two embedded creation-bytecode constants in the desktop AND web
+// graduationArtifact.ts files from the forge artifacts. Run after ANY change to contracts/src/GraduationExecutor.sol,
 // contracts/src/hooks/AllowlistHook.sol or their imports:
 //
 //   cd contracts && forge build && cd .. && node scripts/regen-graduation-artifact.mjs
@@ -16,10 +15,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const target = resolve(
-  repoRoot,
+// The desktop app and the web app each embed the same bytecode (separate
+// packages, no shared module): both are rewritten together so they cannot drift.
+const targets = [
   "desktop/src/features/launchpad/lib/graduationArtifact.ts",
-);
+  "web/src/features/launchpad/lib/graduationArtifact.ts",
+].map((path) => resolve(repoRoot, path));
 
 /** foundry >= 1.0 writes `out/<File>.sol/<Contract>.json`. */
 function artifact(file, contract) {
@@ -40,18 +41,21 @@ function artifact(file, contract) {
 const executor = artifact("GraduationExecutor.sol", "GraduationExecutor");
 const hook = artifact("AllowlistHook.sol", "AllowlistHook");
 
-let source = readFileSync(target, "utf8");
-const replaceConst = (name, value) => {
-  const re = new RegExp(`(export const ${name} =\\n  ")0x[0-9a-f]+(";)`);
-  if (!re.test(source)) {
-    console.error(`could not find ${name} in ${target}`);
-    process.exit(1);
-  }
-  source = source.replace(re, `$1${value}$2`);
-};
-replaceConst("GRADUATION_EXECUTOR_CREATION_BYTECODE", executor.object);
-replaceConst("ALLOWLIST_HOOK_CREATION_BYTECODE", hook.object);
-writeFileSync(target, source);
+for (const target of targets) {
+  let source = readFileSync(target, "utf8");
+  const replaceConst = (name, value) => {
+    const re = new RegExp(`(export const ${name} =\\n  ")0x[0-9a-f]+(";)`);
+    if (!re.test(source)) {
+      console.error(`could not find ${name} in ${target}`);
+      process.exit(1);
+    }
+    source = source.replace(re, `$1${value}$2`);
+  };
+  replaceConst("GRADUATION_EXECUTOR_CREATION_BYTECODE", executor.object);
+  replaceConst("ALLOWLIST_HOOK_CREATION_BYTECODE", hook.object);
+  writeFileSync(target, source);
+  console.log(`rewrote ${target}`);
+}
 console.log(
-  `rewrote ${target}\n  GraduationExecutor solc ${executor.solc}, ${executor.object.length / 2 - 1} bytes\n  AllowlistHook      solc ${hook.solc}, ${hook.object.length / 2 - 1} bytes`,
+  `  GraduationExecutor solc ${executor.solc}, ${executor.object.length / 2 - 1} bytes\n  AllowlistHook      solc ${hook.solc}, ${hook.object.length / 2 - 1} bytes`,
 );

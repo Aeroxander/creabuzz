@@ -5,7 +5,12 @@ import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "./Modal";
 import { UnauditedNotice } from "./UnauditedNotice";
-import { clearingPrice, decodeU256, ethCall } from "../chain";
+import {
+  clearingPrice,
+  decodeU256,
+  ethCall,
+  recordSaleCurrency,
+} from "../chain";
 import {
   bidPlanWithDefaultHint,
   buildBidCalls,
@@ -14,7 +19,15 @@ import {
   validateBid,
   type BidPlan,
 } from "../lib/bid-tx";
-import { toAtomic } from "../lib/amounts";
+import {
+  formatMoney,
+  formatQ96PerToken,
+  roundUpSignificant,
+  toAtomic,
+} from "../lib/amounts";
+import { floorPricePerToken } from "../lib/launch-params";
+import { priceFormat } from "../lib/sale-currency";
+import { priceToAtomic, priceToQ96, unitsToPlain } from "../lib/sale-plans";
 import { TX_HASH_RE } from "../lib/milestone-receipt";
 import { createInjectedWalletSender } from "../lib/wallet-sender";
 import type { LaunchRecord } from "../models";
@@ -75,9 +88,24 @@ export function RecordBidDialog({
    * (Rule 6: the recovery must lead back to the thing the reader was doing).
    */
   const resumeRef = useRef<(() => void) | null>(null);
+  const cur = recordSaleCurrency(record);
   const [bucket, setBucket] = useState("bucket-0");
+  // Plain amounts in the sale's own currency (ETH or USDC). Converted to the
+  // auction's atomic units and Q96 price below; the mirror still records atomic.
   const [budget, setBudget] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
+  // A sensible starting ceiling: twice the floor price. It is only a starting
+  // point — a bid below the clearing price is refused, and the founder-set
+  // floor is the one price we know for certain.
+  const [maxPrice, setMaxPrice] = useState(() => {
+    const floor = toAtomic(record.floorPrice);
+    if (floor === null || floor <= 0n) return "";
+    // Twice the floor, rounded up to two significant digits: the exact double
+    // carries the floor's tick-snapping residue (0.000007999999999999).
+    return unitsToPlain(
+      roundUpSignificant(floorPricePerToken(floor * 2n), 2),
+      cur.decimals,
+    );
+  });
   const [tx, setTx] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -107,7 +135,10 @@ export function RecordBidDialog({
     };
   }, [auction, rpcEndpoint]);
 
-  const budgetAtomic = useMemo(() => toAtomic(budget), [budget]);
+  const budgetAtomic = useMemo(
+    () => priceToAtomic(budget, cur.decimals),
+    [budget, cur.decimals],
+  );
 
   const plan: BidPlan | null = useMemo(() => {
     if (
@@ -117,7 +148,7 @@ export function RecordBidDialog({
     ) {
       return null;
     }
-    const desired = toAtomic(maxPrice);
+    const desired = priceToQ96(maxPrice, cur.decimals);
     if (desired === null) return null;
     // Snap up to the grid: a price between ticks reverts onchain
     // (TickPriceNotAtBoundary), and snapping up keeps the user's premium
@@ -134,7 +165,7 @@ export function RecordBidDialog({
       },
       floorPriceQ96,
     );
-  }, [budgetAtomic, floorPriceQ96, maxPrice, tickSpacingQ96]);
+  }, [budgetAtomic, cur.decimals, floorPriceQ96, maxPrice, tickSpacingQ96]);
 
   const issues = useMemo(() => {
     if (!plan || tickSpacingQ96 === null || floorPriceQ96 === null) return [];
@@ -242,12 +273,12 @@ export function RecordBidDialog({
       // returning bidder is not asked to approve again (a failed read composes
       // the approve — see needsUnderlyingApproval).
       let underlyingAllowance: bigint | null = null;
-      if (record.currency) {
+      if (cur.kind !== "eth") {
         try {
           underlyingAllowance = decodeU256(
             await ethCall(
               rpcEndpoint,
-              record.currency,
+              cur.value,
               encodeErc20Allowance(senderAddress, PERMIT2_ADDRESS),
             ),
           );
@@ -258,7 +289,8 @@ export function RecordBidDialog({
       const calls = buildBidCalls({
         auction,
         plan: ownerPlan,
-        currency: record.currency ?? null,
+        // ETH is the native coin: no token, no Permit2, the bid carries its value.
+        currency: cur.kind === "eth" ? null : cur.value,
         deadline: BigInt(Math.floor(Date.now() / 1000)) + 3600n,
         underlyingAllowance,
       });
@@ -298,8 +330,9 @@ export function RecordBidDialog({
     resumeRef.current = submit;
     void onPublish({
       bucket: bucket.trim() || "bucket-0",
-      budget: budget.trim(),
-      maxPrice: maxPrice.trim(),
+      // The mirror records atomic units and the snapped Q96 price, as before.
+      budget: budgetAtomic?.toString() ?? budget.trim(),
+      maxPrice: plan?.maxPriceQ96.toString() ?? maxPrice.trim(),
       tx: tx.trim(),
       asAgent,
     });
@@ -316,8 +349,8 @@ export function RecordBidDialog({
       </h2>
       <UnauditedNotice chainId={record.chainId} />
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Your bid is a submitBid call on the auction contract; the feed mirror
-        records the transaction hash. The chain is the ledger.
+        Your bid goes from your wallet straight to the auction. Once it is
+        confirmed, record it on this launch&apos;s page so others can see it.
       </p>
       {!auction ? (
         <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
@@ -367,59 +400,61 @@ export function RecordBidDialog({
         </label>
       </fieldset>
       <div className="mt-3 flex flex-col gap-3">
-        <div>
-          <label className="text-sm font-medium" htmlFor="bid-bucket">
-            Bucket
-          </label>
-          <Input
-            id="bid-bucket"
-            className="mt-1"
-            onChange={(e) => setBucket(e.target.value)}
-            placeholder="bucket-0"
-            value={bucket}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="text-sm font-medium" htmlFor="bid-budget">
-              Budget (base units)
+              Your budget ({cur.symbol})
             </label>
             <Input
               id="bid-budget"
               data-testid="bid-budget"
               className="mt-1"
+              inputMode="decimal"
               onChange={(e) => setBudget(e.target.value)}
-              placeholder="1000000"
+              placeholder={cur.kind === "eth" ? "1" : "1000"}
               value={budget}
-              type="number"
+              type="text"
             />
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+              The most you will spend. You pay the clearing price for what you
+              win; the rest is refunded.
+            </p>
           </div>
           <div>
             <label className="text-sm font-medium" htmlFor="bid-max-price">
-              Max price (Q96)
+              Highest price per token ({cur.symbol})
             </label>
             <Input
               id="bid-max-price"
               data-testid="bid-max-price"
               className="mt-1"
+              inputMode="decimal"
               onChange={(e) => setMaxPrice(e.target.value)}
-              placeholder="2000000000000000000000000"
+              placeholder={cur.kind === "eth" ? "0.000004" : "0.02"}
               value={maxPrice}
-              type="number"
+              type="text"
             />
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+              You never pay more than this, and usually pay less.
+            </p>
           </div>
         </div>
-        {clearing !== null ? (
-          <p className="text-xs text-black/60 dark:text-white/60">
-            Current clearing price: {clearing.toString()} Q96. Your max price
-            must be above it.
-          </p>
-        ) : (
-          <p className="text-xs text-black/60 dark:text-white/60">
-            Clearing price unavailable right now; the contract still enforces
-            "above clearing" when the bid lands.
-          </p>
-        )}
+        <p
+          className="text-xs text-black/60 dark:text-white/60"
+          data-testid="bid-price-context"
+        >
+          Floor price{" "}
+          {floorPriceQ96 !== null
+            ? formatQ96PerToken(floorPriceQ96, priceFormat(cur))
+            : "unknown"}
+          {clearing !== null
+            ? ` · current clearing price ${formatQ96PerToken(clearing, priceFormat(cur))} (your highest price must be above it)`
+            : " · the clearing price could not be read; the contract still enforces that your price is above it when the bid lands"}
+          {plan && budgetAtomic !== null
+            ? ` · you are bidding ${formatMoney(budgetAtomic, cur)}`
+            : ""}
+          .
+        </p>
         {issues.length > 0 ? (
           <ul
             data-testid="bid-issues"
@@ -459,9 +494,25 @@ export function RecordBidDialog({
         <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
           Advanced
           <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
-            who records this bid
+            bucket and who records this bid
           </span>
         </summary>
+        <div className="mt-2">
+          <label className="text-sm font-medium" htmlFor="bid-bucket">
+            Bucket
+          </label>
+          <Input
+            id="bid-bucket"
+            className="mt-1"
+            onChange={(e) => setBucket(e.target.value)}
+            placeholder="bucket-0"
+            value={bucket}
+          />
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            A label that groups related bids on the launch page. The default is
+            fine.
+          </p>
+        </div>
         <label className="mt-2 flex items-start gap-2 text-sm text-black/60 dark:text-white/60">
           <input
             checked={asAgent}

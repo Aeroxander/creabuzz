@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from "react";
 
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
+import { recordSaleCurrency } from "../chain";
+import { formatAtomic, formatMoney } from "../lib/amounts";
 import { Button } from "@/shared/ui/button";
 import {
   GRADUATION_STEP_COPY,
@@ -86,6 +88,10 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
     launchChainId,
   });
   const readiness = state.readiness;
+  const cur = recordSaleCurrency(record);
+  // Graduated in this session, or earlier (found by the readiness check): the
+  // steps below are then history or irrelevant, and the outcome is what matters.
+  const alreadyGraduated = readiness?.status === "already-graduated";
   const canExecute = state.phase === "ready" && gate.ok;
   const retry = flow.retryPlan;
 
@@ -135,7 +141,45 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         </details>
       ) : null}
 
-      <ol aria-label="Graduation steps" className="mt-3 flex flex-col gap-1">
+      {flow.result ? (
+        <dl
+          className="mt-3 divide-y divide-black/10 rounded-lg border border-black/10 px-3 text-sm dark:divide-white/10 dark:border-white/10"
+          data-testid="graduation-result"
+        >
+          {[
+            ["Raised", formatMoney(flow.result.currencyRaised, cur)],
+            [
+              "Paid to the treasury",
+              formatMoney(flow.result.treasuryShare, cur),
+            ],
+            [
+              "Held in reserve for the price floor",
+              formatMoney(flow.result.reserveEscrow, cur),
+            ],
+            [
+              "Unsold tokens returned to the treasury",
+              formatAtomic(flow.result.unsoldTokens, 18, {
+                symbol: "tokens",
+                maxFractionDigits: 2,
+              }),
+            ],
+          ].map(([label, value]) => (
+            <div
+              className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5"
+              key={label}
+            >
+              <dt className="text-black/60 dark:text-white/60">{label}</dt>
+              <dd className="ml-auto text-right font-medium tabular-nums">
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      <ol
+        aria-label="Graduation steps"
+        className={`mt-3 flex flex-col gap-1 ${alreadyGraduated && state.phase !== "done" ? "hidden" : ""}`}
+      >
         {GRADUATION_STEPS.map((step) => {
           const status = state.steps[step.id];
           return (

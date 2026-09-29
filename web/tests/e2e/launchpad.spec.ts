@@ -29,6 +29,8 @@ function record(auction?: string) {
     ],
     content: JSON.stringify({
       pitch: "To the stars.",
+      // Circle's USDC on Sepolia (the fixture's chain): amounts read as USDC.
+      currency: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
       stage: servedStage,
       // A deployable price grid: the form validates these against the auction
       // contract, so a fixture with half of them leaves Save disabled.
@@ -429,8 +431,9 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
 
   // The mirror is disabled until a tx hash exists.
   await expect(page.getByTestId("bid-record")).toBeDisabled();
-  await page.getByTestId("bid-budget").fill("1000000");
-  await page.getByTestId("bid-max-price").fill("1000000000000000000000000");
+  // Plain USDC amounts: a 1,000 USDC budget, at most 5 USDC a token.
+  await page.getByTestId("bid-budget").fill("1000");
+  await page.getByTestId("bid-max-price").fill("5");
 
   // The send button is enabled for a valid composed bid on a linked auction.
   await expect(page.getByTestId("bid-send")).toBeEnabled();
@@ -939,3 +942,101 @@ test("the sandbox walks a full raise, clearly badged as simulated", async ({
   // No fabricated chain addresses.
   await expect(page.getByText("Auction contract")).toBeVisible();
 });
+
+const SEPOLIA_USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+
+/** The sale step's body (the stepper reuses the test id on a span). */
+const saleStep = (page: import("@playwright/test").Page) =>
+  page.locator('div[data-testid="wizard-step-sale"]');
+
+/** New launch -> token step filled -> on the sale step. */
+async function toSaleStep(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  const token = page.getByTestId("wizard-step-token");
+  await token
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Currency Test");
+  await token.getByLabel("Symbol").fill("CUR");
+  await token.getByLabel(/supply/i).fill("1000000");
+  await page.getByTestId("wizard-continue").click();
+  await expect(saleStep(page)).toBeVisible();
+}
+
+test("a new sale defaults to USDC and can switch to ETH and back", async ({
+  page,
+}) => {
+  await toSaleStep(page);
+  const choice = page.getByTestId("sale-currency");
+  await expect(choice.getByRole("radio")).toHaveCount(2);
+  await expect(choice.getByRole("radio", { name: /USDC/ })).toBeChecked();
+  await expect(page.getByLabel("Price per token (USDC)")).toHaveValue("0.01");
+  await expect(page.getByTestId("sale-eth-note")).toHaveCount(0);
+
+  // ETH: units, label, starting price and the "no dollar conversion" note follow.
+  await page.getByTestId("sale-currency-eth").click();
+  await expect(choice.getByRole("radio", { name: /ETH/ })).toBeChecked();
+  await expect(page.getByLabel("Price per token (ETH)")).toHaveValue(
+    "0.000004",
+  );
+  await expect(page.getByTestId("sale-eth-note")).toContainText(
+    "Nothing is converted from dollars",
+  );
+  await expect(saleStep(page)).toContainText("0.000004 ETH a token");
+
+  // Back to USDC: the dollar starting point returns, not ETH-sized numbers.
+  await page.getByTestId("sale-currency-usdc").click();
+  await expect(page.getByLabel("Price per token (USDC)")).toHaveValue("0.01");
+  await expect(saleStep(page)).toContainText("$0.01 a token");
+});
+
+/** From wherever the wizard is (past the token step) on to the Publish step. */
+async function continueToPublish(page: import("@playwright/test").Page) {
+  const publish = page.getByRole("button", { name: /Publish launch/ });
+  for (let i = 0; i < 6 && !(await publish.isVisible()); i++) {
+    const next = page.getByTestId("wizard-continue");
+    if (await next.isDisabled()) {
+      await page.getByRole("button", { name: "Product project" }).click();
+    } else {
+      await next.click();
+    }
+  }
+  await expect(publish).toBeVisible();
+}
+
+test("the chosen currency is what gets published", async ({ page }) => {
+  test.setTimeout(90_000);
+  published.length = 0;
+  await toSaleStep(page);
+  await page.getByTestId("sale-currency-eth").click();
+  await continueToPublish(page);
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect.poll(() => published.find((e) => e.kind === 37001)).toBeTruthy();
+  const eth = JSON.parse(
+    published.find((e) => e.kind === 37001)?.content ?? "{}",
+  );
+  // ETH is the native coin: no token address is published.
+  expect(eth.currency ?? "").toBe("");
+  // ...and the floor is priced in ETH's 18 decimals, not USDC's 6.
+  expect(BigInt(eth.floorPrice) > 10n ** 20n).toBe(true);
+
+  published.length = 0;
+  await page.getByRole("button", { name: "New launch" }).first().click();
+  await toSaleStepFromOpenDialog(page);
+  await continueToPublish(page);
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect.poll(() => published.find((e) => e.kind === 37001)).toBeTruthy();
+  const usdc = JSON.parse(
+    published.find((e) => e.kind === 37001)?.content ?? "{}",
+  );
+  expect(usdc.currency).toBe(SEPOLIA_USDC.toLowerCase());
+});
+
+async function toSaleStepFromOpenDialog(page: import("@playwright/test").Page) {
+  const token = page.getByTestId("wizard-step-token");
+  await token
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Currency Two");
+  await token.getByLabel("Symbol").fill("CU2");
+  await token.getByLabel(/supply/i).fill("1000000");
+  await page.getByTestId("wizard-continue").click();
+}

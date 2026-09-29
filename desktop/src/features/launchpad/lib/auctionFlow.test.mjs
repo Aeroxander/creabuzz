@@ -251,6 +251,19 @@ test("deriveAuctionDeployParams maps the record fields", () => {
   );
 });
 
+test("a native (ETH) sale is accepted, however 'native' is spelled", () => {
+  // The executor takes ETH through receive() and pays it out natively, so
+  // null / "" / the zero address all mean an ETH sale and resolve to zero.
+  const ZERO = "0x0000000000000000000000000000000000000000";
+  for (const currency of [null, "", "  ", ZERO]) {
+    assert.equal(
+      deriveAuctionDeployParams({ ...PLAN, currency }).currency,
+      ZERO,
+      `currency ${JSON.stringify(currency)}`,
+    );
+  }
+});
+
 test("deriveAuctionDeployParams enforces every parameter gate", () => {
   const cases = [
     [{ ...PLAN, token: "" }, /token address/],
@@ -259,15 +272,6 @@ test("deriveAuctionDeployParams enforces every parameter gate", () => {
     [{ ...PLAN, tokenSupply: "1.5" }, /token plan supply/],
     [{ ...PLAN, tokenSupply: `1${"0".repeat(21)}` }, /uint128/],
     [{ ...PLAN, currency: "usdc" }, /currency/],
-    // The graduation executor cannot settle a native sale (bindAuction reverts
-    // NativeCurrencyUnsupported), so every spelling of "native" is refused up
-    // front — before any transaction, not at the last step.
-    [{ ...PLAN, currency: null }, /ERC-20/],
-    [{ ...PLAN, currency: "" }, /ERC-20/],
-    [
-      { ...PLAN, currency: "0x0000000000000000000000000000000000000000" },
-      /ERC-20/,
-    ],
     [{ ...PLAN, floorPrice: "1000000" }, /floorPrice.*2\^32/],
     [{ ...PLAN, tickSpacing: "1" }, /tickSpacing/],
     [{ ...PLAN, requiredRaised: "0" }, /requiredRaised/],
@@ -993,11 +997,27 @@ test("runAuctionDeploy record failure keeps the deploy and offers record-only re
 // Graduation readiness
 // ---------------------------------------------------------------------------
 
+// Custom-error selectors (`cast sig`) as a node reports them on a revert.
+const REVERTS = {
+  notGraduated: "0xc1c5eb4f", // NotGraduated(address)
+  alreadyExecuted: "0x27307889", // AlreadyExecuted(address)
+  other: "0x5a8e1bb8", // AuctionNotBound(address,address)
+};
+
 function readinessEffects(script) {
   return {
     call: async ({ to, data }) => {
-      assert.equal(to, AUCTION_ADDR);
       const selector = data.slice(0, 10);
+      if (selector === "0x69d4d0f1") {
+        // A simulation of executeGraduation(auction), sent to the executor.
+        assert.equal(to, EXECUTOR_GOLDEN);
+        const outcome = script.simulate ?? "ok";
+        if (outcome === "ok") return "0x";
+        throw new Error(
+          `execution reverted: custom error ${REVERTS[outcome]}: ${"0".repeat(64)}`,
+        );
+      }
+      assert.equal(to, AUCTION_ADDR);
       if (selector === SELECTOR_FUNDS_RECIPIENT) return addrWord(script.funds);
       if (selector === SELECTOR_TOKENS_RECIPIENT)
         return addrWord(script.tokens);
@@ -1050,7 +1070,7 @@ test("checkGraduationReadiness renders the contract's actual gates", async () =>
   });
   assert.equal(finalizes.status, "ready");
   assert.equal(finalizes.finalizesOnExecute, true);
-  assert.match(finalizes.message, /finalizes it/);
+  assert.match(finalizes.message, /would succeed/);
 
   const early = await checkGraduationReadiness({
     effects: readinessEffects({
@@ -1086,12 +1106,112 @@ test("checkGraduationReadiness renders the contract's actual gates", async () =>
       graduated: false,
       paramsRevert: true,
       block: 1011n,
+      simulate: "notGraduated",
     }),
     auction: AUCTION_ADDR,
     endBlock: 1010,
   });
   assert.equal(missed.status, "threshold-missed");
   assert.match(missed.message, /Threshold not met — refunds path/);
+});
+
+test("an auction that cleared its threshold is ready even before anyone checkpoints the end block", async () => {
+  // REGRESSION. `isGraduated()` only reflects the LAST checkpoint, so right after
+  // the end block a successful auction reads isGraduated=false and (with the
+  // params view still reverting) used to be reported as "threshold missed" — the
+  // founder was told there was nothing to graduate. The simulation of the real
+  // call (which checkpoints first) is what decides.
+  const readiness = await checkGraduationReadiness({
+    effects: readinessEffects({
+      funds: EXECUTOR_GOLDEN,
+      tokens: EXECUTOR_GOLDEN,
+      graduated: false,
+      paramsRevert: true,
+      block: 1011n,
+      simulate: "ok",
+    }),
+    auction: AUCTION_ADDR,
+    endBlock: 1010,
+  });
+  assert.equal(readiness.status, "ready");
+  assert.equal(readiness.finalizesOnExecute, true);
+});
+
+test("a graduation that already ran is never offered again, even though its params stay readable", async () => {
+  // REGRESSION. After executeGraduation the auction stays graduated and its
+  // lbpInitializationParams() stay readable, so the params-readable branch said
+  // "ready" for a launch that had already been graduated (the call would revert
+  // AlreadyExecuted). A founder returning to the page saw an Execute button.
+  const readiness = await checkGraduationReadiness({
+    effects: readinessEffects({
+      funds: EXECUTOR_GOLDEN,
+      tokens: EXECUTOR_GOLDEN,
+      graduated: true,
+      paramsRevert: false,
+      block: 1011n,
+      simulate: "alreadyExecuted",
+    }),
+    auction: AUCTION_ADDR,
+    endBlock: 1010,
+  });
+  assert.equal(readiness.status, "already-graduated");
+});
+
+test("graduation readiness classifies the simulated revert, and never simulates a running auction", async () => {
+  const already = await checkGraduationReadiness({
+    effects: readinessEffects({
+      funds: EXECUTOR_GOLDEN,
+      tokens: EXECUTOR_GOLDEN,
+      graduated: true,
+      paramsRevert: true,
+      block: 1011n,
+      simulate: "alreadyExecuted",
+    }),
+    auction: AUCTION_ADDR,
+    endBlock: 1010,
+  });
+  assert.equal(already.status, "already-graduated");
+
+  const blocked = await checkGraduationReadiness({
+    effects: readinessEffects({
+      funds: EXECUTOR_GOLDEN,
+      tokens: EXECUTOR_GOLDEN,
+      graduated: false,
+      paramsRevert: true,
+      block: 1011n,
+      simulate: "other",
+    }),
+    auction: AUCTION_ADDR,
+    endBlock: 1010,
+  });
+  assert.equal(blocked.status, "blocked");
+  assert.match(blocked.message, /would revert right now/);
+  assert.ok(blocked.message.includes(REVERTS.other));
+
+  // Before the end there is nothing to simulate: a simulation there would only
+  // ever report "not graduated" for a perfectly healthy auction.
+  const effects = readinessEffects({
+    funds: EXECUTOR_GOLDEN,
+    tokens: EXECUTOR_GOLDEN,
+    graduated: false,
+    paramsRevert: true,
+    block: 1005n,
+  });
+  const inner = effects.call;
+  effects.call = async (input) => {
+    assert.notEqual(
+      input.data.slice(0, 10),
+      "0x69d4d0f1",
+      "simulated too early",
+    );
+    return inner(input);
+  };
+  const running = await checkGraduationReadiness({
+    effects,
+    auction: AUCTION_ADDR,
+    endBlock: 1010,
+  });
+  assert.equal(running.status, "running");
 });
 
 test("checkGraduationReadiness names misconfigured recipients and failed reads", async () => {

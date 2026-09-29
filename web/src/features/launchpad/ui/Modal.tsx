@@ -29,14 +29,14 @@ export function Modal({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: dismiss layer only
     <div
-      className={`fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/20 p-4 dark:bg-black/50 ${MODAL_BACKDROP_BLUR_CLASS}`}
+      className={`fixed inset-0 z-50 grid grid-cols-[minmax(0,1fr)] place-items-center overflow-y-auto bg-black/20 p-4 dark:bg-black/50 ${MODAL_BACKDROP_BLUR_CLASS}`}
       onClick={onClose}
       role="presentation"
     >
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: click only stops propagation */}
       <div
         aria-label={label}
-        className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl dark:bg-[#1e1e1e]"
+        className="w-full min-w-0 max-w-lg rounded-2xl bg-white p-5 shadow-xl dark:bg-[#1e1e1e]"
         onClick={(e) => e.stopPropagation()}
         ref={containerRef}
         role="dialog"

@@ -239,6 +239,21 @@ export function unitsToPlain(value: string | bigint, decimals = 6): string {
   return `${sign}${whole}.${digits}`;
 }
 
+/**
+ * A plain per-token price ("0.000004") → the raw Q96 price the auction reads,
+ * NOT snapped to a tick grid (a bidder's price is snapped separately, upward).
+ * Null when the text is not a price the currency's decimals can hold.
+ */
+export function priceToQ96(
+  price: string,
+  currencyDecimals = 6,
+  tokenDecimals = 18,
+): bigint | null {
+  const atomic = priceToAtomic(price, currencyDecimals);
+  if (atomic === null || atomic <= 0n) return null;
+  return (atomic * Q96) / 10n ** BigInt(tokenDecimals);
+}
+
 /** A Q96 floor price → the plain per-token price the founder typed. */
 export function atomicToPrice(
   floorPriceQ96: bigint,

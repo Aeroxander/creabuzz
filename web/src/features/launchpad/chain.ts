@@ -1,3 +1,4 @@
+import { saleCurrencyFor, type SaleCurrency } from "./lib/sale-currency.ts";
 import type { LaunchRecord } from "./models";
 import {
   DEFAULT_SECONDS_PER_BLOCK,
@@ -106,10 +107,28 @@ export interface ChainEnv {
   VITE_CHAIN_RPC_URL?: string;
   /** "1"/"true" offers mainnet presets (default off — contracts are unaudited). */
   VITE_ENABLE_MAINNET?: string;
+  /** Address of the dev USDC on a local chain (a local deploy has no fixed one). */
+  VITE_LOCAL_USDC?: string;
 }
 
 function viteEnv(): ChainEnv | undefined {
   return (import.meta as { env?: ChainEnv }).env;
+}
+
+/** The dev USDC's address on a local chain, when the build knows one. */
+export function localUsdcAddress(
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  const value = env?.VITE_LOCAL_USDC?.trim();
+  return value ? value : null;
+}
+
+/** What a launch record's sale raises in, on its own chain. */
+export function recordSaleCurrency(record: {
+  currency: string | null;
+  chainId: string | null;
+}): SaleCurrency {
+  return saleCurrencyFor(record.currency, record.chainId, localUsdcAddress());
 }
 
 /** The preset with this chain id, or null when the id is not preset-backed. */
@@ -334,9 +353,15 @@ async function rpc(
     if (!res.ok) throw new Error(`rpc http ${res.status}`);
     const body = (await res.json()) as {
       result?: unknown;
-      error?: { message?: string };
+      error?: { message?: string; data?: unknown };
     };
-    if (body.error) throw new Error(body.error.message ?? "rpc error");
+    if (body.error) {
+      // A reverted call reports its custom error as revert `data`; some nodes
+      // leave it out of `message`, so carry it along for callers that classify.
+      const data =
+        typeof body.error.data === "string" ? ` ${body.error.data}` : "";
+      throw new Error(`${body.error.message ?? "rpc error"}${data}`);
+    }
     return body.result;
   } finally {
     clearTimeout(timer);

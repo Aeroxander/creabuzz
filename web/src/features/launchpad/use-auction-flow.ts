@@ -12,7 +12,14 @@
  * readiness time (`fundsRecipient()`), so graduation works after a reload
  * that loses the deploy flow's session state.
  */
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ethBlockNumber,
@@ -35,6 +42,7 @@ import {
   buildGraduationsView,
   checkGraduationReadiness,
   decodeGraduationRecord,
+  type GraduationRecord,
   GRADUATION_STEPS,
   graduationFlowReducer,
   graduationRetryPlan,
@@ -196,6 +204,12 @@ export interface GraduationFlow {
   /** Retry semantics: re-check / re-execute remaining / mirror-only. */
   retry: () => void;
   retryPlan: GraduationRetryPlan;
+  /**
+   * What the graduation did, read back from the executor once it has run (in
+   * this session or an earlier one). Null until then, or if the read fails —
+   * it is a summary of a chain fact, never a gate on anything.
+   */
+  result: GraduationRecord | null;
 }
 
 /**
@@ -215,6 +229,33 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
   stateRef.current = state;
 
   const readEffects = useMemo(() => makeReadOnlyEffects(getRpcEndpoint()), []);
+  const [result, setResult] = useState<GraduationRecord | null>(null);
+  // Starting the flow resets the reducer (readiness included), so the executor
+  // found by the readiness check is remembered here for the summary read.
+  const executorSeen = useRef<string | null>(null);
+  if (state.readiness?.executor)
+    executorSeen.current = state.readiness.executor;
+  const graduatedExecutor =
+    state.phase === "done" || state.readiness?.status === "already-graduated"
+      ? executorSeen.current
+      : null;
+  useEffect(() => {
+    if (!graduatedExecutor) return;
+    let alive = true;
+    readEffects
+      .call(buildGraduationsView(graduatedExecutor, auction))
+      .then((raw) => {
+        if (alive) setResult(decodeGraduationRecord(raw));
+      })
+      .catch(() => {
+        // Informational only: the graduation is on chain whether or not this
+        // summary could be read, so a failed read shows no summary.
+        if (alive) setResult(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [auction, graduatedExecutor, readEffects]);
   const signEffects = useMemo(
     () =>
       wallet
@@ -328,5 +369,6 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
     start,
     retry,
     retryPlan: graduationRetryPlan(state),
+    result,
   };
 }

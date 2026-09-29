@@ -44,6 +44,7 @@ import {
   DEFAULT_PERFORMANCE_TRANCHES,
   validateVesting,
 } from "./vesting-params.ts";
+import { saleCurrencyFor } from "./sale-currency.ts";
 import {
   durationSecondsFor,
   floorFromPrice,
@@ -334,8 +335,9 @@ export function patchForPrice(
   price: string,
   saleKind: SaleKind,
   supply: string,
+  currencyDecimals = 6,
 ): SalePatch | null {
-  const floor = floorFromPrice(price);
+  const floor = floorFromPrice(price, currencyDecimals);
   if (!floor) return null;
   const requiredRaised = thresholdFromFloor({
     saleTokens: saleTokensFromSupply(supply),
@@ -354,8 +356,9 @@ export function patchForRaiseTarget(
   raiseTarget: string,
   saleKind: SaleKind,
   supply: string,
+  currencyDecimals = 6,
 ): SalePatch | null {
-  const target = priceToAtomic(raiseTarget);
+  const target = priceToAtomic(raiseTarget, currencyDecimals);
   if (target === null || target <= 0n) return null;
   const floor = floorFromRaiseTarget({
     raiseTarget: target,
@@ -498,15 +501,30 @@ export function wizardStepIssues(
     }
   }
   if (step === "sale") {
+    // The units the founder types in are the sale currency's: ETH has 18
+    // decimals, USDC 6. Examples in the messages follow it.
+    const currency = saleCurrencyFor(form.currency, form.chainId);
+    const decimals = currency.decimals;
     if (wizard.pricingMode === "price") {
-      if (patchForPrice(wizard.price, wizard.saleKind, form.supply) === null) {
-        issues.push("Enter a price per token, for example 0.01.");
+      if (
+        patchForPrice(wizard.price, wizard.saleKind, form.supply, decimals) ===
+        null
+      ) {
+        issues.push(
+          `Enter a price per token in ${currency.symbol}, for example ${currency.kind === "eth" ? "0.000004" : "0.01"}.`,
+        );
       }
     } else if (
-      patchForRaiseTarget(wizard.raiseTarget, wizard.saleKind, form.supply) ===
-      null
+      patchForRaiseTarget(
+        wizard.raiseTarget,
+        wizard.saleKind,
+        form.supply,
+        decimals,
+      ) === null
     ) {
-      issues.push("Enter what the sale needs to raise, for example 300000.");
+      issues.push(
+        `Enter what the sale needs to raise in ${currency.symbol}, for example ${currency.kind === "eth" ? "120" : "300000"}.`,
+      );
     }
     if (wizard.durationKey === "custom") {
       const endAt = endSecondsFromDateInput(wizard.endDate, now);

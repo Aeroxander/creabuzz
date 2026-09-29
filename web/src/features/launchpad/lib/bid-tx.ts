@@ -67,7 +67,8 @@ export interface BidPlan {
 
 export interface UnsignedTx {
   to: string;
-  value: "0x0";
+  /** Hex wei sent with the call: "0x0" everywhere except a native-currency bid. */
+  value: `0x${string}`;
   data: string;
 }
 
@@ -305,8 +306,8 @@ export function buildBidTransaction(
  * CCA budget is pulled from the CALLER (`ContinuousClearingAuction.sol`
  * `submitBid` → `permit2TransferFrom(..., msg.sender, ...)`), while `owner`
  * receives tokens and refunds. Nothing here assumes `msg.sender == owner`.
- * (Native-currency auctions are unchanged from the old inline composition:
- * `value` stays "0x0" — only the ERC-20 path is wired.)
+ * A native-currency (ETH) auction is a single `submitBid` carrying the bid
+ * amount as its value; an ERC-20 one is the approve legs then a zero-value bid.
  */
 export function buildBidCalls(input: {
   auction: string;
@@ -345,7 +346,14 @@ export function buildBidCalls(input: {
       ),
     });
   }
-  calls.push(buildBidTransaction(input.auction, input.plan));
+  const bid = buildBidTransaction(input.auction, input.plan);
+  // A native-currency auction takes the bid amount as the call's ETH value
+  // (`submitBid` reverts InvalidAmount unless `msg.value == amount`); an ERC-20
+  // auction takes none (`CurrencyIsNotNative`).
+  const native = !(currency && /^0x[0-9a-fA-F]{40}$/.test(currency));
+  calls.push(
+    native ? { ...bid, value: `0x${input.plan.amount.toString(16)}` } : bid,
+  );
   return calls;
 }
 

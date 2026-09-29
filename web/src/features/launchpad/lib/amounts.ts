@@ -92,6 +92,8 @@ export function formatQ96PerToken(
     tokenDecimals?: number;
     currencyDecimals?: number;
     symbol?: string;
+    /** Printed after the figure (`0.000004 ETH`); replaces the `$` prefix. */
+    unit?: string;
   } = {},
 ): string {
   const q96 = toAtomic(floorPriceQ96);
@@ -100,14 +102,22 @@ export function formatQ96PerToken(
   const currencyDecimals = options.currencyDecimals ?? USDC_DECIMALS;
   // currency smallest units per whole token
   const perToken = (q96 * 10n ** BigInt(tokenDecimals)) / (1n << 96n);
-  const prefix = options.symbol ? `${options.symbol}` : "$";
+  const prefix = options.symbol ? `${options.symbol}` : options.unit ? "" : "$";
+  const suffix = options.unit ? ` ${options.unit}` : "";
   // Precision follows magnitude: a dollar price reads as "$1", a sub-cent one
   // keeps enough digits not to round to zero. Q96 arithmetic loses a hair, and
   // "rounded at the displayed digit" would otherwise print "$0.999999".
   const scale = 10n ** BigInt(currencyDecimals);
+  // Two decimals from a cent up; below that, enough digits for three
+  // significant ones (0.000004 ETH must not print as 0.0000).
+  const firstNonZero = currencyDecimals - perToken.toString().length + 1;
   const maxFraction =
-    perToken >= scale / 100n ? 2 : perToken >= scale / 1_000_000n ? 4 : 6;
-  return `${prefix}${formatAtomic(perToken, currencyDecimals, { maxFractionDigits: maxFraction })}`;
+    perToken >= scale / 100n
+      ? 2
+      : perToken === 0n
+        ? currencyDecimals
+        : Math.min(currencyDecimals, Math.max(4, firstNonZero + 2));
+  return `${prefix}${formatAtomic(perToken, currencyDecimals, { maxFractionDigits: maxFraction })}${suffix}`;
 }
 
 /** A block count as a duration, at a chain's block time. */
@@ -185,10 +195,34 @@ export const SETTLEMENT_TERMS = [
  * Money at the precision people use. Atomic units go to six decimals, which is
  * noise on a raise figure; two decimals and rounding is what a treasury screen
  * shows, so a threshold of 299999.999998 reads as 300,000.
+ *
+ * `currency` is the sale's own symbol and decimals (ETH: 18, USDC: 6; USDC when
+ * omitted, as before). ETH amounts keep four fractional digits: 0.0004 ETH is
+ * real money and must not read as 0.
  */
-export function formatMoney(value: string | bigint | null | undefined): string {
-  return formatAtomic(value, USDC_DECIMALS, {
+export function formatMoney(
+  value: string | bigint | null | undefined,
+  currency: { symbol: string; decimals: number } = {
     symbol: "USDC",
-    maxFractionDigits: 2,
+    decimals: USDC_DECIMALS,
+  },
+): string {
+  return formatAtomic(value, currency.decimals, {
+    symbol: currency.symbol,
+    maxFractionDigits: currency.decimals > 6 ? 4 : 2,
   });
+}
+
+/**
+ * `value` rounded UP to `digits` significant digits (`7999999999999` -> `8000000000000`).
+ * Used for suggestions a person will read: a starting price of 0.000007999999999999
+ * is an artefact of tick snapping, not a number anyone chose. Rounding up keeps a
+ * suggested ceiling from falling below the price it was derived from.
+ */
+export function roundUpSignificant(value: bigint, digits = 2): bigint {
+  if (value <= 0n || digits < 1) return value;
+  const length = value.toString().length;
+  if (length <= digits) return value;
+  const unit = 10n ** BigInt(length - digits);
+  return ((value + unit - 1n) / unit) * unit;
 }

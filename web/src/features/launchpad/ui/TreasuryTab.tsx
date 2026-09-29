@@ -11,7 +11,7 @@ import { Input } from "@/shared/ui/input";
 import { Card } from "@/shared/ui/card";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
-import { erc20BalanceOf, getRpcEndpoint } from "../chain";
+import { erc20BalanceOf, getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { Launch } from "../models";
 import { formatAtomic, formatMoney, toAtomic } from "../lib/amounts";
 import { resolveDaoBinding } from "../lib/org-money";
@@ -133,14 +133,23 @@ export function TreasuryTab({
           {[
             [
               "Raise if it clears at the floor",
-              plan ? formatMoney(plan.floorRaise) : "—",
+              plan
+                ? formatMoney(plan.floorRaise, recordSaleCurrency(record))
+                : "—",
             ],
             [
               "Graduation threshold",
-              record.requiredRaised ? formatMoney(record.requiredRaised) : "—",
+              record.requiredRaised
+                ? formatMoney(record.requiredRaised, recordSaleCurrency(record))
+                : "—",
             ],
             ...(record.budget
-              ? [["Monthly budget", formatMoney(record.budget)] as const]
+              ? [
+                  [
+                    "Monthly budget",
+                    formatMoney(record.budget, recordSaleCurrency(record)),
+                  ] as const,
+                ]
               : []),
             [
               "Treasury",

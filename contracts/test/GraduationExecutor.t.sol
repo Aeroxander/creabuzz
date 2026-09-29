@@ -81,8 +81,15 @@ contract FundedMockAuction is IContinuousClearingAuction, ICcaFinalization {
     }
     function sweepCurrency() external override {
         require(msg.sender == fundsRecipient, "not funds recipient");
+        if (nativeCurrency) {
+            // A native raise arrives as a plain ETH send from the auction.
+            (bool ok,) = fundsRecipient.call{value: address(this).balance}("");
+            require(ok, "native sweep failed");
+            return;
+        }
         currencyToken.transfer(fundsRecipient, currencyToken.balanceOf(address(this)));
     }
+    receive() external payable {}
     function sweepUnsoldTokens() external override {
         require(msg.sender == tokensRecipient, "not tokens recipient");
         saleToken.transfer(tokensRecipient, saleToken.balanceOf(address(this)));
@@ -136,6 +143,9 @@ contract FakeAuction is IContinuousClearingAuction, ICcaFinalization {
     function sweepCurrency() external override {}
     function sweepUnsoldTokens() external override {}
 }
+
+/// A treasury that cannot receive ETH.
+contract RejectsETH {}
 
 contract GraduationExecutorTest is Test {
     address treasury = address(0xBEEF);
@@ -359,19 +369,104 @@ contract GraduationExecutorTest is Test {
         assertEq(fresh.boundAuction(), address(mine));
     }
 
-    function test_bind_refuses_native_currency() public {
-        GraduationExecutor fresh = new GraduationExecutor(treasury, 4000, LOCK);
-        FundedMockAuction nativeAuction = new FundedMockAuction();
-        nativeAuction.setNative(true);
-        nativeAuction.setRecipients(address(fresh), address(fresh));
+    // ---- native (ETH) currency ---------------------------------------------
+
+    /// A graduated native auction holding `raised` wei and 300 unsold tokens,
+    /// with a fresh executor bound to it.
+    function _nativeSetup(address treasury_, uint256 raised)
+        internal
+        returns (GraduationExecutor ex, FundedMockAuction na)
+    {
+        ex = new GraduationExecutor(treasury_, 4000, LOCK);
+        na = new FundedMockAuction();
+        na.setNative(true);
+        na.setGraduated(true);
+        na.setParams(1e18, 500e18, raised);
+        na.setRecipients(address(ex), address(ex));
+        na.fund(0, 300e18);
+        vm.deal(address(na), raised);
+        vm.prank(treasury_);
+        ex.bindAuction(address(na));
+    }
+
+    function test_native_auction_binds() public {
+        (GraduationExecutor ex, FundedMockAuction na) = _nativeSetup(treasury, 10 ether);
+        assertEq(ex.boundAuction(), address(na));
+    }
+
+    function test_native_graduation_pays_the_treasury_and_escrows_the_reserve_in_eth() public {
+        (GraduationExecutor ex, FundedMockAuction na) = _nativeSetup(treasury, 10 ether);
+        uint256 treasuryBefore = treasury.balance;
+        ex.executeGraduation(address(na));
+
+        // 40% reserve stays escrowed IN THE EXECUTOR as ETH; 60% goes out.
+        assertEq(address(ex).balance, 4 ether, "reserve escrowed");
+        assertEq(treasury.balance - treasuryBefore, 6 ether, "treasury share");
+        assertEq(address(na).balance, 0, "auction fully swept");
+        (,, uint256 raised, uint256 reserve, uint256 treasuryShare,, address pool, bool executed) =
+            ex.graduations(address(na));
+        assertEq(raised, 10 ether);
+        assertEq(reserve, 4 ether);
+        assertEq(treasuryShare, 6 ether);
+        assertEq(pool, address(0));
+        assertTrue(executed);
+        // Unsold tokens still go to the treasury as tokens.
+        assertEq(na.saleToken().balanceOf(treasury), 300e18);
+    }
+
+    function test_native_reserve_releases_to_the_recorded_pool_in_eth() public {
+        (GraduationExecutor ex, FundedMockAuction na) = _nativeSetup(treasury, 10 ether);
+        ex.executeGraduation(address(na));
+        address pool = address(0xF00D);
         vm.prank(treasury);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GraduationExecutor.NativeCurrencyUnsupported.selector, address(nativeAuction)
-            )
-        );
-        fresh.bindAuction(address(nativeAuction));
-        assertEq(fresh.boundAuction(), address(0));
+        ex.releaseReserve(address(na), pool);
+        assertEq(pool.balance, 4 ether);
+        assertEq(address(ex).balance, 0);
+        vm.prank(treasury);
+        vm.expectRevert(abi.encodeWithSelector(GraduationExecutor.AlreadyReleased.selector, address(na)));
+        ex.releaseReserve(address(na), pool);
+    }
+
+    function test_native_stuck_reserve_returns_to_the_treasury_after_the_lock() public {
+        (GraduationExecutor ex, FundedMockAuction na) = _nativeSetup(treasury, 10 ether);
+        ex.executeGraduation(address(na));
+        uint256 before_ = treasury.balance;
+        vm.prank(treasury);
+        vm.expectRevert();
+        ex.withdrawStuckReserve(address(na)); // still locked
+        vm.warp(block.timestamp + LOCK + 1);
+        vm.prank(treasury);
+        ex.withdrawStuckReserve(address(na));
+        assertEq(treasury.balance - before_, 4 ether);
+        assertEq(address(ex).balance, 0);
+    }
+
+    function test_eth_from_anyone_but_the_bound_auction_is_refused() public {
+        // Unbound executor: nobody may send ETH.
+        GraduationExecutor unbound = new GraduationExecutor(treasury, 4000, LOCK);
+        vm.deal(eoa, 1 ether);
+        vm.prank(eoa);
+        (bool ok,) = address(unbound).call{value: 1 ether}("");
+        assertFalse(ok, "unbound executor took ETH");
+
+        // Bound executor: only its auction.
+        (GraduationExecutor ex,) = _nativeSetup(treasury, 1 ether);
+        vm.prank(eoa);
+        (ok,) = address(ex).call{value: 1 ether}("");
+        assertFalse(ok, "a stranger's ETH was accepted");
+        assertEq(address(ex).balance, 0);
+    }
+
+    function test_native_graduation_is_atomic_when_the_treasury_rejects_eth() public {
+        RejectsETH stubborn = new RejectsETH();
+        (GraduationExecutor ex, FundedMockAuction na) = _nativeSetup(address(stubborn), 10 ether);
+        vm.expectRevert();
+        ex.executeGraduation(address(na));
+        // Nothing moved and nothing was recorded: the raise is still in the auction.
+        assertEq(address(na).balance, 10 ether);
+        assertEq(address(ex).balance, 0);
+        (,,,,,,, bool executed) = ex.graduations(address(na));
+        assertFalse(executed);
     }
 
     function test_bind_refuses_a_non_contract_and_wrong_recipients() public {

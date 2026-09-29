@@ -24,6 +24,7 @@
 
 import { decodeBool } from "@/features/launchpad/lib/chainRpc";
 import {
+  encodeExecuteGraduation,
   encodeFunctionData,
   selectorOf,
 } from "@/features/launchpad/lib/evmCalls";
@@ -108,6 +109,8 @@ export type GraduationReadinessStatus =
   | "ready"
   | "running"
   | "threshold-missed"
+  | "already-graduated"
+  | "blocked"
   | "misconfigured";
 
 export interface GraduationReadiness {
@@ -133,6 +136,42 @@ export class GraduationCheckError extends Error {
     super(message);
     this.name = "GraduationCheckError";
     this.stage = stage;
+  }
+}
+
+/**
+ * What simulating `executeGraduation(auction)` says. The simulation IS the
+ * contract's own gate: it materializes the end-block checkpoint first (which
+ * `isGraduated()` alone cannot see — it only reflects the LAST checkpoint, so an
+ * auction that cleared its threshold reads as failed until someone checkpoints)
+ * and then runs every check the real call would.
+ */
+type GraduationSimulation =
+  | { kind: "ok" }
+  | { kind: "not-graduated" }
+  | { kind: "already-executed" }
+  | { kind: "reverted"; reason: string };
+
+async function simulateGraduation(
+  effects: Pick<AuctionEffects, "call">,
+  executor: string,
+  auction: string,
+): Promise<GraduationSimulation> {
+  try {
+    await effects.call({
+      to: executor,
+      data: encodeExecuteGraduation(auction),
+    });
+    return { kind: "ok" };
+  } catch (error) {
+    const reason = auctionErrorMessage(error);
+    // The node reports a custom error as its 4-byte selector somewhere in the
+    // message (`custom error 0x…`, or the raw revert data).
+    const has = (signature: string) =>
+      reason.toLowerCase().includes(selectorOf(signature).slice(2));
+    if (has("NotGraduated(address)")) return { kind: "not-graduated" };
+    if (has("AlreadyExecuted(address)")) return { kind: "already-executed" };
+    return { kind: "reverted", reason };
   }
 }
 
@@ -224,14 +263,52 @@ export async function checkGraduationReadiness(input: {
   }
 
   if (graduated && params) {
-    return {
-      status: "ready",
-      message:
-        "Finalized and graduated — lbpInitializationParams() is readable, the exact gate executeGraduation consumes (GraduationExecutor.sol:98-99).",
-      executor: fundsRecipient,
-      params,
-      finalizesOnExecute: false,
-    };
+    // Finalized and graduated: the params are readable. That does NOT mean the
+    // graduation is still to do — after it has run, the auction stays graduated
+    // and its params stay readable, so a returning founder would be told
+    // "ready" for a call that reverts AlreadyExecuted. Ask the contract.
+    const simulation = await simulateGraduation(
+      effects,
+      fundsRecipient,
+      auction,
+    );
+    switch (simulation.kind) {
+      case "ok":
+        return {
+          status: "ready",
+          message:
+            "Finalized and graduated — lbpInitializationParams() is readable, the exact gate executeGraduation consumes (GraduationExecutor.sol:98-99).",
+          executor: fundsRecipient,
+          params,
+          finalizesOnExecute: false,
+        };
+      case "already-executed":
+        return {
+          status: "already-graduated",
+          message:
+            "executeGraduation already ran for this auction (AlreadyExecuted).",
+          executor: fundsRecipient,
+          params,
+          finalizesOnExecute: false,
+        };
+      case "not-graduated":
+        return {
+          status: "threshold-missed",
+          message:
+            "The graduation call reports the auction as not graduated although its params are readable — refusing to offer it.",
+          executor: fundsRecipient,
+          params,
+          finalizesOnExecute: false,
+        };
+      default:
+        return {
+          status: "blocked",
+          message: `executeGraduation would revert right now: ${simulation.reason}`,
+          executor: fundsRecipient,
+          params,
+          finalizesOnExecute: false,
+        };
+    }
   }
 
   let block: bigint;
@@ -245,31 +322,58 @@ export async function checkGraduationReadiness(input: {
   }
   const over = endBlock !== null && block > BigInt(endBlock);
 
-  if (graduated) {
-    if (over) {
-      return {
-        status: "ready",
-        message:
-          "Graduated and past the end block — the end-block checkpoint is still pending, and the graduation call finalizes it itself (ContinuousClearingAuction.sol:91-95).",
-        executor: fundsRecipient,
-        params: null,
-        finalizesOnExecute: true,
-      };
+  if (over) {
+    // Past the end, `isGraduated()` cannot be trusted: it reads the last
+    // checkpoint, and the end-block one may not exist yet. Ask the contract.
+    const simulation = await simulateGraduation(
+      effects,
+      fundsRecipient,
+      auction,
+    );
+    switch (simulation.kind) {
+      case "ok":
+        return {
+          status: "ready",
+          message:
+            "The auction has ended and the graduation call would succeed; it finalizes the end-block checkpoint itself (ContinuousClearingAuction.sol:91-95).",
+          executor: fundsRecipient,
+          params: null,
+          finalizesOnExecute: true,
+        };
+      case "not-graduated":
+        return {
+          status: "threshold-missed",
+          message:
+            "Threshold not met — refunds path. The auction ended below its required raise, so there is nothing to graduate; bidders exit/claim refunds.",
+          executor: fundsRecipient,
+          params: null,
+          finalizesOnExecute: false,
+        };
+      case "already-executed":
+        return {
+          status: "already-graduated",
+          message:
+            "executeGraduation already ran for this auction (AlreadyExecuted).",
+          executor: fundsRecipient,
+          params: null,
+          finalizesOnExecute: false,
+        };
+      default:
+        return {
+          status: "blocked",
+          message: `executeGraduation would revert right now: ${simulation.reason}`,
+          executor: fundsRecipient,
+          params: null,
+          finalizesOnExecute: false,
+        };
     }
+  }
+
+  if (graduated) {
     return {
       status: "running",
       message:
         "The raise met the threshold (isGraduated() = true) but the auction is still running — graduation executes after the end block (the sweeps require the auction to be over, ContinuousClearingAuction.sol:663).",
-      executor: fundsRecipient,
-      params: null,
-      finalizesOnExecute: false,
-    };
-  }
-  if (over) {
-    return {
-      status: "threshold-missed",
-      message:
-        "Threshold not met — refunds path. The auction ended below its required raise, so there is nothing to graduate; bidders exit/claim refunds.",
       executor: fundsRecipient,
       params: null,
       finalizesOnExecute: false,

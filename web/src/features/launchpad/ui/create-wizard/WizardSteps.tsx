@@ -31,6 +31,8 @@ import {
   type PricingMode,
   type WizardState,
 } from "../../lib/wizard";
+import type { SaleCurrency } from "../../lib/sale-currency";
+import { CurrencyChoice } from "./CurrencyChoice";
 import { Field, Segmented, Select, Stepper } from "./fields";
 
 /** Everything the steps can read or change, assembled by the dialog. */
@@ -48,6 +50,10 @@ export interface WizardController {
     tokenName: string;
   };
   sale: {
+    /** What the sale raises in, and the choices offered on this chain. */
+    currency: SaleCurrency;
+    currencyChoices: readonly SaleCurrency[];
+    onCurrency(value: SaleCurrency): void;
     summary: string;
     conversion: string | null;
     onSaleKind(kind: SaleKind): void;
@@ -177,6 +183,20 @@ function SaleStep({ controller }: { controller: WizardController }) {
   const { wizard, patch, sale } = controller;
   return (
     <div className="flex flex-col gap-3" data-testid="wizard-step-sale">
+      <CurrencyChoice
+        choices={sale.currencyChoices}
+        onChange={sale.onCurrency}
+        selected={sale.currency}
+      />
+      {sale.currency.kind === "eth" ? (
+        <p
+          className="text-xs text-black/60 dark:text-white/60"
+          data-testid="sale-eth-note"
+        >
+          Prices and targets below are in ETH. Nothing is converted from
+          dollars, so check the price against today&apos;s ETH price.
+        </p>
+      ) : null}
       <Select
         hint={SALE_PLANS[wizard.saleKind].blurb}
         id="sale-kind"
@@ -231,32 +251,36 @@ function SaleStep({ controller }: { controller: WizardController }) {
       />
       {wizard.pricingMode === "price" ? (
         <Field
-          hint="What one token costs. 0.01 means a cent."
+          hint={
+            sale.currency.kind === "eth"
+              ? "What one token costs, in ETH. 0.000004 is four millionths of an ETH."
+              : "What one token costs. 0.01 means a cent."
+          }
           id="sale-price"
-          label="Price per token"
+          label={`Price per token (${sale.currency.symbol})`}
         >
           <input
             className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
             id="sale-price"
             inputMode="decimal"
             onChange={(event) => sale.onPrice(event.target.value)}
-            placeholder="0.01"
+            placeholder={sale.currency.kind === "eth" ? "0.000004" : "0.01"}
             type="text"
             value={wizard.price}
           />
         </Field>
       ) : (
         <Field
-          hint="What the sale has to reach to graduate, in whole currency."
+          hint={`What the sale has to reach to graduate, in whole ${sale.currency.symbol}.`}
           id="sale-raise"
-          label="Raise target"
+          label={`Raise target (${sale.currency.symbol})`}
         >
           <input
             className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
             id="sale-raise"
             inputMode="decimal"
             onChange={(event) => sale.onRaiseTarget(event.target.value)}
-            placeholder="300000"
+            placeholder={sale.currency.kind === "eth" ? "120" : "300000"}
             type="text"
             value={wizard.raiseTarget}
           />
