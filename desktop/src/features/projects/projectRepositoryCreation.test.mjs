@@ -216,7 +216,7 @@ test("validateProjectEventEnvelope accepts a valid minimal envelope", () => {
 test("validateProjectEventEnvelope rejects missing d tag", () => {
   assert.throws(
     () => validateProjectEventEnvelope([["name", "X"]], ""),
-    /NIP-MP.*'d'/,
+    /Project record: .*'d'/,
   );
 });
 
@@ -230,7 +230,7 @@ test("validateProjectEventEnvelope rejects duplicate d tags", () => {
         ],
         "",
       ),
-    /NIP-MP.*'d'/,
+    /Project record: .*'d'/,
   );
 });
 
@@ -245,7 +245,7 @@ test("validateProjectEventEnvelope rejects duplicate name tags", () => {
         ],
         "",
       ),
-    /NIP-MP.*duplicate.*'name'/,
+    /Project record: .*duplicate.*'name'/,
   );
 });
 
@@ -260,7 +260,7 @@ test("validateProjectEventEnvelope rejects a name tag that exceeds 256 bytes", (
         ],
         "",
       ),
-    /NIP-MP.*'name'.*256/,
+    /Project record: .*'name'.*256/,
   );
 });
 
@@ -275,7 +275,7 @@ test("validateProjectEventEnvelope rejects a description tag that exceeds 2048 b
         ],
         "",
       ),
-    /NIP-MP.*'description'.*2048/,
+    /Project record: .*'description'.*2048/,
   );
 });
 
@@ -287,7 +287,7 @@ test("validateProjectEventEnvelope rejects more than 64 a-tags", () => {
       `30617:${"a".repeat(64)}:repo-${String(i).padStart(2, "0")}`,
     ]);
   }
-  assert.throws(() => validateProjectEventEnvelope(tags, ""), /NIP-MP.*64/);
+  assert.throws(() => validateProjectEventEnvelope(tags, ""), /Project record: .*64/);
 });
 
 test("validateProjectEventEnvelope rejects a member address with uppercase owner hex", () => {
@@ -301,7 +301,7 @@ test("validateProjectEventEnvelope rejects a member address with uppercase owner
         ],
         "",
       ),
-    /NIP-MP.*invalid.*address/,
+    /Project record: .*invalid.*address/,
   );
 });
 
@@ -317,7 +317,7 @@ test("validateProjectEventEnvelope rejects duplicate a-tag addresses", () => {
         ],
         "",
       ),
-    /NIP-MP.*duplicate.*address/,
+    /Project record: .*duplicate.*address/,
   );
 });
 
@@ -342,7 +342,7 @@ test("buildProjectPatchTemplate catches duplicate d in live head via full-envelo
         ownerPubkey: OWNER,
         repositoryAddresses: [],
       }),
-    /NIP-MP.*'d'/,
+    /Project record: .*'d'/,
   );
 });
 

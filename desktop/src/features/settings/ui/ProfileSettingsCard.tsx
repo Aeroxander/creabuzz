@@ -777,7 +777,7 @@ export function ProfileSettingsCard({
                                   className="text-sm font-normal text-muted-foreground/70"
                                   data-settings-subcopy
                                 >
-                                  Your keypair and NIP-05 handle are fixed for
+                                  Your key and verified handle are fixed for
                                   this device.
                                 </p>
                               </div>
@@ -797,7 +797,7 @@ export function ProfileSettingsCard({
                               />
                               <IdentityRow
                                 copyValue={profile?.nip05Handle ?? undefined}
-                                label="NIP-05 handle"
+                                label="Verified handle"
                                 testId="profile-nip05"
                                 value={nip05Handle}
                               />

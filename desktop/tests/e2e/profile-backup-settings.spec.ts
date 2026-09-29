@@ -103,7 +103,7 @@ test("private key menu replaces the backup settings rows", async ({ page }) => {
   const testDialog = page.getByTestId("backup-test-dialog");
   await expect(testDialog).toContainText("Test a key backup");
   await expect(testDialog.getByText("Select your backup file")).toBeVisible();
-  await expect(testDialog).toContainText("standard NIP-49 format");
+  await expect(testDialog).toContainText("standard Nostr encrypted-key format");
 });
 
 test("creation requires a sufficiently long password and exposes a temporary header download", async ({

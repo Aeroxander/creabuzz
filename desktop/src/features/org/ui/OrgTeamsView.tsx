@@ -342,8 +342,8 @@ function SeedExamplesButton() {
           data-testid="org-seed-confirm"
         >
           <p className="w-full text-xs text-muted-foreground">
-            Publishes 3 example strategies (arXiv 2609.22682 Appendix A) to the
-            relay under your key. Continue?
+            Publishes 3 example strategies to the shared bank under your key.
+            Continue?
           </p>
           <Button
             data-testid="org-seed-confirm-publish"
@@ -871,7 +871,7 @@ export function OrgTeamsView() {
         {strategies.length === 0 ? (
           <EmptyState
             action={<SeedExamplesButton />}
-            description="No strategies yet. Seed the bank with the paper's example strategies, or publish your own."
+            description="No strategies yet. Add the example strategies, or publish your own."
             icon={<BookOpen aria-hidden="true" className="h-5 w-5" />}
             testId="org-bank-empty"
             title="No strategies in the bank"

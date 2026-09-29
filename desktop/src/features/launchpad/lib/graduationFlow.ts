@@ -226,7 +226,7 @@ export async function checkGraduationReadiness(input: {
       status: "misconfigured",
       message:
         `This auction's recipients are misconfigured: fundsRecipient is ${fundsRecipient} but tokensRecipient is ${tokensRecipient}. ` +
-        "executeGraduation requires BOTH to be the GraduationExecutor (GraduationExecutor.sol:86-91) and will revert — this launch must be redeployed with the executor as both recipients.",
+        "Graduation needs both to be the graduation contract, so it would fail — this launch must be redeployed with the graduation contract as both recipients.",
       executor: fundsRecipient,
       params: null,
       finalizesOnExecute: false,
@@ -277,7 +277,7 @@ export async function checkGraduationReadiness(input: {
         return {
           status: "ready",
           message:
-            "Finalized and graduated — lbpInitializationParams() is readable, the exact gate executeGraduation consumes (GraduationExecutor.sol:98-99).",
+            "The auction is finalized and met its threshold, so the graduation will succeed.",
           executor: fundsRecipient,
           params,
           finalizesOnExecute: false,
@@ -335,7 +335,7 @@ export async function checkGraduationReadiness(input: {
         return {
           status: "ready",
           message:
-            "The auction has ended and the graduation call would succeed; it finalizes the end-block checkpoint itself (ContinuousClearingAuction.sol:91-95).",
+            "The auction has ended and the graduation would succeed; it also records the auction's final result.",
           executor: fundsRecipient,
           params: null,
           finalizesOnExecute: true,
@@ -373,7 +373,7 @@ export async function checkGraduationReadiness(input: {
     return {
       status: "running",
       message:
-        "The raise met the threshold (isGraduated() = true) but the auction is still running — graduation executes after the end block (the sweeps require the auction to be over, ContinuousClearingAuction.sol:663).",
+        "The raise has met its threshold, but the auction is still running. Graduation becomes possible once it ends.",
       executor: fundsRecipient,
       params: null,
       finalizesOnExecute: false,

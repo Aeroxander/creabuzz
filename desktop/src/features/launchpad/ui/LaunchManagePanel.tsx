@@ -99,7 +99,7 @@ function stepStatusText(
 function statusLine(state: MintFlowState): string {
   switch (state.phase) {
     case "preparing":
-      return "Computing the token address (router fee + CREATE2 preflight)…";
+      return "Working out the token's address before anything is sent…";
     case "running": {
       const index = state.steps.findIndex((s) => s.status === "running");
       const current = index === -1 ? 0 : index;
@@ -613,10 +613,10 @@ function AuctionDeployPanel({
       <h3 className="text-sm font-semibold">Deploy auction</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         {record.admission === "curated"
-          ? "Curated track: deploys the AllowlistHook bid gate, the GraduationExecutor, and the continuous-clearing auction (factory CREATE2)."
-          : "Community track: deploys the GraduationExecutor and the continuous-clearing auction (factory CREATE2). No bid hook."}{" "}
-        The GraduationExecutor deploys first — it must be the auction&apos;s
-        funds and tokens recipient from day one (GraduationExecutor.sol:77-91).
+          ? "Curated track: deploys the bid gate, the graduation contract and the auction."
+          : "Community track: deploys the graduation contract and the auction. There is no bid gate."}{" "}
+        The graduation contract is deployed first, because the auction must pay
+        its raise and unsold tokens to it from day one.
       </p>
       {gateMessage}
       {gatePassed ? (
@@ -779,10 +779,10 @@ function GraduationPanel({ launch }: { launch: Launch }) {
     <section className="rounded-2xl border border-border/70 bg-card/60 px-4 py-3">
       <h3 className="text-sm font-semibold">Execute graduation</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        One atomic call sweeps the raise and the unsold supply, splits{" "}
-        {DEFAULT_RESERVE_BPS / 100}% into the reserve escrow (the TokenMaster
-        floor) and the rest into the treasury, then records the graduation
-        (GraduationExecutor.sol:77-129).
+        One transaction sweeps the raise and the unsold supply, puts{" "}
+        {DEFAULT_RESERVE_BPS / 100}% of the raise into the reserve that backs
+        the token&apos;s price floor and the rest into the treasury, then
+        records the graduation.
       </p>
       {walletQuery.isPending || chainQuery.isPending ? (
         <p className="mt-2 text-2xs text-muted-foreground" role="status">

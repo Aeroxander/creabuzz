@@ -154,7 +154,7 @@ export function authorityLine(input: {
 }): string {
   const proposer = truncatePubkey(input.proposer);
   if (input.grant) {
-    return `Proposed by ${proposer} under NIP-ORG grant ${truncatePubkey(input.grant)} — an attenuating, revocable delegation, bound to this record.`;
+    return `Proposed by ${proposer} under delegation ${truncatePubkey(input.grant)} — a limited, revocable permission recorded with this proposal.`;
   }
   return `Proposed by ${proposer} under their own key — no delegation grant recorded on this record.`;
 }
@@ -165,7 +165,7 @@ export function authorityLine(input: {
 
 /** The receipt vocabulary this panel reads and writes (D4, §5). */
 export const RECEIPTS_VOCABULARY =
-  "kind:47005 proposal/vote/execute mirrors (tx-tagged)";
+  "the proposal, each vote and the execution, each recorded with its transaction";
 
 /** The 47005 tables the governance lifecycle emits. */
 export const GOV_RECEIPT_TABLES = ["proposal", "vote", "execute"] as const;

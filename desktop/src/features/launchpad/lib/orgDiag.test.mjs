@@ -93,7 +93,7 @@ test("golden thrash scoreboard", () => {
     reworkRateBp: 5000,
     settledRateBp: 5000,
     reading:
-      "thrash-shaped: most revisions rework a coordinate — the busywork reading",
+      "churning: most revisions rework the same item — effort without progress",
   });
 });
 

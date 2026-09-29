@@ -150,7 +150,7 @@ export function StrategyFormDialog({
           <DialogDescription className="text-xs">
             {editing
               ? "Publishing signs the revision with your key and replaces this strategy's latest head (newest wins)."
-              : "Structured kind:44020 authoring. Publishing signs the strategy with your key and adds it to the shared strategy bank."}
+              : "Publishing signs the strategy with your key and adds it to the shared strategy bank."}
           </DialogDescription>
         </DialogHeader>
 
@@ -207,7 +207,7 @@ export function StrategyFormDialog({
                 className="text-xs font-medium"
                 htmlFor="org-strategy-json"
               >
-                kind:44020 content
+                Strategy (JSON)
               </label>
               <Textarea
                 className="min-h-72 resize-y font-mono text-2xs"
@@ -239,7 +239,7 @@ export function StrategyFormDialog({
           >
             <Spinner aria-hidden="true" className="h-4 w-4" />
             <p className="text-xs text-muted-foreground">
-              Signing and publishing kind:44020 to the relay…
+              Signing and publishing the strategy…
             </p>
           </div>
         ) : null}

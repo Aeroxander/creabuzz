@@ -175,7 +175,7 @@ export function ProposalRagequitDialog({
               {result.sharesRemaining !== "" && (
                 <> · shares remaining: {result.sharesRemaining}</>
               )}
-              . Recorded in the kind:47005 <code>ragequit</code> receipt.
+              . Recorded on this launch.
             </p>
           )}
           {mirrorError && (

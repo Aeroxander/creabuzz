@@ -227,7 +227,7 @@ test("authorityLine falls back honestly without a grant, renders provenance with
     proposer: FOUNDER,
     grant: `g${"1".repeat(63)}`,
   });
-  assert.match(granted, /NIP-ORG grant g1{7}…1{4}/);
+  assert.match(granted, /delegation g1{7}…1{4}/);
   assert.match(granted, /revocable/);
 });
 
@@ -357,6 +357,6 @@ test("litmus: every kind carries all three visible facts", () => {
       `${kind}: authority`,
     );
     assert.ok(RECEIPTS_VOCABULARY.length > 0, `${kind}: receipts`);
-    assert.match(RECEIPTS_VOCABULARY, /47005/);
+    assert.match(RECEIPTS_VOCABULARY, /recorded with its transaction/);
   }
 });

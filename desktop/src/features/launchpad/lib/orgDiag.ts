@@ -278,7 +278,7 @@ export function tomasello(events: DiagEvent[]): Tomasello | null {
   });
   const reading =
     instN === 0
-      ? "talk without institutions: no standing rules or executed decisions in this window (the CooperBench shape — volume is not the instrument)"
+      ? "talk without decisions: no standing rules or executed decisions in this window — a busy channel is not the same as a team that decides"
       : instN * 2 < communicateN
         ? "institutions exist but communication dominates — measure what binds future action, not what is said"
         : "institutionalization present: proposals/votes/executions and approval gates bind future action";
@@ -389,9 +389,9 @@ export function thrash(events: DiagEvent[]): Thrash | null {
   const settledRateBp = rateBp(settled, coordinates);
   const reading =
     reworkRateBp >= 5000
-      ? "thrash-shaped: most revisions rework a coordinate — the busywork reading"
+      ? "churning: most revisions rework the same item — effort without progress"
       : settledRateBp >= 7000
-        ? "settled: most coordinates were written once and left alone (Cursor's nine crates)"
+        ? "settled: most items were written once and left alone"
         : "mixed: raw counts above are the honest read";
   return {
     revisions,

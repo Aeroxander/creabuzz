@@ -73,7 +73,7 @@ const VERIFY_SAMPLE_NOTE =
   "Checks that the newest entries you were viewing are still present after a fresh re-fetch.";
 
 const CHAIN_NOT_SERVED_NOTE =
-  "This relay served no hash-chain entries (kind 48001) to you — they are readable by community owners and admins only — so client-side chain verification is unavailable. Every row below is still a signed event.";
+  "The audit chain is only visible to community owners and admins, so it cannot be verified from this account. Every row below is still individually signed.";
 
 const CHAIN_OPERATOR_CAVEAT =
   "This shows the relay's published entries are internally consistent; it does not protect against the relay operator, who signs and stores the chain.";

@@ -264,10 +264,10 @@ function AgentTaskDraftAction({ item }: { item: FeedItem }) {
                         Publish a pending contribution record for review?
                       </AlertDialogTitle>
                       <AlertDialogDescription>
-                        The drafted kind:37013 record is signed with your key
-                        and posted to the community relay with review status
-                        "pending". You can still accept or reject it from the
-                        Contributions tab.
+                        The drafted contribution record is signed with your key
+                        and shared with the community, marked "pending review".
+                        You can still accept or reject it from the Contributions
+                        tab.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

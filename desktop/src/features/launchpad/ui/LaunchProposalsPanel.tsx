@@ -570,8 +570,7 @@ function ProposalCard({
       <section aria-label="Receipts" className="mt-1.5">
         <p className="text-2xs">
           <span className="font-medium text-foreground">Receipts:</span>{" "}
-          {RECEIPTS_VOCABULARY} — every action on this card mirrors its tx
-          there.
+          {RECEIPTS_VOCABULARY}. Every action on this card is recorded there.
         </p>
         {receipts.length > 0 ? (
           <ul className="mt-1 flex flex-col gap-0.5">
@@ -697,8 +696,8 @@ function ProposalCard({
                   {actionLabel} confirmed — transaction{" "}
                   {truncatePubkey(action.data.receipt.txHash)}
                   {action.data.mirrorError
-                    ? ` · the 47005 mirror failed to publish (${action.data.mirrorError}) — the chain is the ledger; the receipt record will catch up on refetch.`
-                    : " · mirrored to its kind:47005 receipt."}
+                    ? ` · the receipt could not be recorded (${action.data.mirrorError}) — the transaction still happened; the record will catch up on refresh.`
+                    : " · recorded on this launch."}
                 </p>
               )
             ) : null}

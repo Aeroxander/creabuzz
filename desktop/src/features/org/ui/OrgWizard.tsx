@@ -252,7 +252,7 @@ function RootStep({
 
   return (
     <StepShell
-      description="Publishes the org chart’s first kind:37010 node. The root is the community’s top delegation node; everything else hangs under it."
+      description="Creates the top of the org chart. Every role and agent seat hangs under it."
       position={positionOf("root")}
       title="Name the org root"
     >
@@ -360,7 +360,7 @@ function SeatStep({
 
   return (
     <StepShell
-      description={`Adds a child kind:37010 node under ${parentName}. Budgets cover an agent by its key, so a seat is budgeted once an agent occupies it.`}
+      description={`Adds a role under ${parentName}. Budgets follow the agent in a seat, so a seat is budgeted once an agent occupies it.`}
       position={positionOf("seat")}
       title="Add a role or agent seat"
     >
@@ -633,7 +633,7 @@ function BudgetStep({
 
   return (
     <StepShell
-      description="Publishes a kind:37012 budget. It covers one agent, or every agent that has no budget of its own; an overrun becomes an approval request instead of a silent stop."
+      description="Sets a budget for one agent, or for every agent without a budget of its own. Going over it asks for approval instead of silently stopping."
       position={positionOf("budget")}
       title="First budget"
     >
