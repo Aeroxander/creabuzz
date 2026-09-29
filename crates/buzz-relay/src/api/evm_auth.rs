@@ -44,6 +44,10 @@ use crate::state::AppState;
 
 use super::{api_error, internal_error};
 
+/// Nonces one community may mint per [`NONCE_ISSUE_WINDOW_SECS`].
+const NONCE_ISSUE_MAX_PER_WINDOW: u32 = 600;
+/// Fixed window for [`NONCE_ISSUE_MAX_PER_WINDOW`].
+const NONCE_ISSUE_WINDOW_SECS: u64 = 60;
 /// Redis key prefix for single-use SIWE nonces.
 const NONCE_KEY_PREFIX: &str = "siwe:nonce:";
 /// Nonce lifetime in seconds (10 minutes).
@@ -125,6 +129,29 @@ pub async fn issue_nonce(
         .get()
         .await
         .map_err(|e| internal_error(&format!("redis pool: {e}")))?;
+
+    // The endpoint is unauthenticated and every nonce is a Redis key that lives
+    // for NONCE_TTL_SECS, so cap how many one community can mint per window.
+    // This bounds Redis memory; it is a community-wide cap, not per client (the
+    // relay has no trusted client-address source here), so a flood can slow
+    // logins but never exhaust the store.
+    let issue_key = format!("siwe:nonce-issue:{}", tenant.community());
+    let issued: u32 = redis::cmd("INCR")
+        .arg(&issue_key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| internal_error(&format!("redis INCR: {e}")))?;
+    if issued == 1 {
+        redis::cmd("EXPIRE")
+            .arg(&issue_key)
+            .arg(NONCE_ISSUE_WINDOW_SECS)
+            .query_async::<u32>(&mut conn)
+            .await
+            .map_err(|e| internal_error(&format!("redis EXPIRE: {e}")))?;
+    }
+    if issued > NONCE_ISSUE_MAX_PER_WINDOW {
+        return Err(api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited"));
+    }
 
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let key = format!("{NONCE_KEY_PREFIX}{nonce}");

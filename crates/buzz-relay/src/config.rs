@@ -964,14 +964,23 @@ impl Config {
             })
         };
 
+        // A set-but-unparseable chain id must fail startup: silently dropping it
+        // would turn off the SIWE chain check the operator asked for.
+        let evm_chain_id: Option<u64> = match std::env::var("BUZZ_EVM_CHAIN_ID") {
+            Ok(raw) if !raw.trim().is_empty() => Some(raw.trim().parse().map_err(|_| {
+                ConfigError::InvalidValue(format!(
+                    "BUZZ_EVM_CHAIN_ID must be a positive integer chain id (got \"{}\")",
+                    raw.trim()
+                ))
+            })?),
+            _ => None,
+        };
         let evm_auth = std::env::var("BUZZ_EVM_AUTH")
             .ok()
             .map(|v| v.eq_ignore_ascii_case("on") || v == "true" || v == "1")
             .unwrap_or(false)
             .then(|| EvmAuthConfig {
-                chain_id: std::env::var("BUZZ_EVM_CHAIN_ID")
-                    .ok()
-                    .and_then(|v| v.parse().ok()),
+                chain_id: evm_chain_id,
                 erc6492_validator: std::env::var("BUZZ_EVM_ERC6492_VALIDATOR").ok(),
                 rpc_url: std::env::var("BUZZ_EVM_RPC_URL").ok(),
                 enforce_attestation: std::env::var("BUZZ_EVM_ENFORCE_ATTESTATION")
@@ -1861,6 +1870,24 @@ mod tests {
         for k in KNOBS {
             std::env::remove_var(k);
         }
+    }
+
+    #[test]
+    fn a_bad_evm_chain_id_fails_startup_instead_of_disabling_the_check() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("BUZZ_EVM_AUTH", "on");
+        std::env::set_var("BUZZ_EVM_CHAIN_ID", "8453");
+        let config = Config::from_env().expect("a valid chain id");
+        assert_eq!(config.evm_auth.expect("evm auth on").chain_id, Some(8453));
+
+        for bad in ["mainnet", "0x2105", "-1", "8453.5"] {
+            std::env::set_var("BUZZ_EVM_CHAIN_ID", bad);
+            let err = Config::from_env().expect_err("a bad chain id must fail startup");
+            assert!(err.to_string().contains("BUZZ_EVM_CHAIN_ID"), "{err}");
+        }
+
+        std::env::remove_var("BUZZ_EVM_CHAIN_ID");
+        std::env::remove_var("BUZZ_EVM_AUTH");
     }
 
     #[test]

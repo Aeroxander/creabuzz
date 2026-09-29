@@ -45,11 +45,28 @@ pub struct HttpJsonRpc {
     url: String,
 }
 
+/// Time to establish the connection to the node.
+const RPC_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+/// Time for a whole request, response included. Signature verification sits on
+/// the sign-in path, so a slow or hostile node must not be able to hold it.
+const RPC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+/// Largest response body accepted (`eth_getCode` of a 24 KiB contract is ~48 KiB
+/// of hex; this leaves generous room and no more).
+const RPC_MAX_RESPONSE_BYTES: usize = 256 * 1024;
+
 impl HttpJsonRpc {
-    /// Build a transport for a bare node URL (e.g. `$BUZZ_ETH_RPC_URL`).
+    /// Build a transport for a bare node URL (e.g. `$BUZZ_ETH_RPC_URL`), with
+    /// connect and request timeouts and a response size cap.
     pub fn new(url: &str) -> Self {
+        // A failed builder (no TLS backend) falls back to the default client,
+        // which is still bounded per request below.
+        let client = reqwest::Client::builder()
+            .connect_timeout(RPC_CONNECT_TIMEOUT)
+            .timeout(RPC_REQUEST_TIMEOUT)
+            .build()
+            .unwrap_or_default();
         Self {
-            client: reqwest::Client::new(),
+            client,
             url: url.to_string(),
         }
     }
@@ -64,12 +81,30 @@ impl HttpJsonRpc {
                 "method": method,
                 "params": params,
             }))
+            .timeout(RPC_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(|e| EvmAuthError::Rpc(format!("transport: {e}")))?;
-        let body: Value = resp
-            .json()
+        let mut resp = resp;
+        if resp
+            .content_length()
+            .is_some_and(|n| n > RPC_MAX_RESPONSE_BYTES as u64)
+        {
+            return Err(EvmAuthError::Rpc("response too large".into()));
+        }
+        // Read in chunks so a body with no declared length is capped too.
+        let mut raw: Vec<u8> = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
             .await
+            .map_err(|e| EvmAuthError::Rpc(format!("bad response: {e}")))?
+        {
+            if raw.len() + chunk.len() > RPC_MAX_RESPONSE_BYTES {
+                return Err(EvmAuthError::Rpc("response too large".into()));
+            }
+            raw.extend_from_slice(&chunk);
+        }
+        let body: Value = serde_json::from_slice(&raw)
             .map_err(|e| EvmAuthError::Rpc(format!("bad response: {e}")))?;
         if let Some(err) = body.get("error") {
             return Err(EvmAuthError::Rpc(format!("{err}")));
@@ -106,6 +141,32 @@ impl JsonRpc for HttpJsonRpc {
             .to_string();
         let strip = hex.strip_prefix("0x").unwrap_or(&hex);
         hex::decode(strip).map_err(|e| EvmAuthError::Rpc(format!("eth_call hex: {e}")))
+    }
+}
+
+/// Decode a validator's boolean answer strictly.
+///
+/// Two shapes are valid: the universal validator's single byte (`0x00`/`0x01`)
+/// and a standard 32-byte ABI `bool` (thirty-one zero bytes then `0x00`/`0x01`).
+/// An empty return (a call that reached no code) is `false`. Anything else is
+/// an error — in particular a 32-byte word that merely *starts* with `0x01`
+/// must not read as `true`, and one ending in `0x01` must not read as `false`.
+fn parse_bool_return(data: &[u8]) -> Result<bool, EvmAuthError> {
+    match data {
+        [] => Ok(false),
+        [0] => Ok(false),
+        [1] => Ok(true),
+        word if word.len() == 32 && word[..31].iter().all(|b| *b == 0) => match word[31] {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(EvmAuthError::Rpc(format!(
+                "unexpected validator bool 0x{other:02x}"
+            ))),
+        },
+        other => Err(EvmAuthError::Rpc(format!(
+            "unexpected validator return of {} bytes",
+            other.len()
+        ))),
     }
 }
 
@@ -169,7 +230,7 @@ impl RpcSignatureVerifier {
             if let Some(validator) = self.erc6492_validator {
                 let data = encode_is_valid_sig(address, digest, sig);
                 let ret = self.rpc.eth_call(&validator, &data).await?;
-                return self.parse_bool_return(&ret);
+                return parse_bool_return(&ret);
             }
             // Wrapped but no validator configured: cannot deploy/validate.
             return Err(EvmAuthError::Rpc(
@@ -193,23 +254,6 @@ impl RpcSignatureVerifier {
             .map_err(|_| EvmAuthError::InvalidSignature("expected 65-byte signature".into()))?;
         let recovered = recover_address(digest, &sig_65)?;
         Ok(&recovered == address)
-    }
-
-    fn parse_bool_return(&self, data: &[u8]) -> Result<bool, EvmAuthError> {
-        if data.is_empty() {
-            return Ok(false);
-        }
-        // The universal validator returns a single byte [0x00 | 0x01] carrying
-        // the result (EIP-6492 `isValidSig` reverts with a minimum-length
-        // payload). Accept either a packed byte or a 32-byte ABI bool.
-        match data[0] {
-            1 => Ok(true),
-            0 => Ok(false),
-            _ => Err(EvmAuthError::Rpc(format!(
-                "unexpected validator return byte 0x{:02x}",
-                data[0]
-            ))),
-        }
     }
 }
 
@@ -370,5 +414,38 @@ mod tests {
                 .unwrap();
             assert!(res);
         });
+    }
+
+    #[test]
+    fn validator_bool_accepts_only_the_two_valid_shapes() {
+        let mut word = [0u8; 32];
+        assert!(!parse_bool_return(&[]).unwrap(), "no return data is false");
+        assert!(!parse_bool_return(&[0]).unwrap());
+        assert!(parse_bool_return(&[1]).unwrap());
+        // A standard ABI bool: 31 zero bytes then the value.
+        assert!(!parse_bool_return(&word).unwrap());
+        word[31] = 1;
+        assert!(
+            parse_bool_return(&word).unwrap(),
+            "an ABI `true` must read as true"
+        );
+    }
+
+    #[test]
+    fn validator_bool_rejects_everything_else() {
+        assert!(parse_bool_return(&[2]).is_err());
+        assert!(parse_bool_return(&[1, 0]).is_err());
+        // Starts with 0x01 but is not an ABI bool: must not read as true.
+        let mut word = [0u8; 32];
+        word[0] = 1;
+        assert!(parse_bool_return(&word).is_err());
+        // Nonzero padding, or a value other than 0/1.
+        word = [0u8; 32];
+        word[30] = 1;
+        assert!(parse_bool_return(&word).is_err());
+        word = [0u8; 32];
+        word[31] = 2;
+        assert!(parse_bool_return(&word).is_err());
+        assert!(parse_bool_return(&[0u8; 33]).is_err());
     }
 }
