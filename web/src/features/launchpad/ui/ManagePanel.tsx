@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
-import { hasFounderCommitments, type Launch } from "../models";
+import { hasFounderCommitments } from "../models";
 import { toAtomic } from "../lib/amounts";
 import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
 import {

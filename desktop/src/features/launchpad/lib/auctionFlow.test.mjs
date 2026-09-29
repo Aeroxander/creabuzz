@@ -615,13 +615,15 @@ test("runAuctionDeploy (community) sends executor CREATE (no `to`) then factory 
 test("runAuctionDeploy (curated) deploys the AllowlistHook first", async () => {
   const { dispatch } = collectingDispatch();
   const sends = [];
+  let auctionLive = false;
   const effects = {
     call: async () => addrWord(AUCTION_ADDR),
     send: async (call) => {
       sends.push(call);
+      if (call.to === FACTORY) auctionLive = true;
       return successReceipt(TX1);
     },
-    codeAt: async () => false,
+    codeAt: async (address) => address === AUCTION_ADDR && auctionLive,
     transactionCount: async () => 7n,
     blockNumber: async () => 0n,
   };
@@ -829,7 +831,11 @@ test("runAuctionDeploy halts on a mined revert, names the step, and resumes at a
     predictCreateAddress(DEPLOYER, 8n),
     "resume re-predicts from the current nonce",
   );
-  assert.equal(sends.length, 3, "executor + factory on retry");
+  assert.equal(
+    sends.length,
+    4,
+    "executor + factory + onTokensReceived on retry (the reverted CREATE was send #1)",
+  );
 });
 
 test("runAuctionDeploy treats code at the predicted address as done (no re-send)", async () => {
@@ -921,7 +927,15 @@ test("runAuctionDeploy skips the factory send when the CREATE2 address is live",
   const state = fold(auctionDeployReducer, previous, actions);
   assert.equal(state.phase, "success");
   assert.equal(state.steps.auction.alreadyDeployed, true);
-  assert.equal(sends.length, 1, "only the executor CREATE");
+  assert.equal(
+    sends.length,
+    2,
+    "executor CREATE + onTokensReceived (funding/bind read as satisfied)",
+  );
+  assert.ok(
+    sends.every((c) => c.to !== FACTORY),
+    "the factory create is skipped when the CREATE2 address is live",
+  );
   assert.deepEqual(links, [{ auction: AUCTION_ADDR }]);
 });
 

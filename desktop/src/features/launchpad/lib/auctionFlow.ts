@@ -902,7 +902,7 @@ export const AUCTION_DEPLOY_STEP_LABELS: Record<AuctionDeployStepId, string> = {
   bind: "Bind the executor",
 };
 
-function isCreateStep(step: AuctionDeployStepId): boolean {
+function isCreateStep(step: AuctionDeployStepId): step is "hook" | "executor" {
   return step === "hook" || step === "executor";
 }
 
