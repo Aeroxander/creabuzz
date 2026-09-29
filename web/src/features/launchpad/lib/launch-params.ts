@@ -111,7 +111,7 @@ export function validateLaunchParams(
   } else if (input.floorPrice < MIN_FLOOR_PRICE) {
     error(
       "floorPrice",
-      `Floor price is below the contract minimum of ${MIN_FLOOR_PRICE} (2^32+1) as a Q96 value.`,
+      "The floor price is too low for the auction to price anything. Raise it.",
     );
   }
 

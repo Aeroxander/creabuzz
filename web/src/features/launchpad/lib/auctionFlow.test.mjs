@@ -272,7 +272,7 @@ test("deriveAuctionDeployParams enforces every parameter gate", () => {
     [{ ...PLAN, tokenSupply: "1.5" }, /token plan supply/],
     [{ ...PLAN, tokenSupply: `1${"0".repeat(21)}` }, /uint128/],
     [{ ...PLAN, currency: "usdc" }, /currency/],
-    [{ ...PLAN, floorPrice: "1000000" }, /floorPrice.*2\^32/],
+    [{ ...PLAN, floorPrice: "1000000" }, /floor price is too low/],
     [{ ...PLAN, tickSpacing: "1" }, /tickSpacing/],
     [{ ...PLAN, requiredRaised: "0" }, /requiredRaised/],
     [{ ...PLAN, requiredRaised: `1${"0".repeat(39)}` }, /uint128/],
@@ -1227,7 +1227,7 @@ test("checkGraduationReadiness names misconfigured recipients and failed reads",
     endBlock: 1010,
   });
   assert.equal(misconfigured.status, "misconfigured");
-  assert.match(misconfigured.message, /executeGraduation requires BOTH/);
+  assert.match(misconfigured.message, /both to be the graduation contract/);
 
   await assert.rejects(
     () =>

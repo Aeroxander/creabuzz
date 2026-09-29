@@ -1,4 +1,5 @@
 import { BookMarked, GitBranch, WifiOff } from "lucide-react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -68,7 +69,7 @@ function CommunityEmptyState() {
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
           Repositories pushed to this community will show up here. Open this
-          community in the Buzz desktop app to start pushing code.
+          community in the {APP_NAME} desktop app to start pushing code.
         </p>
         <ConnectButton className="mt-6" />
       </div>

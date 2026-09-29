@@ -343,7 +343,7 @@ export function deriveDirectory(input: {
       hasPitch: Boolean(summary),
       openRoles: summary?.openRoles ?? [],
       updatedAt: receipt.createdAt,
-      sources: ["kind:47005 summon receipt"],
+      sources: ["DAO creation receipt"],
     });
   }
   for (const deployment of deployments) {
@@ -381,7 +381,7 @@ export function deriveDirectory(input: {
     card.deploymentTx ??= deployment.tx;
     card.chainId ??= toChainNumber(deployment.chainId);
     card.updatedAt = Math.max(card.updatedAt, deployment.createdAt);
-    card.sources.push(`kind:37018 ${deployment.role} deployment`);
+    card.sources.push(`${deployment.role} deployment record`);
   }
   for (const card of cards.values()) {
     const summary = byProjectId.get(card.projectId);

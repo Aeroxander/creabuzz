@@ -79,7 +79,7 @@ describe("the three litmus facts", () => {
   });
 
   it("receipts and record-only copy are stable strings (D4/D8)", () => {
-    assert.match(RECEIPTS_COPY, /47005/);
+    assert.match(RECEIPTS_COPY, /linked to its transaction/);
     assert.match(RECORD_ONLY_COPY, /Record-only/);
   });
 

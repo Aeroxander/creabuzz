@@ -65,7 +65,7 @@ export interface UnlockPlan {
 
 /** The exact wording the dialog prints, so copy and report cannot drift. */
 export const UNLOCK_ENFORCEMENT_GAP =
-  "The enforcer exists: escrow the milestone tranches in ClaimStake and submit each row as a claim (tranche-claims.ts), and a verifier's approve quorum releases the tranche onchain — capital against attested delivery. It is opt-in per launch: until these tranches are escrowed and claimed, release stays a treasury action against the recorded verdict (kind 47005).";
+  "Milestone payouts can be enforced onchain: each milestone becomes a claim whose payout is held in escrow and released only when enough verifiers approve it. It is optional per launch; until a milestone is escrowed and claimed, releasing it is a treasury decision recorded on the launch.";
 
 export const MIN_MILESTONES = 2;
 export const MAX_MILESTONES = 4;

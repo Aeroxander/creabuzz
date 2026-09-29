@@ -160,7 +160,7 @@ function TeamMap({
                 data-testid={`team-source-${member.source}`}
                 title={
                   member.source === "grant"
-                    ? "Recorded by a kind:37011 ownership grant"
+                    ? "Recorded by an ownership grant the founder published"
                     : "Declared by the founder's pitch, not yet a grant"
                 }
               >
@@ -177,10 +177,10 @@ function TeamMap({
         ) : null}
       </ul>
       <p className="mt-3 text-2xs text-black/50 dark:text-white/50">
-        <span className="font-medium">recorded</span> = a kind:37011 ownership
-        grant the founder published ·{" "}
-        <span className="font-medium">declared</span> = the founder's stake
-        asserted by the pitch. Both stay revocable until the DAO adopts the map.
+        <span className="font-medium">recorded</span> = an ownership grant the
+        founder published · <span className="font-medium">declared</span> = the
+        founder's stake asserted by the pitch. Both stay revocable until the DAO
+        adopts the map.
       </p>
     </Card>
   );

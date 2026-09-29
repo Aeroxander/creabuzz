@@ -163,7 +163,7 @@ export function SummonDialog({
   const preconditions: string[] = [];
   if (!launch) {
     preconditions.push(
-      `No launch record for “${project.manifest.nodeId}” — the kind:47005 summon receipt attaches to it. Create the launch first; the ids line up.`,
+      `No launch record for “${project.manifest.nodeId}” — the DAO's creation receipt is recorded on it. Create the launch first.`,
     );
   }
   if (!summonerOk) {

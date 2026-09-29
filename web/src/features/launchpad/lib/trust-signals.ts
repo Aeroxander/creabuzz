@@ -774,7 +774,7 @@ export function communityDerivation(
       key: "contributions-superseded",
       label: "Superseded versions (not double-counted)",
       value: record.counts.superseded,
-      source: `${KIND_CONTRIBUTION_RECORD} · newest per action id wins (NIP-ORG)`,
+      source: `${KIND_CONTRIBUTION_RECORD} · the newest version of each action wins`,
     },
     {
       key: "approvals-granted",
@@ -792,7 +792,7 @@ export function communityDerivation(
       key: "approvals-unlinked",
       label: "Approvals naming no contribution",
       value: record.counts.approvalsUnlinked,
-      source: `kind ${KIND_APPROVAL_GRANT}/${KIND_APPROVAL_DENY} · e/d tag matched nothing`,
+      source: `kind ${KIND_APPROVAL_GRANT}/${KIND_APPROVAL_DENY} · matched no known request`,
     },
     {
       key: "community-unreadable",

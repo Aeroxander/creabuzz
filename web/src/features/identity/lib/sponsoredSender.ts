@@ -120,7 +120,7 @@ export interface SponsoredSenderAvailability {
   missing: SponsoredSenderMissing[];
   /** Plain explanation of the first blocker. */
   reason: string | null;
-  /** How to recover — names the identity page for passkey blockers. */
+  /** How to recover — points at the profile menu for passkey blockers. */
   action: string | null;
 }
 
@@ -208,12 +208,12 @@ export function sponsoredSenderAvailability(input: {
     credential: {
       reason: "No passkey is registered in this browser.",
       action:
-        "Create a passkey on the identity page (/identity-demo), then retry.",
+        'Open your profile menu, choose "Set up passkey sign-in", then retry.',
     },
     "owner-key": {
       reason:
         "This browser's passkey has no wallet owner key yet (it predates wallet-owner capture).",
-      action: "Re-register the passkey on the identity page (/identity-demo).",
+      action: "Open your profile menu and set up passkey sign-in again.",
     },
     "chain-config": {
       reason:

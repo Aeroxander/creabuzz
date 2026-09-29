@@ -356,7 +356,7 @@ test("sponsoredSenderAvailability covers the full input combination space", () =
       chainId: CHAIN_ID,
       rpcUrl: "x",
     }).action,
-    "Create a passkey on the identity page (/identity-demo), then retry.",
+    'Open your profile menu, choose "Set up passkey sign-in", then retry.',
   );
   assert.equal(
     sponsoredSenderAvailability({
@@ -365,7 +365,7 @@ test("sponsoredSenderAvailability covers the full input combination space", () =
       chainId: CHAIN_ID,
       rpcUrl: "x",
     }).action,
-    "Re-register the passkey on the identity page (/identity-demo).",
+    "Open your profile menu and set up passkey sign-in again.",
   );
 });
 
@@ -406,7 +406,7 @@ test("unavailable send/getAddress throw SponsoredSenderUnavailableError with the
     assert.ok(err instanceof SponsoredSenderUnavailableError);
     assert.equal(
       err.availability.action,
-      "Create a passkey on the identity page (/identity-demo), then retry.",
+      'Open your profile menu, choose "Set up passkey sign-in", then retry.',
     );
     return true;
   });

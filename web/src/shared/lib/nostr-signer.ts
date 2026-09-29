@@ -30,7 +30,9 @@ declare global {
 
 export class Nip07UnavailableError extends Error {
   constructor() {
-    super("A NIP-07 browser extension is required to join in the browser.");
+    super(
+      "A Nostr signer browser extension is required to join in the browser.",
+    );
     this.name = "Nip07UnavailableError";
   }
 }
@@ -193,7 +195,7 @@ export async function signNostrEvent(
       typeof signed.id !== "string" ||
       typeof signed.sig !== "string"
     ) {
-      throw new Error("The NIP-07 extension returned an invalid signed event.");
+      throw new Error("The signer extension returned an invalid signature.");
     }
     return signed;
   }

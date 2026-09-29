@@ -255,7 +255,7 @@ export function legacyFields(
           <Field
             id="launch-ip-list"
             label="Committed assets"
-            hint="One URL or NIP-MP coordinate per line — repos, docs, social accounts, domains."
+            hint="One link per line — repos, docs, social accounts, domains."
           >
             <textarea
               id="launch-ip-list"
@@ -532,9 +532,10 @@ export function legacyFields(
             >
               <p className="text-sm font-medium">Performance vesting</p>
               <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-                Tranches unlock at price multiples of the raise price (the
-                MetaDAO 2x…32x ladder by default). Record-level now; the onchain
-                enforcer comes with verifier milestones.
+                Tranches unlock as the token price reaches multiples of the
+                raise price (2x up to 32x by default). This is recorded on the
+                launch for now; onchain enforcement comes with verifier
+                milestones.
               </p>
               <label
                 className="mt-2 block text-sm text-black/60 dark:text-white/60"

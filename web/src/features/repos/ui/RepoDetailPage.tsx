@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Users,
 } from "lucide-react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -326,8 +327,8 @@ export function RepoDetailPage() {
             </p>
             <p className="mt-2 text-xs opacity-80">
               Repository reads require an authenticated member of this
-              community. Install a NIP-07 extension to sign in, or open this
-              repository in the Buzz desktop app.
+              community. Install a Nostr signer extension to sign in, or open
+              this repository in the {APP_NAME} desktop app.
             </p>
           </div>
         )}

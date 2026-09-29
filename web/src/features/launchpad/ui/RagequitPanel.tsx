@@ -340,8 +340,7 @@ function PositionBody({
       </ul>
       <p className="mt-2 text-xs text-black/50 dark:text-white/50">
         The claim is computed live from the DAO&apos;s balances; the exact
-        payout is fixed by the chain at the moment the exit mines
-        (Moloch.sol:772-793).
+        payout is fixed by the chain at the moment the exit is confirmed.
       </p>
       <Button className="mt-3" onClick={onExit} data-testid="ragequit-exit">
         Exit and claim
@@ -452,8 +451,8 @@ function RagequitDialog({
         Burns {formatAmount(sharesToBurn)} shares of {truncatePubkey(dao)} and
         claims the proportional treasury share to{" "}
         {holder ? truncatePubkey(holder) : "this account"} — one transaction,
-        then a kind:47005 <code>ragequit</code> receipt recording the tx. The
-        chain is the ledger; the receipt is the legible record.
+        then a receipt on this launch recording it. The chain is the ledger; the
+        receipt is the readable record.
       </p>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
         Tokens claimed:{" "}

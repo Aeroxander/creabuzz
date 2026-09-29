@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { APP_NAME } from "@/shared/constants/brand";
 import { getUserSigningBlockedReason } from "@/shared/lib/nostr-signer";
 import { Button } from "@/shared/ui/button";
 
@@ -33,7 +34,7 @@ import { deriveSignRecovery } from "../lib/sign-recovery";
 export function SignRecovery({
   message,
   onUnlocked,
-  displayName = "Buzz reader",
+  displayName = `${APP_NAME} reader`,
   className = "",
   testId = "sign-recovery",
   showHeadline = true,

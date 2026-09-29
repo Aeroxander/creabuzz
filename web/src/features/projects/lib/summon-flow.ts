@@ -40,8 +40,8 @@ export interface SummonReceipt extends ConfirmedSummon {
 export type SummonStepId = "send" | "mirror";
 
 export const SUMMON_STEP_LABELS: Record<SummonStepId, string> = {
-  send: "Summon the DAO onchain (mint Shares to the map)",
-  mirror: "Record the summon (kind:47005 summon receipt)",
+  send: "Create the DAO onchain and issue its shares",
+  mirror: "Record the new DAO on the launch",
 };
 
 /** The plan, in order: the money write first, its record second. */

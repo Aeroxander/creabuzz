@@ -820,6 +820,7 @@ web:
 
 # Run web lint and format checks
 web-check:
+    node --test scripts/check-copy-core.test.mjs
     cd {{web_dir}} && pnpm check
 
 # Fix web lint and format issues

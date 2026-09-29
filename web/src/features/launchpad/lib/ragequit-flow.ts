@@ -45,8 +45,8 @@ export interface FlowReceipt {
 export type RagequitStepId = "exit" | "mirror";
 
 export const RAGEQUIT_STEP_LABELS: Record<RagequitStepId, string> = {
-  exit: "Exit onchain (burn shares, claim treasury)",
-  mirror: "Record the exit (kind:47005 ragequit receipt)",
+  exit: "Exit onchain: give up your shares and take your part of the treasury",
+  mirror: "Record the exit on the launch",
 };
 
 export type RagequitStepStatus =

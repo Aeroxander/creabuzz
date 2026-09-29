@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import { APP_NAME } from "@/shared/constants/brand";
 import remarkGfm from "remark-gfm";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -208,7 +209,7 @@ export function WikiView({
   };
 
   const exportWiki = () => {
-    const header = `# Buzz Wiki Export\n\nExported ${new Date().toISOString()} — ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
+    const header = `# ${APP_NAME} Wiki Export\n\nExported ${new Date().toISOString()} — ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
     const body = pages
       .map((page) => `\n---\n\n# Page: ${page.slug}\n\n${page.content}`)
       .join("\n");

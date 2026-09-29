@@ -173,7 +173,7 @@ describe("deriveDirectory — DAOs from summon receipts", () => {
     assert.equal(card.chainId, 11155111);
     assert.equal(card.addressUrl, `${SEPOLIA}/address/${DAO}`);
     assert.equal(card.txUrl, `${SEPOLIA}/tx/${TX}`);
-    assert.deepEqual(card.sources, ["kind:47005 summon receipt"]);
+    assert.deepEqual(card.sources, ["DAO creation receipt"]);
     assert.equal(counts.malformed, 0);
   });
 
@@ -210,7 +210,7 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
     assert.equal(card.dao, null, "a summoner contract is not a treasury");
     assert.deepEqual(card.contract, { role: "summoner", address: SUMMONER });
     assert.equal(card.addressUrl, `${SEPOLIA}/address/${SUMMONER}`);
-    assert.deepEqual(card.sources, ["kind:37018 summoner deployment"]);
+    assert.deepEqual(card.sources, ["summoner deployment record"]);
     assert.equal(card.hasPitch, false, "no pitch claimed that does not exist");
   });
 
@@ -231,8 +231,8 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
       address: SUMMONER,
     });
     assert.deepEqual(card.sources, [
-      "kind:47005 summon receipt",
-      "kind:37018 summoner deployment",
+      "DAO creation receipt",
+      "summoner deployment record",
     ]);
   });
 });

@@ -98,7 +98,7 @@ export function quorumSummary(params: QuorumParams = {}): string {
 
 /** D8: the record-only fallback — no onchain binding, no invented actions. */
 export const RECORD_ONLY_COPY =
-  "Record-only: this proposal is tracked here (kind 47005), but its actions run as a treasury action against the recorded decision.";
+  "Record-only: this proposal is tracked here, but its actions are carried out by the treasury, following the recorded decision.";
 
 /** The second litmus fact: who acted, and under what authority (D5). */
 export function authorityLine(author: string, grant?: string | null): string {
@@ -110,7 +110,7 @@ export function authorityLine(author: string, grant?: string | null): string {
 
 /** The third litmus fact: where the receipts are (D4). */
 export const RECEIPTS_COPY =
-  "Receipts: kind:47005 proposal / vote / execute mirrors, tx-bound.";
+  "Receipts: the proposal, each vote and the execution are recorded here, each linked to its transaction.";
 
 /** Decode `state(id)`'s uint256 word into majeur's label. */
 export function decodeProposalState(word: bigint | number): string {

@@ -461,7 +461,7 @@ export function encodeSummonCalldata(input: {
 }): string {
   if (input.initHolders.length !== input.initShares.length) {
     throw new Error(
-      `summon-composer: ${input.initHolders.length} holders but ${input.initShares.length} share amounts (Moloch.sol:221 LengthMismatch)`,
+      `summon-composer: ${input.initHolders.length} holders but ${input.initShares.length} share amounts; every holder needs exactly one share amount`,
     );
   }
   if (!BYTES32_RE.test(input.salt)) {

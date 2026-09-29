@@ -73,7 +73,7 @@ export function OrgDiagnosticCard() {
         <div className="mt-3 space-y-3 text-xs">
           {/* Instrument 1 — Pentland's time signal (timing-only). */}
           <section aria-label="Time signal">
-            <h4 className="font-medium">Time signal (Pentland)</h4>
+            <h4 className="font-medium">Activity rhythm</h4>
             {report.timeSignal ? (
               <>
                 <p className="text-black/70 dark:text-white/70">
@@ -95,8 +95,8 @@ export function OrgDiagnosticCard() {
 
           {/* Instrument 2 — Tomasello's three layers. */}
           {report.tomasello ? (
-            <section aria-label="Tomasello layers">
-              <h4 className="font-medium">Three layers (Tomasello)</h4>
+            <section aria-label="How the team coordinates">
+              <h4 className="font-medium">How the team coordinates</h4>
               <div className="grid grid-cols-3 gap-2">
                 {(
                   [
@@ -120,8 +120,8 @@ export function OrgDiagnosticCard() {
           ) : null}
 
           {/* Instrument 3 — the WEF five failure modes. */}
-          <section aria-label="WEF failure modes">
-            <h4 className="font-medium">Failure modes (WEF five)</h4>
+          <section aria-label="Health checks">
+            <h4 className="font-medium">Health checks</h4>
             <div className="flex flex-wrap gap-2">
               {report.wefModes.map((mode) => (
                 <span
@@ -137,8 +137,8 @@ export function OrgDiagnosticCard() {
 
           {/* Instrument 4 — Cursor's thrash-vs-work scoreboard. */}
           {report.thrash ? (
-            <section aria-label="Thrash scoreboard">
-              <h4 className="font-medium">Thrash vs work (Cursor)</h4>
+            <section aria-label="Churn vs progress">
+              <h4 className="font-medium">Churn vs progress</h4>
               <p className="text-black/70 dark:text-white/70">
                 {report.thrash.revisions} revisions /{" "}
                 {report.thrash.coordinates} coordinates · rework{" "}
@@ -188,8 +188,8 @@ export function OrgDiagnosticCard() {
                 </span>
               </p>
               <p className="text-black/60 dark:text-white/60">
-                approval concentration is the WEF's governor-agents risk
-                (“overreliance on agents supervising other agents”)
+                When most approvals come from one reviewer, or agents mostly
+                approve other agents, oversight is thinner than it looks.
               </p>
             </section>
           ) : null}

@@ -232,7 +232,7 @@ test("a mined revert fails the send step as data — nothing is recorded", async
   );
   assert.equal(state.phase, "failed");
   assert.equal(state.failedStep, "send");
-  assert.match(state.errorMessage, /Summon the DAO onchain .* failed/);
+  assert.match(state.errorMessage, /Create the DAO onchain .* failed/);
   assert.match(state.errorMessage, /reverted onchain \(tx 0x11/);
   assert.equal(published, 0, "a reverted summon is never recorded as done");
   assert.equal(state.reconcile, false, "a revert is safe to retry");

@@ -68,7 +68,25 @@ export function hasBackedUp(): boolean {
   }
 }
 
-export function ProfileMenu() {
+/**
+ * Where the menu is mounted. `sidebar` is the full-width chip; `rail` (the
+ * global nav on wide screens) and `tabbar` (the phone bottom bar) show only the
+ * avatar, keeping the name and username as the button's accessible text.
+ */
+export type ProfileMenuPlacement = "sidebar" | "rail" | "tabbar";
+
+const POPOVER_POSITION: Record<ProfileMenuPlacement, string> = {
+  sidebar: "bottom-full left-0 mb-1",
+  rail: "bottom-0 left-full ml-2",
+  tabbar: "bottom-full right-0 mb-2",
+};
+
+export function ProfileMenu({
+  placement = "sidebar",
+}: {
+  placement?: ProfileMenuPlacement;
+} = {}) {
+  const compact = placement !== "sidebar";
   const [open, setOpen] = useState(false);
   // Read once at mount; sign out / import reload the page, so no setter
   // is needed — "create identity" itself reloads on completion.
@@ -122,8 +140,15 @@ export function ProfileMenu() {
         close();
       }
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const saveProfile = async () => {
@@ -173,15 +198,28 @@ export function ProfileMenu() {
 
   if (!created) {
     return (
-      <div className="border-t border-black/10 px-3 py-2.5 dark:border-white/10">
+      <div
+        className={
+          compact
+            ? ""
+            : "border-t border-black/10 px-3 py-2.5 dark:border-white/10"
+        }
+      >
         <button
           type="button"
           onClick={() => setShowOnboarding(true)}
-          className="flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
+          className={
+            compact
+              ? "grid h-10 w-10 place-items-center rounded-full border border-dashed border-black/30 text-black/70 hover:bg-black/5 dark:border-white/30 dark:text-white/70 dark:hover:bg-white/10"
+              : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
+          }
           data-testid="create-identity-cta"
+          title={compact ? "Create your identity" : undefined}
         >
-          <UserPlus className="h-4 w-4" />
-          Create your identity
+          <UserPlus aria-hidden className="h-4 w-4" />
+          <span className={compact ? "sr-only" : undefined}>
+            Create your identity
+          </span>
         </button>
         {showOnboarding ? (
           <OnboardingDialog
@@ -207,15 +245,21 @@ export function ProfileMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+        aria-expanded={open}
+        className={
+          compact
+            ? "relative grid h-10 w-10 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            : "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+        }
         data-testid="user-chip"
+        title={compact ? displayName : undefined}
       >
         <UserAvatar
           avatarUrl={profile?.picture ?? null}
           displayName={displayName}
           size="sm"
         />
-        <span className="min-w-0 flex-1">
+        <span className={compact ? "sr-only" : "min-w-0 flex-1"}>
           <span className="block truncate text-sm font-medium text-black dark:text-white">
             {displayName}
           </span>
@@ -228,12 +272,21 @@ export function ProfileMenu() {
           </span>
         </span>
         {!hasBackedUp() ? (
-          <KeyRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <KeyRound
+            aria-hidden
+            className={
+              compact
+                ? "absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-background text-amber-500"
+                : "h-3.5 w-3.5 shrink-0 text-amber-500"
+            }
+          />
         ) : null}
       </button>
 
       {open ? (
-        <div className="absolute bottom-full left-0 z-40 mb-1 w-72 rounded-xl border border-black/10 bg-background p-3 shadow-xl dark:border-white/10">
+        <div
+          className={`absolute z-50 max-h-[80dvh] w-72 overflow-y-auto rounded-xl border border-black/10 bg-background p-3 shadow-xl dark:border-white/10 ${POPOVER_POSITION[placement]}`}
+        >
           {!hasBackedUp() ? (
             <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3 w-3 shrink-0" />

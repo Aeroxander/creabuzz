@@ -279,7 +279,7 @@ test("profile menu fits once an identity exists", async ({ page }) => {
     window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
   });
   await openCommunity(page);
-  await page.getByTestId("open-channel-list").click();
+  // On a phone the profile menu lives in the app's bottom tab bar.
   await page.getByTestId("user-chip").click();
   await expectNoOverflow(page, "profile");
   await shot(page, "16b-mobile-profile");

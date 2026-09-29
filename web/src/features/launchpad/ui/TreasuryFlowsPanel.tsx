@@ -228,8 +228,8 @@ function ReceiptSection({
         ))}
       </ul>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-        Source: the launch&apos;s kind:47005 receipt mirrors (the deploy and
-        exits publish them; the tx links are the chain record).
+        Source: the receipts this launch published for its deploy and exits;
+        each links to its transaction on the chain.
       </p>
     </section>
   );
@@ -494,9 +494,9 @@ export function TreasuryFlowsPanel({
         ) : orgMoney.data && orgMoney.data.budgets.length > 0 ? (
           <>
             <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-              Source: kind:37012 budgets + kind:37014 spend receipts from this
-              community relay, cross-read against the OrgAllowance contract
-              (kind 37012&apos;s <code>onchain</code> binding). Current epoch:{" "}
+              Source: the budgets and spend receipts published in this
+              community, checked against the onchain spending allowance. Current
+              period:{" "}
               {budgetEpoch(
                 "month",
                 BigInt(Math.floor(Date.now() / 1000)),
@@ -517,9 +517,9 @@ export function TreasuryFlowsPanel({
           </>
         ) : (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            No bound-org budget records (kind:37012) are published on this
-            community relay, so the spend ledger shows onchain data only — the
-            budget picture appears once budgets are recorded.
+            No budgets are published in this community yet, so the spend ledger
+            shows onchain data only. The budget picture appears once budgets are
+            recorded.
           </p>
         )}
       </section>

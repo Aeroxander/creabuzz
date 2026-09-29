@@ -244,8 +244,8 @@ export function MyBidsPanel({
       </div>
       {groups.length === 0 ? (
         <p className="rounded-lg bg-black/5 p-3 text-sm text-black/60 dark:bg-white/5 dark:text-white/60">
-          No connected account found. Connect an injected wallet or create a
-          passkey on the identity page to see bids here.
+          No connected account found. Connect a browser wallet, or set up
+          passkey sign-in from your profile menu, to see your bids here.
         </p>
       ) : null}
       {groups.map((group) => {

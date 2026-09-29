@@ -1,12 +1,4 @@
-import {
-  BookMarked,
-  Compass,
-  Globe,
-  LayoutGrid,
-  Rocket,
-  Search,
-  Users,
-} from "lucide-react";
+import { BookMarked, Compass, Globe, Users } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -134,46 +126,11 @@ export function CommunityDirectoryPage() {
           <Compass className="h-5 w-5" /> Communities
         </h1>
         <AddCommunityForm />
-        {/* flex-wrap: four entries must still fit a 390px viewport without
-            forcing page-level horizontal overflow. */}
-        <span className="flex flex-wrap gap-2">
-          <Link to="/discover">
-            <Button
-              variant="outline"
-              size="sm"
-              className="dark:border-white/15"
-            >
-              <Search aria-hidden /> Discover
-            </Button>
-          </Link>
-          <Link to="/repos">
-            <Button
-              variant="outline"
-              size="sm"
-              className="dark:border-white/15"
-            >
-              <BookMarked /> Repositories
-            </Button>
-          </Link>
-          <Link to="/launchpad">
-            <Button
-              variant="outline"
-              size="sm"
-              className="dark:border-white/15"
-            >
-              <Rocket /> Launchpad
-            </Button>
-          </Link>
-          <Link to="/projects">
-            <Button
-              variant="outline"
-              size="sm"
-              className="dark:border-white/15"
-            >
-              <LayoutGrid /> Projects
-            </Button>
-          </Link>
-        </span>
+        <Link to="/repos">
+          <Button variant="outline" size="sm" className="dark:border-white/15">
+            <BookMarked /> Repositories
+          </Button>
+        </Link>
       </header>
 
       {isLoading ? (

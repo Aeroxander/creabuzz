@@ -70,7 +70,7 @@ export const AUCTION_DEPLOY_STEPS = [
   {
     id: "auction",
     label: "Auction",
-    detail: "Deploys the CCA auction via the factory (CREATE2).",
+    detail: "Deploys the auction contract.",
   },
   {
     id: "hookAuction",

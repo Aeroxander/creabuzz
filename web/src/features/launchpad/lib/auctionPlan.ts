@@ -382,7 +382,7 @@ export function deriveAuctionDeployParams(
   // AuctionLauncher.sol:41 — a Q96 price must clear 2^32 to price anything.
   if (floorPrice < (1n << 32n) + 1n) {
     fail(
-      `floorPrice must be at least 2^32 + 1 Q96 (AuctionLauncher.BadFloorPrice): ${inputs.floorPrice}`,
+      `The floor price is too low for the auction to price anything (${inputs.floorPrice}). Raise it.`,
     );
   }
   const tickSpacing = orFail("tickSpacing", () =>

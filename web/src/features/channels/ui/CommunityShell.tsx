@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   BookOpen,
   Bot,
   ListChecks,
@@ -8,14 +7,12 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import { useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
-import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
@@ -232,22 +229,9 @@ export function CommunityShell({
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#43e296]/15 dark:bg-[#43e296]/20">
               <Zap className="h-4 w-4 text-[#0e9f66] dark:text-[#43e296]" />
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-black dark:text-white">
-                Creaton
-              </p>
-              <p className="truncate text-2xs text-black/60 dark:text-white/60">
-                {host}
-              </p>
-            </div>
-            <Link
-              to="/"
-              className="ml-auto shrink-0 rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
-              aria-label="Back to all communities"
-              title="All communities"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+            <p className="min-w-0 truncate text-sm font-semibold text-black dark:text-white">
+              {host}
+            </p>
           </div>
           <NotificationBell
             onOpenChannel={(channelId) => {
@@ -368,9 +352,6 @@ export function CommunityShell({
               setSidebarOpen(false);
             }}
           />
-          <div className="mt-auto border-t border-black/10 px-3 py-2.5 dark:border-white/10">
-            <ProfileMenu />
-          </div>
         </div>
 
         <div

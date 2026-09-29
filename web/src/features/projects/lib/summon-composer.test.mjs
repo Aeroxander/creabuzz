@@ -222,7 +222,7 @@ test("holders and share arrays of different length cannot be encoded", () => {
         initHolders: [B_A],
         initShares: [1n, 2n],
       }),
-    /LengthMismatch/,
+    /exactly one share amount/,
   );
 });
 

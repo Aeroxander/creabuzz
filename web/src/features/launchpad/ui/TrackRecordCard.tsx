@@ -48,24 +48,40 @@ import {
 } from "../lib/trust-signals";
 import { useTrustSignals } from "../use-launches";
 
-/** One derived figure: what was counted, and where from. */
+/**
+ * The derived figures, with where each was counted from. The provenance is
+ * audit detail, so it sits in one collapsed section rather than under every
+ * number.
+ */
 function DerivationList({ rows }: { rows: DerivationRow[] }) {
   return (
-    <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
-      {rows.map((row) => (
-        <div key={row.key} className="flex flex-col gap-0.5 py-1.5">
-          <div className="flex items-baseline justify-between gap-3">
+    <>
+      <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex items-baseline justify-between gap-3 py-1.5"
+          >
             <dt className="min-w-0 text-black/60 dark:text-white/60">
               {row.label}
             </dt>
             <dd className="shrink-0 font-medium tabular-nums">{row.value}</dd>
           </div>
-          <p className="break-words text-2xs text-black/45 dark:text-white/45">
-            {row.source}
-          </p>
-        </div>
-      ))}
-    </dl>
+        ))}
+      </dl>
+      <details className="mt-1 text-2xs text-black/60 dark:text-white/60">
+        <summary className="cursor-pointer select-none">
+          Where these numbers come from
+        </summary>
+        <ul className="mt-1 space-y-0.5 break-words">
+          {rows.map((row) => (
+            <li key={row.key}>
+              <span className="font-medium">{row.label}:</span> {row.source}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </>
   );
 }
 
@@ -162,9 +178,8 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
         What the feed has actually recorded: milestone verdicts and claims (kind
         47005, verdict word <code>approve</code>|<code>reject</code>),
         settlement receipts with their tx, and the community's contribution
-        reviews (kind 37013). These are outcomes, not a rating — every figure
-        below shows the input it came from, and a check that cannot be made says
-        so.
+        reviews. These are outcomes, not a rating — each figure can be traced to
+        what it was counted from, and a check that cannot be made says so.
       </p>
 
       {state === "empty" ? (
@@ -275,10 +290,9 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
       <section className="mt-4" aria-label="Community contributions">
         <h3 className="text-sm font-semibold">Community contributions</h3>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          Community-wide: contribution records are not launch-scoped (NIP-ORG),
-          so these counts cover the whole relay, not just this launch. Canonical
-          record per action id — newer versions replace older ones instead of
-          stacking.
+          Contribution records belong to the whole community, not one launch, so
+          these counts cover everyone here. When a record is updated, the newer
+          version replaces the older one instead of counting twice.
         </p>
         {community.isPending ? (
           <p className="mt-2 text-xs text-black/60 dark:text-white/60">
