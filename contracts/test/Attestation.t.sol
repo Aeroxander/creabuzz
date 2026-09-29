@@ -25,7 +25,7 @@ contract MockUSD {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) public virtual returns (bool) {
         uint256 allowed = allowance[from][msg.sender];
         if (allowed != type(uint256).max) {
             require(allowed >= amount, "mock allowance");
@@ -35,6 +35,59 @@ contract MockUSD {
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
         return true;
+    }
+}
+
+/// A transferFrom-hook probe: fires a one-shot call after the transfer moves.
+contract CallbackUSD is MockUSD {
+    address public hookTarget;
+    bytes public hookData;
+    bool public hookArmed;
+    bool public hookFired;
+
+    function setHook(address target, bytes calldata data) external {
+        hookTarget = target;
+        hookData = data;
+        hookArmed = true;
+        hookFired = false;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        bool okres = super.transferFrom(from, to, amount);
+        if (hookArmed) {
+            hookArmed = false;
+            hookFired = true;
+            (bool ok,) = hookTarget.call(hookData); // swallowed on purpose
+            ok;
+        }
+        return okres;
+    }
+}
+
+/// The reentrant attacker: mid-pull, it slides a same-id claim with its OWN
+/// stake in under the outer write. If the outer write lands last, the inner
+/// stake is orphaned in escrow with no record.
+contract ReentrySubmitter {
+    ClaimStake public stake;
+    MockUSD public token;
+    bytes32 public claimId;
+    bool public fired;
+    bool public succeeded;
+
+    constructor(ClaimStake s, MockUSD t, bytes32 id) {
+        stake = s;
+        token = t;
+        claimId = id;
+    }
+
+    function attack() external {
+        fired = true;
+        token.approve(address(stake), 100e6);
+        try stake.submitClaim(claimId, 10e6, 100e6, keccak256("forged-evidence")) {
+            succeeded = true;
+        } catch {
+            succeeded = false;
+        }
     }
 }
 
@@ -90,6 +143,31 @@ contract AttestationTest is Test {
     }
 
     // ------------------------------------------------------------- release
+
+    /// Reentrancy (checks-effects-interactions): a callback fired mid-stake-
+    /// pull must not be able to slide a same-id claim under the outer write
+    /// and get its stake orphaned in escrow. The claim is recorded BEFORE the
+    /// pull, so the reentrant submit hits `AlreadySettled` and is refused.
+    function test_reentrant_same_id_submit_cannot_orphan_the_stake() public {
+        CallbackUSD cb = new CallbackUSD();
+        ClaimStake stake2 = new ClaimStake(verifiers, treasury, address(cb));
+        ReentrySubmitter sub = new ReentrySubmitter(stake2, cb, CLAIM);
+        cb.mint(contributor, 1_000e6);
+        vm.prank(contributor);
+        cb.approve(address(stake2), 1_000e6);
+        cb.mint(address(sub), 200e6); // the attacker's own stake budget
+        cb.setHook(address(sub), abi.encodeWithSignature("attack()"));
+
+        vm.prank(contributor);
+        stake2.submitClaim(CLAIM, 500e6, 50e6, keccak256("evidence"));
+
+        assertTrue(cb.hookFired(), "the reentrancy probe never fired");
+        assertFalse(sub.succeeded(), "a reentrant same-id submit must be refused");
+        // Exactly one stake in escrow: nothing orphaned, nothing overwritten.
+        assertEq(cb.balanceOf(address(stake2)), 50e6);
+        assertEq(cb.balanceOf(contributor), 1_000e6 - 50e6);
+        assertEq(cb.balanceOf(address(sub)), 200e6); // the attacker's stake never moved
+    }
 
     function test_release_only_on_quorum() public {
         _submit(CLAIM, contributor, 500e6, 50e6, keccak256("evidence"));

@@ -25,7 +25,12 @@
 #
 # ⚠️  Dev only. It writes a community, users and events into $DATABASE_URL.
 
-set -uo pipefail
+# Fail fast on unexpected failures (`-e`). The expect_* helpers and the probe
+# captures that feed them keep their semantics on purpose: a capture whose
+# output is asserted tolerates its probe's non-zero exit (`|| true`) so the
+# assertion reports it instead of aborting the run. Everything else — build,
+# migrate, seeding, relay boot — aborts on failure.
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -47,8 +52,13 @@ fail() { FAILS=$((FAILS + 1)); printf '  \033[31m✗\033[0m %s\n' "$*"; }
 skip() { printf '  \033[33m-\033[0m skipped: %s\n' "$*"; }
 
 cleanup() {
-  [[ -n "$RELAY_PID" ]] && kill "$RELAY_PID" 2>/dev/null
-  [[ -n "$MOCK_PID" ]] && kill "$MOCK_PID" 2>/dev/null
+  # Every entry is tolerant (`|| true`): under `set -e`, killing an
+  # already-dead process would abort the trap and skip the rest of the cleanup.
+  [[ -n "$RELAY_PID" ]] && kill "$RELAY_PID" 2>/dev/null || true
+  [[ -n "$MOCK_PID" ]] && kill "$MOCK_PID" 2>/dev/null || true
+  # Backstop for the step-7 gateway script: a crash between its `cat >` and the
+  # inline `rm -f` must not leave web/.loop-gateway.mjs in the working tree.
+  rm -f "$REPO_ROOT/web/.loop-gateway.mjs"
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -74,6 +84,8 @@ fi
 BUZZ="$BIN/buzz"
 
 # Optional LLM step: a mock upstream that reports token usage.
+# LLM_ARGS expands below with the bash-3.2-safe `${arr[@]+"${arr[@]}"}` idiom:
+# a bare `"${arr[@]}"` aborts under `set -u` on bash 3.2 when the array is empty.
 LLM_ARGS=()
 if command -v node >/dev/null 2>&1 && [[ -d web/node_modules/@noble ]]; then
   cat > "$WORK/mock_llm.py" <<'PY'
@@ -109,12 +121,12 @@ env DATABASE_URL="$DATABASE_URL" REDIS_URL="$REDIS_URL" \
     BUZZ_BIND_ADDR="127.0.0.1:${PORT}" RELAY_URL="ws://${HOST}" \
     BUZZ_HEALTH_PORT="$((PORT + 1))" BUZZ_METRICS_PORT="$((PORT + 2))" \
     BUZZ_RELAY_PRIVATE_KEY="$(openssl rand -hex 32)" BUZZ_GIT_CONFORMANCE_PROBE=false \
-    "${LLM_ARGS[@]}" \
+    ${LLM_ARGS[@]+"${LLM_ARGS[@]}"} \
     "$BIN/buzz-relay" >"$WORK/relay.log" 2>&1 &
 RELAY_PID=$!
 for _ in $(seq 1 60); do
   curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
-  kill -0 "$RELAY_PID" 2>/dev/null || { echo "relay exited:"; grep -E '"level":"ERROR"|^Error' "$WORK/relay.log" | head -5 | cut -c1-300; exit 2; }
+  kill -0 "$RELAY_PID" 2>/dev/null || { echo "relay exited:"; grep -E '"level":"ERROR"|^Error' "$WORK/relay.log" | head -5 | cut -c1-300 || true; exit 2; }
   sleep 0.5
 done
 curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || { echo "relay did not become healthy"; exit 2; }
@@ -133,10 +145,12 @@ sql "insert into relay_members (community_id, pubkey, role) values ('$CID','$AGE
 
 # ── 1. template apply ───────────────────────────────────────────────────────
 log "1. apply the vanilla-app-studio template"
-APPLY="$(owner templates apply vanilla-app-studio)"
+# Captures feeding expect_* tolerate their probe's non-zero exit (see the
+# header): the assertion below reports the failure instead of aborting.
+APPLY="$(owner templates apply vanilla-app-studio)" || true
 expect_eq "apply reports ok" "$(echo "$APPLY" | json status)" "ok"
 expect_contains "the org root was created" "$APPLY" "org:root"
-NODES="$(owner org node list)"
+NODES="$(owner org node list)" || true
 for n in root seat-app-dev seat-qa-reviewer seat-product-lead; do
   expect_contains "node $n exists" "$NODES" "$n"
 done
@@ -144,8 +158,8 @@ expect_contains "the default budget exists" "$(owner org budget list)" "default-
 
 # ── 2. idempotent re-apply ──────────────────────────────────────────────────
 log "2. re-apply changes nothing"
-AGAIN="$(owner templates apply vanilla-app-studio)"
-CREATED="$(echo "$AGAIN" | python3 -c 'import json,sys; print(sum(1 for s in json.load(sys.stdin)["steps"] if s["action"]!="skipped"))')"
+AGAIN="$(owner templates apply vanilla-app-studio)" || true
+CREATED="$(echo "$AGAIN" | python3 -c 'import json,sys; print(sum(1 for s in json.load(sys.stdin)["steps"] if s["action"]!="skipped"))')" || true
 expect_eq "every step skipped on re-apply" "$CREATED" "0"
 
 # ── 3. seat an agent ────────────────────────────────────────────────────────
@@ -153,12 +167,12 @@ log "3. seat the agent"
 expect_contains "attach publishes" "$(owner org node attach-agent --id seat-app-dev --agent "$AGENT_PK")" '"accepted":true'
 expect_contains "attach is idempotent" "$(owner org node attach-agent --id seat-app-dev --agent "$AGENT_PK")" '"changed":false'
 expect_contains "only the author can change a seat" "$(agent org node attach-agent --id seat-app-dev --agent "$AGENT_PK")" "not found among your own"
-SEAT="$(owner org node get --id seat-app-dev)"
+SEAT="$(owner org node get --id seat-app-dev)" || true
 expect_contains "the seat now holds the agent" "$SEAT" "$AGENT_PK"
 
 # ── 4. the budget bites ─────────────────────────────────────────────────────
 log "4. an owner budget bounds the agent, never a human"
-CH="$(sql "select id from channels where community_id='$CID' and name='dev' and deleted_at is null")"
+CH="$(sql "select id from channels where community_id='$CID' and name='dev' and deleted_at is null")" || true
 [[ -n "$CH" ]] && pass "found the dev channel" || fail "the template created no dev channel"
 sql "insert into channel_members (community_id, channel_id, pubkey, role) values ('$CID','$CH',decode('$AGENT_PK','hex'),'member') on conflict do nothing" >/dev/null
 # An owner-signed budget naming the agent replaces the community default for it
@@ -174,7 +188,7 @@ done
 
 # ── 5. approval ─────────────────────────────────────────────────────────────
 log "5. the owner approves; the agent cannot"
-REQ="$(sql "select t->>1 from events e, jsonb_array_elements(e.tags) t where e.community_id='$CID' and e.kind=46010 and t->>0='d' order by e.created_at desc limit 1")"
+REQ="$(sql "select t->>1 from events e, jsonb_array_elements(e.tags) t where e.community_id='$CID' and e.kind=46010 and t->>0='d' order by e.created_at desc limit 1")" || true
 [[ -n "$REQ" ]] && pass "an approval request was raised" || fail "no approval request (46010) found"
 expect_contains "the agent cannot approve its own overrun" "$(agent org budget resolve --request "$REQ")" "only a community owner"
 expect_contains "the owner grants" "$(owner org budget resolve --request "$REQ" --note 'ok for today')" '"accepted":true'
@@ -183,12 +197,12 @@ expect_contains "then the limit bites again" "$(agent messages send --channel "$
 
 # ── 6. emergency stop ───────────────────────────────────────────────────────
 log "6. emergency stop"
-STOP="$(owner org agent stop --pubkey "$AGENT_PK")"
+STOP="$(owner org agent stop --pubkey "$AGENT_PK")" || true
 expect_eq "stop reports stopped" "$(echo "$STOP" | json stopped)" "True"
 expect_contains "a stopped agent is hard-refused" "$(agent messages send --channel "$CH" --content 'still here?')" "limit 0"
-SEATS_AFTER="$(sql "select e.content::jsonb->'agentSeats' from events e where e.community_id='$CID' and e.kind=37010 and e.d_tag='seat-app-dev' and e.deleted_at is null order by e.created_at desc limit 1")"
+SEATS_AFTER="$(sql "select e.content::jsonb->'agentSeats' from events e where e.community_id='$CID' and e.kind=37010 and e.d_tag='seat-app-dev' and e.deleted_at is null order by e.created_at desc limit 1")" || true
 expect_eq "the newest seat record is empty" "$SEATS_AFTER" "[]"
-STOP2="$(owner org agent stop --pubkey "$AGENT_PK")"
+STOP2="$(owner org agent stop --pubkey "$AGENT_PK")" || true
 expect_eq "a second stop is a no-op" "$(echo "$STOP2" | python3 -c 'import json,sys; print(sum(s.get("changed",0) for s in json.load(sys.stdin)["steps"]))')" "0"
 
 # ── 7. LLM spend budget (optional) ──────────────────────────────────────────
@@ -198,7 +212,8 @@ if [[ -n "$MOCK_PID" ]]; then
   sql "insert into users (community_id, pubkey) values ('$CID', decode('$LLM_PK','hex')) on conflict do nothing" >/dev/null
   sql "update users set agent_owner_pubkey = decode('$OWNER_PK','hex') where community_id='$CID' and pubkey=decode('$LLM_PK','hex')" >/dev/null
   sql "insert into relay_members (community_id, pubkey, role) values ('$CID','$LLM_PK','member') on conflict do nothing" >/dev/null
-  owner org budget create --id b-llm --subject "$LLM_PK" --window day --llm-cost-cents 1 >/dev/null
+  expect_contains "the owner caps LLM spend at 1 cent a day" \
+    "$(owner org budget create --id b-llm --subject "$LLM_PK" --window day --llm-cost-cents 1)" '"accepted":true'
   cat > web/.loop-gateway.mjs <<JS
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -217,7 +232,7 @@ for (let i = 1; i <= 5; i++) {
 }
 console.log(out.join(','));
 JS
-  STATUSES="$(cd web && node .loop-gateway.mjs 2>&1 | tail -1)"; rm -f web/.loop-gateway.mjs
+  STATUSES="$(cd web && node .loop-gateway.mjs 2>&1 | tail -1)" || true; rm -f web/.loop-gateway.mjs
   expect_eq "4 calls served (250 milli-cents each) then the 1-cent budget refuses" "$STATUSES" "200,200,200,200,429"
 else
   skip "needs node with web/node_modules (@noble) for NIP-98 signing"
@@ -228,6 +243,6 @@ if [[ "$FAILS" -eq 0 ]]; then
   printf '\033[32mloop-test: %d checks passed\033[0m\n' "$PASSES"
 else
   printf '\033[31mloop-test: %d failed, %d passed\033[0m\n' "$FAILS" "$PASSES"
-  echo "relay log tail:"; tail -5 "$WORK/relay.log" | cut -c1-200
+  echo "relay log tail:"; tail -5 "$WORK/relay.log" | cut -c1-200 || true
   exit 1
 fi

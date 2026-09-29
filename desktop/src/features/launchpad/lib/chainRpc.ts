@@ -34,7 +34,14 @@ export function decodeUint256(hex: string): bigint {
 }
 
 export function decodeBool(hex: string): boolean {
-  return decodeUint256(hex) !== 0n;
+  // Strict: only the canonical ABI bool (32 bytes, 0x…00 / 0x…01). Garbage
+  // must never silently read as `true` — a bad `isGraduated` read would
+  // misreport a live auction as graduated. Matches web's `decodeBoolStrict`.
+  const padded = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (padded.length !== 64) throw new Error("expected 32-byte return");
+  const v = hexToBigInt(`0x${padded}`);
+  if (v > 1n) throw new Error("expected canonical bool");
+  return v === 1n;
 }
 
 type RpcCall = { to: string; data: string };

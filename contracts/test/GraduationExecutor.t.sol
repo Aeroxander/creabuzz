@@ -6,15 +6,71 @@ import {GraduationExecutor} from "../src/GraduationExecutor.sol";
 import {IContinuousClearingAuction, ICcaFinalization} from "../src/CCA.sol";
 
 contract PlainERC20 {
-    mapping(address => uint256) public balanceOf;
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
+    mapping(address => uint256) internal _balances;
+    function balanceOf(address a) public view virtual returns (uint256) {
+        return _balances[a];
     }
-    function transfer(address to, uint256 amount) external returns (bool) {
-        require(balanceOf[msg.sender] >= amount, "insufficient");
-        balanceOf[msg.sender] -= amount;
-        balanceOf[to] += amount;
+    function mint(address to, uint256 amount) external {
+        _balances[to] += amount;
+    }
+    function transfer(address to, uint256 amount) public virtual returns (bool) {
+        require(_balances[msg.sender] >= amount, "insufficient");
+        _balances[msg.sender] -= amount;
+        _balances[to] += amount;
         return true;
+    }
+}
+
+/// A true fee-on-transfer currency: the sender pays `amount`, the recipient
+/// receives `amount - 1%` (the fee is burned in transit).
+contract FeeERC20 is PlainERC20 {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        require(balanceOf(msg.sender) >= amount, "insufficient");
+        _balances[msg.sender] -= amount;
+        _balances[to] += amount - amount / 100;
+        return true;
+    }
+}
+
+/// A token that fires a ONE-SHOT hook call after `transfer`, swallowing the
+/// result: a malicious-token reentrancy probe (the real CEI surface — a
+/// callback fired mid-sweep, before `executed` is written).
+contract CallbackERC20 is PlainERC20 {
+    address public hookTarget;
+    bytes public hookData;
+    bool public hookArmed;
+    bool public hookFired;
+    bool public hookSucceeded;
+
+    function setHook(address target, bytes calldata data) external {
+        hookTarget = target;
+        hookData = data;
+        hookArmed = true;
+        hookFired = false;
+        hookSucceeded = false;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        bool okres = super.transfer(to, amount);
+        if (hookArmed) {
+            hookArmed = false;
+            hookFired = true;
+            (bool ok,) = hookTarget.call(hookData);
+            hookSucceeded = ok;
+        }
+        return okres;
+    }
+}
+
+/// A token whose `balanceOf` can be toggled to revert (fail-closed probe).
+contract RevertingBalanceERC20 is PlainERC20 {
+    bool public broken;
+    function setBroken(bool b) external {
+        broken = b;
+    }
+    function balanceOf(address a) public view override returns (uint256) {
+        require(!broken, "balanceOf broken");
+        return super.balanceOf(a);
     }
 }
 
@@ -72,6 +128,12 @@ contract FundedMockAuction is IContinuousClearingAuction, ICcaFinalization {
     }
     function setNative(bool native_) external {
         nativeCurrency = native_;
+    }
+    function setSaleToken(PlainERC20 t) external {
+        saleToken = t;
+    }
+    function setCurrencyToken(PlainERC20 t) external {
+        currencyToken = t;
     }
     function currency() external view override returns (address) {
         return nativeCurrency ? address(0) : address(currencyToken);
@@ -187,6 +249,114 @@ contract GraduationExecutorTest is Test {
         assertEq(escrow, 3600e6);
         assertEq(unsold, 300e18);
         assertTrue(executed);
+    }
+
+    /// The real CEI surface: a token callback fired mid-sweep (before
+    /// `executed` is written) must not let a second graduation run. The probe's
+    /// reentrant attempt fails, the record captures the real swept amounts,
+    /// and exactly one GraduationExecuted is emitted across both attempts.
+    function test_token_callback_reentry_cannot_double_run_graduation() public {
+        CallbackERC20 hooked = new CallbackERC20();
+        auction.setSaleToken(hooked);
+        auction.setParams(1e18, 500e18, 9000e6);
+        // setUp already funded 9000e6 of currency; only the hooked sale token
+        // needs supply (a second fund() would double the raise).
+        hooked.mint(address(auction), 300e18);
+        hooked.setHook(
+            address(executor),
+            abi.encodeWithSignature("executeGraduation(address)", address(auction))
+        );
+
+        vm.recordLogs();
+        executor.executeGraduation(address(auction));
+
+        assertTrue(hooked.hookFired(), "the reentrancy probe never fired");
+        assertFalse(hooked.hookSucceeded(), "a reentrant execution must be refused");
+        // Exactly one run's worth of accounting, with the real swept amounts.
+        (,,,,, uint256 unsold,, bool executed) = executor.graduations(address(auction));
+        assertEq(unsold, 300e18);
+        assertTrue(executed);
+        assertEq(hooked.balanceOf(treasury), 300e18);
+        assertEq(PlainERC20(auction.currency()).balanceOf(treasury), 5400e6);
+        // Exactly one GraduationExecuted event despite two attempts.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 emitted;
+        bytes32 sig = keccak256(
+            "GraduationExecuted(address,uint256,uint256,uint256,uint256,uint256,uint256)"
+        );
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] == sig) emitted++;
+        }
+        assertEq(emitted, 1);
+    }
+
+    /// A fee-on-transfer currency delivers less than the declared
+    /// `currencyRaised`: the split must match what was actually received (the
+    /// recorded reserve stays fully backed) and stray pre-existing balances
+    /// must be left alone.
+    function test_fee_on_transfer_split_matches_what_was_received() public {
+        FeeERC20 feeCurrency = new FeeERC20();
+        auction.setCurrencyToken(feeCurrency);
+        auction.setSaleToken(new PlainERC20());
+        auction.setParams(1e18, 500e18, 9000e6);
+        // The swapped-in tokens need their own supply (setUp's funding minted
+        // the originals).
+        feeCurrency.mint(address(auction), 9000e6);
+        PlainERC20(auction.token()).mint(address(auction), 300e18);
+        // A stray pre-existing sale-token balance is not the raise's unsold
+        // supply and must not be swept into the treasury split.
+        PlainERC20(auction.token()).mint(address(executor), 50e18);
+
+        executor.executeGraduation(address(auction));
+
+        // 9000e6 moved, 1% burned in transit: 8910e6 received IS the raise.
+        (,, uint256 raised, uint256 escrow, uint256 toTreasury, uint256 unsold,,) =
+            executor.graduations(address(auction));
+        assertEq(raised, 8910e6);
+        assertEq(escrow, 3564e6); // 40% of what arrived, not of the declaration
+        assertEq(toTreasury, 5346e6); // the remainder — no dust stranded
+        assertEq(escrow + toTreasury, 8910e6); // the record is fully backed
+        assertEq(unsold, 300e18); // only the swept delta, not the stray 50
+        // Treasury received its share net of the currency's own transfer fee.
+        assertEq(feeCurrency.balanceOf(treasury), (5346e6 * 99) / 100);
+        // The stray balance is untouched (documented: stuck, never donated).
+        assertEq(PlainERC20(auction.token()).balanceOf(address(executor)), 50e18);
+
+        // The recorded reserve is backed to the wei: release pays the pool.
+        assertEq(feeCurrency.balanceOf(address(executor)), 3564e6);
+        address pool = address(0xB0B);
+        vm.prank(treasury);
+        executor.releaseReserve(address(auction), pool);
+        assertEq(feeCurrency.balanceOf(address(executor)), 0);
+        assertEq(feeCurrency.balanceOf(pool), (3564e6 * 99) / 100); // net of the fee
+    }
+
+    /// A token whose `balanceOf` reverts must abort the recovery without
+    /// burning the one-shot flag: the retry still works once the token behaves.
+    function test_reverting_balance_of_cannot_burn_the_recovery_flag() public {
+        RevertingBalanceERC20 lying = new RevertingBalanceERC20();
+        auction.setSaleToken(lying);
+        auction.setGraduated(false); // the raise missed: a failed launch
+        auction.setParams(1e18, 500e18, 0);
+        auction.fund(0, 300e18);
+        lying.setBroken(true);
+
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(GraduationExecutor.BalanceReadFailed.selector, address(lying))
+        );
+        executor.recoverFailedLaunch(address(auction));
+        assertFalse(
+            executor.launchRecovered(address(auction)),
+            "the one-shot flag must survive a lying balanceOf"
+        );
+
+        // Once the token behaves, the recovery goes through exactly once.
+        lying.setBroken(false);
+        vm.prank(treasury);
+        executor.recoverFailedLaunch(address(auction));
+        assertTrue(executor.launchRecovered(address(auction)));
+        assertEq(lying.balanceOf(treasury), 300e18);
     }
 
     function test_charity_eoa_can_trigger_but_cannot_steal() public {

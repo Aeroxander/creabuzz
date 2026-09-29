@@ -44,6 +44,52 @@ impl<'a> PgOrgGraph<'a> {
     pub fn new(pool: &'a PgPool, community_id: Uuid) -> Self {
         Self { pool, community_id }
     }
+
+    /// Whether `pubkey` occupies an `agentSeats` slot in any surviving org
+    /// node of this community — i.e. is seated as an AGENT, not a human.
+    ///
+    /// Seated agents are excluded from human-only authority such as signing
+    /// counted reviews (NIP-ORG reviewer rule). Any surviving node row counts:
+    /// ingest gates kind:37010 publication through the R1 authority anchor, so
+    /// a node that names seats carries authority (a forged decoy node cannot
+    /// land in the first place). `agentSeats` membership is tested inside
+    /// nested `CASE`s so the JSON cast and array expansion only ever run on
+    /// JSON-object node rows (SQL does not promise `AND` short-circuiting).
+    pub async fn is_seated_agent(&self, pubkey: &str) -> Result<bool> {
+        let mut conn =
+            observability::acquire_writer(self.pool, observability::WriterOperation::Authorization)
+                .await?;
+        let row = sqlx::query(
+            r#"
+            SELECT 1
+            FROM events
+            WHERE community_id = $1
+              AND kind = $2
+              AND deleted_at IS NULL
+              AND channel_id IS NULL
+              AND CASE
+                    WHEN kind = $2 AND content IS JSON OBJECT THEN
+                      CASE
+                        WHEN jsonb_typeof(content::jsonb -> 'agentSeats') = 'array' THEN
+                          EXISTS (
+                            SELECT 1
+                            FROM jsonb_array_elements_text(content::jsonb -> 'agentSeats') AS s(v)
+                            WHERE lower(s.v) = $3
+                          )
+                        ELSE false
+                      END
+                    ELSE false
+                  END
+            LIMIT 1
+            "#,
+        )
+        .bind(self.community_id)
+        .bind(KIND_ORG_NODE)
+        .bind(pubkey)
+        .fetch_optional(&mut *conn)
+        .await?;
+        Ok(row.is_some())
+    }
 }
 
 /// One raw candidate row: `(event id hex, author hex, created_at secs, content)`.

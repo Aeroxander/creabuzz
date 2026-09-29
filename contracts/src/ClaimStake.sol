@@ -166,9 +166,11 @@ contract ClaimStake {
         // THIS claim (`fund`); the contributor's stake is pulled from their own
         // balance into escrow, so a spam claim actually risks something.
         address contributor = msg.sender;
-        if (stake > 0 && !currency.transferFrom(contributor, address(this), stake)) {
-            revert MintFailed(address(currency), contributor, stake);
-        }
+        // Record the claim BEFORE pulling the stake (checks-effects-
+        // interactions): a callback-bearing token (ERC-777 style) re-entering
+        // `submitClaim` with the same id now hits `AlreadySettled` instead of
+        // overwriting this record and orphaning its stake. A failed pull
+        // reverts the whole submission — record included.
         claims[claimId] = MilestoneClaim({
             contributor: contributor,
             amount: amount,
@@ -178,6 +180,9 @@ contract ClaimStake {
         });
         approvalsAtSubmit[claimId] = verifiers.approvalCount(claimId);
         objectionsAtSubmit[claimId] = verifiers.objectionCount(claimId);
+        if (stake > 0 && !currency.transferFrom(contributor, address(this), stake)) {
+            revert MintFailed(address(currency), contributor, stake);
+        }
         emit ClaimSubmitted(claimId, contributor, amount, stake, evidenceHash);
     }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { recordSaleCurrency } from "../chain";
@@ -13,6 +13,10 @@ import {
 } from "../lib/auction-copy";
 import { DEFAULT_RESERVE_BPS } from "../lib/auctionFlow";
 import { GRADUATION_STEPS } from "../lib/graduationFlow";
+import {
+  GRADUATION_TX_HASH_RE,
+  graduationTxStore,
+} from "../lib/graduation-progress";
 import type { Launch } from "../models";
 import { useGraduationFlow } from "../use-auction-flow";
 import { useConnectedWallet } from "../use-connected-wallet";
@@ -75,7 +79,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
     chainId: launchChainId ?? 0,
     publishReceipt,
   });
-  const { state, check } = flow;
+  const { state, check, retry: retryFlow } = flow;
 
   // Read the graduation gates on open, and again if the auction changes.
   useEffect(() => {
@@ -99,9 +103,33 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
   const failureNote =
     state.errorMessage &&
     (state.phase === "mirrorFailed" ||
+      state.txHashMissing ||
       (moneyLanded && state.failedStep !== "execute"))
       ? " The graduation itself is complete onchain. Retrying only publishes the remaining receipt and never sends the money again."
       : "";
+
+  // Manual hash recovery (the terminal `supply-hash` state): the founder
+  // pastes the confirmed executeGraduation hash (wallet / block explorer) and
+  // it is persisted where the flow resumes from it.
+  const [hashDraft, setHashDraft] = useState("");
+  const [hashError, setHashError] = useState<string | null>(null);
+  const submitTxHash = useCallback(
+    (event: FormEvent) => {
+      event.preventDefault();
+      const txHash = hashDraft.trim();
+      if (!GRADUATION_TX_HASH_RE.test(txHash)) {
+        setHashError(
+          "Enter the full transaction hash: 0x followed by 64 hexadecimal characters.",
+        );
+        return;
+      }
+      setHashError(null);
+      // One action = one atomic persist, then resume the receipt mirrors.
+      graduationTxStore(record.auction ?? "").save(txHash);
+      retryFlow();
+    },
+    [hashDraft, record.auction, retryFlow],
+  );
 
   return (
     <div
@@ -209,7 +237,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
           </Button>
         ) : null}
         {state.phase === "failed" || state.phase === "mirrorFailed" ? (
-          retry ? (
+          retry && retry.kind !== "supply-hash" ? (
             <Button
               aria-busy={flow.busy}
               data-testid="graduation-retry"
@@ -237,6 +265,54 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
           Re-check
         </Button>
       </div>
+
+      {retry?.kind === "supply-hash" ? (
+        <form
+          aria-label="Supply the graduation transaction hash"
+          className="mt-2 flex flex-wrap items-center gap-2"
+          data-testid="graduation-supply-hash-form"
+          onSubmit={submitTxHash}
+        >
+          <label
+            className="text-xs text-black/60 dark:text-white/60"
+            htmlFor="graduation-tx-hash"
+          >
+            Graduation transaction hash
+          </label>
+          <input
+            aria-describedby={
+              hashError ? "graduation-tx-hash-error" : undefined
+            }
+            aria-invalid={hashError ? true : undefined}
+            className="min-w-0 flex-1 rounded-md border border-black/20 bg-transparent px-2 py-1 text-xs [overflow-wrap:anywhere] dark:border-white/20"
+            data-testid="graduation-tx-hash-input"
+            disabled={flow.busy}
+            id="graduation-tx-hash"
+            onChange={(event) => setHashDraft(event.target.value)}
+            placeholder="0x…"
+            value={hashDraft}
+          />
+          <Button
+            data-testid="graduation-supply-hash"
+            disabled={flow.busy}
+            size="sm"
+            type="submit"
+            variant="outline"
+          >
+            Resume receipt publish
+          </Button>
+          {hashError ? (
+            <p
+              className="w-full text-xs text-red-600 dark:text-red-400"
+              data-testid="graduation-tx-hash-error"
+              id="graduation-tx-hash-error"
+              role="alert"
+            >
+              {hashError}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
 
       <StatusLine
         testId="graduation-status"

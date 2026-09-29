@@ -77,8 +77,11 @@ contract OrgAllowance {
     event OwnerSet(address indexed previousOwner, address indexed newOwner);
     event SpenderSet(bytes32 indexed subject, address indexed spender);
     event AllowanceSet(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount);
+    /// @notice Advisory-path spend record (`spend` only). `spendTo` does NOT
+    /// emit this — `SpentTo` is its single authoritative record, so consumers
+    /// summing both events can never double-count one debit.
     event Spent(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount, address spender);
-    /// @notice Emitted by `spendTo` in addition to `Spent`: tokens actually moved.
+    /// @notice The authoritative record of a `spendTo` debit: tokens actually moved.
     event SpentTo(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount, address to);
     event TreasurySet(address indexed previousTreasury, address indexed newTreasury);
     event EpochSecondsSet(bytes32 indexed subject, uint64 epochSeconds);
@@ -211,7 +214,7 @@ contract OrgAllowance {
         // Effects before the external call (the token may call back).
         _debit(subject, token, epoch, amount);
         token.safeTransferFrom(from, to, amount);
-        emit Spent(subject, token, epoch, amount, msg.sender);
+        // ONE authoritative event per debit (see the `SpentTo` declaration).
         emit SpentTo(subject, token, epoch, amount, to);
     }
 

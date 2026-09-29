@@ -136,19 +136,13 @@ pub async fn issue_nonce(
     // relay has no trusted client-address source here), so a flood can slow
     // logins but never exhaust the store.
     let issue_key = format!("siwe:nonce-issue:{}", tenant.community());
-    let issued: u32 = redis::cmd("INCR")
-        .arg(&issue_key)
-        .query_async(&mut conn)
+    // One atomic EVAL: the increment and the window TTL arm (or repair) run
+    // together, so no failure path can leave `issue_key` TTL-less — the old
+    // INCR-then-EXPIRE pair could (an EXPIRE error after the INCR stuck), and
+    // a TTL-less counter past the cap rate-limited the community forever.
+    let issued: u32 = bump_fixed_window(&mut conn, &issue_key, NONCE_ISSUE_WINDOW_SECS)
         .await
-        .map_err(|e| internal_error(&format!("redis INCR: {e}")))?;
-    if issued == 1 {
-        redis::cmd("EXPIRE")
-            .arg(&issue_key)
-            .arg(NONCE_ISSUE_WINDOW_SECS)
-            .query_async::<u32>(&mut conn)
-            .await
-            .map_err(|e| internal_error(&format!("redis EXPIRE: {e}")))?;
-    }
+        .map_err(|e| internal_error(&format!("redis nonce issue window: {e}")))?;
     if issued > NONCE_ISSUE_MAX_PER_WINDOW {
         return Err(api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited"));
     }
@@ -618,7 +612,43 @@ async fn consume_nonce(state: &AppState, nonce: &str) -> Result<(), (StatusCode,
     Ok(())
 }
 
-/// Fixed-window per-npub rate limit via Redis INCR/EXPIRE.
+/// Lua for [`bump_fixed_window`]: `INCR` and the window `EXPIRE` run in ONE
+/// atomic script, so no failure path can leave a counter key without a TTL.
+/// The `TTL < 0` branch also repairs keys left TTL-less by the old
+/// INCR-then-EXPIRE code — such a key gets a fresh window and then expires
+/// normally instead of holding its community past the cap forever.
+const BUMP_FIXED_WINDOW_LUA: &str = r"
+local v = redis.call('INCR', KEYS[1])
+if v == 1 or redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return v
+";
+
+/// The single `EVAL` command behind [`bump_fixed_window`].
+fn bump_fixed_window_cmd(key: &str, window_secs: u64) -> redis::Cmd {
+    let mut cmd = redis::cmd("EVAL");
+    cmd.arg(BUMP_FIXED_WINDOW_LUA)
+        .arg(1)
+        .arg(key)
+        .arg(window_secs);
+    cmd
+}
+
+/// Atomically bump a fixed-window counter at `key`, arming (or repairing) its
+/// `window_secs` TTL in the same script. Returns the post-increment value.
+async fn bump_fixed_window<C: redis::aio::ConnectionLike>(
+    conn: &mut C,
+    key: &str,
+    window_secs: u64,
+) -> redis::RedisResult<u32> {
+    bump_fixed_window_cmd(key, window_secs)
+        .query_async::<u32>(conn)
+        .await
+}
+
+/// Fixed-window per-npub rate limit backed by [`bump_fixed_window`] (same
+/// wedge-proof atomic increment + window TTL as the community nonce cap).
 async fn rate_limited(state: &AppState, npub_hex: &str) -> Result<bool, (StatusCode, Json<Value>)> {
     let mut conn = state
         .redis_pool
@@ -626,19 +656,9 @@ async fn rate_limited(state: &AppState, npub_hex: &str) -> Result<bool, (StatusC
         .await
         .map_err(|e| internal_error(&format!("redis pool: {e}")))?;
     let key = format!("siwe:register-rate:{npub_hex}");
-    let count: u32 = redis::cmd("INCR")
-        .arg(&key)
-        .query_async(&mut conn)
+    let count: u32 = bump_fixed_window(&mut conn, &key, RATE_WINDOW_SECS)
         .await
-        .map_err(|e| internal_error(&format!("redis INCR: {e}")))?;
-    if count == 1 {
-        redis::cmd("EXPIRE")
-            .arg(&key)
-            .arg(RATE_WINDOW_SECS)
-            .query_async::<u32>(&mut conn)
-            .await
-            .map_err(|e| internal_error(&format!("redis EXPIRE: {e}")))?;
-    }
+        .map_err(|e| internal_error(&format!("redis register rate window: {e}")))?;
     Ok(count > RATE_MAX_ATTEMPTS)
 }
 
@@ -678,6 +698,65 @@ mod tests {
     /// The secp256k1 key behind [`TEST_ADDRESS`].
     fn test_evm_key() -> SigningKey {
         SigningKey::from_slice(&hex::decode(TEST_EVM_KEY).expect("hex")).expect("secp256k1 key")
+    }
+
+    /// The window bump is ONE atomic `EVAL`: increment and TTL (re)arm travel
+    /// in a single command, so no failure path can leave a counter key without
+    /// a TTL (the old INCR-then-EXPIRE wedge), and the script repairs keys the
+    /// old code already left TTL-less.
+    #[test]
+    fn bump_fixed_window_is_one_atomic_eval_with_ttl_repair() {
+        let packed = bump_fixed_window_cmd("siwe:nonce-issue:test", 60).get_packed_command();
+        let text = String::from_utf8(packed).expect("RESP is UTF-8");
+        // One command, five argv slots: EVAL <lua> 1 <key> <window>.
+        assert!(text.starts_with("*5\r\n"), "single EVAL command: {text:?}");
+        // Increment and TTL arm share the one script ...
+        assert!(text.contains("redis.call('INCR'"), "{text:?}");
+        assert!(text.contains("redis.call('EXPIRE'"), "{text:?}");
+        // ... and a counter left TTL-less (TTL < 0) is repaired, not just the
+        // freshly created key (v == 1).
+        assert!(text.contains("redis.call('TTL'"), "{text:?}");
+        assert!(text.contains("siwe:nonce-issue:test"), "{text:?}");
+        assert!(text.contains("\r\n60\r\n"), "window arg: {text:?}");
+    }
+
+    /// Recovery property (live Redis: `REDIS_URL` or `redis://127.0.0.1:6379`;
+    /// run with `cargo test -p buzz-relay -- --ignored`): a counter left
+    /// TTL-less — exactly what the old INCR-then-EXPIRE failure produced — has
+    /// its window TTL repaired on the next bump and then expires with the
+    /// window instead of rate-limiting its community forever.
+    #[tokio::test]
+    #[ignore = "needs a live Redis (REDIS_URL or redis://127.0.0.1:6379)"]
+    async fn bump_fixed_window_repairs_a_ttl_less_counter() {
+        let url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+        let pool = deadpool_redis::Config::from_url(&url)
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .expect("redis pool");
+        let mut conn = pool.get().await.expect("redis connection");
+        let key = format!("siwe:test-window:{}", uuid::Uuid::new_v4().simple());
+        // Wedge exactly what the old bug left behind: a counter with no TTL.
+        redis::cmd("SET")
+            .arg(&key)
+            .arg(41)
+            .query_async::<()>(&mut conn)
+            .await
+            .expect("seed wedge");
+        let issued = bump_fixed_window(&mut conn, &key, 60)
+            .await
+            .expect("bump");
+        assert_eq!(issued, 42, "counter keeps counting across the repair");
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .expect("ttl");
+        assert!((1..=60).contains(&ttl), "wedged counter re-armed: ttl={ttl}");
+        redis::cmd("DEL")
+            .arg(&key)
+            .query_async::<()>(&mut conn)
+            .await
+            .expect("cleanup");
     }
 
     /// An EIP-712 `NostrSigner` attestation for `npub`, signed by `key`, in

@@ -19,8 +19,8 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///   2. sweep net raised currency into this contract (protocol fee already
 ///      taken by the immutable fee controller),
 ///   3. sweep unsold tokens back here,
-///   4. split: `reserveBps` → reserve escrow (the TokenMaster floor), the
-///      remainder → treasury,
+///   4. split the amount ACTUALLY received: `reserveBps` → reserve escrow (the
+///      TokenMaster floor), the remainder → treasury,
 ///   5. unsold tokens → treasury (they are launch supply, not sale value),
 ///   6. record the graduation and emit the receipts an indexer mirrors as
 ///      47005 `sweep`/`lock` events.
@@ -50,6 +50,13 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// to take back on demand: `withdrawStuckReserve` opens only `reserveLockSeconds`
 /// after graduation, only while no pool was recorded, and only pays the
 /// treasury. Before then the reserve can go nowhere but the recorded pool.
+///
+/// TRUST ASSUMPTIONS (accepted, documented):
+/// - A treasury that cannot receive ETH makes an ETH graduation revert
+///   atomically (`_pay` fails); the raise stays in the auction until the
+///   treasury can receive. Payouts are push-and-atomic by design.
+/// - Force-sent ETH or ERC-20 is unrecoverable: every payout is amount-exact
+///   against recorded accounting, and stray balances are never swept.
 contract GraduationExecutor is ILBPInitializer {
     using SafeTransferLib for address;
 
@@ -87,6 +94,19 @@ contract GraduationExecutor is ILBPInitializer {
     /// not inside, `Graduation` so the 8-word `graduations(address)` getter
     /// that indexers and clients decode stays byte-stable.
     mapping(address auction => uint64) public graduatedAt;
+
+    /// @dev Reentrancy latch (1 = free, 2 = entered). The one-shot `executed`
+    /// flag already blocks every call after the accounting is written; the
+    /// latch covers callbacks fired mid-sweep (e.g. a malicious sale token's
+    /// `transfer` hook), the one window where `executed` is not yet set.
+    uint256 private _entered = 1;
+
+    modifier nonReentrant() {
+        if (_entered != 1) revert Reentrancy();
+        _entered = 2;
+        _;
+        _entered = 1;
+    }
 
     event GraduationExecuted(
         address indexed auction,
@@ -133,6 +153,12 @@ contract GraduationExecutor is ILBPInitializer {
     error ReserveLocked(address auction, uint64 unlockAt);
     /// @notice A pool address of zero would burn the reserve.
     error BadPool();
+    /// @notice A non-reentrant entry point was re-entered mid-execution
+    /// (typically from a token callback fired during a sweep).
+    error Reentrancy();
+    /// @notice A token's `balanceOf` misbehaved (reverted or returned garbage).
+    /// The executor fails closed rather than account a zero it cannot trust.
+    error BalanceReadFailed(address token);
 
     constructor(address treasury_, uint16 reserveBps_, uint64 reserveLockSeconds_) {
         if (treasury_ == address(0)) revert OnlyTreasury(address(0));
@@ -179,8 +205,12 @@ contract GraduationExecutor is ILBPInitializer {
     /// @dev Materializes the auction's final checkpoint BEFORE reading
     /// `isGraduated()`, which only sees the latest checkpoint — without this a
     /// keeper calling right after `endBlock` gets `NotGraduated` even for a
-    /// launch that cleared the threshold.
-    function executeGraduation(address auction) external {
+    /// launch that cleared the threshold. The split is computed from the
+    /// currency balance delta across `sweepCurrency` (what was ACTUALLY
+    /// received — a fee-on-transfer currency delivers less than the declared
+    /// `currencyRaised`, and recording the declared figure would escrow an
+    /// unbacked reserve that strands on release).
+    function executeGraduation(address auction) external nonReentrant {
         _requireBound(auction);
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
         Graduation storage g = graduations[auction];
@@ -198,39 +228,51 @@ contract GraduationExecutor is ILBPInitializer {
             revert NotTokensRecipient(auction, address(this), cca.tokensRecipient());
         }
 
+        address currency = cca.currency();
+        address token = cca.token();
+        IContinuousClearingAuction.LBPInitializationParams memory params =
+            cca.lbpInitializationParams();
+
+        // Pre-existing stray balances (donated, force-sent) are not the raise:
+        // only the swept delta is accounted and paid, and stray value is left
+        // exactly where it is.
+        uint256 currencyBefore = _currencyBalance(currency, address(this));
+        uint256 tokensBefore = _tokenBalance(token, address(this));
+
         // Pull. On a graduated auction, sweepCurrency moves the net raise;
         // sweepUnsoldTokens returns the remaining supply.
         cca.sweepCurrency();
         cca.sweepUnsoldTokens();
 
-        IContinuousClearingAuction.LBPInitializationParams memory params =
-            cca.lbpInitializationParams();
-        uint256 reserveShare = (params.currencyRaised * reserveBps) / 10_000;
-        uint256 treasuryShare = params.currencyRaised - reserveShare;
-        uint256 unsoldTokens = _tokenBalance(cca.token(), address(this));
+        uint256 received = _currencyBalance(currency, address(this)) - currencyBefore;
+        uint256 unsoldTokens = _tokenBalance(token, address(this)) - tokensBefore;
+        uint256 reserveShare = (received * reserveBps) / 10_000;
+        uint256 treasuryShare = received - reserveShare;
 
+        // All state (including `executed`) is durable before any payout leaves
+        // the contract: after this write every reentrant call hits
+        // `AlreadyExecuted`, and `nonReentrant` covered the sweeps above.
         g.initialPriceX96 = params.initialPriceX96;
         g.tokensSold = params.tokensSold;
-        g.currencyRaised = params.currencyRaised;
+        g.currencyRaised = received;
         g.reserveEscrow = reserveShare;
         g.treasuryShare = treasuryShare;
         g.unsoldTokens = unsoldTokens;
         g.executed = true;
         graduatedAt[auction] = uint64(block.timestamp);
 
-        address currency = cca.currency();
         if (treasuryShare > 0) {
             _pay(currency, treasury, treasuryShare);
         }
         if (unsoldTokens > 0) {
-            cca.token().safeTransfer(treasury, unsoldTokens);
+            token.safeTransfer(treasury, unsoldTokens);
         }
 
         emit GraduationExecuted(
             auction,
             params.initialPriceX96,
             params.tokensSold,
-            params.currencyRaised,
+            received,
             reserveShare,
             treasuryShare,
             unsoldTokens
@@ -245,8 +287,10 @@ contract GraduationExecutor is ILBPInitializer {
     /// The executor is the auction's `tokensRecipient`, which is what authorizes
     /// the `sweepUnsoldTokens` pull. Exactly the swept amount is forwarded (the
     /// executor's pre-existing token balance is left alone). Runs once per
-    /// auction; the auction's own one-shot sweep is the backstop.
-    function recoverFailedLaunch(address auction) external {
+    /// auction; the auction's own one-shot sweep is the backstop. Balance reads
+    /// are strict: a lying `balanceOf` aborts the recovery and the one-shot
+    /// flag survives for a retry — it can never burn with supply stranded.
+    function recoverFailedLaunch(address auction) external nonReentrant {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
         _requireBound(auction);
         if (launchRecovered[auction]) revert AlreadyRecovered(auction);
@@ -275,7 +319,7 @@ contract GraduationExecutor is ILBPInitializer {
     /// Treasury records the pool post-deploy; the reserve releases once, to
     /// the recorded pool only. This is the ONLY way the reserve leaves before
     /// the lock expires.
-    function releaseReserve(address auction, address tokenMasterPool) external {
+    function releaseReserve(address auction, address tokenMasterPool) external nonReentrant {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
         _requireBound(auction);
         if (tokenMasterPool == address(0)) revert BadPool();
@@ -294,7 +338,7 @@ contract GraduationExecutor is ILBPInitializer {
     /// graduation + `reserveLockSeconds`, and only while no pool was recorded,
     /// the treasury (and only the treasury) takes the reserve back. Before the
     /// lock expires the reserve is committed to the recorded pool.
-    function withdrawStuckReserve(address auction) external {
+    function withdrawStuckReserve(address auction) external nonReentrant {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
         _requireBound(auction);
         Graduation storage g = graduations[auction];
@@ -332,12 +376,22 @@ contract GraduationExecutor is ILBPInitializer {
         if (msg.sender != boundAuction) revert NativeFromStranger(msg.sender);
     }
 
+    /// @dev Strict `balanceOf`: a token whose balance read reverts or returns
+    /// garbage aborts the accounting (fail closed) instead of reading as zero.
+    /// A zero here would let `recoverFailedLaunch` burn its one-shot flag with
+    /// the supply still stranded, and would split an unbacked escrow.
     function _tokenBalance(address token, address holder) internal view returns (uint256) {
         (bool ok, bytes memory ret) = token.staticcall(
             abi.encodeWithSignature("balanceOf(address)", holder)
         );
-        if (!ok || ret.length < 32) return 0;
+        if (!ok || ret.length < 32) revert BalanceReadFailed(token);
         return abi.decode(ret, (uint256));
+    }
+
+    /// @dev Balance of `currency` held by `holder`: the native balance for the
+    /// zero-address currency, a strict `balanceOf` otherwise.
+    function _currencyBalance(address currency, address holder) internal view returns (uint256) {
+        return currency == address(0) ? holder.balance : _tokenBalance(currency, holder);
     }
 
     /// @notice The executor reads params from the chain itself at execution;

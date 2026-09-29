@@ -90,6 +90,8 @@ export function AuctionDeployPanel({
     wallet: wallet.wallet,
     chainId: launchChainId ?? 0,
     onLink,
+    launchId: record.id,
+    recordAuction: record.auction ?? null,
   });
   const { state } = flow;
 

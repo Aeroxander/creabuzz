@@ -86,9 +86,10 @@ export function makeWalletAuctionEffects(
     }
   };
 
-  let chainChecked = false;
+  // The chain is verified before EVERY send (the module contract above): the
+  // wallet can switch networks between sends mid-flow, and one bounded
+  // `eth_chainId` read per send is cheap.
   const requireChain = async (): Promise<void> => {
-    if (chainChecked) return;
     const actual = Number(
       hexQuantity(await request("eth_chainId"), "chain id"),
     );
@@ -97,7 +98,6 @@ export function makeWalletAuctionEffects(
         `Your wallet is on chain ${actual}, but this launch is on chain ${chainId}. Switch networks in your wallet and try again.`,
       );
     }
-    chainChecked = true;
   };
 
   return {

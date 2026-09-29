@@ -14,12 +14,22 @@
 use num_bigint::BigUint;
 use num_traits::Zero;
 
-pub const SELECTOR_SUBMIT_BID: &str = "a52c8728"; // submitBid(uint256,uint128,address,uint256,bytes)
-pub const SELECTOR_EXIT_BID: &str = "8e4deb17"; // exitBid(uint256)
-pub const SELECTOR_CLAIM_TOKENS: &str = "46e04a2f"; // claimTokens(uint256)
-pub const SELECTOR_CLAIM_TOKENS_BATCH: &str = "b8f163d6"; // claimTokensBatch(address,uint256[])
-pub const SELECTOR_PERMIT2_APPROVE: &str = "87517c45"; // approve(address,address,uint160,uint48) on Permit2
-pub const SELECTOR_ERC20_APPROVE: &str = "095ea7b3"; // approve(address,uint256) on the bid currency
+/// `submitBid(uint256,uint128,address,uint256,bytes)` selector on the CCA
+/// auction (hex, no `0x`).
+pub const SELECTOR_SUBMIT_BID: &str = "a52c8728";
+/// `exitBid(uint256)` selector on the CCA auction (hex, no `0x`).
+pub const SELECTOR_EXIT_BID: &str = "8e4deb17";
+/// `claimTokens(uint256)` selector on the CCA auction (hex, no `0x`).
+pub const SELECTOR_CLAIM_TOKENS: &str = "46e04a2f";
+/// `claimTokensBatch(address,uint256[])` selector on the CCA auction (hex,
+/// no `0x`).
+pub const SELECTOR_CLAIM_TOKENS_BATCH: &str = "b8f163d6";
+/// `approve(address,address,uint160,uint48)` selector on Permit2 (hex,
+/// no `0x`).
+pub const SELECTOR_PERMIT2_APPROVE: &str = "87517c45";
+/// `approve(address,uint256)` selector on the bid currency (hex, no `0x`).
+pub const SELECTOR_ERC20_APPROVE: &str = "095ea7b3";
+/// The canonical Permit2 deployment (`0x`-prefixed; same on every chain).
 pub const PERMIT2_ADDRESS: &str = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const Q96: u32 = 96;
 
@@ -202,18 +212,28 @@ pub fn compose_bid_calls(
     Ok(calls)
 }
 
+/// The ordered unsigned calls for one bid plus the parameters that produced
+/// them — the composer output shape shared with web `bid-tx.ts`.
 pub struct BidCompose {
+    /// Tick-snapped Q96 maximum price the bidder accepts.
     pub max_price_q96: String,
+    /// Bid amount in the currency's base units (wei for native bids).
     pub amount: String,
+    /// Address that owns the bid and receives the claimed tokens.
     pub owner: String,
+    /// EIP-155 chain id the calls target.
     pub chain_id: String,
+    /// Calls to submit in order (currency approvals first).
     pub calls: Vec<TxCall>,
 }
 
+/// One unsigned contract call — the wallet-request shape (to/value/data).
 pub struct TxCall {
+    /// Callee address (`0x`-prefixed).
     pub to: String,
     /// Hex quantity of native value the call carries (`"0x0"` for none).
     pub value: String,
+    /// `0x`-prefixed calldata for the call.
     pub data: String,
 }
 

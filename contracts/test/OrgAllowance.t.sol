@@ -279,12 +279,27 @@ contract OrgAllowanceTest is Test {
     }
 
     /// The enforced path: the ledger debit and the token movement are one call.
+    /// `spendTo` emits `SpentTo` and never `Spent` — one authoritative event
+    /// per debit, so off-chain consumers summing both can't double-count.
     function test_SpendTo_DebitsTheLedgerAndMovesTheTokens() public {
         _wireTreasury(1_000 ether, 1_000 ether);
         vm.prank(spender);
         vm.expectEmit(true, true, true, true, address(org));
         emit OrgAllowance.SpentTo(subject, token, 1, 30 ether, payee);
+        vm.recordLogs();
         org.spendTo(subject, token, 1, 30 ether, payee);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 orgEmits;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(org)) continue;
+            orgEmits++;
+            assertEq(
+                logs[i].topics[0],
+                keccak256("SpentTo(bytes32,address,uint64,uint256,address)"),
+                "spendTo emits SpentTo only (Spent would double-count)"
+            );
+        }
+        assertEq(orgEmits, 1, "exactly one authoritative event per debit");
 
         assertEq(usdc.balanceOf(payee), 30 ether, "the payee was paid");
         assertEq(usdc.balanceOf(treasuryAddr), 970 ether, "from the treasury");

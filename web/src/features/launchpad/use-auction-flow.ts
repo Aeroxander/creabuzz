@@ -11,6 +11,11 @@
  * before connecting anything. The GraduationExecutor is recovered from chain at
  * readiness time (`fundsRecipient()`), so graduation works after a reload
  * that loses the deploy flow's session state.
+ *
+ * The deploy flow itself survives reloads via `lib/deploy-progress.ts`: every
+ * dispatch persists the step state (predicted addresses, tx hashes) BEFORE the
+ * step's effects run, and the reducer seeds from that store on mount, so a
+ * crash-reload resumes from the predictions instead of deploying duplicates.
  */
 import {
   useCallback,
@@ -30,13 +35,20 @@ import {
 import {
   auctionDeployReducer,
   auctionErrorMessage,
-  initAuctionDeployState,
   retryPlan,
   runAuctionDeploy,
   type AuctionDispatch,
   type AuctionEffects,
   type AuctionPlanInputs,
 } from "./lib/auctionFlow";
+import {
+  deployProgressFingerprint,
+  loadDeployProgress,
+  makeGenerationFence,
+  saveDeployProgress,
+  seedAuctionDeployState,
+  settleIfCurrent,
+} from "./lib/deploy-progress";
 import { buildGraduationCall } from "./lib/evmCalls";
 import {
   buildGraduationsView,
@@ -93,6 +105,14 @@ export interface AuctionDeployFlowInput {
   chainId: number;
   /** Republish the launch record with the deployed `auction` tag. */
   onLink: (input: { auction: string }) => Promise<unknown>;
+  /** The launch record id — deploy progress is persisted under it. */
+  launchId: string;
+  /**
+   * The record's current `auction` tag, if any. The flow refuses to link a
+   * different address than this (or its own persisted prediction) — see the
+   * re-link refusal in `runAuctionDeploy`.
+   */
+  recordAuction?: string | null;
   /** CCA factory override (default: the canonical v2.1.0 factory). */
   factory?: string;
   /** GraduationExecutor reserve share (default 4000 = 40%). */
@@ -113,14 +133,41 @@ export interface AuctionDeployFlow {
 export function useAuctionDeployFlow(
   input: AuctionDeployFlowInput,
 ): AuctionDeployFlow {
-  const { plan, wallet, chainId, onLink, factory, reserveBps } = input;
+  const {
+    plan,
+    wallet,
+    chainId,
+    onLink,
+    launchId,
+    recordAuction = null,
+    factory,
+    reserveBps,
+  } = input;
+  const fingerprint = deployProgressFingerprint(plan);
   const [state, dispatch] = useReducer(
     auctionDeployReducer,
-    plan.admission,
-    initAuctionDeployState,
+    { admission: plan.admission, fingerprint, launchId },
+    // Reload seam: seed the state (predicted addresses, receipts) from the
+    // persisted progress so the flow's `codeAt` idempotency guards engage
+    // and a reload never re-sends a CREATE that already landed.
+    ({ admission, fingerprint: fp, launchId: id }) =>
+      seedAuctionDeployState(admission, loadDeployProgress(id, fp)),
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // The persist seam: every action is folded and stored BEFORE `run`'s next
+  // effect runs, so a crash between a predicted address and its transaction
+  // still resumes from the prediction.
+  const dispatchPersist = useCallback<AuctionDispatch>(
+    (action) => {
+      const next = auctionDeployReducer(stateRef.current, action);
+      stateRef.current = next;
+      saveDeployProgress(launchId, fingerprint, next);
+      dispatch(action);
+    },
+    [fingerprint, launchId],
+  );
 
   const run = useCallback(
     (mode: "fresh" | "resume"): void => {
@@ -135,13 +182,23 @@ export function useAuctionDeployFlow(
         deployer: wallet.address,
         ...(factory !== undefined ? { factory } : {}),
         ...(reserveBps !== undefined ? { reserveBps } : {}),
-        dispatch: dispatch as AuctionDispatch,
+        dispatch: dispatchPersist,
         mode,
         previous: stateRef.current,
+        expectedAuction: recordAuction?.trim() || null,
         onLink,
       });
     },
-    [chainId, factory, onLink, plan, reserveBps, wallet],
+    [
+      chainId,
+      dispatchPersist,
+      factory,
+      onLink,
+      plan,
+      recordAuction,
+      reserveBps,
+      wallet,
+    ],
   );
 
   const start = useCallback(() => run("fresh"), [run]);
@@ -149,16 +206,19 @@ export function useAuctionDeployFlow(
     const planToRetry = retryPlan(stateRef.current);
     if (!planToRetry) return;
     if (planToRetry.kind === "record") {
-      dispatch({ type: "link_started" });
+      dispatchPersist({ type: "link_started" });
       void onLink({ auction: planToRetry.auctionAddress })
-        .then(() => dispatch({ type: "linked" }))
+        .then(() => dispatchPersist({ type: "linked" }))
         .catch((error: unknown) =>
-          dispatch({ type: "link_failed", reason: auctionErrorMessage(error) }),
+          dispatchPersist({
+            type: "link_failed",
+            reason: auctionErrorMessage(error),
+          }),
         );
       return;
     }
     run("resume");
-  }, [onLink, run]);
+  }, [dispatchPersist, onLink, run]);
 
   const busy =
     state.phase === "preparing" ||
@@ -228,7 +288,11 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const readEffects = useMemo(() => makeReadOnlyEffects(getRpcEndpoint()), []);
+  // Always the CURRENT configured endpoint (the chain the launch lives on):
+  // an empty-dep pin would keep reading whichever endpoint the page loaded
+  // with after the community (and its relay/RPC) changed.
+  const rpcUrl = getRpcEndpoint();
+  const readEffects = useMemo(() => makeReadOnlyEffects(rpcUrl), [rpcUrl]);
   const [result, setResult] = useState<GraduationRecord | null>(null);
   // Starting the flow resets the reducer (readiness included), so the executor
   // found by the readiness check is remembered here for the summary read.
@@ -268,20 +332,28 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
     [chainId, wallet],
   );
 
+  // Generation fence: a slow earlier readiness answer must never overwrite a
+  // newer one (the `useConnectedWallet` pattern).
+  const checkFence = useRef(makeGenerationFence());
   const check = useCallback(() => {
+    const token = checkFence.current.next();
     dispatch({ type: "check_start" });
     // Always the configured RPC (the chain the launch lives on): a wallet that
     // is on another network would otherwise report "no such auction" for a
     // perfectly good one.
     void checkGraduationReadiness({ effects: readEffects, auction, endBlock })
       .then((readiness: GraduationReadiness) =>
-        dispatch({ type: "check_result", readiness }),
+        settleIfCurrent(checkFence.current, token, () =>
+          dispatch({ type: "check_result", readiness }),
+        ),
       )
       .catch((error: unknown) =>
-        dispatch({
-          type: "check_failed",
-          message: auctionErrorMessage(error),
-        }),
+        settleIfCurrent(checkFence.current, token, () =>
+          dispatch({
+            type: "check_failed",
+            message: auctionErrorMessage(error),
+          }),
+        ),
       );
   }, [auction, endBlock, readEffects]);
 

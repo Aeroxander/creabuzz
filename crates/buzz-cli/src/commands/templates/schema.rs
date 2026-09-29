@@ -119,13 +119,21 @@ use serde::Deserialize;
 
 use crate::error::CliError;
 
+/// Longest accepted `name` field in a template.
 pub const MAX_NAME: usize = 60;
+/// Longest accepted `description` field in a template.
 pub const MAX_DESCRIPTION: usize = 280;
+/// Longest accepted `purpose` field in a template.
 pub const MAX_PURPOSE: usize = 200;
+/// Channels a single template may define.
 pub const MAX_CHANNELS: usize = 8;
+/// Personas a single template may define.
 pub const MAX_PERSONAS: usize = 6;
+/// Workflows a single template may define.
 pub const MAX_WORKFLOWS: usize = 6;
+/// Docs a single template may reference.
 pub const MAX_DOCS: usize = 8;
+/// Skills a single template may reference.
 pub const MAX_SKILLS: usize = 8;
 /// Vacant agent seats a template may seed (one per persona at most).
 pub const MAX_ORG_SEATS: usize = MAX_PERSONAS;

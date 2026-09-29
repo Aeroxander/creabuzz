@@ -485,6 +485,12 @@ test-unit:
 test-integration:
     ./scripts/run-tests.sh integration
 
+# Run the DAO OS "org loop" end to end against a throwaway relay
+# (scripts/loop-test.sh). Needs DATABASE_URL plus a running Postgres and Redis;
+# dev only — it writes a test community into the database.
+loop-test:
+    ./scripts/loop-test.sh
+
 # Regenerate the model-capability normative corpus from the production Rust
 # resolver. The corpus is a golden snapshot, never hand-edited: this runs the
 # `#[ignore]`d writer test in buzz-agent, which serializes `resolve()` over the

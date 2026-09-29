@@ -8,7 +8,10 @@
  *
  * Split from `auctionFlow.ts` (shared effect ports, decoders, and signatures
  * live there; no network/clock/DOM here — `auctionFlow.test.mjs` binds this
- * seam with scripted fakes). Sources of truth:
+ * seam with scripted fakes). The one exception: the execute tx hash is
+ * persisted through `graduation-progress.ts` behind an injectable port with a
+ * Web Storage default, so a reload cannot lose the receipt binding. Sources of
+ * truth:
  * - `contracts/src/GraduationExecutor.sol` — `executeGraduation` (:77-129,
  *   callable by anyone), `graduations(address)` record (:34-45), and its
  *   deploy-time recipient requirement (:86-91) the readiness check verifies.
@@ -22,7 +25,11 @@
  *   vocabulary (`sweep`/`lock`) is unconstrained.
  */
 
-import { decodeU256 } from "../chain.ts";
+import {
+  graduationTxStore,
+  type GraduationTxStore,
+} from "./graduation-progress.ts";
+import { isUserRejection } from "./wallet-errors.ts";
 import {
   encodeExecuteGraduation,
   encodeFunctionData,
@@ -103,6 +110,23 @@ export function decodeLbpParams(returnData: string): LbpParams {
     tokensSold: wordValue(w[1]),
     currencyRaised: wordValue(w[2]),
   };
+}
+
+/**
+ * Strict `bool` decode: only the canonical 32-byte word `0x…00`/`0x…01` is a
+ * bool. Anything else (short/long garbage, `0x…02`) throws rather than being
+ * coerced — a garbage read must never report the auction as graduated.
+ */
+export function decodeBoolStrict(returnData: string): boolean {
+  const hex = (
+    returnData.startsWith("0x") ? returnData.slice(2) : returnData
+  ).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    throw new Error(`expected a 32-byte bool word, got ${returnData}`);
+  }
+  if (/^0{64}$/.test(hex)) return false;
+  if (/^0{63}1$/.test(hex)) return true;
+  throw new Error(`non-canonical bool word: ${returnData}`);
 }
 
 export type GraduationReadinessStatus =
@@ -235,13 +259,12 @@ export async function checkGraduationReadiness(input: {
 
   let graduated: boolean;
   try {
-    graduated =
-      decodeU256(
-        await effects.call({
-          to: auction,
-          data: selectorOf(SIGNATURE_IS_GRADUATED),
-        }),
-      ) !== 0n;
+    graduated = decodeBoolStrict(
+      await effects.call({
+        to: auction,
+        data: selectorOf(SIGNATURE_IS_GRADUATED),
+      }),
+    );
   } catch (error) {
     throw new GraduationCheckError(
       "graduated",
@@ -495,6 +518,12 @@ export interface GraduationFlowState {
   errorMessage: string | null;
   /** The confirmed `executeGraduation` tx hash — the receipts' hash binding. */
   graduationTxHash: string | null;
+  /**
+   * True only for the `step-failed` that reported "no tx hash to bind": the
+   * graduation is onchain but nothing can bind the receipts, so a plain retry
+   * must not loop. Cleared by every other transition (Review-Proven Rule 2).
+   */
+  txHashMissing: boolean;
 }
 
 export type GraduationFlowAction =
@@ -504,7 +533,14 @@ export type GraduationFlowAction =
   | { type: "reset"; order: readonly GraduationStepId[] }
   | { type: "step-start"; step: GraduationStepId }
   | { type: "step-done"; step: GraduationStepId; txHash?: string }
-  | { type: "step-failed"; step: GraduationStepId; message: string };
+  | {
+      type: "step-failed";
+      step: GraduationStepId;
+      message: string;
+      /** True when the failure is "no tx hash to bind" — terminal until a hash
+       * is supplied; never a plain retry loop. */
+      hashMissing?: boolean;
+    };
 
 const ALL_GRADUATION_STEPS: readonly GraduationStepId[] = [
   "execute",
@@ -531,6 +567,7 @@ export function initialGraduationState(): GraduationFlowState {
     failedStep: null,
     errorMessage: null,
     graduationTxHash: null,
+    txHashMissing: false,
   };
 }
 
@@ -547,6 +584,7 @@ export function graduationFlowReducer(
         readiness: null,
         failedStep: null,
         errorMessage: null,
+        txHashMissing: false,
       };
     case "check_result":
       return {
@@ -554,6 +592,7 @@ export function graduationFlowReducer(
         phase: action.readiness.status === "ready" ? "ready" : "not-ready",
         readiness: action.readiness,
         errorMessage: null,
+        txHashMissing: false,
       };
     case "check_failed":
       return {
@@ -562,6 +601,7 @@ export function graduationFlowReducer(
         readiness: null,
         failedStep: null,
         errorMessage: action.message,
+        txHashMissing: false,
       };
     case "reset": {
       const order = [...action.order];
@@ -579,6 +619,7 @@ export function graduationFlowReducer(
         steps: { ...state.steps, [action.step]: "active" },
         failedStep: null,
         errorMessage: null,
+        txHashMissing: false,
       };
     case "step-done": {
       const steps = { ...state.steps, [action.step]: "done" as const };
@@ -594,6 +635,7 @@ export function graduationFlowReducer(
         graduationTxHash,
         failedStep: null,
         errorMessage: null,
+        txHashMissing: false,
       };
     }
     case "step-failed": {
@@ -609,6 +651,7 @@ export function graduationFlowReducer(
           GRADUATION_STEPS.find((s) => s.id === action.step)?.label ??
           action.step
         } failed — ${action.message}`,
+        txHashMissing: action.hashMissing === true,
       };
     }
   }
@@ -619,6 +662,11 @@ export type GraduationRetryPlan =
   | { kind: "check" }
   | { kind: "execute" }
   | { kind: "mirror" }
+  /** Terminal: the graduation is onchain but no tx hash exists anywhere to
+   * bind the receipts to. A plain retry would re-enter the same failure — the
+   * real recovery is supplying the hash (persisted via
+   * `graduation-progress.ts`). */
+  | { kind: "supply-hash" }
   | null;
 
 /**
@@ -629,11 +677,16 @@ export type GraduationRetryPlan =
  *   actually landed is detected and never re-sent (`AlreadyExecuted` would
  *   revert, GraduationExecutor.sol:81);
  * - a mirror failure re-publishes only the missing receipts — the money action
- *   is NEVER re-sent (the confirmed tx hash is bound into the receipt tags).
+ *   is NEVER re-sent (the confirmed tx hash is bound into the receipt tags);
+ * - a missing tx hash is terminal (`supply-hash`): retrying without a hash can
+ *   only fail the same way again.
  */
 export function graduationRetryPlan(
   state: GraduationFlowState,
 ): GraduationRetryPlan {
+  if (state.phase === "failed" && state.txHashMissing) {
+    return { kind: "supply-hash" };
+  }
   if (state.phase === "mirrorFailed") return { kind: "mirror" };
   if (state.phase === "failed") {
     return state.failedStep === null
@@ -658,6 +711,11 @@ export interface GraduationDeps {
     kind: "sweep" | "lock",
     parts: { extraTags: string[][]; content: Record<string, string> },
   ): Promise<unknown>;
+  /**
+   * Durable home for the confirmed execute tx hash (defaults to a Web Storage
+   * store keyed by the launch's auction address — `graduation-progress.ts`).
+   */
+  progress?: GraduationTxStore;
 }
 
 /** Everything one graduation attempt needs; re-runnable for retries. */
@@ -691,7 +749,10 @@ export async function runGraduationFlow(
     graduationTxHash: null,
   },
 ): Promise<void> {
-  let graduationTxHash = resume.graduationTxHash;
+  // The persisted hash survives a reload the resume set cannot (rule 2): it is
+  // read back whenever the caller has none.
+  const progress = deps.progress ?? graduationTxStore(execution.auction);
+  let graduationTxHash = resume.graduationTxHash ?? progress.load();
 
   if (!resume.completed.has("execute")) {
     dispatch({ type: "step-start", step: "execute" });
@@ -719,10 +780,29 @@ export async function runGraduationFlow(
       try {
         receipt = await deps.send(execution.call);
       } catch (error) {
+        const reason = graduationErrorMessage(error);
+        // Declining in the wallet is a KNOWN outcome — nothing was sent.
+        // Reporting it as "may or may not have been broadcast" would send the
+        // founder hunting for a transaction that does not exist.
+        if (isUserRejection(reason)) {
+          const done = GRADUATION_STEPS.filter((s) =>
+            resume.completed.has(s.id),
+          ).map((s) => s.label);
+          const doneNote =
+            done.length > 0
+              ? ` Already done: ${done.join(", ")}.`
+              : " Nothing else has run yet.";
+          dispatch({
+            type: "step-failed",
+            step: "execute",
+            message: `You declined the step in your wallet — nothing was sent.${doneNote} Use "Retry remaining steps" to continue when you are ready.`,
+          });
+          return;
+        }
         dispatch({
           type: "step-failed",
           step: "execute",
-          message: `${graduationErrorMessage(error)} — the transaction may or may not have been broadcast; retry first re-checks the onchain graduation record`,
+          message: `${reason} — the transaction may or may not have been broadcast; retry first re-checks the onchain graduation record`,
         });
         return;
       }
@@ -735,6 +815,16 @@ export async function runGraduationFlow(
         return;
       }
       graduationTxHash = receipt.txHash;
+      // Persist the moment the confirmed hash exists: a reload before the
+      // mirrors publish must not lose the binding. Contained because the money
+      // call has already landed — a storage failure must not abort the run
+      // (this session still holds the hash and binds the receipts below).
+      try {
+        progress.save(receipt.txHash);
+      } catch {
+        // Best-effort across reloads only; never store a malformed hash, and
+        // never let storage trouble strand an already-landed graduation.
+      }
       dispatch({ type: "step-done", step: "execute", txHash: receipt.txHash });
     }
   }
@@ -746,12 +836,15 @@ export async function runGraduationFlow(
   if (graduationTxHash === null) {
     // Rule 1: name it — the graduation is complete onchain but its hash is
     // unknown, so the receipts cannot be bound (the relay requires one `tx`
-    // tag, ingest.rs:2111-2114).
+    // tag, ingest.rs:2111-2114). Rule 6: this must NOT become a retry loop —
+    // the recovery affordance is supplying the hash (`needsTxHash` +
+    // `supply-hash`), persisted via `graduation-progress.ts`.
     dispatch({
       type: "step-failed",
       step: remaining[0],
+      hashMissing: true,
       message:
-        "the graduation is executed onchain but this session has no confirmed transaction hash to bind the receipts to (the earlier attempt's receipt was never received) — receipts cannot be published without it",
+        "the graduation is executed onchain but no confirmed transaction hash is available to bind the receipts to (the earlier attempt's receipt was never received) — paste the confirmed executeGraduation transaction hash below to resume; receipts cannot be published without it",
     });
     return;
   }

@@ -22,6 +22,11 @@ interface IRouterInfraFee {
 /// @notice An env fee/spread/share is above the conservative ceiling.
 error AboveCeiling(string what, uint256 value, uint256 ceiling);
 
+/// @notice An env name/symbol contains a quote, backslash, or control
+/// character and would corrupt the raw string interpolation of
+/// `deployments/apptoken-latest.json`.
+error JsonUnsafeString(string what, string value);
+
 interface IToken {
     function setTransferValidator(address validator) external;
 }
@@ -131,9 +136,26 @@ contract DeployAppToken is Script {
         });
     }
 
+    /// @notice Revert unless `value` is safe for raw string interpolation into
+    /// the deployments JSON below: no quote, backslash, or control character.
+    /// Public so the guardrail is testable without env plumbing.
+    function requireJsonSafe(string memory what, string memory value) public pure {
+        bytes memory raw = bytes(value);
+        for (uint256 i = 0; i < raw.length; i++) {
+            bytes1 c = raw[i];
+            // 0x7f is legal in a JSON string; < 0x20 is not.
+            if (c == '"' || c == "\\" || uint8(c) < 0x20) revert JsonUnsafeString(what, value);
+        }
+    }
+
     function run() external returns (address token) {
         string memory name = vm.envString("APPTOKEN_NAME");
         string memory symbol = vm.envString("APPTOKEN_SYMBOL");
+        // The deployments JSON at the end interpolates name/symbol raw —
+        // reject anything that would corrupt it instead of writing a broken
+        // file the CLI must parse.
+        requireJsonSafe("APPTOKEN_NAME", name);
+        requireJsonSafe("APPTOKEN_SYMBOL", symbol);
         uint256 salt = vm.envOr("APPTOKEN_SALT", uint256(1));
         address treasury = vm.envAddress("APPTOKEN_TREASURY");
         // The token/pool owner (holder of the fee levers, below the immutable
@@ -151,9 +173,20 @@ contract DeployAppToken is Script {
         // local flow; production uses explicit owner ops). Pass APPTOKEN_TV
         // to pin a specific validator.
         address tv = vm.envOr("APPTOKEN_TV", address(0));
-        uint16 buyFee = uint16(vm.envOr("APPTOKEN_BUY_FEE_BPS", uint256(200)));
-        uint16 sellFee = uint16(vm.envOr("APPTOKEN_SELL_FEE_BPS", uint256(200)));
-        uint16 spread = uint16(vm.envOr("APPTOKEN_SPREAD_BPS", uint256(100)));
+        // Validate the FULL env range before the uint16 narrowing: a bare
+        // uint16 cast silently truncates values above 65_535 (65_736 would
+        // become 200), slipping past the MAX_* ceiling check inside
+        // `initializationParameters`. MAX_* < 65_536, so a value that passes
+        // these checks is also safe to narrow.
+        uint256 buyFeeBps = vm.envOr("APPTOKEN_BUY_FEE_BPS", uint256(200));
+        uint256 sellFeeBps = vm.envOr("APPTOKEN_SELL_FEE_BPS", uint256(200));
+        uint256 spreadBps = vm.envOr("APPTOKEN_SPREAD_BPS", uint256(100));
+        if (spreadBps > MAX_SPREAD_BPS) revert AboveCeiling("spread", spreadBps, MAX_SPREAD_BPS);
+        if (buyFeeBps > MAX_FEE_BPS) revert AboveCeiling("buyFee", buyFeeBps, MAX_FEE_BPS);
+        if (sellFeeBps > MAX_FEE_BPS) revert AboveCeiling("sellFee", sellFeeBps, MAX_FEE_BPS);
+        uint16 buyFee = uint16(buyFeeBps);
+        uint16 sellFee = uint16(sellFeeBps);
+        uint16 spread = uint16(spreadBps);
 
         PoolDeploymentParameters memory poolParams = PoolDeploymentParameters({
             name: name,

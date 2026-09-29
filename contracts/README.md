@@ -19,9 +19,10 @@ surface that wraps upstream primitives:
   treasury, records pool addresses once the apptoken deployment lands.
 - `src/GraduationExecutor.sol` — apptoken graduation that actually moves the
   money (sweep + split + escrow + release; supersedes the initializer). Bound to
-  exactly ONE auction (`bindAuction`, treasury, one-shot, ERC-20 currency only);
-  the reserve leaves only to the recorded pool, or back to the treasury after
-  `reserveLockSeconds` (constructor arg, 1 day..365 days).
+  exactly ONE auction (`bindAuction`, treasury, one-shot; ERC-20 or native ETH
+  currency — `receive()` takes ETH from the bound auction only, `_pay` sends it
+  for the zero currency); the reserve leaves only to the recorded pool, or back
+  to the treasury after `reserveLockSeconds` (constructor arg, 1 day..365 days).
 - `src/VerifierSet.sol` + `src/ClaimStake.sol` — C5 attestation tier: verifier
   panels with quorum (>= 1) and slashing, contributor stakes-to-claim with escrow
   that releases only on quorum attestation (the paper's "expert panels"
@@ -34,6 +35,21 @@ surface that wraps upstream primitives:
   (`spend` is advisory accounting only); spends may not name a future epoch.
 - `src/OrgBinding.sol` — DAO binding records; only the first binder or the
   recorded DAO may rebind a root.
+
+## Trust assumptions
+
+Sharp edges that are deliberate, not oversights:
+
+- A treasury that cannot receive ETH makes an ETH graduation revert atomically
+  — the raise stays in the auction until the treasury can receive. Payouts are
+  push-and-atomic by design; nothing lands half-paid.
+- Force-sent ETH or ERC-20 is unrecoverable. Payouts are amount-exact against
+  the recorded accounting, so value shoved in outside a recorded flow has no
+  exit path.
+- `OrgAllowance.spendTo` emits `SpentTo` only. It used to emit both `Spent` and
+  `SpentTo` per debit, which double-counted for consumers summing both events;
+  `Spent` is now the advisory `spend` record and `SpentTo` the one authoritative
+  `spendTo` record.
 
 ## Pins
 

@@ -18,14 +18,19 @@ use crate::error::{DbError, Result};
 use crate::Db;
 use buzz_core::CommunityId;
 
-/// Upper bound on budget events returned per subject lookup.
+/// Upper bound on budget events returned per subject lookup AND per author
+/// class within it (authority-signed and subject-signed each get their own
+/// window — see [`budgets_for_subject`]).
 ///
 /// Budgets are small, community-level records and the lookup filters by
 /// subject *in SQL*, so unrelated budgets can never crowd a subject's own out
-/// of the result. The bound only caps how many budgets one subject can carry:
-/// budgets are NIP-33 replaceable per `(author, d)`, and only the community
-/// owner/admin, anchored seat holders, and the subject itself may publish one
-/// for it, so 64 is far beyond any realistic org.
+/// of the result. The author-class split is dilution-proofing: a subject
+/// flooding its OWN budgets can never push an authority-signed budget out of
+/// the window (which would silently loosen enforcement). The bound only caps
+/// how many budgets one class can carry: budgets are NIP-33 replaceable per
+/// `(author, d)`, and only the community owner/admin, anchored seat holders,
+/// and the subject itself may publish one for it, so 64 per class is far
+/// beyond any realistic org.
 pub const BUDGET_LOOKUP_CAP: i64 = 64;
 
 /// Upper bound on community default (`subject: "*"`) budgets returned by
@@ -59,10 +64,20 @@ pub struct BudgetEvent {
 /// Look up budget events whose `content.subject` equals `subject`.
 ///
 /// The subject filter runs in SQL (`lower(content.subject) = $subject`), newest
-/// first, bounded by `cap`. The JSON cast only ever runs on JSON-object rows of
-/// kind 37012 (nested `CASE`s — SQL does not promise `AND` short-circuiting),
-/// so a malformed unrelated row cannot fail the lookup. Budgets with malformed
-/// content are ignored by enforcement: ingest validation rejects them.
+/// first, bounded by `cap` **per author class**: rows signed by someone other
+/// than the subject (authority-signed, ingest-gated to owner/admin/seat
+/// holders) and rows signed by the subject itself each get their own window,
+/// unioned. A subject flooding its own budgets can therefore never displace an
+/// authority-signed budget out of the result — the displacement silently
+/// loosened enforcement (`has_authority_limit` flipped false and the attacker
+/// ran at its self-chosen limits). Subject-vs-subject crowding is harmless:
+/// NIP-33 replacement already lets a subject rewrite its own budgets. (For
+/// the `"*"` default subject no author matches, so everything lands in the
+/// authority window — unchanged behavior.) The JSON cast only ever runs on
+/// JSON-object rows of kind 37012 (nested `CASE`s — SQL does not promise
+/// `AND` short-circuiting), so a malformed unrelated row cannot fail the
+/// lookup. Budgets with malformed content are ignored by enforcement: ingest
+/// validation rejects them.
 async fn budgets_for_subject(
     pool: &PgPool,
     community_id: Uuid,
@@ -71,6 +86,7 @@ async fn budgets_for_subject(
 ) -> Result<Vec<BudgetEvent>> {
     let rows = sqlx::query(
         r#"
+        (
         SELECT encode(id, 'hex') AS event_id,
                encode(pubkey, 'hex') AS author,
                content
@@ -78,6 +94,7 @@ async fn budgets_for_subject(
         WHERE community_id = $1
           AND kind = 37012
           AND deleted_at IS NULL
+          AND lower(encode(pubkey, 'hex')) <> $2
           AND CASE
                 WHEN kind = 37012 AND content IS JSON OBJECT
                   THEN lower(content::jsonb ->> 'subject') = $2
@@ -85,6 +102,25 @@ async fn budgets_for_subject(
               END
         ORDER BY created_at DESC, id ASC
         LIMIT $3
+        )
+        UNION ALL
+        (
+        SELECT encode(id, 'hex') AS event_id,
+               encode(pubkey, 'hex') AS author,
+               content
+        FROM events
+        WHERE community_id = $1
+          AND kind = 37012
+          AND deleted_at IS NULL
+          AND lower(encode(pubkey, 'hex')) = $2
+          AND CASE
+                WHEN kind = 37012 AND content IS JSON OBJECT
+                  THEN lower(content::jsonb ->> 'subject') = $2
+                ELSE false
+              END
+        ORDER BY created_at DESC, id ASC
+        LIMIT $3
+        )
         "#,
     )
     .bind(community_id)
@@ -259,7 +295,13 @@ pub async fn count_contribution_outcomes(
         }
         match buzz_core::org_grant::is_authority_holder(&graph, &review.reviewer).await {
             Ok(true) => {
-                authorized.insert(review.reviewer.clone());
+                // A seated agent (a pubkey occupying any node's `agentSeats`)
+                // cannot sign counted reviews: review authority is human-only
+                // (NIP-ORG reviewer rule). Without this, an agent key placed
+                // in `holders` could review another agent up the ladder.
+                if !graph.is_seated_agent(&review.reviewer).await? {
+                    authorized.insert(review.reviewer.clone());
+                }
             }
             Ok(false) => {}
             // A denial here means the graph was too large to verify:
@@ -375,7 +417,10 @@ pub struct CreateBudgetApprovalParams<'a> {
 ///
 /// At most one **pending** row exists per
 /// `(community_id, subject, counter_type, window_start)` — repeated overrun
-/// attempts refresh its expiry instead of growing the table without bound.
+/// attempts refresh its expiry AND re-bind it to the currently enforcing
+/// budget and limit (one atomic upsert: a stale `budget_event_id` would make
+/// the eventual grant's tolerance attach to the wrong budget) instead of
+/// growing the table without bound.
 /// Returns the stored token hash (the new one on first insert, the existing
 /// one on refresh), which the caller embeds in the kind:46010 notification.
 pub async fn create_budget_approval(
@@ -391,7 +436,9 @@ pub async fn create_budget_approval(
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
         ON CONFLICT (community_id, subject, counter_type, window_start)
             WHERE status = 'pending'
-        DO UPDATE SET expires_at = EXCLUDED.expires_at
+        DO UPDATE SET expires_at = EXCLUDED.expires_at,
+                      limit_value = EXCLUDED.limit_value,
+                      budget_event_id = EXCLUDED.budget_event_id
         RETURNING token
         "#,
     )
@@ -777,6 +824,16 @@ mod postgres_tests {
         subject: &str,
         on_exceed: &str,
     ) -> Vec<u8> {
+        insert_budget_event_as(pool, community_id, [9u8; 32], subject, on_exceed).await
+    }
+
+    async fn insert_budget_event_as(
+        pool: &PgPool,
+        community_id: Uuid,
+        author: [u8; 32],
+        subject: &str,
+        on_exceed: &str,
+    ) -> Vec<u8> {
         let mut event_id = [0u8; 32];
         event_id[..16].copy_from_slice(Uuid::new_v4().as_bytes());
         event_id[16..].copy_from_slice(Uuid::new_v4().as_bytes());
@@ -794,7 +851,7 @@ mod postgres_tests {
         )
         .bind(community_id)
         .bind(event_id.as_slice())
-        .bind([9u8; 32])
+        .bind(author)
         .bind(content)
         .bind([1u8; 64])
         .execute(pool)
@@ -1556,6 +1613,137 @@ mod postgres_tests {
             found[0].author_hex,
             hex::encode([9u8; 32]),
             "the signer is returned so enforcement can tell authority from self"
+        );
+
+        cleanup(&pool, community).await;
+    }
+
+    /// Dilution-proofing: a subject flooding its OWN budgets (all newer,
+    /// distinct rows) can never displace an authority-signed budget out of the
+    /// lookup window. The old single newest-first window let 64+ self rows
+    /// push the authority budget out, flipping `has_authority_limit` false in
+    /// enforcement and loosening the subject to its self-chosen limits.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn self_budget_flooding_cannot_displace_an_authority_budget() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let agent = "abababababababababababababababababababababababababababababababab";
+        let agent_key = [0xabu8; 32];
+        let admin_key = [9u8; 32];
+
+        // The authority-signed budget is the OLDEST row; 70 newer self-signed
+        // rows follow.
+        let authority_id =
+            insert_budget_event_as(&pool, community, admin_key, agent, "require-approval").await;
+        for _ in 0..70 {
+            insert_budget_event_as(&pool, community, agent_key, agent, "reject").await;
+        }
+
+        let db = Db::from_pool(pool.clone());
+        let found = db
+            .budget_enforcement_lookup(buzz_core::CommunityId::from_uuid(community), agent)
+            .await
+            .expect("lookup");
+        assert!(
+            found
+                .iter()
+                .any(|b| b.event_id_hex == hex::encode(&authority_id)),
+            "self-signed flooding must never displace the authority budget"
+        );
+
+        cleanup(&pool, community).await;
+    }
+
+    /// A seated agent (a pubkey occupying an org node's `agentSeats`) cannot
+    /// sign counted reviews even when it also holds the node: review authority
+    /// is human-only (NIP-ORG reviewer rule). A human holder reviewing the
+    /// same action still counts.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn a_seated_agent_cannot_sign_counted_reviews() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let db = Db::from_pool(pool.clone());
+        let cid = buzz_core::CommunityId::from_uuid(community);
+
+        let subject = [0xa1u8; 32];
+        let subject_hex = hex::encode(subject);
+        let seated = [0x5au8; 32];
+        let seated_hex = hex::encode(seated);
+        let owner = [0xb2u8; 32];
+        insert_relay_member(&pool, community, &hex::encode(owner), "owner").await;
+        let now = chrono::Utc::now();
+        let window = now - chrono::Duration::days(1);
+        let t0 = now - chrono::Duration::hours(2);
+
+        // An org node listing `seated` both as a holder and as a seated agent.
+        insert_org_event(
+            &pool,
+            community,
+            37010,
+            &owner,
+            Some("root"),
+            serde_json::json!({
+                "v": 1,
+                "holders": [seated_hex.clone()],
+                "agentSeats": [seated_hex.clone()],
+            }),
+            t0,
+        )
+        .await;
+
+        // The subject files an action; the seated agent accepts it.
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &subject,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0 + chrono::Duration::minutes(5),
+        )
+        .await;
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &seated,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0 + chrono::Duration::minutes(10),
+        )
+        .await;
+
+        let counts = db
+            .count_contribution_outcomes(cid, &subject_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            (counts.accepted, counts.rejected),
+            (0, 0),
+            "a seated agent's review must not move the ladder"
+        );
+
+        // A human (non-seated) authority holder reviewing the same action counts.
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &owner,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0 + chrono::Duration::minutes(15),
+        )
+        .await;
+        let counts = db
+            .count_contribution_outcomes(cid, &subject_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            (counts.accepted, counts.rejected),
+            (1, 0),
+            "a human authority holder's review counts"
         );
 
         cleanup(&pool, community).await;

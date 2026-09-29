@@ -582,6 +582,12 @@ export async function runAuctionDeploy(input: {
   mode: "fresh" | "resume";
   /** The flow's current state — completed/predicted addresses seed retries. */
   previous: AuctionDeployState;
+  /**
+   * The auction address this launch was previously given — predicted by an
+   * earlier attempt (persisted progress) or already recorded on the launch
+   * record. The flow refuses to link a DIFFERENT address to the launch.
+   */
+  expectedAuction?: string | null;
   onLink: (input: { auction: string }) => Promise<unknown>;
 }): Promise<void> {
   const {
@@ -594,8 +600,16 @@ export async function runAuctionDeploy(input: {
     dispatch,
     mode,
     previous,
+    expectedAuction = null,
     onLink,
   } = input;
+
+  const sameAddress = (a: string, b: string | null): boolean =>
+    b !== null && a.toLowerCase() === b.toLowerCase();
+  const mismatchReason = (kept: string, derived: string): string =>
+    `this launch already carries auction ${kept}, but this deploy would link ${derived} — no transaction was sent. ` +
+    `Reload and run the deploy again to confirm and resume ${kept} (an auction that exists onchain is never redeployed). ` +
+    `If ${kept} belongs to a dead earlier attempt, relaunch the record first — that clears the old link — and then deploy.`;
 
   let params: AuctionDeployParams;
   try {
@@ -611,6 +625,29 @@ export async function runAuctionDeploy(input: {
 
   dispatch({ type: "begin", mode });
   dispatch({ type: "prepared", auctionAddress: null });
+
+  // Re-link refusal: a launch that was previously predicted (persisted
+  // progress) or recorded to one auction must never silently link a
+  // different one. Checked HERE — before any effect runs — so a mismatch
+  // costs nothing on chain and the founder gets a decision, not a surprise.
+  const carriedAuction = previous.steps.auction.address;
+  if (
+    expectedAuction &&
+    carriedAuction &&
+    !sameAddress(expectedAuction, carriedAuction)
+  ) {
+    dispatch({
+      type: "step_failed",
+      step: "auction",
+      txHash: null,
+      outcome: null,
+      reason: mismatchReason(expectedAuction, carriedAuction),
+    });
+    return;
+  }
+  // The address this launch already committed to (recorded wins over
+  // predicted); the auction step refuses to link anything else.
+  const guardedAuction = expectedAuction ?? carriedAuction;
 
   // Addresses as the run discovers them; seeded from the carried state so a
   // resume keeps earlier completions (and predictions) alive.
@@ -785,6 +822,43 @@ export async function runAuctionDeploy(input: {
         null,
         null,
         `factory.getAddress(...) failed: ${auctionErrorMessage(error)}`,
+      );
+      return;
+    }
+    // Re-link refusal / resume preference: the auction this launch already
+    // carries (recorded or predicted earlier) wins over a re-derived one.
+    // If it exists onchain it is confirmed and resumed — never deployed again
+    // beside itself; if it does not and this run derives a different address,
+    // refuse BEFORE the factory send, with a way out.
+    if (guardedAuction && !sameAddress(guardedAuction, auctionAddress)) {
+      let existing: boolean;
+      try {
+        existing = await effects.codeAt(guardedAuction);
+      } catch (error) {
+        failStep(
+          step,
+          null,
+          null,
+          `verifying ${guardedAuction} onchain failed: ${auctionErrorMessage(error)}`,
+        );
+        return;
+      }
+      if (existing) {
+        addresses[step] = guardedAuction;
+        dispatch({
+          type: "step_done",
+          step,
+          txHash: null,
+          address: guardedAuction,
+          alreadyDeployed: true,
+        });
+        continue;
+      }
+      failStep(
+        step,
+        null,
+        null,
+        mismatchReason(guardedAuction, auctionAddress),
       );
       return;
     }

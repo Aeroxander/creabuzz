@@ -49,9 +49,12 @@ test("decodeUint256 requires 32 bytes", () => {
   assert.throws(() => decodeUint256("0x1234"), /32-byte/);
 });
 
-test("decodeBool treats nonzero as true", () => {
+test("decodeBool accepts only the canonical ABI bool", () => {
   assert.equal(decodeBool(`0x${"0".repeat(64)}`), false);
   assert.equal(decodeBool(`0x${"0".repeat(63)}1`), true);
+  // Garbage must not read as graduated.
+  assert.throws(() => decodeBool(`0x${"0".repeat(63)}2`), /canonical bool/);
+  assert.throws(() => decodeBool("0x1234"), /32-byte/);
 });
 
 function stubFetch(routes) {

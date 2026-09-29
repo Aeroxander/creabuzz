@@ -145,18 +145,30 @@ test("nothing is sent while the wallet is on the wrong chain", async () => {
   );
 });
 
-test("the chain is checked once, then trusted for the rest of the flow", async () => {
+test("the chain is verified before every send — a mid-flow switch refuses the next send", async () => {
+  const chains = ["0x7a69", "0x1"];
   const provider = fakeProvider({
-    eth_chainId: "0x7a69",
+    eth_chainId: () => chains.shift(),
     eth_sendTransaction: HASH,
     eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1" },
   });
   const e = effects(provider);
   await e.send({ to: DEPLOYER, data: "0x" });
-  await e.send({ to: DEPLOYER, data: "0x" });
+  // The wallet switches networks between sends (the multi-step flows
+  // interleave wallet prompts).
+  await assert.rejects(
+    e.send({ to: DEPLOYER, data: "0x" }),
+    /wallet is on chain 1, but this launch is on chain 31337/,
+  );
+  assert.equal(
+    provider.log.filter((r) => r.method === "eth_sendTransaction").length,
+    1,
+    "the second send is refused before it is ever requested",
+  );
   assert.equal(
     provider.log.filter((r) => r.method === "eth_chainId").length,
-    1,
+    2,
+    "the chain is checked before every send",
   );
 });
 

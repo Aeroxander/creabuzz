@@ -42,8 +42,6 @@ const SIG_SET_SCORE_ROOT: &str = "setScoreRoot(bytes32,uint256)";
 /// The canonical program id the launchpad's community track reads.
 pub const DEFAULT_PROGRAM: &str = "trustgraphs.output.nostr-member.v1";
 
-const ADDRESS_RE: &str = "^0x[0-9a-fA-F]{40}$";
-
 /// One score row — the web `TrustScore` shape (`trust-score.ts`).
 #[derive(Deserialize, Serialize, Clone)]
 pub struct TrustScore {
@@ -63,10 +61,14 @@ pub struct RootBundle {
     pub program: String,
     pub root: String,
     pub epoch: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub indexerUrl: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchorBlock: Option<u64>,
+    /// Where the per-member proofs bundle is served from. Wire name is
+    /// camelCase per NIP-LP and web `trust-score.ts`.
+    #[serde(rename = "indexerUrl", skip_serializing_if = "Option::is_none")]
+    pub indexer_url: Option<String>,
+    /// Block the scores were anchored at, when the engine records one. Wire
+    /// name is camelCase per NIP-LP and web `trust-score.ts`.
+    #[serde(rename = "anchorBlock", skip_serializing_if = "Option::is_none")]
+    pub anchor_block: Option<u64>,
     /// member (lowercase) -> score + sorted-pair Merkle proof.
     pub proofs: BTreeMap<String, MemberProof>,
 }
@@ -137,7 +139,7 @@ pub fn compose(
     let mut levels: Vec<Vec<[u8; 32]>> = vec![rows.iter().map(|r| r.2).collect()];
     while levels.last().unwrap().len() > 1 {
         let cur = levels.last().unwrap();
-        let mut next = Vec::with_capacity((cur.len() + 1) / 2);
+        let mut next = Vec::with_capacity(cur.len().div_ceil(2));
         let mut i = 0;
         while i < cur.len() {
             if i + 1 < cur.len() {
@@ -184,8 +186,8 @@ pub fn compose(
         program: program.to_owned(),
         root: format!("0x{}", hex::encode(root)),
         epoch: epoch.to_owned(),
-        indexerUrl: indexer_url,
-        anchorBlock: anchor_block,
+        indexer_url,
+        anchor_block,
         proofs,
     })
 }
@@ -210,10 +212,10 @@ pub fn build_root_event(bundle: &RootBundle) -> Result<EventBuilder, CliError> {
         "root": root.to_ascii_lowercase(),
         "epoch": bundle.epoch,
     });
-    if let Some(u) = &bundle.indexerUrl {
+    if let Some(u) = &bundle.indexer_url {
         content["indexerUrl"] = json!(u);
     }
-    if let Some(b) = bundle.anchorBlock {
+    if let Some(b) = bundle.anchor_block {
         content["anchorBlock"] = json!(b);
     }
     let d = format!("{}:{}", bundle.program, bundle.epoch);
@@ -338,9 +340,10 @@ pub async fn cmd_rotate_gate(
             AllowanceError::SpendReverted { tx_hash } => CliError::Other(format!(
                 "rotation transaction {tx_hash} reverted onchain"
             )),
-            AllowanceError::SpendUnconfirmed { .. } => CliError::Other(format!(
+            AllowanceError::SpendUnconfirmed { .. } => CliError::Other(
                 "rotation not confirmed within the deadline — check the receipt; do NOT re-submit blindly"
-            )),
+                    .to_string(),
+            ),
             other => CliError::Other(format!("rotate-gate failed: {other}")),
         })?;
     println!(
@@ -368,7 +371,7 @@ pub async fn dispatch(sub: crate::TrustgraphCmd, client: &BuzzClient) -> Result<
                     .map_err(|e| CliError::Other(format!("read {path}: {e}")))?;
                 let b: RootBundle = serde_json::from_str(&raw)
                     .map_err(|e| CliError::Other(format!("bundle JSON: {e}")))?;
-                (b.program, b.epoch, b.root, b.indexerUrl, b.anchorBlock)
+                (b.program, b.epoch, b.root, b.indexer_url, b.anchor_block)
             } else {
                 (
                     program.unwrap_or_else(|| DEFAULT_PROGRAM.to_owned()),
@@ -394,8 +397,8 @@ pub async fn dispatch(sub: crate::TrustgraphCmd, client: &BuzzClient) -> Result<
         program,
         root,
         epoch,
-        indexerUrl: indexer_url,
-        anchorBlock: anchor_block,
+        indexer_url,
+        anchor_block,
         proofs: BTreeMap::new(), // the record carries the root; proofs live at indexerUrl
     };
     let builder = build_root_event(&bundle)?;

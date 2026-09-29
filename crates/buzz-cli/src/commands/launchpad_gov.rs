@@ -16,7 +16,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use buzz_evm_allowance::tx;
 use buzz_evm_allowance::{abi, AllowanceClient, AllowanceError, EvmRpc, HttpEvmRpc};
 use num_bigint::BigUint;
 use serde_json::json;
@@ -32,7 +31,6 @@ const RECEIPT_DEADLINE: Duration = buzz_evm_allowance::DEFAULT_RECEIPT_DEADLINE;
 // against `cast sig` (the same pins as web `vote-tx.ts`).
 const SIG_OPEN_PROPOSAL: &str = "openProposal(uint256)";
 const SIG_CAST_VOTE: &str = "castVote(uint256,uint8)";
-const SIG_QUEUE: &str = "queue(uint256)";
 const SIG_EXECUTE_BY_VOTES: &str = "executeByVotes(uint8,address,uint256,bytes,bytes32)";
 const SIG_PROPOSAL_ID: &str = "proposalId(uint8,address,uint256,bytes,bytes32)";
 const SIG_STATE: &str = "state(uint256)";
@@ -105,7 +103,7 @@ pub fn encode_intent_args(
     let data_bytes = {
         let clean = data.trim();
         let hex = clean.strip_prefix("0x").unwrap_or(clean);
-        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) || hex.len() % 2 != 0 {
+        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) || !hex.len().is_multiple_of(2) {
             return Err(CliError::Usage(format!(
                 "data must be even-length hex: {data:?}"
             )));
@@ -121,10 +119,10 @@ pub fn encode_intent_args(
     out.extend_from_slice(&abi::encode_uint256(0xa0));
     out.extend_from_slice(&nonce_word);
     // tail: length + right-padded bytes
-    let padded = (data_bytes.len() + 31) / 32 * 32;
+    let padded = data_bytes.len().div_ceil(32) * 32;
     out.extend_from_slice(&abi::encode_uint256(data_bytes.len() as u128));
     out.extend_from_slice(&data_bytes);
-    out.resize(out.len() - data_bytes.len() + padded.max(0), 0);
+    out.resize(out.len() - data_bytes.len() + padded, 0);
     Ok(out)
 }
 
@@ -145,13 +143,6 @@ pub fn encode_cast_vote(id: &str, support: u8) -> Result<Vec<u8>, CliError> {
     let mut out = abi::selector(SIG_CAST_VOTE).to_vec();
     out.extend_from_slice(&uint256_word(id)?);
     out.extend_from_slice(&abi::encode_uint256(support as u128));
-    Ok(out)
-}
-
-/// `queue(uint256)`.
-pub fn encode_queue(id: &str) -> Result<Vec<u8>, CliError> {
-    let mut out = abi::selector(SIG_QUEUE).to_vec();
-    out.extend_from_slice(&uint256_word(id)?);
     Ok(out)
 }
 
@@ -472,7 +463,10 @@ mod tests {
     fn selectors_match_cast_sig() {
         assert_eq!(hex::encode(abi::selector(SIG_OPEN_PROPOSAL)), "31288f40");
         assert_eq!(hex::encode(abi::selector(SIG_CAST_VOTE)), "56781388");
-        assert_eq!(hex::encode(abi::selector(SIG_QUEUE)), "ddf0b009");
+        // `queue(uint256)` is part of the documented lifecycle but has no CLI
+        // command yet (that subcommand belongs in `lib.rs`); the pin stays so
+        // the future `launchpad queue` step cannot drift from `cast sig`.
+        assert_eq!(hex::encode(abi::selector("queue(uint256)")), "ddf0b009");
         assert_eq!(hex::encode(abi::selector(SIG_EXECUTE_BY_VOTES)), "ee5b2895");
         assert_eq!(hex::encode(abi::selector(SIG_PROPOSAL_ID)), "997506ba");
         assert_eq!(hex::encode(abi::selector(SIG_STATE)), "3e4f49e6");

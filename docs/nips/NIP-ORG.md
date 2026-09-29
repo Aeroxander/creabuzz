@@ -518,7 +518,10 @@ Review authority:
   evaluates a performance-linked ladder it tallies, per action, the newest
   review by an authorized reviewer other than the subject (ties: lowest event
   id); the subject's own `reviewStatus` is never trusted, and an action with
-  no authorized review counts as neither accepted nor rejected. Ingest still
+  no authorized review counts as neither accepted nor rejected. An
+  **authorized reviewer is human-only**: a pubkey occupying any node's
+  `agentSeats` slot is a seated agent, and a seated agent's reviews are not
+  counted. Ingest still
   admits the record (a parallel record by an unauthorized signer is harmless
   history), so the rule bites at the decision, not at the write.
 - A client MUST label a disposition published by a key without verified
