@@ -217,6 +217,86 @@ async fn cmd_node_list(client: &BuzzClient, limit: Option<u32>) -> Result<(), Cl
     Ok(())
 }
 
+/// Merge `agent_hex` into (or out of) a node's `agentSeats`.
+///
+/// Returns `None` when there is nothing to change — the agent already sits in
+/// the seat (attach) or does not (detach) — so callers publish only real edits.
+/// Comparison is case-insensitive; holders, scope, parent and UI hints are kept.
+fn with_agent_seat(
+    mut content: OrgNodeContent,
+    agent_hex: &str,
+    detach: bool,
+) -> Option<OrgNodeContent> {
+    let present = content
+        .agent_seats
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case(agent_hex));
+    match (present, detach) {
+        (true, false) | (false, true) => None,
+        (false, false) => {
+            content.agent_seats.push(agent_hex.to_string());
+            Some(content)
+        }
+        (true, true) => {
+            content
+                .agent_seats
+                .retain(|a| !a.eq_ignore_ascii_case(agent_hex));
+            Some(content)
+        }
+    }
+}
+
+async fn cmd_node_attach_agent(
+    client: &BuzzClient,
+    node_id: &str,
+    agent: &str,
+    detach: bool,
+) -> Result<(), CliError> {
+    validate_d_tag(node_id, "node")?;
+    let agent_hex = validate_pubkey_hex(agent, "agent")?;
+    let me = hex::encode(client.keys().public_key().to_bytes());
+
+    // Nodes are addressed by (author, kind, d): only the author's own record
+    // can be replaced, and the relay's authority anchor would reject anyone
+    // else republishing this id.
+    let filter = serde_json::json!({
+        "kinds": [KIND_ORG_NODE],
+        "#d": [node_id],
+        "authors": [me],
+    });
+    let events = fetch_org_events(client, vec![KIND_ORG_NODE], Some(filter)).await?;
+    let Some(current) = events.iter().max_by_key(|e| e.created_at) else {
+        return Err(CliError::Other(format!(
+            "org node '{node_id}' not found among your own nodes — only a node's author can change its seats"
+        )));
+    };
+    let existing: OrgNodeContent = serde_json::from_str(&current.content).map_err(|e| {
+        CliError::Other(format!("org node '{node_id}' has unreadable content: {e}"))
+    })?;
+
+    let Some(updated) = with_agent_seat(existing, &agent_hex, detach) else {
+        println!(
+            "{}",
+            serde_json::json!({
+                "accepted": true,
+                "changed": false,
+                "message": if detach { "agent is not in this seat" } else { "agent already sits in this seat" },
+            })
+        );
+        return Ok(());
+    };
+
+    let builder =
+        buzz_sdk::build_org_node(node_id, &updated).map_err(|e| CliError::Usage(e.to_string()))?;
+    let event = client.sign_event(builder)?;
+    let response = client.submit_event(event).await?;
+    println!(
+        "{}",
+        parse_write_response(&response, "node already exists")?
+    );
+    Ok(())
+}
+
 async fn cmd_node_delete(client: &BuzzClient, node_id: &str) -> Result<(), CliError> {
     validate_d_tag(node_id, "node")?;
     let owner_hex = hex::encode(client.keys().public_key().to_bytes());
@@ -1001,6 +1081,9 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
             }
             crate::OrgNodeCmd::List { limit } => cmd_node_list(client, limit).await,
             crate::OrgNodeCmd::Delete { id } => cmd_node_delete(client, &id).await,
+            crate::OrgNodeCmd::AttachAgent { id, agent, detach } => {
+                cmd_node_attach_agent(client, &id, &agent, detach).await
+            }
         },
         OrgCmd::Grant(sub) => match sub {
             crate::OrgGrantCmd::Create {
@@ -1203,5 +1286,56 @@ mod tests {
         let upper = format!("{CHAIN}|{CONTRACT}|{}", SUBJECT.to_uppercase());
         let binding = parse_onchain_binding(&upper).expect("valid spec");
         assert_eq!(binding.subject, SUBJECT);
+    }
+
+    // ── seat attach ───────────────────────────────────────────────────────
+
+    fn seat_node(agents: &[&str]) -> OrgNodeContent {
+        OrgNodeContent {
+            v: 1,
+            name: "Head of Story".into(),
+            node_kind: OrgNodeKind::AgentSeat,
+            parent: Some("root".into()),
+            holders: vec!["h".repeat(64)],
+            agent_seats: agents.iter().map(|a| a.to_string()).collect(),
+            scope: OrgScope {
+                read_below: true,
+                assign_below: false,
+                can_grant: vec!["task:create".into()],
+            },
+            ui: None,
+            onchain: None,
+        }
+    }
+
+    #[test]
+    fn attaching_an_agent_fills_a_vacant_seat_and_keeps_everything_else() {
+        let agent = "a".repeat(64);
+        let before = seat_node(&[]);
+        let after = with_agent_seat(before.clone(), &agent, false).expect("vacant seat changes");
+        assert_eq!(after.agent_seats, vec![agent]);
+        assert_eq!(after.holders, before.holders, "holders untouched");
+        assert_eq!(after.parent, before.parent, "parent untouched");
+        assert_eq!(after.scope, before.scope, "canGrant untouched");
+        assert_eq!(after.name, before.name);
+    }
+
+    #[test]
+    fn attaching_twice_is_a_no_op_regardless_of_case() {
+        let agent = "a".repeat(64);
+        assert!(with_agent_seat(seat_node(&[&agent]), &agent, false).is_none());
+        assert!(with_agent_seat(seat_node(&[&agent]), &agent.to_uppercase(), false).is_none());
+    }
+
+    #[test]
+    fn detaching_removes_only_that_agent() {
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let after = with_agent_seat(seat_node(&[&a, &b]), &a.to_uppercase(), true)
+            .expect("present agent detaches");
+        assert_eq!(after.agent_seats, vec![b]);
+        assert!(
+            with_agent_seat(seat_node(&[&"b".repeat(64)]), &a, true).is_none(),
+            "detaching an agent that is not seated changes nothing"
+        );
     }
 }

@@ -24,7 +24,10 @@ import { verbEntailedBy as legacyVerbEntailedBy } from "./grantVerify.ts";
 const corpus = JSON.parse(
   readFileSync(
     fileURLToPath(
-      new URL("../../../../../scripts/org-authority-corpus.json", import.meta.url),
+      new URL(
+        "../../../../../scripts/org-authority-corpus.json",
+        import.meta.url,
+      ),
     ),
     "utf8",
   ),
@@ -77,7 +80,11 @@ for (const world of corpus.worlds) {
   const { graph, expect } = world;
 
   test(`${world.name}: anchoring and canonical node`, () => {
-    assert.deepEqual(nodeAnchoring(graph), expect.anchored, "per-node anchoring");
+    assert.deepEqual(
+      nodeAnchoring(graph),
+      expect.anchored,
+      "per-node anchoring",
+    );
     for (const [d, want] of Object.entries(expect.canonical)) {
       const got = resolveNode(graph, d);
       assert.equal(got.kind === "found" ? got.node.eventId : got.kind, want, d);
@@ -87,12 +94,18 @@ for (const world of corpus.worlds) {
   test(`${world.name}: grant decision`, () => {
     const { grant } = expect;
     assert.equal(
-      verifyIncomingGrant(graph, grant.incoming.issuer, grant.incoming, corpus.now).ok,
+      verifyIncomingGrant(
+        graph,
+        grant.incoming.issuer,
+        grant.incoming,
+        corpus.now,
+      ).ok,
       grant.ok,
       "incoming grant",
     );
     assert.equal(
-      verifyIncomingGrant(graph, grant.forgedAuthor, grant.incoming, corpus.now).ok,
+      verifyIncomingGrant(graph, grant.forgedAuthor, grant.incoming, corpus.now)
+        .ok,
       grant.forgedAuthorOk,
       "grant signed by someone other than its issuer",
     );

@@ -176,6 +176,7 @@ const PRESET_TABLE = [
     explorer: "https://basescan.org",
     blockTimeSeconds: 2,
     nativeSymbol: "ETH",
+    mainnet: true,
   },
   {
     id: "base-sepolia",
@@ -209,7 +210,15 @@ test("defaultChainPreset: dev -> Local Anvil, prod -> configured default", () =>
   const cases = [
     [{}, true, "anvil"],
     [{}, false, "sepolia"],
-    [{ VITE_LAUNCHPAD_CHAIN_ID: "8453" }, true, "base"],
+    // A mainnet default needs the explicit switch (R4); without it the build
+    // falls back to its safe default.
+    [{ VITE_LAUNCHPAD_CHAIN_ID: "8453" }, true, "anvil"],
+    [{ VITE_LAUNCHPAD_CHAIN_ID: "8453" }, false, "sepolia"],
+    [
+      { VITE_LAUNCHPAD_CHAIN_ID: "8453", VITE_ENABLE_MAINNET: "1" },
+      true,
+      "base",
+    ],
     [{ VITE_LAUNCHPAD_CHAIN_ID: "84532" }, false, "base-sepolia"],
     [{ VITE_LAUNCHPAD_CHAIN_ID: "31337" }, false, "anvil"],
     [{ VITE_LAUNCHPAD_CHAIN_ID: "99999999" }, true, "anvil"],

@@ -13,7 +13,7 @@ import {
   retryPlan,
   runMintAttempt,
 } from "../lib/mint-flow";
-import { type CreateLaunchInput } from "../use-launches";
+import type { CreateLaunchInput } from "../use-launches";
 import { Input } from "@/shared/ui/input";
 import {
   resolveSender,

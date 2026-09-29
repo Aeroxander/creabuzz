@@ -1036,7 +1036,11 @@ export function buildTokenDeployCalls(
 
 /** ABI-encode Ownable `transferOwnership(newOwner)` (`cast`: `0xf2fde38b`). */
 export function encodeTransferOwnership(newOwner: string): string {
-  return encodeFunctionData("transferOwnership(address)", ["address"], [newOwner]);
+  return encodeFunctionData(
+    "transferOwnership(address)",
+    ["address"],
+    [newOwner],
+  );
 }
 
 /**
@@ -1179,7 +1183,10 @@ export function buildBindAuctionCall(
  * `validate` accrues per-wallet caps, so it answers only to the auction it is
  * bound to (one-shot, owner-only). Bids revert until this lands.
  */
-export function buildSetHookAuctionCall(hook: string, auction: string): EvmCall {
+export function buildSetHookAuctionCall(
+  hook: string,
+  auction: string,
+): EvmCall {
   return {
     to: hook,
     data: encodeSetHookAuction(auction),

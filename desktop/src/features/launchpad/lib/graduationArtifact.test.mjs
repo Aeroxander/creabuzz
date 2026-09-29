@@ -80,7 +80,9 @@ export function withoutMetadata(hex) {
 
 function artifactBytecode(file, contract, t) {
   const relPath = `contracts/out/${file}/${contract}.json`;
-  const path = fileURLToPath(new URL(`../../../../../${relPath}`, import.meta.url));
+  const path = fileURLToPath(
+    new URL(`../../../../../${relPath}`, import.meta.url),
+  );
   if (!existsSync(path)) {
     if (process.env.REQUIRE_CONTRACT_ARTIFACTS === "1") {
       assert.fail(
@@ -160,7 +162,11 @@ test("GraduationExecutor constructor args match cast abi-encode", () => {
     CAST_EXECUTOR_CONSTRUCTOR,
   );
   assert.equal(
-    encodeGraduationExecutorConstructorArgs(TREASURY, 0, MIN_RESERVE_LOCK_SECONDS),
+    encodeGraduationExecutorConstructorArgs(
+      TREASURY,
+      0,
+      MIN_RESERVE_LOCK_SECONDS,
+    ),
     CAST_EXECUTOR_CONSTRUCTOR_MIN_LOCK,
   );
 });

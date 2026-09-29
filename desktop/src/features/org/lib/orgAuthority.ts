@@ -60,7 +60,10 @@ export type StoredOrgGrant = {
 };
 
 /** A grant being published (no stored author yet). */
-export type IncomingGrant = Omit<StoredOrgGrant, "author" | "createdAt" | "eventId">;
+export type IncomingGrant = Omit<
+  StoredOrgGrant,
+  "author" | "createdAt" | "eventId"
+>;
 
 /** The org graph of one community: who administers it, plus every node and grant record. */
 export type OrgGraph = {
@@ -88,14 +91,16 @@ const DENIAL_TEXT: Record<Denial, string> = {
     "a root org node (no parent) may only be published by the community owner or an admin",
   not_anchored:
     "the author is neither the community owner/admin nor a holder of an anchored parent node",
-  id_owned_by_another_author: "another author already publishes a node with this id",
+  id_owned_by_another_author:
+    "another author already publishes a node with this id",
   scope_widens_parent: "the node's scope is wider than its parent's",
   issuer_not_author: "a grant's issuer must be the event author",
   default_budget_requires_admin:
     'the default budget (subject "*") may only be published by the community owner or an admin',
   budget_author_not_authorized:
     "a budget may only be published by the community owner/admin, an anchored seat holder, or its subject agent",
-  node_not_anchored: "a referenced org node is not anchored to the community owner or an admin",
+  node_not_anchored:
+    "a referenced org node is not anchored to the community owner or an admin",
   chain_invalid: "the grant chain does not verify",
 };
 
@@ -158,7 +163,10 @@ export function verbEntailedBy(child: string, parent: string): boolean {
   return childArg === parentArg;
 }
 
-function firstUnentailed(child: readonly string[], parent: readonly string[]): string | null {
+function firstUnentailed(
+  child: readonly string[],
+  parent: readonly string[],
+): string | null {
   return child.find((v) => !parent.some((p) => verbEntailedBy(v, p))) ?? null;
 }
 
@@ -169,7 +177,10 @@ export type NodeLookup =
   | { kind: "unanchored" }
   | { kind: "found"; node: StoredOrgNode };
 
-function newestFirst<T extends { createdAt: number; eventId: string }>(a: T, b: T): number {
+function newestFirst<T extends { createdAt: number; eventId: string }>(
+  a: T,
+  b: T,
+): number {
   if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
   return a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0;
 }
@@ -222,7 +233,9 @@ class Walk {
       const hit = this.anchored.get(start.eventId);
       if (hit !== undefined) return hit;
     }
-    const stack: Array<[StoredOrgNode, string[]]> = [[start, [...seed, start.d]]];
+    const stack: Array<[StoredOrgNode, string[]]> = [
+      [start, [...seed, start.d]],
+    ];
     const seen = new Set<string>();
     let result = false;
     while (stack.length > 0) {
@@ -235,7 +248,8 @@ class Walk {
       }
       const parent = cur.parent;
       if (parent === null) continue;
-      if (path.length >= MAX_NODE_ANCHOR_DEPTH || path.includes(parent)) continue;
+      if (path.length >= MAX_NODE_ANCHOR_DEPTH || path.includes(parent))
+        continue;
       for (const p of this.nodeCandidates(parent)) {
         if (p.holders.includes(cur.author)) stack.push([p, [...path, parent]]);
       }
@@ -259,7 +273,9 @@ class Walk {
         const admin = this.isAdmin(c.author);
         if (best === null || (admin && !best.admin)) best = { admin, node: c };
       }
-      result = best ? { kind: "found", node: best.node } : { kind: "unanchored" };
+      result = best
+        ? { kind: "found", node: best.node }
+        : { kind: "unanchored" };
     }
     this.canonical.set(d, result);
     return result;
@@ -313,7 +329,8 @@ export function checkNodePublication(
   const who = author.toLowerCase();
   if (walk.isAdmin(who)) return { ok: true };
   if (!parent) return denied("root_requires_admin");
-  if (parent === d) return denied("not_anchored", `org node ${d} is not anchored`);
+  if (parent === d)
+    return denied("not_anchored", `org node ${d} is not anchored`);
   for (const existing of walk.nodeCandidates(d)) {
     if (existing.author !== who) return denied("id_owned_by_another_author");
   }
@@ -328,7 +345,10 @@ export function checkNodePublication(
     if (walk.isAnchored(p, [d])) return { ok: true };
   }
   return widened !== null
-    ? denied("scope_widens_parent", `verb ${widened} is not entailed by the parent's canGrant`)
+    ? denied(
+        "scope_widens_parent",
+        `verb ${widened} is not entailed by the parent's canGrant`,
+      )
     : denied("not_anchored", `org node ${d} is not anchored`);
 }
 
@@ -366,7 +386,14 @@ export function isEquityGrantContent(content: unknown): boolean {
 
 type ChainLink = Pick<
   StoredOrgGrant,
-  "d" | "issuer" | "grantee" | "via" | "verbs" | "parentGrant" | "expires" | "revoked"
+  | "d"
+  | "issuer"
+  | "grantee"
+  | "via"
+  | "verbs"
+  | "parentGrant"
+  | "expires"
+  | "revoked"
 >;
 
 /** Verify one fully selected chain (incoming first, root last) against its canonical nodes. */
@@ -402,7 +429,8 @@ function verifySelectedChain(
         return `issuer ${parent.issuer} is not seated in node ${parent.via}`;
       }
       hops += 1;
-      if (hops > MAX_GRANT_CHAIN_DEPTH) return "grant chain exceeds the maximum depth";
+      if (hops > MAX_GRANT_CHAIN_DEPTH)
+        return "grant chain exceeds the maximum depth";
     } else {
       for (const verb of grant.verbs) {
         if (!node.canGrant.some((cg) => verbEntailedBy(verb, cg))) {
@@ -467,7 +495,10 @@ export function verifyIncomingGrant(
     if (cur.parentGrant === null) return verifySelected(chain);
     const parentD = cur.parentGrant;
     if (chain.some((g) => g.d === parentD)) {
-      note("chain_invalid", `circular grant chain detected at grant ${parentD}`);
+      note(
+        "chain_invalid",
+        `circular grant chain detected at grant ${parentD}`,
+      );
       return false;
     }
     if (chain.length > MAX_GRANT_CHAIN_DEPTH) {
@@ -516,7 +547,10 @@ export function tallyReviews(
   const allowed = authorized instanceof Set ? authorized : new Set(authorized);
   const canonical = new Map<string, ReviewRow>();
   for (const row of rows) {
-    if (row.reviewer.toLowerCase() === subject.toLowerCase() || !allowed.has(row.reviewer)) {
+    if (
+      row.reviewer.toLowerCase() === subject.toLowerCase() ||
+      !allowed.has(row.reviewer)
+    ) {
       continue;
     }
     const cur = canonical.get(row.d);

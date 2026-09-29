@@ -7,6 +7,7 @@ import {
 
 import { relayClient } from "@/shared/api/relayClient";
 import { invokeTauri, signRelayEvent } from "@/shared/api/tauri";
+import { getIdentity } from "@/shared/api/tauriIdentity";
 import {
   KIND_ORG_NODE,
   KIND_ORG_GRANT,
@@ -37,6 +38,13 @@ import {
   type OrgChart,
 } from "./orgModels";
 import { deleteAddressableEvents } from "./lib/orgDeletion";
+import {
+  buildGrantContent,
+  buildGrantRevocation,
+  orgNodeTags,
+  SeatNotFoundError,
+  withAgentSeat,
+} from "./lib/orgPublish";
 import {
   buildOrgBudgetContent,
   isCommunityDefaultSubject,
@@ -492,6 +500,63 @@ export function useDeleteOrgNodeMutation() {
   });
 }
 
+type AttachAgentSeatInput = {
+  /** Node id (for a template seat: `seat-<persona-id>`). */
+  dtag: string;
+  agentPubkey: string;
+  detach?: boolean;
+};
+
+/**
+ * Seat an agent in a node you authored (or remove it). Republishes the node
+ * with only `agentSeats` changed — holders, parent, scope and any onchain
+ * binding are kept, since a wholesale rewrite would strip a node's standing.
+ * Resolves `false` when the seat already reads that way and nothing was sent.
+ */
+export async function publishAgentSeat(
+  input: AttachAgentSeatInput,
+): Promise<boolean> {
+  const { pubkey } = await getIdentity();
+  const existing = await fetchOwnRecord(KIND_ORG_NODE, input.dtag, pubkey);
+  if (!existing) {
+    throw new SeatNotFoundError(
+      "Only a node's author can change its seats, and this one was not found among yours.",
+    );
+  }
+  const content = withAgentSeat(
+    existing.content,
+    input.agentPubkey,
+    input.detach ?? false,
+  );
+  if (content === null) return false;
+  const event = await signRelayEvent({
+    kind: KIND_ORG_NODE,
+    content,
+    tags: orgNodeTags(input.dtag, content),
+  });
+  await relayClient.publishEvent(
+    event,
+    "Timed out updating the seat.",
+    "Failed to update the seat.",
+  );
+  return true;
+}
+
+export function useAttachAgentSeatMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: publishAgentSeat,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [...orgQueryKey, "nodes"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [...orgQueryKey, "chart"],
+      });
+    },
+  });
+}
+
 type OrgGrantInput = {
   dtag: string;
   grantee: string;
@@ -506,15 +571,15 @@ async function publishOrgGrantEvent(input: OrgGrantInput): Promise<string> {
     ["d", input.dtag],
     ["p", input.grantee],
   ];
-  const content = JSON.stringify({
-    v: 1,
-    issuer: "",
+  // The relay refuses a grant whose signer is not its `issuer`.
+  const { pubkey } = await getIdentity();
+  const content = buildGrantContent({
+    issuer: pubkey,
     grantee: input.grantee,
     via: input.via,
     verbs: input.verbs,
     parentGrant: input.parentGrant,
     expires: input.expires,
-    revoked: false,
   });
   const event = await signRelayEvent({ kind: KIND_ORG_GRANT, content, tags });
   await relayClient.publishEvent(
@@ -525,9 +590,41 @@ async function publishOrgGrantEvent(input: OrgGrantInput): Promise<string> {
   return event.id;
 }
 
+/** The newest record you signed for a coordinate — only its author can replace it. */
+async function fetchOwnRecord(
+  kind: number,
+  dtag: string,
+  pubkey: string,
+): Promise<RelayEvent | null> {
+  const events = await relayClient.fetchEvents({
+    kinds: [kind],
+    authors: [pubkey],
+    "#d": [dtag],
+    limit: 20,
+  });
+  const own = events
+    .filter(
+      (e) =>
+        e.pubkey.toLowerCase() === pubkey.toLowerCase() &&
+        e.tags.some((t) => t[0] === "d" && t[1] === dtag),
+    )
+    .sort((a, b) => b.created_at - a.created_at);
+  return own[0] ?? null;
+}
+
 async function publishOrgGrantRevocation(dtag: string): Promise<string> {
-  const tags: string[][] = [["d", dtag]];
-  const content = JSON.stringify({ revoked: true });
+  // Revocation republishes the FULL grant with `revoked: true`; the relay
+  // parses every grant as a whole body, so a bare stub would be refused.
+  const { pubkey } = await getIdentity();
+  const existing = await fetchOwnRecord(KIND_ORG_GRANT, dtag, pubkey);
+  if (!existing) {
+    throw new Error(
+      "Only the issuer can revoke a grant, and it was not found among yours.",
+    );
+  }
+  const tags: string[][] =
+    existing.tags.length > 0 ? existing.tags : [["d", dtag]];
+  const content = buildGrantRevocation(existing.content, pubkey);
   const event = await signRelayEvent({ kind: KIND_ORG_GRANT, content, tags });
   await relayClient.publishEvent(
     event,

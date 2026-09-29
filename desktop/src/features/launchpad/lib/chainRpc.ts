@@ -312,7 +312,10 @@ export function defaultChainPreset(
   const configured = env?.VITE_LAUNCHPAD_CHAIN_ID?.trim();
   if (configured) {
     const preset = chainPresetByChainId(configured);
-    if (preset) return preset;
+    // A mainnet default needs the explicit switch; otherwise fall through.
+    if (preset && (preset.mainnet !== true || mainnetEnabled(env))) {
+      return preset;
+    }
   }
   if (dev) return LOCAL_ANVIL_PRESET;
   return (

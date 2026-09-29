@@ -3107,6 +3107,22 @@ pub enum OrgNodeCmd {
         #[arg(long)]
         id: String,
     },
+    /// Seat an agent in a node you authored (or remove it with --detach).
+    ///
+    /// Republishes the node with the agent merged into `agentSeats`; holders,
+    /// scope and parent are kept. Idempotent: attaching an agent that already
+    /// sits in the seat publishes nothing. Only a node's author can change it.
+    AttachAgent {
+        /// Node id (for a template seat: `seat-<persona-id>`)
+        #[arg(long)]
+        id: String,
+        /// Agent pubkey (64-char hex)
+        #[arg(long)]
+        agent: String,
+        /// Remove the agent from the seat instead of adding it
+        #[arg(long)]
+        detach: bool,
+    },
 }
 
 /// Org grant subcommands — kind:37011.
