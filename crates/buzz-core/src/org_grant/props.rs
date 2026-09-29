@@ -915,3 +915,417 @@ proptest! {
         );
     }
 }
+
+// ── the cross-language corpus ─────────────────────────────────────────────
+//
+// `scripts/org-authority-corpus.json` is generated from the production
+// decision functions over deterministic worlds (a small splitmix64 stream, not
+// proptest, so a proptest upgrade cannot silently reshuffle the file). The
+// TypeScript twins (`orgAuthority.ts` in desktop and web) replay it, so a
+// client that renders "this grant is valid" agrees with the relay that
+// enforced it. The drift gate below fails CI if the committed file is stale;
+// regenerate with `just regen-org-corpus`.
+//
+// Pubkeys and event ids are shortened to opaque labels (`a`..`e`, `e0001`):
+// every function under test treats them as plain strings.
+
+const CORPUS_JSON: &str = include_str!("../../../../scripts/org-authority-corpus.json");
+
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+    fn chance(&mut self, num: u64, den: u64) -> bool {
+        self.next() % den < num
+    }
+    fn subset(&mut self, max: usize, n: usize) -> Vec<usize> {
+        let len = self.below(n + 1);
+        (0..len).map(|_| self.below(max)).collect()
+    }
+    fn opt(&mut self, num: u64, den: u64, max: usize) -> Option<usize> {
+        self.chance(num, den).then(|| self.below(max))
+    }
+}
+
+fn rand_node(rng: &mut Rng) -> NodeSpec {
+    let d = rng.below(NODE_DS);
+    NodeSpec {
+        author: rng.below(ACTORS),
+        d,
+        parent: rng.opt(7, 10, NODE_DS).filter(|p| *p < d),
+        holders: rng.subset(ACTORS, 3),
+        agents: rng.subset(ACTORS, 2),
+        can_grant: rng.subset(VERBS.len(), 4),
+    }
+}
+
+fn rand_grant(rng: &mut Rng) -> GrantSpec {
+    let issuer = rng.below(ACTORS);
+    let forged = rng.chance(12, 100);
+    GrantSpec {
+        author: if forged { rng.below(ACTORS) } else { issuer },
+        d: rng.below(GRANT_DS),
+        issuer,
+        grantee: rng.below(ACTORS),
+        via: rng.below(NODE_DS),
+        verbs: rng.subset(VERBS.len(), 3),
+        parent: rng.opt(6, 10, GRANT_DS),
+        revoked: rng.chance(1, 10),
+        expires: rng
+            .chance(15, 100)
+            .then(|| if rng.chance(1, 2) { NOW - 5 } else { NOW + 5 }),
+    }
+}
+
+fn rand_incoming(rng: &mut Rng) -> Incoming {
+    Incoming {
+        issuer: rng.below(ACTORS - 1),
+        grantee: rng.below(ACTORS),
+        via: rng.below(NODE_DS),
+        verbs: rng.subset(VERBS.len(), 3),
+        parent: rng.opt(7, 10, GRANT_DS),
+    }
+}
+
+fn rand_mut(rng: &mut Rng) -> Mut {
+    let i = rng.below(16);
+    match rng.below(16) {
+        0 => Mut::NodeHolders(i, rng.subset(ACTORS, 3)),
+        1 => Mut::NodeAgents(i, rng.subset(ACTORS, 2)),
+        2 => Mut::NodeCanGrant(i, rng.subset(VERBS.len(), 4)),
+        3 => Mut::NodeAuthor(i, rng.below(ACTORS)),
+        4 => Mut::NodeParent(i, rng.opt(1, 2, NODE_DS)),
+        5 => Mut::GrantIssuer(i, rng.below(ACTORS)),
+        6 => Mut::GrantAuthor(i, rng.below(ACTORS)),
+        7 => Mut::GrantGrantee(i, rng.below(ACTORS)),
+        8 => Mut::GrantVia(i, rng.below(NODE_DS)),
+        9 => Mut::GrantVerbs(i, rng.subset(VERBS.len(), 3)),
+        10 => Mut::GrantParent(i, rng.opt(1, 2, GRANT_DS)),
+        11 => Mut::GrantRevoked(i),
+        12 => Mut::GrantExpiry(i, rng.chance(1, 2)),
+        13 => Mut::AddNode(rand_node(rng)),
+        14 => Mut::AddGrant(rand_grant(rng)),
+        _ => Mut::Incoming(rand_incoming(rng)),
+    }
+}
+
+fn sample_world(rng: &mut Rng) -> (Spec, Incoming) {
+    let (mut spec, mut inc) = skeleton();
+    for _ in 0..rng.below(5) {
+        let m = rand_mut(rng);
+        apply(&mut spec, &mut inc, m);
+    }
+    (spec, inc)
+}
+
+/// Worlds the acyclic generator cannot reach: a node that is its own parent,
+/// and a repeated `d` whose ancestry passes through itself (the resolver is
+/// deliberately stricter than a plain fixpoint there).
+fn edge_worlds() -> Vec<(&'static str, Spec, Incoming)> {
+    let node = |author, d, parent, holders: &[usize]| NodeSpec {
+        author,
+        d,
+        parent,
+        holders: holders.to_vec(),
+        agents: vec![],
+        can_grant: vec![0, 3, 4],
+    };
+    let (skel, inc) = skeleton();
+    let self_parent = Spec {
+        admins: vec![0],
+        nodes: vec![node(0, 0, None, &[1]), node(1, 1, Some(1), &[1])],
+        grants: vec![],
+    };
+    let d_loop = Spec {
+        admins: vec![0],
+        nodes: vec![
+            node(0, 0, None, &[1]),
+            node(1, 1, Some(0), &[2]),
+            node(2, 2, Some(1), &[3]),
+            // same `d` as the second node, reached only through its descendant
+            node(3, 1, Some(2), &[3]),
+        ],
+        grants: vec![],
+    };
+    let orphan_cycle = Spec {
+        admins: vec![0],
+        nodes: vec![
+            node(1, 1, Some(2), &[2]),
+            node(2, 2, Some(1), &[1]),
+            node(0, 0, None, &[0]),
+        ],
+        grants: vec![],
+    };
+    vec![
+        ("skeleton", skel, inc.clone()),
+        ("self-parent", self_parent, inc.clone()),
+        ("d-loop", d_loop, inc.clone()),
+        ("orphan-cycle", orphan_cycle, inc),
+    ]
+}
+
+fn short_pk(pk: &str) -> String {
+    pk.chars().next().map(String::from).unwrap_or_default()
+}
+
+fn short_event(id: &str) -> String {
+    format!("e{:04x}", u64::from_str_radix(id, 16).unwrap_or(0))
+}
+
+fn graph_json(g: &Graph) -> serde_json::Value {
+    let mut admins: Vec<String> = g.admins.iter().map(|a| short_pk(a)).collect();
+    admins.sort();
+    let pks = |v: &[String]| -> Vec<String> { v.iter().map(|p| short_pk(p)).collect() };
+    serde_json::json!({
+        "admins": admins,
+        "nodes": g.nodes.iter().map(|n| serde_json::json!({
+            "author": short_pk(&n.author),
+            "createdAt": n.created_at,
+            "eventId": short_event(&n.event_id),
+            "d": n.node.d,
+            "parent": n.parent,
+            "holders": pks(&n.node.holders),
+            "agentSeats": pks(&n.node.agent_seats),
+            "canGrant": n.node.scope.can_grant,
+        })).collect::<Vec<_>>(),
+        "grants": g.grants.iter().map(|x| serde_json::json!({
+            "author": short_pk(&x.author),
+            "createdAt": x.created_at,
+            "eventId": short_event(&x.event_id),
+            "d": x.grant.d,
+            "issuer": short_pk(&x.grant.issuer),
+            "grantee": short_pk(&x.grant.grantee),
+            "via": x.grant.via,
+            "verbs": x.grant.verbs,
+            "parentGrant": x.grant.parent_grant,
+            "expires": x.grant.expires,
+            "revoked": x.grant.revoked,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn incoming_json(inc: &Incoming) -> serde_json::Value {
+    serde_json::json!({
+        "d": "incoming",
+        "issuer": short_pk(&actor(inc.issuer)),
+        "grantee": short_pk(&actor(inc.grantee)),
+        "via": node_d(inc.via),
+        "verbs": verbs_of(&inc.verbs),
+        "parentGrant": inc.parent.map(grant_d),
+        "expires": serde_json::Value::Null,
+        "revoked": false,
+    })
+}
+
+fn world_json(name: &str, rng: &mut Rng, spec: &Spec, inc: &Incoming) -> serde_json::Value {
+    let g = Graph::from_spec(spec);
+    let canonical = |d: usize| -> serde_json::Value {
+        block_on(async {
+            let mut walk = Walk::new(&g);
+            match walk
+                .canonical_node(&node_d(d))
+                .await
+                .expect("in-memory graph")
+            {
+                NodeLookup::Missing => serde_json::json!("missing"),
+                NodeLookup::Unanchored => serde_json::json!("unanchored"),
+                NodeLookup::Found(n) => serde_json::json!(short_event(&n.event_id)),
+            }
+        })
+    };
+    let mut publish = Vec::new();
+    for _ in 0..3 {
+        let (author, d) = (rng.below(ACTORS), rng.below(NODE_DS));
+        let parent = rng.opt(8, 10, NODE_DS);
+        let can_grant = verbs_of(&rng.subset(VERBS.len(), 3));
+        let ok = block_on(check_node_publication(
+            &g,
+            &actor(author),
+            &node_d(d),
+            parent.map(node_d).as_deref(),
+            &can_grant,
+        ))
+        .is_ok();
+        publish.push(serde_json::json!({
+            "author": short_pk(&actor(author)),
+            "d": node_d(d),
+            "parent": parent.map(node_d),
+            "canGrant": can_grant,
+            "ok": ok,
+        }));
+    }
+    let budget = |author: usize, subject: String| -> serde_json::Value {
+        let r = block_on(check_budget_publisher(&g, &actor(author), &subject));
+        serde_json::json!({
+            "author": short_pk(&actor(author)),
+            "subject": if subject == DEFAULT_BUDGET_SUBJECT { subject.clone() } else { short_pk(&subject) },
+            "result": match r {
+                Ok(BudgetPublisher::CommunityAdmin) => Some("admin"),
+                Ok(BudgetPublisher::Subject) => Some("subject"),
+                Ok(BudgetPublisher::AnchoredHolder) => Some("holder"),
+                Err(_) => None,
+            },
+        })
+    };
+    let mut budgets = vec![budget(
+        rng.below(ACTORS),
+        DEFAULT_BUDGET_SUBJECT.to_string(),
+    )];
+    for _ in 0..2 {
+        budgets.push(budget(rng.below(ACTORS), actor(rng.below(ACTORS))));
+    }
+    let forger = (inc.issuer + 1) % ACTORS;
+    serde_json::json!({
+        "name": name,
+        "graph": graph_json(&g),
+        "expect": {
+            "anchored": prod_anchored(&g),
+            "canonical": (0..NODE_DS).map(|d| (node_d(d), canonical(d))).collect::<serde_json::Map<_, _>>(),
+            "grant": {
+                "incoming": incoming_json(inc),
+                "ok": prod_grant_ok(&g, inc),
+                "forgedAuthor": short_pk(&actor(forger)),
+                "forgedAuthorOk": block_on(verify_incoming_grant(&g, &actor(forger), resolved(inc), NOW)).is_ok(),
+            },
+            "publish": publish,
+            "holders": (0..ACTORS).map(|a| (short_pk(&actor(a)), serde_json::json!(block_on(is_authority_holder(&g, &actor(a))).expect("in-memory graph")))).collect::<serde_json::Map<_, _>>(),
+            "budget": budgets,
+        },
+    })
+}
+
+fn tally_json(rng: &mut Rng) -> serde_json::Value {
+    let rows: Vec<ReviewRow> = (0..rng.below(10))
+        .map(|i| ReviewRow {
+            d: format!("a{}", rng.below(3)),
+            reviewer: actor(rng.below(ACTORS)),
+            created_at: NOW + rng.below(3) as u64,
+            event_id: format!("{:064x}", i + 1),
+            status: [Some("accepted"), Some("rejected"), Some("pending"), None][rng.below(4)]
+                .map(String::from),
+        })
+        .collect();
+    let subject = actor(rng.below(ACTORS));
+    let authorized: HashSet<String> = rng.subset(ACTORS, 4).into_iter().map(actor).collect();
+    let (accepted, rejected) = tally_reviews(&rows, &subject, &authorized);
+    let mut authorized_short: Vec<String> = authorized.iter().map(|a| short_pk(a)).collect();
+    authorized_short.sort();
+    authorized_short.dedup();
+    serde_json::json!({
+        "rows": rows.iter().map(|r| serde_json::json!({
+            "d": r.d, "reviewer": short_pk(&r.reviewer), "createdAt": r.created_at,
+            "eventId": short_event(&r.event_id), "status": r.status,
+        })).collect::<Vec<_>>(),
+        "subject": short_pk(&subject),
+        "authorized": authorized_short,
+        "expect": [accepted, rejected],
+    })
+}
+
+/// Render the corpus from the production decision functions. The single writer
+/// behind both the drift gate and the regen recipe, so "what the gate checks"
+/// and "what regen writes" cannot diverge. One entry per line keeps diffs
+/// reviewable.
+fn generate_corpus_json() -> String {
+    let mut rng = Rng(0x0005_EED0_46A7_E5A1);
+    let mut worlds = Vec::new();
+    for (name, spec, inc) in edge_worlds() {
+        worlds.push(world_json(name, &mut rng, &spec, &inc));
+    }
+    for i in 0..96 {
+        let (spec, inc) = sample_world(&mut rng);
+        worlds.push(world_json(&format!("world-{i:03}"), &mut rng, &spec, &inc));
+    }
+
+    // Entailment over the verb pool plus malformed and boundary arguments.
+    let mut verbs: Vec<&str> = VERBS.to_vec();
+    verbs.extend([
+        "read:#",
+        "read:",
+        "spend:",
+        "spend:0",
+        "spend:18446744073709551616",
+        "task",
+        "x:#eng",
+        "read:#eng:",
+        "read:eng",
+        "read:#e",
+    ]);
+    let entailment: Vec<serde_json::Value> = verbs
+        .iter()
+        .flat_map(|c| {
+            verbs
+                .iter()
+                .map(move |p| serde_json::json!([c, p, verb_entailed_by(c, p)]))
+        })
+        .collect();
+    let tally: Vec<serde_json::Value> = (0..40).map(|_| tally_json(&mut rng)).collect();
+
+    let lines = |items: &[serde_json::Value]| -> String {
+        items
+            .iter()
+            .map(|v| serde_json::to_string(v).expect("corpus entry serializes"))
+            .collect::<Vec<_>>()
+            .join(",\n")
+    };
+    format!(
+        "{{\n\"version\": 1,\n\"now\": {NOW},\n\"entailment\": [\n{}\n],\n\"worlds\": [\n{}\n],\n\"tally\": [\n{}\n]\n}}\n",
+        lines(&entailment),
+        lines(&worlds),
+        lines(&tally),
+    )
+}
+
+fn corpus_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/org-authority-corpus.json")
+}
+
+/// Drift gate: the committed corpus must be byte-identical to what the
+/// production functions generate now, so a change to the resolver cannot ship
+/// without the TypeScript twins seeing new expectations.
+#[test]
+fn corpus_matches_generated_snapshot() {
+    assert_eq!(
+        CORPUS_JSON,
+        generate_corpus_json(),
+        "scripts/org-authority-corpus.json is out of date — run `just regen-org-corpus` and commit the result"
+    );
+}
+
+/// The corpus must contain both outcomes, or the TS replay proves little.
+#[test]
+fn corpus_exercises_accepts_and_rejects() {
+    let corpus: serde_json::Value = serde_json::from_str(CORPUS_JSON).expect("corpus parses");
+    let worlds = corpus["worlds"].as_array().expect("worlds");
+    let count = |f: &dyn Fn(&serde_json::Value) -> bool| worlds.iter().filter(|w| f(w)).count();
+    let accepted = count(&|w| w["expect"]["grant"]["ok"] == true);
+    let rejected = count(&|w| w["expect"]["grant"]["ok"] == false);
+    let published = count(&|w| {
+        w["expect"]["publish"]
+            .as_array()
+            .is_some_and(|p| p.iter().any(|x| x["ok"] == true))
+    });
+    assert!(accepted >= 15, "too few accepted grants: {accepted}");
+    assert!(rejected >= 15, "too few rejected grants: {rejected}");
+    assert!(
+        published >= 15,
+        "too few accepted publications: {published}"
+    );
+}
+
+/// Rewrite `scripts/org-authority-corpus.json` from the production functions.
+/// Run through `just regen-org-corpus`.
+#[test]
+#[ignore = "writer: run via `just regen-org-corpus`"]
+fn regen_corpus_file() {
+    std::fs::write(corpus_path(), generate_corpus_json()).expect("write corpus file");
+}

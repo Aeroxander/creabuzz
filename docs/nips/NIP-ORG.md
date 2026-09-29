@@ -201,6 +201,14 @@ edge that NIP-OA's single hop cannot express.
   grant issued directly from standing.
 - `verbs` is a list of **scoped capabilities**, each `name` or
   `name:argument` (a channel scope, a spend ceiling, a task verb).
+- **Reserved verbs.** Only some verbs are consulted when an agent acts:
+  `spend:<amount>` is enforced onchain by the allowance contract, and the
+  governance and run counters are enforced through budgets. The `read:` and
+  `task:` verbs, and the node scope flags `readBelow` and `assignBelow`, are
+  **reserved**: they are recorded, and their delegation is verified for
+  attenuation like any other, but no relay or harness reads them at runtime.
+  Channel membership remains the only read gate. A client MUST NOT present a
+  reserved verb as an enforced restriction.
 - **Attenuation (MUST):** if `parentGrant` is present, every verb here MUST
   be entailed by some verb in the parent chain — same name and an argument no
   broader (`spend:50000` under `spend:100000` is valid; `spend:200000` is
@@ -596,6 +604,11 @@ stray `h` never channel-scopes it.
 
 - Clients render the org chart by reducing the `37010` forest into a tree,
   resolving seats to profiles/usernames.
+- Client resolvers stay in step with the relay through a shared corpus:
+  `scripts/org-authority-corpus.json` is generated from the Rust resolver
+  (`just regen-org-corpus`) and replayed by the desktop and web `orgAuthority`
+  twins, covering anchoring, canonical node choice, grant chains, node and
+  budget publication, authority holders, verb entailment and the review tally.
 - Before attributing an action to delegated authority, a client **MUST**
   verify the grant chain locally (attenuation + root standing), because
   enforcement may be off. The chain is small and the walk is cheap.

@@ -494,6 +494,14 @@ test-integration:
 regen-model-corpus:
     cargo test -p buzz-agent --lib model_capabilities::tests::regen_corpus_file -- --ignored --exact
 
+# Regenerate the NIP-ORG authority corpus (anchoring, grant chains, node and
+# budget publication, entailment, review tally) from the production Rust
+# resolver in buzz-core. The desktop and web `orgAuthority.ts` twins replay it.
+# Never hand-edit; the `corpus_matches_generated_snapshot` gate fails CI if the
+# committed file drifts.
+regen-org-corpus:
+    cargo test -p buzz-core --lib org_grant::props::regen_corpus_file -- --ignored --exact
+
 # Buzz shared compute e2e: current desktop discovery/admission logic and
 # Playwright UI coverage.
 mesh-e2e:

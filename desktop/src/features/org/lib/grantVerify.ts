@@ -77,6 +77,15 @@ export function channelContainedBy(child: string, parent: string): boolean {
   return true;
 }
 
+const U64_MAX = 18446744073709551615n;
+
+/** Mirror of Rust's `u64::from_str`: an optional "+", digits only, within range. */
+function parseU64(text: string): bigint | null {
+  if (!/^\+?\d+$/.test(text)) return null;
+  const value = BigInt(text);
+  return value <= U64_MAX ? value : null;
+}
+
 /**
  * Whether `child` verb is entailed by `parent` verb (NIP-ORG attenuation):
  * same name, and the child's argument no broader than the parent's.
@@ -102,10 +111,10 @@ export function verbEntailedBy(child: string, parent: string): boolean {
   }
   // Mirror Rust's u64::from_str: an optional "+" then digits only, so
   // "1e3" or "0x10" fall through to exact-match, not numeric comparison.
-  const U64_RE = /^\+?\d+$/;
-  if (U64_RE.test(childArg) && U64_RE.test(parentArg)) {
-    const childNum = BigInt(childArg);
-    const parentNum = BigInt(parentArg);
+  // Values past u64::MAX fail to parse in Rust and so also fall through.
+  const childNum = parseU64(childArg);
+  const parentNum = parseU64(parentArg);
+  if (childNum !== null && parentNum !== null) {
     return childNum <= parentNum;
   }
   // Generic: exact match.
