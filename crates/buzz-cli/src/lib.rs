@@ -902,6 +902,16 @@ pub enum DmsCmd {
 
 #[derive(Subcommand)]
 pub enum UsersCmd {
+    /// Print the identity of the configured key (local; no relay connection)
+    ///
+    /// With `--new`, generate a fresh keypair instead and print its secret key
+    /// too — for scripts and tests that need a throwaway identity. The secret
+    /// is printed only in that mode.
+    Whoami {
+        /// Generate a new keypair and print it (including the secret key)
+        #[arg(long)]
+        new: bool,
+    },
     /// Look up user profiles by pubkey or name
     Get {
         /// User pubkey(s) to look up (64-char hex). Omit for your own profile
@@ -3549,6 +3559,31 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         }
     }
 
+    // `users whoami` is local-only: it reads (or generates) a key and prints the
+    // identity, so it works with no relay and no configured key when `--new`.
+    if let Cmd::Users(UsersCmd::Whoami { new }) = &cli.command {
+        let keys = if *new {
+            Keys::generate()
+        } else {
+            let key = cli.private_key.as_deref().ok_or_else(|| {
+                CliError::Auth(
+                    "BUZZ_PRIVATE_KEY is required (use --private-key or set env var), or pass --new"
+                        .into(),
+                )
+            })?;
+            Keys::parse(key).map_err(|e| CliError::Key(format!("invalid BUZZ_PRIVATE_KEY: {e}")))?
+        };
+        let mut out = serde_json::json!({
+            "pubkey": keys.public_key().to_hex(),
+            "npub": nostr::ToBech32::to_bech32(&keys.public_key()).unwrap_or_default(),
+        });
+        if *new {
+            out["secret"] = serde_json::json!(keys.secret_key().to_secret_hex());
+        }
+        println!("{out}");
+        return Ok(());
+    }
+
     // Auth: private key is required for all relay operations.
     // The keypair IS the identity — no tokens, no other auth.
     let private_key_str = cli.private_key.ok_or_else(|| {
@@ -3917,7 +3952,8 @@ mod tests {
                 "presence",
                 "set-presence",
                 "set-profile",
-                "set-status"
+                "set-status",
+                "whoami"
             ]
         );
         assert_eq!(
@@ -4042,7 +4078,7 @@ mod tests {
             ("repos", 5),
             ("social", 7),
             ("upload", 1),
-            ("users", 5),
+            ("users", 6),
             ("workflows", 8),
         ];
 

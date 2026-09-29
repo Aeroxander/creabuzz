@@ -106,6 +106,19 @@ cargo clippy -p buzz-cli -- -D warnings
 
 ---
 
+### One-command org loop
+
+`scripts/loop-test.sh` walks the DAO OS loop against a real relay it boots on a throwaway port
+(template apply and re-apply, seat an agent, budget bites for an agent but not a human, owner
+approval, emergency stop, and — when `web/node_modules` exists — the priced LLM spend budget).
+It needs Postgres and Redis (`DATABASE_URL`, `REDIS_URL`), migrates a fresh database itself, and
+prints one line per check; it exits non-zero on any failure. The on-chain half is
+`scripts/dogfood-raise.sh` plus the forge suites.
+
+```bash
+DATABASE_URL=postgres://buzz@127.0.0.1:5433/buzz REDIS_URL=redis://127.0.0.1:6379 scripts/loop-test.sh
+```
+
 ## 6. Live Testing — Command by Command
 
 Run each command, verify exit code 0 and check output. Most commands
