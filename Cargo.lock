@@ -1090,6 +1090,7 @@ dependencies = [
  "hmac 0.13.0",
  "nostr 0.44.7",
  "percent-encoding",
+ "proptest",
  "rand 0.10.1",
  "serde",
  "serde_json",

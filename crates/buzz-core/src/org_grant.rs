@@ -739,7 +739,7 @@ impl<'a, S: OrgGraphSource> Walk<'a, S> {
                 continue;
             }
             for p in self.node_candidates(parent).await? {
-                if p.node.holders.iter().any(|h| *h == cur.author) {
+                if p.node.holders.contains(&cur.author) {
                     let mut next = path.clone();
                     next.push(parent.to_string());
                     stack.push((p, next));
@@ -851,7 +851,7 @@ pub async fn check_node_publication<S: OrgGraphSource>(
     }
     let mut widened: Option<String> = None;
     for p in walk.node_candidates(parent).await? {
-        if !p.node.holders.iter().any(|h| *h == author) {
+        if !p.node.holders.contains(&author) {
             continue;
         }
         if let Some(verb) = first_unentailed(can_grant, &p.node.scope.can_grant) {
@@ -959,10 +959,7 @@ pub async fn verify_incoming_grant<S: OrgGraphSource>(
 
     'search: loop {
         // Descend from the current leaf until a root is reached or a link fails.
-        loop {
-            let Some(cur) = chain.last().cloned() else {
-                break;
-            };
+        while let Some(cur) = chain.last().cloned() {
             let Some(parent_d) = cur.parent_grant.clone() else {
                 match verify_selected_chain(&mut walk, &chain, now).await {
                     Ok(()) => return Ok(()),
@@ -2459,3 +2456,6 @@ mod authority_tests {
         assert!(!is_equity_grant_content(&serde_json::json!({"verbs":[]})));
     }
 }
+
+#[cfg(test)]
+mod props;

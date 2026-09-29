@@ -109,6 +109,7 @@ pub struct DiagEvent {
     pub actor: String,
     /// Unix seconds.
     pub at: u64,
+    /// The action class of the event.
     pub class: DiagClass,
     /// The acted-on coordinate (`(kind, author, d)`), when the event has one.
     /// Revisions of one coordinate are the thrash/drift surface.
@@ -218,9 +219,11 @@ fn sorted_events(events: &[DiagEvent]) -> Vec<&DiagEvent> {
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct TimeSignal {
+    /// Number of events the signal was computed from.
     pub events: usize,
     /// Interval burstiness in bp (positive = bursty = coordination-consistent).
     pub burstiness_bp: i128,
+    /// Whether the interval pattern reads as bursty.
     pub bursty: bool,
     /// Cross-actor handoffs (≤ [`HANDOFF_LAG_S`]) as a share of events, bp.
     pub handoff_rate_bp: u32,
@@ -230,6 +233,7 @@ pub struct TimeSignal {
     pub reading: String,
 }
 
+/// Compute the [`TimeSignal`] for `events`, or `None` below the minimum sample.
 pub fn time_signal(events: &[DiagEvent]) -> Option<TimeSignal> {
     if events.len() < MIN_EVENTS {
         return None;
@@ -290,23 +294,30 @@ pub fn time_signal(events: &[DiagEvent]) -> Option<TimeSignal> {
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct Tomasello {
+    /// The communicate layer (messages).
     pub communicate: Layer,
+    /// The build-trust layer (reviews, approvals and similar).
     pub build_trust: Layer,
+    /// The institutionalize layer (proposals, votes, org edits).
     pub institutionalize: Layer,
+    /// Plain-language read — a pattern, never a verdict.
     pub reading: String,
 }
 
+/// One layer of the [`Tomasello`] report.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 // Camel-case on the wire: the report JSON is byte-compatible with the TS
 // twins (web `org-diag.ts`, desktop `orgDiag.ts`) — `buzz diag`, the
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct Layer {
+    /// Number of events in this layer.
     pub events: usize,
     /// This layer's share of all actions, bp.
     pub share_bp: u32,
 }
 
+/// Compute the [`Tomasello`] layers for `events`, or `None` below the minimum sample.
 pub fn tomasello(events: &[DiagEvent]) -> Option<Tomasello> {
     if events.len() < MIN_EVENTS {
         return None;
@@ -348,13 +359,17 @@ pub fn tomasello(events: &[DiagEvent]) -> Option<Tomasello> {
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct WefMode {
+    /// Name of the failure mode.
     pub mode: &'static str,
+    /// Number of events that signal this mode.
     pub signal_events: usize,
     /// Raw counts first; `status` is thresholded and says so.
     pub status: &'static str,
+    /// What the count does and does not show.
     pub note: &'static str,
 }
 
+/// Read the five WEF failure modes from `events`.
 pub fn wef_modes(events: &[DiagEvent]) -> Vec<WefMode> {
     let count = |c: DiagClass| events.iter().filter(|e| e.class == c).count();
     let approvals = count(DiagClass::Approval);
@@ -430,16 +445,20 @@ pub fn wef_modes(events: &[DiagEvent]) -> Vec<WefMode> {
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct Thrash {
+    /// Total revisions of coordinates in the window.
     pub revisions: usize,
+    /// Distinct coordinates revised.
     pub coordinates: usize,
     /// Revisions beyond the first per coordinate (the busywork surface), bp of
     /// all revisions.
     pub rework_rate_bp: u32,
     /// Coordinates written once and left alone (the settled surface), bp.
     pub settled_rate_bp: u32,
+    /// Plain-language read — a pattern, never a verdict.
     pub reading: String,
 }
 
+/// Compute the [`Thrash`] scoreboard for `events`, or `None` below the minimum sample.
 pub fn thrash(events: &[DiagEvent]) -> Option<Thrash> {
     let mut per_coordinate: std::collections::BTreeMap<&str, usize> =
         std::collections::BTreeMap::new();
@@ -492,8 +511,11 @@ pub fn thrash(events: &[DiagEvent]) -> Option<Thrash> {
 // workflow step output, and the UI cards are literally the same report.
 #[serde(rename_all = "camelCase")]
 pub struct DriftProbe {
+    /// The acting seat (pubkey hex).
     pub actor: String,
+    /// Events by this actor in the earlier half of the window.
     pub earlier_events: usize,
+    /// Events by this actor in the later half of the window.
     pub later_events: usize,
     /// L1 distance between class mixes, bp (0 = same mix, 20000 = disjoint).
     pub drift_bp: u32,
