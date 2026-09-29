@@ -124,9 +124,15 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         return;
       }
       setHashError(null);
-      // One action = one atomic persist, then resume the receipt mirrors.
-      graduationTxStore(record.auction ?? "").save(txHash);
-      retryFlow();
+      // One action = one atomic persist, then resume the receipt mirrors. The
+      // hash also rides the retry itself, so a browser that refuses storage
+      // (blocked site data) still resumes; only reload-survival is lost.
+      try {
+        graduationTxStore(record.auction ?? "").save(txHash);
+      } catch {
+        // Best-effort: the in-memory hash below is what this run binds to.
+      }
+      retryFlow(txHash);
     },
     [hashDraft, record.auction, retryFlow],
   );
@@ -242,7 +248,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
               aria-busy={flow.busy}
               data-testid="graduation-retry"
               disabled={flow.busy || (retry.kind !== "check" && !gate.ok)}
-              onClick={flow.retry}
+              onClick={() => flow.retry()}
               size="sm"
               type="button"
               variant="outline"

@@ -34,6 +34,7 @@ import {
 } from "./SenderPicker";
 import {
   type OnchainCall,
+  planClaimAction,
   planClaimSubmit,
   planVerdictSubmit,
 } from "../lib/claim-submit";
@@ -193,38 +194,56 @@ export function ManagePanel({
    * the mirror-only flow still applies then.
    */
   const submitOnchain = async (
-    kind: "claim" | "verdict-approve" | "verdict-reject",
+    kind:
+      | "claim"
+      | "fund"
+      | "verdict-approve"
+      | "verdict-reject"
+      | "settle"
+      | "payout",
   ) => {
     setMilestoneError(null);
     setOnchainSending(true);
     try {
-      let call: OnchainCall | null = null;
-      if (kind === "claim") {
+      let calls: OnchainCall[] | null = null;
+      if (kind === "claim" || kind === "fund") {
         const row = record.unlocks?.milestones.find(
           (m) => m.claim === claimId.trim(),
         );
-        call = row
-          ? (planClaimSubmit({
+        const plan = row
+          ? planClaimSubmit({
               record,
               row,
               evidenceHash: evidenceHash.trim(),
-            })?.call ?? null)
+            })
           : null;
+        calls =
+          kind === "claim"
+            ? plan
+              ? [plan.call]
+              : null
+            : (plan?.fundCalls ?? null);
+      } else if (kind === "settle" || kind === "payout") {
+        const call = planClaimAction(record, claimId.trim(), kind);
+        calls = call ? [call] : null;
       } else {
-        call = planVerdictSubmit(
+        const call = planVerdictSubmit(
           record,
           claimId.trim(),
           kind === "verdict-approve",
         );
+        calls = call ? [call] : null;
       }
-      if (!call) {
+      if (!calls) {
         setMilestoneError(
-          "This launch is not wired onchain yet (deploy the enforcer and link ClaimStake/VerifierSet on the record).",
+          kind === "fund" && record.claimStake && !record.token
+            ? "Link the token address on this launch before reserving a payout."
+            : "This launch isn't set up for onchain milestones yet. Link its milestone contracts on the launch record first.",
         );
         return;
       }
       const sender = resolveSender(milestoneSender);
-      const result = await sender.sendCalls([call]);
+      const result = await sender.sendCalls(calls);
       if (!isTxHash(result.txHash)) {
         throw new Error("The sender returned an invalid hash.");
       }
@@ -515,6 +534,47 @@ export function ManagePanel({
                 variant="outline"
               >
                 Attest reject
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+              After the claim is submitted, the treasury reserves its payout.
+              Once enough verifiers attest, anyone can settle it, and the
+              contributor then collects the payout.
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <Button
+                data-testid="fund-claim-onchain"
+                disabled={
+                  onchainSending ||
+                  claimId.trim() === "" ||
+                  !EVIDENCE_HASH_RE.test(evidenceHash.trim())
+                }
+                onClick={() => void submitOnchain("fund")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Reserve payout
+              </Button>
+              <Button
+                data-testid="settle-claim-onchain"
+                disabled={onchainSending || claimId.trim() === ""}
+                onClick={() => void submitOnchain("settle")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Settle
+              </Button>
+              <Button
+                data-testid="payout-claim-onchain"
+                disabled={onchainSending || claimId.trim() === ""}
+                onClick={() => void submitOnchain("payout")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Collect payout
               </Button>
             </div>
             {milestoneError ? (

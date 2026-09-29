@@ -742,16 +742,17 @@ mod tests {
             .query_async::<()>(&mut conn)
             .await
             .expect("seed wedge");
-        let issued = bump_fixed_window(&mut conn, &key, 60)
-            .await
-            .expect("bump");
+        let issued = bump_fixed_window(&mut conn, &key, 60).await.expect("bump");
         assert_eq!(issued, 42, "counter keeps counting across the repair");
         let ttl: i64 = redis::cmd("TTL")
             .arg(&key)
             .query_async(&mut conn)
             .await
             .expect("ttl");
-        assert!((1..=60).contains(&ttl), "wedged counter re-armed: ttl={ttl}");
+        assert!(
+            (1..=60).contains(&ttl),
+            "wedged counter re-armed: ttl={ttl}"
+        );
         redis::cmd("DEL")
             .arg(&key)
             .query_async::<()>(&mut conn)

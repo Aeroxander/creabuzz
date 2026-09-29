@@ -36,22 +36,46 @@ export type GraduationTxStorage = Pick<
 const PREFIX = "buzz:launchpad:graduation-tx:";
 
 /**
- * The store for one launch. Without Web Storage, or with a corrupt entry,
- * `load()` is null — an honest "unknown", never a fabricated hash (a corrupt
- * entry is removed, not trusted).
+ * `globalThis.localStorage`, or null when the browser refuses it. Reading the
+ * property itself throws `SecurityError` when site data is blocked (Safari
+ * "Block all cookies", Brave strict), so it is never touched unguarded.
+ */
+function defaultStorage(): GraduationTxStorage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The store for one launch. Without Web Storage, with storage that throws, or
+ * with a corrupt entry, `load()` is null — an honest "unknown", never a
+ * fabricated hash (a corrupt entry is removed, not trusted). Blocked storage
+ * must never stop a graduation: the flow still holds the hash in memory and
+ * the manual-entry recovery stays available.
  */
 export function graduationTxStore(
   launchKey: string,
-  storage: GraduationTxStorage | null = globalThis.localStorage ?? null,
+  storage: GraduationTxStorage | null = defaultStorage(),
 ): GraduationTxStore {
   const key = `${PREFIX}${launchKey}`;
   return {
     load() {
       if (!storage) return null;
-      const stored = storage.getItem(key);
+      let stored: string | null;
+      try {
+        stored = storage.getItem(key);
+      } catch {
+        return null;
+      }
       if (stored === null) return null;
       if (!GRADUATION_TX_HASH_RE.test(stored)) {
-        storage.removeItem(key);
+        try {
+          storage.removeItem(key);
+        } catch {
+          // Unreadable garbage stays unread; load() still reports unknown.
+        }
         return null;
       }
       return stored;
@@ -60,10 +84,17 @@ export function graduationTxStore(
       if (!GRADUATION_TX_HASH_RE.test(txHash)) {
         throw new Error(`refusing to persist a malformed tx hash: ${txHash}`);
       }
+      // Storage failures propagate: the caller decides whether persistence is
+      // best-effort (the flow, after the money call landed) or must be
+      // reported (the manual hash-entry form).
       storage?.setItem(key, txHash);
     },
     clear() {
-      storage?.removeItem(key);
+      try {
+        storage?.removeItem(key);
+      } catch {
+        // Nothing stored is readable either; clearing has nothing to do.
+      }
     },
   };
 }

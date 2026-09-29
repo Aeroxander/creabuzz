@@ -8,36 +8,34 @@
  * All arguments are static words, so the encoding is head words only.
  *
  * Launch wiring (the escrow is the project token):
- * 1. `encodeFund(treasury, escrowRequired)` -- treasury approves the token
- *    and funds the milestone payouts (from `tranche-claims.ts`).
- * 2. `encodeSubmitClaim[WithSchedule](...)` -- the claimant stakes their claim.
- * 3. Verifiers `attest`; anyone `settle`s at approval quorum -> tranche paid.
+ * 1. `encodeSubmitClaim[WithSchedule](...)` -- the claimant stakes their claim.
+ * 2. `encodeFund(claimId, amount)` -- the treasury approves the token, then
+ *    reserves this one claim's payout. The claim must exist first: `fund`
+ *    reverts `UnknownClaim` for a claim that was never submitted.
+ * 3. Verifiers `attest`; anyone `settle`s once a quorum is reached.
+ * 4. The contributor calls `payout` to withdraw the tranche plus their stake.
  */
 
 // submitClaim(bytes32,uint256,uint256,bytes32)
 export const SELECTOR_SUBMIT_CLAIM = "0x26d3f6d4";
 // submitClaimWithSchedule(bytes32,uint256,uint256,bytes32,uint32,uint64,uint8,uint128)
 export const SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE = "0x55e9ad90";
-// fund(address,uint256)
-export const SELECTOR_FUND = "0x7b1837de";
+// fund(bytes32,uint256)
+export const SELECTOR_FUND = "0xe46bbc9e";
+// settle(bytes32)
+export const SELECTOR_SETTLE = "0x987757dd";
+// payout(bytes32)
+export const SELECTOR_PAYOUT = "0xcfefb3d5";
 // attest(bytes32,bool) on VerifierSet — the verdict half of the join
 export const SELECTOR_ATTEST = "0x5747a6b1";
 
 const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
-const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 function bytes32Word(value: string, name: string): string {
   if (!BYTES32_RE.test(value)) {
     throw new Error(`${name} must be 0x + 64 hex: ${JSON.stringify(value)}`);
   }
   return value.slice(2).toLowerCase();
-}
-
-function addressWord(value: string, name: string): string {
-  if (!ADDRESS_RE.test(value)) {
-    throw new Error(`${name} must be 0x + 40 hex: ${JSON.stringify(value)}`);
-  }
-  return value.slice(2).toLowerCase().padStart(64, "0");
 }
 
 function uintWord(value: bigint | string, name: string): string {
@@ -99,13 +97,35 @@ export function encodeSubmitClaimWithSchedule(
 }
 
 /**
- * `fund(address,uint256)` -- treasury pre-funds the tranche escrow. Callers
- * must `approve` the project token to the ClaimStake first.
+ * `fund(bytes32,uint256)` -- the treasury reserves `amount` for ONE claim's
+ * payout. Only the treasury may call it, the claim must already be submitted,
+ * and the treasury must first `approve` the token to the ClaimStake.
  */
-export function encodeFund(funder: string, amount: bigint | string): string {
+export function encodeFund(
+  claimIdWord: string,
+  amount: bigint | string,
+): string {
   return (
-    SELECTOR_FUND + addressWord(funder, "funder") + uintWord(amount, "amount")
+    SELECTOR_FUND +
+    bytes32Word(claimIdWord, "claimIdWord") +
+    uintWord(amount, "amount")
   );
+}
+
+/**
+ * `settle(bytes32)` -- anyone may call once the verifiers reach a quorum:
+ * approval releases the claim, objection slashes the stake to the treasury.
+ */
+export function encodeSettle(claimIdWord: string): string {
+  return SELECTOR_SETTLE + bytes32Word(claimIdWord, "claimIdWord");
+}
+
+/**
+ * `payout(bytes32)` -- the contributor withdraws an approved, fully funded
+ * claim's tranche plus their stake. One-shot.
+ */
+export function encodePayout(claimIdWord: string): string {
+  return SELECTOR_PAYOUT + bytes32Word(claimIdWord, "claimIdWord");
 }
 
 /**

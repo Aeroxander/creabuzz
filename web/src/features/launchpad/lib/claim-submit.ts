@@ -15,9 +15,12 @@
 
 import type { LaunchRecord } from "../models.ts";
 import type { UnlockMilestone } from "./unlock-plans.ts";
+import { encodeErc20Approve } from "./bid-tx.ts";
 import {
   encodeAttest,
   encodeFund,
+  encodePayout,
+  encodeSettle,
   encodeSubmitClaim,
   encodeSubmitClaimWithSchedule,
 } from "./claim-tx.ts";
@@ -43,8 +46,13 @@ export interface ClaimSubmitPlan {
   call: OnchainCall;
   /** The tranche this row releases, token base units (decimal). */
   amount: string;
-  /** Treasury's `fund()` call — escrows this tranche before/at submission. */
-  fundCall: OnchainCall;
+  /**
+   * The treasury's escrow for this tranche, in send order: approve the token
+   * to the ClaimStake, then `fund(claimId, amount)`. Send only AFTER the claim
+   * itself landed (`fund` reverts for a claim that does not exist yet). Null
+   * when the record has no token address to approve.
+   */
+  fundCalls: OnchainCall[] | null;
 }
 
 const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -71,7 +79,7 @@ export function evidenceHashWord(evidenceHash: string): string | null {
 export function planClaimSubmit(args: {
   record: Pick<
     LaunchRecord,
-    "claimStake" | "tokenPlan" | "unlocks" | "treasury"
+    "claimStake" | "tokenPlan" | "unlocks" | "treasury" | "token"
   >;
   row: UnlockMilestone;
   evidenceHash: string;
@@ -129,11 +137,21 @@ export function planClaimSubmit(args: {
     claimStake,
     call,
     amount: amount.toString(),
-    fundCall: {
-      to: claimStake,
-      data: encodeFund(treasury, amount),
-      value: "0x0",
-    },
+    fundCalls:
+      record.token && ADDRESS_RE.test(record.token)
+        ? [
+            {
+              to: record.token,
+              data: encodeErc20Approve(claimStake, amount),
+              value: "0x0",
+            },
+            {
+              to: claimStake,
+              data: encodeFund(claimWord, amount),
+              value: "0x0",
+            },
+          ]
+        : null,
   };
 }
 
@@ -159,4 +177,28 @@ export function planVerdictSubmit(
     return null;
   }
   return { to: verifierSet, data: encodeAttest(word, approve), value: "0x0" };
+}
+
+/**
+ * `settle` or `payout` for one claim on the launch's ClaimStake. Null when the
+ * record has no ClaimStake or the claim text is malformed.
+ */
+export function planClaimAction(
+  record: Pick<LaunchRecord, "claimStake">,
+  claimText: string,
+  action: "settle" | "payout",
+): OnchainCall | null {
+  const claimStake = record.claimStake;
+  if (!claimStake || !ADDRESS_RE.test(claimStake)) return null;
+  let word: string;
+  try {
+    word = claimIdWord(claimText);
+  } catch {
+    return null;
+  }
+  return {
+    to: claimStake,
+    data: action === "settle" ? encodeSettle(word) : encodePayout(word),
+    value: "0x0",
+  };
 }

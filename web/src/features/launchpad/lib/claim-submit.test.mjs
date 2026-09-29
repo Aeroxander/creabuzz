@@ -8,24 +8,32 @@ import { describe, it } from "node:test";
 
 import {
   evidenceHashWord,
+  planClaimAction,
   planClaimSubmit,
   planVerdictSubmit,
 } from "./claim-submit.ts";
+import { SELECTOR_ERC20_APPROVE } from "./bid-tx.ts";
 import {
   SELECTOR_ATTEST,
   SELECTOR_FUND,
+  SELECTOR_PAYOUT,
+  SELECTOR_SETTLE,
   SELECTOR_SUBMIT_CLAIM,
   SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE,
 } from "./claim-tx.ts";
 
 const CLAIM_STAKE = "0xcccccccccccccccccccccccccccccccccccccccc";
 const TREASURY = "0x1111111111111111111111111111111111111111";
+const TOKEN = "0x3333333333333333333333333333333333333333";
+const M1_WORD =
+  "6d31000000000000000000000000000000000000000000000000000000000000";
 const EVIDENCE = "a".repeat(64);
 
 function record(overrides = {}) {
   return {
     claimStake: CLAIM_STAKE,
     treasury: TREASURY,
+    token: TOKEN,
     tokenPlan: { mode: "mint", name: "P", symbol: "P", supply: "1000000" },
     unlocks: {
       mode: "milestones",
@@ -72,8 +80,37 @@ describe("planClaimSubmit", () => {
     assert.equal(plan.amount, "120000"); // 20% * 60% of 1,000,000
     assert.ok(plan.call.data.startsWith(SELECTOR_SUBMIT_CLAIM));
     assert.equal(plan.call.to, CLAIM_STAKE);
-    assert.ok(plan.fundCall.data.startsWith(SELECTOR_FUND));
-    assert.equal(plan.fundCall.value, "0x0");
+  });
+
+  it("escrows by CLAIM ID: approve the token, then fund(claimId, amount)", () => {
+    // Regression: the escrow was encoded as fund(address,uint256), a function
+    // ClaimStake no longer has, so every funding call reverted.
+    const plan = planClaimSubmit({
+      record: record(),
+      row: ROW,
+      evidenceHash: EVIDENCE,
+    });
+    assert.ok(plan?.fundCalls);
+    const [approve, fund] = plan.fundCalls;
+    assert.equal(approve.to, TOKEN);
+    assert.ok(approve.data.startsWith(SELECTOR_ERC20_APPROVE));
+    assert.equal(approve.data.slice(34, 74), CLAIM_STAKE.slice(2));
+    assert.equal(fund.to, CLAIM_STAKE);
+    assert.equal(
+      fund.data,
+      `${SELECTOR_FUND}${M1_WORD}${(120000).toString(16).padStart(64, "0")}`,
+    );
+    assert.equal(fund.value, "0x0");
+  });
+
+  it("has no escrow plan without a token address to approve", () => {
+    const plan = planClaimSubmit({
+      record: record({ token: null }),
+      row: ROW,
+      evidenceHash: EVIDENCE,
+    });
+    assert.ok(plan);
+    assert.equal(plan.fundCalls, null);
   });
 
   it("rides a royalty schedule when given (allocation = tranche)", () => {
@@ -163,6 +200,24 @@ describe("planVerdictSubmit", () => {
     assert.equal(planVerdictSubmit({ verifierSet: null }, "m1", true), null);
     assert.equal(
       planVerdictSubmit({ verifierSet: VERIFIER_SET }, "", true),
+      null,
+    );
+  });
+});
+
+describe("planClaimAction", () => {
+  it("settle and payout target the ClaimStake with the claim word", () => {
+    const settle = planClaimAction({ claimStake: CLAIM_STAKE }, "m1", "settle");
+    assert.equal(settle?.to, CLAIM_STAKE);
+    assert.equal(settle?.data, `${SELECTOR_SETTLE}${M1_WORD}`);
+    const payout = planClaimAction({ claimStake: CLAIM_STAKE }, "m1", "payout");
+    assert.equal(payout?.data, `${SELECTOR_PAYOUT}${M1_WORD}`);
+  });
+
+  it("returns null unwired or malformed", () => {
+    assert.equal(planClaimAction({ claimStake: null }, "m1", "settle"), null);
+    assert.equal(
+      planClaimAction({ claimStake: CLAIM_STAKE }, "", "payout"),
       null,
     );
   });

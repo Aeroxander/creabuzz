@@ -4,10 +4,17 @@
  */
 
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   encodeFund,
+  encodePayout,
+  encodeSettle,
+  SELECTOR_ATTEST,
+  SELECTOR_PAYOUT,
+  SELECTOR_SETTLE,
   encodeSubmitClaim,
   encodeSubmitClaimWithSchedule,
   SELECTOR_FUND,
@@ -24,7 +31,51 @@ describe("selectors pinned to cast sig", () => {
   it("submitClaim / submitClaimWithSchedule / fund", () => {
     assert.equal(SELECTOR_SUBMIT_CLAIM, "0x26d3f6d4");
     assert.equal(SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE, "0x55e9ad90");
-    assert.equal(SELECTOR_FUND, "0x7b1837de");
+    assert.equal(SELECTOR_FUND, "0xe46bbc9e");
+    assert.equal(SELECTOR_SETTLE, "0x987757dd");
+    assert.equal(SELECTOR_PAYOUT, "0xcfefb3d5");
+  });
+});
+
+/**
+ * The goldens above only prove the hex matches a signature string. This binds
+ * each selector to the COMPILED contract, so a signature change in
+ * ClaimStake.sol / VerifierSet.sol fails here (the stale `fund(address,…)`
+ * selector shipped because nothing did this).
+ */
+function methodIdentifiers(file, contract, t) {
+  const rel = `contracts/out/${file}/${contract}.json`;
+  const path = fileURLToPath(new URL(`../../../../../${rel}`, import.meta.url));
+  if (!existsSync(path)) {
+    if (process.env.REQUIRE_CONTRACT_ARTIFACTS === "1") {
+      assert.fail(`${rel} is missing but REQUIRE_CONTRACT_ARTIFACTS=1`);
+    }
+    t.skip(`artifact not built: ${rel}`);
+    return null;
+  }
+  return JSON.parse(readFileSync(path, "utf8")).methodIdentifiers;
+}
+
+describe("selectors exist on the compiled contracts", () => {
+  it("ClaimStake", (t) => {
+    const ids = methodIdentifiers("ClaimStake.sol", "ClaimStake", t);
+    if (!ids) return;
+    const have = new Set(Object.values(ids).map((id) => `0x${id}`));
+    for (const selector of [
+      SELECTOR_SUBMIT_CLAIM,
+      SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE,
+      SELECTOR_FUND,
+      SELECTOR_SETTLE,
+      SELECTOR_PAYOUT,
+    ]) {
+      assert.ok(have.has(selector), `${selector} is not a ClaimStake method`);
+    }
+  });
+
+  it("VerifierSet", (t) => {
+    const ids = methodIdentifiers("VerifierSet.sol", "VerifierSet", t);
+    if (!ids) return;
+    assert.equal(`0x${ids["attest(bytes32,bool)"]}`, SELECTOR_ATTEST);
   });
 });
 
@@ -65,14 +116,26 @@ describe("cast calldata goldens", () => {
   });
 });
 
-describe("fund(address,uint256)", () => {
-  it("left-pads the funder address", () => {
-    const out = encodeFund("0x000000000000000000000000000000000000dEaD", 1000n);
+describe("fund / settle / payout", () => {
+  it("fund(bytes32,uint256) takes the claim word, not an address", () => {
     assert.equal(
-      out,
-      "0x7b1837de" +
-        "000000000000000000000000000000000000000000000000000000000000dead" +
+      encodeFund(CLAIM_WORD, 1000n),
+      "0xe46bbc9e" +
+        "6d31000000000000000000000000000000000000000000000000000000000000" +
         "00000000000000000000000000000000000000000000000000000000000003e8",
+    );
+  });
+
+  it("settle(bytes32) / payout(bytes32)", () => {
+    assert.equal(
+      encodeSettle(CLAIM_WORD),
+      "0x987757dd" +
+        "6d31000000000000000000000000000000000000000000000000000000000000",
+    );
+    assert.equal(
+      encodePayout(CLAIM_WORD),
+      "0xcfefb3d5" +
+        "6d31000000000000000000000000000000000000000000000000000000000000",
     );
   });
 });
@@ -93,7 +156,7 @@ describe("input validation", () => {
     );
     assert.throws(
       () => encodeFund("0xdead", 1n),
-      /funder must be 0x \+ 40 hex/,
+      /claimIdWord must be 0x \+ 64 hex/,
     );
   });
 

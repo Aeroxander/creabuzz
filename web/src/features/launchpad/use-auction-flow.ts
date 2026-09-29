@@ -261,8 +261,11 @@ export interface GraduationFlow {
   check: () => void;
   /** Execute the graduation, then publish the bound receipts. */
   start: () => void;
-  /** Retry semantics: re-check / re-execute remaining / mirror-only. */
-  retry: () => void;
+  /**
+   * Retry semantics: re-check / re-execute remaining / mirror-only. A
+   * manually supplied graduation hash rides the retry directly.
+   */
+  retry: (suppliedTxHash?: string) => void;
   retryPlan: GraduationRetryPlan;
   /**
    * What the graduation did, read back from the executor once it has run (in
@@ -413,25 +416,33 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
     execute(executorAddress);
   }, [execute, executor]);
 
-  const retry = useCallback(() => {
-    const plan = graduationRetryPlan(stateRef.current);
-    if (!plan) return;
-    const current = stateRef.current;
-    const executorAddress = current.readiness?.executor ?? executor;
-    if (plan.kind === "check" || !executorAddress) {
-      check();
-      return;
-    }
-    const completed = new Set<GraduationStepId>(
-      GRADUATION_STEPS.map((s) => s.id).filter(
-        (id) => current.steps[id] === "done",
-      ),
-    );
-    execute(executorAddress, {
-      completed,
-      graduationTxHash: current.graduationTxHash,
-    });
-  }, [check, execute, executor]);
+  /**
+   * `suppliedTxHash` is the founder's manually entered graduation hash. It is
+   * passed straight into the run, so the recovery works even when the browser
+   * refuses to persist it.
+   */
+  const retry = useCallback(
+    (suppliedTxHash?: string) => {
+      const plan = graduationRetryPlan(stateRef.current);
+      if (!plan) return;
+      const current = stateRef.current;
+      const executorAddress = current.readiness?.executor ?? executor;
+      if (plan.kind === "check" || !executorAddress) {
+        check();
+        return;
+      }
+      const completed = new Set<GraduationStepId>(
+        GRADUATION_STEPS.map((s) => s.id).filter(
+          (id) => current.steps[id] === "done",
+        ),
+      );
+      execute(executorAddress, {
+        completed,
+        graduationTxHash: suppliedTxHash ?? current.graduationTxHash,
+      });
+    },
+    [check, execute, executor],
+  );
 
   const busy = state.phase === "checking" || state.phase === "running";
   return {
