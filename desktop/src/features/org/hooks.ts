@@ -41,6 +41,7 @@ import { deleteAddressableEvents } from "./lib/orgDeletion";
 import {
   buildGrantContent,
   buildGrantRevocation,
+  nextCreatedAt,
   orgNodeTags,
   SeatNotFoundError,
   withAgentSeat,
@@ -533,6 +534,10 @@ export async function publishAgentSeat(
     kind: KIND_ORG_NODE,
     content,
     tags: orgNodeTags(input.dtag, content),
+    createdAt: nextCreatedAt(
+      existing.created_at,
+      Math.floor(Date.now() / 1000),
+    ),
   });
   await relayClient.publishEvent(
     event,
@@ -625,7 +630,15 @@ async function publishOrgGrantRevocation(dtag: string): Promise<string> {
   const tags: string[][] =
     existing.tags.length > 0 ? existing.tags : [["d", dtag]];
   const content = buildGrantRevocation(existing.content, pubkey);
-  const event = await signRelayEvent({ kind: KIND_ORG_GRANT, content, tags });
+  const event = await signRelayEvent({
+    kind: KIND_ORG_GRANT,
+    content,
+    tags,
+    createdAt: nextCreatedAt(
+      existing.created_at,
+      Math.floor(Date.now() / 1000),
+    ),
+  });
   await relayClient.publishEvent(
     event,
     "Timed out revoking grant.",

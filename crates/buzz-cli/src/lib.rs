@@ -2701,6 +2701,10 @@ pub enum OrgCmd {
     #[command(subcommand)]
     Contribution(OrgContributionCmd),
 
+    /// Agent controls (emergency stop)
+    #[command(subcommand)]
+    Agent(OrgAgentCmd),
+
     /// Bind the org ROOT node to an onchain DAO (NIP-ORG "Opt-in onchain
     /// binding") — republishes the root 37010 with `content.onchain`.
     ///
@@ -3059,6 +3063,34 @@ pub enum OrgContributionCmd {
         /// the classifier, never as instructions)
         #[arg(long)]
         note: Option<String>,
+    },
+}
+
+/// Org agent subcommands.
+#[derive(Subcommand)]
+pub enum OrgAgentCmd {
+    /// Emergency stop: cut an agent off from acting, then clear where it sits
+    ///
+    /// In order, each step idempotent so a re-run finishes whatever failed:
+    /// 1. publish an all-time budget of zero with a hard reject (containment
+    ///    first — runs, tasks, messages, LLM calls, governance and spend stop
+    ///    at once, with no approval queue);
+    /// 2. with --ban, ban the agent from the community;
+    /// 3. remove the agent from every org seat you authored;
+    /// 4. revoke every delegation you issued to it (ownership stakes are kept).
+    ///
+    /// Only what you authored can be changed by you; the JSON report says what
+    /// was done and the command exits non-zero if any step failed.
+    Stop {
+        /// The agent's pubkey (64-char hex)
+        #[arg(long)]
+        pubkey: String,
+        /// Also ban the agent from the community (kind 9040)
+        #[arg(long)]
+        ban: bool,
+        /// Optional private reason recorded with the ban
+        #[arg(long)]
+        reason: Option<String>,
     },
 }
 

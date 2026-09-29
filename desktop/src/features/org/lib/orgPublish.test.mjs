@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildGrantContent,
   buildGrantRevocation,
+  nextCreatedAt,
   orgNodeTags,
   withAgentSeat,
 } from "./orgPublish.ts";
@@ -124,4 +125,19 @@ test("node tags match the SDK builder: d, name, one seat per occupant", () => {
     ["seat", OTHER],
     ["seat", AGENT],
   ]);
+});
+
+test("a republish is strictly newer than the record it replaces", () => {
+  assert.equal(nextCreatedAt(null, 100), 100);
+  assert.equal(nextCreatedAt(90, 100), 100);
+  assert.equal(
+    nextCreatedAt(100, 100),
+    101,
+    "same second would be dropped as a duplicate",
+  );
+  assert.equal(
+    nextCreatedAt(500, 100),
+    501,
+    "a record dated ahead of the clock",
+  );
 });

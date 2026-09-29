@@ -2572,6 +2572,9 @@ impl std::str::FromStr for BudgetWindow {
 pub enum OnExceed {
     /// Route the action into workflow approval (46010–46012).
     RequireApproval,
+    /// Refuse the action outright, with no approval request — a hard stop
+    /// (used by an emergency stop, where a human queue would only be noise).
+    Reject,
 }
 
 /// Limits within a budget record.

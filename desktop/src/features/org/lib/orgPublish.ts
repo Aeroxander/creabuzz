@@ -117,3 +117,15 @@ export function orgNodeTags(dtag: string, content: string): string[][] {
   for (const agent of stringArray(body.agentSeats)) tags.push(["seat", agent]);
   return tags;
 }
+
+/**
+ * A `created_at` (unix seconds) strictly newer than the record being replaced.
+ * NIP-33 keeps only the newest event per coordinate and drops a republish made
+ * within the same second as its predecessor as a duplicate.
+ */
+export function nextCreatedAt(
+  existingCreatedAt: number | null,
+  now: number,
+): number {
+  return Math.max(now, existingCreatedAt === null ? 0 : existingCreatedAt + 1);
+}
