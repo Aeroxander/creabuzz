@@ -85,16 +85,15 @@ contract TokenLifecycleJourneyTest is Test {
     }
 
     function test_WizardRowToTrancheReleaseAndRoyalty() public {
-        // --- Launch: treasury escrows the milestone allocation (fund()).
-        vm.prank(treasury);
-        stake.fund(treasury, TRANCHE_1 + TRANCHE_2);
-
         // --- Alice submits wizard row m1 with a royalty schedule ride-along.
         // (Weight 1 / 12mo / Tier I: inside the band caps.)
         vm.prank(alice);
         stake.submitClaimWithSchedule(
             M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1)
         );
+        // --- Treasury reserves the tranche for THAT claim (fund is per claim).
+        vm.prank(treasury);
+        stake.fund(M1, TRANCHE_1);
 
         // --- Verifier approves; settle releases on ATTESTATION.
         vm.prank(verifierA);
@@ -139,8 +138,6 @@ contract TokenLifecycleJourneyTest is Test {
     }
 
     function test_RejectedRow_Slashed_NoTranche_NoSchedule() public {
-        vm.prank(treasury);
-        stake.fund(treasury, TRANCHE_1 + TRANCHE_2);
         // Alice posts 100 of her own tokens as claim stake (skin in the game).
         pt.setBalance(alice, 100);
         vm.startPrank(alice);
@@ -149,6 +146,8 @@ contract TokenLifecycleJourneyTest is Test {
             M2, TRANCHE_2, 100, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_2)
         );
         vm.stopPrank();
+        vm.prank(treasury);
+        stake.fund(M2, TRANCHE_2);
 
         vm.prank(verifierA);
         verifiers.attest(M2, false); // objection quorum
@@ -158,15 +157,19 @@ contract TokenLifecycleJourneyTest is Test {
         assertEq(uint256(status), uint256(ClaimStake.Status.Rejected), "rejected");
         assertEq(pt.balanceOf(alice), 0, "no tranche released");
         assertEq(dist.allocOf(alice), 0, "no schedule minted (I8)");
+        // The slash is real: Alice's 100 stake AND the tranche reserved for the
+        // rejected claim are in the treasury, nothing is left in the escrow.
+        assertEq(pt.balanceOf(treasury), TRANCHE_1 + TRANCHE_2 + 100, "stake slashed to treasury");
+        assertEq(pt.balanceOf(address(stake)), 0, "nothing stranded in the escrow");
     }
 
     function test_SellingAllAllocation_StopsRoyalty_ButTrancheIsOurs() public {
-        vm.prank(treasury);
-        stake.fund(treasury, TRANCHE_1 + TRANCHE_2);
         vm.prank(alice);
         stake.submitClaimWithSchedule(
             M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1)
         );
+        vm.prank(treasury);
+        stake.fund(M1, TRANCHE_1);
         vm.prank(verifierA);
         verifiers.attest(M1, true);
         stake.settle(M1);

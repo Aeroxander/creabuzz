@@ -188,13 +188,11 @@ contract JourneyFloatA is JourneyFloatBase {
         vm.stopBroadcast();
         _save(d);
 
-        // ---- escrow the milestone allocation (fund) ------------------------
+        // ---- treasury mints + approves the milestone allocation ------------
         vm.startBroadcast(TREASURY_KEY);
         d.token.mint(treasury, TRANCHE_1 + TRANCHE_2);
         d.token.approve(address(d.stake), type(uint256).max);
-        d.stake.fund(treasury, TRANCHE_1 + TRANCHE_2);
         vm.stopBroadcast();
-        require(d.token.balanceOf(address(d.stake)) == TRANCHE_1 + TRANCHE_2, "escrow funded");
 
         // ---- wizard row m1 as an onchain claim (+ royalty schedule) --------
         vm.startBroadcast(CLAIMANT_KEY);
@@ -202,6 +200,12 @@ contract JourneyFloatA is JourneyFloatBase {
             constantM1, TRANCHE_1, 0, evidence, 1, 365 days, 1, uint128(TRANCHE_1)
         );
         vm.stopBroadcast();
+
+        // ---- treasury reserves the tranche FOR THAT CLAIM (fund is per claim) -
+        vm.startBroadcast(TREASURY_KEY);
+        d.stake.fund(constantM1, TRANCHE_1);
+        vm.stopBroadcast();
+        require(d.token.balanceOf(address(d.stake)) == TRANCHE_1, "m1 tranche reserved");
 
         // ---- verifier attests; settle releases on ATTESTATION --------------
         vm.startBroadcast(VERIFIER_KEY);
@@ -227,7 +231,7 @@ contract JourneyFloatA is JourneyFloatBase {
         d.dist.fund(treasury, 10_000);
         vm.stopBroadcast();
 
-        console2.log("PHASE 1 OK - tranches escrowed; m1 released on attestation.");
+        console2.log("PHASE 1 OK - m1 tranche reserved for its claim; released on attestation.");
         console2.log("addresses:", ADDR_FILE);
     }
 }

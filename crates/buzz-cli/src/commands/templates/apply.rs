@@ -32,12 +32,19 @@
 //! monotonic `created_at` (`max(now, prior + 1)`) so a same-second replacement
 //! cannot lose the relay's LWW tie-break to an older head.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use buzz_sdk::{
+    BudgetLimits, BudgetWindow, OnExceed, OrgBudgetContent, OrgNodeContent, OrgNodeKind, OrgNodeUi,
+    OrgScope, TaskLimits,
+};
 use nostr::{EventBuilder, Kind, Tag, Timestamp};
 use sha2::{Digest, Sha256};
 
-use super::schema::{doc_slug, Template, TemplateFiles, TemplateSkill};
+use super::schema::{
+    doc_slug, seat_node_id, Template, TemplateFiles, TemplateSkill, ORG_DEFAULT_BUDGET_ID,
+    ORG_ROOT_NODE_ID,
+};
 use crate::client::{extract_d_tag, extract_tag_value, normalize_write_response, BuzzClient};
 use crate::error::CliError;
 
@@ -54,6 +61,7 @@ pub enum StepKind {
     Seed,
     Skill,
     Persona,
+    Org,
     Workflow,
     Doc,
     Welcome,
@@ -66,6 +74,7 @@ impl StepKind {
             Self::Seed => "seed",
             Self::Skill => "skill",
             Self::Persona => "persona",
+            Self::Org => "org",
             Self::Workflow => "workflow",
             Self::Doc => "doc",
             Self::Welcome => "welcome",
@@ -121,6 +130,12 @@ pub struct ExistingState {
     pub channels: BTreeMap<String, String>,
     /// Marker-matched items, keyed by (step kind, marker item id).
     pub items: BTreeMap<(StepKind, String), ExistingItem>,
+    /// `d` tags of the signer's own kind:37010 org nodes. Org steps dedup on
+    /// these (not on the marker) so an org the user built by hand is never
+    /// overwritten by a template's replaceable re-publish.
+    pub org_nodes: BTreeSet<String>,
+    /// `d` tags of the signer's own kind:37012 budgets (same reasoning).
+    pub org_budgets: BTreeSet<String>,
 }
 
 /// Marker item id for a channel seed message.
@@ -195,6 +210,29 @@ pub fn plan_apply(template: &Template, existing: &ExistingState) -> Vec<PlanStep
     for p in &template.personas {
         push_marker_step(&mut steps, StepKind::Persona, p.id.clone(), existing);
     }
+    if let Some(org) = &template.org {
+        // Root first (seats hang off it), then one vacant seat per persona,
+        // then the default budget every agent falls under.
+        push_org_step(
+            &mut steps,
+            "org:root".to_string(),
+            existing.org_nodes.contains(ORG_ROOT_NODE_ID),
+        );
+        for seat in &org.seats {
+            push_org_step(
+                &mut steps,
+                format!("org:seat:{}", seat.persona),
+                existing.org_nodes.contains(&seat_node_id(&seat.persona)),
+            );
+        }
+        if org.default_budget.is_some() {
+            push_org_step(
+                &mut steps,
+                "org:budget".to_string(),
+                existing.org_budgets.contains(ORG_DEFAULT_BUDGET_ID),
+            );
+        }
+    }
     for w in &template.workflows {
         push_marker_step(&mut steps, StepKind::Workflow, w.file.clone(), existing);
     }
@@ -209,6 +247,19 @@ pub fn plan_apply(template: &Template, existing: &ExistingState) -> Vec<PlanStep
     );
 
     steps
+}
+
+fn push_org_step(steps: &mut Vec<PlanStep>, item: String, exists: bool) {
+    let action = if exists {
+        PlanAction::Skip(SkipReason::AlreadyExists)
+    } else {
+        PlanAction::Create
+    };
+    steps.push(PlanStep {
+        kind: StepKind::Org,
+        item,
+        action,
+    });
 }
 
 fn push_marker_step(
@@ -727,7 +778,136 @@ pub(crate) fn build_step_event(
             )?;
             Ok(builder.tag(marker))
         }
+        // Org steps need the signer's identity (the founder seat's holder):
+        // they are built by `build_org_step_event`, which `execute_plan`
+        // dispatches to. Reaching this arm is a programming error.
+        StepKind::Org => Err(CliError::Other(
+            "org steps are built by build_org_step_event".into(),
+        )),
     }
+}
+
+/// Build the signed write for one `org` step: the founder root node, a vacant
+/// agent seat, or the community default budget (see `schema.rs` module docs).
+///
+/// Split from [`build_step_event`] because the root's holder is the applying
+/// identity, which the generic builder does not carry.
+pub(crate) fn build_org_step_event(
+    template_id: &str,
+    template: &Template,
+    step: &PlanStep,
+    signer_hex: &str,
+    prior_created_at: Option<u64>,
+) -> Result<EventBuilder, CliError> {
+    let org = template
+        .org
+        .as_ref()
+        .ok_or_else(|| CliError::Other("plan step has an org item but no org block".into()))?;
+    let ts = Timestamp::from(next_created_at(prior_created_at));
+    let marker = marker_tag(template_id, &step.item)?;
+    let sdk_err = |what: &str, e: buzz_sdk::SdkError| CliError::Other(format!("{what}: {e}"));
+
+    if step.item == "org:root" {
+        let content = OrgNodeContent {
+            v: 1,
+            name: org.root.name.clone(),
+            node_kind: OrgNodeKind::Role,
+            parent: None,
+            holders: vec![signer_hex.to_string()],
+            agent_seats: Vec::new(),
+            scope: OrgScope {
+                read_below: true,
+                assign_below: true,
+                can_grant: vec!["read".to_string(), "task".to_string()],
+            },
+            ui: org.root.blurb.clone().map(|blurb| OrgNodeUi {
+                color: None,
+                icon: None,
+                blurb: Some(blurb),
+            }),
+            onchain: None,
+        };
+        let builder = buzz_sdk::build_org_node(ORG_ROOT_NODE_ID, &content)
+            .map_err(|e| sdk_err("build_org_node (root) failed", e))?;
+        return Ok(builder.tag(marker).custom_created_at(ts));
+    }
+
+    if let Some(persona_id) = step.item.strip_prefix("org:seat:") {
+        let seat = org
+            .seats
+            .iter()
+            .find(|s| s.persona == persona_id)
+            .ok_or_else(|| CliError::Other(format!("no org seat for persona '{persona_id}'")))?;
+        let persona = template
+            .personas
+            .iter()
+            .find(|p| p.id == persona_id)
+            .ok_or_else(|| {
+                CliError::Other(format!("org seat names unknown persona '{persona_id}'"))
+            })?;
+        let content = OrgNodeContent {
+            v: 1,
+            name: seat.title.clone().unwrap_or_else(|| persona.name.clone()),
+            node_kind: OrgNodeKind::AgentSeat,
+            parent: Some(ORG_ROOT_NODE_ID.to_string()),
+            // Vacant until a persona instance is attached to this seat.
+            holders: Vec::new(),
+            agent_seats: Vec::new(),
+            scope: OrgScope::default(),
+            ui: None,
+            onchain: None,
+        };
+        let builder = buzz_sdk::build_org_node(&seat_node_id(persona_id), &content)
+            .map_err(|e| sdk_err("build_org_node (seat) failed", e))?;
+        return Ok(builder.tag(marker).custom_created_at(ts));
+    }
+
+    if step.item == "org:budget" {
+        let b = org
+            .default_budget
+            .as_ref()
+            .ok_or_else(|| CliError::Other("org:budget step but no default_budget".into()))?;
+        let window = match b.window.as_deref().unwrap_or("day") {
+            "epoch" => BudgetWindow::Epoch,
+            "day" => BudgetWindow::Day,
+            "week" => BudgetWindow::Week,
+            "month" => BudgetWindow::Month,
+            other => {
+                return Err(CliError::Other(format!(
+                    "default_budget.window '{other}' is not epoch|day|week|month"
+                )))
+            }
+        };
+        let content = OrgBudgetContent {
+            v: 1,
+            // "*" = the community default: applies to every agent that has no
+            // budget of its own (owner-signed only; the relay enforces it).
+            subject: "*".to_string(),
+            window,
+            limits: BudgetLimits {
+                spend: None,
+                runs: b.runs,
+                tasks: b.tasks_create.map(|create| TaskLimits {
+                    create: Some(create),
+                    approve: None,
+                }),
+                governance: None,
+                messages: b.messages,
+                llm_calls: b.llm_calls,
+            },
+            on_exceed: OnExceed::RequireApproval,
+            onchain: None,
+            performance_link: None,
+        };
+        let builder = buzz_sdk::build_org_budget(ORG_DEFAULT_BUDGET_ID, &content)
+            .map_err(|e| sdk_err("build_org_budget failed", e))?;
+        return Ok(builder.tag(marker).custom_created_at(ts));
+    }
+
+    Err(CliError::Other(format!(
+        "unknown org step item '{}'",
+        step.item
+    )))
 }
 
 fn parse_channel_uuid(
@@ -822,6 +1002,31 @@ pub async fn query_existing_state(
         serde_json::json!({ "kinds": [30023], "authors": [me], "#t": [template_id], "limit": 200 }),
         serde_json::json!({ "kinds": [9], "authors": [me], "#t": [template_id], "limit": 200 }),
     ];
+    // The signer's own org nodes and budgets, by `d` — org steps dedup on
+    // these so a hand-built org is never overwritten (NIP-33 replacement is
+    // per author + d, so a re-publish would silently replace it).
+    let org_filters = [
+        serde_json::json!({ "kinds": [buzz_core::kind::KIND_ORG_NODE], "authors": [me], "limit": 500 }),
+        serde_json::json!({ "kinds": [buzz_core::kind::KIND_ORG_BUDGET], "authors": [me], "limit": 500 }),
+    ];
+    let org_raw = client.query_multi(&org_filters).await?;
+    let org_events: Vec<serde_json::Value> = serde_json::from_str(&org_raw).unwrap_or_default();
+    for e in &org_events {
+        let d = extract_d_tag(e);
+        if d.is_empty() {
+            continue;
+        }
+        match e.get("kind").and_then(|v| v.as_u64()).unwrap_or(0) {
+            k if k == buzz_core::kind::KIND_ORG_NODE as u64 => {
+                state.org_nodes.insert(d);
+            }
+            k if k == buzz_core::kind::KIND_ORG_BUDGET as u64 => {
+                state.org_budgets.insert(d);
+            }
+            _ => {}
+        }
+    }
+
     let raw = client.query_multi(&marker_filters).await?;
     let events: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap_or_default();
     for e in &events {
@@ -903,6 +1108,7 @@ pub async fn execute_plan(
         }
     }
     let mut welcome: Option<WelcomeResult> = None;
+    let signer_hex = client.keys().public_key().to_hex();
 
     for step in plan {
         match step.action {
@@ -917,15 +1123,19 @@ pub async fn execute_plan(
             .items
             .get(&(step.kind, step.item.clone()))
             .map(|i| i.created_at);
-        let built = build_step_event(
-            template_id,
-            template,
-            files,
-            step,
-            &channel_ids,
-            prior,
-            &resolved_skills,
-        );
+        let built = if step.kind == StepKind::Org {
+            build_org_step_event(template_id, template, step, &signer_hex, prior)
+        } else {
+            build_step_event(
+                template_id,
+                template,
+                files,
+                step,
+                &channel_ids,
+                prior,
+                &resolved_skills,
+            )
+        };
         let builder = match built {
             Ok(b) => b,
             Err(e) => {
@@ -1031,8 +1241,9 @@ fn extract_h_tag(event: &nostr::Event) -> String {
 mod tests {
     use super::*;
     use crate::commands::templates::schema::{
-        SkillScope, Template, TemplateChannel, TemplateDoc, TemplateFiles, TemplatePersona,
-        TemplateSkill, TemplateWorkflow,
+        SkillScope, Template, TemplateChannel, TemplateDefaultBudget, TemplateDoc, TemplateFiles,
+        TemplateOrg, TemplateOrgRoot, TemplateOrgSeat, TemplatePersona, TemplateSkill,
+        TemplateWorkflow,
     };
 
     fn template() -> Template {
@@ -1073,6 +1284,7 @@ mod tests {
                 source: "https://example.com/SKILL.md".into(),
                 applies_to: SkillScope::All,
             }],
+            org: None,
             welcome: "welcome.md".into(),
         }
     }
@@ -1599,5 +1811,245 @@ mod tests {
             msg.contains("persona 'writer' declares unknown skill 'nope'"),
             "{msg}"
         );
+    }
+
+    // ---- org block: founder seat, vacant agent seats, default budget ----
+
+    fn org_template() -> Template {
+        let mut t = template();
+        t.org = Some(TemplateOrg {
+            root: TemplateOrgRoot {
+                name: "Studio".into(),
+                blurb: Some("The founders".into()),
+            },
+            seats: vec![TemplateOrgSeat {
+                persona: "writer".into(),
+                title: Some("Head of Story".into()),
+            }],
+            default_budget: Some(TemplateDefaultBudget {
+                window: Some("week".into()),
+                runs: Some(200),
+                tasks_create: Some(20),
+                messages: Some(300),
+                llm_calls: None,
+            }),
+        });
+        t
+    }
+
+    fn org_step(plan: &[PlanStep], item: &str) -> PlanStep {
+        plan.iter()
+            .find(|s| s.kind == StepKind::Org && s.item == item)
+            .unwrap_or_else(|| panic!("no org step {item}"))
+            .clone()
+    }
+
+    fn signed(builder: EventBuilder, keys: &nostr::Keys) -> nostr::Event {
+        builder.sign_with_keys(keys).unwrap()
+    }
+
+    fn first_tag(event: &nostr::Event, name: &str) -> Option<Vec<String>> {
+        event
+            .tags
+            .iter()
+            .map(|t| {
+                t.as_slice()
+                    .iter()
+                    .map(String::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .find(|t| t.first().map(String::as_str) == Some(name))
+    }
+
+    #[test]
+    fn org_block_plans_root_then_seats_then_budget_after_the_personas() {
+        let plan = plan_apply(&org_template(), &ExistingState::default());
+        let order: Vec<(StepKind, &str)> = plan.iter().map(|s| (s.kind, s.item.as_str())).collect();
+        let persona_at = order
+            .iter()
+            .position(|(k, _)| *k == StepKind::Persona)
+            .unwrap();
+        assert_eq!(
+            &order[persona_at + 1..persona_at + 4],
+            &[
+                (StepKind::Org, "org:root"),
+                (StepKind::Org, "org:seat:writer"),
+                (StepKind::Org, "org:budget"),
+            ],
+            "root before its seats, budget last, all after the personas"
+        );
+        assert!(plan
+            .iter()
+            .filter(|s| s.kind == StepKind::Org)
+            .all(|s| s.action == PlanAction::Create));
+    }
+
+    #[test]
+    fn a_template_without_an_org_block_plans_no_org_steps() {
+        let plan = plan_apply(&template(), &ExistingState::default());
+        assert!(plan.iter().all(|s| s.kind != StepKind::Org));
+    }
+
+    /// The safety property: NIP-33 replacement is per author + `d`, so a
+    /// re-publish would silently overwrite an org the user built by hand.
+    /// Org steps therefore dedup on the signer's own node/budget `d` tags.
+    #[test]
+    fn existing_org_nodes_and_budgets_are_never_overwritten() {
+        let mut existing = ExistingState::default();
+        existing.org_nodes.insert("root".into());
+        existing.org_nodes.insert("seat-writer".into());
+        existing.org_budgets.insert("default-agents".into());
+        let plan = plan_apply(&org_template(), &existing);
+        for s in plan.iter().filter(|s| s.kind == StepKind::Org) {
+            assert_eq!(
+                s.action,
+                PlanAction::Skip(SkipReason::AlreadyExists),
+                "{s:?}"
+            );
+        }
+        // A partial org (root present, seat and budget missing) plans only the rest.
+        let mut partial = ExistingState::default();
+        partial.org_nodes.insert("root".into());
+        let plan = plan_apply(&org_template(), &partial);
+        assert_eq!(
+            org_step(&plan, "org:root").action,
+            PlanAction::Skip(SkipReason::AlreadyExists)
+        );
+        assert_eq!(
+            org_step(&plan, "org:seat:writer").action,
+            PlanAction::Create
+        );
+        assert_eq!(org_step(&plan, "org:budget").action, PlanAction::Create);
+    }
+
+    #[test]
+    fn org_root_is_a_role_node_held_by_the_signer() {
+        let t = org_template();
+        let plan = plan_apply(&t, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let event = signed(
+            build_org_step_event("demo-template", &t, &org_step(&plan, "org:root"), &me, None)
+                .unwrap(),
+            &keys,
+        );
+        assert_eq!(event.kind.as_u16() as u32, buzz_core::kind::KIND_ORG_NODE);
+        assert_eq!(first_tag(&event, "d").unwrap()[1], "root");
+        assert_eq!(
+            first_tag(&event, "t").unwrap(),
+            vec!["t", "demo-template", "org:root"]
+        );
+        let body: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(body["name"], "Studio");
+        assert_eq!(body["kind"], "role");
+        assert_eq!(body["holders"], serde_json::json!([me]));
+        assert!(body.get("parent").is_none(), "a root has no parent");
+        assert_eq!(
+            body["scope"]["canGrant"],
+            serde_json::json!(["read", "task"])
+        );
+        assert_eq!(body["ui"]["blurb"], "The founders");
+    }
+
+    #[test]
+    fn org_seat_is_a_vacant_agent_seat_under_the_root() {
+        let t = org_template();
+        let plan = plan_apply(&t, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let event = signed(
+            build_org_step_event(
+                "demo-template",
+                &t,
+                &org_step(&plan, "org:seat:writer"),
+                &me,
+                None,
+            )
+            .unwrap(),
+            &keys,
+        );
+        assert_eq!(first_tag(&event, "d").unwrap()[1], "seat-writer");
+        let body: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(body["name"], "Head of Story", "the declared title wins");
+        // Wire spelling is snake_case (`agent_seat`): the SDK enum, the desktop
+        // reader and the relay all agree; NIP-ORG documents it the same way.
+        assert_eq!(body["kind"], "agent_seat");
+        assert_eq!(body["parent"], "root");
+        assert_eq!(body["holders"], serde_json::json!([]));
+        assert_eq!(body["agentSeats"], serde_json::json!([]), "vacant");
+    }
+
+    #[test]
+    fn org_seat_title_defaults_to_the_persona_name() {
+        let mut t = org_template();
+        t.org.as_mut().unwrap().seats[0].title = None;
+        let plan = plan_apply(&t, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let event = signed(
+            build_org_step_event(
+                "demo-template",
+                &t,
+                &org_step(&plan, "org:seat:writer"),
+                &me,
+                None,
+            )
+            .unwrap(),
+            &keys,
+        );
+        let body: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(body["name"], "The Writer");
+    }
+
+    /// The default budget is what makes "every agent is covered from day one"
+    /// true: subject `"*"`, the declared window and only the declared limits.
+    #[test]
+    fn org_default_budget_targets_every_agent() {
+        let t = org_template();
+        let plan = plan_apply(&t, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let event = signed(
+            build_org_step_event(
+                "demo-template",
+                &t,
+                &org_step(&plan, "org:budget"),
+                &me,
+                None,
+            )
+            .unwrap(),
+            &keys,
+        );
+        assert_eq!(event.kind.as_u16() as u32, buzz_core::kind::KIND_ORG_BUDGET);
+        assert_eq!(first_tag(&event, "d").unwrap()[1], "default-agents");
+        let body: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(body["subject"], "*");
+        assert_eq!(body["window"], "week");
+        assert_eq!(body["onExceed"], "require-approval");
+        assert_eq!(body["limits"]["runs"], 200);
+        assert_eq!(body["limits"]["tasks"]["create"], 20);
+        assert_eq!(body["limits"]["messages"], 300);
+        assert!(
+            body["limits"].get("llmCalls").is_none() && body["limits"].get("spend").is_none(),
+            "only declared limits are written: {}",
+            body["limits"]
+        );
+    }
+
+    #[test]
+    fn org_steps_refuse_the_generic_builder() {
+        let t = org_template();
+        let plan = plan_apply(&t, &ExistingState::default());
+        let err = build_step_event(
+            "demo-template",
+            &t,
+            &files(),
+            &org_step(&plan, "org:root"),
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("build_org_step_event"), "{err}");
     }
 }

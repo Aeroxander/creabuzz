@@ -31,22 +31,27 @@ import {Call, Summoner} from "majeur/src/Moloch.sol";
 ///   for the DAO this contract binds; not needed onchain here.
 ///
 /// DELIBERATE SIMPLIFICATIONS (dev-first, all documented):
-/// - `bindDao`/`summonAndBind` are permissionless RECORDERS. They do not
-///   authenticate the caller against the org graph. Authorization lives in
-///   the signed 37010 update (the CLI verifies the signer is a root holder);
-///   relay-side enforcement of who may write `content.onchain` is a
-///   documented follow-up. On a production chain, gate these behind the
-///   relay's attested submitter or the DAO itself.
+/// - `bindDao`/`summonAndBind` are RECORDERS with a first-writer owner: the
+///   FIRST caller for a `rootId` becomes its recorded `binderOf`, and from then
+///   on only that binder OR the currently recorded DAO (acting through its own
+///   governance, so a DAO can re-point itself) may rebind the root
+///   (`NotBinder` otherwise). Before this, both functions were permissionless
+///   last-write-wins: a stranger could overwrite any org's binding — and the
+///   indexer-visible `DaoBound` — with one call. Residual limit, by design: the
+///   contract cannot prove the first caller speaks for the org root (that
+///   authority lives in the signed 37010 update the CLI verifies), so a
+///   front-runner can still claim a root nobody has bound yet; readers must
+///   confirm a binding against the signed 37010 head before trusting it.
 /// - `initCalls` are pinned empty, so governance knobs stay at the Moloch
 ///   defaults (`proposalThreshold = 0`, no timelock/TTL changes). The
 ///   validated defaults `SafeSummoner._buildCalls` assembles (KF#11: a
 ///   nonzero proposal threshold, TTL > timelock, ...) are the production
 ///   tightening: pass them as `initCalls` or set them by proposal after
 ///   summon. Kept out here to keep the wrapper surface minimal.
-/// - Re-binding the same `rootId` overwrites the record and emits a fresh
-///   `DaoBound` — matching NIP-33 last-write-wins semantics of the 37010
-///   head it mirrors. Indexers must treat the latest event per `rootId` as
-///   the live binding.
+/// - Re-binding the same `rootId` (by its binder or its DAO, above)
+///   overwrites the record and emits a fresh `DaoBound` — matching NIP-33
+///   last-write-wins semantics of the 37010 head it mirrors. Indexers must
+///   treat the latest event per `rootId` as the live binding.
 /// - Transferring `OrgAllowance` ownership to the DAO is orchestrated by the
 ///   deploy script (current owner calls `setOwner(dao)` after summon). The
 ///   production path is a governance proposal through the DAO; the atomic
@@ -104,6 +109,11 @@ contract OrgBinding {
     /// @notice rootId (the org root's 32-byte Nostr event id) => binding.
     mapping(bytes32 rootId => Binding) public bindingOf;
 
+    /// @notice rootId => the address that first bound it (the only non-DAO
+    /// address that may rebind it). Kept beside `bindingOf` so that getter's
+    /// `(dao, boundAt)` shape stays stable for indexers.
+    mapping(bytes32 rootId => address) public binderOf;
+
     // ------------------------------------------------------------------
     // Events / Errors
     // ------------------------------------------------------------------
@@ -114,8 +124,14 @@ contract OrgBinding {
     ///         none; readers MUST treat empty as "unknown", never as a value.
     event DaoBound(bytes32 indexed rootId, address indexed dao, uint64 boundAt, string uri);
 
+    /// @notice Emitted once per root, when its first caller becomes its binder.
+    event BinderSet(bytes32 indexed rootId, address indexed binder);
+
     error EmptyHolders();
     error HoldersSharesMismatch();
+    /// @notice A binding for this root exists and the caller is neither its
+    /// recorded binder nor its recorded DAO.
+    error NotBinder(bytes32 rootId, address caller);
 
     // ------------------------------------------------------------------
     // Constructor
@@ -129,12 +145,27 @@ contract OrgBinding {
     // Binding
     // ------------------------------------------------------------------
 
+    /// @dev The first caller for `rootId` becomes its binder; afterwards only that
+    /// binder or the recorded DAO may rebind.
+    function _authorizeBind(bytes32 rootId) internal {
+        address binder = binderOf[rootId];
+        if (binder == address(0)) {
+            binderOf[rootId] = msg.sender;
+            emit BinderSet(rootId, msg.sender);
+            return;
+        }
+        if (msg.sender != binder && msg.sender != bindingOf[rootId].dao) {
+            revert NotBinder(rootId, msg.sender);
+        }
+    }
+
     /// @notice Summon a majeur DAO with the initial member set and record it
     /// as the binding of org root `rootId`, atomically in one transaction.
     /// @return dao The summoned Moloch clone (shares minted to `p.holders`).
     function summonAndBind(bytes32 rootId, SummonParams calldata p) external returns (address dao) {
         if (p.holders.length == 0) revert EmptyHolders();
         if (p.holders.length != p.shares.length) revert HoldersSharesMismatch();
+        _authorizeBind(rootId);
 
         dao = address(
             summoner.summon(
@@ -161,6 +192,7 @@ contract OrgBinding {
     /// supported chain, or through a governance proposal. Recording-only by
     /// design; see the contract-level simplification notes.
     function bindDao(bytes32 rootId, address dao) external {
+        _authorizeBind(rootId);
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});
         bindingOf[rootId] = b;
         // Best-effort read of the existing DAO's own metadata. The

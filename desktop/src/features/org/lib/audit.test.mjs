@@ -129,6 +129,20 @@ describe("auditDescription", () => {
     );
   });
 
+  it("names the community-default budget instead of a truncated key", () => {
+    const text = auditDescription(
+      auditEvent({
+        kind: 37012,
+        content: { subject: "*", window: "day", limits: { messages: 3 } },
+      }),
+      { namesByPubkey: new Map(), namesByDtag: new Map() },
+    );
+    assert.equal(
+      text,
+      "Budget set for All agents (community default): 3 messages/day",
+    );
+  });
+
   it("never renders raw JSON for malformed content", () => {
     const text = auditDescription(
       auditEvent({ kind: 37012, content: "not json at all" }),

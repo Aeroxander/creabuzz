@@ -11,6 +11,9 @@ use crate::error::AllowanceError;
 
 pub(crate) const SELECTOR_REMAINING_OF: &str = "remainingOf(bytes32,address,uint64)";
 pub(crate) const SELECTOR_SPEND: &str = "spend(bytes32,address,uint64,uint256)";
+/// The ENFORCED payout: debits the ledger and moves tokens
+/// `transferFrom(treasury, to, amount)` in one call.
+pub(crate) const SELECTOR_SPEND_TO: &str = "spendTo(bytes32,address,uint64,uint256,address)";
 #[cfg(feature = "test-support")]
 pub(crate) const SELECTOR_SET_SPENDER: &str = "setSpender(bytes32,address)";
 #[cfg(feature = "test-support")]
@@ -99,6 +102,28 @@ pub fn encode_spend(subject: &[u8; 32], token: &[u8; 20], epoch: u64, amount: u1
     out.extend_from_slice(&encode_address_word(token));
     out.extend_from_slice(&encode_uint256(epoch as u128));
     out.extend_from_slice(&encode_uint256(amount));
+    out
+}
+
+/// ABI-encode `spendTo(bytes32,address,uint64,uint256,address)` — the ENFORCED
+/// payout (`OrgAllowance.spendTo`): the contract debits the subject's allowance
+/// and then moves `amount` of `token` from its treasury to `to`, or reverts as a
+/// whole. Unlike [`encode_spend`] (accounting only), a spender key cannot move
+/// treasury money any other way.
+pub fn encode_spend_to(
+    subject: &[u8; 32],
+    token: &[u8; 20],
+    epoch: u64,
+    amount: u128,
+    to: &[u8; 20],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 160);
+    out.extend_from_slice(&selector(SELECTOR_SPEND_TO));
+    out.extend_from_slice(subject);
+    out.extend_from_slice(&encode_address_word(token));
+    out.extend_from_slice(&encode_uint256(epoch as u128));
+    out.extend_from_slice(&encode_uint256(amount));
+    out.extend_from_slice(&encode_address_word(to));
     out
 }
 
@@ -216,6 +241,39 @@ mod tests {
             hex::encode(keccak256(b"")),
             "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
         );
+    }
+
+    /// `spendTo` is the enforced payout: its selector and full calldata are
+    /// pinned to `cast` (foundry 1.5.1) so the wire format cannot drift from the
+    /// contract:
+    ///
+    /// ```text
+    /// cast sig      "spendTo(bytes32,address,uint64,uint256,address)" -> 0xcea045bd
+    /// cast calldata "spendTo(bytes32,address,uint64,uint256,address)" \
+    ///   0x11aa…11aa 0x…0042 20000 1500000 0x…00d3
+    /// ```
+    #[test]
+    fn spend_to_selector_and_calldata_match_cast() {
+        assert_eq!(hex::encode(selector(SELECTOR_SPEND_TO)), "cea045bd");
+        let subject =
+            parse_subject("11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa")
+                .unwrap();
+        let token = parse_address("0x0000000000000000000000000000000000000042").unwrap();
+        let to = parse_address("0x00000000000000000000000000000000000000d3").unwrap();
+        let data = encode_spend_to(&subject, &token, 20_000, 1_500_000, &to);
+        assert_eq!(
+            format!("0x{}", hex::encode(&data)),
+            "0xcea045bd\
+             11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa\
+             0000000000000000000000000000000000000000000000000000000000000042\
+             0000000000000000000000000000000000000000000000000000000000004e20\
+             000000000000000000000000000000000000000000000000000000000016e360\
+             00000000000000000000000000000000000000000000000000000000000000d3"
+        );
+        // The advisory `spend` selector is a DIFFERENT function: a caller that
+        // asks for the enforced path can never silently get accounting-only.
+        assert_ne!(selector(SELECTOR_SPEND_TO), selector(SELECTOR_SPEND));
+        assert_eq!(data.len(), 4 + 5 * 32);
     }
 
     #[test]

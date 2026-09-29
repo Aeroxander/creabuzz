@@ -13,7 +13,11 @@ import {IAuctionStorage} from "continuous-clearing-auction/src/interfaces/IAucti
 import {IStepStorage} from "continuous-clearing-auction/src/interfaces/IStepStorage.sol";
 import {Checkpoint} from "continuous-clearing-auction/src/libraries/CheckpointLib.sol";
 import {MockProtocolFeeController} from "btt/mocks/MockProtocolFeeController.sol";
+import {
+    ContinuousClearingAuctionFactory
+} from "continuous-clearing-auction/src/ContinuousClearingAuctionFactory.sol";
 import {GraduationExecutor} from "../src/GraduationExecutor.sol";
+import {AllowlistHook} from "../src/hooks/AllowlistHook.sol";
 
 /// @dev The vendored Permit2 harness is compiled as its own unit (Permit2 pins
 ///      `pragma solidity 0.8.17`); this test only talks to it through `vm.deployCode`.
@@ -151,6 +155,7 @@ contract LaunchLifecycleTest is Test {
     uint64 internal constant END_BLOCK = 102;
     uint64 internal constant CLAIM_BLOCK = 105;
     uint16 internal constant RESERVE_BPS = 4000;
+    uint64 internal constant RESERVE_LOCK = 30 days;
     /// @dev solady `SafeTransferLib.PERMIT2` (SafeTransferLib.sol:64) — the
     ///      canonical Permit2 the auction pulls bids through (ContinuousClearingAuction.sol:479).
     address internal constant PERMIT2_CANONICAL = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
@@ -180,7 +185,7 @@ contract LaunchLifecycleTest is Test {
 
         currency = new MockERC20();
         saleToken = new MockERC20();
-        executor = new GraduationExecutor(treasury, RESERVE_BPS);
+        executor = new GraduationExecutor(treasury, RESERVE_BPS, RESERVE_LOCK);
 
         // ABI pin: the auction's bid pull is `SafeTransferLib.permit2TransferFrom`
         // which composes `transferFrom(address,address,uint160,address)`
@@ -257,6 +262,9 @@ contract LaunchLifecycleTest is Test {
         auction = new ContinuousClearingAuction(address(saleToken), TOTAL_SUPPLY, params, feeController);
         saleToken.mint(address(auction), TOTAL_SUPPLY);
         auction.onTokensReceived();
+        // The executor serves exactly the one auction its treasury binds it to.
+        vm.prank(treasury);
+        executor.bindAuction(address(auction));
         vm.roll(START_BLOCK);
     }
 
@@ -605,5 +613,229 @@ contract LaunchLifecycleTest is Test {
         vm.prank(dan);
         auction.claimTokens(danBid);
         assertEq(saleToken.balanceOf(dan), 300e18);
+    }
+
+    // -----------------------------------------------------------------------
+    // The app's launch sequence against the REAL factory + CCA
+    // -----------------------------------------------------------------------
+
+    /// @dev `configData` exactly as `desktop/.../auctionFlow.ts` encodes it:
+    /// `abi.encode(AuctionParameters{...})` with the executor as BOTH recipients.
+    function _appConfigData(uint128 requiredCurrencyRaised, address hook)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encode(
+            AuctionParameters({
+                currency: address(currency),
+                tokensRecipient: address(executor),
+                fundsRecipient: address(executor),
+                startBlock: START_BLOCK,
+                endBlock: END_BLOCK,
+                claimBlock: CLAIM_BLOCK,
+                tickSpacing: TICK_SPACING_Q96,
+                validationHook: hook,
+                floorPrice: FLOOR_PRICE_Q96,
+                requiredCurrencyRaised: requiredCurrencyRaised,
+                auctionStepsData: abi.encodePacked(STEP_MPS, STEP_BLOCKS)
+            })
+        );
+    }
+
+    /// @notice The founder flow as the desktop composes it, step for step, on the
+    /// real `ContinuousClearingAuctionFactory` and CCA:
+    ///   1. deploy the allowlist hook (curated track),  2. deploy the executor
+    ///   (setUp),  3. `factory.create`,  4. transfer the sale supply to the
+    ///   auction,  5. `auction.onTokensReceived()`,  6. `hook.setAuction`,
+    ///   7. `executor.bindAuction`,  then two buyers bid, the chain passes the
+    ///   end block, anyone runs `executeGraduation`, both buyers exit + claim.
+    /// Steps 4-5 are the ones no app path performed before: without them every
+    /// bid and checkpoint reverts `TokensNotReceived` (next test).
+    function test_app_launch_sequence_end_to_end_on_the_real_factory_and_cca() public {
+        // The deploying wallet IS the treasury (the app's treasury gate).
+        saleToken.mint(treasury, TOTAL_SUPPLY);
+        ContinuousClearingAuctionFactory factory = new ContinuousClearingAuctionFactory(address(0));
+        AllowlistHook hook = new AllowlistHook(treasury, 1000e18);
+        bytes memory configData = _appConfigData(300e18, address(hook));
+        bytes32 salt = bytes32(uint256(1));
+
+        vm.startPrank(treasury);
+        address predicted =
+            address(factory.getAddress(address(saleToken), TOTAL_SUPPLY, configData, salt, treasury));
+        address created = address(factory.create(address(saleToken), TOTAL_SUPPLY, configData, salt));
+        assertEq(created, predicted, "the CREATE2 precompute the app shows matches the deploy");
+        auction = ContinuousClearingAuction(created);
+
+        // 4-5: fund the auction, then tell it the supply arrived.
+        saleToken.transfer(created, TOTAL_SUPPLY);
+        auction.onTokensReceived();
+        // 6-7: bind the hook and the executor to this auction, once.
+        hook.setAuction(created);
+        executor.bindAuction(created);
+        hook.setBidder(dan, true);
+        hook.setBidder(erin, true);
+        vm.stopPrank();
+        assertEq(saleToken.balanceOf(treasury), 0, "the whole sale supply moved to the auction");
+        assertEq(saleToken.balanceOf(created), TOTAL_SUPPLY);
+
+        // Two buyers bid through the gated auction.
+        vm.roll(START_BLOCK);
+        uint256 danBid = _bid(dan, 300e18, 2 * Q96, FLOOR_PRICE_Q96);
+        uint256 erinBid = _bid(erin, 200e18, 4 * Q96, 2 * Q96);
+        assertEq(hook.spent(dan), 300e18, "the real auction drove the hook's accounting");
+        assertEq(hook.spent(erin), 200e18);
+
+        // Past the end block a keeper (no explicit checkpoint) graduates the launch.
+        vm.roll(END_BLOCK + 1);
+        executor.executeGraduation(created);
+        GraduationExecutor.Graduation memory g = _graduationOf(created);
+        assertTrue(g.executed);
+        assertEq(g.currencyRaised, 500e18);
+        assertEq(g.reserveEscrow, 200e18, "4000bps to the reserve escrow");
+        assertEq(g.treasuryShare, 300e18);
+        assertEq(currency.balanceOf(treasury), 300e18);
+        assertEq(currency.balanceOf(address(executor)), 200e18);
+        assertEq(saleToken.balanceOf(treasury), 500e18, "unsold supply swept to the treasury");
+
+        // The reserve is locked, then withdrawable; here the pool lands first.
+        vm.prank(treasury);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GraduationExecutor.ReserveLocked.selector,
+                created,
+                uint64(block.timestamp) + RESERVE_LOCK
+            )
+        );
+        executor.withdrawStuckReserve(created);
+        vm.prank(treasury);
+        executor.releaseReserve(created, pool);
+        assertEq(currency.balanceOf(pool), 200e18);
+
+        // Exits and claims settle the buyers.
+        vm.roll(END_BLOCK + 2);
+        vm.prank(dan);
+        auction.exitBid(danBid);
+        vm.prank(erin);
+        auction.exitBid(erinBid);
+        vm.roll(CLAIM_BLOCK);
+        vm.prank(dan);
+        auction.claimTokens(danBid);
+        vm.prank(erin);
+        auction.claimTokens(erinBid);
+        assertEq(saleToken.balanceOf(dan), 300e18);
+        assertEq(saleToken.balanceOf(erin), 200e18);
+        assertEq(saleToken.balanceOf(created), 0, "every sold token claimed");
+    }
+
+    /// @notice The regression this sequence exists to prevent: an auction that was
+    /// created but never funded reverts `TokensNotReceived` on the first bid AND
+    /// on every checkpoint (the CCA's `onlyActiveAuction`), and `onTokensReceived`
+    /// itself refuses until the supply has actually arrived.
+    function test_unfunded_auction_reverts_TokensNotReceived_until_funded() public {
+        saleToken.mint(treasury, TOTAL_SUPPLY);
+        ContinuousClearingAuctionFactory factory = new ContinuousClearingAuctionFactory(address(0));
+        bytes memory configData = _appConfigData(300e18, address(0));
+        vm.prank(treasury);
+        auction = ContinuousClearingAuction(
+            address(factory.create(address(saleToken), TOTAL_SUPPLY, configData, bytes32(uint256(2))))
+        );
+        vm.roll(START_BLOCK);
+
+        currency.mint(dan, 300e18);
+        vm.startPrank(dan);
+        currency.approve(PERMIT2_CANONICAL, 300e18);
+        IPermit2(PERMIT2_CANONICAL).approve(
+            address(currency), address(auction), uint160(300e18), type(uint48).max
+        );
+        vm.expectRevert(IContinuousClearingAuction.TokensNotReceived.selector);
+        auction.submitBid(2 * Q96, 300e18, dan, FLOOR_PRICE_Q96, "");
+        vm.stopPrank();
+        vm.expectRevert(IContinuousClearingAuction.TokensNotReceived.selector);
+        auction.checkpoint();
+
+        // Calling `onTokensReceived` before the transfer is refused too.
+        vm.expectRevert(IContinuousClearingAuction.InvalidTokenAmountReceived.selector);
+        auction.onTokensReceived();
+
+        vm.startPrank(treasury);
+        saleToken.transfer(address(auction), TOTAL_SUPPLY);
+        auction.onTokensReceived();
+        vm.stopPrank();
+        vm.prank(dan);
+        auction.submitBid(2 * Q96, 300e18, dan, FLOOR_PRICE_Q96, "");
+    }
+
+    /// @notice The curated-track gate on the real auction: only the auction drives
+    /// the hook, allowlisted bidders bid up to their cap, everyone else is refused
+    /// by the auction with the hook's own reason.
+    function test_allowlist_hook_gates_the_real_auction_and_strangers_cannot_drive_it() public {
+        AllowlistHook hook = new AllowlistHook(treasury, 400e18);
+        AuctionParameters memory params = AuctionParameters({
+            currency: address(currency),
+            tokensRecipient: address(executor),
+            fundsRecipient: address(executor),
+            startBlock: START_BLOCK,
+            endBlock: END_BLOCK,
+            claimBlock: CLAIM_BLOCK,
+            tickSpacing: TICK_SPACING_Q96,
+            validationHook: address(hook),
+            floorPrice: FLOOR_PRICE_Q96,
+            requiredCurrencyRaised: 300e18,
+            auctionStepsData: abi.encodePacked(STEP_MPS, STEP_BLOCKS)
+        });
+        auction = new ContinuousClearingAuction(address(saleToken), TOTAL_SUPPLY, params, address(0));
+        saleToken.mint(address(auction), TOTAL_SUPPLY);
+        auction.onTokensReceived();
+        vm.startPrank(treasury);
+        hook.setAuction(address(auction));
+        hook.setBidder(dan, true);
+        vm.stopPrank();
+        vm.roll(START_BLOCK);
+
+        // A stranger cannot burn dan's cap by calling the hook directly.
+        vm.prank(erin);
+        vm.expectRevert(abi.encodeWithSelector(AllowlistHook.NotAuction.selector, erin));
+        hook.validate(2 * Q96, 400e18, dan, dan, "");
+        assertEq(hook.spent(dan), 0);
+
+        // The real auction path still works: dan bids inside the cap ...
+        _bid(dan, 250e18, 2 * Q96, FLOOR_PRICE_Q96);
+        assertEq(hook.spent(dan), 250e18);
+
+        // ... a non-allowlisted bidder is refused with the hook's reason ...
+        currency.mint(erin, 100e18);
+        vm.startPrank(erin);
+        currency.approve(PERMIT2_CANONICAL, 100e18);
+        IPermit2(PERMIT2_CANONICAL).approve(
+            address(currency), address(auction), uint160(100e18), type(uint48).max
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("ValidationHookCallFailed(bytes)")),
+                abi.encodeWithSelector(AllowlistHook.NotAllowlisted.selector, erin)
+            )
+        );
+        auction.submitBid(2 * Q96, 100e18, erin, FLOOR_PRICE_Q96, "");
+        vm.stopPrank();
+
+        // ... and dan cannot exceed his cap (250 + 200 > 400).
+        currency.mint(dan, 200e18);
+        vm.startPrank(dan);
+        currency.approve(PERMIT2_CANONICAL, 200e18);
+        IPermit2(PERMIT2_CANONICAL).approve(
+            address(currency), address(auction), uint160(200e18), type(uint48).max
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("ValidationHookCallFailed(bytes)")),
+                abi.encodeWithSelector(
+                    AllowlistHook.OverPerWalletCap.selector, dan, uint128(250e18), uint128(200e18), uint128(400e18)
+                )
+            )
+        );
+        auction.submitBid(2 * Q96, 200e18, dan, FLOOR_PRICE_Q96, "");
+        vm.stopPrank();
+        assertEq(hook.spent(dan), 250e18, "a refused bid does not consume cap");
     }
 }

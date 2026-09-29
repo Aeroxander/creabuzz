@@ -10,7 +10,19 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { useCreateOrgBudgetMutation } from "../hooks";
-import { OrgEntityPicker, type OrgPickerOption } from "./OrgEntityPicker";
+import {
+  BUDGET_LIMIT_FIELDS,
+  ENFORCEMENT_LABEL,
+  budgetSubjectError,
+  isLimitFieldValid,
+  parseLimitField,
+  type BudgetEnforcement,
+  type BudgetLimitField,
+  type BudgetLimitInput,
+  type BudgetLimitKey,
+} from "../lib/budgetForm";
+import { OrgEntityPicker } from "./OrgEntityPicker";
+import { useBudgetSubjectOptions } from "./useBudgetSubjects";
 import type { OrgNode } from "../orgModels";
 
 type OrgBudgetFormProps = {
@@ -25,6 +37,41 @@ const WINDOW_OPTIONS = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
 ] as const;
+
+type LimitDrafts = Record<BudgetLimitKey, string>;
+
+const EMPTY_DRAFTS: LimitDrafts = {
+  runs: "",
+  messages: "",
+  llmCalls: "",
+  taskCreate: "",
+  proposals: "",
+  taskApprove: "",
+  spend: "",
+};
+
+const GROUPS: readonly {
+  enforcement: BudgetEnforcement;
+  hint: string;
+}[] = [
+  {
+    enforcement: "relay",
+    hint: "The relay counts these and turns an overrun into an approval request.",
+  },
+  {
+    enforcement: "advisory",
+    hint: "Recorded and shown, but the relay cannot stop them.",
+  },
+];
+
+function draftsToInput(drafts: LimitDrafts): BudgetLimitInput {
+  const input: BudgetLimitInput = {};
+  for (const field of BUDGET_LIMIT_FIELDS) {
+    const value = parseLimitField(drafts[field.key]);
+    if (value !== undefined) input[field.key] = value;
+  }
+  return input;
+}
 
 export function OrgBudgetForm({
   open,
@@ -47,23 +94,19 @@ export function OrgBudgetForm({
   const [window, setWindow] = React.useState<
     "epoch" | "day" | "week" | "month"
   >("month");
-  const [spendAmount, setSpendAmount] = React.useState("");
-  const [runs, setRuns] = React.useState("");
-  const [taskCreate, setTaskCreate] = React.useState("");
-  const [taskApprove, setTaskApprove] = React.useState("");
+  const [drafts, setDrafts] = React.useState<LimitDrafts>(EMPTY_DRAFTS);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const dtagRef = React.useRef<HTMLInputElement>(null);
   const createMutation = useCreateOrgBudgetMutation();
+  const { options: subjectOptions, communityDefaultAvailable } =
+    useBudgetSubjectOptions(nodes);
 
   React.useEffect(() => {
     if (!open) return;
     setDtag("");
-    setSubject("");
+    setSubject(null);
     setWindow("month");
-    setSpendAmount("");
-    setRuns("");
-    setTaskCreate("");
-    setTaskApprove("");
+    setDrafts(EMPTY_DRAFTS);
     setErrorMessage(null);
     const timerId = globalThis.setTimeout(() => {
       dtagRef.current?.focus();
@@ -71,20 +114,13 @@ export function OrgBudgetForm({
     return () => globalThis.clearTimeout(timerId);
   }, [open]);
 
-  const subjectOptions = React.useMemo<OrgPickerOption[]>(
-    () =>
-      nodes.map((node) => ({
-        id: node.dtag,
-        label: node.name,
-        kindBadge: node.kind,
-      })),
-    [nodes],
+  const limitsValid = BUDGET_LIMIT_FIELDS.every((field) =>
+    isLimitFieldValid(drafts[field.key]),
   );
-
   const canSubmit =
     dtag.trim().length > 0 &&
-    subject !== null &&
-    subject.trim().length > 0 &&
+    budgetSubjectError(subject) === null &&
+    limitsValid &&
     !createMutation.isPending;
 
   const handleSubmit = React.useCallback(
@@ -96,18 +132,9 @@ export function OrgBudgetForm({
         try {
           await createMutation.mutateAsync({
             dtag: dtag.trim(),
-            subject: (subject ?? "").trim(),
+            subject: subject ?? "",
             window,
-            spendAmount: spendAmount
-              ? Number.parseInt(spendAmount, 10)
-              : undefined,
-            runs: runs ? Number.parseInt(runs, 10) : undefined,
-            taskCreate: taskCreate
-              ? Number.parseInt(taskCreate, 10)
-              : undefined,
-            taskApprove: taskApprove
-              ? Number.parseInt(taskApprove, 10)
-              : undefined,
+            limits: draftsToInput(drafts),
           });
           onOpenChange(false);
         } catch (error) {
@@ -117,19 +144,44 @@ export function OrgBudgetForm({
         }
       })();
     },
-    [
-      dtag,
-      subject,
-      window,
-      spendAmount,
-      runs,
-      taskCreate,
-      taskApprove,
-      canSubmit,
-      createMutation,
-      onOpenChange,
-    ],
+    [dtag, subject, window, drafts, canSubmit, createMutation, onOpenChange],
   );
+
+  const renderLimit = (field: BudgetLimitField) => {
+    const inputId = `org-budget-limit-${field.key}`;
+    const noteId = `${inputId}-note`;
+    return (
+      <div className="space-y-1.5" key={field.key}>
+        <label
+          className="text-sm font-medium text-foreground"
+          htmlFor={inputId}
+        >
+          {field.label}
+        </label>
+        <Input
+          aria-describedby={field.note ? noteId : undefined}
+          disabled={createMutation.isPending}
+          id={inputId}
+          min="0"
+          onChange={(event) =>
+            setDrafts((current) => ({
+              ...current,
+              [field.key]: event.target.value,
+            }))
+          }
+          placeholder={field.placeholder}
+          step="1"
+          type="number"
+          value={drafts[field.key]}
+        />
+        {field.note ? (
+          <p className="text-2xs text-muted-foreground" id={noteId}>
+            {field.note}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <Dialog
@@ -143,13 +195,14 @@ export function OrgBudgetForm({
         <DialogHeader>
           <DialogTitle>Create Budget</DialogTitle>
           <DialogDescription>
-            Set spending, run, or task limits for an agent or node.
+            Bound what one agent — or every agent by default — may do in a
+            window.
           </DialogDescription>
         </DialogHeader>
         <form
           id="org-budget-form"
           onSubmit={handleSubmit}
-          className="space-y-4"
+          className="max-h-[60vh] space-y-4 overflow-y-auto pr-1"
         >
           <div className="space-y-1.5">
             <label
@@ -167,16 +220,24 @@ export function OrgBudgetForm({
               value={dtag}
             />
           </div>
-          <OrgEntityPicker
-            disabled={createMutation.isPending}
-            emptyMessage="No org nodes yet. Create a node first."
-            mode="single"
-            onChange={setSubject}
-            options={subjectOptions}
-            searchPlaceholder="Search nodes..."
-            selected={subject}
-            triggerLabel="Subject"
-          />
+          <div className="space-y-1.5">
+            <OrgEntityPicker
+              disabled={createMutation.isPending}
+              emptyMessage="No agents are seated in the org yet. Put an agent in a seat first."
+              mode="single"
+              onChange={setSubject}
+              options={subjectOptions}
+              searchPlaceholder="Search agents..."
+              selected={subject}
+              triggerLabel="Subject"
+            />
+            {communityDefaultAvailable ? null : (
+              <p className="text-2xs text-muted-foreground">
+                Only the community owner or an admin can set the default budget
+                for all agents.
+              </p>
+            )}
+          </div>
           <div className="space-y-1.5">
             <span
               className="text-sm font-medium text-foreground"
@@ -218,80 +279,32 @@ export function OrgBudgetForm({
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="org-budget-runs"
-              >
-                Max Runs
-              </label>
-              <Input
-                disabled={createMutation.isPending}
-                id="org-budget-runs"
-                onChange={(event) => setRuns(event.target.value)}
-                placeholder="e.g. 100"
-                type="number"
-                min="0"
-                value={runs}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="org-budget-spend"
-              >
-                Max Spend (cents)
-              </label>
-              <Input
-                disabled={createMutation.isPending}
-                id="org-budget-spend"
-                onChange={(event) => setSpendAmount(event.target.value)}
-                placeholder="e.g. 50000"
-                type="number"
-                min="0"
-                value={spendAmount}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="org-budget-task-create"
-              >
-                Task Create Limit
-              </label>
-              <Input
-                disabled={createMutation.isPending}
-                id="org-budget-task-create"
-                onChange={(event) => setTaskCreate(event.target.value)}
-                placeholder="e.g. 10"
-                type="number"
-                min="0"
-                value={taskCreate}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="org-budget-task-approve"
-              >
-                Task Approve Limit
-              </label>
-              <Input
-                disabled={createMutation.isPending}
-                id="org-budget-task-approve"
-                onChange={(event) => setTaskApprove(event.target.value)}
-                placeholder="e.g. 5"
-                type="number"
-                min="0"
-                value={taskApprove}
-              />
-            </div>
-          </div>
+          {GROUPS.map((group) => (
+            <fieldset
+              className="m-0 space-y-2 rounded-md border border-border/60 p-3"
+              data-testid={`org-budget-group-${group.enforcement}`}
+              key={group.enforcement}
+            >
+              <legend className="px-1 text-xs font-semibold text-foreground">
+                {ENFORCEMENT_LABEL[group.enforcement]}
+              </legend>
+              <p className="text-2xs text-muted-foreground">{group.hint}</p>
+              <div className="grid grid-cols-2 gap-3">
+                {BUDGET_LIMIT_FIELDS.filter(
+                  (field) => field.enforcement === group.enforcement,
+                ).map(renderLimit)}
+              </div>
+            </fieldset>
+          ))}
+          {limitsValid ? null : (
+            <p className="text-sm text-destructive" role="alert">
+              Limits must be whole numbers, 0 or more.
+            </p>
+          )}
           {errorMessage ? (
-            <p className="text-sm text-destructive">{errorMessage}</p>
+            <p className="text-sm text-destructive" role="alert">
+              {errorMessage}
+            </p>
           ) : null}
         </form>
         <DialogFooter>

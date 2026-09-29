@@ -8,6 +8,12 @@ import {IValidationHook} from "../CCA.sol";
 /// trustgraph score root with a Merkle proof. The launch treasury rotates the
 /// root each epoch; leaves bind (bidder, score) and `minScore` is the
 /// separate acceptance threshold checked alongside the proof.
+///
+/// Unlike `AllowlistHook`, `validate` is a pure `view`: it accrues nothing, so a
+/// stranger calling it can consume no one's allowance and there is nothing to
+/// bind to a single auction. (If per-bidder accounting is ever added here it
+/// must adopt `AllowlistHook`'s `setAuction` gate first — see
+/// `test_trust_hook_validate_is_stateless_so_strangers_burn_nothing`.)
 contract TrustGatedHook is IValidationHook {
     address public immutable owner;
     bytes32 public scoreRoot;

@@ -219,19 +219,23 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              aria-current={selectedView === "paperclip" ? "page" : undefined}
-              data-testid="open-paperclip-view"
-              isActive={selectedView === "paperclip"}
-              onClick={onSelectPaperclip}
-              tooltip="Paperclip"
-              type="button"
-            >
-              <Paperclip className="h-4 w-4" />
-              <SidebarMenuLabel>Paperclip</SidebarMenuLabel>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {/* Deprecated on-ramp: Org and Wiki replace it, so it is hidden
+              unless the `paperclip` preview feature is enabled. */}
+          <FeatureGate feature="paperclip">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                aria-current={selectedView === "paperclip" ? "page" : undefined}
+                data-testid="open-paperclip-view"
+                isActive={selectedView === "paperclip"}
+                onClick={onSelectPaperclip}
+                tooltip="Paperclip"
+                type="button"
+              >
+                <Paperclip className="h-4 w-4" />
+                <SidebarMenuLabel>Paperclip</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </FeatureGate>
           <SidebarMenuItem>
             <SidebarMenuButton
               aria-current={selectedView === "org" ? "page" : undefined}

@@ -634,6 +634,50 @@ test.describe("org UI screenshots", () => {
     await page.screenshot({ path: `${SHOTS}/org-grants.png`, fullPage: false });
   });
 
+  test("budgets: enforcement labels, and the form offers agents (never org node ids)", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await openOrgView(page);
+    await openChartTab(page);
+    // Seeded cards say, per limit, whether the relay enforces it: runs are
+    // counted by the relay; the onchain-bound spend is enforced onchain.
+    const boundBudget = page.getByTestId("org-budget-limits-budget-agent");
+    await expect(boundBudget).toContainText("50 runs/month");
+    await expect(boundBudget).toContainText("Enforced by the relay");
+    await expect(boundBudget).toContainText("Enforced onchain");
+    await expect(
+      page.getByTestId("org-budget-limits-budget-eng"),
+    ).not.toContainText("Advisory");
+
+    await page.getByRole("button", { name: "Budget", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Create Budget" });
+    await expect(dialog).toBeVisible();
+    // Limits the relay cannot observe are grouped and labelled advisory.
+    const advisory = dialog.getByTestId("org-budget-group-advisory");
+    await expect(advisory).toContainText("Advisory");
+    await expect(advisory).toContainText("Task Approve Limit");
+    await expect(advisory).toContainText("Max Spend (cents)");
+    await expect(dialog.getByTestId("org-budget-group-relay")).toContainText(
+      "Enforced by the relay",
+    );
+    // The subject is an agent seat holder, not a node: "Ops Agent" occupies a
+    // seat; "Platform" is a node with no agent and must not be offered.
+    await dialog.getByRole("button", { name: /Subject/ }).click();
+    const listbox = page.getByRole("listbox", { name: "Subject" });
+    await expect(
+      listbox.getByRole("option", { name: /Ops Agent/ }),
+    ).toBeVisible();
+    await expect(listbox.getByRole("option", { name: /Platform/ })).toHaveCount(
+      0,
+    );
+    await listbox.getByRole("option", { name: /Ops Agent/ }).click();
+    await dialog.getByLabel("Budget ID").fill("budget-ops-runs");
+    await expect(
+      dialog.getByRole("button", { name: "Create Budget" }),
+    ).toBeEnabled();
+  });
+
   test("contributions tab: table with filters", async ({ page }) => {
     await installMockBridge(page);
     await openOrgView(page);

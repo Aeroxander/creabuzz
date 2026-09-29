@@ -1,39 +1,45 @@
 import * as React from "react";
 
+import { useCommunities } from "@/features/communities/useCommunities";
 import {
+  gettingStartedCommunityScope,
   readGettingStartedDismissed,
   writeGettingStartedDismissed,
 } from "@/features/home/lib/gettingStarted";
 
 /**
  * Dismissal state for the home "Getting started" checklist, persisted per
- * identity in localStorage. `restore` powers the Settings → Getting started
- * "Show on Home" affordance (Rule 6: hiding the card must never remove the
- * only way back).
+ * community AND identity in localStorage. `restore` powers the Settings →
+ * Getting started "Show on Home" affordance (Rule 6: hiding the card must
+ * never remove the only way back).
  */
 export function useGettingStartedDismissal(
   currentPubkey: string | null | undefined,
 ) {
+  const { activeCommunity } = useCommunities();
+  const communityScope = gettingStartedCommunityScope(
+    activeCommunity?.relayUrl,
+  );
   const normalizedPubkey = currentPubkey?.trim().toLowerCase() ?? "";
   const [dismissed, setDismissed] = React.useState<boolean>(() =>
-    readGettingStartedDismissed(normalizedPubkey),
+    readGettingStartedDismissed(communityScope, normalizedPubkey),
   );
 
-  // Re-read when the identity changes so one account never inherits another
-  // account's dismissal.
+  // Re-read when the community or identity changes so one account (or one
+  // community) never inherits another's dismissal.
   React.useEffect(() => {
-    setDismissed(readGettingStartedDismissed(normalizedPubkey));
-  }, [normalizedPubkey]);
+    setDismissed(readGettingStartedDismissed(communityScope, normalizedPubkey));
+  }, [communityScope, normalizedPubkey]);
 
   const dismiss = React.useCallback(() => {
-    writeGettingStartedDismissed(normalizedPubkey, true);
+    writeGettingStartedDismissed(communityScope, normalizedPubkey, true);
     setDismissed(true);
-  }, [normalizedPubkey]);
+  }, [communityScope, normalizedPubkey]);
 
   const restore = React.useCallback(() => {
-    writeGettingStartedDismissed(normalizedPubkey, false);
+    writeGettingStartedDismissed(communityScope, normalizedPubkey, false);
     setDismissed(false);
-  }, [normalizedPubkey]);
+  }, [communityScope, normalizedPubkey]);
 
   return { dismiss, dismissed, restore };
 }

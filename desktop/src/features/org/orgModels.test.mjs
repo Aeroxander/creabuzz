@@ -127,13 +127,13 @@ describe("eventToOrgBudget", () => {
     const budget = eventToOrgBudget(
       orgEvent(37012, "b1", {
         v: 1,
-        subject: "agent-seat-1",
+        subject: BOB,
         window: "month",
         limits: { runs: 100, spend: { amount: 5000, unit: "usd-cents" } },
         onExceed: "require-approval",
       }),
     );
-    assert.equal(budget.subject, "agent-seat-1");
+    assert.equal(budget.subject, BOB);
     assert.equal(budget.window, "month");
     assert.equal(budget.limits.runs, 100);
     assert.equal(budget.limits.spend.amount, 5000);

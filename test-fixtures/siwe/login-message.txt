@@ -1,0 +1,11 @@
+login.example.com wants you to sign in with your Ethereum account:
+0x1234567890abcdef1234567890abcdef12345678
+
+
+URI: https://login.example.com
+Version: 1
+Chain ID: 8453
+Nonce: abc123xyz789
+Issued At: 2026-07-28T10:00:00.000Z
+Resources:
+- nostr:953d3363262e86b770419834c53d2446409db6d918a57f8f339d495d54ab001f

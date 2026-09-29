@@ -14,11 +14,9 @@ import { useQuery } from "@tanstack/react-query";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import {
-  KIND_EVM_BINDING,
-  parseBindingRecord,
-  type BindingRecord,
-} from "./lib/bindings";
+import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
+
+import { parseBindingRecord, type BindingRecord } from "./lib/bindings";
 
 /** One team cannot exceed this many author probes per lookup. */
 const MAX_BINDING_AUTHORS = 64;

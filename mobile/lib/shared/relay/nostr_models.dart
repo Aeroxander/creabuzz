@@ -58,12 +58,37 @@ abstract final class EventKind {
   static const huddleParticipantLeft = 48102;
   static const huddleEnded = 48103;
 
-  /// NIP-ORG: community org graph (addressable, d = id, h = community).
+  /// NIP-ORG: community org graph (addressable, d = id). Community-level and
+  /// global-only: no `h` routing tag (`h` is the NIP-29 channel tag, and a
+  /// stray one never channel-scopes these kinds).
   static const orgNode = 37010;
   static const orgGrant = 37011;
   static const orgBudget = 37012;
   static const contributionRecord = 37013;
   static const budgetSpendReceipt = 37014;
+
+  /// NIP-ORG (Project Board): project pitch / team manifest (d = the
+  /// project's org-node id) and a member's request to fill one declared role
+  /// (d = `<node>/<role>/<requester-16>`).
+  static const orgPitch = 37015;
+  static const orgJoinRequest = 37016;
+
+  /// NIP-ORG (Discovery plane): EVM binding — which address holds a seat,
+  /// authored by the bound npub (d = the bound `0x…` address) — and deployment
+  /// record — where the Summoner is (d = `<chainId>:<role>`).
+  static const evmBinding = 37017;
+  static const deploymentRecord = 37018;
+
+  /// Agent skill definition (addressable, d = skill id; community-level and
+  /// global-only).
+  static const skill = 30180;
+
+  /// Human wiki page (addressable, d = slug, content = markdown).
+  static const wikiPage = 44001;
+
+  /// Relay hash-chain audit entry — relay-signed, readable by community
+  /// owners and admins only.
+  static const auditEntry = 48001;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [

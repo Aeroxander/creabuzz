@@ -199,6 +199,32 @@ impl AllowanceClient {
         Ok(tx_hash)
     }
 
+    /// Settle an ENFORCED payout onchain: send
+    /// `spendTo(subject, token, epoch, amount, to)` from the configured spender
+    /// key and wait (bounded) for the receipt. The contract debits the
+    /// subject's allowance and moves `amount` of `token` from its treasury to
+    /// `to` in the same transaction — it reverts as a whole when the allowance,
+    /// the treasury's ERC-20 approval, or the treasury balance falls short, or
+    /// when the epoch has not begun. This is the path that makes the ceiling
+    /// bind where money moves; [`AllowanceClient::record_spend`] is accounting
+    /// only.
+    pub async fn record_spend_to(
+        &self,
+        subject_hex: &str,
+        token: &str,
+        amount: u128,
+        window: Window,
+        to: &str,
+    ) -> Result<SpendReceipt, AllowanceError> {
+        let spender = self.spender.as_ref().ok_or(AllowanceError::NoSpender)?;
+        let subject = abi::parse_subject(subject_hex)?;
+        let token_addr = abi::parse_address(token)?;
+        let to_addr = abi::parse_address(to)?;
+        let epoch = window.epoch_now();
+        let data = abi::encode_spend_to(&subject, &token_addr, epoch, amount, &to_addr);
+        self.send_contract_tx(spender, &data).await
+    }
+
     /// Send one bounded-gas contract call from `spender` and wait for the
     /// receipt. Shared by the spend path and the deployment-time admin calls
     /// used by the integration test.
@@ -461,6 +487,120 @@ mod tests {
         assert!(matches!(
             client.check(SUBJECT, "0x1234", 1, Window::Day).await,
             AllowanceDecision::Denied { .. }
+        ));
+        assert_eq!(rpc.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    /// Scripted node for the full send path: answers each JSON-RPC method
+    /// with a canned value and records every `eth_estimateGas` call so the test
+    /// can assert exactly which calldata the client asked the chain to run.
+    struct SendMockRpc {
+        estimate_data: Mutex<Vec<String>>,
+        sent_raw: Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl EvmRpc for SendMockRpc {
+        async fn call(
+            &self,
+            method: &'static str,
+            params: Value,
+            _timeout: Duration,
+        ) -> Result<Value, AllowanceError> {
+            Ok(match method {
+                "eth_chainId" => Value::String("0x7a69".into()),
+                "eth_getTransactionCount" => Value::String("0x0".into()),
+                "eth_gasPrice" => Value::String("0x1".into()),
+                "eth_estimateGas" => {
+                    let data = params[0]["data"].as_str().unwrap_or_default().to_string();
+                    self.estimate_data.lock().unwrap().push(data);
+                    Value::String("0x5208".into())
+                }
+                "eth_sendRawTransaction" => {
+                    // Echo the hash the client signed for so the "node must
+                    // acknowledge exactly our tx" guard passes: derive it from
+                    // the raw bytes (keccak256 of the signed payload).
+                    let raw = params[0].as_str().unwrap_or_default().to_string();
+                    let bytes = hex::decode(raw.trim_start_matches("0x")).unwrap();
+                    self.sent_raw.lock().unwrap().push(raw);
+                    Value::String(format!("0x{}", hex::encode(abi::keccak256(&bytes))))
+                }
+                "eth_getTransactionReceipt" => serde_json::json!({ "status": "0x1" }),
+                other => panic!("unexpected rpc {other}"),
+            })
+        }
+    }
+
+    const SPENDER_KEY: &str = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+    const PAYEE: &str = "0x00000000000000000000000000000000000000d3";
+
+    /// `record_spend_to` must put `spendTo(...)` — the enforced payout — on the
+    /// wire with the recipient, and `record_spend` must keep sending the
+    /// accounting-only `spend(...)`. Swapping the two encoders fails this test.
+    #[tokio::test]
+    async fn record_spend_to_sends_the_enforced_spend_to_calldata() {
+        let rpc = Arc::new(SendMockRpc {
+            estimate_data: Mutex::new(vec![]),
+            sent_raw: Mutex::new(vec![]),
+        });
+        let client = AllowanceClient::from_transport(rpc.clone(), CONTRACT)
+            .unwrap()
+            .with_spender_key(SPENDER_KEY)
+            .unwrap()
+            .with_receipt_deadline(Duration::from_secs(5));
+
+        let receipt = client
+            .record_spend_to(SUBJECT, TOKEN, 1_500_000, Window::Epoch, PAYEE)
+            .await
+            .expect("mock node confirms");
+        assert!(receipt.tx_hash.starts_with("0x"));
+
+        let subject = abi::parse_subject(SUBJECT).unwrap();
+        let token = abi::parse_address(TOKEN).unwrap();
+        let to = abi::parse_address(PAYEE).unwrap();
+        let expected = abi::encode_spend_to(&subject, &token, 0, 1_500_000, &to);
+        {
+            let seen = rpc.estimate_data.lock().unwrap();
+            assert_eq!(seen.len(), 1);
+            assert_eq!(seen[0], format!("0x{}", hex::encode(&expected)));
+            assert_eq!(
+                &expected[..4],
+                &[0xce, 0xa0, 0x45, 0xbd],
+                "spendTo selector"
+            );
+        }
+        assert_eq!(rpc.sent_raw.lock().unwrap().len(), 1);
+
+        // The advisory path still sends `spend` (no recipient word).
+        client
+            .record_spend(SUBJECT, TOKEN, 5, Window::Epoch)
+            .await
+            .expect("mock node confirms");
+        let advisory = abi::encode_spend(&subject, &token, 0, 5);
+        let seen = rpc.estimate_data.lock().unwrap();
+        assert_eq!(seen[1], format!("0x{}", hex::encode(&advisory)));
+        assert_ne!(seen[0], seen[1]);
+    }
+
+    #[tokio::test]
+    async fn record_spend_to_rejects_a_bad_recipient_before_touching_the_node() {
+        let rpc = Arc::new(MockRpc::new(vec![]));
+        let client = AllowanceClient::from_transport(rpc.clone(), CONTRACT)
+            .unwrap()
+            .with_spender_key(SPENDER_KEY)
+            .unwrap();
+        assert!(matches!(
+            client
+                .record_spend_to(SUBJECT, TOKEN, 1, Window::Day, "0x1234")
+                .await,
+            Err(AllowanceError::InvalidInput(_))
+        ));
+        let no_key = AllowanceClient::from_transport(rpc.clone(), CONTRACT).unwrap();
+        assert!(matches!(
+            no_key
+                .record_spend_to(SUBJECT, TOKEN, 1, Window::Day, PAYEE)
+                .await,
+            Err(AllowanceError::NoSpender)
         ));
         assert_eq!(rpc.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }

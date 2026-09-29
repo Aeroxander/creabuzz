@@ -511,6 +511,7 @@ async fn handle_channel_window_filter(
     raw: &Value,
     filter: &nostr::Filter,
     accessible_channels: &[uuid::Uuid],
+    reader_is_admin: bool,
     events: &mut Vec<Value>,
 ) -> Result<(), (StatusCode, Json<Value>)> {
     use buzz_core::kind::{KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS};
@@ -581,6 +582,14 @@ async fn handle_channel_window_filter(
     // 1. Rows, in keyset order.
     let mut row_ids_hex = Vec::with_capacity(window.rows.len());
     for row in &window.rows {
+        // Defense-in-depth: admin-only kinds are channel-less by construction
+        // and never appear in a channel window, but the gate must not depend on
+        // that storage invariant.
+        if !reader_is_admin
+            && buzz_core::kind::is_admin_only_kind(row.stored_event.event.kind.as_u16() as u32)
+        {
+            continue;
+        }
         row_ids_hex.push(row.stored_event.event.id.to_hex());
         let v = serde_json::to_value(&row.stored_event.event)
             .map_err(|e| internal_error(&format!("window row serialize: {e}")))?;
@@ -1172,6 +1181,19 @@ async fn query_events_authed(
     )
     .await?;
 
+    // Admin-only kinds (the 48001 audit chain) are readable only by the
+    // community owner/admin: resolve the role once (skipped when no filter can
+    // match such a kind). A lookup failure fails the request; it is never
+    // downgraded to "not an admin" and answered with an authoritative empty set.
+    let reader_is_admin = crate::handlers::req::resolve_reader_is_admin(
+        state,
+        tenant.community(),
+        &pubkey_bytes,
+        &filters,
+    )
+    .await
+    .map_err(|e| internal_error(&format!("reader role lookup: {e}")))?;
+
     if filters.iter().any(|f| f.search.is_some()) {
         if has_mixed_search_filters(&filters) {
             return Err(api_error(
@@ -1187,6 +1209,7 @@ async fn query_events_authed(
             tenant,
             &authed_pubkey_hex,
             &pubkey_bytes,
+            reader_is_admin,
         )
         .await;
     }
@@ -1212,6 +1235,7 @@ async fn query_events_authed(
             raw,
             filter,
             &accessible_channels,
+            reader_is_admin,
             &mut events,
         )
         .await?;
@@ -1446,6 +1470,7 @@ async fn query_events_authed(
             &pubkey_bytes,
             state,
             tenant.community(),
+            reader_is_admin,
         )
         .await;
         crate::handlers::req::apply_channel_scope_to_query(
@@ -1525,7 +1550,11 @@ async fn query_events_authed(
                     // Also enforces author-only kinds (30300/30350) and the persona
                     // shared-gate (kind:30175 without ["shared","true"]). Single call
                     // covers all three gated event classes.
-                    if !crate::handlers::req::event_visible_to_reader(&se.event, &pubkey_bytes) {
+                    if !crate::handlers::req::event_visible_to_reader(
+                        &se.event,
+                        &pubkey_bytes,
+                        reader_is_admin,
+                    ) {
                         continue;
                     }
                     if let Ok(v) = serde_json::to_value(&se.event) {
@@ -1718,6 +1747,17 @@ async fn count_events_authed(
     )
     .await?;
 
+    // Same admin-only gate as `/query`: non-admin counts exclude the audit
+    // chain in SQL (fast path and fallback) and per event.
+    let reader_is_admin = crate::handlers::req::resolve_reader_is_admin(
+        state,
+        tenant.community(),
+        &pubkey_bytes,
+        &filters,
+    )
+    .await
+    .map_err(|e| internal_error(&format!("reader role lookup: {e}")))?;
+
     let mut total: u64 = 0;
     for filter in &filters {
         let needs_author_only_filtering =
@@ -1758,6 +1798,7 @@ async fn count_events_authed(
                 &pubkey_bytes,
                 state,
                 tenant.community(),
+                reader_is_admin,
             )
             .await;
             crate::handlers::req::apply_channel_scope_to_query(
@@ -1813,6 +1854,7 @@ async fn count_events_authed(
                             if !crate::handlers::req::event_visible_to_reader(
                                 &se.event,
                                 &pubkey_bytes,
+                                reader_is_admin,
                             ) {
                                 continue;
                             }
@@ -1832,6 +1874,7 @@ async fn count_events_authed(
                 &pubkey_bytes,
                 state,
                 tenant.community(),
+                reader_is_admin,
             )
             .await;
             query.channel_ids = Some(accessible_channels.to_vec());
@@ -1883,6 +1926,7 @@ async fn count_events_authed(
                             if !crate::handlers::req::event_visible_to_reader(
                                 &se.event,
                                 &pubkey_bytes,
+                                reader_is_admin,
                             ) {
                                 continue;
                             }
@@ -1946,6 +1990,7 @@ async fn handle_bridge_search(
     tenant: &buzz_core::tenant::TenantContext,
     reader_pubkey_hex: &str,
     pubkey_bytes: &[u8],
+    reader_is_admin: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     // Bridge always includes global (channel-less) events — same as WS with
     // full scopes. `None` means no accessible channels and no global access →
@@ -2064,7 +2109,11 @@ async fn handle_bridge_search(
             // branch cannot currently return unshared persona content — but the
             // check here ensures that a future FTS allowlist change cannot silently
             // reopen the bypass.
-            if !crate::handlers::req::event_visible_to_reader(&stored.event, pubkey_bytes) {
+            if !crate::handlers::req::event_visible_to_reader(
+                &stored.event,
+                pubkey_bytes,
+                reader_is_admin,
+            ) {
                 continue;
             }
             // Dedup across filters.

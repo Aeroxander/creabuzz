@@ -9,10 +9,19 @@
 //!
 //! - `subject` = the agent's 32-byte Nostr pubkey, **verbatim** as `bytes32`.
 //! - `allowanceOf/spentOf/remainingOf(subject, token, uint64 epoch)`.
-//! - `spend(subject, token, epoch, amount)` — only the authorized spender.
+//! - `spendTo(subject, token, epoch, amount, to)` — the ENFORCED payout: the
+//!   contract debits the allowance and moves the tokens
+//!   `transferFrom(treasury, to, amount)` in one call (only the authorized
+//!   spender; the treasury approves the contract). [`AllowanceClient::record_spend_to`].
+//! - `spend(subject, token, epoch, amount)` — accounting only / ADVISORY: it
+//!   records consumption but moves no tokens, so it binds nothing on whoever
+//!   holds the funds. [`AllowanceClient::record_spend`].
 //! - Epoch mapping: day = `unix/86400`, week = `unix/604800`,
 //!   month = `unix/2592000`; the all-time `"epoch"` window is contract
-//!   epoch `0`.
+//!   epoch `0`. The contract rejects an epoch that has not begun
+//!   (`epoch > block.timestamp / epochSeconds`, per-subject `epochSeconds`,
+//!   default 86400), so the subject's `epochSeconds` must match the window the
+//!   client uses.
 //!
 //! # Failure posture
 //!

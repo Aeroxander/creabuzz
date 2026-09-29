@@ -2,3 +2,4 @@
 @openzeppelin/contracts/=lib/continuous-clearing-auction/lib/openzeppelin-contracts/contracts/
 account-abstraction/=lib/zerodev-kernel-7579-plugins/dependencies/eth-infinitism-account-abstraction-0.8.0/contracts/
 src/=lib/zerodev-kernel-7579-plugins/src/
+solady/=lib/zerodev-kernel-7579-plugins/dependencies/solady-0.1.26/src/

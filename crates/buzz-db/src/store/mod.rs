@@ -28,6 +28,8 @@ pub mod feed;
 pub mod git_repo;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
+/// NIP-ORG authority resolver adapter (R1 anchoring over the org graph).
+pub mod org_graph;
 /// Monthly table partition management.
 pub mod partition;
 /// Buzz product-feedback sidecar persistence.

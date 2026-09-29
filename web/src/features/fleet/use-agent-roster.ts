@@ -15,6 +15,7 @@ import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { KIND_AGENT_CAPABILITIES } from "@/shared/constants/kinds";
 
+import { LIVENESS_WINDOW_MS } from "./lib/heartbeat";
 import {
   indexRoster,
   parseAnnouncement,
@@ -39,8 +40,6 @@ export interface AgentCapabilities {
   updatedAt: number;
   alive: boolean;
 }
-
-const LIVENESS_WINDOW_MS = 180_000;
 
 const RUNTYPES: readonly string[] = ["browser", "desktop", "sandbox"];
 const STATUSES: readonly string[] = ["available", "busy", "offline"];

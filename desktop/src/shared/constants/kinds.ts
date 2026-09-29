@@ -98,18 +98,41 @@ export const KIND_LAUNCH_UPDATE = 47003;
 export const KIND_LAUNCH_PROPOSAL = 47004;
 export const KIND_LAUNCH_RECEIPT = 47005;
 export const KIND_SCORE_ROOT = 37006;
-// NIP-ORG: community org graph (addressable, d = id, h = community).
+// NIP-ORG: community org graph (addressable, d = id). Community-level and
+// global-only: no `h` routing tag (`h` is the NIP-29 channel tag, and a stray one
+// never channel-scopes these kinds).
 export const KIND_ORG_NODE = 37010;
 export const KIND_ORG_GRANT = 37011;
 export const KIND_ORG_BUDGET = 37012;
 export const KIND_CONTRIBUTION_RECORD = 37013;
 export const KIND_BUDGET_SPEND_RECEIPT = 37014;
+// NIP-ORG (Project Board): project pitch / team manifest (d = the project's
+// org-node id; declared roles as ["role", slug, label, pct] tags) and a member's
+// request to fill one declared role (d = "<node>/<role>/<requester-16>"; a
+// decline republishes the same d under the founder's key). Mirror of buzz-core.
+export const KIND_ORG_PITCH = 37015;
+export const KIND_ORG_JOIN_REQUEST = 37016;
+// NIP-ORG (Discovery plane): EVM binding — "which address holds this seat",
+// authored by the bound npub (d = the bound 0x… address) — and deployment
+// record — "where is the Summoner" (d = "<chainId>:<role>"). Mirror of buzz-core.
+export const KIND_EVM_BINDING = 37017;
+export const KIND_DEPLOYMENT_RECORD = 37018;
+// Relay hash-chain audit entry (mirror of buzz-core KIND_AUDIT_ENTRY): signed by
+// the relay, readable by community owners and admins only. See
+// features/org/lib/auditChain.ts for what verifying the chain does and does not
+// prove.
+export const KIND_AUDIT_ENTRY = 48001;
+// Agent skill definition (mirror of buzz-core KIND_SKILL): a shareable Agent
+// Skills instruction set (d = skill id; community-level and global-only).
+export const KIND_SKILL = 30180;
 export const ORG_EVENT_KINDS = [
   KIND_ORG_NODE,
   KIND_ORG_GRANT,
   KIND_ORG_BUDGET,
   KIND_CONTRIBUTION_RECORD,
   KIND_BUDGET_SPEND_RECEIPT,
+  KIND_ORG_PITCH,
+  KIND_ORG_JOIN_REQUEST,
 ] as const;
 export const LAUNCHPAD_EVENT_KINDS = [
   KIND_LAUNCH_RECORD,

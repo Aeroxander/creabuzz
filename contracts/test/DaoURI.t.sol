@@ -4,13 +4,29 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
 import {DaoURIAdapter} from "../src/DaoURIAdapter.sol";
-import {Moloch} from "majeur/src/Moloch.sol";
+import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
 
 /// @notice Phase 3 acceptance (OA.md/OAv2): the half-built `contractURI()`
 ///         field becomes the ERC-4824 `daoURI()`, the summon carries it, and
 ///         — the DUNA category-error guard — a named uri OVERRIDES majeur's
 ///         nonprofit default so no commercial AO inherits a stranger's
 ///         charter (OAv2 §4.8: the adapter is required, not optional).
+/// Stand-in for majeur's DUNA operating-charter renderer: what a DAO's
+/// `contractURI()` falls through to when no uri was named.
+contract DunaRendererMock {
+    string internal constant DUNA = "data:application/json,{\"name\":\"a stranger's Wyoming nonprofit charter\"}";
+
+    function daoContractURI(Moloch) external pure returns (string memory) {
+        return DUNA;
+    }
+    function daoTokenURI(Moloch, uint256) external pure returns (string memory) {
+        return "";
+    }
+    function badgeTokenURI(Moloch, uint256) external pure returns (string memory) {
+        return "";
+    }
+}
+
 contract DaoURIAdapterTest is Test {
     address internal treasury = makeAddr("treasury");
 
@@ -53,17 +69,48 @@ contract DaoURIAdapterTest is Test {
         assertEq(adapter.daoURI(), uri, "ERC-4824 entry point");
     }
 
-    /// The DUNA guard: an EMPTY uri falls through to majeur's renderer
-    /// default — the category error OAv2 §4.8 names. The assertion here
-    /// pins WHY the adapter + a named uri are required for bound orgs.
-    function test_emptyUriFallsThroughToTheRendererDefault() public {
+    /// OrgBinding summons with NO renderer, so an empty uri reads back as the
+    /// empty string — "unknown", which the DaoBound docs tell readers never to
+    /// treat as a value. It is never a stranger's charter.
+    function test_emptyUri_withoutARenderer_readsBackEmpty() public {
         (Moloch dao, ) = _summon("");
-        // Not asserting the charter's text — asserting that the default is
-        // NOT the org's dao.json (i.e. a real document must be named).
+        assertEq(bytes(dao.contractURI()).length, 0, "no uri, no renderer: nothing is claimed");
+        DaoURIAdapter adapter = new DaoURIAdapter(address(dao));
+        assertEq(bytes(adapter.daoURI()).length, 0, "the adapter exposes unknown as unknown");
+    }
+
+    /// The DUNA guard (OAv2 §4.8): if a renderer IS set, an EMPTY uri falls
+    /// through to the renderer's default — a stranger's charter presented as the
+    /// org's own metadata — and a NAMED uri overrides it. The adapter forwards
+    /// whatever `contractURI()` says, so a bound org must name its own document.
+    function test_emptyUri_fallsThroughToTheRenderer_andANamedUriOverridesIt() public {
+        DunaRendererMock renderer = new DunaRendererMock();
+        Summoner summoner = new Summoner();
+        address[] memory holders = new address[](1);
+        uint256[] memory shares = new uint256[](1);
+        holders[0] = treasury;
+        shares[0] = 1e18;
+
+        Moloch unnamed = summoner.summon(
+            "Cafe AO", "CAFE", "", 500, true, address(renderer), keccak256("unnamed"),
+            holders, shares, new Call[](0)
+        );
+        Moloch named = summoner.summon(
+            "Cafe AO", "CAFE", "https://relay.example/dao.json", 500, true, address(renderer),
+            keccak256("named"), holders, shares, new Call[](0)
+        );
+
+        string memory fallbackUri = unnamed.contractURI();
+        assertEq(fallbackUri, renderer.daoContractURI(unnamed), "an empty uri IS the renderer default");
+        assertEq(
+            new DaoURIAdapter(address(unnamed)).daoURI(),
+            fallbackUri,
+            "the adapter launders nothing: it exposes the fall-through as-is"
+        );
+        assertEq(named.contractURI(), "https://relay.example/dao.json", "a named uri wins");
         assertTrue(
-            bytes(dao.contractURI()).length != bytes("https://relay.example/dao.json").length
-                || keccak256(bytes(dao.contractURI())) != keccak256(bytes("https://relay.example/dao.json")),
-            "empty uri must not silently become the org's document"
+            keccak256(bytes(named.contractURI())) != keccak256(bytes(fallbackUri)),
+            "the org's document is not the renderer's charter"
         );
     }
 

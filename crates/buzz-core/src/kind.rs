@@ -197,6 +197,27 @@ pub const P_GATED_KINDS: &[u32] = &[
     KIND_AGENT_TURN_METRIC,
 ];
 
+/// Kinds whose stored events are readable only by the community owner or an
+/// admin (`relay_members.role IN ('owner', 'admin')`).
+///
+/// The relay's own hash-chain audit entries ([`KIND_AUDIT_ENTRY`], 48001) are
+/// recorded for every persistent event — including gift wraps and private
+/// channels — and carry actor pubkeys and channel ids, so letting any member
+/// `REQ {"kinds":[48001]}` would reveal who did what in channels they cannot
+/// see. Every client read path must exclude these kinds for a non-admin reader
+/// and never reveal their existence: WebSocket REQ (historical + NIP-50
+/// search), live fan-out, COUNT, HTTP `POST /query` and `POST /count`, and
+/// id-based hydration. Unlike [`AUTHOR_ONLY_KINDS`] and [`P_GATED_KINDS`] the
+/// gate is a community *role*, so a plain member simply receives nothing (no
+/// error), which keeps kindless `ids` lookups indistinguishable from "no such
+/// event".
+pub const ADMIN_ONLY_KINDS: &[u32] = &[KIND_AUDIT_ENTRY];
+
+/// Returns `true` if `kind` is in [`ADMIN_ONLY_KINDS`].
+pub fn is_admin_only_kind(kind: u32) -> bool {
+    ADMIN_ONLY_KINDS.contains(&kind)
+}
+
 /// NIP-AP: Agent Persona (parameterized replaceable, owner-authored).
 ///
 /// Persona definition event published by the workspace owner. Addressed by
@@ -1091,6 +1112,21 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ORG_JOIN_REQUEST,
     KIND_EVM_BINDING,
     KIND_DEPLOYMENT_RECORD,
+    // Registered late: the constants existed but were missing from this list,
+    // so a colliding new kind would not have been caught by
+    // `no_duplicate_kind_values`. `all_kind_constants_are_registered` now fails
+    // when a `pub const ...: u32` kind is defined but not listed here.
+    KIND_AUTH,
+    KIND_NOSTR_IDENTITY_BINDING,
+    KIND_PUSH_LEASE,
+    KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_TASK,
+    KIND_TEAM_STRATEGY,
+    KIND_TEAM_RUN,
+    KIND_TEAM_TURN,
+    KIND_WIKI_PAGE,
+    KIND_ROYALTY_SCHEDULE,
+    KIND_ROYALTY_CLOSE,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -1110,6 +1146,40 @@ pub const fn is_replaceable(kind: u32) -> bool {
 /// These events are keyed by `(pubkey, kind, d_tag)` — the latest `created_at` wins.
 pub const fn is_parameterized_replaceable(kind: u32) -> bool {
     kind >= PARAM_REPLACEABLE_KIND_MIN && kind <= PARAM_REPLACEABLE_KIND_MAX
+}
+
+/// Slug-addressed fork kinds that sit OUTSIDE the NIP-33 window but are read
+/// by their `d` tag: the human wiki (44001), the agent wiki (44002), fleet
+/// capabilities/tasks (44010/44011) and the team strategy/run/turn kinds
+/// (44020–44022).
+///
+/// The relay materializes the first `d` tag of these events into the indexed
+/// `events.d_tag` column so server-side readers (`/governance.md`, the
+/// `d_tag`/`d_tags` query pushdown) can find them. They stay REGULAR events:
+/// every revision is stored and replacement is read-side last-write-wins, so
+/// this list must never be consulted by replacement logic (use
+/// [`is_parameterized_replaceable`] for that).
+pub const D_TAG_ADDRESSED_KINDS: [u32; 7] = [
+    KIND_WIKI_PAGE,
+    KIND_AGENT_WIKI_PAGE,
+    KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_TASK,
+    KIND_TEAM_STRATEGY,
+    KIND_TEAM_RUN,
+    KIND_TEAM_TURN,
+];
+
+/// Returns `true` if `kind` is one of [`D_TAG_ADDRESSED_KINDS`]: a regular
+/// (non-replaceable) kind whose `d` tag is materialized for lookup.
+pub const fn is_d_tag_addressed(kind: u32) -> bool {
+    let mut i = 0;
+    while i < D_TAG_ADDRESSED_KINDS.len() {
+        if D_TAG_ADDRESSED_KINDS[i] == kind {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Returns `true` if `kind` is a workflow execution event (46001–46012).
@@ -1255,6 +1325,68 @@ mod tests {
         for &k in ALL_KINDS {
             assert!(seen.insert(k), "duplicate kind value: {k}");
         }
+    }
+
+    #[test]
+    fn all_kind_constants_are_registered() {
+        // Source-level completeness check: every `pub const NAME: u32` kind
+        // defined in this file must be named in `ALL_KINDS`, otherwise
+        // duplicate detection silently skips it (as happened for the wiki,
+        // fleet, team and royalty kinds).
+        const SOURCE: &str = include_str!("kind.rs");
+        // Range bounds, not kinds.
+        const NOT_KINDS: [&str; 4] = [
+            "EPHEMERAL_KIND_MIN",
+            "EPHEMERAL_KIND_MAX",
+            "PARAM_REPLACEABLE_KIND_MIN",
+            "PARAM_REPLACEABLE_KIND_MAX",
+        ];
+        let list_start = SOURCE
+            .find("pub const ALL_KINDS: &[u32] = &[")
+            .expect("ALL_KINDS definition");
+        let list_end = list_start + SOURCE[list_start..].find("\n];").expect("end of ALL_KINDS");
+        let listed = &SOURCE[list_start..list_end];
+        let definitions_end = SOURCE.find("#[cfg(test)]").expect("test module marker");
+        let mut missing = Vec::new();
+        for line in SOURCE[..definitions_end].lines() {
+            let Some(rest) = line.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((name, ty)) = rest.split_once(':') else {
+                continue;
+            };
+            if !ty.trim_start().starts_with("u32 =") || NOT_KINDS.contains(&name) {
+                continue;
+            }
+            let registered = listed
+                .lines()
+                .any(|entry| entry.trim().trim_end_matches(',') == name);
+            if !registered {
+                missing.push(name.to_owned());
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "kind constants missing from ALL_KINDS: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn audit_entries_are_admin_only_and_registered() {
+        assert!(ADMIN_ONLY_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(is_admin_only_kind(KIND_AUDIT_ENTRY));
+        assert!(!is_admin_only_kind(KIND_STREAM_MESSAGE));
+        for kind in ADMIN_ONLY_KINDS {
+            assert!(
+                ALL_KINDS.contains(kind),
+                "admin-only kind {kind} unregistered"
+            );
+        }
+        // The admin gate is a role gate: it must not be confused with the
+        // author/#p gates, which would 403 an admin reading someone else's rows.
+        assert!(!AUTHOR_ONLY_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(!P_GATED_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(!RESULT_GATED_KINDS.contains(&KIND_AUDIT_ENTRY));
     }
 
     #[test]

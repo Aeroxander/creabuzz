@@ -19,7 +19,8 @@ interface IRouterInfraFee {
     function infrastructureFeeBPS() external view returns (uint16);
 }
 
-error NotTreasuryBroadcaster(address caller);
+/// @notice An env fee/spread/share is above the conservative ceiling.
+error AboveCeiling(string what, uint256 value, uint256 ceiling);
 
 interface IToken {
     function setTransferValidator(address validator) external;
@@ -39,12 +40,30 @@ interface IValidatorRuleset {
 ///
 /// All params via env (defaults = local/dev):
 /// APPTOKEN_NAME, APPTOKEN_SYMBOL, APPTOKEN_SALT (default 1),
-/// APPTOKEN_TREASURY (owner + initial supply recipient),
+/// APPTOKEN_TREASURY (initial supply recipient; the broadcaster),
+/// APPTOKEN_OWNER (token/pool owner, default = APPTOKEN_TREASURY; set it to the
+///   DAO to hand the fee levers over — see "Ownership" below),
 /// APPTOKEN_INITIAL_SUPPLY (whole tokens, default 1000000),
 /// APPTOKEN_ROUTER (default TokenMaster router),
 /// APPTOKEN_STANDARD_FACTORY, APPTOKEN_TV,
 /// APPTOKEN_BUY_FEE_BPS / APPTOKEN_SELL_FEE_BPS (default 200),
 /// APPTOKEN_SPREAD_BPS (default 100).
+///
+/// SAFE DEFAULTS (docs/dao-os.md R4). The pool's `max*` guardrails are IMMUTABLE:
+/// whoever owns the token can move fees/spreads anywhere below them and never
+/// above. They used to be 10_000 / 9999 (i.e. "owner may charge a 100% fee on
+/// every sell") — a rug-capable configuration. They are now capped at
+/// {MAX_FEE_BPS} = {MAX_SPREAD_BPS} = 1_000 bps (10%) and the creator's spend
+/// share at {MAX_SPEND_CREATOR_SHARE_BPS} = 5_000 (the initial share, so it
+/// can be lowered but never raised). The env fee/spread values must sit at or
+/// below these ceilings (the script reverts otherwise).
+///
+/// Ownership. `initialOwner` is `APPTOKEN_OWNER` (default the treasury). Wiring
+/// the transfer validator + Vanilla ruleset is an owner op, so the script does
+/// it only when the owner IS the broadcaster; when `APPTOKEN_OWNER` names
+/// another address (the DAO) the script deploys the token and stops — the owner
+/// then wires the validator itself. To hand an existing treasury-owned token to
+/// the DAO after graduation, call `transferOwnership(dao)` on the token.
 ///
 /// Flow: compute deterministic address → router.deployToken (empty signature,
 /// permissionless on fresh/local deployments) → Vanilla validator ruleset
@@ -54,11 +73,72 @@ interface IValidatorRuleset {
 contract DeployAppToken is Script {
     event AppTokenDeployed(address indexed token);
 
+    /// @notice Immutable pool ceilings for buy/sell fees, buy demand fee and
+    /// buy/sell spreads: 10%. Mirrored by desktop `evmCalls.ts` and web
+    /// `mint-tx.ts` (pinned by their tests).
+    uint256 public constant MAX_FEE_BPS = 1_000;
+    uint256 public constant MAX_SPREAD_BPS = 1_000;
+    /// @notice Immutable ceiling on the creator's share of spent value. Equal to
+    /// the initial share: it can be lowered, never raised.
+    uint256 public constant MAX_SPEND_CREATOR_SHARE_BPS = 5_000;
+    uint256 public constant INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000;
+
+    /// @notice The `StandardPoolInitializationParameters` this script deploys,
+    /// with the conservative ceilings above. Public so the guardrails are
+    /// testable against the real TokenMaster `StandardPool`.
+    function initializationParameters(
+        address supplyRecipient,
+        uint256 initialSupply,
+        uint16 spread,
+        uint16 buyFee,
+        uint16 sellFee
+    ) public pure returns (StandardPoolInitializationParameters memory) {
+        if (spread > MAX_SPREAD_BPS) revert AboveCeiling("spread", spread, MAX_SPREAD_BPS);
+        if (buyFee > MAX_FEE_BPS) revert AboveCeiling("buyFee", buyFee, MAX_FEE_BPS);
+        if (sellFee > MAX_FEE_BPS) revert AboveCeiling("sellFee", sellFee, MAX_FEE_BPS);
+        return StandardPoolInitializationParameters({
+            initialSupplyRecipient: supplyRecipient,
+            initialSupplyAmount: initialSupply,
+            minBuySpreadBPS: 0,
+            maxBuySpreadBPS: MAX_SPREAD_BPS,
+            maxBuyFeeBPS: MAX_FEE_BPS,
+            maxBuyDemandFeeBPS: MAX_FEE_BPS,
+            minSellSpreadBPS: 0,
+            maxSellSpreadBPS: MAX_SPREAD_BPS,
+            maxSellFeeBPS: MAX_FEE_BPS,
+            maxSpendCreatorShareBPS: MAX_SPEND_CREATOR_SHARE_BPS,
+            creatorEmissionRateNumerator: 0,
+            creatorEmissionRateDenominator: 1,
+            creatorEmissionsHardCap: 0,
+            initialBuyParameters: StandardPoolBuyParameters({
+                buySpreadBPS: spread,
+                buyFeeBPS: buyFee,
+                buyCostPairedTokenNumerator: 1e18,
+                buyCostPoolTokenDenominator: 1e18,
+                useTargetSupply: false,
+                reserved: 0,
+                buyDemandFeeBPS: 0,
+                targetSupplyBaseline: 0,
+                targetSupplyBaselineScaleFactor: 0,
+                targetSupplyGrowthRatePerSecond: 0,
+                targetSupplyBaselineTimestamp: 0
+            }),
+            initialSellParameters: StandardPoolSellParameters({sellSpreadBPS: spread, sellFeeBPS: sellFee}),
+            initialSpendParameters: StandardPoolSpendParameters({
+                creatorShareBPS: uint16(INITIAL_SPEND_CREATOR_SHARE_BPS)
+            }),
+            initialPausedState: 0
+        });
+    }
+
     function run() external returns (address token) {
         string memory name = vm.envString("APPTOKEN_NAME");
         string memory symbol = vm.envString("APPTOKEN_SYMBOL");
         uint256 salt = vm.envOr("APPTOKEN_SALT", uint256(1));
         address treasury = vm.envAddress("APPTOKEN_TREASURY");
+        // The token/pool owner (holder of the fee levers, below the immutable
+        // ceilings). Defaults to the treasury; pass the DAO to hand it over.
+        address owner = vm.envOr("APPTOKEN_OWNER", treasury);
         uint256 initialSupply = vm.envOr("APPTOKEN_INITIAL_SUPPLY", uint256(1_000_000)) * 1e18;
         // Native pairing requires a nonzero initial deposit (the pool's
         // starting reserve). Funded by the broadcaster as msg.value.
@@ -79,42 +159,10 @@ contract DeployAppToken is Script {
             name: name,
             symbol: symbol,
             tokenDecimals: 18,
-            initialOwner: treasury,
+            initialOwner: owner,
             pairedToken: address(0),
             initialPairedTokenToDeposit: pairedDeposit,
-            encodedInitializationArgs: abi.encode(
-                StandardPoolInitializationParameters({
-                    initialSupplyRecipient: treasury,
-                    initialSupplyAmount: initialSupply,
-                    minBuySpreadBPS: 0,
-                    maxBuySpreadBPS: 9999,
-                    maxBuyFeeBPS: 10_000,
-                    maxBuyDemandFeeBPS: 10_000,
-                    minSellSpreadBPS: 0,
-                    maxSellSpreadBPS: 9999,
-                    maxSellFeeBPS: 10_000,
-                    maxSpendCreatorShareBPS: 10_000,
-                    creatorEmissionRateNumerator: 0,
-                    creatorEmissionRateDenominator: 1,
-                    creatorEmissionsHardCap: 0,
-                    initialBuyParameters: StandardPoolBuyParameters({
-                        buySpreadBPS: spread,
-                        buyFeeBPS: buyFee,
-                        buyCostPairedTokenNumerator: 1e18,
-                        buyCostPoolTokenDenominator: 1e18,
-                        useTargetSupply: false,
-                        reserved: 0,
-                        buyDemandFeeBPS: 0,
-                        targetSupplyBaseline: 0,
-                        targetSupplyBaselineScaleFactor: 0,
-                        targetSupplyGrowthRatePerSecond: 0,
-                        targetSupplyBaselineTimestamp: 0
-                    }),
-                    initialSellParameters: StandardPoolSellParameters({sellSpreadBPS: spread, sellFeeBPS: sellFee}),
-                    initialSpendParameters: StandardPoolSpendParameters({creatorShareBPS: 5000}),
-                    initialPausedState: 0
-                })
-            ),
+            encodedInitializationArgs: abi.encode(initializationParameters(treasury, initialSupply, spread, buyFee, sellFee)),
             defaultTransferValidator: tv,
             useRouterForPairedTransfers: false,
             partnerFeeRecipient: address(0),
@@ -141,10 +189,13 @@ contract DeployAppToken is Script {
         );
         address realTV = tv == address(0) ? address(0x721C008fdff27BF06E7E123956E2Fe03B63342e3) : tv;
         // Wire the canonical validator + Vanilla ruleset (1: open trading).
-        // Requires broadcaster == treasury (collection owner).
-        if (treasury != msg.sender) revert NotTreasuryBroadcaster(msg.sender);
-        IToken(token).setTransferValidator(realTV);
-        IValidatorRuleset(realTV).setRulesetOfCollection(token, 1, address(0), 0, 0);
+        // Owner ops: only the broadcaster can do them, and only when it IS the
+        // owner. A DAO-owned deploy (`APPTOKEN_OWNER` != broadcaster) stops
+        // here; the owner wires the validator itself.
+        if (owner == msg.sender) {
+            IToken(token).setTransferValidator(realTV);
+            IValidatorRuleset(realTV).setRulesetOfCollection(token, 1, address(0), 0, 0);
+        }
         vm.stopBroadcast();
         emit AppTokenDeployed(token);
         // Machine-readable handoff for the CLI (script emits never land in

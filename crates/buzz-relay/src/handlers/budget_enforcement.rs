@@ -2,26 +2,58 @@
 //!
 //! Checks whether an agent's action exceeds any applicable budget limits
 //! before the event is committed to the database, and consumes the matching
-//! counter when the action is admitted (`runs` on the kind:44200 gate,
-//! `tasks.create` on the kind:44011 gate — see [`enforce_counter`]).
+//! counter when the action is admitted. Counter classes:
+//!
+//! | counter                                          | gate                                   |
+//! |--------------------------------------------------|----------------------------------------|
+//! | `runs`                                           | kind:44200 agent turn metrics          |
+//! | `task_create`                                    | kind:44011 agent tasks                 |
+//! | `governance_proposal` / `_vote` / `_execute`     | kinds 47004 / 47005                    |
+//! | `messages`                                       | chat messages (kinds 9, 40002) by agents |
+//! | `llm_calls`                                      | the LLM gateway (`/llm/chat/completions`) |
 //!
 //! Contract (see `docs/nips/NIP-ORG.md`): a budget's JSON content keys are
-//! camelCase — `{ subject, window, limits, onExceed }` — and a budget
-//! applies to an agent when `content.subject` equals the agent's 64-hex
-//! pubkey (case-insensitive).
+//! camelCase — `{ subject, window, limits, onExceed }`.
+//!
+//! # Which budgets apply
+//!
+//! A budget applies to an agent when `content.subject` equals the agent's
+//! 64-hex pubkey (case-insensitive), **or** it is a community *default*
+//! budget (`subject: "*"`, owner/admin-signed only — enforced at ingest) and
+//! the agent has no authority-signed budget of its own for that counter (R2).
+//! A budget the subject signed itself is *additive*: it never displaces the
+//! default or an authority-signed budget.
+//!
+//! When several budgets apply to one subject the **strictest limit wins** (a
+//! subject cannot loosen itself). One admitted action increments each
+//! `(counter, window)` exactly once, however many budgets share that window,
+//! while every applicable budget's limit is checked against the shared
+//! counter.
+//!
+//! # Windows
+//!
+//! Windows are fixed epochs — `floor(unix_time / len) * len` with `len` of
+//! 86 400 (`day`), 604 800 (`week`) or 2 592 000 (`month`) seconds — so the
+//! relay, `OrgAllowance.sol` and the desktop agree on where a window starts.
+//! `epoch` is the all-time cumulative window.
 //!
 //! On exceed with `onExceed: "require-approval"` the relay records the
 //! overrun durably (a `budget_approvals` row, written first) and then emits
 //! a relay-signed kind:46010 notification best-effort; the row is the
 //! recovery record if the notification is lost. The would-be action is
 //! still rejected — approval is granted through a human decision, never by
-//! re-submitting the same event.
+//! re-submitting the same event. Granting and denying those rows is wired:
+//! see `command_executor::resolve_budget_approval_command` (kinds 46030/46031).
+//! (`migrations/0047_budget_consumption.sql` still says grant/deny wiring is a
+//! follow-up; that comment predates the wiring and applied migrations are
+//! never edited.)
 
 use std::sync::Arc;
 
+use buzz_core::org_grant::DEFAULT_BUDGET_SUBJECT;
 use buzz_core::tenant::TenantContext;
-use chrono::Datelike;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 use nostr::{EventBuilder, Kind, Tag};
 use uuid::Uuid;
 
@@ -36,41 +68,42 @@ const VALID_WINDOWS: [&str; 4] = ["epoch", "day", "week", "month"];
 /// `buzz-workflow`'s `suspend_run`).
 const BUDGET_APPROVAL_TTL_SECS: i64 = 24 * 3600;
 
+/// Length in seconds of the fixed `day` window (`OrgAllowance.sol`: `unix / 86400`).
+const DAY_SECS: i64 = 86_400;
+/// Length in seconds of the fixed `week` window (`unix / 604800`).
+const WEEK_SECS: i64 = 604_800;
+/// Length in seconds of the fixed `month` window (`unix / 2592000`).
+const MONTH_SECS: i64 = 2_592_000;
+
+/// Counter class for chat messages authored by agents (kinds 9 and 40002).
+pub(crate) const COUNTER_MESSAGES: &str = "messages";
+/// Counter class for LLM gateway calls.
+pub(crate) const COUNTER_LLM_CALLS: &str = "llm_calls";
+
 /// Compute the window start timestamp for a budget window type.
 ///
-/// - `"day"` / `"week"` / `"month"` start at local-relay midnight of the
-///   current day / Monday of the current ISO week / 1st of the current
-///   month (UTC).
+/// - `"day"` / `"week"` / `"month"` are **fixed epochs**: the window starts at
+///   `floor(unix_time / len) * len` with `len` = 86 400 / 604 800 / 2 592 000
+///   seconds, exactly the epoch numbering `OrgAllowance.sol` and the desktop
+///   use (`unix / len`). They are not calendar days/weeks/months.
 /// - `"epoch"` is the **all-time cumulative** counter: its window starts at
 ///   the Unix epoch and never resets. A budget that must expire needs an
 ///   explicit `expires` on the budget event itself, not this window.
 ///
-/// Unknown window strings also map to the all-time epoch window here, but
-/// they can only reach enforcement if they were stored before this
-/// validation existed — kind:37012 ingest rejects unknown windows (see
-/// [`validate_budget_publication`]).
+/// Unknown window strings also map to the all-time epoch window here (the
+/// stricter direction: an all-time counter only grows), but they can only
+/// reach enforcement if they were stored before this validation existed —
+/// kind:37012 ingest rejects unknown windows (see [`budget_content_error`]).
 pub(crate) fn budget_window_start(window: &str, now: DateTime<Utc>) -> DateTime<Utc> {
-    match window {
-        "day" => now
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .map(|t| t.and_utc())
-            .unwrap_or(now),
-        "week" => {
-            let days_since_monday = now.date_naive().weekday().num_days_from_monday() as i64;
-            (now - chrono::Duration::days(days_since_monday))
-                .date_naive()
-                .and_hms_opt(0, 0, 0)
-                .map(|t| t.and_utc())
-                .unwrap_or(now)
-        }
-        "month" => NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
-            .and_then(|d| d.and_hms_opt(0, 0, 0))
-            .map(|t| t.and_utc())
-            .unwrap_or(now),
+    let len = match window {
+        "day" => DAY_SECS,
+        "week" => WEEK_SECS,
+        "month" => MONTH_SECS,
         // "epoch" and any unknown legacy value: all-time cumulative.
-        _ => DateTime::UNIX_EPOCH,
-    }
+        _ => return DateTime::UNIX_EPOCH,
+    };
+    let ts = now.timestamp().max(0);
+    DateTime::from_timestamp(ts - ts.rem_euclid(len), 0).unwrap_or(DateTime::UNIX_EPOCH)
 }
 
 /// Validate the budget-specific content of a kind:37012 event.
@@ -78,21 +111,37 @@ pub(crate) fn budget_window_start(window: &str, now: DateTime<Utc>) -> DateTime<
 /// Beyond the shared org envelope (JSON object, bounded `d`), a budget must
 /// carry:
 /// - `subject`: a 64-hex pubkey (case-insensitive) — the agent the budget
-///   applies to. A budget without a resolvable subject could never apply,
-///   so it is rejected rather than stored dead.
+///   applies to — or `"*"`, the community default budget (R2), which covers
+///   agents that have no authority-signed budget of their own and cannot
+///   carry an `onchain` binding (that binds one agent's key). A budget
+///   without a resolvable subject could never apply, so it is rejected
+///   rather than stored dead.
 /// - `window`: one of `"epoch" | "day" | "week" | "month"`. Unknown values
 ///   are rejected so they can no longer silently degrade to the all-time
 ///   epoch window.
+/// - `limits` (when present): a well-formed limits object. A malformed one
+///   would be skipped by enforcement — and, being authority-signed, would
+///   still displace the default — so it is rejected up front.
 ///
 /// Returns the rejection message on failure.
 pub(crate) fn budget_content_error(content: &serde_json::Value) -> Option<String> {
     let subject = content.get("subject").and_then(|s| s.as_str());
     let Some(subject) = subject else {
-        return Some("org budget content must carry a `subject` (64-hex agent pubkey)".into());
+        return Some(
+            "org budget content must carry a `subject` (64-hex agent pubkey, or \"*\" for the community default)"
+                .into(),
+        );
     };
+    let is_default = subject == DEFAULT_BUDGET_SUBJECT;
     let is_hex = subject.len() == 64 && subject.bytes().all(|b| b.is_ascii_hexdigit());
-    if !is_hex {
-        return Some("org budget content `subject` must be a 64-hex agent pubkey".into());
+    if !is_default && !is_hex {
+        return Some(
+            "org budget content `subject` must be a 64-hex agent pubkey (or \"*\" for the community default)"
+                .into(),
+        );
+    }
+    if is_default && content.get("onchain").is_some() {
+        return Some("a default budget (subject \"*\") cannot carry an `onchain` binding".into());
     }
 
     let window = content.get("window").and_then(|w| w.as_str());
@@ -110,37 +159,24 @@ pub(crate) fn budget_content_error(content: &serde_json::Value) -> Option<String
         }
     }
 
+    if let Some(limits) = content.get("limits") {
+        if let Err(e) = serde_json::from_value::<buzz_sdk::BudgetLimits>(limits.clone()) {
+            return Some(format!("org budget content `limits` is malformed: {e}"));
+        }
+    }
+
     None
 }
 
-/// Decision core of the budget publication rule.
-///
-/// A budget capping an agent may only be published by:
-/// (a) the agent itself (`content.subject` equals the author), or
-/// (b) the community owner (relay-member role `"owner"`).
-///
-/// Any other MessagesWrite member could otherwise cap any agent's autonomy
-/// (a griefing vector: a peer budget of `runs: 0` would freeze an agent).
-/// Returns the rejection message when publication is not allowed.
-pub(crate) fn budget_author_error(
-    author_hex: &str,
-    subject: &str,
-    author_role: Option<&str>,
-) -> Option<String> {
-    if author_hex.eq_ignore_ascii_case(subject) {
-        return None;
-    }
-    if author_role == Some("owner") {
-        return None;
-    }
-    Some(
-        "restricted: a budget may only be published by its subject agent or the community owner"
-            .into(),
-    )
-}
-
 /// Validate a kind:37012 budget event at ingest: content contract plus the
-/// publication-authority rule (subject itself or community owner).
+/// publication-authority rule (R1).
+///
+/// A budget may be published by the community owner/admin, by a human holding
+/// a seat in an anchored org node, or by its subject agent itself; the
+/// community default (`subject: "*"`) by the owner/admin only. A subject's own
+/// budget can only ever *add* constraints — enforcement applies the strictest
+/// limit among every budget covering the subject and never lets a
+/// subject-signed budget displace an authority-signed one.
 pub(crate) async fn validate_budget_publication(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -161,24 +197,15 @@ pub(crate) async fn validate_budget_publication(
         .and_then(|s| s.as_str())
         .unwrap_or_default();
     let author_hex = event.pubkey.to_hex();
-    if !author_hex.eq_ignore_ascii_case(subject) {
-        let author_role = state
-            .db
-            .get_relay_member(tenant.community(), &author_hex)
-            .await
-            .map_err(|e| {
-                IngestError::Internal(format!("error: db error checking budget author: {e}"))
-            })?
-            .map(|m| m.role);
-        if let Some(msg) = budget_author_error(&author_hex, subject, author_role.as_deref()) {
-            return Err(IngestError::Rejected(msg));
-        }
-    }
-
-    Ok(())
+    let graph = state.db.org_graph(tenant.community());
+    buzz_core::org_grant::check_budget_publisher(&graph, &author_hex, subject)
+        .await
+        .map(|_| ())
+        .map_err(|e| super::org_grant_enforcement::authority_ingest_error(e, "budget author"))
 }
 
 /// One applicable budget limit resolved for enforcement.
+#[derive(Debug, Clone)]
 struct ApplicableLimit {
     budget_event_id_hex: String,
     on_exceed: String,
@@ -187,17 +214,16 @@ struct ApplicableLimit {
     window_start: DateTime<Utc>,
 }
 
-/// Check whether an agent's action exceeds any applicable budget limits.
-///
-/// Looks up budget events (kind:37012) whose `content.subject` matches the
-/// agent's hex pubkey, then checks the relevant counter against the limit.
+/// Map a counter class to the limit a budget's typed `limits` carries for it.
 ///
 /// Counter types: `"runs"` for agent turn metrics (kind:44200),
 /// `"task_create"`/`"task_approve"` for agent task counters (kind:44011),
-/// and `"governance_proposal"`/`"governance_vote"`/`"governance_execute"`
-/// for the governance-action classes (kinds 47004/47005 — the S3 HITL gate:
-/// over the ceiling with `onExceed: "require-approval"` the action becomes a
-/// 46010 approval request instead of executing).
+/// `"governance_proposal"`/`"governance_vote"`/`"governance_execute"` for the
+/// governance-action classes (kinds 47004/47005 — the S3 HITL gate: over the
+/// ceiling with `onExceed: "require-approval"` the action becomes a 46010
+/// approval request instead of executing), `"messages"` for chat messages an
+/// agent authors (kinds 9/40002) and `"llm_calls"` for LLM gateway calls.
+/// `"task_approve"` is not enforced anywhere yet (see the note in `ingest.rs`).
 pub(crate) fn counter_limit(limits: &buzz_sdk::BudgetLimits, counter_type: &str) -> Option<u32> {
     match counter_type {
         "runs" => limits.runs,
@@ -206,51 +232,23 @@ pub(crate) fn counter_limit(limits: &buzz_sdk::BudgetLimits, counter_type: &str)
         "governance_proposal" => limits.governance.as_ref().and_then(|g| g.proposal),
         "governance_vote" => limits.governance.as_ref().and_then(|g| g.vote),
         "governance_execute" => limits.governance.as_ref().and_then(|g| g.execute),
+        COUNTER_MESSAGES => limits.messages,
+        COUNTER_LLM_CALLS => limits.llm_calls,
         _ => None,
     }
 }
-/// counters are not yet enforced).
-#[allow(dead_code)]
-pub(crate) async fn check_agent_budget(
-    state: &Arc<AppState>,
-    tenant: &TenantContext,
-    agent_pubkey_hex: &str,
-    counter_type: &str,
-) -> Result<(), IngestError> {
-    let budgets = applicable_limits(state, tenant, agent_pubkey_hex, counter_type).await?;
-    for budget in budgets {
-        let effective_limit =
-            effective_limit(&state.db, tenant, agent_pubkey_hex, counter_type, &budget).await?;
-        let within = state
-            .db
-            .check_budget_consumption(
-                tenant.community(),
-                agent_pubkey_hex,
-                counter_type,
-                budget.window_start,
-                effective_limit,
-            )
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: db error checking budget: {e}")))?;
-        if !within {
-            return Err(
-                exceeded_error(state, tenant, agent_pubkey_hex, counter_type, &budget).await,
-            );
-        }
-    }
-    Ok(())
-}
 
-/// Outcome of one budget's check-and-consume pass.
+/// Outcome of checking (and, when admitted, consuming) a set of budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RunBudgetOutcome {
-    /// The action is within the (effective) limit and its consumption was
-    /// recorded.
+enum BudgetOutcome {
+    /// The action is within every applicable limit and its consumption was
+    /// recorded once per `(counter, window)`.
     Admitted,
-    /// The counter is at or past the effective limit (including the
-    /// post-increment race check). The caller routes this through the
-    /// exceed path, which records the durable approval request.
-    Exceeded,
+    /// The counter is at or past the strictest limit of a window (including
+    /// the post-increment race check). Carries the index of the binding
+    /// budget in the slice; the caller routes it through the exceed path,
+    /// which records the durable approval request.
+    Exceeded(usize),
 }
 
 /// Effective limit for one budget: the published limit plus one unit of
@@ -284,16 +282,121 @@ async fn effective_limit(
     Ok(budget.limit.saturating_add(granted))
 }
 
+/// The strictest limit among the budgets that share one `(counter, window)`.
+struct WindowGroup {
+    window_start: DateTime<Utc>,
+    /// Effective (tolerance-adjusted) limit of the binding budget.
+    limit: i64,
+    /// Index of the binding budget in the input slice.
+    binding: usize,
+}
+
+/// Check every applicable budget and, when all pass, consume the action.
+///
+/// Budgets are grouped by `window_start` (all budgets on one window share one
+/// counter row). Per group the strictest effective limit binds — a subject
+/// cannot loosen itself by holding a second, looser budget — ties go to a hard
+/// (`onExceed: "reject"`) budget.
+///
+/// 1. **Check** every group's counter against its binding limit. If any is at
+///    or over, return [`BudgetOutcome::Exceeded`] *without consuming
+///    anything*: a rejected action must not burn budget.
+/// 2. **Consume** exactly one unit per group — never one per budget, which
+///    would over-count N x when N budgets share a window. The increment is a
+///    same-call durable write whose failure fails the ingest (never a
+///    fire-and-forget log). The relay store does not expose a transaction
+///    spanning event insert and counter write, so the counter is consumed
+///    before the event is stored — a later storage failure then over-counts
+///    one action, which fails closed (a subject is budget-limited sooner,
+///    never later). A concurrent ingest that races past the check trips the
+///    post-increment guard (`consumed > limit`) and is reported as exceeded;
+///    the counter stands (conservative).
+async fn enforce_budget_set(
+    db: &buzz_db::Db,
+    tenant: &TenantContext,
+    subject: &str,
+    counter_type: &str,
+    budgets: &[ApplicableLimit],
+) -> Result<BudgetOutcome, IngestError> {
+    let mut groups: Vec<WindowGroup> = Vec::new();
+    for (index, budget) in budgets.iter().enumerate() {
+        let limit = effective_limit(db, tenant, subject, counter_type, budget).await?;
+        match groups
+            .iter_mut()
+            .find(|g| g.window_start == budget.window_start)
+        {
+            Some(group) => {
+                let binding_is_hard = budgets[group.binding].on_exceed == "reject";
+                let stricter = limit < group.limit
+                    || (limit == group.limit && budget.on_exceed == "reject" && !binding_is_hard);
+                if stricter {
+                    group.limit = limit;
+                    group.binding = index;
+                }
+            }
+            None => groups.push(WindowGroup {
+                window_start: budget.window_start,
+                limit,
+                binding: index,
+            }),
+        }
+    }
+
+    for group in &groups {
+        let within = db
+            .check_budget_consumption(
+                tenant.community(),
+                subject,
+                counter_type,
+                group.window_start,
+                group.limit,
+            )
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: db error checking budget: {e}")))?;
+        if !within {
+            return Ok(BudgetOutcome::Exceeded(group.binding));
+        }
+    }
+
+    let mut raced: Option<usize> = None;
+    for group in &groups {
+        let consumed = db
+            .increment_budget_consumption(
+                tenant.community(),
+                subject,
+                counter_type,
+                group.window_start,
+                1,
+            )
+            .await
+            .map_err(|e| {
+                IngestError::Internal(format!("error: could not record budget consumption: {e}"))
+            })?;
+        if consumed > group.limit && raced.is_none() {
+            raced = Some(group.binding);
+        }
+    }
+    Ok(match raced {
+        Some(binding) => BudgetOutcome::Exceeded(binding),
+        None => BudgetOutcome::Admitted,
+    })
+}
+
+/// A limit that applies when no budget defines one for the counter (the LLM
+/// gateway's operator-configured daily cap).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FallbackLimit {
+    /// Window the fallback counts over (`"day"`, …).
+    pub(crate) window: &'static str,
+    /// Calls allowed per window.
+    pub(crate) limit: i64,
+}
+
 /// Enforce the agent's run budget and consume one run.
 ///
 /// The full kind:44200 gate: check every applicable budget's `runs` limit,
-/// and when all pass, immediately increment the `runs` counter for each of
-/// them in the current window. The increment is a same-call durable write
-/// whose failure fails the ingest (never a fire-and-forget log). The relay
-/// store does not expose a transaction spanning event insert and counter
-/// write, so the counter is consumed before the event is stored — a later
-/// storage failure then over-counts one run, which fails closed (an agent
-/// is budget-limited sooner, never later).
+/// and when all pass, increment the `runs` counter once per window. See
+/// [`enforce_budget_set`] for the atomicity note.
 pub(crate) async fn enforce_run_budget(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -302,8 +405,8 @@ pub(crate) async fn enforce_run_budget(
     enforce_counter(state, tenant, agent_pubkey_hex, "runs").await
 }
 
-/// Enforce every applicable budget's `counter_type` limit for the agent,
-/// consuming one unit of each when within the (effective) limit.
+/// Enforce every applicable budget's `counter_type` limit for the subject,
+/// consuming one unit per window when within the (effective) limits.
 ///
 /// The counter_type-parameterized form of [`enforce_run_budget`] — the
 /// kind:44200 gate enforces `"runs"`, the kind:44011 gate enforces
@@ -315,87 +418,118 @@ pub(crate) async fn enforce_counter(
     agent_pubkey_hex: &str,
     counter_type: &str,
 ) -> Result<(), IngestError> {
-    let budgets = applicable_limits(state, tenant, agent_pubkey_hex, counter_type).await?;
-    for budget in budgets {
-        match enforce_one_counter(&state.db, tenant, agent_pubkey_hex, counter_type, &budget)
-            .await?
-        {
-            RunBudgetOutcome::Admitted => {}
-            RunBudgetOutcome::Exceeded => {
-                return Err(
-                    exceeded_error(state, tenant, agent_pubkey_hex, counter_type, &budget).await,
-                );
-            }
-        }
-    }
-    Ok(())
+    enforce_counter_with_fallback(state, tenant, agent_pubkey_hex, counter_type, None).await
 }
 
-/// Check and consume one budget's `runs` limit for the agent.
-///
-/// The decision core of [`enforce_run_budget`], split out so tests can
-/// drive the real check/tolerance/increment seam with a bare `Db` (the
-/// exceed path needs the full app state to emit the kind:46010
-/// notification and is exercised end-to-end elsewhere). The increment is
-/// a same-call durable write whose failure fails the ingest — see the
-/// atomicity note on [`enforce_run_budget`].
-async fn enforce_one_counter(
-    db: &buzz_db::Db,
+/// [`enforce_counter`] with an operator fallback: when no budget defines a
+/// limit for the counter, `fallback` applies (as a hard reject).
+pub(crate) async fn enforce_counter_with_fallback(
+    state: &Arc<AppState>,
     tenant: &TenantContext,
     agent_pubkey_hex: &str,
     counter_type: &str,
-    budget: &ApplicableLimit,
-) -> Result<RunBudgetOutcome, IngestError> {
-    let limit = effective_limit(db, tenant, agent_pubkey_hex, counter_type, budget).await?;
-
-    let within = db
-        .check_budget_consumption(
-            tenant.community(),
+    fallback: Option<FallbackLimit>,
+) -> Result<(), IngestError> {
+    let mut budgets = applicable_limits(state, tenant, agent_pubkey_hex, counter_type).await?;
+    if budgets.is_empty() {
+        if let Some(fallback) = fallback {
+            budgets.push(ApplicableLimit {
+                budget_event_id_hex: "config-default".to_string(),
+                on_exceed: "reject".to_string(),
+                window: fallback.window.to_string(),
+                limit: fallback.limit,
+                window_start: budget_window_start(fallback.window, Utc::now()),
+            });
+        }
+    }
+    if budgets.is_empty() {
+        return Ok(());
+    }
+    match enforce_budget_set(&state.db, tenant, agent_pubkey_hex, counter_type, &budgets).await? {
+        BudgetOutcome::Admitted => Ok(()),
+        BudgetOutcome::Exceeded(binding) => Err(exceeded_error(
+            state,
+            tenant,
             agent_pubkey_hex,
             counter_type,
-            budget.window_start,
-            limit,
+            &budgets[binding],
         )
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db error checking budget: {e}")))?;
-    if !within {
-        return Ok(RunBudgetOutcome::Exceeded);
+        .await),
     }
-
-    let consumed = db
-        .increment_budget_consumption(
-            tenant.community(),
-            agent_pubkey_hex,
-            counter_type,
-            budget.window_start,
-            1,
-        )
-        .await
-        .map_err(|e| {
-            IngestError::Internal(format!("error: could not record budget consumption: {e}"))
-        })?;
-    if consumed > limit {
-        // A concurrent ingest raced past the check. The counter already
-        // stands (conservative); route through the same exceed path.
-        return Ok(RunBudgetOutcome::Exceeded);
-    }
-    Ok(RunBudgetOutcome::Admitted)
 }
 
-/// `"runs"` delegator over [`enforce_one_counter`] — the seam the
-/// budget-enforcement postgres tests drive (production callers go through
-/// [`enforce_run_budget`] → [`enforce_counter`]).
-#[cfg_attr(not(test), allow(dead_code))]
-async fn enforce_one_run_budget(
-    db: &buzz_db::Db,
+/// Enforce the `messages` budget for a chat message (kinds 9 and 40002).
+///
+/// Only agents are metered (design rule 5: budgets never cap a human's own
+/// actions), so a non-agent author returns immediately without a budget
+/// lookup — the common case on the hot chat path.
+pub(crate) async fn enforce_message_budget(
+    state: &Arc<AppState>,
     tenant: &TenantContext,
-    agent_pubkey_hex: &str,
-    budget: &ApplicableLimit,
-) -> Result<RunBudgetOutcome, IngestError> {
-    enforce_one_counter(db, tenant, agent_pubkey_hex, "runs", budget).await
+    author_pubkey_hex: &str,
+) -> Result<(), IngestError> {
+    if !subject_is_agent(state, tenant, author_pubkey_hex).await? {
+        return Ok(());
+    }
+    enforce_counter(state, tenant, author_pubkey_hex, COUNTER_MESSAGES).await
 }
 
-/// Resolve the budgets that actually bound `counter_type` for this agent.
+/// Enforce the `llm_calls` budget for an LLM gateway call, falling back to the
+/// operator's daily cap when no budget covers the caller.
+pub(crate) async fn enforce_llm_call(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    caller_pubkey_hex: &str,
+    default_daily_cap: u32,
+) -> Result<(), IngestError> {
+    enforce_counter_with_fallback(
+        state,
+        tenant,
+        caller_pubkey_hex,
+        COUNTER_LLM_CALLS,
+        Some(FallbackLimit {
+            window: "day",
+            limit: i64::from(default_daily_cap),
+        }),
+    )
+    .await
+}
+
+/// Whether `pubkey_hex` is an agent: its `users` row carries an
+/// `agent_owner_pubkey` (set from the NIP-OA owner attestation at auth).
+///
+/// Read-through the per-community author-type cache (the mapping is
+/// first-write-wins and set before an agent's first event). A lookup error
+/// propagates — it is never read as "human".
+///
+/// Limitation: a key that never registered an owner (no NIP-OA attestation)
+/// is indistinguishable from a human here, so only its *own* budgets bind it,
+/// never the community default. Register agents through NIP-OA.
+pub(crate) async fn subject_is_agent(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    pubkey_hex: &str,
+) -> Result<bool, IngestError> {
+    let Ok(bytes) = hex::decode(pubkey_hex) else {
+        return Ok(false);
+    };
+    let key = (tenant.community(), bytes);
+    if let Some(cached) = state.author_type_cache.get(&key) {
+        return Ok(cached);
+    }
+    let is_agent = match state.db.get_agent_channel_policy(key.0, &key.1).await {
+        Ok(Some((_, owner))) => owner.is_some(),
+        Ok(None) => false,
+        Err(e) => {
+            return Err(IngestError::Internal(format!(
+                "error: db error resolving agent status: {e}"
+            )))
+        }
+    };
+    state.author_type_cache.insert(key, is_agent);
+    Ok(is_agent)
+}
+
 /// One counter limit resolved through (or without) a performance ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ResolvedCounterLimit {
@@ -455,6 +589,112 @@ fn resolve_laddered_limit(
     })
 }
 
+/// Resolve one stored budget event into the limit it imposes on
+/// `counter_type` for `subject`, or `None` when it does not bound that
+/// counter (no limits object, or no limit for this counter).
+async fn resolve_budget_event(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    subject: &str,
+    counter_type: &str,
+    budget_event: buzz_db::budget::BudgetEvent,
+) -> Result<Option<ApplicableLimit>, IngestError> {
+    let content: serde_json::Value = serde_json::from_str(&budget_event.content)
+        .map_err(|e| IngestError::Internal(format!("error: malformed budget content: {e}")))?;
+
+    // Missing/unknown window falls back to the all-time epoch window;
+    // ingest validation keeps unknown values out of new budgets.
+    let window = content
+        .get("window")
+        .and_then(|w| w.as_str())
+        .unwrap_or("epoch");
+
+    let Some(limits) = content.get("limits") else {
+        return Ok(None);
+    };
+
+    // Performance ladder (NIP-ORG § Performance-linked autonomy): fetch the
+    // subject's *reviewed* contribution outcome counts over the ladder's own
+    // window, then resolve the active tier. A malformed ladder fails closed to
+    // the base limits inside `resolve_laddered_limit`.
+    let ladder_counts: Option<buzz_sdk::ContributionSummary> = match content.get("performanceLink")
+    {
+        Some(link_val) => {
+            let link: Option<buzz_sdk::PerformanceLink> =
+                serde_json::from_value(link_val.clone()).ok();
+            match link {
+                Some(link) => {
+                    let window_start = budget_window_start(
+                        match link.window {
+                            buzz_sdk::BudgetWindow::Epoch => "epoch",
+                            buzz_sdk::BudgetWindow::Day => "day",
+                            buzz_sdk::BudgetWindow::Week => "week",
+                            buzz_sdk::BudgetWindow::Month => "month",
+                        },
+                        Utc::now(),
+                    );
+                    let dims = link.dimensions.clone().unwrap_or_default();
+                    match state
+                        .db
+                        .count_contribution_outcomes(
+                            tenant.community(),
+                            subject,
+                            window_start,
+                            &dims,
+                        )
+                        .await
+                    {
+                        Ok(c) => Some(buzz_sdk::ContributionSummary {
+                            accepted: c.accepted as u32,
+                            rejected: c.rejected as u32,
+                        }),
+                        Err(e) => {
+                            return Err(IngestError::Internal(format!(
+                                "error: db error counting contribution outcomes: {e}"
+                            )));
+                        }
+                    }
+                }
+                None => None,
+            }
+        }
+        None => None,
+    };
+
+    let Some(resolved) = resolve_laddered_limit(
+        limits,
+        content.get("performanceLink"),
+        ladder_counts,
+        counter_type,
+    ) else {
+        return Ok(None);
+    };
+
+    Ok(Some(ApplicableLimit {
+        budget_event_id_hex: budget_event.event_id_hex,
+        // A violated ladder with `onViolation: "revoke"` hard-rejects:
+        // zero autonomy means zero, with no approval escape hatch.
+        on_exceed: if resolved.hard_reject {
+            "reject".to_string()
+        } else {
+            budget_event.on_exceed
+        },
+        window: window.to_string(),
+        limit: resolved.limit,
+        window_start: budget_window_start(window, Utc::now()),
+    }))
+}
+
+/// Resolve the budgets that actually bound `counter_type` for this subject.
+///
+/// - Every budget whose `content.subject` names the subject and that defines a
+///   limit for the counter applies. The lookup filters by subject in SQL, so
+///   budgets for other subjects can never hide these.
+/// - If none of them was signed by an authority (someone other than the
+///   subject — the subject's own budget only ever adds constraints), the
+///   community default budget(s) (`subject: "*"`) apply too, **to agents
+///   only** (design rule 5: budgets never cap a human) — see
+///   [`subject_is_agent`].
 async fn applicable_limits(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -462,99 +702,44 @@ async fn applicable_limits(
     counter_type: &str,
 ) -> Result<Vec<ApplicableLimit>, IngestError> {
     let community_id = tenant.community();
+    let subject = agent_pubkey_hex.to_ascii_lowercase();
 
-    let budgets = state
+    let own = state
         .db
-        .budget_enforcement_lookup(community_id, agent_pubkey_hex)
+        .budget_enforcement_lookup(community_id, &subject)
         .await
         .map_err(|e| IngestError::Internal(format!("error: db error querying budgets: {e}")))?;
 
     let mut applicable = Vec::new();
-    for budget_event in budgets {
-        let content: serde_json::Value = serde_json::from_str(&budget_event.content)
-            .map_err(|e| IngestError::Internal(format!("error: malformed budget content: {e}")))?;
+    let mut has_authority_limit = false;
+    for budget_event in own {
+        let authority_signed = !budget_event.author_hex.eq_ignore_ascii_case(&subject);
+        if let Some(limit) =
+            resolve_budget_event(state, tenant, &subject, counter_type, budget_event).await?
+        {
+            has_authority_limit |= authority_signed;
+            applicable.push(limit);
+        }
+    }
 
-        // Missing/unknown window falls back to the all-time epoch window;
-        // ingest validation keeps unknown values out of new budgets.
-        let window = content
-            .get("window")
-            .and_then(|w| w.as_str())
-            .unwrap_or("epoch");
-
-        let Some(limits) = content.get("limits") else {
-            continue;
-        };
-
-        // Performance ladder (NIP-ORG § Performance-linked autonomy): fetch
-        // the subject's contribution outcome counts over the ladder's own
-        // window, then resolve the active tier. A malformed ladder fails
-        // closed to the base limits inside `resolve_laddered_limit`.
-        let ladder_counts: Option<buzz_sdk::ContributionSummary> =
-            match content.get("performanceLink") {
-                Some(link_val) => {
-                    let link: Option<buzz_sdk::PerformanceLink> =
-                        serde_json::from_value(link_val.clone()).ok();
-                    match link {
-                        Some(link) => {
-                            let window_start = budget_window_start(
-                                match link.window {
-                                    buzz_sdk::BudgetWindow::Epoch => "epoch",
-                                    buzz_sdk::BudgetWindow::Day => "day",
-                                    buzz_sdk::BudgetWindow::Week => "week",
-                                    buzz_sdk::BudgetWindow::Month => "month",
-                                },
-                                Utc::now(),
-                            );
-                            let dims = link.dimensions.clone().unwrap_or_default();
-                            match state
-                                .db
-                                .count_contribution_outcomes(
-                                    community_id,
-                                    agent_pubkey_hex,
-                                    window_start,
-                                    &dims,
-                                )
-                                .await
-                            {
-                                Ok(c) => Some(buzz_sdk::ContributionSummary {
-                                    accepted: c.accepted as u32,
-                                    rejected: c.rejected as u32,
-                                }),
-                                Err(e) => {
-                                    return Err(IngestError::Internal(format!(
-                                        "error: db error counting contribution outcomes: {e}"
-                                    )));
-                                }
-                            }
-                        }
-                        None => None,
-                    }
+    if !has_authority_limit {
+        let defaults = state
+            .db
+            .default_budget_lookup(community_id)
+            .await
+            .map_err(|e| {
+                IngestError::Internal(format!("error: db error querying default budgets: {e}"))
+            })?;
+        if !defaults.is_empty() && subject_is_agent(state, tenant, &subject).await? {
+            for budget_event in defaults {
+                if let Some(limit) =
+                    resolve_budget_event(state, tenant, &subject, counter_type, budget_event)
+                        .await?
+                {
+                    applicable.push(limit);
                 }
-                None => None,
-            };
-
-        let Some(resolved) = resolve_laddered_limit(
-            limits,
-            content.get("performanceLink"),
-            ladder_counts,
-            counter_type,
-        ) else {
-            continue;
-        };
-
-        applicable.push(ApplicableLimit {
-            budget_event_id_hex: budget_event.event_id_hex,
-            // A violated ladder with `onViolation: "revoke"` hard-rejects:
-            // zero autonomy means zero, with no approval escape hatch.
-            on_exceed: if resolved.hard_reject {
-                "reject".to_string()
-            } else {
-                budget_event.on_exceed
-            },
-            window: window.to_string(),
-            limit: resolved.limit,
-            window_start: budget_window_start(window, Utc::now()),
-        });
+            }
+        }
     }
     Ok(applicable)
 }
@@ -846,28 +1031,58 @@ mod tests {
         assert!(resolve_laddered_limit(&limits, None, None, "task_approve").is_none());
     }
 
+    /// Item 8: windows are fixed epochs (`floor(ts/len)*len`), the same slot
+    /// `OrgAllowance.sol` (`unix / len`) and the desktop compute — not
+    /// calendar days/weeks/months.
     #[test]
-    fn day_window_starts_at_utc_midnight() {
+    fn windows_are_fixed_epochs_matching_the_contract() {
+        let now = fixed_now();
+        let ts = now.timestamp();
+        for (window, len) in [("day", 86_400i64), ("week", 604_800), ("month", 2_592_000)] {
+            let start = budget_window_start(window, now);
+            assert_eq!(
+                start.timestamp(),
+                (ts / len) * len,
+                "{window} must start at floor(unix/{len})*{len}"
+            );
+            assert_eq!(start.timestamp() % len, 0);
+            assert!(start <= now && now < start + chrono::Duration::seconds(len));
+        }
+    }
+
+    /// The fixed 30-day month and 7-day week are NOT calendar boundaries:
+    /// 2026-09-16 15:42:07 UTC is neither the 1st of September nor the Monday
+    /// of its ISO week in epoch numbering.
+    #[test]
+    fn fixed_epoch_windows_differ_from_calendar_windows() {
+        let now = fixed_now();
+        assert_ne!(
+            budget_window_start("month", now),
+            Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap(),
+            "month is a 30-day epoch, not the calendar month"
+        );
+        assert_ne!(
+            budget_window_start("week", now),
+            Utc.with_ymd_and_hms(2026, 9, 14, 0, 0, 0).unwrap(),
+            "week is a 7-day epoch (Thursday-aligned), not the ISO week"
+        );
+        // Day windows happen to coincide with UTC midnight.
         assert_eq!(
-            budget_window_start("day", fixed_now()),
+            budget_window_start("day", now),
             Utc.with_ymd_and_hms(2026, 9, 16, 0, 0, 0).unwrap()
         );
     }
 
+    /// One instant belongs to exactly one window per kind, and the boundary
+    /// second starts the next window.
     #[test]
-    fn week_window_starts_monday() {
-        // 2026-09-16 is a Wednesday; Monday is 2026-09-14.
+    fn window_boundary_starts_the_next_epoch() {
+        let boundary = DateTime::from_timestamp(86_400 * 20_000, 0).unwrap();
+        assert_eq!(budget_window_start("day", boundary), boundary);
+        let last = boundary - chrono::Duration::seconds(1);
         assert_eq!(
-            budget_window_start("week", fixed_now()),
-            Utc.with_ymd_and_hms(2026, 9, 14, 0, 0, 0).unwrap()
-        );
-    }
-
-    #[test]
-    fn month_window_starts_on_the_first() {
-        assert_eq!(
-            budget_window_start("month", fixed_now()),
-            Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap()
+            budget_window_start("day", last),
+            boundary - chrono::Duration::days(1)
         );
     }
 
@@ -937,37 +1152,53 @@ mod tests {
     }
 
     const AGENT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const OTHER: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     #[test]
-    fn budget_author_may_publish_own_budget() {
-        assert_eq!(budget_author_error(AGENT, AGENT, None), None);
-        // Case-insensitive hex comparison.
-        let upper_agent = AGENT.to_ascii_uppercase();
-        assert_eq!(budget_author_error(&upper_agent, AGENT, None), None);
+    fn default_budget_subject_is_accepted_but_cannot_be_onchain() {
+        let content =
+            budget_json(r#"{"subject": "*", "window": "day", "limits": {"messages": 10}}"#);
+        assert_eq!(budget_content_error(&content), None);
+        let onchain = budget_json(
+            r#"{"subject": "*", "window": "day", "limits": {"runs": 1},
+                "onchain": {"chain": "eip155:1", "contract": "0x0", "subject": "*"}}"#,
+        );
+        let msg = budget_content_error(&onchain).expect("onchain default rejected");
+        assert!(msg.contains("onchain"), "got: {msg}");
     }
 
     #[test]
-    fn community_owner_may_publish_any_budget() {
-        assert_eq!(budget_author_error(OTHER, AGENT, Some("owner")), None);
+    fn malformed_limits_are_rejected_at_ingest() {
+        let content = budget_json(
+            r#"{"subject": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "window": "day", "limits": {"runs": "fifty"}}"#,
+        );
+        let msg = budget_content_error(&content).expect("bad limits rejected");
+        assert!(msg.contains("`limits` is malformed"), "got: {msg}");
+        // The new counter keys parse from the wire.
+        let ok = budget_json(
+            r#"{"subject": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "window": "day", "limits": {"messages": 5, "llmCalls": 7}}"#,
+        );
+        assert_eq!(budget_content_error(&ok), None);
     }
 
+    /// Item 10: `messages` and `llm_calls` bind to `limits.messages` /
+    /// `limits.llmCalls` read from the camelCase wire content.
     #[test]
-    fn plain_member_and_outsider_may_not_publish_someone_elses_budget() {
-        let msg = budget_author_error(OTHER, AGENT, Some("member"))
-            .expect("member capping another agent must be rejected");
-        assert!(msg.contains("restricted:"), "got: {msg}");
-
-        let msg = budget_author_error(OTHER, AGENT, None)
-            .expect("non-member capping an agent must be rejected");
-        assert!(msg.contains("restricted:"), "got: {msg}");
-    }
-
-    #[test]
-    fn admin_role_is_not_owner_authority_for_budgets() {
-        // The minimal rule is subject-or-owner; admins intentionally do not
-        // gain budget authority.
-        assert!(budget_author_error(OTHER, AGENT, Some("admin")).is_some());
+    fn message_and_llm_counters_bind_their_limits() {
+        let limits: buzz_sdk::BudgetLimits =
+            serde_json::from_str(r#"{"messages": 12, "llmCalls": 34}"#).unwrap();
+        assert_eq!(counter_limit(&limits, COUNTER_MESSAGES), Some(12));
+        assert_eq!(counter_limit(&limits, COUNTER_LLM_CALLS), Some(34));
+        assert_eq!(counter_limit(&limits, "runs"), None);
+        let r = resolve_laddered_limit(
+            &serde_json::json!({"messages": 12}),
+            None,
+            None,
+            COUNTER_MESSAGES,
+        )
+        .unwrap();
+        assert_eq!(r.limit, 12);
     }
 
     // -- Postgres tests: drive the real check/tolerance/increment seam ----
@@ -1021,6 +1252,16 @@ mod tests {
             .execute(pool)
             .await
             .expect("delete approvals");
+        sqlx::query("DELETE FROM users WHERE community_id = $1")
+            .bind(community)
+            .execute(pool)
+            .await
+            .expect("delete users");
+        sqlx::query("DELETE FROM relay_members WHERE community_id = $1")
+            .bind(community)
+            .execute(pool)
+            .await
+            .expect("delete relay members");
         sqlx::query("DELETE FROM communities WHERE id = $1")
             .bind(community)
             .execute(pool)
@@ -1058,22 +1299,22 @@ mod tests {
 
         // Two runs admitted, the third exceeds.
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("first run"),
-            RunBudgetOutcome::Admitted
+            BudgetOutcome::Admitted
         );
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("second run"),
-            RunBudgetOutcome::Admitted
+            BudgetOutcome::Admitted
         );
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("third run"),
-            RunBudgetOutcome::Exceeded,
+            BudgetOutcome::Exceeded(0),
             "limit-2 budget must block the third run"
         );
 
@@ -1110,17 +1351,17 @@ mod tests {
         // The grant forgives exactly one overrun: the next run is admitted
         // (counter reaches the effective limit), then blocked again.
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("run after grant"),
-            RunBudgetOutcome::Admitted,
+            BudgetOutcome::Admitted,
             "granted tolerance must admit one more run"
         );
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("run after tolerance spent"),
-            RunBudgetOutcome::Exceeded,
+            BudgetOutcome::Exceeded(0),
             "one grant forgives one overrun, no more"
         );
 
@@ -1150,10 +1391,10 @@ mod tests {
         .await
         .expect("deny");
         assert_eq!(
-            enforce_one_run_budget(&db, &tenant, agent, &budget)
+            one_budget(&db, &tenant, agent, "runs", &budget)
                 .await
                 .expect("run after denial"),
-            RunBudgetOutcome::Exceeded,
+            BudgetOutcome::Exceeded(0),
             "a denied request must not lift the limit"
         );
 
@@ -1440,16 +1681,16 @@ mod tests {
         let budget = task_budget(1);
 
         assert_eq!(
-            enforce_one_counter(&db, &tenant, agent, "task_create", &budget)
+            one_budget(&db, &tenant, agent, "task_create", &budget)
                 .await
                 .expect("first task"),
-            RunBudgetOutcome::Admitted
+            BudgetOutcome::Admitted
         );
         assert_eq!(
-            enforce_one_counter(&db, &tenant, agent, "task_create", &budget)
+            one_budget(&db, &tenant, agent, "task_create", &budget)
                 .await
                 .expect("second task"),
-            RunBudgetOutcome::Exceeded,
+            BudgetOutcome::Exceeded(0),
             "limit-1 budget must block the second task"
         );
 
@@ -1483,20 +1724,543 @@ mod tests {
         );
 
         assert_eq!(
-            enforce_one_counter(&db, &tenant, agent, "task_create", &budget)
+            one_budget(&db, &tenant, agent, "task_create", &budget)
                 .await
                 .expect("task after grant"),
-            RunBudgetOutcome::Admitted,
+            BudgetOutcome::Admitted,
             "granted tolerance must admit one more task_create"
         );
         assert_eq!(
-            enforce_one_counter(&db, &tenant, agent, "task_create", &budget)
+            one_budget(&db, &tenant, agent, "task_create", &budget)
                 .await
                 .expect("task after tolerance spent"),
-            RunBudgetOutcome::Exceeded,
+            BudgetOutcome::Exceeded(0),
             "one grant forgives one overrun, no more"
         );
 
+        pg_cleanup(&pool, community).await;
+    }
+
+    // -- item 6-10: sets of budgets, defaults, windows, counters -----------------
+
+    /// Test-facing seam: one budget through the production check/consume core.
+    async fn one_budget(
+        db: &buzz_db::Db,
+        tenant: &TenantContext,
+        agent: &str,
+        counter_type: &str,
+        budget: &ApplicableLimit,
+    ) -> BudgetOutcome {
+        enforce_budget_set(
+            db,
+            tenant,
+            agent,
+            counter_type,
+            std::slice::from_ref(budget),
+        )
+        .await
+        .expect("budget check")
+    }
+
+    fn tenant_of(community: uuid::Uuid) -> TenantContext {
+        TenantContext::resolved(
+            buzz_core::CommunityId::from_uuid(community),
+            format!("budget-enf-{community}.test"),
+        )
+    }
+
+    async fn pg_insert_budget_event_by(
+        pool: &sqlx::PgPool,
+        community: uuid::Uuid,
+        author: [u8; 32],
+        content: serde_json::Value,
+    ) {
+        let mut event_id = [0u8; 32];
+        event_id[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+        event_id[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+        sqlx::query(
+            "INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, sig)
+             VALUES ($1, $2, $3, now(), 37012, '[]'::jsonb, $4, $5)",
+        )
+        .bind(community)
+        .bind(event_id.as_slice())
+        .bind(author.as_slice())
+        .bind(content.to_string())
+        .bind([2u8; 64])
+        .execute(pool)
+        .await
+        .expect("insert budget event");
+    }
+
+    /// Register `agent` (with `owner`) in the users table — the relay's agent
+    /// discriminator (`agent_owner_pubkey IS NOT NULL`).
+    async fn pg_register_agent(
+        pool: &sqlx::PgPool,
+        community: uuid::Uuid,
+        agent: [u8; 32],
+        owner: [u8; 32],
+    ) {
+        for pk in [owner, agent] {
+            sqlx::query(
+                "INSERT INTO users (community_id, pubkey) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(community)
+            .bind(pk.as_slice())
+            .execute(pool)
+            .await
+            .expect("insert user");
+        }
+        sqlx::query(
+            "UPDATE users SET agent_owner_pubkey = $3 WHERE community_id = $1 AND pubkey = $2",
+        )
+        .bind(community)
+        .bind(agent.as_slice())
+        .bind(owner.as_slice())
+        .execute(pool)
+        .await
+        .expect("set agent owner");
+    }
+
+    async fn consumed(
+        pool: &sqlx::PgPool,
+        community: uuid::Uuid,
+        agent: &str,
+        counter: &str,
+    ) -> Vec<(DateTime<Utc>, i64)> {
+        sqlx::query_as(
+            "SELECT window_start, consumed FROM budget_consumption
+             WHERE community_id = $1 AND subject = $2 AND counter_type = $3
+             ORDER BY window_start",
+        )
+        .bind(community)
+        .bind(agent)
+        .bind(counter)
+        .fetch_all(pool)
+        .await
+        .expect("consumption rows")
+    }
+
+    /// Item 9: two budgets on one window must increment the shared counter
+    /// ONCE per action (not N x), with the STRICTEST limit binding — and a
+    /// looser subject-signed budget cannot loosen it.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn shared_window_counts_once_and_strictest_limit_wins() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let agent = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
+        let mk = |limit: i64| {
+            serde_json::json!({
+                "v": 1, "subject": agent, "window": "day",
+                "limits": { "messages": limit }, "onExceed": "reject",
+            })
+        };
+        // Two authority-signed budgets (limits 5 and 3) on the same day window…
+        pg_insert_budget_event_by(&pool, community, [8u8; 32], mk(5)).await;
+        pg_insert_budget_event_by(&pool, community, [7u8; 32], mk(3)).await;
+        // …and a looser budget the subject signed itself (limit 100).
+        let agent_key: [u8; 32] = hex::decode(agent).unwrap().try_into().unwrap();
+        pg_insert_budget_event_by(&pool, community, agent_key, mk(100)).await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+
+        for n in 1..=3 {
+            enforce_counter(&state, &tenant, agent, COUNTER_MESSAGES)
+                .await
+                .unwrap_or_else(|e| panic!("action {n} is within the strictest limit (3): {e:?}"));
+        }
+        let rows = consumed(&pool, community, agent, COUNTER_MESSAGES).await;
+        assert_eq!(rows.len(), 1, "one (counter, window) row");
+        assert_eq!(
+            rows[0].1, 3,
+            "3 actions consumed 3 units, not 3 x 3 budgets"
+        );
+
+        let err = enforce_counter(&state, &tenant, agent, COUNTER_MESSAGES)
+            .await
+            .expect_err("the strictest limit (3) binds; 100 and 5 do not loosen it");
+        match err {
+            IngestError::Rejected(msg) => assert!(
+                msg.contains("budget exceeded: messages limit 3"),
+                "unexpected rejection: {msg}"
+            ),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        let rows = consumed(&pool, community, agent, COUNTER_MESSAGES).await;
+        assert_eq!(rows[0].1, 3, "a rejected action consumes nothing");
+
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// Budgets on different windows each get their own counter row,
+    /// incremented once per action; the tighter window binds; a rejected
+    /// action does not burn the looser window's budget.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn each_window_counts_once_and_a_rejection_burns_nothing() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let agent = "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2";
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [8u8; 32],
+            serde_json::json!({
+                "v": 1, "subject": agent, "window": "day",
+                "limits": { "llmCalls": 10 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [8u8; 32],
+            serde_json::json!({
+                "v": 1, "subject": agent, "window": "week",
+                "limits": { "llmCalls": 2 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+
+        enforce_counter(&state, &tenant, agent, COUNTER_LLM_CALLS)
+            .await
+            .expect("call 1");
+        enforce_counter(&state, &tenant, agent, COUNTER_LLM_CALLS)
+            .await
+            .expect("call 2");
+        let err = enforce_counter(&state, &tenant, agent, COUNTER_LLM_CALLS)
+            .await
+            .expect_err("the weekly limit of 2 binds");
+        assert!(
+            matches!(&err, IngestError::Rejected(m) if m.contains("llm_calls limit 2")),
+            "{err:?}"
+        );
+
+        let rows = consumed(&pool, community, agent, COUNTER_LLM_CALLS).await;
+        let total: i64 = rows.iter().map(|r| r.1).sum();
+        // day window row and week window row (they may be the same row when
+        // the current week and day start together — Thursday 00:00 UTC).
+        let expected: Vec<i64> =
+            if budget_window_start("day", Utc::now()) == budget_window_start("week", Utc::now()) {
+                vec![2]
+            } else {
+                vec![2, 2]
+            };
+        assert_eq!(
+            rows.iter().map(|r| r.1).collect::<Vec<_>>(),
+            expected,
+            "each (counter, window) exactly once: {rows:?} total {total}"
+        );
+
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// Item 7 (R2): the community default budget binds every REGISTERED AGENT
+    /// without its own authority-signed budget for the counter — and never
+    /// binds a human, an unregistered key, or an agent whose owner budgeted it.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn default_budget_binds_agents_by_default_but_never_humans() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let owner = [0x10u8; 32];
+        let agent_a = [0x11u8; 32]; // no own budget -> default applies
+        let agent_b = [0x12u8; 32]; // owner-signed own budget -> default displaced
+        let human = [0x13u8; 32];
+        let (a_hex, b_hex, h_hex) = (
+            hex::encode(agent_a),
+            hex::encode(agent_b),
+            hex::encode(human),
+        );
+        pg_register_agent(&pool, community, agent_a, owner).await;
+        pg_register_agent(&pool, community, agent_b, owner).await;
+        pg_register_agent(&pool, community, human, human).await; // self-owned row is not an agent… see below
+        sqlx::query(
+            "UPDATE users SET agent_owner_pubkey = NULL WHERE community_id = $1 AND pubkey = $2",
+        )
+        .bind(community)
+        .bind(human.as_slice())
+        .execute(&pool)
+        .await
+        .expect("humans have no owner");
+
+        // The default: 1 message per day, signed by the (admin) owner key.
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [0xaau8; 32],
+            serde_json::json!({
+                "v": 1, "subject": "*", "window": "day",
+                "limits": { "messages": 1 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        // agent_b's owner gave it 3 messages/day.
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [0xaau8; 32],
+            serde_json::json!({
+                "v": 1, "subject": b_hex, "window": "day",
+                "limits": { "messages": 3 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+
+        // agent_a: default (1/day) applies.
+        enforce_message_budget(&state, &tenant, &a_hex)
+            .await
+            .expect("agent a, message 1");
+        let err = enforce_message_budget(&state, &tenant, &a_hex)
+            .await
+            .expect_err("the default budget must bind an agent with no budget of its own");
+        assert!(
+            matches!(&err, IngestError::Rejected(m) if m.contains("messages limit 1")),
+            "{err:?}"
+        );
+
+        // agent_b: its own (3/day) governs, not the default (1/day).
+        for n in 1..=3 {
+            enforce_message_budget(&state, &tenant, &b_hex)
+                .await
+                .unwrap_or_else(|e| panic!("agent b message {n}: {e:?}"));
+        }
+        assert!(
+            enforce_message_budget(&state, &tenant, &b_hex)
+                .await
+                .is_err(),
+            "its own limit still binds"
+        );
+
+        // A human is never budget-capped, however many messages.
+        for _ in 0..5 {
+            enforce_message_budget(&state, &tenant, &h_hex)
+                .await
+                .expect("humans pass");
+        }
+        // Nor is a key the relay has never seen (no agent registration).
+        let stranger = hex::encode([0x14u8; 32]);
+        for _ in 0..5 {
+            enforce_message_budget(&state, &tenant, &stranger)
+                .await
+                .expect("unregistered keys pass");
+        }
+
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// The default fills per counter: an agent whose own budget does not
+    /// define `messages` is still bound by the default's `messages`.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn default_budget_fills_counters_the_own_budget_omits() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let agent = [0x21u8; 32];
+        let a_hex = hex::encode(agent);
+        pg_register_agent(&pool, community, agent, [0x20u8; 32]).await;
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [0xaau8; 32],
+            serde_json::json!({
+                "v": 1, "subject": "*", "window": "day",
+                "limits": { "messages": 1, "runs": 9 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [0xaau8; 32],
+            serde_json::json!({
+                "v": 1, "subject": a_hex, "window": "day",
+                "limits": { "runs": 50 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+        enforce_message_budget(&state, &tenant, &a_hex)
+            .await
+            .expect("message 1");
+        assert!(
+            enforce_message_budget(&state, &tenant, &a_hex)
+                .await
+                .is_err(),
+            "default messages limit binds"
+        );
+        // `runs` is governed by the agent's own budget (50), not the default (9).
+        for _ in 0..10 {
+            enforce_counter(&state, &tenant, &a_hex, "runs")
+                .await
+                .expect("own runs budget (50)");
+        }
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// A subject-signed budget is additive: with NO authority-signed budget
+    /// the default still applies next to it (the subject cannot displace it).
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn subject_signed_budget_never_displaces_the_default() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let agent = [0x31u8; 32];
+        let a_hex = hex::encode(agent);
+        pg_register_agent(&pool, community, agent, [0x30u8; 32]).await;
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [0xaau8; 32],
+            serde_json::json!({
+                "v": 1, "subject": "*", "window": "day",
+                "limits": { "messages": 1 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        // The agent tries to loosen itself with a 1000/day budget of its own.
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            agent,
+            serde_json::json!({
+                "v": 1, "subject": a_hex, "window": "day",
+                "limits": { "messages": 1000 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+        enforce_message_budget(&state, &tenant, &a_hex)
+            .await
+            .expect("message 1");
+        assert!(
+            enforce_message_budget(&state, &tenant, &a_hex)
+                .await
+                .is_err(),
+            "the subject's looser own budget must not displace the community default"
+        );
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// Item 6, end to end through the production gate: 150 unrelated budgets
+    /// (the newest rows) must not hide the subject's budget from enforcement.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn junk_budgets_do_not_silently_disable_enforcement() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let agent = "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4";
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [8u8; 32],
+            serde_json::json!({
+                "v": 1, "subject": agent, "window": "day",
+                "limits": { "runs": 1 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        for i in 0..150u32 {
+            pg_insert_budget_event_by(
+                &pool,
+                community,
+                [9u8; 32],
+                serde_json::json!({
+                    "v": 1, "subject": format!("{i:064x}"), "window": "day",
+                    "limits": { "runs": 1 }, "onExceed": "reject",
+                }),
+            )
+            .await;
+        }
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+        enforce_counter(&state, &tenant, agent, "runs")
+            .await
+            .expect("first run");
+        assert!(
+            enforce_counter(&state, &tenant, agent, "runs")
+                .await
+                .is_err(),
+            "the subject's budget must still bind behind 150 newer unrelated budgets"
+        );
+        pg_cleanup(&pool, community).await;
+    }
+
+    /// Item 11: the LLM gateway's daily cap applies through the `llm_calls`
+    /// counter when no budget covers the caller, and a budget's `llmCalls`
+    /// governs when one does.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn llm_daily_cap_falls_back_to_config_and_yields_to_a_budget() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let plain = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
+        let budgeted = "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6";
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [8u8; 32],
+            serde_json::json!({
+                "v": 1, "subject": budgeted, "window": "day",
+                "limits": { "llmCalls": 3 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+
+        // No budget: the config default (2/day here) applies.
+        enforce_llm_call(&state, &tenant, plain, 2)
+            .await
+            .expect("call 1");
+        enforce_llm_call(&state, &tenant, plain, 2)
+            .await
+            .expect("call 2");
+        let err = enforce_llm_call(&state, &tenant, plain, 2)
+            .await
+            .expect_err("the config default caps a caller with no budget");
+        assert!(
+            matches!(&err, IngestError::Rejected(m) if m.contains("llm_calls limit 2")),
+            "{err:?}"
+        );
+
+        // A budget with llmCalls governs (3), not the config default (2).
+        for n in 1..=3 {
+            enforce_llm_call(&state, &tenant, budgeted, 2)
+                .await
+                .unwrap_or_else(|e| panic!("budgeted call {n}: {e:?}"));
+        }
+        assert!(matches!(
+            enforce_llm_call(&state, &tenant, budgeted, 2).await,
+            Err(IngestError::Rejected(m)) if m.contains("llm_calls limit 3")
+        ));
         pg_cleanup(&pool, community).await;
     }
 }

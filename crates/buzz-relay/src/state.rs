@@ -698,6 +698,14 @@ pub struct AppState {
     /// Per-community channel visibility string, used to gate the private-channel fan-out
     /// access check so open channels stay zero-cost. Invalidated on a flip.
     pub channel_visibility_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), String>>,
+    /// Community owner/admin role cache: (community_id, pubkey_bytes) →
+    /// `relay_members.role IN ('owner', 'admin')`. Backs the admin-only read
+    /// gate ([`buzz_core::kind::ADMIN_ONLY_KINDS`]). Short TTL (10s) bounds how
+    /// long a demoted admin keeps read access to audit entries on this pod.
+    /// Only successful lookups are cached; an error is never turned into a
+    /// cached "not an admin".
+    #[allow(clippy::type_complexity)]
+    pub community_admin_cache: Arc<moka::sync::Cache<(CommunityId, Vec<u8>), bool>>,
 
     /// Bounded channel for audit logging, absent when audit logging is disabled.
     pub audit_tx: Option<mpsc::Sender<buzz_audit::NewAuditEntry>>,
@@ -733,8 +741,19 @@ pub struct AppState {
     /// Shared HTTP client for relay-proxied GIF provider requests. Reusing the
     /// connection pool avoids a fresh TLS handshake for every search/share.
     pub gif_http_client: reqwest::Client,
+    /// Shared HTTP client for the relay-owned LLM gateway, built once at
+    /// startup (redirects disabled: a provider 3xx must never replay the
+    /// key-bearing request elsewhere). `None` when the gateway is not
+    /// configured, or when the client could not be built — the gateway then
+    /// answers 503 instead of panicking or rebuilding a client per request.
+    pub llm_http_client: Option<reqwest::Client>,
     /// Shared Redis-backed admission limits for ordinary HTTP and WebSocket work.
     pub admission_rate_limiter: Arc<RedisRateLimiter>,
+
+    /// Per-connection frame budget for anonymous P2P-signaling EVENT/REQ
+    /// (`BUZZ_P2P_SIGNALING`). Keyed by connection id; entries expire after
+    /// one window and the map is capacity-bounded.
+    pub p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter,
 
     /// Per-agent sliding-window rate limiter for observer frames (kind 24200).
     /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
@@ -829,6 +848,17 @@ impl AppState {
         let nip98_replay: Arc<dyn Nip98ReplayGuard> =
             Arc::new(RedisNip98ReplayGuard::new(redis_pool.clone()));
         let gif_http_client = crate::api::gifs::build_gif_http_client();
+        let llm_http_client = if config.llm.is_some() {
+            match crate::api::llm_gateway::build_llm_http_client() {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    tracing::error!(%error, "LLM gateway HTTP client could not be built; /llm/chat/completions will answer 503");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let admission_rate_limiter = Arc::new(RedisRateLimiter::new(redis_pool.clone()));
         let audit_enabled = audit_arc.is_some();
         let state = Self {
@@ -879,6 +909,12 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            community_admin_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(std::time::Duration::from_secs(10))
+                    .build(),
+            ),
             audit_tx: audit_enabled.then_some(audit_tx),
             media_storage: Arc::new(media_storage),
             storage_sweep: Arc::new(tokio::sync::Mutex::new(
@@ -892,7 +928,9 @@ impl AppState {
             started_at: Instant::now(),
             nip98_replay,
             gif_http_client,
+            llm_http_client,
             admission_rate_limiter,
+            p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter::new(),
             observer_rate_limiter: Arc::new(DashMap::new()),
             media_upload_rate_limiter: Arc::new(DashMap::new()),
             invite_claim_rate_limiter: Arc::new(
@@ -989,6 +1027,32 @@ impl AppState {
         let result = self.db.is_member(community_id, channel_id, pubkey).await?;
         self.membership_cache.insert(key, result);
         Ok(result)
+    }
+
+    /// Whether `pubkey` is the community owner or an admin
+    /// (`relay_members.role IN ('owner', 'admin')`), with a 10-second cache.
+    ///
+    /// This is the reader-role check behind the admin-only read gate
+    /// ([`buzz_core::kind::ADMIN_ONLY_KINDS`]). A database error is returned to
+    /// the caller — never cached and never mapped to `false` — so a read path
+    /// can fail the request instead of answering with an authoritative "no
+    /// entries".
+    pub async fn is_community_admin_cached(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+    ) -> Result<bool, buzz_db::DbError> {
+        let key = (community_id, pubkey.to_vec());
+        if let Some(cached) = self.community_admin_cache.get(&key) {
+            return Ok(cached);
+        }
+        let is_admin = self
+            .db
+            .get_relay_member(community_id, &hex::encode(pubkey))
+            .await?
+            .is_some_and(|member| matches!(member.role.as_str(), "owner" | "admin"));
+        self.community_admin_cache.insert(key, is_admin);
+        Ok(is_admin)
     }
 
     /// Invalidate caches after a membership change (add/remove member).

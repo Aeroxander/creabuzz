@@ -31,3 +31,20 @@ docs:
   - file: docs/product-brief.md
     title: "Product Brief"
 welcome: welcome.md
+org:
+  # The community org this project starts with: a founder seat (you), one vacant
+  # seat per agent, and a default budget that covers every agent from day one.
+  # Overruns become approval cards in "Needs me" rather than silent stops.
+  root:
+    name: "Vanilla App Studio"
+    blurb: "The studio's founders"
+  seats:
+    - persona: app-dev
+    - persona: qa-reviewer
+    - persona: product-lead
+  default_budget:
+    window: day
+    runs: 200
+    tasks_create: 20
+    messages: 300
+    llm_calls: 200

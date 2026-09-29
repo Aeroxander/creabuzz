@@ -485,6 +485,27 @@ CREATE UNIQUE INDEX idx_budget_approvals_one_pending
     ON budget_approvals (community_id, subject, counter_type, window_start)
     WHERE status = 'pending';
 
+-- EVM identity bindings (migrations 0045 + 0046): maps a member's Nostr pubkey
+-- (hot device key) to its EVM root account, per community. Written by
+-- `POST /auth/siwe/register` after both the SIWE signature and the Nostr proof
+-- event verify. Revocation is soft (`revoked_*`) so history stays auditable.
+CREATE TABLE evm_identities (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    pubkey         TEXT NOT NULL,
+    evm_address    BYTEA NOT NULL,
+    attestation    JSONB,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at     TIMESTAMPTZ,
+    revoked_by     TEXT,
+    revoked_reason TEXT,
+    PRIMARY KEY (community_id, pubkey),
+    CHECK (octet_length(evm_address) = 20)
+);
+
+-- Multiple device npubs may share one EVM root account.
+CREATE INDEX idx_evm_identities_address ON evm_identities (community_id, evm_address);
+
 -- ── Scheduled workflow fires (cron claim) ─────────────────────────────────────
 -- Plan §5: the at-most-once cron fire claim. UNIQUE (community_id, workflow_id,
 -- scheduled_for) — only the pod that wins the claim insert creates the run.
@@ -1777,12 +1798,15 @@ $$;
 SELECT attach_community_write_fence('api_tokens');
 SELECT attach_community_write_fence('archived_identities');
 SELECT attach_community_write_fence('audit_log');
+SELECT attach_community_write_fence('budget_approvals');
+SELECT attach_community_write_fence('budget_consumption');
 SELECT attach_community_write_fence('channel_members');
 SELECT attach_community_write_fence('channels');
 SELECT attach_community_write_fence('community_bans');
 SELECT attach_community_write_fence('delivery_log');
 SELECT attach_community_write_fence('event_mentions');
 SELECT attach_community_write_fence('events');
+SELECT attach_community_write_fence('evm_identities');
 SELECT attach_community_write_fence('git_repo_names');
 SELECT attach_community_write_fence('join_policy_acceptances');
 SELECT attach_community_write_fence('moderation_actions');

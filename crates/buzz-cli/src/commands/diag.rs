@@ -46,8 +46,11 @@ pub async fn cmd_diag(client: &BuzzClient, limit: Option<u32>) -> Result<(), Cli
             dropped += 1;
             continue;
         };
-        let tags: &[serde_json::Value] =
-            row.get("tags").and_then(|v| v.as_array()).map(|v| v.as_slice()).unwrap_or(&[]);
+        let tags: &[serde_json::Value] = row
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
         // The receipt/grant tables refine 47005/37011 into vote/execute/
         // revoke — absent or unknown tables stay at the conservative default.
         let table = tag_value(tags, "kind");

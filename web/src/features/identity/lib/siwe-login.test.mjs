@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -95,28 +96,76 @@ test("siweDomain prefers the relay value and lowercases the fallback", () => {
 });
 
 test("buildSiweMessage keeps the EIP-4361 layout", () => {
-  const message = buildSiweMessage({
-    domain: "localhost",
-    address: "0xabc",
-    uri: "http://localhost:5173",
-    chainId: 1,
-    nonce: "nonce-1",
-    npub: PASSKEY_SIGNER_PUBKEY,
-  });
+  const message = buildSiweMessage(
+    {
+      domain: "localhost",
+      address: "0xabc",
+      uri: "http://localhost:5173",
+      chainId: 1,
+      nonce: "nonce-1",
+      npub: PASSKEY_SIGNER_PUBKEY,
+    },
+    new Date("2026-07-28T10:00:00Z"),
+  );
   const lines = message.split("\n");
   assert.equal(
     lines[0],
     "localhost wants you to sign in with your Ethereum account:",
   );
   assert.equal(lines[1], "0xabc");
+  // EIP-4361 ABNF: `address LF LF [statement LF] LF URI` — no statement means
+  // two blank lines. One blank line is what the relay parser rejects.
   assert.equal(lines[2], "");
-  assert.equal(lines[3], "URI: http://localhost:5173");
-  assert.equal(lines[4], "Version: 1");
-  assert.equal(lines[5], "Chain ID: 1");
-  assert.equal(lines[6], "Nonce: nonce-1");
-  assert.ok(lines[7].startsWith("Issued At: "));
-  assert.equal(lines[8], "Resources:");
-  assert.equal(lines[9], `- nostr:${PASSKEY_SIGNER_PUBKEY}`);
+  assert.equal(lines[3], "");
+  assert.equal(lines[4], "URI: http://localhost:5173");
+  assert.equal(lines[5], "Version: 1");
+  assert.equal(lines[6], "Chain ID: 1");
+  assert.equal(lines[7], "Nonce: nonce-1");
+  assert.equal(lines[8], "Issued At: 2026-07-28T10:00:00.000Z");
+  assert.equal(lines[9], "Resources:");
+  assert.equal(lines[10], `- nostr:${PASSKEY_SIGNER_PUBKEY}`);
+  assert.equal(lines.length, 11);
+});
+
+// Cross-language golden: the relay's parser test
+// (crates/buzz-evm-auth/src/siwe.rs `parses_the_web_client_golden_message`)
+// reads this same file, so a change to either side that breaks the other
+// fails a test on both. The fixture is the message plus one trailing newline
+// (text-file convention); the message itself has none.
+const GOLDEN_URL = new URL(
+  "../../../../../test-fixtures/siwe/login-message.txt",
+  import.meta.url,
+);
+
+function goldenMessage() {
+  const raw = readFileSync(GOLDEN_URL, "utf8");
+  return raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+}
+
+test("the login message is byte-identical to the shared golden fixture", async () => {
+  const login = await buildSiweLogin(
+    { nonce: "abc123xyz789", domain: "login.example.com", chainId: 8453 },
+    deps({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      origin: "https://login.example.com",
+      hostname: "ignored.example",
+      signProof: async () => ({
+        pubkey:
+          "953d3363262e86b770419834c53d2446409db6d918a57f8f339d495d54ab001f",
+      }),
+      now: new Date("2026-07-28T10:00:00Z"),
+    }),
+  );
+  assert.equal(login.message, goldenMessage());
+});
+
+test("the golden fixture has two blank lines and no statement", () => {
+  const lines = goldenMessage().split("\n");
+  assert.deepEqual(lines.slice(2, 5), [
+    "",
+    "",
+    "URI: https://login.example.com",
+  ]);
 });
 
 test("a stored wallet binding round-trips", () => {

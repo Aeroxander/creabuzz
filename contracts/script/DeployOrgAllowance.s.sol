@@ -10,6 +10,13 @@ import {OrgAllowance} from "../src/OrgAllowance.sol";
 /// becomes the community owner; the same (or another) key is then granted as
 /// the per-subject spender (the harness backend EVM key in dev).
 ///
+/// ENFORCED PAYOUTS (docs/dao-os.md R3): set `ORG_ALLOWANCE_TREASURY` to the
+/// custody address and the script wires it as `treasury`. That address must
+/// then `approve(<ORG>, amount)` each token agents may spend; agents pay out
+/// with `spendTo(subject, token, epoch, amount, to)`, which debits the ledger and
+/// moves the tokens in one call. Without a treasury only the advisory `spend`
+/// (accounting, no transfer) is usable.
+///
 /// NDOC — local anvil smoke flow:
 ///
 /// ```bash
@@ -36,7 +43,10 @@ import {OrgAllowance} from "../src/OrgAllowance.sol";
 ///   --rpc-url anvil \
 ///   --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 ///
-/// # 5. spend as the backend key, then read the ledger
+/// # 5. spend as the backend key, then read the ledger. `spend` is ADVISORY
+/// #    (accounting only); with a treasury wired use the enforced payout:
+/// #    cast send 0x<ORG> "spendTo(bytes32,address,uint64,uint256,address)" ... <TO>
+/// #    (epoch must be <= unix_ts / 86400, e.g. `cast call 0x<ORG> "currentEpoch(bytes32)(uint64)" <subject>`)
 /// cast send 0x<ORG> "spend(bytes32,address,uint64,uint256)" \
 ///   0xd1a7d9d1a2f0e13a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a \
 ///   0x<USDC_TOKEN> 1 25000000 \
@@ -53,9 +63,12 @@ contract DeployOrgAllowance is Script {
     function run() external returns (address org) {
         vm.startBroadcast();
         org = address(new OrgAllowance());
+        address treasury = vm.envOr("ORG_ALLOWANCE_TREASURY", address(0));
+        if (treasury != address(0)) OrgAllowance(org).setTreasury(treasury);
         vm.stopBroadcast();
         emit OrgAllowanceDeployed(org, OrgAllowance(org).owner());
         console2.log("OrgAllowance deployed at:", org);
         console2.log("owner:", OrgAllowance(org).owner());
+        console2.log("treasury (spendTo custody):", OrgAllowance(org).treasury());
     }
 }

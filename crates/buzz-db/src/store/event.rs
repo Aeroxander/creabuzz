@@ -10,8 +10,8 @@ use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
 use buzz_core::kind::{
-    event_kind_i32, is_ephemeral, is_parameterized_replaceable, KIND_AUTH, KIND_EVENT_REMINDER,
-    KIND_HUDDLE_STARTED, SHARED_GATED_KINDS,
+    event_kind_i32, is_ephemeral, is_parameterized_replaceable, ADMIN_ONLY_KINDS, KIND_AUTH,
+    KIND_EVENT_REMINDER, KIND_HUDDLE_STARTED, SHARED_GATED_KINDS,
 };
 use buzz_core::{CommunityId, StoredEvent};
 use buzz_datastore_tracing::datastore_span;
@@ -113,6 +113,15 @@ pub struct EventQuery {
     /// SQL pushdown is sound.  Keeping `event_visible_to_reader` as post-filter
     /// defense-in-depth catches any residual mismatch.
     pub shared_gated_reader: Option<Vec<u8>>,
+    /// Exclude every kind in [`ADMIN_ONLY_KINDS`] (the relay's audit-chain
+    /// entries) in SQL, before ORDER/LIMIT and in COUNT, so a non-admin page or
+    /// count can neither contain them nor be starved by them.
+    ///
+    /// Default `false` so internal, trusted readers keep seeing every row;
+    /// every client-facing read path builds its query through
+    /// `filter_to_query_params`, which sets this to `true`, and only an
+    /// authenticated community owner/admin flips it back off.
+    pub exclude_admin_only_kinds: bool,
 }
 
 impl EventQuery {
@@ -144,6 +153,7 @@ impl EventQuery {
             channel_ids_include_global: true,
             max_limit: None,
             shared_gated_reader: None,
+            exclude_admin_only_kinds: false,
         }
     }
 }
@@ -168,11 +178,34 @@ const HUDDLE_LINK_CANDIDATE_LIMIT: i64 = 32;
 ///
 /// For NIP-33 parameterized replaceable events (kind 30000–39999): returns the first
 /// `d` tag's value, or `""` if no `d` tag is present (per NIP-33 spec).
+///
+/// For the slug-addressed fork kinds in [`buzz_core::kind::D_TAG_ADDRESSED_KINDS`]
+/// (wiki pages, fleet, team kinds — regular events outside the NIP-33 window):
+/// returns the first `d` tag that carries a value, or `None` when there is none
+/// or it exceeds [`D_TAG_MAX_LEN`] (an oversized slug must not be able to break
+/// the insert on the btree index; the event is still stored, just not
+/// d-addressable). This only materializes the lookup column — it does not make
+/// the kind replaceable, and every revision is still stored.
+///
 /// For all other events: returns `None` (column stays NULL).
 pub fn extract_d_tag(event: &Event) -> Option<String> {
     let kind_u32 = event.kind.as_u16() as u32;
     if !is_parameterized_replaceable(kind_u32) {
-        return None;
+        if !buzz_core::kind::is_d_tag_addressed(kind_u32) {
+            return None;
+        }
+        return event
+            .tags
+            .iter()
+            .find_map(|tag| {
+                let parts = tag.as_slice();
+                if parts.len() >= 2 && parts[0] == "d" {
+                    Some(parts[1].to_string())
+                } else {
+                    None
+                }
+            })
+            .filter(|slug| slug.len() <= D_TAG_MAX_LEN);
     }
     let val = event
         .tags
@@ -690,6 +723,8 @@ pub(crate) async fn query_events_on(
         qb.push(")");
     }
 
+    push_admin_only_exclusion(&mut qb, q, col_prefix);
+
     // Composite ordering for deterministic pagination across ALL callers of
     // query_events (WebSocket REQ, REST endpoints, canvas, notes, etc.).
     // The `id ASC` tiebreaker ensures stable results when events share the
@@ -912,10 +947,31 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
         }
     }
 
+    push_admin_only_exclusion(&mut qb, q, col_prefix);
+
     let row = qb.build().fetch_one(&mut *conn).await?;
     let cnt: i64 = row.try_get("cnt")?;
 
     Ok(cnt)
+}
+
+/// Append `AND kind NOT IN (<ADMIN_ONLY_KINDS>)` when the query excludes
+/// admin-only kinds. The list is a compile-time constant of integers, never
+/// caller input.
+fn push_admin_only_exclusion(
+    qb: &mut QueryBuilder<sqlx::Postgres>,
+    q: &EventQuery,
+    col_prefix: &str,
+) {
+    if !q.exclude_admin_only_kinds {
+        return;
+    }
+    let kinds = ADMIN_ONLY_KINDS
+        .iter()
+        .map(|kind| kind.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    qb.push(format!(" AND {col_prefix}kind NOT IN ({kinds})"));
 }
 
 /// Soft-delete an event by setting `deleted_at = NOW()`.
@@ -2643,6 +2699,53 @@ mod postgres_tests {
     }
 
     #[test]
+    fn extract_d_tag_materializes_slug_addressed_fork_kinds() {
+        // Wiki and fleet/team kinds are regular events outside 30000–39999, but
+        // their `d` slug must be stored so `/governance.md`-style lookups work.
+        for kind in buzz_core::kind::D_TAG_ADDRESSED_KINDS {
+            let event = make_event_with_kind_and_tags(
+                kind as u16,
+                vec![Tag::parse(["d", "governance"]).unwrap()],
+            );
+            assert_eq!(
+                extract_d_tag(&event),
+                Some("governance".to_string()),
+                "kind {kind} must materialize its d tag"
+            );
+            assert!(
+                !is_parameterized_replaceable(kind),
+                "kind {kind} must stay a regular (non-replaceable) event"
+            );
+        }
+    }
+
+    #[test]
+    fn extract_d_tag_slug_kinds_without_slug_or_oversized_stay_null() {
+        let kind = buzz_core::kind::KIND_WIKI_PAGE as u16;
+        // No `d` tag: NULL (not the NIP-33 empty-string default).
+        let missing = make_event_with_kind_and_tags(kind, vec![Tag::parse(["t", "x"]).unwrap()]);
+        assert_eq!(extract_d_tag(&missing), None);
+        // A valueless `d` tag is skipped in favour of the next valued one.
+        let valueless_first = make_event_with_kind_and_tags(
+            kind,
+            vec![
+                Tag::parse(["d"]).unwrap(),
+                Tag::parse(["d", "second"]).unwrap(),
+            ],
+        );
+        assert_eq!(extract_d_tag(&valueless_first), Some("second".to_string()));
+        // An oversized slug must not reach the btree index.
+        let long = "x".repeat(D_TAG_MAX_LEN + 1);
+        let oversized =
+            make_event_with_kind_and_tags(kind, vec![Tag::parse(["d", &long]).unwrap()]);
+        assert_eq!(extract_d_tag(&oversized), None);
+        let at_limit = "x".repeat(D_TAG_MAX_LEN);
+        let boundary =
+            make_event_with_kind_and_tags(kind, vec![Tag::parse(["d", &at_limit]).unwrap()]);
+        assert_eq!(extract_d_tag(&boundary), Some(at_limit));
+    }
+
+    #[test]
     fn extract_d_tag_non_nip33_returns_none() {
         // kind:1 (text note) — not parameterized replaceable
         let event =
@@ -2733,6 +2836,293 @@ mod postgres_tests {
             vec![Tag::parse(["not_before", "not-a-number"]).unwrap()],
         );
         assert_eq!(extract_not_before(&event), None);
+    }
+
+    /// `exclude_admin_only_kinds` must drop the audit chain (kind 48001) from
+    /// BOTH the row query and the COUNT — before ORDER/LIMIT — and be off by
+    /// default so trusted internal readers still see it.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn admin_only_kind_exclusion_applies_to_rows_and_counts() {
+        use nostr::{EventBuilder, Keys, Kind, Timestamp};
+
+        let db = Db::from_pool(setup_pool().await);
+        let community = CommunityId::from_uuid(make_test_community(&db.pool).await);
+        let other = CommunityId::from_uuid(make_test_community(&db.pool).await);
+        let keys = Keys::generate();
+        let base = Timestamp::now().as_secs();
+        let audit_kind = buzz_core::kind::KIND_AUDIT_ENTRY as u16;
+        let event = |kind: u16, content: &str, offset: u64| {
+            EventBuilder::new(Kind::Custom(kind), content)
+                .custom_created_at(Timestamp::from(base + offset))
+                .sign_with_keys(&keys)
+                .expect("sign")
+        };
+        // The audit rows are NEWER than the note: without pushdown they would
+        // consume a `limit: 1` page and starve the visible note.
+        for (target, e) in [
+            (community, event(1, "note", 0)),
+            (community, event(audit_kind, "audit-1", 10)),
+            (community, event(audit_kind, "audit-2", 20)),
+            (other, event(audit_kind, "other-tenant-audit", 30)),
+        ] {
+            db.insert_event(target, &e, None).await.expect("insert");
+        }
+
+        let mut query = EventQuery::for_community(community);
+        query.limit = Some(1);
+        assert_eq!(
+            db.query_events(&query).await.expect("internal read")[0]
+                .event
+                .content,
+            "audit-2",
+            "the default query is the trusted internal read and sees the chain"
+        );
+
+        query.exclude_admin_only_kinds = true;
+        let visible = db.query_events(&query).await.expect("gated read");
+        assert_eq!(
+            visible
+                .iter()
+                .map(|e| e.event.content.as_str())
+                .collect::<Vec<_>>(),
+            vec!["note"],
+            "the exclusion must apply before LIMIT so audit rows cannot starve the page"
+        );
+
+        // Explicit kind request for the audit chain returns nothing.
+        query.kinds = Some(vec![audit_kind as i32]);
+        query.limit = None;
+        assert!(db
+            .query_events(&query)
+            .await
+            .expect("audit read")
+            .is_empty());
+        assert_eq!(db.count_events(&query).await.expect("audit count"), 0);
+
+        query.exclude_admin_only_kinds = false;
+        assert_eq!(
+            db.count_events(&query).await.expect("internal count"),
+            2,
+            "trusted readers count this tenant's chain only"
+        );
+    }
+
+    /// The production insert path (the one `ingest` uses for regular events)
+    /// must store a wiki page's slug in `d_tag`, so the `d_tags` pushdown that
+    /// `/governance.md` uses finds it, while the page stays a REGULAR event:
+    /// every revision is kept.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn wiki_page_slug_is_stored_and_found_by_d_tags_lookup() {
+        use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+        let db = Db::from_pool(setup_pool().await);
+        let community = CommunityId::from_uuid(make_test_community(&db.pool).await);
+        let other = CommunityId::from_uuid(make_test_community(&db.pool).await);
+        let keys = Keys::generate();
+        let base = Timestamp::now().as_secs();
+
+        let page = |kind: u32, slug: &str, content: &str, offset: u64| {
+            EventBuilder::new(Kind::Custom(kind as u16), content)
+                .tags(vec![Tag::parse(["d", slug]).expect("d tag")])
+                .custom_created_at(Timestamp::from(base + offset))
+                .sign_with_keys(&keys)
+                .expect("sign wiki page")
+        };
+        let wiki = buzz_core::kind::KIND_WIKI_PAGE;
+        let agent_wiki = buzz_core::kind::KIND_AGENT_WIKI_PAGE;
+        for (event, target) in [
+            (page(wiki, "governance", "charter v1", 0), community),
+            (page(wiki, "governance", "charter v2", 10), community),
+            (page(wiki, "roadmap", "not the charter", 20), community),
+            (page(agent_wiki, "ops/standup", "agent page", 30), community),
+            // Same slug in another tenant must never surface.
+            (page(wiki, "governance", "other tenant", 40), other),
+        ] {
+            let (_, inserted) = db
+                .insert_event_with_thread_metadata(target, &event, None, None)
+                .await
+                .expect("insert wiki page through the production path");
+            assert!(inserted);
+        }
+
+        let mut query = EventQuery::for_community(community);
+        query.kinds = Some(vec![wiki as i32]);
+        query.global_only = true;
+        query.d_tags = Some(vec!["governance".to_string(), "charter".to_string()]);
+        let found = db.query_events(&query).await.expect("d_tags lookup");
+        let mut contents: Vec<&str> = found.iter().map(|e| e.event.content.as_str()).collect();
+        contents.sort_unstable();
+        assert_eq!(
+            contents,
+            vec!["charter v1", "charter v2"],
+            "d_tags pushdown must find every stored revision of the slug in this tenant only"
+        );
+
+        query.kinds = Some(vec![agent_wiki as i32]);
+        query.d_tags = None;
+        query.d_tag = Some("ops/standup".to_string());
+        let agent_pages = db.query_events(&query).await.expect("agent wiki lookup");
+        assert_eq!(agent_pages.len(), 1);
+
+        // Regular-event semantics are untouched: no replacement happened.
+        let live_revisions: i64 = sqlx::query_scalar(
+            "SELECT count(*)::BIGINT FROM events \
+             WHERE community_id = $1 AND kind = $2 AND d_tag = 'governance' \
+               AND deleted_at IS NULL",
+        )
+        .bind(community.as_uuid())
+        .bind(wiki as i32)
+        .fetch_one(&db.pool)
+        .await
+        .expect("count live revisions");
+        assert_eq!(
+            live_revisions, 2,
+            "wiki revisions must not replace each other"
+        );
+    }
+
+    /// Migration 0049 fills `d_tag` for wiki/fleet/team rows written before the
+    /// extractor materialized it, and leaves everything else alone.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn d_tag_backfill_migration_populates_legacy_slug_kinds_only() {
+        const BACKFILL: &str = include_str!("../../../../migrations/0049_backfill_wiki_d_tag.sql");
+
+        let pool = setup_pool().await;
+        let community = make_test_community(&pool).await;
+        let unique = Uuid::new_v4();
+
+        // (kind, tags, expected d_tag after the backfill)
+        let long_slug = "x".repeat(D_TAG_MAX_LEN + 1);
+        let rows: Vec<(i32, serde_json::Value, Option<String>)> = vec![
+            (
+                44001,
+                serde_json::json!([["d", "governance"]]),
+                Some("governance".into()),
+            ),
+            (
+                44002,
+                serde_json::json!([["t", "x"], ["d", "ops/standup"]]),
+                Some("ops/standup".into()),
+            ),
+            (
+                44010,
+                serde_json::json!([["d"], ["d", "agent-7"]]),
+                Some("agent-7".into()),
+            ),
+            (
+                44011,
+                serde_json::json!([["d", "task-1"], ["d", "task-2"]]),
+                Some("task-1".into()),
+            ),
+            (
+                44020,
+                serde_json::json!([["d", "strategy"]]),
+                Some("strategy".into()),
+            ),
+            (44021, serde_json::json!([["d", "run"]]), Some("run".into())),
+            (
+                44022,
+                serde_json::json!([["d", "run/0/a"]]),
+                Some("run/0/a".into()),
+            ),
+            // No d tag / oversized slug: stay NULL.
+            (44001, serde_json::json!([["t", "no-slug"]]), None),
+            (44001, serde_json::json!([["d", long_slug]]), None),
+            // Not slug-addressed kinds: a stray d tag must not be materialized.
+            (9, serde_json::json!([["d", "chat"]]), None),
+            (44200, serde_json::json!([["d", "metric"]]), None),
+        ];
+        let mut ids = Vec::new();
+        for (index, (kind, tags, _)) in rows.iter().enumerate() {
+            let mut id = vec![0_u8; 32];
+            id[..16].copy_from_slice(unique.as_bytes());
+            id[16] = index as u8;
+            sqlx::query(
+                "INSERT INTO events \
+                 (community_id, id, pubkey, created_at, kind, tags, content, sig, d_tag) \
+                 VALUES ($1, $2, $3, now(), $4, $5, '', $6, NULL)",
+            )
+            .bind(community)
+            .bind(&id)
+            .bind(vec![2_u8; 32])
+            .bind(kind)
+            .bind(tags)
+            .bind(vec![3_u8; 64])
+            .execute(&pool)
+            .await
+            .expect("insert legacy row with NULL d_tag");
+            ids.push(id);
+        }
+
+        // A legacy row in a fenced (mid-deletion) tenant must be skipped rather
+        // than abort the whole migration on the community write fence.
+        let fenced = make_test_community(&pool).await;
+        let fenced_id = vec![0xfe_u8; 32];
+        sqlx::query(
+            "INSERT INTO events \
+             (community_id, id, pubkey, created_at, kind, tags, content, sig, d_tag) \
+             VALUES ($1, $2, $3, now(), 44001, '[[\"d\", \"governance\"]]'::jsonb, '', $4, NULL)",
+        )
+        .bind(fenced)
+        .bind(&fenced_id)
+        .bind(vec![2_u8; 32])
+        .bind(vec![3_u8; 64])
+        .execute(&pool)
+        .await
+        .expect("insert legacy row in soon-to-be-fenced tenant");
+        let mut fence_tx = pool.begin().await.expect("begin fence tx");
+        sqlx::query(
+            "SELECT set_config('buzz.deletion_executor_community', $1, true), \
+                    set_config('buzz.deletion_fence_generation', '1', true)",
+        )
+        .bind(fenced.to_string())
+        .execute(&mut *fence_tx)
+        .await
+        .expect("authorize fence");
+        sqlx::query(
+            "UPDATE communities SET deletion_state = 'fenced', \
+                    deletion_fence_generation = 1, archived_at = now() WHERE id = $1",
+        )
+        .bind(fenced)
+        .execute(&mut *fence_tx)
+        .await
+        .expect("fence tenant");
+        fence_tx.commit().await.expect("commit fence");
+
+        sqlx::raw_sql(sqlx::AssertSqlSafe(BACKFILL.to_owned()))
+            .execute(&pool)
+            .await
+            .expect("run migration 0049 backfill");
+        // Idempotent: a second run changes nothing and does not fail.
+        sqlx::raw_sql(sqlx::AssertSqlSafe(BACKFILL.to_owned()))
+            .execute(&pool)
+            .await
+            .expect("re-run migration 0049 backfill");
+
+        for ((kind, _, expected), id) in rows.iter().zip(&ids) {
+            let stored: Option<String> =
+                sqlx::query_scalar("SELECT d_tag FROM events WHERE community_id = $1 AND id = $2")
+                    .bind(community)
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("read back d_tag");
+            assert_eq!(&stored, expected, "kind {kind} d_tag after backfill");
+        }
+        let fenced_stored: Option<String> =
+            sqlx::query_scalar("SELECT d_tag FROM events WHERE community_id = $1 AND id = $2")
+                .bind(fenced)
+                .bind(&fenced_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read fenced tenant row");
+        assert_eq!(
+            fenced_stored, None,
+            "fenced tenants are skipped, not written"
+        );
     }
 
     #[tokio::test]

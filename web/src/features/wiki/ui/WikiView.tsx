@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
+import { describeLive } from "../lib/live-status";
 import { useLiveWikiDoc } from "../wiki-sync";
 import { PageDialog } from "./PageDialog";
 import { WikiEditor } from "./WikiEditor";
@@ -66,10 +67,16 @@ export function WikiView({
   const [publishedHere, setPublishedHere] = useState<Set<string>>(new Set());
 
   const published = pages.find((p) => p.slug === activeSlug) ?? null;
-  const { content, setContent, mergeRemoteSnapshot, peers } = useLiveWikiDoc(
-    activeSlug,
-    published?.content ?? "",
-  );
+  const {
+    content,
+    setContent,
+    mergeRemoteSnapshot,
+    peers,
+    strangers,
+    rejected,
+    live,
+  } = useLiveWikiDoc(activeSlug, published?.content ?? "");
+  const liveText = describeLive(live, { peers, strangers, rejected });
   /** The page being edited, including one that exists only in this editor. */
   const active: WikiPage | null =
     published ??
@@ -402,14 +409,20 @@ export function WikiView({
             <span
               className="flex items-center gap-1"
               data-testid="wiki-editors"
-              title={
-                peers > 0
-                  ? `${peers} other ${peers === 1 ? "editor" : "editors"} connected.`
-                  : "Nobody else is connected. Live co-editing needs the relay to accept P2P signalling; without it, edits reach others when a page is saved."
-              }
+              title={liveText.detail}
             >
               <Users className="h-3 w-3" aria-hidden="true" />
-              {peers === 0 ? "Editing alone" : `${peers + 1} editing`}
+              {liveText.editors}
+            </span>
+            <span
+              className="flex items-center gap-1 rounded border border-black/15 px-1.5 py-0.5 dark:border-white/15"
+              data-live-state={live.state}
+              data-testid="wiki-live-status"
+              role="status"
+              title={liveText.detail}
+            >
+              {liveText.chip}
+              <span className="sr-only">. {liveText.detail}</span>
             </span>
             <span
               className="flex items-center gap-1"

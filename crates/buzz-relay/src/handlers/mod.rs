@@ -42,6 +42,10 @@ pub mod report;
 pub mod report_resolution;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
+#[cfg(test)]
+mod p2p_anon_tests;
+#[cfg(test)]
+mod read_gate_tests;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
 

@@ -36,6 +36,14 @@
       ]
     },
     {
+      "id": "paperclip",
+      "name": "Paperclip on-ramp (deprecated)",
+      "description": "Legacy Paperclip import surface. Deprecated: the Org and Wiki views replace it, and it is hidden from the sidebar unless enabled here.",
+      "platforms": [
+        "desktop"
+      ]
+    },
+    {
       "id": "pulse",
       "name": "Pulse",
       "description": "Activity feed with notes, social posts, and agent activity",

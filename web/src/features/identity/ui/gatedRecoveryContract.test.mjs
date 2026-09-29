@@ -88,8 +88,15 @@ for (const [path, label] of QUERY_SURFACES) {
 test("the create-launch failure is rendered inside the dialog, not only as a toast", () => {
   const source = read("src/features/launchpad/ui/CreateLaunchDialog.tsx");
   assert.match(source, /publishError\?: string \| null/);
-  assert.match(source, /message=\{publishError\}/);
-  assert.match(source, /onUnlocked=\{\(\) => submit\(\)\}/);
+  // The inline error is what SignRecovery is handed: the relay's publish
+  // failure when there is one, else the dialog's own submit error. Both must
+  // reach the element that renders the recovery beside it — a `message=` on
+  // some other element (or a dropped `?? error`) would leave the failure as a
+  // toast only. Scoped to the SignRecovery element, not the file.
+  const recovery = source.match(/<SignRecovery\b[\s\S]*?\/>/)?.[0] ?? "";
+  assert.ok(recovery, "CreateLaunchDialog must mount <SignRecovery />");
+  assert.match(recovery, /message=\{publishError \?\? error\}/);
+  assert.match(recovery, /onUnlocked=\{\(\) => submit\(\)\}/);
   // Auto-resume: unlocking re-runs the intent the reader was performing.
   const page = read("src/features/launchpad/ui/LaunchesPage.tsx");
   assert.match(page, /publishError=\{\s*\n?\s*create\.isError/);

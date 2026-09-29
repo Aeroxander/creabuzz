@@ -28,6 +28,10 @@
  *   NIP-ORG tie rule (lowest event id) — the same resolution
  *   `lib/state.ts` uses for requests and grants.
  */
+// Relative import, because the node:test runner imports this module directly
+// and cannot resolve Vite's `@/` alias.
+import { KIND_EVM_BINDING } from "../../../shared/constants/kinds.ts";
+
 // Structural input, as `lib/manifest.ts` `parsePitch` does: the node:test
 // runner imports this module directly, so it stays free of Vite-only aliases.
 export interface BindingEvent {
@@ -39,8 +43,11 @@ export interface BindingEvent {
   content: string;
 }
 
-/** The EVM binding record kind. Mirrors `crates/buzz-core/src/kind.rs`. */
-export const KIND_EVM_BINDING = 37017;
+/**
+ * The binding kind is the shared registry constant (`crates/buzz-core`
+ * `KIND_EVM_BINDING`), re-exported so this module's callers keep one import.
+ */
+export { KIND_EVM_BINDING };
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 

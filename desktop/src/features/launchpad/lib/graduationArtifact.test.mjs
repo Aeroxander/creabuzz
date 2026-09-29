@@ -5,12 +5,15 @@ import { fileURLToPath } from "node:url";
 
 import {
   ALLOWLIST_HOOK_CREATION_BYTECODE,
+  DEFAULT_RESERVE_LOCK_SECONDS,
   encodeAllowlistHookConstructorArgs,
   encodeAllowlistHookDeploy,
   encodeGraduationExecutorConstructorArgs,
   encodeGraduationExecutorDeploy,
   GRADUATION_EXECUTOR_CREATION_BYTECODE,
   MAX_RESERVE_BPS,
+  MAX_RESERVE_LOCK_SECONDS,
+  MIN_RESERVE_LOCK_SECONDS,
   predictCreateAddress,
 } from "./graduationArtifact.ts";
 
@@ -18,11 +21,19 @@ import {
 // Golden vectors (fresh `cast` output; do not hand-edit hex).
 // ---------------------------------------------------------------------------
 
-// `cast abi-encode "constructor(address,uint16)" 0x1111111111111111111111111111111111111111 4000`
+// `cast abi-encode "constructor(address,uint16,uint64)" 0x1111111111111111111111111111111111111111 4000 2592000`
 const CAST_EXECUTOR_CONSTRUCTOR =
   "0x" +
   "0000000000000000000000001111111111111111111111111111111111111111" +
-  "0000000000000000000000000000000000000000000000000000000000000fa0";
+  "0000000000000000000000000000000000000000000000000000000000000fa0" +
+  "0000000000000000000000000000000000000000000000000000000000278d00";
+
+// `cast abi-encode "constructor(address,uint16,uint64)" 0x1111111111111111111111111111111111111111 0 86400`
+const CAST_EXECUTOR_CONSTRUCTOR_MIN_LOCK =
+  "0x" +
+  "0000000000000000000000001111111111111111111111111111111111111111" +
+  "0000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000015180";
 
 // `cast abi-encode "constructor(address,uint128)" 0x1111111111111111111111111111111111111111 1000000`
 const CAST_HOOK_CONSTRUCTOR =
@@ -50,10 +61,32 @@ const CAST_CREATE_ADDRESSES = [
 // Pinned artifact verification (skip gracefully without contracts/out/)
 // ---------------------------------------------------------------------------
 
-function artifactBytecode(relPath, t) {
-  const url = new URL(`../../../../../${relPath}`, import.meta.url);
-  const path = fileURLToPath(url);
+/**
+ * Strip the trailing CBOR metadata (`…a264697066735822<34 bytes>64736f6c63<3
+ * bytes>0033`): its last two bytes are the metadata length. It embeds the hash
+ * of the compiler input (remapping list, source paths), which legitimately
+ * differs between machines; everything before it is the executable creation
+ * code and must match byte for byte.
+ */
+export function withoutMetadata(hex) {
+  const body = hex.replace(/^0x/, "");
+  const metaLen = Number.parseInt(body.slice(-4), 16);
+  assert.ok(
+    Number.isInteger(metaLen) && metaLen > 0 && metaLen * 2 + 4 < body.length,
+    "bytecode must end in a CBOR metadata length",
+  );
+  return body.slice(0, body.length - (metaLen * 2 + 4));
+}
+
+function artifactBytecode(file, contract, t) {
+  const relPath = `contracts/out/${file}/${contract}.json`;
+  const path = fileURLToPath(new URL(`../../../../../${relPath}`, import.meta.url));
   if (!existsSync(path)) {
+    if (process.env.REQUIRE_CONTRACT_ARTIFACTS === "1") {
+      assert.fail(
+        `${relPath} is missing but REQUIRE_CONTRACT_ARTIFACTS=1: run \`forge build\` in contracts/ first`,
+      );
+    }
     t.skip(`artifact not built: ${relPath}`);
     return null;
   }
@@ -63,27 +96,58 @@ function artifactBytecode(relPath, t) {
 
 test("GraduationExecutor pinned bytecode matches contracts/out artifact", (t) => {
   const bytecode = artifactBytecode(
-    "contracts/out/GraduationExecutor.sol/GraduationExecutor.json",
+    "GraduationExecutor.sol",
+    "GraduationExecutor",
     t,
   );
   if (bytecode === null) return;
-  assert.equal(GRADUATION_EXECUTOR_CREATION_BYTECODE, bytecode);
+  assert.equal(
+    withoutMetadata(GRADUATION_EXECUTOR_CREATION_BYTECODE),
+    withoutMetadata(bytecode),
+    "graduationArtifact.ts is stale: run `forge build` then `node scripts/regen-graduation-artifact.mjs`",
+  );
 });
 
 test("AllowlistHook pinned bytecode matches contracts/out artifact", (t) => {
-  const bytecode = artifactBytecode(
-    "contracts/out/hooks/AllowlistHook.sol/AllowlistHook.json",
-    t,
-  );
+  const bytecode = artifactBytecode("AllowlistHook.sol", "AllowlistHook", t);
   if (bytecode === null) return;
-  assert.equal(ALLOWLIST_HOOK_CREATION_BYTECODE, bytecode);
+  assert.equal(
+    withoutMetadata(ALLOWLIST_HOOK_CREATION_BYTECODE),
+    withoutMetadata(bytecode),
+    "graduationArtifact.ts is stale: run `forge build` then `node scripts/regen-graduation-artifact.mjs`",
+  );
 });
 
-test("pinned bytecodes are non-trivial creation code", () => {
-  assert.ok(GRADUATION_EXECUTOR_CREATION_BYTECODE.startsWith("0x60"));
-  assert.ok(GRADUATION_EXECUTOR_CREATION_BYTECODE.length > 2000);
-  assert.ok(ALLOWLIST_HOOK_CREATION_BYTECODE.startsWith("0x60"));
-  assert.ok(ALLOWLIST_HOOK_CREATION_BYTECODE.length > 1000);
+test("withoutMetadata drops exactly the CBOR trailer", () => {
+  // 3 code bytes + 2-byte-length-prefixed metadata of 4 bytes (0x0004).
+  assert.equal(withoutMetadata("0x6001aaaaaaaa0004"), "6001");
+  assert.throws(() => withoutMetadata("0x60"), /metadata length/);
+});
+
+// Function selectors are PUSH4 constants in the dispatcher (`cast sig`). A
+// stale embed — built before the one-auction bind, the reserve lock or the hook's
+// auction gate existed — lacks them, so this fails even where `contracts/out` is
+// not built.
+test("the pinned executor creation code carries the bind + reserve-lock surface", () => {
+  for (const [sig, selector] of [
+    ["bindAuction(address)", "ccd616ae"],
+    ["boundAuction()", "769956cb"],
+    ["withdrawStuckReserve(address)", "eb6ba94e"],
+    ["reserveLockSeconds()", "1c443c4c"],
+    ["reserveUnlockAt(address)", "193c206f"],
+  ]) {
+    assert.ok(
+      GRADUATION_EXECUTOR_CREATION_BYTECODE.includes(selector),
+      `executor creation code lacks ${sig} (0x${selector}) — regenerate graduationArtifact.ts`,
+    );
+  }
+});
+
+test("the pinned hook creation code carries the auction gate", () => {
+  assert.ok(
+    ALLOWLIST_HOOK_CREATION_BYTECODE.includes("b8c6f579"),
+    "hook creation code lacks setAuction(address) — regenerate graduationArtifact.ts",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -91,6 +155,18 @@ test("pinned bytecodes are non-trivial creation code", () => {
 // ---------------------------------------------------------------------------
 
 test("GraduationExecutor constructor args match cast abi-encode", () => {
+  assert.equal(
+    encodeGraduationExecutorConstructorArgs(TREASURY, 4000, 2_592_000),
+    CAST_EXECUTOR_CONSTRUCTOR,
+  );
+  assert.equal(
+    encodeGraduationExecutorConstructorArgs(TREASURY, 0, MIN_RESERVE_LOCK_SECONDS),
+    CAST_EXECUTOR_CONSTRUCTOR_MIN_LOCK,
+  );
+});
+
+test("the default reserve lock is 30 days", () => {
+  assert.equal(DEFAULT_RESERVE_LOCK_SECONDS, 2_592_000);
   assert.equal(
     encodeGraduationExecutorConstructorArgs(TREASURY, 4000),
     CAST_EXECUTOR_CONSTRUCTOR,
@@ -119,7 +195,7 @@ test("AllowlistHook deploy data = pinned bytecode + constructor args", () => {
 });
 
 test("constructor encoders reject the constructors' own bounds", () => {
-  // GraduationExecutor.sol:68-73 — OnlyTreasury(address(0)) / BadReserveBps.
+  // GraduationExecutor constructor — OnlyTreasury(address(0)) / BadReserveBps.
   assert.throws(
     () => encodeGraduationExecutorConstructorArgs("0x0".padEnd(42, "0"), 4000),
     /zero address/,
@@ -136,6 +212,36 @@ test("constructor encoders reject the constructors' own bounds", () => {
   assert.throws(
     () => encodeGraduationExecutorConstructorArgs("nope", 4000),
     /address/,
+  );
+  // GraduationExecutor.BadReserveLock: outside [1 day, 365 days].
+  assert.throws(
+    () =>
+      encodeGraduationExecutorConstructorArgs(
+        TREASURY,
+        4000,
+        MIN_RESERVE_LOCK_SECONDS - 1,
+      ),
+    /reserveLockSeconds/,
+  );
+  assert.throws(
+    () => encodeGraduationExecutorConstructorArgs(TREASURY, 4000, 0),
+    /reserveLockSeconds/,
+  );
+  assert.throws(
+    () =>
+      encodeGraduationExecutorConstructorArgs(
+        TREASURY,
+        4000,
+        MAX_RESERVE_LOCK_SECONDS + 1,
+      ),
+    /reserveLockSeconds/,
+  );
+  assert.doesNotThrow(() =>
+    encodeGraduationExecutorConstructorArgs(
+      TREASURY,
+      4000,
+      MAX_RESERVE_LOCK_SECONDS,
+    ),
   );
   assert.throws(
     () => encodeAllowlistHookConstructorArgs(TREASURY, 1n << 128n),

@@ -2589,6 +2589,14 @@ pub struct BudgetLimits {
     /// Governance-action caps (proposal / vote / execute — the HITL gate).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub governance: Option<GovernanceLimits>,
+    /// Maximum chat messages (kinds 9 and 40002) an agent may author in the
+    /// window. Enforced by the relay at ingest (counter class `messages`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages: Option<u32>,
+    /// Maximum LLM gateway calls in the window. Enforced by the relay's LLM
+    /// gateway (counter class `llm_calls`); the wire key is `llmCalls`.
+    #[serde(default, rename = "llmCalls", skip_serializing_if = "Option::is_none")]
+    pub llm_calls: Option<u32>,
 }
 
 /// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
@@ -2715,6 +2723,8 @@ fn zeroed_limits() -> BudgetLimits {
             vote: Some(0),
             execute: Some(0),
         }),
+        messages: Some(0),
+        llm_calls: Some(0),
     }
 }
 
@@ -5954,6 +5964,8 @@ mod tests {
                 }),
                 runs: Some(50),
                 governance: None,
+                messages: None,
+                llm_calls: None,
                 tasks: Some(TaskLimits {
                     create: Some(20),
                     approve: Some(0),
@@ -5980,6 +5992,8 @@ mod tests {
                         }),
                         runs: Some(80),
                         governance: None,
+                        messages: None,
+                        llm_calls: None,
                         tasks: Some(TaskLimits {
                             create: Some(30),
                             approve: Some(0),
@@ -5995,6 +6009,8 @@ mod tests {
                         }),
                         runs: Some(200),
                         governance: None,
+                        messages: None,
+                        llm_calls: None,
                         tasks: Some(TaskLimits {
                             create: Some(60),
                             approve: Some(2),

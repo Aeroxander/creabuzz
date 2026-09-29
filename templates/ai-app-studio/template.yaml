@@ -50,3 +50,21 @@ skills:
     source: skills/eval-craft/SKILL.md
     applies_to: all
 welcome: welcome.md
+org:
+  # The community org this project starts with: a founder seat (you), one vacant
+  # seat per agent, and a default budget that covers every agent from day one.
+  # Overruns become approval cards in "Needs me" rather than silent stops.
+  root:
+    name: "AI App Studio"
+    blurb: "The studio's founders"
+  seats:
+    - persona: ml-engineer
+    - persona: eval-writer
+    - persona: app-dev
+    - persona: product-lead
+  default_budget:
+    window: day
+    runs: 200
+    tasks_create: 20
+    messages: 300
+    llm_calls: 200

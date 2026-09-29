@@ -270,4 +270,77 @@ contract OrgBindingTest is Test {
         assertEq(boundDao, attacker);
         assertEq(at, block.timestamp);
     }
+    // ------------------------------------------------- who may (re)bind
+
+    function _summonParams(bytes32 salt) internal view returns (OrgBinding.SummonParams memory) {
+        address[] memory h = new address[](1);
+        h[0] = ownerAddr;
+        uint256[] memory s = new uint256[](1);
+        s[0] = 1e18;
+        return OrgBinding.SummonParams({
+            name: "X",
+            symbol: "X",
+            uri: "",
+            quorumBps: 500,
+            ragequittable: true,
+            salt: salt,
+            holders: h,
+            shares: s
+        });
+    }
+
+    /// The exploit: both binders were permissionless last-write-wins, so any
+    /// address could overwrite any org's binding with one call. Removing
+    /// `_authorizeBind` makes both halves of this test fail.
+    function test_StrangerCannotRebindAnExistingRoot() public {
+        (address before_,) = binding.bindingOf(rootId);
+        vm.startPrank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(OrgBinding.NotBinder.selector, rootId, attacker));
+        binding.bindDao(rootId, attacker);
+        vm.expectRevert(abi.encodeWithSelector(OrgBinding.NotBinder.selector, rootId, attacker));
+        binding.summonAndBind(rootId, _summonParams(keccak256("hijack")));
+        vm.stopPrank();
+        (address after_,) = binding.bindingOf(rootId);
+        assertEq(after_, before_, "the binding was not overwritten");
+        assertEq(after_, dao);
+    }
+
+    function test_FirstCallerBecomesTheBinder() public {
+        assertEq(binding.binderOf(rootId), address(this), "setUp's caller is the recorded binder");
+        bytes32 fresh = keccak256("fresh-root");
+        assertEq(binding.binderOf(fresh), address(0));
+        vm.expectEmit(true, true, false, false, address(binding));
+        emit OrgBinding.BinderSet(fresh, attacker);
+        vm.prank(attacker);
+        binding.bindDao(fresh, address(0xD40));
+        assertEq(binding.binderOf(fresh), attacker);
+        // The first caller of one root owns nothing of another.
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(OrgBinding.NotBinder.selector, rootId, attacker));
+        binding.bindDao(rootId, attacker);
+    }
+
+    function test_TheRecordedBinderMayRebind() public {
+        binding.bindDao(rootId, address(0xBEEF)); // this == the binder
+        (address boundDao,) = binding.bindingOf(rootId);
+        assertEq(boundDao, address(0xBEEF));
+        assertEq(binding.binderOf(rootId), address(this), "rebinding does not change the binder");
+    }
+
+    /// The DAO itself (acting through governance) may re-point its own root even
+    /// though it is not the recorded binder — and once it does, the OLD dao no
+    /// longer counts, only the new recorded one.
+    function test_TheRecordedDaoMayRebind_AndOnlyTheCurrentOne() public {
+        address newDao = address(0xDA02);
+        vm.prank(dao);
+        binding.bindDao(rootId, newDao);
+        (address boundDao,) = binding.bindingOf(rootId);
+        assertEq(boundDao, newDao);
+
+        vm.prank(dao); // the superseded DAO
+        vm.expectRevert(abi.encodeWithSelector(OrgBinding.NotBinder.selector, rootId, dao));
+        binding.bindDao(rootId, dao);
+        vm.prank(newDao);
+        binding.bindDao(rootId, address(0xDA03));
+    }
 }

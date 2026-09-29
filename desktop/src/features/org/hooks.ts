@@ -18,6 +18,7 @@ import {
   KIND_APPROVAL_REQUEST,
   KIND_BUDGET_SPEND_RECEIPT,
   KIND_AGENT_WIKI_PAGE,
+  KIND_AUDIT_ENTRY,
 } from "@/shared/constants/kinds";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -37,6 +38,11 @@ import {
 } from "./orgModels";
 import { deleteAddressableEvents } from "./lib/orgDeletion";
 import {
+  buildOrgBudgetContent,
+  isCommunityDefaultSubject,
+  type OrgBudgetContentInput,
+} from "./lib/budgetForm";
+import {
   METRIC_FETCH_LIMIT,
   summarizeConsumption,
   type ConsumptionSummary,
@@ -51,11 +57,7 @@ import {
   KIND_APPROVAL_DENY,
 } from "./lib/dashboard";
 import { AUDIT_EVENT_KINDS, AUDIT_FETCH_LIMIT } from "./lib/audit";
-import {
-  KIND_AUDIT_ENTRY,
-  parseChainEntryBatch,
-  type AuditChainEntry,
-} from "./lib/auditChain";
+import { parseChainEntryBatch, type AuditChainEntry } from "./lib/auditChain";
 import {
   AGENT_WIKI_FETCH_LIMIT,
   newestAgentWikiPages,
@@ -358,13 +360,13 @@ export function useOrgAuditQuery(enabled = true) {
 // ── Hash-chain entries (kind:48001) ─────────────────────────────────────────
 
 /**
- * The relay's hash-chain entries, published as `KIND_AUDIT_ENTRY` events and
- * verified client-side by `lib/auditChain.ts`.
+ * The relay's hash-chain entries, published (relay-signed) as
+ * `KIND_AUDIT_ENTRY` events and verified client-side by `lib/auditChain.ts`.
  *
- * Honest expectation: the relay writes every entry to its `audit_log` chain
- * but does not publish kind:48001 events yet, so this query usually returns
- * an empty set — the view then says so instead of claiming verification it
- * did not perform. Explicit kinds (relay p-gate) and a bounded limit.
+ * Honest expectation: the relay serves these to community owners and admins
+ * only, so for anyone else — or on a relay that predates the publisher — this
+ * returns an empty set, and the view says so instead of claiming verification
+ * it did not perform. Explicit kinds (relay p-gate) and a bounded limit.
  */
 async function fetchAuditChain(): Promise<OrgAuditChainPage> {
   const events = await relayClient.fetchEvents({
@@ -565,38 +567,14 @@ export function useRevokeOrgGrantMutation() {
   });
 }
 
-type OrgBudgetInput = {
+type OrgBudgetInput = OrgBudgetContentInput & {
   dtag: string;
-  subject: string;
-  window: "epoch" | "day" | "week" | "month";
-  spendAmount?: number;
-  runs?: number;
-  taskCreate?: number;
-  taskApprove?: number;
 };
 
 async function publishOrgBudgetEvent(input: OrgBudgetInput): Promise<string> {
-  const limits: Record<string, unknown> = {};
-  if (input.spendAmount != null) {
-    limits.spend = { amount: input.spendAmount, unit: "usd-cents" };
-  }
-  if (input.runs != null) {
-    limits.runs = input.runs;
-  }
-  if (input.taskCreate != null || input.taskApprove != null) {
-    limits.tasks = {
-      ...(input.taskCreate != null ? { create: input.taskCreate } : {}),
-      ...(input.taskApprove != null ? { approve: input.taskApprove } : {}),
-    };
-  }
+  // Throws locally on a subject the relay would reject (org node d-tags, empty).
+  const content = buildOrgBudgetContent(input);
   const tags: string[][] = [["d", input.dtag]];
-  const content = JSON.stringify({
-    v: 1,
-    subject: input.subject,
-    window: input.window,
-    limits,
-    onExceed: "require-approval",
-  });
   const event = await signRelayEvent({ kind: KIND_ORG_BUDGET, content, tags });
   await relayClient.publishEvent(
     event,
@@ -693,7 +671,7 @@ export function useBudgetConsumptionQuery(
     queryFn: () => fetchBudgetConsumption(subject, window, runsLimit),
     staleTime: ORG_STALE_TIME_MS,
     gcTime: ORG_GC_TIME_MS,
-    enabled: subject.length > 0,
+    enabled: subject.length > 0 && !isCommunityDefaultSubject(subject),
   });
 }
 
@@ -709,13 +687,16 @@ async function fetchBudgetUtilizations(
   return Promise.all(
     budgets.map(async (budget) => ({
       budget,
-      summary: budget.subject
-        ? await fetchBudgetConsumption(
-            budget.subject,
-            budget.window,
-            budget.limits.runs,
-          )
-        : null,
+      // The community default covers every agent: turn metrics are keyed by
+      // one agent's pubkey, so there is no single consumption to measure.
+      summary:
+        budget.subject && !isCommunityDefaultSubject(budget.subject)
+          ? await fetchBudgetConsumption(
+              budget.subject,
+              budget.window,
+              budget.limits.runs,
+            )
+          : null,
     })),
   );
 }

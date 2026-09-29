@@ -2,7 +2,7 @@
  * Browser-hosted fleet agent (Phase 1).
  *
  * A WebRuntime agent that lives in this tab: it advertises capabilities
- * (kind:44010, with a periodic heartbeat), listens for channel mentions
+ * (kind:44010, on change plus a slow keepalive), listens for channel mentions
  * and assigned tasks (kind:44011), and answers through the relay's LLM
  * gateway (`/llm/chat/completions` — the key stays server-side). It is
  * intentionally ephemeral: closing the tab takes it offline, which the
@@ -17,6 +17,16 @@ import {
   KIND_WIKI_PAGE,
 } from "@/shared/constants/kinds";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
+import {
+  shouldPublishAnnouncement,
+  type PublishedAnnouncement,
+} from "@/features/fleet/lib/heartbeat";
+import {
+  AGENT_NAME,
+  TASK_PATTERN,
+  answerWikiEdit,
+  createWikiCopilotPolicy,
+} from "@/features/fleet/lib/wiki-copilot";
 import { parseTask } from "@/features/fleet/use-agent-tasks";
 import {
   readMemory,
@@ -25,7 +35,11 @@ import {
   appendChannelMemory,
 } from "@/features/fleet/agent-memory";
 import { recordUsage } from "@/features/fleet/agent-usage";
-import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
+import {
+  queryEvents,
+  type NostrFilter,
+  type NostrEvent,
+} from "@/shared/lib/nostr-client";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { getAgentPubkey, signAsAgent } from "@/shared/lib/agent-identity";
@@ -34,9 +48,16 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 
 export type AgentLifecycleState = "stopped" | "starting" | "running";
 
-const HEARTBEAT_MS = 60_000;
+/**
+ * How often the heartbeat timer LOOKS at whether to republish. It publishes
+ * only on a change or once HEARTBEAT_INTERVAL_MS has passed since the last
+ * publish (`shouldPublishAnnouncement`); a timer as slow as the keepalive would
+ * miss it by publish latency and stretch every beat to two intervals.
+ */
+const HEARTBEAT_CHECK_MS = 60_000;
 const MENTION_REPLY_COOLDOWN_MS = 30_000;
-const AGENT_NAME = "buzz-tab";
+/** How long the roster of known agent identities is trusted. */
+const KNOWN_AGENTS_TTL_MS = 10 * 60_000;
 const MENTION_PATTERN = /@?buzz[- _]?tab\b|@buzz-agent\b/i;
 
 interface BrowserAgentEvents {
@@ -50,6 +71,10 @@ class BrowserAgent {
   private unsubscribeTasks: (() => void) | null = null;
   private unsubscribeWiki: (() => void) | null = null;
   private lastReplyAt = 0;
+  /** True while a mention is being answered; the heartbeat reports it. */
+  private busy = false;
+  /** The last capabilities announcement the relay accepted. */
+  private lastAnnouncement: PublishedAnnouncement | null = null;
   private events: BrowserAgentEvents = {};
   private channelIds: string[] = [];
 
@@ -112,10 +137,10 @@ class BrowserAgent {
     try {
       await this.announce("available");
       this.heartbeatTimer = setInterval(() => {
-        void this.announce("available").catch(() => {
-          // transient publish failures are fine; the next beat retries
+        void this.announce(this.busy ? "busy" : "available").catch(() => {
+          // transient publish failures are fine; the next check retries
         });
-      }, HEARTBEAT_MS);
+      }, HEARTBEAT_CHECK_MS);
       this.bindSubscriptions();
       this.setState("running");
     } catch (error) {
@@ -242,13 +267,27 @@ class BrowserAgent {
         team = null;
       }
     }
+    const tools = ["chat", "wiki", "search"];
+    // Kind 44010 is stored forever, so republish on a change (status, team,
+    // tools) or as a slow keepalive — not on every timer tick.
+    const fingerprint = JSON.stringify({
+      name: AGENT_NAME,
+      runtype: "browser",
+      status,
+      tools,
+      team,
+    });
+    const nowMs = Date.now();
+    if (!shouldPublishAnnouncement(this.lastAnnouncement, fingerprint, nowMs)) {
+      return;
+    }
     const capabilities = {
       name: AGENT_NAME,
       runtype: "browser",
       status,
-      tools: ["chat", "wiki", "search"],
+      tools,
       team,
-      heartbeat: Math.floor(Date.now() / 1000),
+      heartbeat: Math.floor(nowMs / 1000),
     };
     const event = await signAsAgent({
       kind: KIND_AGENT_CAPABILITIES,
@@ -261,22 +300,16 @@ class BrowserAgent {
     if (!result.accepted) {
       throw new Error(result.message ?? "capabilities publish rejected");
     }
+    // Only an accepted publish counts, so a rejected one is retried.
+    this.lastAnnouncement = { fingerprint, atMs: nowMs };
   }
-
-  /**
-   * "@buzz-tab: <instruction>" delegates work. The escape matters: inside a
-   * template literal the two-character sequence backslash-s is not an escape,
-   * so the unescaped form matched zero or more literal "s" characters instead
-   * of whitespace between the name and the colon.
-   */
-  private TASK_PATTERN = new RegExp(`^@${AGENT_NAME}\\s*:`, "i");
 
   private async onMention(event: NostrEvent) {
     if (event.pubkey === getAgentPubkey()) return;
     if (!MENTION_PATTERN.test(event.content)) return;
     // "@agent: <instruction>" delegates work — capture it as a task; the
     // task subscription (below) picks it up and processes it.
-    if (this.TASK_PATTERN.test(event.content)) {
+    if (TASK_PATTERN.test(event.content)) {
       void this.captureTask(event).catch((error) => {
         console.error("[browser-agent] task capture failed:", error);
       });
@@ -288,6 +321,7 @@ class BrowserAgent {
     this.lastReplyAt = Date.now();
 
     this.setState("running");
+    this.busy = true;
     void this.announce("busy").catch(() => {});
 
     try {
@@ -312,6 +346,7 @@ class BrowserAgent {
         `⚠️ gateway/agent error: ${error instanceof Error ? error.message : "unknown"} (echo: ${event.content.slice(0, 160)})`,
       );
     } finally {
+      this.busy = false;
       void this.announce("available").catch(() => {});
     }
   }
@@ -408,32 +443,62 @@ class BrowserAgent {
     }
   }
 
-  private async onWikiEdit(event: NostrEvent) {
-    if (event.pubkey === getAgentPubkey()) return;
-    if (!this.TASK_PATTERN.test(event.content)) return;
-    const slug = event.tags.find((t) => t[0] === "d")?.[1];
-    if (!slug) return;
-    const instruction = event.content
-      .replace(this.TASK_PATTERN, "")
-      .trim()
-      .slice(0, 400);
+  /**
+   * Pubkeys known to be agents (anyone who announced capabilities), so the
+   * wiki copilot never answers another agent's page. Refreshed lazily; a failed
+   * refresh keeps the previous set — the copilot's other guards (neutralised
+   * trigger, reply tag, hourly budget) do not depend on it.
+   */
+  private knownAgents = new Set<string>();
+  private knownAgentsAt = 0;
+
+  private async refreshKnownAgents(): Promise<void> {
+    if (Date.now() - this.knownAgentsAt < KNOWN_AGENTS_TTL_MS) return;
+    // Stamp first so a failing relay is retried once per TTL, not per event.
+    this.knownAgentsAt = Date.now();
     try {
-      const answer = await this.askLlm(
-        `You are ${AGENT_NAME}, a browser-hosted wiki copilot. A user asked you inside this wiki page. Answer concisely; the answer is appended to the page.`,
-        `Wiki page "${slug}":\n\n${event.content.slice(0, 3000)}\n\nInstruction: ${instruction}`,
-      );
-      const updated = `${event.content}\n\n---\n> ✍️ ${AGENT_NAME}\n\n${answer.slice(0, 2000)}`;
-      const signed = await signAsAgent({
-        kind: KIND_WIKI_PAGE,
-        tags: [["d", slug]],
-        content: updated,
+      const events = await queryEvents(relayWsUrl(), {
+        kinds: [KIND_AGENT_CAPABILITIES],
+        limit: 1000,
       });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsAgent,
+      for (const event of events) this.knownAgents.add(event.pubkey);
+    } catch (error) {
+      console.warn("[browser-agent] could not list known agents", error);
+    }
+  }
+
+  private wikiPolicy = createWikiCopilotPolicy({
+    selfPubkey: () => getAgentPubkey(),
+    knownAgents: () => this.knownAgents,
+  });
+
+  private async onWikiEdit(event: NostrEvent) {
+    // Cheap exits first: most page events are not requests, and none of those
+    // should cost a relay query.
+    if (event.pubkey === getAgentPubkey()) return;
+    if (!TASK_PATTERN.test(event.content)) return;
+    await this.refreshKnownAgents();
+    try {
+      await answerWikiEdit(this.wikiPolicy, event, {
+        ask: ({ slug, instruction, page }) =>
+          this.askLlm(
+            `You are ${AGENT_NAME}, a browser-hosted wiki copilot. A user asked you inside this wiki page. Answer concisely; the answer is appended to the page.`,
+            `Wiki page "${slug}":\n\n${page}\n\nInstruction: ${instruction}`,
+          ),
+        publish: async (draft) => {
+          const signed = await signAsAgent({
+            kind: KIND_WIKI_PAGE,
+            tags: draft.tags,
+            content: draft.content,
+          });
+          const result = await publishEvent(relayWsUrl(), signed, {
+            signAuth: signAsAgent,
+          });
+          if (!result.accepted) {
+            console.warn("[browser-agent] wiki reply rejected", result.message);
+          }
+        },
       });
-      if (!result.accepted) {
-        console.warn("[browser-agent] wiki reply rejected", result.message);
-      }
     } catch (error) {
       console.error("[browser-agent] wiki copilot failed:", error);
     }
@@ -441,7 +506,7 @@ class BrowserAgent {
 
   private async captureTask(mention: NostrEvent) {
     const instruction = mention.content
-      .replace(this.TASK_PATTERN, "")
+      .replace(TASK_PATTERN, "")
       .trim()
       .slice(0, 400);
     const taskId = `task-${mention.id.slice(0, 16)}`;

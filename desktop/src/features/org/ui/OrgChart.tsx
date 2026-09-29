@@ -12,6 +12,8 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
+import { useUsersBatchQuery } from "@/features/profile/hooks";
+import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -34,6 +36,11 @@ import {
   newestSeenPerSeat,
   type AgentLiveness,
 } from "../lib/nodeLiveness";
+import {
+  budgetSubjectLabel,
+  describeBudgetLimits,
+  isCommunityDefaultSubject,
+} from "../lib/budgetForm";
 import { pluralize } from "../lib/format";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import type { CanvasDensity } from "../lib/canvasLayout";
@@ -289,6 +296,7 @@ export function OrgChart({ query, focus }: OrgChartProps) {
         <OrgBudgetSection
           budgets={data.budgets}
           headingRef={budgetsHeadingRef}
+          nodes={data.nodes}
         />
       )}
 
@@ -664,12 +672,47 @@ function OrgNodeIcon({ kind }: { kind: OrgNode["kind"] }) {
 function OrgBudgetSection({
   budgets,
   headingRef,
+  nodes,
 }: {
   budgets: OrgBudget[];
   headingRef: React.RefObject<HTMLHeadingElement | null>;
+  nodes: OrgNode[];
 }) {
   const deleteMutation = useDeleteOrgBudgetMutation();
-  const activeBudgets = budgets.filter((b) => !b.revoked);
+  const activeBudgets = React.useMemo(
+    () => budgets.filter((b) => !b.revoked),
+    [budgets],
+  );
+  // A budget's subject is an agent pubkey (or "*"): name it from the agent's
+  // profile, falling back to the seat it occupies, never the raw 64-hex key.
+  const agentKeys = React.useMemo(
+    () =>
+      activeBudgets
+        .filter((b) => b.subject && !isCommunityDefaultSubject(b.subject))
+        .map((b) => b.subject),
+    [activeBudgets],
+  );
+  const profiles = useUsersBatchQuery(agentKeys).data?.profiles;
+  const seatNames = React.useMemo(() => {
+    const names = new Map<string, string>();
+    for (const node of nodes) {
+      for (const seat of node.agentSeats) {
+        const key = seat.trim().toLowerCase();
+        if (!names.has(key)) names.set(key, node.name);
+      }
+    }
+    return names;
+  }, [nodes]);
+  const subjectName = (budget: OrgBudget): string =>
+    budget.subject
+      ? budgetSubjectLabel(budget.subject, (pubkey) =>
+          resolveUserLabel({
+            pubkey,
+            profiles,
+            fallbackName: seatNames.get(pubkey.trim().toLowerCase()),
+          }),
+        )
+      : budget.dtag;
 
   if (activeBudgets.length === 0) return null;
 
@@ -684,18 +727,8 @@ function OrgBudgetSection({
       </h3>
       <div className="space-y-2">
         {activeBudgets.map((budget) => {
-          const limits = budget.limits;
-          const limitText = [
-            limits.runs && `${limits.runs} runs/${budget.window}`,
-            limits.tasks?.create &&
-              `${limits.tasks.create} tasks created/${budget.window}`,
-            limits.tasks?.approve &&
-              `${limits.tasks.approve} tasks approved/${budget.window}`,
-            limits.spend &&
-              `${limits.spend.amount} ${limits.spend.unit}/${budget.window}`,
-          ]
-            .filter(Boolean)
-            .join(", ");
+          const limitRows = describeBudgetLimits(budget);
+          const name = subjectName(budget);
 
           return (
             <Card key={budget.dtag} className="group p-3 relative">
@@ -703,9 +736,7 @@ function OrgBudgetSection({
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">
-                      {budget.subject || budget.dtag}
-                    </span>
+                    <span className="text-sm font-medium">{name}</span>
                     {budget.onchain && (
                       <OnchainChip
                         address={budget.onchain.contract}
@@ -715,19 +746,48 @@ function OrgBudgetSection({
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    {limitText || "no limits"}
-                    <span className="ml-2">
+                    {limitRows.length > 0 ? (
+                      <ul
+                        className="space-y-0.5"
+                        data-testid={`org-budget-limits-${budget.dtag}`}
+                      >
+                        {limitRows.map((row) => (
+                          <li
+                            className="flex flex-wrap items-center gap-1.5"
+                            key={row.key}
+                          >
+                            <span>{row.text}</span>
+                            <span
+                              className="rounded-sm bg-muted px-1 py-0.5 text-2xs font-medium text-muted-foreground"
+                              data-enforcement={row.enforcement}
+                            >
+                              {row.badge}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      "no limits"
+                    )}
+                    <span className="mt-0.5 block">
                       <AlertTriangle className="inline h-3 w-3" />
                       on exceed: {budget.onExceed}
                     </span>
                   </div>
-                  <OrgBudgetConsumption budget={budget} />
+                  {isCommunityDefaultSubject(budget.subject) ? (
+                    <p className="mt-1.5 text-2xs text-muted-foreground">
+                      Applies to each agent that has no budget of its own; usage
+                      is tracked per agent.
+                    </p>
+                  ) : (
+                    <OrgBudgetConsumption budget={budget} />
+                  )}
                   <OrgBudgetLadder budget={budget} />
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
-                      aria-label={`Budget actions for ${budget.subject || budget.dtag}`}
+                      aria-label={`Budget actions for ${name}`}
                       className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted"
                       type="button"
                     >

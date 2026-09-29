@@ -41,8 +41,13 @@ contract VerifierSet {
     error NotAVerifier(address verifier);
     error AlreadyAttested(bytes32 claimId, address verifier);
     error AlreadyVerifier(address verifier);
+    /// @notice A quorum of zero would let anyone settle any claim with no
+    /// attestation at all (`approvals >= 0` is always true).
+    error BadQuorum(uint256 quorum);
 
     constructor(address owner_, uint256 quorum_) {
+        if (owner_ == address(0)) revert OnlyOwner(address(0));
+        if (quorum_ == 0) revert BadQuorum(quorum_);
         owner = owner_;
         quorum = quorum_;
     }
@@ -62,6 +67,7 @@ contract VerifierSet {
 
     function setQuorum(uint256 quorum_) external {
         if (msg.sender != owner) revert OnlyOwner(msg.sender);
+        if (quorum_ == 0) revert BadQuorum(quorum_);
         quorum = quorum_;
         emit QuorumSet(quorum_);
     }
@@ -69,6 +75,12 @@ contract VerifierSet {
     /// @notice A verifier attests (or objects to) a milestone claim. One
     /// attestation per claim per verifier, either side. Approvals accumulate
     /// into the claim's counter so quorum is O(1) to read.
+    /// @dev The attestation binds only the `claimId` — the verifier is vouching
+    /// for whatever claim `ClaimStake` holds under that id, so verifiers must
+    /// read the on-chain claim (contributor, amount, evidence) BEFORE attesting.
+    /// `ClaimStake` ignores any attestation made before the claim was submitted
+    /// (it snapshots the counters at submit), so an id cannot be pre-approved
+    /// and then squatted with different content.
     function attest(bytes32 claimId, bool approve) external {
         if (!verifiers[msg.sender].active) revert NotAVerifier(msg.sender);
         if (attested[claimId][msg.sender]) revert AlreadyAttested(claimId, msg.sender);

@@ -106,7 +106,9 @@ pub fn encode_intent_args(
         let clean = data.trim();
         let hex = clean.strip_prefix("0x").unwrap_or(clean);
         if !hex.bytes().all(|b| b.is_ascii_hexdigit()) || hex.len() % 2 != 0 {
-            return Err(CliError::Usage(format!("data must be even-length hex: {data:?}")));
+            return Err(CliError::Usage(format!(
+                "data must be even-length hex: {data:?}"
+            )));
         }
         hex::decode(hex).map_err(|e| CliError::Usage(format!("data: {e}")))?
     };
@@ -136,7 +138,9 @@ pub fn encode_open_proposal(id: &str) -> Result<Vec<u8>, CliError> {
 /// `castVote(uint256,uint8)`.
 pub fn encode_cast_vote(id: &str, support: u8) -> Result<Vec<u8>, CliError> {
     if support > 2 {
-        return Err(CliError::Usage(format!("support must be 0, 1, or 2: {support}")));
+        return Err(CliError::Usage(format!(
+            "support must be 0, 1, or 2: {support}"
+        )));
     }
     let mut out = abi::selector(SIG_CAST_VOTE).to_vec();
     out.extend_from_slice(&uint256_word(id)?);
@@ -173,7 +177,8 @@ pub struct GovClient {
 
 impl GovClient {
     pub fn new_http(rpc_url: &str, dao: &str) -> Result<Self, CliError> {
-        let rpc: Arc<dyn EvmRpc> = Arc::new(HttpEvmRpc::new(rpc_url).map_err(cli_error("rpc init"))?);
+        let rpc: Arc<dyn EvmRpc> =
+            Arc::new(HttpEvmRpc::new(rpc_url).map_err(cli_error("rpc init"))?);
         Self::from_transport(rpc, dao)
     }
 
@@ -254,9 +259,12 @@ impl GovClient {
             .ok_or_else(|| CliError::Other(format!("unknown ProposalState: {word}")))
     }
 
-    async fn send(&self, spender: &k256::ecdsa::SigningKey, data: &[u8], what: &str)
-        -> Result<String, CliError>
-    {
+    async fn send(
+        &self,
+        spender: &k256::ecdsa::SigningKey,
+        data: &[u8],
+        what: &str,
+    ) -> Result<String, CliError> {
         let tx_client = AllowanceClient::from_transport(self.rpc.clone(), &self.dao_hex())
             .map_err(cli_error("tx client"))?
             .with_rpc_timeout(self.rpc_timeout)
@@ -280,10 +288,13 @@ impl GovClient {
         Ok(receipt.tx_hash)
     }
 
-    pub async fn open_proposal(&self, spender: &k256::ecdsa::SigningKey, id: &str)
-        -> Result<String, CliError>
-    {
-        self.send(spender, &encode_open_proposal(id)?, "openProposal").await
+    pub async fn open_proposal(
+        &self,
+        spender: &k256::ecdsa::SigningKey,
+        id: &str,
+    ) -> Result<String, CliError> {
+        self.send(spender, &encode_open_proposal(id)?, "openProposal")
+            .await
     }
 
     pub async fn cast_vote(
@@ -292,7 +303,8 @@ impl GovClient {
         id: &str,
         support: u8,
     ) -> Result<String, CliError> {
-        self.send(spender, &encode_cast_vote(id, support)?, "castVote").await
+        self.send(spender, &encode_cast_vote(id, support)?, "castVote")
+            .await
     }
 
     pub async fn execute_by_votes(
@@ -328,8 +340,8 @@ fn load_chain() -> Result<(String, k256::ecdsa::SigningKey), CliError> {
         )));
     };
     let clean = spender_key.trim().trim_start_matches("0x");
-    let key_bytes =
-        hex::decode(clean).map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY} hex: {e}")))?;
+    let key_bytes = hex::decode(clean)
+        .map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY} hex: {e}")))?;
     let spender = k256::ecdsa::SigningKey::from_slice(&key_bytes)
         .map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY}: {e}")))?;
     Ok((rpc_url, spender))
@@ -380,7 +392,9 @@ pub async fn cmd_process(
     let (rpc_url, spender) = load_chain()?;
     let client = GovClient::new_http(&rpc_url, dao)?;
     let id = client.proposal_id(op, to, value, data, nonce).await?;
-    let tx_hash = client.execute_by_votes(&spender, op, to, value, data, nonce).await?;
+    let tx_hash = client
+        .execute_by_votes(&spender, op, to, value, data, nonce)
+        .await?;
     println!(
         "{}",
         json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id })
@@ -400,7 +414,10 @@ pub async fn cmd_proposal_state(dao: &str, id: &str) -> Result<(), CliError> {
         })?;
     let client = GovClient::new_http(&rpc_url, dao)?;
     let state = client.state(id).await?;
-    println!("{}", json!({ "dao": client.dao_hex(), "id": id, "state": state }));
+    println!(
+        "{}",
+        json!({ "dao": client.dao_hex(), "id": id, "state": state })
+    );
     Ok(())
 }
 
@@ -465,7 +482,14 @@ mod tests {
     /// (its `cast calldata` golden is the shared vector).
     #[test]
     fn execute_by_votes_matches_the_cast_golden() {
-        let data = encode_execute_by_votes(0, TO, "0", "0x123456", "0x1111111111111111111111111111111111111111111111111111111111111111").unwrap();
+        let data = encode_execute_by_votes(
+            0,
+            TO,
+            "0",
+            "0x123456",
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+        )
+        .unwrap();
         assert_eq!(
             format!("0x{}", hex::encode(&data)),
             "0xee5b28950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000dead000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000031234560000000000000000000000000000000000000000000000000000000000"
@@ -509,6 +533,12 @@ mod tests {
             serde_json::Value::String(format!("0x{:064x}", 3)),
         );
         let client = GovClient::from_transport(Arc::new(MockRpc::new(m)), DAO).expect("client");
-        assert_eq!(client.state(&format!("0x{}", "0".repeat(63))).await.unwrap(), "Succeeded");
+        assert_eq!(
+            client
+                .state(&format!("0x{}", "0".repeat(63)))
+                .await
+                .unwrap(),
+            "Succeeded"
+        );
     }
 }

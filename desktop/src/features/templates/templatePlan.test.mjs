@@ -76,6 +76,21 @@ test("step labels cover every step kind", () => {
   );
 });
 
+test("org steps read as the founder seat, agent seats and the default budget", () => {
+  assert.equal(
+    stepLabel({ step: "org", item: "org:root", action: "created" }),
+    "Founder seat",
+  );
+  assert.equal(
+    stepLabel({ step: "org", item: "org:seat:writer", action: "created" }),
+    "Agent seat writer",
+  );
+  assert.equal(
+    stepLabel({ step: "org", item: "org:budget", action: "created" }),
+    "Default agent budget",
+  );
+});
+
 test("full success surfaces the welcome message and no resume", () => {
   const report = {
     status: "ok",

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -7,10 +8,14 @@ import {
   hasPostedMessage,
   hasRunWorkflow,
   pickFirstConversationalChannel,
+  readGettingStartedDismissed,
+  writeGettingStartedDismissed,
 } from "./gettingStarted.ts";
 
 const SELF = "A".repeat(64);
 const OTHER = "B".repeat(64);
+const RELAY_A = "wss://alpha.example.com";
+const RELAY_B = "wss://beta.example.com";
 
 function feedItem(overrides = {}) {
   return {
@@ -156,11 +161,61 @@ test("channel affordances prefer a non-DM channel", () => {
 
 test("dismissal key is scoped per identity", () => {
   assert.notEqual(
-    gettingStartedDismissedKey(SELF),
-    gettingStartedDismissedKey(OTHER),
+    gettingStartedDismissedKey(RELAY_A, SELF),
+    gettingStartedDismissedKey(RELAY_A, OTHER),
   );
   assert.equal(
-    gettingStartedDismissedKey(` ${SELF.toUpperCase()} `),
-    gettingStartedDismissedKey(SELF),
+    gettingStartedDismissedKey(RELAY_A, ` ${SELF.toUpperCase()} `),
+    gettingStartedDismissedKey(RELAY_A, SELF),
   );
+});
+
+test("dismissal key is scoped per community", () => {
+  // The same identity dismissing the checklist in one community must not hide
+  // it in another, where its steps are different and still undone.
+  assert.notEqual(
+    gettingStartedDismissedKey(RELAY_A, SELF),
+    gettingStartedDismissedKey(RELAY_B, SELF),
+  );
+  // One community, however its URL was typed.
+  assert.equal(
+    gettingStartedDismissedKey(` ${RELAY_A.toUpperCase()}/ `, SELF),
+    gettingStartedDismissedKey(RELAY_A, SELF),
+  );
+  // Not the pre-fix identity-only key.
+  assert.doesNotMatch(gettingStartedDismissedKey(RELAY_A, SELF), /\.v1:/);
+});
+
+test("dismissal state does not leak across communities in storage", () => {
+  const store = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, value),
+      removeItem: (key) => store.delete(key),
+    },
+  };
+  try {
+    writeGettingStartedDismissed(RELAY_A, SELF, true);
+    assert.equal(readGettingStartedDismissed(RELAY_A, SELF), true);
+    assert.equal(readGettingStartedDismissed(RELAY_B, SELF), false);
+    assert.equal(readGettingStartedDismissed(RELAY_A, OTHER), false);
+    writeGettingStartedDismissed(RELAY_A, SELF, false);
+    assert.equal(readGettingStartedDismissed(RELAY_A, SELF), false);
+    // A dismissal written under the old identity-only key is not honoured.
+    store.set(`buzz-getting-started-dismissed.v1:${SELF}`, "1");
+    assert.equal(readGettingStartedDismissed(RELAY_B, SELF), false);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("the hook scopes dismissal by the active community", () => {
+  const source = readFileSync(
+    new URL("../useGettingStartedDismissal.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /useCommunities\(\)/);
+  assert.match(source, /activeCommunity\?\.relayUrl/);
+  assert.match(source, /readGettingStartedDismissed\(communityScope/);
 });

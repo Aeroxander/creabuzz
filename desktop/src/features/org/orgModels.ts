@@ -181,6 +181,8 @@ export function eventToOrgGrant(event: RelayEvent): OrgGrant {
 }
 
 // ── Org budget (kind:37012) ────────────────────────────────────────────────
+// `subject` is the 64-hex pubkey of the agent the budget covers, or "*" for
+// the community default (see lib/budgetForm.ts). It is never an org node id.
 
 export type SpendLimit = {
   amount: number;
@@ -192,10 +194,22 @@ export type TaskLimits = {
   approve?: number;
 };
 
+/** Governance-action ceilings (kinds 47004/47005), counted by the relay. */
+export type GovernanceLimits = {
+  proposal?: number;
+  vote?: number;
+  execute?: number;
+};
+
 export type BudgetLimits = {
   spend?: SpendLimit;
   runs?: number;
   tasks?: TaskLimits;
+  governance?: GovernanceLimits;
+  /** Chat messages an agent may author per window (relay-enforced). */
+  messages?: number;
+  /** LLM gateway calls per window (relay-enforced); wire key `llmCalls`. */
+  llmCalls?: number;
 };
 
 export type BudgetWindow = "epoch" | "day" | "week" | "month";

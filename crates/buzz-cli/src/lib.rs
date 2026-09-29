@@ -3229,7 +3229,10 @@ pub enum OrgAllowanceCmd {
         window: String,
     },
     /// Record a spend onchain (as the authorized spender) and publish a
-    /// kind:37014 Budget Spend Receipt
+    /// kind:37014 Budget Spend Receipt. With `--to` the payout is ENFORCED
+    /// (`spendTo`: the contract debits the allowance and moves the tokens from
+    /// its treasury to the recipient in one transaction); without it the spend
+    /// is only recorded (`spend`, ADVISORY — no tokens move).
     Spend {
         /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
         #[arg(long)]
@@ -3246,6 +3249,11 @@ pub enum OrgAllowanceCmd {
         /// Unit identifier recorded in the Nostr receipt
         #[arg(long, default_value = "usd-cents")]
         unit: String,
+        /// Recipient address (0x…). Uses the enforced `spendTo` payout: the
+        /// OrgAllowance treasury must have approved the contract for the token.
+        /// Omit to record an advisory (accounting-only) spend.
+        #[arg(long)]
+        to: Option<String>,
     },
 }
 
@@ -3340,21 +3348,20 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         ) {
             use RoyaltyCmd::*;
             return match royalty_cmd {
-            Show { distributor } => commands::royalty::cmd_show(distributor).await,
-            Claim { distributor } => commands::royalty::cmd_claim(distributor).await,
-            Settle { distributor } => commands::royalty::cmd_settle(distributor).await,
-            MirrorSchedule {
-                chain,
-                distributor,
-                claim_id,
-                evidence_hash,
-                contributor,
-                weight,
-                term,
-                band,
-                allocation,
-            } => {
-                commands::royalty::cmd_mirror_schedule(
+                Show { distributor } => commands::royalty::cmd_show(distributor).await,
+                Claim { distributor } => commands::royalty::cmd_claim(distributor).await,
+                Settle { distributor } => commands::royalty::cmd_settle(distributor).await,
+                MirrorSchedule {
+                    chain,
+                    distributor,
+                    claim_id,
+                    evidence_hash,
+                    contributor,
+                    weight,
+                    term,
+                    band,
+                    allocation,
+                } => commands::royalty::cmd_mirror_schedule(
                     chain,
                     distributor,
                     claim_id,
@@ -3364,19 +3371,17 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     *term,
                     *band,
                     *allocation,
-                )
-            }
-            MirrorClose {
-                chain,
-                distributor,
-                window_id,
-                revenue,
-                buyback_share,
-                treasury_share,
-                pool,
-                carried,
-            } => {
-                commands::royalty::cmd_mirror_close(
+                ),
+                MirrorClose {
+                    chain,
+                    distributor,
+                    window_id,
+                    revenue,
+                    buyback_share,
+                    treasury_share,
+                    pool,
+                    carried,
+                } => commands::royalty::cmd_mirror_close(
                     chain,
                     distributor,
                     *window_id,
@@ -3385,12 +3390,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     *treasury_share,
                     *pool,
                     *carried,
-                )
-            }
-            PublishSchedule { .. } | PublishClose { .. } | Watch { .. } => {
-                unreachable!("publish runs after auth")
-            }
-        };
+                ),
+                PublishSchedule { .. } | PublishClose { .. } | Watch { .. } => {
+                    unreachable!("publish runs after auth")
+                }
+            };
         }
     }
 
@@ -3422,9 +3426,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     root,
                     min_score,
                     dry_run,
-                } => {
-                    commands::trustgraph::cmd_rotate_gate(hook, root, *min_score, *dry_run).await
-                }
+                } => commands::trustgraph::cmd_rotate_gate(hook, root, *min_score, *dry_run).await,
                 PublishRoot { .. } => unreachable!("publish runs after auth"),
             };
         }
@@ -3708,6 +3710,7 @@ mod tests {
             "agwiki",
             "canvas",
             "channels",
+            "diag",
             "dms",
             "emoji",
             "feed",

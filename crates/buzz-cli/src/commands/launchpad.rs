@@ -681,9 +681,11 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
     }
 }
 
-/// Compose an unsigned bid: Permit2 approve (ERC-20 currency) then submitBid.
-/// Prints a JSON envelope a wallet or `cast send` can sign — the CLI never
-/// signs or moves money ("machines compose, humans sign").
+/// Compose an unsigned bid. ERC-20 currency: `currency.approve(PERMIT2, amount)`,
+/// then `PERMIT2.approve(..)`, then `submitBid`. Native currency: `submitBid`
+/// carrying the budget as `value`. Prints a JSON envelope a wallet or `cast
+/// send` can sign — the CLI never signs or moves money ("machines compose,
+/// humans sign").
 #[allow(clippy::too_many_arguments)]
 fn cmd_compose_bid(
     as_agent: bool,
@@ -701,8 +703,7 @@ fn cmd_compose_bid(
     deadline: Option<u64>,
 ) -> Result<(), CliError> {
     use crate::commands::launchpad_compose::{
-        encode_permit2_approve, encode_submit_bid, snap_max_price_to_tick, validate_bid, TxCall,
-        PERMIT2_ADDRESS,
+        compose_bid_calls, encode_submit_bid, snap_max_price_to_tick, validate_bid,
     };
     use num_bigint::BigUint;
 
@@ -726,27 +727,20 @@ fn cmd_compose_bid(
     let bid_data =
         encode_submit_bid(&snapped, &amount, owner, Some(&floor), "0x").map_err(CliError::Other)?;
 
-    let mut calls: Vec<TxCall> = Vec::new();
     if let Some(currency_addr) = currency {
         validate_0x_address(currency_addr, "currency")?;
-        let exp = deadline.unwrap_or_else(|| {
-            (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0))
-                + 3600
-        });
-        let approve = encode_permit2_approve(currency_addr, auction, &amount, exp)
-            .map_err(CliError::Other)?;
-        calls.push(TxCall {
-            to: PERMIT2_ADDRESS.to_string(),
-            data: approve,
-        });
     }
-    calls.push(TxCall {
-        to: auction.to_string(),
-        data: bid_data,
+    let exp = deadline.unwrap_or_else(|| {
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0))
+            + 3600
     });
+    // The ordered calls (ERC-20: underlying approve -> Permit2 approve -> bid;
+    // native: the bid carrying `value`). See `compose_bid_calls`.
+    let calls =
+        compose_bid_calls(currency, auction, &amount, bid_data, exp).map_err(CliError::Other)?;
 
     let mut envelope = serde_json::json!({
         "compose": "buzz launchpad compose-bid",
@@ -756,7 +750,7 @@ fn cmd_compose_bid(
         "amount": format!("{amount}"),
         "calls": calls.into_iter().map(|c| serde_json::json!({
             "to": c.to,
-            "value": "0x0",
+            "value": c.value,
             "data": c.data,
         })).collect::<Vec<_>>(),
     });

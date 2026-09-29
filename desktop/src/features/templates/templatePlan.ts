@@ -12,6 +12,16 @@ import type {
  * the production seams `ui/StartProjectSection.tsx` renders from.
  */
 
+/** Label for an `org` apply step: the founder seat, a vacant agent seat, or the default budget. */
+function orgStepLabel(item: string): string {
+  if (item === "org:root") return "Founder seat";
+  if (item === "org:budget") return "Default agent budget";
+  if (item.startsWith("org:seat:")) {
+    return `Agent seat ${item.slice("org:seat:".length)}`;
+  }
+  return item;
+}
+
 /** Human label for one apply step (the "what you get" progress checklist). */
 export function stepLabel(step: TemplateApplyStep): string {
   switch (step.step) {
@@ -23,6 +33,8 @@ export function stepLabel(step: TemplateApplyStep): string {
       return `Skill ${step.item}`;
     case "persona":
       return `Agent ${step.item}`;
+    case "org":
+      return orgStepLabel(step.item);
     case "workflow":
       return `Workflow ${step.item}`;
     case "doc":

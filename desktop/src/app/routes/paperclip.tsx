@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
+import { usePreviewFeatureWarning } from "@/shared/features";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 const PaperclipView = React.lazy(async () => {
@@ -21,5 +22,8 @@ export const Route = createFileRoute("/paperclip")({
 });
 
 function PaperclipRouteComponent() {
+  // Deprecated and hidden from the sidebar: a direct link says how to bring
+  // the entry back rather than opening it silently.
+  usePreviewFeatureWarning("paperclip");
   return <PaperclipRoute />;
 }

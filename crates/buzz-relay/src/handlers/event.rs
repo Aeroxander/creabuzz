@@ -175,6 +175,47 @@ pub async fn filter_fanout_by_access(
         matches
     };
 
+    // Admin-only gate (fan-out): ADMIN_ONLY_KINDS events (the 48001 audit
+    // chain — actor pubkeys and channel ids for every persistent event,
+    // including private channels and gift wraps) are delivered only to
+    // connections whose authenticated pubkey is the community owner/admin.
+    // Mirrors the REQ/COUNT/`/query` gate; runs before the channel filter
+    // because these events are stored channel-less. Roles are resolved once
+    // per distinct pubkey, through the 10s community-admin cache. A failed
+    // lookup fails closed for this delivery only (the durable chain stays
+    // readable over REQ).
+    let matches = if buzz_core::kind::is_admin_only_kind(event_kind_u32(&stored_event.event)) {
+        let mut roles: HashMap<Vec<u8>, bool> = HashMap::new();
+        let mut allowed = Vec::with_capacity(matches.len());
+        for (conn_id, sub_id) in matches {
+            let Some(pubkey) = state.conn_manager.pubkey_for_conn(conn_id) else {
+                continue;
+            };
+            let key = pubkey.to_vec();
+            let is_admin = match roles.get(&key) {
+                Some(is_admin) => *is_admin,
+                None => match state.is_community_admin_cached(community_id, &key).await {
+                    Ok(is_admin) => {
+                        roles.insert(key, is_admin);
+                        is_admin
+                    }
+                    Err(e) => {
+                        warn!(
+                            "fan-out admin-only gate: role lookup failed, withholding delivery: {e}"
+                        );
+                        false
+                    }
+                },
+            };
+            if is_admin {
+                allowed.push((conn_id, sub_id));
+            }
+        }
+        allowed
+    } else {
+        matches
+    };
+
     let Some(channel_id) = stored_event.channel_id else {
         return matches;
     };
@@ -637,7 +678,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
     )
     .increment(1);
 
-    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids) = {
+    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids, anonymous) = {
         let auth = conn.auth_state.read().await;
         match &*auth {
             AuthState::Authenticated(ctx) => (
@@ -646,18 +687,40 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 ctx.pubkey,
                 ctx.scopes.clone(),
                 ctx.channel_ids.clone(),
+                false,
             ),
-            // P2P signaling mode: anonymous ephemeral events are accepted so
-            // browser P2P layers (e.g. Trystero over Nostr) can rendezvous
-            // through the relay. Ephemeral events are broadcast to live
-            // subscribers and never stored, so no durable data is opened.
-            _ if state.config.p2p_signaling && is_ephemeral(kind_u32) => (
-                conn.conn_id,
-                event.pubkey.to_bytes().to_vec(),
-                event.pubkey,
-                vec![buzz_auth::Scope::MessagesWrite],
-                None,
-            ),
+            // P2P signaling mode: anonymous events are accepted so browser P2P
+            // layers (e.g. Trystero over Nostr) can rendezvous through the
+            // relay — but only Trystero-shaped events of allowlisted ephemeral
+            // kinds (never a Buzz-defined kind such as presence 20001, see
+            // `p2p_signaling`), within a per-connection frame budget. They are
+            // broadcast to live subscribers and never stored, so no durable
+            // data is opened. Anything else falls through to `auth-required`.
+            _ if state.config.p2p_signaling
+                && state.config.p2p_signaling_policy.event_allowed(&event) =>
+            {
+                if !state.p2p_signaling_limiter.admit(
+                    conn.conn_id,
+                    crate::p2p_signaling::AnonymousFrame::Event,
+                    state.config.p2p_signaling_policy.frames_per_minute,
+                ) {
+                    reject("rate_limit");
+                    conn.send(RelayMessage::ok(
+                        &event_id_hex,
+                        false,
+                        "rate-limited: anonymous signaling quota exceeded",
+                    ));
+                    return;
+                }
+                (
+                    conn.conn_id,
+                    event.pubkey.to_bytes().to_vec(),
+                    event.pubkey,
+                    vec![buzz_auth::Scope::MessagesWrite],
+                    None,
+                    true,
+                )
+            }
             _ => {
                 reject("auth");
                 conn.send(RelayMessage::ok(
@@ -752,6 +815,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
             conn_id,
             pubkey_bytes,
             auth_pubkey,
+            anonymous,
             Arc::clone(&conn),
             state,
         )
@@ -809,11 +873,16 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
 }
 
 /// Handle ephemeral events (kind 20000–29999) — WS-only, never stored.
+///
+/// `anonymous` marks an unauthenticated P2P-signaling socket: its throwaway
+/// key must never reach member state, so the presence branch is skipped for it
+/// even though the admission policy already refuses kind 20001.
 async fn handle_ephemeral_event(
     event: Event,
     conn_id: uuid::Uuid,
     pubkey_bytes: Vec<u8>,
     auth_pubkey: nostr::PublicKey,
+    anonymous: bool,
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) -> Result<(), String> {
@@ -827,8 +896,9 @@ async fn handle_ephemeral_event(
         Err(_) => return Err("error: internal error".to_string()),
     }
 
-    // Special handling for presence events (kind:20001).
-    if event_kind_u32(&event) == KIND_PRESENCE_UPDATE {
+    // Special handling for presence events (kind:20001). Never for an
+    // anonymous socket: presence is member state, keyed by authenticated pubkey.
+    if !anonymous && event_kind_u32(&event) == KIND_PRESENCE_UPDATE {
         // Accept both bare strings ("online") and legacy JSON ({"status":"online"}).
         let raw = event.content.to_string();
         let status = if raw.starts_with('{') {
@@ -1450,6 +1520,66 @@ mod tests {
             frame[3],
             "restricted: observer frame is not authorized for this agent owner"
         );
+    }
+
+    /// Defense in depth behind the admission policy: even if a presence event
+    /// reached the ephemeral handler on an anonymous socket, it must not touch
+    /// member presence state. Authenticated presence still works (control).
+    #[tokio::test]
+    #[ignore = "requires Postgres and Redis"]
+    async fn anonymous_flag_keeps_presence_writes_out_of_member_state() {
+        let state = crate::test_support::test_state().await;
+        let host = format!("presence-guard-{}.example", Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("community")
+            .id;
+        let tenant = buzz_core::TenantContext::resolved(community, host);
+        let make_conn = || {
+            let (send_tx, _send_rx) = mpsc::channel(8);
+            let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
+            Arc::new(crate::connection::ConnectionState {
+                conn_id: Uuid::new_v4(),
+                tenant: tenant.clone(),
+                remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
+                auth_state: RwLock::new(crate::connection::AuthState::Failed),
+                subscriptions: Arc::new(Mutex::new(HashMap::new())),
+                send_tx,
+                ctrl_tx,
+                cancel: CancellationToken::new(),
+                backpressure_count: Arc::new(AtomicU8::new(0)),
+                grace_limit: 3,
+            })
+        };
+
+        for (anonymous, expected) in [(true, None), (false, Some("online".to_string()))] {
+            let keys = Keys::generate();
+            let event = EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), "online")
+                .sign_with_keys(&keys)
+                .expect("sign presence");
+            super::handle_ephemeral_event(
+                event,
+                Uuid::new_v4(),
+                keys.public_key().to_bytes().to_vec(),
+                keys.public_key(),
+                anonymous,
+                make_conn(),
+                Arc::clone(&state),
+            )
+            .await
+            .expect("ephemeral handler accepts the event");
+            assert_eq!(
+                state
+                    .pubsub
+                    .get_presence(&tenant, &keys.public_key())
+                    .await
+                    .expect("read presence"),
+                expected,
+                "anonymous={anonymous}"
+            );
+        }
     }
 
     mod pubsub_fanout {

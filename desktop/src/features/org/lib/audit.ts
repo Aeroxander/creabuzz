@@ -29,6 +29,7 @@ import {
   eventToOrgGrant,
   eventToOrgNode,
 } from "../orgModels";
+import { budgetLimitSummary, budgetSubjectLabel } from "./budgetForm";
 
 // Mirrors buzz-core's approval command kinds (kind:46030 grant / 46031 deny)
 // resolving a kind:46010 request — same scoping choice as lib/dashboard.ts.
@@ -182,20 +183,6 @@ function displayName(
   );
 }
 
-function budgetLimitText(budget: ReturnType<typeof eventToOrgBudget>): string {
-  const limits = budget.limits;
-  const parts = [
-    limits.runs != null && `${limits.runs} runs/${budget.window}`,
-    limits.spend != null &&
-      `${limits.spend.amount} ${limits.spend.unit}/${budget.window}`,
-    limits.tasks?.create != null &&
-      `${limits.tasks.create} tasks created/${budget.window}`,
-    limits.tasks?.approve != null &&
-      `${limits.tasks.approve} tasks approved/${budget.window}`,
-  ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(", ") : "no limits";
-}
-
 function contributionTone(
   record: ReturnType<typeof eventToContributionRecord>,
 ): StatusTone {
@@ -282,7 +269,7 @@ export function auditDescription(
     }
     case KIND_ORG_BUDGET: {
       const budget = eventToOrgBudget(event as never);
-      return `Budget set for ${displayName(budget.subject, input.namesByPubkey)}: ${budgetLimitText(budget)}`;
+      return `Budget set for ${budgetSubjectLabel(budget.subject, (key) => displayName(key, input.namesByPubkey))}: ${budgetLimitSummary(budget)}`;
     }
     case KIND_CONTRIBUTION_RECORD: {
       const record = eventToContributionRecord(event as never);

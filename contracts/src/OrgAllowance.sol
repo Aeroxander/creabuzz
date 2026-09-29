@@ -1,40 +1,47 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title OrgAllowance — per-agent spend enforcement ledger for the Buzz org graph.
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+
+/// @title OrgAllowance — per-agent spend allowances that ENFORCE where money moves.
 ///
-/// @notice This contract is the ENFORCEMENT LEDGER for agent spending inside a
-/// community org graph (docs/nips/NIP-ORG.md): it records who may spend how
-/// much, and what was actually spent. It deliberately does NOT custody or move
-/// tokens. Actual token custody/transfers stay with the treasury EOA in dev;
-/// the harness backend EVM key acts as the authorized spender and settles
-/// transfers out-of-band against what this contract permits. This mirrors the
-/// NIP-LP rule ("the chain is the ledger; Nostr is the record") one level up:
-/// here the contract is the ledger of authority, the treasury holds the money.
+/// @notice The ceiling and the payout path live in one contract (docs/dao-os.md
+/// R3). `spendTo` debits an agent's allowance for (subject, token, epoch) and
+/// THEN moves the tokens with `transferFrom(treasury, to, amount)`: the treasury
+/// approves this contract for the token (its ERC-20 allowance is the second,
+/// outer cap) and gives the agent's spender key NOTHING else — the spender can
+/// move money only through `spendTo`, only up to the ledger, only for epochs that
+/// have begun. A bare ledger cannot say that: the treasury key (or any key that
+/// holds the funds) can always pay out without calling it.
 ///
-/// /// DELIBERATE SIMPLIFICATION (dev-first):
-/// - Ownership is a single EOA (`owner`, the deployer = the community owner in
-///   dev). `setOwner` is a simple owner-only transfer; a two-step
-///   (propose/accept) pattern is left to the DAO-bound upgrade.
-/// - The DAO-bound upgrade replaces `owner` with DAO governance and moves
-///   token custody onchain. Per docs/nips/NIP-ORG.md, "Opt-in onchain
-///   binding": on binding, node `holders` map to DAO shares, `budgets` map to
-///   treasury allowances (`setAllowance`/`spendAllowance`), and the exit
-///   right is ragequit. This contract's `setAllowance`/`spend` surface is the
-///   shape that upgrade binds to.
+/// `spend` is kept for accounting-only callers and is ADVISORY: it records
+/// consumption but moves no tokens, so nothing stops the holder of the funds
+/// from paying out without it. Surfaces must label anything settled through
+/// `spend` as advisory and anything settled through `spendTo` as enforced.
+///
+/// Ownership is a single address (`owner`, the deployer = the community owner in
+/// dev; DAO governance after the NIP-ORG onchain binding upgrade, docs/nips/
+/// NIP-ORG.md "Opt-in onchain binding": `budgets` map to treasury allowances).
+/// `setOwner` is a plain owner-only transfer; a two-step handover is left to
+/// the DAO-bound upgrade.
 ///
 /// @dev Subject identity: `subject` is the agent's 32-byte Nostr pubkey,
 /// VERBATIM — no keccak hashing, no truncation. It is used directly as a
 /// mapping key so Nostr bytes and chain state agree byte-for-byte.
 ///
-/// @dev Epoch mapping (documented contract; callers compute the uint64):
-/// - day   epoch = uint64(unix_ts / 86400)
-/// - week  epoch = uint64(unix_ts / 604800)
-/// - month epoch = uint64(unix_ts / 2592000)  // fixed 30-day months, dev only
-/// A governance-defined epoch counter (set by proposal, not derived from wall
-/// time) is the DAO-bound upgrade path; callers must treat the epoch domain as
-/// namespaced by the governance mode that minted it.
+/// @dev Epoch mapping: `epoch = uint64(unix_ts / epochSeconds)` with
+/// `epochSeconds` per subject (owner-set, default 86400 = day; the relay's
+/// budget windows are 86_400 / 604_800 / 2_592_000). A spend may name the
+/// CURRENT epoch or an earlier one, never one that has not begun: an agent
+/// cannot pre-spend allowance the owner staged for a future window. Unspent
+/// allowance of a past epoch stays spendable (carry-over) until the owner
+/// reduces it. Changing a subject's `epochSeconds` re-bases its epoch numbers.
 contract OrgAllowance {
+    using SafeTransferLib for address;
+
+    /// @notice Epoch length used for a subject whose `epochSecondsOf` is unset.
+    uint64 public constant DEFAULT_EPOCH_SECONDS = 86_400;
+
     // ---------------------------------------------------------------------
     // State
     // ---------------------------------------------------------------------
@@ -42,6 +49,14 @@ contract OrgAllowance {
     /// @notice Community owner. The deployer in dev; DAO governance after the
     /// NIP-ORG onchain binding upgrade.
     address public owner;
+
+    /// @notice The custody address `spendTo` pays from. It must have approved
+    /// this contract for each token it lets agents spend. Owner-set;
+    /// address(0) disables `spendTo`.
+    address public treasury;
+
+    /// @notice Epoch length in seconds per subject (0 = `DEFAULT_EPOCH_SECONDS`).
+    mapping(bytes32 subject => uint64 seconds_) public epochSecondsOf;
 
     /// @notice Authorized spender per subject. The dev harness backend EVM key.
     /// address(0) means "no spender authorized" — a subject with no spender
@@ -63,6 +78,10 @@ contract OrgAllowance {
     event SpenderSet(bytes32 indexed subject, address indexed spender);
     event AllowanceSet(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount);
     event Spent(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount, address spender);
+    /// @notice Emitted by `spendTo` in addition to `Spent`: tokens actually moved.
+    event SpentTo(bytes32 indexed subject, address indexed token, uint64 indexed epoch, uint256 amount, address to);
+    event TreasurySet(address indexed previousTreasury, address indexed newTreasury);
+    event EpochSecondsSet(bytes32 indexed subject, uint64 epochSeconds);
 
     // ---------------------------------------------------------------------
     // Errors
@@ -72,6 +91,15 @@ contract OrgAllowance {
     error NotSpender(address caller, bytes32 subject);
     error OverSpend(uint256 requested, uint256 remaining);
     error BelowSpent(uint256 newAllowance, uint256 spent);
+    error ZeroAddress();
+    /// @notice The epoch has not begun yet (`epoch > block.timestamp / epochSeconds`).
+    error FutureEpoch(uint64 epoch, uint64 currentEpoch);
+    /// @notice `spendTo` needs an owner-set treasury.
+    error TreasuryNotSet();
+    /// @notice `spendTo` cannot pay a zero recipient or the native token.
+    error BadRecipient(address to);
+    error BadToken(address token);
+    error BadEpochSeconds(uint64 epochSeconds);
 
     // ---------------------------------------------------------------------
     // Modifiers
@@ -104,8 +132,24 @@ contract OrgAllowance {
     /// @notice Transfer ownership. Simple owner-only set (documented
     /// simplification; two-step handover is the DAO-upgrade's concern).
     function setOwner(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
         emit OwnerSet(owner, newOwner);
         owner = newOwner;
+    }
+
+    /// @notice Set the custody address `spendTo` pays from (the treasury that
+    /// approves this contract). address(0) disables `spendTo`.
+    function setTreasury(address newTreasury) external onlyOwner {
+        emit TreasurySet(treasury, newTreasury);
+        treasury = newTreasury;
+    }
+
+    /// @notice Set a subject's epoch length. 0 is refused (unset falls back to
+    /// `DEFAULT_EPOCH_SECONDS`; to return to the default pass 86400).
+    function setEpochSeconds(bytes32 subject, uint64 epochSeconds) external onlyOwner {
+        if (epochSeconds == 0) revert BadEpochSeconds(epochSeconds);
+        epochSecondsOf[subject] = epochSeconds;
+        emit EpochSecondsSet(subject, epochSeconds);
     }
 
     /// @notice Authorize `spender` for `subject`. The harness backend EVM key
@@ -116,9 +160,12 @@ contract OrgAllowance {
     }
 
     /// @notice Set (or replace) the allowance for (subject, token, epoch).
-    /// Replaces any previous value; to reduce an existing allowance below its
-    /// current spend, see `decreaseAllowance` (which enforces the floor).
+    /// Replaces any previous value but never below what was already spent
+    /// (`BelowSpent`) — otherwise `remaining = allowance - spent` would
+    /// underflow and the ledger would lie about what the agent may still do.
     function setAllowance(bytes32 subject, address token, uint64 epoch, uint256 amount) external onlyOwner {
+        uint256 spent = _spent[subject][token][epoch];
+        if (amount < spent) revert BelowSpent(amount, spent);
         _allowance[subject][token][epoch] = amount;
         emit AllowanceSet(subject, token, epoch, amount);
     }
@@ -139,19 +186,53 @@ contract OrgAllowance {
     // ---------------------------------------------------------------------
 
     /// @notice Record a spend of `amount` against (subject, token, epoch).
-    /// Only the subject's authorized spender may call. Records authority and
-    /// consumption; does NOT transfer tokens (treasury EOA settles custody in
-    /// dev — see the contract-level simplification note).
+    /// ADVISORY / ACCOUNTING ONLY: moves no tokens, so it enforces nothing on
+    /// whoever holds the funds. Enforced payouts go through `spendTo`. Only the
+    /// subject's authorized spender may call, and only for an epoch that has
+    /// begun.
     function spend(bytes32 subject, address token, uint64 epoch, uint256 amount) external onlySpenderOf(subject) {
+        _debit(subject, token, epoch, amount);
+        emit Spent(subject, token, epoch, amount, msg.sender);
+    }
+
+    /// @notice ENFORCED payout: debit the allowance, then move `amount` of
+    /// `token` from `treasury` to `to` (`transferFrom(treasury, to, amount)`).
+    /// Reverts as a whole — ledger and transfer together — if the treasury has
+    /// not approved this contract for `amount`, lacks the balance, or the
+    /// allowance is exhausted. Only the subject's authorized spender may call.
+    function spendTo(bytes32 subject, address token, uint64 epoch, uint256 amount, address to)
+        external
+        onlySpenderOf(subject)
+    {
+        address from = treasury;
+        if (from == address(0)) revert TreasuryNotSet();
+        if (to == address(0)) revert BadRecipient(to);
+        if (token == address(0)) revert BadToken(token);
+        // Effects before the external call (the token may call back).
+        _debit(subject, token, epoch, amount);
+        token.safeTransferFrom(from, to, amount);
+        emit Spent(subject, token, epoch, amount, msg.sender);
+        emit SpentTo(subject, token, epoch, amount, to);
+    }
+
+    /// @dev Shared ledger debit: epoch must have begun, amount within remaining.
+    function _debit(bytes32 subject, address token, uint64 epoch, uint256 amount) internal {
+        uint64 current = currentEpoch(subject);
+        if (epoch > current) revert FutureEpoch(epoch, current);
         uint256 remaining = _allowance[subject][token][epoch] - _spent[subject][token][epoch];
         if (amount > remaining) revert OverSpend(amount, remaining);
         _spent[subject][token][epoch] += amount;
-        emit Spent(subject, token, epoch, amount, msg.sender);
     }
 
     // ---------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------
+
+    /// @notice The epoch a spend may name at most: `block.timestamp / epochSeconds`.
+    function currentEpoch(bytes32 subject) public view returns (uint64) {
+        uint64 len = epochSecondsOf[subject];
+        return uint64(block.timestamp / (len == 0 ? DEFAULT_EPOCH_SECONDS : len));
+    }
 
     function allowanceOf(bytes32 subject, address token, uint64 epoch) external view returns (uint256) {
         return _allowance[subject][token][epoch];

@@ -517,4 +517,52 @@ mod tests {
             Err(EvmAuthError::InvalidMessage(_))
         ));
     }
+
+    /// The exact message the web client builds for fixed inputs. The web test
+    /// (`siwe-login.test.mjs`, "byte-identical to the shared golden fixture")
+    /// asserts its builder emits these bytes; this side asserts the relay's
+    /// parser accepts them — so neither side can drift alone. The fixture is
+    /// the message plus one trailing newline (text-file convention).
+    const WEB_GOLDEN: &str = include_str!("../../../test-fixtures/siwe/login-message.txt");
+
+    fn web_golden_message() -> &'static str {
+        WEB_GOLDEN.strip_suffix('\n').unwrap_or(WEB_GOLDEN)
+    }
+
+    #[test]
+    fn parses_the_web_client_golden_message() {
+        let msg = SiweMessage::parse(web_golden_message()).expect("relay must accept web message");
+        assert_eq!(msg.domain, "login.example.com");
+        assert_eq!(
+            msg.address,
+            EvmAddress::parse("0x1234567890abcdef1234567890abcdef12345678").unwrap()
+        );
+        assert_eq!(msg.statement, None);
+        assert_eq!(msg.uri, "https://login.example.com");
+        assert_eq!(msg.version, 1);
+        assert_eq!(msg.chain_id, 8453);
+        assert_eq!(msg.nonce, "abc123xyz789");
+        assert_eq!(msg.issued_at, now("2026-07-28T10:00:00Z"));
+        assert_eq!(
+            msg.resources,
+            vec![
+                "nostr:953d3363262e86b770419834c53d2446409db6d918a57f8f339d495d54ab001f"
+                    .to_string()
+            ]
+        );
+        msg.validate_window(now("2026-07-28T10:00:30Z")).unwrap();
+    }
+
+    /// Falsifiability of the golden pair: the layout the web client used to
+    /// send (ONE blank line after the address, i.e. not EIP-4361) must not
+    /// parse into a valid message, so the fixture really pins the fix.
+    #[test]
+    fn rejects_the_one_blank_line_web_layout() {
+        let one_blank = web_golden_message().replacen("\n\n\n", "\n\n", 1);
+        assert_ne!(one_blank, web_golden_message());
+        assert!(matches!(
+            SiweMessage::parse(&one_blank),
+            Err(EvmAuthError::InvalidMessage(_))
+        ));
+    }
 }

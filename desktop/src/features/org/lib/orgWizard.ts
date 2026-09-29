@@ -64,7 +64,10 @@ export type WizardCreated =
   | {
       kind: "budget";
       dtag: string;
+      /** 64-hex agent pubkey, or "*" (community default). Never a node id. */
       subject: string;
+      /** Display name of the subject for the review row. */
+      subjectLabel: string;
       window: string;
       limitsText: string;
     };

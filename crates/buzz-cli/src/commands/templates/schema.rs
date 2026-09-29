@@ -38,7 +38,40 @@
 //!     source: https://ethskills.com/SKILL.md   # https URL or template-relative file
 //!     applies_to: developers   # "developers" | "all"
 //! welcome: welcome.md          # posted to the FIRST channel + returned for the UI
+//! org:                         # OPTIONAL — seeds the community org (see below)
+//!   root:
+//!     name: Studio             # ≤60 — the founder seat; the applying user holds it
+//!     blurb: Founders          # optional, ≤120
+//!   seats:                     # 0..6 — one vacant agent seat per persona
+//!     - persona: writer        # a persona `id` from THIS file
+//!       title: Head of Story   # optional seat title (default: the persona name)
+//!   default_budget:            # the community default agent budget (subject "*")
+//!     window: day              # epoch | day | week | month (default day)
+//!     runs: 200                # optional caps, each 1..=1_000_000
+//!     tasks_create: 20
+//!     messages: 300
+//!     llm_calls: 200
 //! ```
+//!
+//! # The `org` block wires the template into the org and its budgets
+//!
+//! The DAO-OS contract (`docs/dao-os.md`, rules R1/R2) is that every agent is
+//! covered by a budget from the moment it joins and sits in a seat under a
+//! founder root. The `org` block is how a template delivers that in one apply:
+//!
+//! * `root` → a kind:37010 role node with id `root`, held by the applying user
+//!   (only the community owner/admin may create a root — the relay enforces
+//!   it). An existing `root` node is never overwritten.
+//! * `seats[]` → one kind:37010 `agent-seat` node per persona with the
+//!   deterministic id `seat-<persona-id>`, parented to `root`, holder list
+//!   empty (the seat is *vacant* until a persona instance is attached — the
+//!   desktop attaches the agent it deploys to `seat-<persona-id>`).
+//! * `default_budget` → a kind:37012 budget with subject `"*"` and id
+//!   `default-agents`: the relay applies it to every agent that has no budget
+//!   of its own. Overruns become approval requests, never silent stops.
+//!
+//! Every event carries the template marker tag, so re-apply and `--resume`
+//! skip what already exists (idempotent, consistent-prefix execution).
 //!
 //! All referenced files live under `templates/<id>/`. Referenced paths must be
 //! relative and stay inside the template directory (no `..`, no absolute).
@@ -94,6 +127,17 @@ pub const MAX_PERSONAS: usize = 6;
 pub const MAX_WORKFLOWS: usize = 6;
 pub const MAX_DOCS: usize = 8;
 pub const MAX_SKILLS: usize = 8;
+/// Vacant agent seats a template may seed (one per persona at most).
+pub const MAX_ORG_SEATS: usize = MAX_PERSONAS;
+/// Longest founder-seat blurb.
+pub const MAX_ORG_BLURB: usize = 120;
+/// Ceiling on any default-budget counter (a template is a starting point, not
+/// an unlimited grant).
+pub const MAX_DEFAULT_BUDGET_LIMIT: u32 = 1_000_000;
+/// The org node id the template's founder seat uses.
+pub const ORG_ROOT_NODE_ID: &str = "root";
+/// The budget id (`d`) of the community default agent budget.
+pub const ORG_DEFAULT_BUDGET_ID: &str = "default-agents";
 /// Uniform bound on every referenced text file (matches the SDK builders'
 /// `check_content(64 * 1024)` and `buzz_persona::skill`'s skill bound).
 pub const MAX_FILE_BYTES: usize = 64 * 1024;
@@ -197,6 +241,54 @@ pub struct TemplateDoc {
     pub title: String,
 }
 
+/// The founder seat an `org` block creates.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateOrgRoot {
+    pub name: String,
+    #[serde(default)]
+    pub blurb: Option<String>,
+}
+
+/// One vacant agent seat, bound to a persona by id.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateOrgSeat {
+    /// A persona `id` declared in this same file.
+    pub persona: String,
+    /// Optional seat title; defaults to the persona's display name.
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// The community default agent budget (relay subject `"*"`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateDefaultBudget {
+    /// `epoch` | `day` | `week` | `month`; absent ⇒ `day`.
+    #[serde(default)]
+    pub window: Option<String>,
+    #[serde(default)]
+    pub runs: Option<u32>,
+    #[serde(default)]
+    pub tasks_create: Option<u32>,
+    #[serde(default)]
+    pub messages: Option<u32>,
+    #[serde(default)]
+    pub llm_calls: Option<u32>,
+}
+
+/// The optional `org:` block — see the module docs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateOrg {
+    pub root: TemplateOrgRoot,
+    #[serde(default)]
+    pub seats: Vec<TemplateOrgSeat>,
+    #[serde(default)]
+    pub default_budget: Option<TemplateDefaultBudget>,
+}
+
 /// The parsed `template.yaml`. Fields map 1:1 onto the pinned contract; the
 /// optional blocks default to empty (a template with no `skills:` is valid).
 #[derive(Debug, Clone, Deserialize)]
@@ -214,7 +306,15 @@ pub struct Template {
     pub docs: Vec<TemplateDoc>,
     #[serde(default)]
     pub skills: Vec<TemplateSkill>,
+    /// Optional org seeding (founder seat, vacant agent seats, default budget).
+    #[serde(default)]
+    pub org: Option<TemplateOrg>,
     pub welcome: String,
+}
+
+/// The deterministic org node id of the seat a persona's agent sits in.
+pub fn seat_node_id(persona_id: &str) -> String {
+    format!("seat-{persona_id}")
 }
 
 /// Kebab id: lowercase alphanumerics separated by single dashes.
@@ -487,9 +587,103 @@ pub fn validate_template(
         }
     }
 
+    if let Some(org) = &template.org {
+        validate_org(org, template)?;
+    }
+
     // Welcome: posted to the FIRST channel.
     read_ref(files, "welcome", &template.welcome)?;
 
+    Ok(())
+}
+
+/// Validate the optional `org:` block against the template's own personas.
+fn validate_org(org: &TemplateOrg, template: &Template) -> Result<(), String> {
+    if org.root.name.trim().is_empty() {
+        return Err("org.root.name must not be empty".into());
+    }
+    if org.root.name.chars().count() > MAX_NAME {
+        return Err(format!("org.root.name exceeds {MAX_NAME} characters"));
+    }
+    if let Some(blurb) = &org.root.blurb {
+        if blurb.chars().count() > MAX_ORG_BLURB {
+            return Err(format!("org.root.blurb exceeds {MAX_ORG_BLURB} characters"));
+        }
+    }
+
+    if org.seats.len() > MAX_ORG_SEATS {
+        return Err(format!(
+            "org.seats exceeds {MAX_ORG_SEATS} entries (got {})",
+            org.seats.len()
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for (i, seat) in org.seats.iter().enumerate() {
+        let what = format!("org.seats[{i}]");
+        if !template.personas.iter().any(|p| p.id == seat.persona) {
+            let mut declared: Vec<&str> = template.personas.iter().map(|p| p.id.as_str()).collect();
+            declared.sort_unstable();
+            return Err(format!(
+                "{what}: unknown persona id '{}' (declared persona ids: {})",
+                seat.persona,
+                declared.join(", ")
+            ));
+        }
+        if !seen.insert(seat.persona.as_str()) {
+            return Err(format!(
+                "{what}: duplicate seat for persona '{}'",
+                seat.persona
+            ));
+        }
+        if let Some(title) = &seat.title {
+            if title.trim().is_empty() {
+                return Err(format!("{what}: title must not be empty (omit the field)"));
+            }
+            if title.chars().count() > MAX_NAME {
+                return Err(format!("{what}: title exceeds {MAX_NAME} characters"));
+            }
+        }
+        // The org node `d` grammar is `[a-z0-9._-]{1,64}`: `seat-` + the
+        // persona slug must fit.
+        if seat_node_id(&seat.persona).len() > buzz_core::org_grant::ORG_D_MAX_LEN {
+            return Err(format!(
+                "{what}: seat id 'seat-{}' exceeds {} bytes",
+                seat.persona,
+                buzz_core::org_grant::ORG_D_MAX_LEN
+            ));
+        }
+    }
+
+    if let Some(b) = &org.default_budget {
+        if let Some(w) = &b.window {
+            if !matches!(w.as_str(), "epoch" | "day" | "week" | "month") {
+                return Err(format!(
+                    "org.default_budget.window must be one of epoch, day, week, month (got '{w}')"
+                ));
+            }
+        }
+        let limits = [
+            ("runs", b.runs),
+            ("tasks_create", b.tasks_create),
+            ("messages", b.messages),
+            ("llm_calls", b.llm_calls),
+        ];
+        if limits.iter().all(|(_, v)| v.is_none()) {
+            return Err(
+                "org.default_budget must set at least one limit (runs, tasks_create, messages, llm_calls)"
+                    .into(),
+            );
+        }
+        for (name, value) in limits {
+            if let Some(v) = value {
+                if v == 0 || v > MAX_DEFAULT_BUDGET_LIMIT {
+                    return Err(format!(
+                        "org.default_budget.{name} must be between 1 and {MAX_DEFAULT_BUDGET_LIMIT} (got {v})"
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -543,6 +737,79 @@ mod tests {
     #[test]
     fn minimal_template_is_valid() {
         assert!(check(&base_yaml(), &base_files()).is_ok());
+    }
+
+    // ---- org block ----
+
+    /// A valid template that declares one persona so `org.seats` can point at it.
+    fn org_yaml(org: &str) -> String {
+        let mut yaml = base_yaml().replace(
+            "personas: []",
+            "personas:\n  - id: writer\n    name: The Writer\n    prompt: personas/writer.md",
+        );
+        yaml.push_str(org);
+        yaml
+    }
+
+    fn org_files() -> TemplateFiles {
+        files(&[
+            ("welcome.md", "# Welcome"),
+            ("personas/writer.md", "prompt"),
+        ])
+    }
+
+    #[test]
+    fn org_block_with_seat_and_default_budget_is_valid() {
+        let yaml = org_yaml(
+            "org:\n  root:\n    name: Studio\n  seats:\n    - persona: writer\n      title: Head of Story\n  default_budget:\n    window: week\n    runs: 200\n    messages: 300\n",
+        );
+        assert!(check(&yaml, &org_files()).is_ok());
+        assert_eq!(seat_node_id("writer"), "seat-writer");
+    }
+
+    #[test]
+    fn org_seat_must_name_a_declared_persona() {
+        let yaml = org_yaml("org:\n  root:\n    name: Studio\n  seats:\n    - persona: ghost\n");
+        let err = check(&yaml, &org_files()).unwrap_err();
+        assert!(err.contains("unknown persona id 'ghost'"), "{err}");
+        assert!(err.contains("writer"), "names the declared ids: {err}");
+    }
+
+    #[test]
+    fn org_rejects_duplicate_seats_and_empty_root() {
+        let dup = org_yaml(
+            "org:\n  root:\n    name: Studio\n  seats:\n    - persona: writer\n    - persona: writer\n",
+        );
+        assert!(check(&dup, &org_files())
+            .unwrap_err()
+            .contains("duplicate seat"));
+        let empty = org_yaml("org:\n  root:\n    name: '  '\n");
+        assert!(check(&empty, &org_files())
+            .unwrap_err()
+            .contains("org.root.name must not be empty"));
+    }
+
+    #[test]
+    fn org_default_budget_bounds_are_enforced() {
+        for (body, needle) in [
+            ("default_budget: {}\n", "at least one limit"),
+            ("default_budget:\n    runs: 0\n", "between 1 and"),
+            ("default_budget:\n    runs: 1000001\n", "between 1 and"),
+            (
+                "default_budget:\n    window: hour\n    runs: 5\n",
+                "window must be one of",
+            ),
+        ] {
+            let yaml = org_yaml(&format!("org:\n  root:\n    name: Studio\n  {body}"));
+            let err = check(&yaml, &org_files()).unwrap_err();
+            assert!(err.contains(needle), "{body:?} -> {err}");
+        }
+    }
+
+    #[test]
+    fn org_block_rejects_unknown_fields() {
+        let yaml = org_yaml("org:\n  root:\n    name: Studio\n  treasury: 0xabc\n");
+        assert!(serde_yaml::from_str::<Template>(&yaml).is_err());
     }
 
     // ---- schema bound table (each documented bound rejects) ----

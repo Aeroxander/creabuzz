@@ -21,18 +21,26 @@
  *
  * Digests are pinned by vectors derived from the crate's own `compute_hash`
  * (see `auditChain.test.mjs` for the fixtures and their derivation).
+ *
+ * What a verified chain proves — and what it does not. The relay records every
+ * structural moment in `audit_log` and publishes each entry as a relay-signed
+ * kind:48001 event (`crates/buzz-relay/src/audit.rs`), readable by community
+ * owners and admins only. Verifying the chain proves the entries the relay
+ * published are INTERNALLY CONSISTENT: each links to its predecessor and each
+ * digest matches its fields, so an entry edited or dropped from the middle of
+ * a served run shows up as a break at that seq. It is NOT tamper-evidence
+ * against the relay operator: the operator holds the signing key and the
+ * database and can recompute a consistent chain from any point (or serve a
+ * shorter one), and no external anchor pins the head. Treat it as a
+ * consistency check on what the relay chooses to show, not as an independent
+ * witness.
  */
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-/**
- * Kind of a relay-published audit entry event. Registered in
- * `crates/buzz-core/src/kind.rs:723` and accepted by relay ingest
- * (`crates/buzz-relay/src/handlers/event.rs:50`); the relay does not publish
- * these yet, so the query below is written against the documented envelope and
- * reports honestly when the relay serves none.
- */
-export const KIND_AUDIT_ENTRY = 48001;
+// The event kind (48001, `KIND_AUDIT_ENTRY`) is the shared constant in
+// `@/shared/constants/kinds`; the relay publishes it, and serves it to owners
+// and admins only, so a reader outside those roles sees an empty chain.
 
 /** `hash.rs:9` — hashed in place of a missing `prev_hash` (chain genesis). */
 export const GENESIS_HEX = "0".repeat(64);

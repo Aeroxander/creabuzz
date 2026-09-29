@@ -90,6 +90,19 @@ export const SIGNATURE_DEPLOY_TOKEN =
  */
 export const MAX_INFRASTRUCTURE_FEE_BPS = 250n;
 
+/**
+ * Immutable pool ceilings (docs/dao-os.md R4), mirrored from
+ * `contracts/script/DeployAppToken.s.sol` and desktop `evmCalls.ts` (pinned by
+ * `mint-tx.test.mjs`). They used to be 10_000 / 9999 bps — "the owner may
+ * charge a 100% fee" — a rug-capable configuration. Whoever owns the token can
+ * move fees and spreads anywhere BELOW these, never above.
+ */
+export const MAX_TOKEN_FEE_BPS = 1_000n;
+export const MAX_TOKEN_SPREAD_BPS = 1_000n;
+/** Ceiling on the creator's spend share: equal to its initial value, so it can only go down. */
+export const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
+export const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
+
 const TOKEN_DECIMALS = 18n; // the script hardcodes 18
 const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
 
@@ -148,12 +161,23 @@ export interface TokenDeployCallsParams {
   router?: string;
   /** APPTOKEN_STANDARD_FACTORY. Default {@link DEFAULT_STANDARD_POOL_FACTORY}. */
   factory?: string;
+  /**
+   * APPTOKEN_OWNER — `poolParams.initialOwner`, the holder of the token's fee
+   * and spread levers (below the immutable ceilings). Defaults to `treasury`.
+   * Pass the DAO to launch DAO-owned. The transfer-validator wiring (calls 2-3
+   * of {@link buildTokenDeployCalls}) is an OWNER op, so those calls are only
+   * composed when the owner is the treasury wallet that signs. To hand a
+   * treasury-owned token to the DAO after graduation use
+   * {@link buildTransferTokenOwnershipCall}.
+   */
+  owner?: string;
 }
 
 interface ResolvedTokenDeployParams {
   name: string;
   symbol: string;
   treasury: string;
+  owner: string;
   tokenAddress: string;
   salt: bigint;
   initialSupplyAmount: bigint;
@@ -169,17 +193,33 @@ interface ResolvedTokenDeployParams {
 function resolveTokenDeployParams(
   params: TokenDeployCallsParams,
 ): ResolvedTokenDeployParams {
+  const spreadBps = params.spreadBps ?? 100;
+  const buyFeeBps = params.buyFeeBps ?? 200;
+  const sellFeeBps = params.sellFeeBps ?? 200;
+  // The deploy script refuses these too (`AboveCeiling`): fail here, not on chain.
+  for (const [label, value, ceiling] of [
+    ["spreadBps", spreadBps, MAX_TOKEN_SPREAD_BPS],
+    ["buyFeeBps", buyFeeBps, MAX_TOKEN_FEE_BPS],
+    ["sellFeeBps", sellFeeBps, MAX_TOKEN_FEE_BPS],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 0 || BigInt(value) > ceiling) {
+      throw new Error(
+        `${label} must be an integer in 0..${ceiling} (the pool's immutable ceiling): ${value}`,
+      );
+    }
+  }
   return {
     name: params.name,
     symbol: params.symbol,
     treasury: params.treasury,
+    owner: params.owner ?? params.treasury,
     tokenAddress: params.tokenAddress,
     salt: params.salt ?? 1n,
     initialSupplyAmount: params.initialSupplyAmount ?? 1_000_000n * 10n ** 18n,
     pairedDepositWei: params.pairedDepositWei ?? 10n ** 17n, // 0.1 ether
-    spreadBps: params.spreadBps ?? 100,
-    buyFeeBps: params.buyFeeBps ?? 200,
-    sellFeeBps: params.sellFeeBps ?? 200,
+    spreadBps,
+    buyFeeBps,
+    sellFeeBps,
     defaultTransferValidator: params.defaultTransferValidator ?? ZERO_ADDRESS,
     router: params.router ?? DEFAULT_TOKENMASTER_ROUTER,
     factory: params.factory ?? DEFAULT_STANDARD_POOL_FACTORY,
@@ -230,7 +270,7 @@ function encodeStandardPoolInitArgs(p: ResolvedTokenDeployParams): string {
   };
   const spendParams: AbiField = {
     kind: "tuple",
-    fields: [{ kind: "uint", value: 5000n }], // creatorShareBPS — script's 5000
+    fields: [{ kind: "uint", value: INITIAL_SPEND_CREATOR_SHARE_BPS }], // creatorShareBPS — script's 5000
   };
   return abiEncode([
     {
@@ -239,13 +279,13 @@ function encodeStandardPoolInitArgs(p: ResolvedTokenDeployParams): string {
         { kind: "address", value: p.treasury }, // initialSupplyRecipient
         { kind: "uint", value: p.initialSupplyAmount },
         { kind: "uint", value: 0n }, // minBuySpreadBPS
-        { kind: "uint", value: 9999n }, // maxBuySpreadBPS
-        { kind: "uint", value: 10_000n }, // maxBuyFeeBPS
-        { kind: "uint", value: 10_000n }, // maxBuyDemandFeeBPS
+        { kind: "uint", value: MAX_TOKEN_SPREAD_BPS }, // maxBuySpreadBPS
+        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxBuyFeeBPS
+        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxBuyDemandFeeBPS
         { kind: "uint", value: 0n }, // minSellSpreadBPS
-        { kind: "uint", value: 9999n }, // maxSellSpreadBPS
-        { kind: "uint", value: 10_000n }, // maxSellFeeBPS
-        { kind: "uint", value: 10_000n }, // maxSpendCreatorShareBPS
+        { kind: "uint", value: MAX_TOKEN_SPREAD_BPS }, // maxSellSpreadBPS
+        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxSellFeeBPS
+        { kind: "uint", value: MAX_SPEND_CREATOR_SHARE_BPS }, // maxSpendCreatorShareBPS
         { kind: "uint", value: 0n }, // creatorEmissionRateNumerator
         { kind: "uint", value: 1n }, // creatorEmissionRateDenominator
         { kind: "uint", value: 0n }, // creatorEmissionsHardCap
@@ -281,7 +321,7 @@ export function encodeDeployToken(params: TokenDeployCallsParams): string {
             { kind: "string", value: p.name },
             { kind: "string", value: p.symbol },
             { kind: "uint", value: TOKEN_DECIMALS }, // tokenDecimals — 18
-            { kind: "address", value: p.treasury }, // initialOwner
+            { kind: "address", value: p.owner }, // initialOwner (APPTOKEN_OWNER)
             { kind: "address", value: ZERO_ADDRESS }, // pairedToken — native
             { kind: "uint", value: p.pairedDepositWei },
             {
@@ -364,12 +404,17 @@ export function buildTokenDeployCalls(
     p.defaultTransferValidator.toLowerCase() === ZERO_ADDRESS
       ? CANONICAL_TRANSFER_VALIDATOR
       : p.defaultTransferValidator;
+  const deploy: MintEvmCall = {
+    to: p.router,
+    data: encodeDeployToken(params),
+    value: valueHex(p.pairedDepositWei),
+  };
+  // Calls 2-3 are OWNER ops signed by the treasury wallet: when the token is
+  // launched with a different owner (the DAO) they would revert, so the owner
+  // wires the validator itself.
+  if (p.owner.toLowerCase() !== p.treasury.toLowerCase()) return [deploy];
   return [
-    {
-      to: p.router,
-      data: encodeDeployToken(params),
-      value: valueHex(p.pairedDepositWei),
-    },
+    deploy,
     {
       to: p.tokenAddress,
       data: encodeSetTransferValidator(realTransferValidator),
@@ -387,6 +432,29 @@ export function buildTokenDeployCalls(
       value: valueHex(0n),
     },
   ];
+}
+
+/** ABI-encode Ownable `transferOwnership(newOwner)` (`cast`: `0xf2fde38b`). */
+export function encodeTransferOwnership(newOwner: string): string {
+  return abiEncodeCall("transferOwnership(address)", [
+    { kind: "address", value: newOwner },
+  ]);
+}
+
+/**
+ * `token.transferOwnership(dao)` — hands a treasury-owned apptoken to the DAO
+ * (the holder of the fee/spread levers) once the launch has graduated.
+ * Owner-only: the current owner (the treasury wallet) must sign it.
+ */
+export function buildTransferTokenOwnershipCall(
+  token: string,
+  newOwner: string,
+): MintEvmCall {
+  return {
+    to: token,
+    data: encodeTransferOwnership(newOwner),
+    value: valueHex(0n),
+  };
 }
 
 // ---------------------------------------------------------------------------

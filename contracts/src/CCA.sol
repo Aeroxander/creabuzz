@@ -44,6 +44,14 @@ interface ICcaFinalization {
     function endBlock() external view returns (uint64);
 }
 
+/// @notice The auction's validation-hook getter. Kept apart from
+/// `IContinuousClearingAuction` (mirrors upstream `validationHook()`, whose
+/// `IValidationHook` return type is ABI-identical to `address`) so hooks can
+/// verify the auction they are bound to without every mock implementing it.
+interface ICcaValidationHookView {
+    function validationHook() external view returns (address);
+}
+
 /// @notice Downstream strategy consumed by a graduated auction. The canonical
 /// implementation seeds a Uniswap v4 pool; the launchpad deploys
 /// `AppTokenLBPInitializer` instead to seed apptoken rails.

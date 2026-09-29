@@ -8,11 +8,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  canonicalBindingByPubkey,
-  KIND_EVM_BINDING,
-  parseBindingRecord,
-} from "./bindings.ts";
+import { KIND_EVM_BINDING } from "../../../shared/constants/kinds.ts";
+import { canonicalBindingByPubkey, parseBindingRecord } from "./bindings.ts";
 import { composeSummon, localBindingMap } from "./summon-composer.ts";
 
 const FOUNDER_PUB = "a".repeat(64);

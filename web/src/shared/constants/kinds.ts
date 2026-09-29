@@ -34,13 +34,13 @@ export const KIND_ROYALTY_SCHEDULE = 47006;
 export const KIND_ROYALTY_CLOSE = 47007;
 /** NIP-LP (reserved): trustgraph score root published by an operator. */
 export const KIND_SCORE_ROOT = 37006;
-/** NIP-ORG: org node — a role/team seat in the community org chart (addressable, d = node id, h = community). */
+/** NIP-ORG: org node — a role/team seat in the community org chart (addressable, d = node id; community-level, no `h` tag). */
 export const KIND_ORG_NODE = 37010;
-/** NIP-ORG: org grant — a scoped, revocable delegation of authority (addressable, d = grant id, h = community). */
+/** NIP-ORG: org grant — a scoped, revocable delegation of authority (addressable, d = grant id; community-level, no `h` tag). */
 export const KIND_ORG_GRANT = 37011;
-/** NIP-ORG: budget — a bound on agent/delegated autonomy (addressable, d = subject id, h = community). */
+/** NIP-ORG: budget — a bound on agent/delegated autonomy (addressable, d = subject id; community-level, no `h` tag). */
 export const KIND_ORG_BUDGET = 37012;
-/** NIP-ORG: contribution record — verified action with multi-dimensional profile (addressable, d = action id, h = community). */
+/** NIP-ORG: contribution record — verified action with multi-dimensional profile (addressable, d = action id; community-level, no `h` tag). */
 export const KIND_CONTRIBUTION_RECORD = 37013;
 /** NIP-ORG: budget spend receipt — Nostr mirror of a spend settled against an onchain allowance (addressable, d = spend id). */
 export const KIND_BUDGET_SPEND_RECEIPT = 37014;
@@ -48,6 +48,14 @@ export const KIND_BUDGET_SPEND_RECEIPT = 37014;
 export const KIND_ORG_PITCH = 37015;
 /** NIP-ORG: project join request — request a declared role for a stated % (addressable, d = `<node>/<role>/<requester-16>`); a decline republishes the same d under the founder's key. */
 export const KIND_ORG_JOIN_REQUEST = 37016;
+/** NIP-ORG (Discovery plane): EVM binding — "which address holds this seat", authored by the bound npub (addressable, d = the bound `0x…` address). */
+export const KIND_EVM_BINDING = 37017;
+/** NIP-ORG (Discovery plane): deployment record — "where is the Summoner" (addressable, d = `<chainId>:<role>`). */
+export const KIND_DEPLOYMENT_RECORD = 37018;
+/** Agent skill definition — a shareable Agent Skills instruction set (addressable, d = skill id; community-level and global-only). */
+export const KIND_SKILL = 30180;
+/** Relay hash-chain audit entry — relay-signed, readable by community owners and admins only. */
+export const KIND_AUDIT_ENTRY = 48001;
 /** All NIP-ORG event kinds. */
 export const ORG_EVENT_KINDS = [
   KIND_ORG_NODE,

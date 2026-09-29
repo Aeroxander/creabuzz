@@ -18,6 +18,7 @@ import type {
   OrgNode,
 } from "../orgModels";
 import { consumptionPercentage } from "./budgetConsumption";
+import { budgetLimitSummary, budgetSubjectLabel } from "./budgetForm";
 import { pluralize } from "./format";
 import type { AgentLiveness } from "./nodeLiveness";
 
@@ -114,7 +115,7 @@ export function deriveBlockingBanners(input: BannerInput): BlockingBanner[] {
       banner: {
         key: `budget-${budget.dtag}`,
         tone: "blocking",
-        title: `${displayName(budget.subject, input.namesByPubkey)} hit ${rounded}% of its ${budget.window} runs budget`,
+        title: `${budgetSubjectLabel(budget.subject, (key) => displayName(key, input.namesByPubkey))} hit ${rounded}% of its ${budget.window} runs budget`,
         detail: "Further turns will be rejected.",
         actionLabel: "Raise the budget",
         actionTarget: "budgets",
@@ -252,20 +253,6 @@ function stringField(obj: Record<string, unknown>, key: string): string | null {
 
 function shortId(value: string): string {
   return value.length > 10 ? `${value.slice(0, 10)}…` : value;
-}
-
-function budgetLimitText(budget: OrgBudget): string {
-  const limits = budget.limits;
-  const parts = [
-    limits.runs != null && `${limits.runs} runs/${budget.window}`,
-    limits.spend != null &&
-      `${limits.spend.amount} ${limits.spend.unit}/${budget.window}`,
-    limits.tasks?.create != null &&
-      `${limits.tasks.create} tasks created/${budget.window}`,
-    limits.tasks?.approve != null &&
-      `${limits.tasks.approve} tasks approved/${budget.window}`,
-  ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(", ") : "no limits";
 }
 
 function contributionTone(record: ContributionRecord): StatusTone {
@@ -432,7 +419,7 @@ export function deriveActivityRows(input: ActivityInput): ActivityRow[] {
       kind: 37012,
       createdAt: budget.createdAt,
       tone: "waiting",
-      description: `Budget set for ${displayName(budget.subject, input.namesByPubkey)}: ${budgetLimitText(budget)}`,
+      description: `Budget set for ${budgetSubjectLabel(budget.subject, (key) => displayName(key, input.namesByPubkey))}: ${budgetLimitSummary(budget)}`,
       actorPubkey: budget.author,
       targetTab: "grants",
     });

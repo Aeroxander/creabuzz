@@ -59,9 +59,11 @@ import { relativeTimeLabel } from "../lib/dashboard";
  * 1. **Hash chain** — chain entries (kind:48001) are re-digested in the
  *    browser by `lib/auditChain.ts` (byte-exact with `crates/buzz-audit`).
  *    A verified run shows its seq range; a break turns loud red at the exact
- *    seq. When the relay serves no chain entries — today's reality, the relay
- *    writes `audit_log` but does not publish kind:48001 — the badge says
- *    "not served" rather than green.
+ *    seq. The relay does publish these entries (relay-signed kind:48001), but
+ *    only to community owners and admins; when none are served to this reader
+ *    the badge says "not served" rather than green. A verified chain proves the
+ *    published entries are internally consistent — it is not tamper-evidence
+ *    against the relay operator, who signs and stores the chain.
  * 2. **Presence check** — the Verify modal re-fetches and confirms the rows
  *    you were reading are still there. It is labeled as presence, never as a
  *    chain proof.
@@ -71,7 +73,10 @@ const VERIFY_SAMPLE_NOTE =
   "Checks that the newest entries you were viewing are still present after a fresh re-fetch.";
 
 const CHAIN_NOT_SERVED_NOTE =
-  "This relay serves no hash-chain entries (kind 48001), so client-side chain verification is unavailable. Every row below is still a signed event.";
+  "This relay served no hash-chain entries (kind 48001) to you — they are readable by community owners and admins only — so client-side chain verification is unavailable. Every row below is still a signed event.";
+
+const CHAIN_OPERATOR_CAVEAT =
+  "This shows the relay's published entries are internally consistent; it does not protect against the relay operator, who signs and stores the chain.";
 
 function CopyableEventId({ eventId }: { eventId: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -168,12 +173,12 @@ function describeChainStatus(input: {
       ? {
           state: "verified",
           text: `Chain verified ${range}`,
-          note: `All ${verification.count} entries from the genesis entry hash-link correctly; digests were recomputed in this app. Coverage: ${coverage}.`,
+          note: `All ${verification.count} entries from the genesis entry hash-link correctly; digests were recomputed in this app. Coverage: ${coverage}. ${CHAIN_OPERATOR_CAVEAT}`,
         }
       : {
           state: "verified",
           text: `Chain verified ${range}`,
-          note: `Entries ${range} hash-link correctly; digests were recomputed in this app. Verification covers the ${coverage} above — the chain continues before it.`,
+          note: `Entries ${range} hash-link correctly; digests were recomputed in this app. Verification covers the ${coverage} above — the chain continues before it. ${CHAIN_OPERATOR_CAVEAT}`,
         };
   }
   return {

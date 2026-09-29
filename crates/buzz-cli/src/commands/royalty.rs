@@ -179,7 +179,8 @@ impl RoyaltyClient {
 
     /// Broadcast `settle()` (permissionless) from `spender`, bounded.
     pub async fn settle(&self, spender: &k256::ecdsa::SigningKey) -> Result<String, CliError> {
-        self.send(spender, &encode_settle_calldata(), "settle").await
+        self.send(spender, &encode_settle_calldata(), "settle")
+            .await
     }
 
     async fn send(
@@ -199,15 +200,13 @@ impl RoyaltyClient {
                 AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
                     "the distributor refused {what} at simulation; nothing was broadcast: {detail}"
                 )),
-                AllowanceError::SpendReverted { tx_hash } => CliError::Other(format!(
-                    "{what} transaction {tx_hash} reverted onchain"
-                )),
-                AllowanceError::SpendUnconfirmed { .. } => {
-                    CliError::Other(format!(
-                        "{what} transaction not confirmed within the deadline — \
-                         check the receipt before assuming it landed; do NOT re-submit blindly"
-                    ))
+                AllowanceError::SpendReverted { tx_hash } => {
+                    CliError::Other(format!("{what} transaction {tx_hash} reverted onchain"))
                 }
+                AllowanceError::SpendUnconfirmed { .. } => CliError::Other(format!(
+                    "{what} transaction not confirmed within the deadline — \
+                         check the receipt before assuming it landed; do NOT re-submit blindly"
+                )),
                 other => CliError::Other(format!("{what} failed: {other}")),
             })?;
         Ok(receipt.tx_hash)
@@ -476,8 +475,8 @@ pub fn decode_window_closed_log(entry: &serde_json::Value) -> Result<WindowClose
         .as_str()
         .ok_or_else(|| CliError::Other("log has no data".into()))?
         .trim_start_matches("0x");
-    let bytes = hex::decode(data)
-        .map_err(|e| CliError::Other(format!("malformed log data: {e}")))?;
+    let bytes =
+        hex::decode(data).map_err(|e| CliError::Other(format!("malformed log data: {e}")))?;
     if bytes.len() < 5 * 32 {
         return Err(CliError::Other(format!(
             "log data too short for WindowClosed: {} bytes",
@@ -528,7 +527,11 @@ pub fn published_windows(events_json: &str, distributor: &str) -> Result<BTreeSe
         }
         let mut ours = false;
         let mut window: Option<u64> = None;
-        for tag in event["tags"].as_array().map(|v| v.as_slice()).unwrap_or(&[]) {
+        for tag in event["tags"]
+            .as_array()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+        {
             let key = tag[0].as_str().unwrap_or("");
             let value = tag[1].as_str().unwrap_or("");
             if key == "distributor" && value.to_ascii_lowercase() == want {
@@ -576,7 +579,8 @@ fn build_mirror_event(
 ) -> Result<EventBuilder, CliError> {
     let kind = template["kind"]
         .as_u64()
-        .ok_or_else(|| CliError::Other("mirror template lost its kind".into()))? as u16;
+        .ok_or_else(|| CliError::Other("mirror template lost its kind".into()))?
+        as u16;
     let content = template["content"]
         .as_str()
         .ok_or_else(|| CliError::Other("mirror template lost its content".into()))?
@@ -592,19 +596,22 @@ fn build_mirror_event(
         let value = tag[1]
             .as_str()
             .ok_or_else(|| CliError::Other("mirror tag is not a string".into()))?;
-        builder = builder.tag(Tag::parse([key, value]).map_err(|e| {
-            CliError::Other(format!("invalid mirror tag [{key},{value}]: {e}"))
-        })?);
+        builder = builder
+            .tag(Tag::parse([key, value]).map_err(|e| {
+                CliError::Other(format!("invalid mirror tag [{key},{value}]: {e}"))
+            })?);
     }
     if let (Some(author), Some(id)) = (launch_author, launch_id) {
         let coord = format!("{author}:{id}");
-        builder = builder.tag(Tag::parse(["a", &coord]).map_err(|e| {
-            CliError::Other(format!("invalid launch coordinate {coord}: {e}"))
-        })?);
+        builder = builder.tag(
+            Tag::parse(["a", &coord])
+                .map_err(|e| CliError::Other(format!("invalid launch coordinate {coord}: {e}")))?,
+        );
     }
     if let Some(h) = channel {
-        builder = builder
-            .tag(Tag::parse(["h", h]).map_err(|e| CliError::Other(format!("invalid channel: {e}")))?);
+        builder = builder.tag(
+            Tag::parse(["h", h]).map_err(|e| CliError::Other(format!("invalid channel: {e}")))?,
+        );
     }
     Ok(builder)
 }
@@ -612,10 +619,7 @@ fn build_mirror_event(
 /// `buzz royalty publish-schedule | publish-close` — sign and publish the
 /// attestation-feed mirrors through the ordinary relay path (post-auth). The
 /// local-only commands run before auth and never reach here.
-pub async fn dispatch(
-    sub: crate::RoyaltyCmd,
-    client: &BuzzClient,
-) -> Result<(), CliError> {
+pub async fn dispatch(sub: crate::RoyaltyCmd, client: &BuzzClient) -> Result<(), CliError> {
     use crate::RoyaltyCmd::*;
     let (template, what, launch_author, launch_id, channel) = match sub {
         PublishSchedule {
@@ -722,7 +726,10 @@ pub async fn dispatch(
         channel.as_deref(),
     )
     .await?;
-    println!("{}", json!({ "status": "ok", "what": what, "response": response }));
+    println!(
+        "{}",
+        json!({ "status": "ok", "what": what, "response": response })
+    );
     Ok(())
 }
 
@@ -885,8 +892,14 @@ mod tests {
     /// removing this binding lets the feed drift off the spec.
     #[test]
     fn mirror_kinds_match_buzz_core_registry() {
-        assert_eq!(MIRROR_KIND_SCHEDULE, buzz_core::kind::KIND_ROYALTY_SCHEDULE as u16);
-        assert_eq!(MIRROR_KIND_CLOSE, buzz_core::kind::KIND_ROYALTY_CLOSE as u16);
+        assert_eq!(
+            MIRROR_KIND_SCHEDULE,
+            buzz_core::kind::KIND_ROYALTY_SCHEDULE as u16
+        );
+        assert_eq!(
+            MIRROR_KIND_CLOSE,
+            buzz_core::kind::KIND_ROYALTY_CLOSE as u16
+        );
     }
 
     #[test]
@@ -904,7 +917,9 @@ mod tests {
         );
         assert_eq!(ev["kind"], 47006);
         let tags = ev["tags"].as_array().unwrap();
-        assert!(tags.iter().any(|t| t[0] == "chain" && t[1] == "eip155:8453"));
+        assert!(tags
+            .iter()
+            .any(|t| t[0] == "chain" && t[1] == "eip155:8453"));
         assert!(tags.iter().any(|t| t[0] == "claim" && t[1] == "0xclaim"));
         let content: serde_json::Value =
             serde_json::from_str(ev["content"].as_str().unwrap()).unwrap();
@@ -915,7 +930,16 @@ mod tests {
 
     #[test]
     fn close_mirror_shape() {
-        let ev = royalty_close_event_json("eip155:8453", DISTRIBUTOR, 7, 10_000, 4_000, 2_000, 4_000, 0);
+        let ev = royalty_close_event_json(
+            "eip155:8453",
+            DISTRIBUTOR,
+            7,
+            10_000,
+            4_000,
+            2_000,
+            4_000,
+            0,
+        );
         assert_eq!(ev["kind"], 47007);
         let content: serde_json::Value =
             serde_json::from_str(ev["content"].as_str().unwrap()).unwrap();
@@ -943,8 +967,8 @@ mod tests {
             format!("eth_call:{}", sel(SIG_NEXT_CLOSE)),
             serde_json::Value::String(MockRpc::word(1_780_000_000)),
         );
-        let client = RoyaltyClient::from_transport(Arc::new(MockRpc::new(m)), DISTRIBUTOR)
-            .expect("client");
+        let client =
+            RoyaltyClient::from_transport(Arc::new(MockRpc::new(m)), DISTRIBUTOR).expect("client");
         assert_eq!(client.claimable_of(HOLDER).await.unwrap(), 4_000);
         assert_eq!(client.carry().await.unwrap(), 111);
         assert_eq!(client.next_close().await.unwrap(), 1_780_000_000);
@@ -954,11 +978,20 @@ mod tests {
     /// NIP-LP bindings — the feed record a reader joins to the launch.
     #[test]
     fn publish_event_shape_binds_launch_and_channel() {
-        let template =
-            royalty_close_event_json("eip155:8453", DISTRIBUTOR, 7, 10_000, 4_000, 2_000, 4_000, 0);
+        let template = royalty_close_event_json(
+            "eip155:8453",
+            DISTRIBUTOR,
+            7,
+            10_000,
+            4_000,
+            2_000,
+            4_000,
+            0,
+        );
         let author = "ab".repeat(32);
-        let builder = build_mirror_event(template, Some(&author), Some("my-launch"), Some("chan-1"))
-            .expect("event");
+        let builder =
+            build_mirror_event(template, Some(&author), Some("my-launch"), Some("chan-1"))
+                .expect("event");
         let event = builder
             .sign_with_keys(&nostr::Keys::generate())
             .expect("sign");
@@ -968,7 +1001,9 @@ mod tests {
             .iter()
             .map(|t| t.as_slice().iter().map(|s| s.as_str()).collect())
             .collect();
-        assert!(tags.iter().any(|t| t == &vec!["a", &format!("{author}:my-launch")]));
+        assert!(tags
+            .iter()
+            .any(|t| t == &vec!["a", &format!("{author}:my-launch")]));
         assert!(tags.iter().any(|t| t == &vec!["h", "chan-1"]));
         assert!(tags.iter().any(|t| t == &vec!["window", "7"]));
         assert!(tags.iter().any(|t| t == &vec!["chain", "eip155:8453"]));
@@ -978,8 +1013,17 @@ mod tests {
 
     #[test]
     fn publish_event_without_bindings_has_no_a_or_h() {
-        let template =
-            royalty_schedule_event_json("eip155:8453", DISTRIBUTOR, "0xclaim", "0xevidence", "0xwho", 1, 2, 3, 4);
+        let template = royalty_schedule_event_json(
+            "eip155:8453",
+            DISTRIBUTOR,
+            "0xclaim",
+            "0xevidence",
+            "0xwho",
+            1,
+            2,
+            3,
+            4,
+        );
         let builder = build_mirror_event(template, None, None, None).expect("event");
         let event = builder
             .sign_with_keys(&nostr::Keys::generate())
@@ -1065,8 +1109,8 @@ mod tests {
             "eth_getLogs".to_string(),
             serde_json::json!([sample_log(1), sample_log(2)]),
         );
-        let client = RoyaltyClient::from_transport(Arc::new(MockRpc::new(m)), DISTRIBUTOR)
-            .expect("client");
+        let client =
+            RoyaltyClient::from_transport(Arc::new(MockRpc::new(m)), DISTRIBUTOR).expect("client");
         let closes = client.window_closes(0).await.expect("logs");
         assert_eq!(closes.len(), 2);
         assert_eq!(closes[0].window_id, 1);

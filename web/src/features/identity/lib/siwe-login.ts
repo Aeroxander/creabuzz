@@ -37,23 +37,41 @@ export interface SiweLogin {
   pubkey: string;
 }
 
-export function buildSiweMessage(input: {
-  domain: string;
-  address: string;
-  uri: string;
-  chainId: number;
-  nonce: string;
-  npub: string;
-}): string {
+/**
+ * Build the EIP-4361 message the relay parses (`buzz-evm-auth/src/siwe.rs`).
+ *
+ * EIP-4361's ABNF is
+ * `address LF LF [statement LF] LF "URI: " uri LF ...`: a message WITHOUT a
+ * statement — this one — therefore has TWO blank lines between the address and
+ * `URI:`. With only one, the relay's statement loop swallows every remaining
+ * line and the login is rejected. `test-fixtures/siwe/login-message.txt` pins
+ * the exact bytes for fixed inputs; both this builder's test and the relay's
+ * parser test read it.
+ *
+ * `now` is injectable so `Issued At` is deterministic under test.
+ */
+export function buildSiweMessage(
+  input: {
+    domain: string;
+    address: string;
+    uri: string;
+    chainId: number;
+    nonce: string;
+    npub: string;
+  },
+  now: Date = new Date(),
+): string {
   return [
     `${input.domain} wants you to sign in with your Ethereum account:`,
     input.address,
+    // No statement: `address LF LF LF URI` (two blank lines, EIP-4361 ABNF).
+    "",
     "",
     `URI: ${input.uri}`,
     "Version: 1",
     `Chain ID: ${input.chainId}`,
     `Nonce: ${input.nonce}`,
-    `Issued At: ${new Date().toISOString()}`,
+    `Issued At: ${now.toISOString()}`,
     "Resources:",
     `- nostr:${input.npub}`,
   ].join("\n");
@@ -86,20 +104,25 @@ export async function buildSiweLogin(
     hostname: string;
     signProof: () => Promise<SiweProof>;
     personalSign: (message: string, address: string) => Promise<string>;
+    /** Clock for `Issued At`; defaults to the current time. */
+    now?: Date;
   },
 ): Promise<SiweLogin> {
   // The proof must be signed before the message is built: its pubkey is the
   // binding the relay checks, and the message has to name it.
   const proof = await deps.signProof();
   const npub = proof.pubkey;
-  const message = buildSiweMessage({
-    domain: siweDomain(challenge, deps.hostname),
-    address: deps.address,
-    uri: deps.origin,
-    chainId: challenge.chainId ?? 1,
-    nonce: challenge.nonce,
-    npub,
-  });
+  const message = buildSiweMessage(
+    {
+      domain: siweDomain(challenge, deps.hostname),
+      address: deps.address,
+      uri: deps.origin,
+      chainId: challenge.chainId ?? 1,
+      nonce: challenge.nonce,
+      npub,
+    },
+    deps.now,
+  );
   const signature = await deps.personalSign(message, deps.address);
   return { message, signature, proof, address: deps.address, pubkey: npub };
 }

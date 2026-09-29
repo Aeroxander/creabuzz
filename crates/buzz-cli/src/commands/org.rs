@@ -449,6 +449,8 @@ async fn cmd_budget_create(
             runs,
             tasks,
             governance: None,
+            messages: None,
+            llm_calls: None,
         },
         on_exceed: OnExceed::RequireApproval,
         onchain: onchain.map(parse_onchain_binding).transpose()?,
@@ -712,9 +714,15 @@ async fn cmd_allowance_spend(
     amount: &str,
     window: &str,
     unit: &str,
+    to: Option<&str>,
 ) -> Result<(), CliError> {
     let amount = parse_allowance_amount(amount)?;
     let window = parse_allowance_window(window)?;
+    // Validate the recipient up front: a bad `--to` must fail before any
+    // network I/O or broadcast.
+    let to = to
+        .map(|t| validate_eth_address(t, "--to recipient"))
+        .transpose()?;
     let budget_window: BudgetWindow = window
         .as_str()
         .parse()
@@ -752,22 +760,30 @@ async fn cmd_allowance_spend(
         )));
     }
 
-    let receipt = guard
-        .record_spend(subject, token, amount, window)
-        .await
-        .map_err(|e: AllowanceError| match e {
-            AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
-                "the contract refused the spend at simulation; nothing was broadcast: {detail}"
-            )),
-            AllowanceError::SpendReverted { tx_hash } => CliError::Other(format!(
-                "spend transaction {tx_hash} reverted onchain; nothing was spent"
-            )),
-            AllowanceError::SpendUnconfirmed { tx_hash, .. } => CliError::Other(format!(
-                "spend transaction {tx_hash} not confirmed in time; \
+    // `--to` selects the ENFORCED payout (`spendTo`: ledger debit + token
+    // transfer in one contract call); without it only the advisory ledger entry
+    // (`spend`) is written and no tokens move.
+    let settled = match to.as_deref() {
+        Some(recipient) => {
+            guard
+                .record_spend_to(subject, token, amount, window, recipient)
+                .await
+        }
+        None => guard.record_spend(subject, token, amount, window).await,
+    };
+    let receipt = settled.map_err(|e: AllowanceError| match e {
+        AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
+            "the contract refused the spend at simulation; nothing was broadcast: {detail}"
+        )),
+        AllowanceError::SpendReverted { tx_hash } => CliError::Other(format!(
+            "spend transaction {tx_hash} reverted onchain; nothing was spent"
+        )),
+        AllowanceError::SpendUnconfirmed { tx_hash, .. } => CliError::Other(format!(
+            "spend transaction {tx_hash} not confirmed in time; \
                  treat the spend as unsettled and re-check before retrying"
-            )),
-            other => CliError::Other(format!("spend failed closed: {other}")),
-        })?;
+        )),
+        other => CliError::Other(format!("spend failed closed: {other}")),
+    })?;
 
     // Receipt mirror — kind:37014, published only after a settled spend.
     // The d tag (NIP-33 replacement key) is the tx hash: one receipt per
@@ -811,6 +827,10 @@ async fn cmd_allowance_spend(
             "unit": unit,
             "window": window.as_str(),
             "contract": guard.contract_hex(),
+            // R7: say whether the ceiling was enforced or only recorded.
+            "enforced": to.is_some(),
+            "to": to,
+            "mode": if to.is_some() { "spendTo (enforced payout)" } else { "spend (advisory — no tokens moved)" },
         })
     );
     Ok(())
@@ -1087,7 +1107,19 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 amount,
                 window,
                 unit,
-            } => cmd_allowance_spend(client, &subject, &token, &amount, &window, &unit).await,
+                to,
+            } => {
+                cmd_allowance_spend(
+                    client,
+                    &subject,
+                    &token,
+                    &amount,
+                    &window,
+                    &unit,
+                    to.as_deref(),
+                )
+                .await
+            }
         },
         // Intercepted in `run()` before the relay connection (local-only
         // EVM exit; no Nostr key, no relay).

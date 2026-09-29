@@ -1188,10 +1188,38 @@ fn tag_values(event: &Event, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// Fetch the newest kind:44020 strategy with `d` = id (read-side LWW:
-/// newest revision per `(pubkey, kind, d)` wins).
+/// Env var listing extra strategy authors (comma-separated 64-hex pubkeys) a
+/// run trusts besides the caller's own key.
+const STRATEGY_AUTHORS_ENV: &str = "BUZZ_TEAM_STRATEGY_AUTHORS";
+
+/// Authors whose kind:44020 strategies a run will load: the caller's own key
+/// plus any 64-hex pubkeys in [`STRATEGY_AUTHORS_ENV`]. A strategy is prompt
+/// text injected into agent turns, and kind:44020 is a plain member write, so
+/// reading "newest by `d` from anyone" would let any member shadow a strategy
+/// with a later `created_at` and steer the team.
+fn trusted_strategy_authors(me: &str, extra: Option<&str>) -> Vec<String> {
+    let mut authors = vec![me.to_ascii_lowercase()];
+    for candidate in extra.unwrap_or_default().split(',') {
+        let candidate = candidate.trim().to_ascii_lowercase();
+        let is_hex = candidate.len() == 64 && candidate.bytes().all(|b| b.is_ascii_hexdigit());
+        if is_hex && !authors.contains(&candidate) {
+            authors.push(candidate);
+        }
+    }
+    authors
+}
+
+/// Fetch the newest kind:44020 strategy with `d` = id from a trusted author
+/// (read-side LWW: newest revision per `(pubkey, kind, d)` wins).
 async fn fetch_strategy(client: &BuzzClient, strategy_id: &str) -> Result<TeamStrategy, CliError> {
-    let filter = serde_json::json!({ "kinds": [KIND_TEAM_STRATEGY], "#d": [strategy_id] });
+    let me = client.keys().public_key().to_hex();
+    let authors =
+        trusted_strategy_authors(&me, std::env::var(STRATEGY_AUTHORS_ENV).ok().as_deref());
+    let filter = serde_json::json!({
+        "kinds": [KIND_TEAM_STRATEGY],
+        "#d": [strategy_id],
+        "authors": authors,
+    });
     let events: Vec<Event> = client
         .query_all_bounded(filter, STRATEGY_QUERY_BOUND)
         .await?
@@ -1214,7 +1242,8 @@ async fn fetch_strategy(client: &BuzzClient, strategy_id: &str) -> Result<TeamSt
     }
     let event = best.ok_or_else(|| {
         CliError::NotFound(format!(
-            "team strategy '{strategy_id}' (kind 44020) not found on the relay"
+            "team strategy '{strategy_id}' (kind 44020) not found on the relay from a trusted author \
+             (your key, or one listed in {STRATEGY_AUTHORS_ENV})"
         ))
     })?;
     let strategy: TeamStrategy = serde_json::from_str(&event.content).map_err(|e| {
@@ -2586,6 +2615,30 @@ pub async fn dispatch(cmd: crate::TeamCmd, client: &BuzzClient) -> Result<(), Cl
 mod tests {
     use super::*;
     use nostr::Keys;
+
+    // ── Trusted strategy authors ───────────────────────────────────────────
+
+    #[test]
+    fn strategy_authors_are_the_caller_plus_valid_extra_pubkeys_only() {
+        let me = "A".repeat(64);
+        let owner = "b".repeat(64);
+        let authors = trusted_strategy_authors(&me, Some(&format!(" {owner} , not-hex ,{me}, ")));
+        assert_eq!(
+            authors,
+            vec!["a".repeat(64), owner],
+            "own key first, lowercased, deduplicated; junk entries dropped"
+        );
+        assert_eq!(
+            trusted_strategy_authors(&me, None),
+            vec!["a".repeat(64)],
+            "without the env var a run trusts only its own key"
+        );
+        assert_eq!(
+            trusted_strategy_authors(&me, Some(&"c".repeat(63))),
+            vec!["a".repeat(64)],
+            "a truncated pubkey is not an author"
+        );
+    }
 
     // ── Fixtures ───────────────────────────────────────────────────────────
 

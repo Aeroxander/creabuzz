@@ -305,6 +305,22 @@ export const SIGNATURE_DEPLOY_TOKEN =
   "(uint256,bytes32,bytes32))";
 /** `executeGraduation(address)` — GraduationExecutor's atomic sweep handoff. */
 export const SIGNATURE_EXECUTE_GRADUATION = "executeGraduation(address)";
+/** ERC-20 `transfer(address,uint256)` — moves the sale supply into the auction. */
+export const SIGNATURE_ERC20_TRANSFER = "transfer(address,uint256)";
+/** ERC-20 `balanceOf(address)` — the funding preflight/idempotency read. */
+export const SIGNATURE_ERC20_BALANCE_OF = "balanceOf(address)";
+/** `onTokensReceived()` on the CCA — arms the auction once its supply arrived. */
+export const SIGNATURE_ON_TOKENS_RECEIVED = "onTokensReceived()";
+/** `bindAuction(address)` on GraduationExecutor — the one-shot, treasury-only bind. */
+export const SIGNATURE_BIND_AUCTION = "bindAuction(address)";
+/** `boundAuction()` on GraduationExecutor — the bind idempotency read. */
+export const SIGNATURE_BOUND_AUCTION = "boundAuction()";
+/** `setAuction(address)` on AllowlistHook — the one-shot, owner-only bind. */
+export const SIGNATURE_SET_HOOK_AUCTION = "setAuction(address)";
+/** `auction()` on AllowlistHook — the bind idempotency read. */
+export const SIGNATURE_HOOK_AUCTION = "auction()";
+/** `withdrawStuckReserve(address)` — treasury takes an unreleased reserve back after the lock. */
+export const SIGNATURE_WITHDRAW_STUCK_RESERVE = "withdrawStuckReserve(address)";
 
 /** Selector of {@link SIGNATURE_SUBMIT_BID} (web pin: `0xa52c8728`). */
 export const SELECTOR_SUBMIT_BID = selectorOf(SIGNATURE_SUBMIT_BID);
@@ -337,6 +353,26 @@ export const SELECTOR_DEPLOY_TOKEN = selectorOf(SIGNATURE_DEPLOY_TOKEN);
 /** Selector of {@link SIGNATURE_EXECUTE_GRADUATION} (`cast`: `0x69d4d0f1`). */
 export const SELECTOR_EXECUTE_GRADUATION = selectorOf(
   SIGNATURE_EXECUTE_GRADUATION,
+);
+/** Selector of {@link SIGNATURE_ERC20_TRANSFER} (`cast`: `0xa9059cbb`). */
+export const SELECTOR_ERC20_TRANSFER = selectorOf(SIGNATURE_ERC20_TRANSFER);
+/** Selector of {@link SIGNATURE_ERC20_BALANCE_OF} (`cast`: `0x70a08231`). */
+export const SELECTOR_ERC20_BALANCE_OF = selectorOf(SIGNATURE_ERC20_BALANCE_OF);
+/** Selector of {@link SIGNATURE_ON_TOKENS_RECEIVED} (`cast`: `0x331f2f65`). */
+export const SELECTOR_ON_TOKENS_RECEIVED = selectorOf(
+  SIGNATURE_ON_TOKENS_RECEIVED,
+);
+/** Selector of {@link SIGNATURE_BIND_AUCTION} (`cast`: `0xccd616ae`). */
+export const SELECTOR_BIND_AUCTION = selectorOf(SIGNATURE_BIND_AUCTION);
+/** Selector of {@link SIGNATURE_BOUND_AUCTION} (`cast`: `0x769956cb`). */
+export const SELECTOR_BOUND_AUCTION = selectorOf(SIGNATURE_BOUND_AUCTION);
+/** Selector of {@link SIGNATURE_SET_HOOK_AUCTION} (`cast`: `0xb8c6f579`). */
+export const SELECTOR_SET_HOOK_AUCTION = selectorOf(SIGNATURE_SET_HOOK_AUCTION);
+/** Selector of {@link SIGNATURE_HOOK_AUCTION} (`cast`: `0x7d9f6db5`). */
+export const SELECTOR_HOOK_AUCTION = selectorOf(SIGNATURE_HOOK_AUCTION);
+/** Selector of {@link SIGNATURE_WITHDRAW_STUCK_RESERVE} (`cast`: `0xeb6ba94e`). */
+export const SELECTOR_WITHDRAW_STUCK_RESERVE = selectorOf(
+  SIGNATURE_WITHDRAW_STUCK_RESERVE,
 );
 
 // ---------------------------------------------------------------------------
@@ -666,12 +702,23 @@ export interface TokenDeployCallsParams {
   router?: string;
   /** APPTOKEN_STANDARD_FACTORY. Default {@link DEFAULT_STANDARD_POOL_FACTORY}. */
   factory?: string;
+  /**
+   * APPTOKEN_OWNER — `poolParams.initialOwner`, the holder of the token's fee
+   * and spread levers (below the immutable ceilings). Defaults to `treasury`.
+   * Pass the DAO to launch DAO-owned. The transfer-validator wiring (calls 2-3
+   * of {@link buildTokenDeployCalls}) is an OWNER op, so those calls are only
+   * composed when the owner is the treasury wallet that signs; a different
+   * owner wires the validator itself. To hand a treasury-owned token to the DAO
+   * after graduation use {@link buildTransferTokenOwnershipCall}.
+   */
+  owner?: string;
 }
 
 interface ResolvedTokenDeployParams {
   name: string;
   symbol: string;
   treasury: string;
+  owner: string;
   tokenAddress: string;
   salt: bigint;
   initialSupplyAmount: bigint;
@@ -684,6 +731,19 @@ interface ResolvedTokenDeployParams {
   factory: string;
 }
 
+/**
+ * Immutable pool ceilings (docs/dao-os.md R4), mirrored from
+ * `contracts/script/DeployAppToken.s.sol` and pinned by `evmCalls.test.mjs`.
+ * They used to be 10_000 / 9999 bps — "the owner may charge a 100% fee" — a
+ * rug-capable configuration owned by the treasury. Whoever owns the token can
+ * move fees and spreads anywhere BELOW these, never above.
+ */
+export const MAX_TOKEN_FEE_BPS = 1_000n;
+export const MAX_TOKEN_SPREAD_BPS = 1_000n;
+/** Ceiling on the creator's share of spent value: equal to its initial value, so it can only go down. */
+export const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
+export const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
+
 const TOKEN_DECIMALS = 18n; // the script hardcodes 18
 const MAX_INFRASTRUCTURE_FEE_BPS = 250n; // deployParams.maxInfrastructureFeeBPS
 const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
@@ -691,17 +751,33 @@ const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
 function resolveTokenDeployParams(
   params: TokenDeployCallsParams,
 ): ResolvedTokenDeployParams {
+  const spreadBps = params.spreadBps ?? 100;
+  const buyFeeBps = params.buyFeeBps ?? 200;
+  const sellFeeBps = params.sellFeeBps ?? 200;
+  // The script refuses these too (`AboveCeiling`): fail here, not on chain.
+  for (const [label, value, ceiling] of [
+    ["spreadBps", spreadBps, MAX_TOKEN_SPREAD_BPS],
+    ["buyFeeBps", buyFeeBps, MAX_TOKEN_FEE_BPS],
+    ["sellFeeBps", sellFeeBps, MAX_TOKEN_FEE_BPS],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 0 || BigInt(value) > ceiling) {
+      throw new Error(
+        `${label} must be an integer in 0..${ceiling} (the pool's immutable ceiling): ${value}`,
+      );
+    }
+  }
   return {
     name: params.name,
     symbol: params.symbol,
     treasury: params.treasury,
+    owner: params.owner ?? params.treasury,
     tokenAddress: params.tokenAddress,
     salt: params.salt ?? 1n,
     initialSupplyAmount: params.initialSupplyAmount ?? 1_000_000n * 10n ** 18n,
     pairedDepositWei: params.pairedDepositWei ?? 10n ** 17n, // 0.1 ether
-    spreadBps: params.spreadBps ?? 100,
-    buyFeeBps: params.buyFeeBps ?? 200,
-    sellFeeBps: params.sellFeeBps ?? 200,
+    spreadBps,
+    buyFeeBps,
+    sellFeeBps,
     defaultTransferValidator: params.defaultTransferValidator ?? ZERO_ADDRESS,
     router: params.router ?? DEFAULT_TOKENMASTER_ROUTER,
     factory: params.factory ?? DEFAULT_STANDARD_POOL_FACTORY,
@@ -736,7 +812,7 @@ function encodeStandardPoolInitArgs(p: ResolvedTokenDeployParams): string {
     BigInt(p.spreadBps), // sellSpreadBPS
     BigInt(p.sellFeeBps), // sellFeeBPS
   ];
-  const spendParams: AbiValue = [5000n]; // creatorShareBPS — script's 5000
+  const spendParams: AbiValue = [INITIAL_SPEND_CREATOR_SHARE_BPS]; // creatorShareBPS — script's 5000
   return encodeParameters(
     [
       {
@@ -780,13 +856,13 @@ function encodeStandardPoolInitArgs(p: ResolvedTokenDeployParams): string {
         p.treasury, // initialSupplyRecipient
         p.initialSupplyAmount,
         0n, // minBuySpreadBPS
-        9999n, // maxBuySpreadBPS
-        10_000n, // maxBuyFeeBPS
-        10_000n, // maxBuyDemandFeeBPS
+        MAX_TOKEN_SPREAD_BPS, // maxBuySpreadBPS
+        MAX_TOKEN_FEE_BPS, // maxBuyFeeBPS
+        MAX_TOKEN_FEE_BPS, // maxBuyDemandFeeBPS
         0n, // minSellSpreadBPS
-        9999n, // maxSellSpreadBPS
-        10_000n, // maxSellFeeBPS
-        10_000n, // maxSpendCreatorShareBPS
+        MAX_TOKEN_SPREAD_BPS, // maxSellSpreadBPS
+        MAX_TOKEN_FEE_BPS, // maxSellFeeBPS
+        MAX_SPEND_CREATOR_SHARE_BPS, // maxSpendCreatorShareBPS
         0n, // creatorEmissionRateNumerator
         1n, // creatorEmissionRateDenominator
         0n, // creatorEmissionsHardCap
@@ -848,7 +924,7 @@ export function encodeDeployToken(params: TokenDeployCallsParams): string {
           p.name,
           p.symbol,
           TOKEN_DECIMALS, // tokenDecimals — the script hardcodes 18
-          p.treasury, // initialOwner
+          p.owner, // initialOwner (APPTOKEN_OWNER, default the treasury)
           ZERO_ADDRESS, // pairedToken — native pairing
           p.pairedDepositWei, // initialPairedTokenToDeposit
           encodeStandardPoolInitArgs(p), // encodedInitializationArgs
@@ -928,12 +1004,17 @@ export function buildTokenDeployCalls(
     p.defaultTransferValidator.toLowerCase() === ZERO_ADDRESS
       ? CANONICAL_TRANSFER_VALIDATOR
       : p.defaultTransferValidator;
+  const deploy: EvmCall = {
+    to: p.router,
+    data: encodeDeployToken(params),
+    value: valueHex(p.pairedDepositWei),
+  };
+  // Calls 2-3 are OWNER ops signed by the treasury wallet: when the token is
+  // launched with a different owner (the DAO) they would revert, so the owner
+  // wires the validator itself.
+  if (p.owner.toLowerCase() !== p.treasury.toLowerCase()) return [deploy];
   return [
-    {
-      to: p.router,
-      data: encodeDeployToken(params),
-      value: valueHex(p.pairedDepositWei),
-    },
+    deploy,
     {
       to: p.tokenAddress,
       data: encodeSetTransferValidator(realTransferValidator),
@@ -951,6 +1032,27 @@ export function buildTokenDeployCalls(
       value: valueHex(0n),
     },
   ];
+}
+
+/** ABI-encode Ownable `transferOwnership(newOwner)` (`cast`: `0xf2fde38b`). */
+export function encodeTransferOwnership(newOwner: string): string {
+  return encodeFunctionData("transferOwnership(address)", ["address"], [newOwner]);
+}
+
+/**
+ * `token.transferOwnership(dao)` — hands a treasury-owned apptoken to the DAO
+ * (the holder of the fee/spread levers) once the launch has graduated.
+ * Owner-only: the current owner (the treasury wallet) must sign it.
+ */
+export function buildTransferTokenOwnershipCall(
+  token: string,
+  newOwner: string,
+): EvmCall {
+  return {
+    to: token,
+    data: encodeTransferOwnership(newOwner),
+    value: valueHex(0n),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1083,122 @@ export function buildGraduationCall(
   return {
     to: executor,
     data: encodeExecuteGraduation(auction),
+    value: valueHex(0n),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Funding + binding the auction — the steps between "auction created" and
+// "bids can land". Without them the CCA reverts `TokensNotReceived` on every
+// bid and checkpoint, and the executor/hook refuse every caller.
+// ---------------------------------------------------------------------------
+
+/** ABI-encode ERC-20 `transfer(to, amount)`. */
+export function encodeErc20Transfer(to: string, amount: bigint): string {
+  return encodeFunctionData(
+    SIGNATURE_ERC20_TRANSFER,
+    ["address", "uint256"],
+    [to, amount],
+  );
+}
+
+/** ABI-encode ERC-20 `balanceOf(holder)` (an `eth_call`, not a send). */
+export function encodeErc20BalanceOf(holder: string): string {
+  return encodeFunctionData(SIGNATURE_ERC20_BALANCE_OF, ["address"], [holder]);
+}
+
+/** ABI-encode `auction.onTokensReceived()` (no arguments). */
+export function encodeOnTokensReceived(): string {
+  return SELECTOR_ON_TOKENS_RECEIVED;
+}
+
+/** ABI-encode `GraduationExecutor.bindAuction(auction)`. */
+export function encodeBindAuction(auction: string): string {
+  return encodeFunctionData(SIGNATURE_BIND_AUCTION, ["address"], [auction]);
+}
+
+/** ABI-encode `AllowlistHook.setAuction(auction)`. */
+export function encodeSetHookAuction(auction: string): string {
+  return encodeFunctionData(SIGNATURE_SET_HOOK_AUCTION, ["address"], [auction]);
+}
+
+/** ABI-encode `GraduationExecutor.withdrawStuckReserve(auction)`. */
+export function encodeWithdrawStuckReserve(auction: string): string {
+  return encodeFunctionData(
+    SIGNATURE_WITHDRAW_STUCK_RESERVE,
+    ["address"],
+    [auction],
+  );
+}
+
+/**
+ * `token.transfer(auction, amount)` — moves the WHOLE sale supply from the
+ * treasury wallet into the auction. The CCA only starts once it holds at least
+ * its `totalSupply` (`onTokensReceived` reverts `InvalidTokenAmountReceived`
+ * otherwise), and nothing else in the app moved these tokens before.
+ */
+export function buildFundAuctionCall(
+  token: string,
+  auction: string,
+  amount: bigint,
+): EvmCall {
+  return {
+    to: token,
+    data: encodeErc20Transfer(auction, amount),
+    value: valueHex(0n),
+  };
+}
+
+/**
+ * `auction.onTokensReceived()` — tells the CCA its supply arrived. Idempotent
+ * upstream (a second call returns early), so a retry is always safe. Until it
+ * runs every `submitBid` and `checkpoint` reverts `TokensNotReceived`.
+ */
+export function buildOnTokensReceivedCall(auction: string): EvmCall {
+  return { to: auction, data: encodeOnTokensReceived(), value: valueHex(0n) };
+}
+
+/**
+ * `executor.bindAuction(auction)` — the one-shot, treasury-only binding that
+ * makes the executor serve exactly this auction. Call right after the auction
+ * exists; the executor refuses every other address.
+ */
+export function buildBindAuctionCall(
+  executor: string,
+  auction: string,
+): EvmCall {
+  return {
+    to: executor,
+    data: encodeBindAuction(auction),
+    value: valueHex(0n),
+  };
+}
+
+/**
+ * `hook.setAuction(auction)` — curated track only. The AllowlistHook's
+ * `validate` accrues per-wallet caps, so it answers only to the auction it is
+ * bound to (one-shot, owner-only). Bids revert until this lands.
+ */
+export function buildSetHookAuctionCall(hook: string, auction: string): EvmCall {
+  return {
+    to: hook,
+    data: encodeSetHookAuction(auction),
+    value: valueHex(0n),
+  };
+}
+
+/**
+ * `executor.withdrawStuckReserve(auction)` — the treasury takes an unreleased
+ * reserve back. Reverts `ReserveLocked` until graduation + `reserveLockSeconds`
+ * and `AlreadyReleased` once a pool was recorded; pays the treasury only.
+ */
+export function buildWithdrawStuckReserveCall(
+  executor: string,
+  auction: string,
+): EvmCall {
+  return {
+    to: executor,
+    data: encodeWithdrawStuckReserve(auction),
     value: valueHex(0n),
   };
 }

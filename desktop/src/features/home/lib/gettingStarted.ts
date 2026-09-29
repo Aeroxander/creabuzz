@@ -184,19 +184,41 @@ export function evaluateGettingStarted(
 
 // ── Dismissal persistence ────────────────────────────────────────────────────
 
-const DISMISS_STORAGE_KEY_PREFIX = "buzz-getting-started-dismissed.v1";
+// v2 scopes the dismissal to the community AND the identity. v1 keyed by
+// pubkey alone, so dismissing the checklist in one community hid it in every
+// other community the same identity joined — where its steps (a channel to
+// say hello in, a first agent) are different and still undone. v1 keys are
+// not migrated: their scope is exactly the bug.
+const DISMISS_STORAGE_KEY_PREFIX = "buzz-getting-started-dismissed.v2";
 
-export function gettingStartedDismissedKey(pubkey: string | null | undefined) {
-  return `${DISMISS_STORAGE_KEY_PREFIX}:${(pubkey ?? "").trim().toLowerCase()}`;
+/**
+ * Storage scope of a community: its relay URL, lowercased with trailing
+ * slashes dropped (communities are deduplicated by relay URL, so this is what
+ * makes two records of one community share a dismissal).
+ */
+export function gettingStartedCommunityScope(
+  relayUrl: string | null | undefined,
+): string {
+  return (relayUrl ?? "").trim().toLowerCase().replace(/\/+$/, "");
+}
+
+export function gettingStartedDismissedKey(
+  relayUrl: string | null | undefined,
+  pubkey: string | null | undefined,
+) {
+  return `${DISMISS_STORAGE_KEY_PREFIX}:${gettingStartedCommunityScope(relayUrl)}:${(pubkey ?? "").trim().toLowerCase()}`;
 }
 
 export function readGettingStartedDismissed(
+  relayUrl: string | null | undefined,
   pubkey: string | null | undefined,
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
     return (
-      window.localStorage.getItem(gettingStartedDismissedKey(pubkey)) === "1"
+      window.localStorage.getItem(
+        gettingStartedDismissedKey(relayUrl, pubkey),
+      ) === "1"
     );
   } catch {
     return false;
@@ -204,12 +226,13 @@ export function readGettingStartedDismissed(
 }
 
 export function writeGettingStartedDismissed(
+  relayUrl: string | null | undefined,
   pubkey: string | null | undefined,
   dismissed: boolean,
 ): void {
   if (typeof window === "undefined") return;
   try {
-    const key = gettingStartedDismissedKey(pubkey);
+    const key = gettingStartedDismissedKey(relayUrl, pubkey);
     if (dismissed) {
       window.localStorage.setItem(key, "1");
     } else {

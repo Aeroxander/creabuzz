@@ -121,7 +121,11 @@ pub fn compose(
     let mut rows: Vec<(String, u128, [u8; 32])> = Vec::with_capacity(scores.len());
     for s in scores {
         let l = leaf(&s.member, s.score)?;
-        let member = s.member.trim().trim_start_matches("0x").to_ascii_lowercase();
+        let member = s
+            .member
+            .trim()
+            .trim_start_matches("0x")
+            .to_ascii_lowercase();
         if rows.iter().any(|(m, _, _)| *m == member) {
             return Err(CliError::Other(format!("duplicate member 0x{member}")));
         }
@@ -168,7 +172,10 @@ pub fn compose(
             member.clone(),
             MemberProof {
                 score: *score,
-                proof: path.iter().map(|h| format!("0x{}", hex::encode(h))).collect(),
+                proof: path
+                    .iter()
+                    .map(|h| format!("0x{}", hex::encode(h)))
+                    .collect(),
             },
         );
     }
@@ -190,7 +197,9 @@ pub fn build_root_event(bundle: &RootBundle) -> Result<EventBuilder, CliError> {
         return Err(CliError::Other("program and epoch are required".into()));
     }
     let root = bundle.root.trim();
-    if !root.starts_with("0x") || root.len() != 66 || !root[2..].chars().all(|c| c.is_ascii_hexdigit())
+    if !root.starts_with("0x")
+        || root.len() != 66
+        || !root[2..].chars().all(|c| c.is_ascii_hexdigit())
     {
         return Err(CliError::Other(format!(
             "root must be 0x + 64 hex (clients refuse malformed roots): {root:?}"
@@ -208,9 +217,12 @@ pub fn build_root_event(bundle: &RootBundle) -> Result<EventBuilder, CliError> {
         content["anchorBlock"] = json!(b);
     }
     let d = format!("{}:{}", bundle.program, bundle.epoch);
-    Ok(EventBuilder::new(Kind::Custom(buzz_core::kind::KIND_SCORE_ROOT as u16), content.to_string())
-        .tag(Tag::parse(["d", &d]).map_err(|e| CliError::Other(format!("bad d tag: {e}")))?)
-        .tag(Tag::parse(["t", "dao-launchpad"]).unwrap()))
+    Ok(EventBuilder::new(
+        Kind::Custom(buzz_core::kind::KIND_SCORE_ROOT as u16),
+        content.to_string(),
+    )
+    .tag(Tag::parse(["d", &d]).map_err(|e| CliError::Other(format!("bad d tag: {e}")))?)
+    .tag(Tag::parse(["t", "dao-launchpad"]).unwrap()))
 }
 
 /// `setScoreRoot(bytes32,uint256)` calldata for the gate rotation.
@@ -223,7 +235,9 @@ pub fn encode_set_score_root(root: &str, min_score: u128) -> Result<Vec<u8>, Cli
         )));
     }
     let mut data = abi::selector(SIG_SET_SCORE_ROOT).to_vec();
-    data.extend_from_slice(&hex::decode(hexpart).map_err(|e| CliError::Other(format!("root: {e}")))?);
+    data.extend_from_slice(
+        &hex::decode(hexpart).map_err(|e| CliError::Other(format!("root: {e}")))?,
+    );
     data.extend_from_slice(&abi::encode_uint256(min_score));
     Ok(data)
 }
@@ -267,7 +281,11 @@ pub fn cmd_compose_root(
             .map_err(|e| CliError::Other(format!("serialize proofs: {e}")))?;
         std::fs::write(path, body).map_err(|e| CliError::Other(format!("write {path}: {e}")))?;
     }
-    println!("{}", serde_json::to_string_pretty(&bundle).map_err(|e| CliError::Other(format!("serialize bundle: {e}")))?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&bundle)
+            .map_err(|e| CliError::Other(format!("serialize bundle: {e}")))?
+    );
     Ok(())
 }
 
@@ -282,7 +300,10 @@ pub async fn cmd_rotate_gate(
     let hook = validate_eth_address(hook, "hook address")?;
     let data = encode_set_score_root(root, min_score)?;
     if dry_run {
-        println!("{}", json!({ "to": hook, "data": format!("0x{}", hex::encode(&data)) }));
+        println!(
+            "{}",
+            json!({ "to": hook, "data": format!("0x{}", hex::encode(&data)) })
+        );
         return Ok(());
     }
     let rpc_url = std::env::var(ENV_EVM_RPC_URL)
@@ -297,8 +318,8 @@ pub async fn cmd_rotate_gate(
         )));
     };
     let clean = spender_key.trim().trim_start_matches("0x");
-    let key_bytes =
-        hex::decode(clean).map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY} hex: {e}")))?;
+    let key_bytes = hex::decode(clean)
+        .map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY} hex: {e}")))?;
     let spender = k256::ecdsa::SigningKey::from_slice(&key_bytes)
         .map_err(|e| CliError::Usage(format!("invalid {ENV_SPENDER_KEY}: {e}")))?;
 
@@ -352,7 +373,9 @@ pub async fn dispatch(sub: crate::TrustgraphCmd, client: &BuzzClient) -> Result<
                 (
                     program.unwrap_or_else(|| DEFAULT_PROGRAM.to_owned()),
                     epoch.ok_or_else(|| CliError::Usage("--epoch is required".into()))?,
-                    root.ok_or_else(|| CliError::Usage("--root or --from-bundle is required".into()))?,
+                    root.ok_or_else(|| {
+                        CliError::Usage("--root or --from-bundle is required".into())
+                    })?,
                     indexer_url,
                     anchor_block,
                 )
@@ -381,7 +404,10 @@ pub async fn dispatch(sub: crate::TrustgraphCmd, client: &BuzzClient) -> Result<
         .map_err(|e| CliError::Other(format!("sign: {e}")))?;
     let raw = client.submit_event(event).await?;
     let response = parse_write_response(&raw, "score root already published for this epoch")?;
-    println!("{}", json!({ "status": "ok", "root": bundle.root, "epoch": bundle.epoch, "response": response }));
+    println!(
+        "{}",
+        json!({ "status": "ok", "root": bundle.root, "epoch": bundle.epoch, "response": response })
+    );
     Ok(())
 }
 
@@ -417,8 +443,14 @@ mod tests {
     #[test]
     fn two_leaf_root_matches_cast() {
         let rows = vec![
-            TrustScore { member: DEAD.into(), score: 5 },
-            TrustScore { member: ONE.into(), score: 7 },
+            TrustScore {
+                member: DEAD.into(),
+                score: 5,
+            },
+            TrustScore {
+                member: ONE.into(),
+                score: 7,
+            },
         ];
         let b = compose(&rows, DEFAULT_PROGRAM, "12", None, None).unwrap();
         assert_eq!(b.root, format!("0x{ROOT_2}"));
@@ -428,7 +460,12 @@ mod tests {
             let path: Vec<[u8; 32]> = mp
                 .proof
                 .iter()
-                .map(|h| hex::decode(h.trim_start_matches("0x")).unwrap().try_into().unwrap())
+                .map(|h| {
+                    hex::decode(h.trim_start_matches("0x"))
+                        .unwrap()
+                        .try_into()
+                        .unwrap()
+                })
                 .collect();
             assert_eq!(hex::encode(fold(l, &path)), ROOT_2, "proof for {member}");
         }
@@ -437,9 +474,18 @@ mod tests {
     #[test]
     fn input_order_does_not_change_the_root() {
         let a = vec![
-            TrustScore { member: DEAD.into(), score: 5 },
-            TrustScore { member: ONE.into(), score: 7 },
-            TrustScore { member: "0x0000000000000000000000000000000000000002".into(), score: 9 },
+            TrustScore {
+                member: DEAD.into(),
+                score: 5,
+            },
+            TrustScore {
+                member: ONE.into(),
+                score: 7,
+            },
+            TrustScore {
+                member: "0x0000000000000000000000000000000000000002".into(),
+                score: 9,
+            },
         ];
         let mut shuffled = a.clone();
         shuffled.swap(0, 2);
@@ -452,7 +498,12 @@ mod tests {
             let path: Vec<[u8; 32]> = mp
                 .proof
                 .iter()
-                .map(|h| hex::decode(h.trim_start_matches("0x")).unwrap().try_into().unwrap())
+                .map(|h| {
+                    hex::decode(h.trim_start_matches("0x"))
+                        .unwrap()
+                        .try_into()
+                        .unwrap()
+                })
                 .collect();
             assert_eq!(
                 format!("0x{}", hex::encode(fold(l, &path))),
@@ -465,8 +516,14 @@ mod tests {
     #[test]
     fn duplicates_and_empty_inputs_are_refused() {
         let dup = vec![
-            TrustScore { member: DEAD.into(), score: 5 },
-            TrustScore { member: DEAD.into(), score: 6 },
+            TrustScore {
+                member: DEAD.into(),
+                score: 5,
+            },
+            TrustScore {
+                member: DEAD.into(),
+                score: 6,
+            },
         ];
         assert!(compose(&dup, DEFAULT_PROGRAM, "1", None, None).is_err());
         assert!(compose(&[], DEFAULT_PROGRAM, "1", None, None).is_err());
@@ -476,12 +533,30 @@ mod tests {
     /// enforced before anything is signed (clients refuse malformed roots).
     #[test]
     fn root_event_shape() {
-        let rows = vec![TrustScore { member: DEAD.into(), score: 5 }];
-        let mut b = compose(&rows, DEFAULT_PROGRAM, "12", Some("https://idx".into()), Some(42)).unwrap();
-        let ev = build_root_event(&b).unwrap().sign_with_keys(&nostr::Keys::generate()).unwrap();
-        assert_eq!(ev.kind, Kind::Custom(buzz_core::kind::KIND_SCORE_ROOT as u16));
-        assert!(ev.tags.iter().any(|t| t.as_slice()
-            == ["d", &format!("{DEFAULT_PROGRAM}:12")]));
+        let rows = vec![TrustScore {
+            member: DEAD.into(),
+            score: 5,
+        }];
+        let mut b = compose(
+            &rows,
+            DEFAULT_PROGRAM,
+            "12",
+            Some("https://idx".into()),
+            Some(42),
+        )
+        .unwrap();
+        let ev = build_root_event(&b)
+            .unwrap()
+            .sign_with_keys(&nostr::Keys::generate())
+            .unwrap();
+        assert_eq!(
+            ev.kind,
+            Kind::Custom(buzz_core::kind::KIND_SCORE_ROOT as u16)
+        );
+        assert!(ev
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["d", &format!("{DEFAULT_PROGRAM}:12")]));
         let content: serde_json::Value = serde_json::from_str(&ev.content).unwrap();
         assert_eq!(content["program"], DEFAULT_PROGRAM);
         assert_eq!(content["epoch"], "12");

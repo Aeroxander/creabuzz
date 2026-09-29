@@ -343,24 +343,21 @@ pub async fn cmd_train_skill(
     optimizer_effort: Option<&str>,
     target_effort: Option<&str>,
 ) -> Result<(), CliError> {
+    use buzz_agwiki::build_system_prompt;
     use buzz_agwiki::llm::classifier_target_from_provider;
     use buzz_agwiki::skill_train::{
         load_expectations, load_split, DistillScorer, DistillTarget, LlmOptimizer,
     };
-    use buzz_agwiki::build_system_prompt;
     use buzz_skillopt::train::{train, TrainConfig};
 
-    let root = std::path::PathBuf::from(
-        data.unwrap_or("crates/buzz-agwiki/data/distill-skill"),
-    );
+    let root = std::path::PathBuf::from(data.unwrap_or("crates/buzz-agwiki/data/distill-skill"));
     let train_set = load_split(&root.join("train")).map_err(CliError::Other)?;
     let sel_split = load_split(&root.join("sel")).map_err(CliError::Other)?;
     let test_split = load_split(&root.join("test")).map_err(CliError::Other)?;
 
-    let target_config = classifier_target_from_provider(|name| {
-        std::env::var(name).ok().filter(|v| !v.is_empty())
-    })
-    .map_err(|e| CliError::Other(format!("classifier target: {e}")))?;
+    let target_config =
+        classifier_target_from_provider(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+            .map_err(|e| CliError::Other(format!("classifier target: {e}")))?;
     let init_skill = buzz_skillopt::SkillDoc::new(build_system_prompt());
 
     let config = TrainConfig {
@@ -388,8 +385,7 @@ pub async fn cmd_train_skill(
         reasoning_effort: target_effort.to_string(),
     };
     let mut scorer = DistillScorer::new();
-    scorer.expectations =
-        load_expectations(&root).map_err(CliError::Other)?;
+    scorer.expectations = load_expectations(&root).map_err(CliError::Other)?;
 
     // The training loop's ports are sync by design (docs/skillopt-port.md);
     // drive them from the blocking pool so the LLM adapter's per-call runtime
@@ -420,7 +416,11 @@ pub async fn cmd_train_skill(
             record.proposed,
             record.selected,
             record.applied,
-            if record.accepted { "ACCEPTED" } else { "rejected" },
+            if record.accepted {
+                "ACCEPTED"
+            } else {
+                "rejected"
+            },
             record.score
         );
     }
@@ -483,8 +483,7 @@ pub async fn cmd_draft(
     publish: bool,
 ) -> Result<(), CliError> {
     use buzz_agwiki::draft::{
-        build_proposal_draft_builder, decision_drafts, existing_anchors,
-        validate_launch_coordinate,
+        build_proposal_draft_builder, decision_drafts, existing_anchors, validate_launch_coordinate,
     };
     use buzz_core::kind::{KIND_LAUNCH_PROPOSAL, KIND_WIKI_PAGE};
 
@@ -512,7 +511,8 @@ pub async fn cmd_draft(
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
-    let mut newest: std::collections::BTreeMap<String, (u64, String)> = std::collections::BTreeMap::new();
+    let mut newest: std::collections::BTreeMap<String, (u64, String)> =
+        std::collections::BTreeMap::new();
     for event in events {
         let Some(d) = tag_values(&event, "d").into_iter().next() else {
             continue;
@@ -586,11 +586,16 @@ pub async fn cmd_draft(
             if publish {
                 let event = client.sign_event(builder)?;
                 let response = client.submit_event(event).await?;
-                let result =
-                    parse_write_response(&response, "draft write raced a newer record")?;
-                println!("landed {coordinate}#{}: {} ({result})", draft.anchor, draft.title);
+                let result = parse_write_response(&response, "draft write raced a newer record")?;
+                println!(
+                    "landed {coordinate}#{}: {} ({result})",
+                    draft.anchor, draft.title
+                );
             } else {
-                println!("{coordinate}#{}\t{}\t{}", draft.anchor, draft.title, draft.kind);
+                println!(
+                    "{coordinate}#{}\t{}\t{}",
+                    draft.anchor, draft.title, draft.kind
+                );
                 println!("{}", draft.content);
             }
             drafted += 1;
@@ -890,14 +895,21 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, false).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, false, None).await;
         assert!(result.is_ok(), "expected ok, got {result:?}");
 
         let chats = state.chat_calls.lock().unwrap();
         assert_eq!(chats.len(), 2, "reflection + distill call");
-        assert_eq!(chats[0]["max_tokens"], 400, "reflection uses the small cap");
+        // buzz_agwiki::AGWIKI_REFLECTION_MAX_TOKENS: sized for reasoning models,
+        // which spend completion tokens on reasoning before the answer.
+        assert_eq!(
+            chats[0]["max_tokens"], 2048,
+            "reflection uses the reflection cap, not the distill cap"
+        );
         assert_eq!(chats[1]["model"], "test-model");
-        assert_eq!(chats[1]["max_tokens"], 1500);
+        // buzz_agwiki::AGWIKI_MAX_TOKENS: room for reasoning models to think
+        // before the page.
+        assert_eq!(chats[1]["max_tokens"], 16_384);
         let user = chats[1]["messages"][1]["content"].as_str().unwrap();
         assert!(user.contains("Payments refactor"));
         assert!(user.contains("Shipped E2E harness"));
@@ -923,7 +935,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, true).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
         assert!(result.is_ok(), "expected ok, got {result:?}");
 
         let posts = state.event_posts.lock().unwrap();
@@ -969,7 +981,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, true).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
         assert!(result.is_ok(), "expected ok, got {result:?}");
         assert_eq!(state.chat_calls.lock().unwrap().len(), 0, "no LLM call");
         assert!(state.event_posts.lock().unwrap().is_empty());
@@ -989,7 +1001,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, true).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
         assert!(result.is_ok(), "expected ok, got {result:?}");
 
         // The stale task was never included: only the fresh record's id flows
@@ -1039,7 +1051,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, true).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
         assert!(result.is_ok(), "retry succeeded: {result:?}");
         assert_eq!(
             state.chat_calls.lock().unwrap().len(),
@@ -1060,7 +1072,7 @@ mod tests {
         let base_url2 = spawn_mock(state2.clone()).await;
         let client2 = BuzzClient::new(base_url2.clone(), Keys::generate(), None, None).unwrap();
         let cfg2 = classifier_config(&base_url2);
-        let result2 = run_distill_inner(&client2, &cfg2, "default", None, true).await;
+        let result2 = run_distill_inner(&client2, &cfg2, "default", None, true, None).await;
         assert!(result2.is_err(), "fail loudly after one retry");
         assert!(
             state2.event_posts.lock().unwrap().is_empty(),
@@ -1116,7 +1128,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, false).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, false, None).await;
         assert!(
             result.is_ok(),
             "reflection failure must not fail the distill: {result:?}"
@@ -1161,7 +1173,7 @@ mod tests {
 
         let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
         let cfg = classifier_config(&base_url);
-        let result = run_distill_inner(&client, &cfg, "default", None, true).await;
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
         assert!(result.is_ok(), "expected ok, got {result:?}");
 
         let chats = state.chat_calls.lock().unwrap();

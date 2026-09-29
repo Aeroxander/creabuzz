@@ -1398,10 +1398,14 @@ test.describe("keyboard and motion preferences", () => {
   });
 });
 
-test("the wiki says when nobody else is connected", async ({ page }) => {
-  // Live co-editing needs the relay to accept P2P signalling. On a relay that
-  // does not, the honest state is "editing alone" with the reason in the title,
-  // rather than a silent no-op that looks like a broken feature.
+test("the wiki says when nobody else is connected, and why live editing is off", async ({
+  page,
+}) => {
+  // Live co-editing is peer-to-peer, needs the relay to accept P2P signalling,
+  // and applies a peer's update only when the peer proves it is a community
+  // member. Where any of that is missing the honest state is "editing alone"
+  // plus a stated reason, rather than a silent no-op that looks broken (or an
+  // open room that applies strangers' text).
   await page.setViewportSize({ width: 1280, height: 900 });
   await mockPartialRelay(page);
   await page.goto("/c/alpha.example.com");
@@ -1414,7 +1418,15 @@ test("the wiki says when nobody else is connected", async ({ page }) => {
   const editors = page.getByTestId("wiki-editors");
   await expect(editors).toBeVisible();
   await expect(editors).toContainText("Editing alone");
-  await expect(editors).toHaveAttribute("title", /P2P signalling/);
+  // This relay publishes no member list (and the browser has no identity), so
+  // peers cannot be verified: live co-editing is unavailable, not "on".
+  const live = page.getByTestId("wiki-live-status");
+  await expect(live).toHaveAttribute("data-live-state", "unavailable", {
+    timeout: 15_000,
+  });
+  await expect(live).toContainText("Live co-editing unavailable");
+  await expect(live).toHaveAttribute("title", /Live co-editing is unavailable/);
+  await expect(live).not.toContainText("verified members only");
 });
 
 test("two tabs converge on one page without P2P signalling", async ({

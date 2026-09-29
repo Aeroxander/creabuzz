@@ -20,6 +20,12 @@ import { Input } from "@/shared/ui/input";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { StepProgress } from "@/shared/ui/step-progress";
 
+import {
+  COMMUNITY_DEFAULT_SUBJECT,
+  ENFORCEMENT_LABEL,
+  budgetSubjectError,
+  parseLimitField,
+} from "../lib/budgetForm";
 import { slugify } from "../lib/pickerOptions";
 import {
   WIZARD_STEPS,
@@ -40,6 +46,8 @@ import {
   useCreateOrgNodeMutation,
 } from "../hooks";
 import type { OrgNode } from "../orgModels";
+import { OrgEntityPicker } from "./OrgEntityPicker";
+import { useBudgetSubjectOptions } from "./useBudgetSubjects";
 
 type OrgWizardProps = {
   /**
@@ -82,23 +90,14 @@ function budgetLimitsText(input: {
   window: string;
   runs?: number;
   spendAmount?: number;
-  taskCreate?: number;
-  taskApprove?: number;
 }): string {
-  const runsPart = input.runs !== undefined ? `${input.runs} runs` : "";
-  const spendPart =
-    input.spendAmount !== undefined ? `${input.spendAmount} usd-cents` : "";
-  const ceiling = [runsPart, spendPart].filter(Boolean).join(" + ");
-  const taskParts = [
-    input.taskCreate !== undefined && `${input.taskCreate} create`,
-    input.taskApprove !== undefined && `${input.taskApprove} approve`,
-  ].filter(Boolean);
   const limits = [
-    ceiling,
-    taskParts.length > 0 && `${taskParts.join("/")} tasks`,
+    input.runs !== undefined && `${input.runs} runs`,
+    input.spendAmount !== undefined &&
+      `${input.spendAmount} usd-cents (advisory)`,
   ]
     .filter(Boolean)
-    .join(", ");
+    .join(" + ");
   return `${limits || "no limits"} per ${input.window}`;
 }
 
@@ -163,12 +162,12 @@ function InlineError({
 
 type BudgetSubmitInput = {
   dtag: string;
+  /** 64-hex agent pubkey, or "*" for the community default. */
   subject: string;
+  subjectLabel: string;
   window: "epoch" | "day" | "week" | "month";
   runs?: number;
   spendAmount?: number;
-  taskCreate?: number;
-  taskApprove?: number;
 };
 
 function StepFooter({
@@ -361,7 +360,7 @@ function SeatStep({
 
   return (
     <StepShell
-      description={`Adds a child kind:37010 node under ${parentName}. Pick an agent seat to give the next step’s budget someone to cover.`}
+      description={`Adds a child kind:37010 node under ${parentName}. Budgets cover an agent by its key, so a seat is budgeted once an agent occupies it.`}
       position={positionOf("seat")}
       title="Add a role or agent seat"
     >
@@ -568,59 +567,95 @@ function GrantStep({
   );
 }
 
-// Step 4 — first budget, preset to the created seat (skippable).
+// Step 4 — first budget (skippable). A budget covers an AGENT (its pubkey) or
+// every agent by default ("*"); the relay rejects an org node id as subject.
 function BudgetStep({
   disabled,
   error,
   pending,
-  subjectDtag,
-  subjectName,
+  nodes,
   onSubmit,
   onSkip,
 }: {
   disabled: boolean;
   error: string | null;
   pending: boolean;
-  subjectDtag: string;
-  subjectName: string;
+  nodes: OrgNode[];
   onSubmit: (input: BudgetSubmitInput) => void;
   onSkip: () => void;
 }) {
   const [dtag, setDtag] = React.useState("");
+  const [subject, setSubject] = React.useState<string | null>(null);
   const [window, setWindow] = React.useState<
     "epoch" | "day" | "week" | "month"
   >("month");
   const [runs, setRuns] = React.useState("");
   const [spendAmount, setSpendAmount] = React.useState("");
   const dtagRef = React.useRef<HTMLInputElement>(null);
+  const { options, communityDefaultAvailable } = useBudgetSubjectOptions(nodes);
 
   React.useEffect(() => {
     if (!disabled && !pending) dtagRef.current?.focus();
   }, [disabled, pending]);
 
-  const canSubmit = dtag.trim().length > 0 && !pending;
+  // The community default is the natural first budget (R2: budgets bind every
+  // agent by default); pre-select it when it is offered and nothing else was
+  // chosen. With no agents seated it is the only option.
+  const defaultOffered = options.some(
+    (option) => option.id === COMMUNITY_DEFAULT_SUBJECT,
+  );
+  React.useEffect(() => {
+    if (defaultOffered) {
+      setSubject((current) => current ?? COMMUNITY_DEFAULT_SUBJECT);
+    }
+  }, [defaultOffered]);
+
+  const selected = options.find((option) => option.id === subject);
+  const runsValue = parseLimitField(runs);
+  const spendValue = parseLimitField(spendAmount);
+  const canSubmit =
+    dtag.trim().length > 0 &&
+    budgetSubjectError(subject) === null &&
+    (runs.trim() === "" || runsValue !== undefined) &&
+    (spendAmount.trim() === "" || spendValue !== undefined) &&
+    !pending;
   const submit = () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !subject) return;
     onSubmit({
       dtag: dtag.trim(),
-      subject: subjectDtag,
+      subject,
+      subjectLabel: selected?.label ?? subject,
       window,
-      runs: runs ? Number.parseInt(runs, 10) : undefined,
-      spendAmount: spendAmount ? Number.parseInt(spendAmount, 10) : undefined,
+      runs: runsValue,
+      spendAmount: spendValue,
     });
   };
 
   return (
     <StepShell
-      description={`Sets a kind:37012 budget over ${subjectName}. Limits gate the agents covered; skip it and the root alone keeps the org running.`}
+      description="Publishes a kind:37012 budget. It covers one agent, or every agent that has no budget of its own; an overrun becomes an approval request instead of a silent stop."
       position={positionOf("budget")}
       title="First budget"
     >
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Subject preset:{" "}
-          <span className="font-mono text-foreground">{subjectDtag}</span>
-        </p>
+        <div className="space-y-1.5">
+          <OrgEntityPicker
+            disabled={disabled || pending}
+            emptyMessage="No agent is seated yet. A budget covers an agent's key, not an empty seat — skip this step and add one once an agent has joined."
+            mode="single"
+            onChange={setSubject}
+            options={options}
+            searchPlaceholder="Search agents..."
+            selected={subject}
+            triggerLabel="Subject"
+          />
+          {communityDefaultAvailable ? null : (
+            <p className="text-xs text-muted-foreground">
+              Only the community owner or an admin can set the default for all
+              agents.
+            </p>
+          )}
+        </div>
         <div className="space-y-1.5">
           <label
             className="text-sm font-medium text-foreground"
@@ -676,6 +711,7 @@ function BudgetStep({
               Max Runs
             </label>
             <Input
+              aria-describedby="org-wizard-budget-runs-mode"
               disabled={disabled || pending}
               id="org-wizard-budget-runs"
               min="0"
@@ -684,6 +720,12 @@ function BudgetStep({
               type="number"
               value={runs}
             />
+            <p
+              className="text-2xs text-muted-foreground"
+              id="org-wizard-budget-runs-mode"
+            >
+              {ENFORCEMENT_LABEL.relay}
+            </p>
           </div>
           <div className="space-y-1.5">
             <label
@@ -693,6 +735,7 @@ function BudgetStep({
               Max Spend (cents)
             </label>
             <Input
+              aria-describedby="org-wizard-budget-spend-mode"
               disabled={disabled || pending}
               id="org-wizard-budget-spend"
               min="0"
@@ -701,6 +744,13 @@ function BudgetStep({
               type="number"
               value={spendAmount}
             />
+            <p
+              className="text-2xs text-muted-foreground"
+              id="org-wizard-budget-spend-mode"
+            >
+              {ENFORCEMENT_LABEL.advisory} — only an on-chain allowance can stop
+              spending.
+            </p>
           </div>
         </div>
         <StepFooter
@@ -835,7 +885,7 @@ function ReviewSummaryRow({ row }: { row: WizardReviewRow }) {
   }
   return (
     <p className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
-      {outcome.subject} · {outcome.window} · {outcome.limitsText}
+      {outcome.subjectLabel} · {outcome.window} · {outcome.limitsText}
     </p>
   );
 }
@@ -894,16 +944,12 @@ export function OrgWizard({
 
   const step = currentStepId(wizard);
   const rootOutcome = wizard.outcomes.root;
-  const seatOutcome = wizard.outcomes.seat;
   const madeEntity = (outcome: WizardOutcome | undefined) =>
     outcome && outcome.step !== "skipped" ? outcome : undefined;
   const rootMade = madeEntity(rootOutcome);
-  const seatMade = madeEntity(seatOutcome);
   const rootNodeOutcome = rootMade?.kind === "node" ? rootMade : undefined;
-  const seatNodeOutcome = seatMade?.kind === "node" ? seatMade : undefined;
   const rootDtag = rootNodeOutcome?.dtag ?? nodes[0]?.dtag ?? "";
   const rootName = rootNodeOutcome?.name ?? nodes[0]?.name ?? "";
-  const seatDtag = seatNodeOutcome?.dtag;
   const granteePubkey = identityQuery.data?.pubkey ?? "";
   const busy =
     createNodeMutation.isPending ||
@@ -978,14 +1024,14 @@ export function OrgWizard({
           dtag: input.dtag,
           subject: input.subject,
           window: input.window,
-          runs: input.runs,
-          spendAmount: input.spendAmount,
+          limits: { runs: input.runs, spend: input.spendAmount },
         });
         const outcome: WizardOutcome = {
           step: "budget",
           kind: "budget",
           dtag: input.dtag,
           subject: input.subject,
+          subjectLabel: input.subjectLabel,
           window: input.window,
           limitsText: budgetLimitsText(input),
         };
@@ -1079,9 +1125,8 @@ export function OrgWizard({
               error={stepError}
               onSkip={() => handleSkip("budget")}
               onSubmit={(input) => void publishBudget(input)}
+              nodes={nodes}
               pending={createBudgetMutation.isPending}
-              subjectDtag={seatDtag ?? rootDtag}
-              subjectName={seatNodeOutcome?.name ?? rootName}
             />
           )}
           {step === "review" && (

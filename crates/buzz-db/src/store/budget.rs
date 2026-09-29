@@ -18,14 +18,29 @@ use crate::error::{DbError, Result};
 use crate::Db;
 use buzz_core::CommunityId;
 
-/// Upper bound on budget events examined per lookup.
+/// Upper bound on budget events returned per subject lookup.
 ///
-/// Budgets are small, community-level records; 100 far exceeds any realistic
-/// org's distinct budget count. The bound is deliberate, not silent: a
-/// community exceeding it must consolidate (budgets are NIP-33 replaceable,
-/// so superseded ones stop accumulating only per (pubkey, d) coordinate) —
-/// see the enforcement-side doc comment on the same constant.
-pub const BUDGET_LOOKUP_CAP: i64 = 100;
+/// Budgets are small, community-level records and the lookup filters by
+/// subject *in SQL*, so unrelated budgets can never crowd a subject's own out
+/// of the result. The bound only caps how many budgets one subject can carry:
+/// budgets are NIP-33 replaceable per `(author, d)`, and only the community
+/// owner/admin, anchored seat holders, and the subject itself may publish one
+/// for it, so 64 is far beyond any realistic org.
+pub const BUDGET_LOOKUP_CAP: i64 = 64;
+
+/// Upper bound on community default (`subject: "*"`) budgets returned by
+/// [`default_budget_lookup`]. Only the owner/admin can publish them.
+pub const DEFAULT_BUDGET_LOOKUP_CAP: i64 = 16;
+
+/// `content.subject` of the community default budget (R2).
+pub const DEFAULT_BUDGET_SUBJECT: &str = buzz_core::org_grant::DEFAULT_BUDGET_SUBJECT;
+
+/// Upper bound on the subject's own contribution action ids examined when
+/// tallying ladder outcomes.
+const CONTRIBUTION_ACTION_CAP: i64 = 2_000;
+
+/// Upper bound on review events examined when tallying ladder outcomes.
+const CONTRIBUTION_REVIEW_CAP: i64 = 5_000;
 
 /// One applicable budget event returned by [`budget_enforcement_lookup`].
 #[derive(Debug, Clone)]
@@ -36,56 +51,55 @@ pub struct BudgetEvent {
     pub on_exceed: String,
     /// Event id (hex) of the kind:37012 record, for audit references.
     pub event_id_hex: String,
+    /// Signer of the budget event (lowercase 64-hex). Enforcement uses it to
+    /// tell an authority-authored budget from a subject-authored one.
+    pub author_hex: String,
 }
 
-/// Look up budget events for a given agent pubkey.
+/// Look up budget events whose `content.subject` equals `subject`.
 ///
-/// Returns each budget whose `content.subject` equals the agent's hex
-/// pubkey (case-insensitive). The caller parses `content` to extract
-/// limits and window type.
-///
-/// The query intentionally cannot mis-bind parameters: it selects the
-/// community's kind:37012 rows by plain equality and matches `subject` in
-/// Rust by JSON field, never through array containment against JSONB.
-pub async fn budget_enforcement_lookup(
+/// The subject filter runs in SQL (`lower(content.subject) = $subject`), newest
+/// first, bounded by `cap`. The JSON cast only ever runs on JSON-object rows of
+/// kind 37012 (nested `CASE`s — SQL does not promise `AND` short-circuiting),
+/// so a malformed unrelated row cannot fail the lookup. Budgets with malformed
+/// content are ignored by enforcement: ingest validation rejects them.
+async fn budgets_for_subject(
     pool: &PgPool,
     community_id: Uuid,
-    agent_pubkey_hex: &str,
+    subject: &str,
+    cap: i64,
 ) -> Result<Vec<BudgetEvent>> {
     let rows = sqlx::query(
         r#"
-        SELECT encode(id, 'hex') AS event_id, content
+        SELECT encode(id, 'hex') AS event_id,
+               encode(pubkey, 'hex') AS author,
+               content
         FROM events
         WHERE community_id = $1
           AND kind = 37012
           AND deleted_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT $2
+          AND CASE
+                WHEN kind = 37012 AND content IS JSON OBJECT
+                  THEN lower(content::jsonb ->> 'subject') = $2
+                ELSE false
+              END
+        ORDER BY created_at DESC, id ASC
+        LIMIT $3
         "#,
     )
     .bind(community_id)
-    .bind(BUDGET_LOOKUP_CAP)
+    .bind(subject.to_ascii_lowercase())
+    .bind(cap)
     .fetch_all(pool)
     .await?;
 
-    let agent = agent_pubkey_hex.to_ascii_lowercase();
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         let content: String = row.get("content");
         let parsed: serde_json::Value = match serde_json::from_str(&content) {
             Ok(v) => v,
-            // A malformed budget must not crash the lookup; enforcement
-            // simply cannot see it. Ingest validation rejects malformed
-            // budget content before it is stored.
             Err(_) => continue,
         };
-        let subject_matches = parsed
-            .get("subject")
-            .and_then(|s| s.as_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case(&agent));
-        if !subject_matches {
-            continue;
-        }
         let on_exceed: String = parsed
             .get("onExceed")
             .and_then(|o| o.as_str())
@@ -95,28 +109,67 @@ pub async fn budget_enforcement_lookup(
             content,
             on_exceed,
             event_id_hex: row.get("event_id"),
+            author_hex: row.get("author"),
         });
     }
     Ok(results)
 }
 
+/// Look up budget events for a given agent pubkey.
+///
+/// Returns each budget whose `content.subject` equals the agent's hex pubkey
+/// (case-insensitive), filtered in SQL so that budgets for other subjects can
+/// never hide it. The caller parses `content` to extract limits and window
+/// type.
+pub async fn budget_enforcement_lookup(
+    pool: &PgPool,
+    community_id: Uuid,
+    agent_pubkey_hex: &str,
+) -> Result<Vec<BudgetEvent>> {
+    budgets_for_subject(pool, community_id, agent_pubkey_hex, BUDGET_LOOKUP_CAP).await
+}
+
+/// Look up the community's default budgets (`content.subject == "*"`, R2).
+///
+/// A default budget covers every agent that has no budget of its own. Ingest
+/// admits them from the community owner/admin only, so every row returned
+/// here carries that authority.
+pub async fn default_budget_lookup(pool: &PgPool, community_id: Uuid) -> Result<Vec<BudgetEvent>> {
+    budgets_for_subject(
+        pool,
+        community_id,
+        DEFAULT_BUDGET_SUBJECT,
+        DEFAULT_BUDGET_LOOKUP_CAP,
+    )
+    .await
+}
+
 /// Deterministic per-window contribution outcome counts for one contributor,
 /// consumed by budget ladder evaluation (NIP-ORG § Performance-linked
-/// autonomy). Only the newest row per action (`d_tag`) counts — kind:37013
-/// is parameterized-replaceable, so superseded versions must not inflate
-/// the tally. Records with a `reviewStatus` other than `accepted` /
-/// `rejected` (e.g. `pending`) count as neither.
+/// autonomy). Records with a `reviewStatus` other than `accepted` /
+/// `rejected` (e.g. `pending`, `appealed`) count as neither.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContributionOutcomeCounts {
-    /// `reviewStatus: "accepted"` records in the window.
+    /// Actions whose canonical authorized review is `accepted`.
     pub accepted: u64,
-    /// `reviewStatus: "rejected"` records in the window.
+    /// Actions whose canonical authorized review is `rejected`.
     pub rejected: u64,
 }
 
-/// Count accepted/rejected contribution records for one contributor within
-/// a window. `dimensions` filters to records carrying at least one of the
-/// named dimensions (empty slice = no dimension filter).
+/// Count accepted/rejected contribution actions for one contributor within a
+/// window. `dimensions` filters to reviews carrying at least one of the named
+/// dimensions (empty slice = no dimension filter).
+///
+/// **The subject's own `reviewStatus` is never trusted** — a contributor
+/// (typically an agent) grading itself must not climb the autonomy ladder. An
+/// action counts only through a review: a kind:37013 event with the same `d`
+/// tag, signed by a pubkey other than the subject, who is the community
+/// owner/admin or a human holding a seat in an *anchored* org node
+/// ([`buzz_core::org_grant::is_authority_holder`]). Per action the canonical
+/// disposition is the newest such review
+/// ([`buzz_core::org_grant::tally_reviews`]); a review cannot predate the
+/// subject's own record of the action, and the window is applied to the
+/// review's `created_at` (when the verdict was reached).
 pub async fn count_contribution_outcomes(
     pool: &PgPool,
     community_id: Uuid,
@@ -124,62 +177,111 @@ pub async fn count_contribution_outcomes(
     window_start: chrono::DateTime<chrono::Utc>,
     dimensions: &[String],
 ) -> Result<ContributionOutcomeCounts> {
-    // jsonb `?|` needs a text[] operand; build it once.
-    let dims: Vec<String> = dimensions.to_vec();
-    let sql = if dims.is_empty() {
-        r#"
-        SELECT
-          COUNT(*) FILTER (WHERE st = 'accepted')::bigint AS accepted,
-          COUNT(*) FILTER (WHERE st = 'rejected')::bigint AS rejected
-        FROM (
-          SELECT DISTINCT ON (d_tag) (content::jsonb->>'reviewStatus') AS st
-          FROM events
-          WHERE community_id = $1
-            AND kind = 37013
-            AND deleted_at IS NULL
-            AND pubkey = decode($2, 'hex')
-            AND d_tag IS NOT NULL
-            AND created_at >= $3
-          ORDER BY d_tag, created_at DESC
-        ) latest
-        "#
+    let subject = subject_pubkey_hex.to_ascii_lowercase();
+    // `mine`: the subject's own action ids (newest first, bounded) with the
+    // time of its earliest surviving record. Reviews are matched to actions
+    // by `d`; the subject's own rows only establish that the action is its.
+    // jsonb `?|` needs a text[] operand.
+    let dimension_filter = if dimensions.is_empty() {
+        ""
     } else {
+        "AND CASE WHEN r.content IS JSON OBJECT \
+              THEN r.content::jsonb -> 'dimensions' ?| $6 \
+              ELSE false END"
+    };
+    let sql = format!(
         r#"
-        SELECT
-          COUNT(*) FILTER (WHERE st = 'accepted')::bigint AS accepted,
-          COUNT(*) FILTER (WHERE st = 'rejected')::bigint AS rejected
-        FROM (
-          SELECT DISTINCT ON (d_tag) (content::jsonb->>'reviewStatus') AS st
+        WITH mine AS (
+          SELECT d_tag, MIN(created_at) AS first_at
           FROM events
           WHERE community_id = $1
             AND kind = 37013
             AND deleted_at IS NULL
             AND pubkey = decode($2, 'hex')
             AND d_tag IS NOT NULL
-            AND created_at >= $3
-            AND content::jsonb->'dimensions' ?| $4
-          ORDER BY d_tag, created_at DESC
-        ) latest
+          GROUP BY d_tag
+          ORDER BY MAX(created_at) DESC
+          LIMIT $4
+        )
+        SELECT r.d_tag AS d,
+               encode(r.pubkey, 'hex') AS reviewer,
+               EXTRACT(EPOCH FROM r.created_at)::bigint AS created_at,
+               encode(r.id, 'hex') AS event_id,
+               CASE WHEN r.content IS JSON OBJECT
+                    THEN r.content::jsonb ->> 'reviewStatus'
+               END AS status
+        FROM events r
+        JOIN mine m ON m.d_tag = r.d_tag
+        WHERE r.community_id = $1
+          AND r.kind = 37013
+          AND r.deleted_at IS NULL
+          AND r.pubkey <> decode($2, 'hex')
+          AND r.created_at >= $3
+          AND r.created_at >= m.first_at
+          {dimension_filter}
+        ORDER BY r.created_at DESC, r.id ASC
+        LIMIT $5
         "#
-    };
+    );
 
-    let mut query = sqlx::query(sql)
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(community_id)
-        .bind(subject_pubkey_hex.to_ascii_lowercase())
-        .bind(window_start);
-    if !dims.is_empty() {
-        query = query.bind(dims);
+        .bind(&subject)
+        .bind(window_start)
+        .bind(CONTRIBUTION_ACTION_CAP)
+        .bind(CONTRIBUTION_REVIEW_CAP);
+    if !dimensions.is_empty() {
+        query = query.bind(dimensions.to_vec());
     }
-    let row = query.fetch_one(pool).await?;
+    let rows = query.fetch_all(pool).await?;
 
-    Ok(ContributionOutcomeCounts {
-        accepted: row.get::<i64, _>("accepted").max(0) as u64,
-        rejected: row.get::<i64, _>("rejected").max(0) as u64,
-    })
+    let reviews: Vec<buzz_core::org_grant::ReviewRow> = rows
+        .iter()
+        .map(|row| {
+            let created_at: i64 = row.get("created_at");
+            buzz_core::org_grant::ReviewRow {
+                d: row.get("d"),
+                reviewer: row.get("reviewer"),
+                created_at: created_at.max(0) as u64,
+                event_id: row.get("event_id"),
+                status: row.get("status"),
+            }
+        })
+        .collect();
+
+    // Resolve each distinct reviewer's authority once.
+    let graph = crate::store::org_graph::PgOrgGraph::new(pool, community_id);
+    let mut authorized = std::collections::HashSet::new();
+    let mut checked = std::collections::HashSet::new();
+    for review in &reviews {
+        if review.reviewer == subject || !checked.insert(review.reviewer.clone()) {
+            continue;
+        }
+        match buzz_core::org_grant::is_authority_holder(&graph, &review.reviewer).await {
+            Ok(true) => {
+                authorized.insert(review.reviewer.clone());
+            }
+            Ok(false) => {}
+            // A denial here means the graph was too large to verify:
+            // treat the reviewer as unauthorized (fail closed).
+            Err(buzz_core::org_grant::OrgAuthorityError::Denied(_)) => {}
+            // A store error must not read as "nobody reviewed": propagate.
+            Err(buzz_core::org_grant::OrgAuthorityError::Source(e)) => return Err(e),
+        }
+    }
+
+    let (accepted, rejected) = buzz_core::org_grant::tally_reviews(&reviews, &subject, &authorized);
+    Ok(ContributionOutcomeCounts { accepted, rejected })
 }
 
 /// Check whether a budget subject has hit its limit for a counter type
-/// within the current window.
+/// within the window that starts at `window_start`.
+///
+/// The counter is the single row keyed `(community, subject, counter,
+/// window_start)`: one action increments each `(counter, window)` exactly once
+/// (see [`increment_budget_consumption`]), whatever number of budgets apply,
+/// so this reads that one row — never a sum across windows, which would count
+/// the same action once per window kind.
 ///
 /// Returns `Ok(true)` if the subject is under the limit, `Ok(false)` if
 /// at or over the limit.
@@ -198,7 +300,7 @@ pub async fn check_budget_consumption(
         WHERE community_id = $1
           AND subject = $2
           AND counter_type = $3
-          AND window_start >= $4
+          AND window_start = $4
         "#,
     )
     .bind(community_id)
@@ -503,7 +605,17 @@ impl Db {
         budget_enforcement_lookup(&self.pool, *community_id.as_uuid(), agent_pubkey_hex).await
     }
 
-    /// Count accepted/rejected contribution records for a budget ladder.
+    /// Look up the community default budgets (`subject: "*"`, R2).
+    #[datastore_span(name = "default_budget_lookup", system = "postgresql")]
+    pub async fn default_budget_lookup(
+        &self,
+        community_id: CommunityId,
+    ) -> Result<Vec<BudgetEvent>> {
+        default_budget_lookup(&self.pool, *community_id.as_uuid()).await
+    }
+
+    /// Count reviewed accepted/rejected contribution actions for a budget
+    /// ladder (self-attested status never counts).
     #[datastore_span(name = "count_contribution_outcomes", system = "postgresql")]
     pub async fn count_contribution_outcomes(
         &self,
@@ -697,6 +809,11 @@ mod postgres_tests {
             .execute(pool)
             .await
             .expect("delete events");
+        sqlx::query("DELETE FROM relay_members WHERE community_id = $1")
+            .bind(community_id)
+            .execute(pool)
+            .await
+            .expect("delete relay members");
         sqlx::query("DELETE FROM budget_consumption WHERE community_id = $1")
             .bind(community_id)
             .execute(pool)
@@ -1343,6 +1460,386 @@ mod postgres_tests {
             .expect("count other subject"),
             0,
             "another subject's grants never leak"
+        );
+
+        cleanup(&pool, community).await;
+    }
+
+    /// Insert a raw org/contribution event row with a signer, `d` tag,
+    /// content and creation time — the same raw-row recipe the relay's
+    /// enforcement tests use.
+    async fn insert_org_event(
+        pool: &PgPool,
+        community_id: Uuid,
+        kind: i32,
+        author: &[u8; 32],
+        d_tag: Option<&str>,
+        content: serde_json::Value,
+        created_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let mut event_id = [0u8; 32];
+        event_id[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+        event_id[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+        let tags = match d_tag {
+            Some(d) => serde_json::json!([["d", d]]),
+            None => serde_json::json!([]),
+        };
+        sqlx::query(
+            "INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, sig, d_tag)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(community_id)
+        .bind(event_id.as_slice())
+        .bind(author.as_slice())
+        .bind(created_at)
+        .bind(kind)
+        .bind(tags)
+        .bind(content.to_string())
+        .bind([1u8; 64])
+        .bind(d_tag)
+        .execute(pool)
+        .await
+        .expect("insert org event");
+    }
+
+    async fn insert_relay_member(pool: &PgPool, community_id: Uuid, pubkey_hex: &str, role: &str) {
+        sqlx::query(
+            "INSERT INTO relay_members (community_id, pubkey, role, added_by)
+             VALUES ($1, $2, $3, NULL)",
+        )
+        .bind(community_id)
+        .bind(pubkey_hex)
+        .bind(role)
+        .execute(pool)
+        .await
+        .expect("insert relay member");
+    }
+
+    fn contribution_content(status: &str, dimensions: &[&str]) -> serde_json::Value {
+        let dims: serde_json::Map<String, serde_json::Value> = dimensions
+            .iter()
+            .map(|d| ((*d).to_string(), serde_json::json!(1.0)))
+            .collect();
+        serde_json::json!({
+            "v": 1,
+            "action": "ship the thing",
+            "dimensions": dims,
+            "reviewStatus": status,
+        })
+    }
+
+    /// Item 6: ~150 unrelated budgets must not hide the subject's budget —
+    /// the old lookup read the 100 newest kind:37012 rows community-wide and
+    /// filtered by subject in Rust, so junk silently disabled enforcement.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn junk_budgets_do_not_hide_the_subjects_budget() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let agent = "abababababababababababababababababababababababababababababababab";
+        let junk_subject = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+        // The subject's budget is the OLDEST row; 150 newer junk rows follow.
+        let own_id = insert_budget_event(&pool, community, agent, "require-approval").await;
+        for _ in 0..150 {
+            insert_budget_event(&pool, community, junk_subject, "reject").await;
+        }
+
+        let db = Db::from_pool(pool.clone());
+        let found = db
+            .budget_enforcement_lookup(buzz_core::CommunityId::from_uuid(community), agent)
+            .await
+            .expect("lookup");
+        assert_eq!(found.len(), 1, "exactly the subject's own budget");
+        assert_eq!(found[0].event_id_hex, hex::encode(own_id));
+        assert_eq!(
+            found[0].author_hex,
+            hex::encode([9u8; 32]),
+            "the signer is returned so enforcement can tell authority from self"
+        );
+
+        cleanup(&pool, community).await;
+    }
+
+    /// Item 7: the default budget (`subject: "*"`) is found by its own
+    /// lookup and is never returned as some agent's own budget.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn default_budget_lookup_returns_only_star_budgets() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let agent = "abababababababababababababababababababababababababababababababab";
+        insert_budget_event(&pool, community, agent, "require-approval").await;
+        let default_id = insert_budget_event(&pool, community, "*", "require-approval").await;
+
+        let db = Db::from_pool(pool.clone());
+        let cid = buzz_core::CommunityId::from_uuid(community);
+        let defaults = db.default_budget_lookup(cid).await.expect("defaults");
+        assert_eq!(defaults.len(), 1);
+        assert_eq!(defaults[0].event_id_hex, hex::encode(default_id));
+        let own = db.budget_enforcement_lookup(cid, agent).await.expect("own");
+        assert_eq!(own.len(), 1, "the default never shows up as an own budget");
+        assert_ne!(own[0].event_id_hex, defaults[0].event_id_hex);
+
+        cleanup(&pool, community).await;
+    }
+
+    /// Item 9: the counter is one row per `(counter, window_start)`; the
+    /// check must read exactly that row. A day counter that lives at a later
+    /// `window_start` inside the same week must not inflate the week's
+    /// check (the old `window_start >=` sum counted it, so two budgets on
+    /// one counter over-counted N x).
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn check_reads_only_the_windows_own_counter_row() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let db = Db::from_pool(pool.clone());
+        let cid = buzz_core::CommunityId::from_uuid(community);
+        let agent = "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
+        let week_start =
+            chrono::DateTime::from_timestamp(1_700_000_000 - 1_700_000_000 % 604_800, 0)
+                .expect("week start");
+        let later_day = week_start + chrono::Duration::days(2);
+
+        db.increment_budget_consumption(cid, agent, "runs", week_start, 2)
+            .await
+            .expect("week counter");
+        db.increment_budget_consumption(cid, agent, "runs", later_day, 5)
+            .await
+            .expect("day counter inside the week");
+
+        assert!(
+            db.check_budget_consumption(cid, agent, "runs", week_start, 3)
+                .await
+                .expect("week check"),
+            "week counter is 2 (< 3); the day row must not be summed into it"
+        );
+        assert!(
+            !db.check_budget_consumption(cid, agent, "runs", later_day, 5)
+                .await
+                .expect("day check"),
+            "the day counter is at its own limit"
+        );
+
+        cleanup(&pool, community).await;
+    }
+
+    /// Item 4: the ladder counts an action only through a review by an
+    /// authorized human other than the contributor. A self-signed `accepted`
+    /// must NOT raise the count; a reviewer-signed one must. Binds the
+    /// production seam `Db::count_contribution_outcomes`.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn self_attested_acceptance_never_counts_but_a_reviewers_does() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let db = Db::from_pool(pool.clone());
+        let cid = buzz_core::CommunityId::from_uuid(community);
+
+        let agent = [0xa1u8; 32];
+        let agent_hex = hex::encode(agent);
+        let owner = [0xb2u8; 32];
+        let outsider = [0xc3u8; 32];
+        insert_relay_member(&pool, community, &hex::encode(owner), "owner").await;
+        let window = chrono::Utc::now() - chrono::Duration::days(1);
+        let t0 = chrono::Utc::now() - chrono::Duration::hours(2);
+
+        // The agent files an action and grades it `accepted` itself.
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &agent,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0,
+        )
+        .await;
+        let counts = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            (counts.accepted, counts.rejected),
+            (0, 0),
+            "a self-signed `accepted` must not raise the count"
+        );
+
+        // A member with no authority also cannot accept it.
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &outsider,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0 + chrono::Duration::minutes(5),
+        )
+        .await;
+        let counts = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            (counts.accepted, counts.rejected),
+            (0, 0),
+            "an unauthorized reviewer's disposition is ignored"
+        );
+
+        // The owner accepts it under the owner's own key (NIP-ORG review).
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &owner,
+            Some("act-1"),
+            contribution_content("accepted", &["build"]),
+            t0 + chrono::Duration::minutes(10),
+        )
+        .await;
+        let counts = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            (counts.accepted, counts.rejected),
+            (1, 0),
+            "a reviewer-signed `accepted` counts"
+        );
+
+        // Dimension filter applies to the canonical review.
+        let with_dim = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &["build".to_string()])
+            .await
+            .expect("count build");
+        assert_eq!(with_dim.accepted, 1);
+        let other_dim = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &["care".to_string()])
+            .await
+            .expect("count care");
+        assert_eq!(other_dim.accepted, 0);
+
+        // A review outside the window does not count.
+        let future_window = chrono::Utc::now() + chrono::Duration::hours(1);
+        let empty = db
+            .count_contribution_outcomes(cid, &agent_hex, future_window, &[])
+            .await
+            .expect("count future window");
+        assert_eq!(empty.accepted, 0);
+
+        // The owner later rejects a second action; the agent's own claim of
+        // `accepted` on it is ignored and the rejection counts.
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &agent,
+            Some("act-2"),
+            contribution_content("accepted", &[]),
+            t0,
+        )
+        .await;
+        insert_org_event(
+            &pool,
+            community,
+            37013,
+            &owner,
+            Some("act-2"),
+            contribution_content("rejected", &[]),
+            t0 + chrono::Duration::minutes(20),
+        )
+        .await;
+        let counts = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!((counts.accepted, counts.rejected), (1, 1));
+
+        cleanup(&pool, community).await;
+    }
+
+    /// An anchored human seat holder is a reviewer; an UNanchored one (a
+    /// node the owner did not sanction) is not; an agent seat never is.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn only_anchored_seat_holders_review() {
+        let pool = test_pool().await;
+        let community = insert_test_community(&pool).await;
+        let db = Db::from_pool(pool.clone());
+        let cid = buzz_core::CommunityId::from_uuid(community);
+
+        let agent = [0xa1u8; 32];
+        let agent_hex = hex::encode(agent);
+        let owner = [0xb2u8; 32];
+        let lead = [0xd4u8; 32];
+        let mallory = [0xe5u8; 32];
+        let seat_agent = [0xf6u8; 32];
+        insert_relay_member(&pool, community, &hex::encode(owner), "owner").await;
+        let window = chrono::Utc::now() - chrono::Duration::days(1);
+        let t0 = chrono::Utc::now() - chrono::Duration::hours(3);
+        let now = chrono::Utc::now() - chrono::Duration::hours(2);
+
+        // Owner-authored root seats `lead` (human) and `seat_agent` (agent).
+        insert_org_event(
+            &pool,
+            community,
+            37010,
+            &owner,
+            Some("root"),
+            serde_json::json!({
+                "v": 1, "name": "Root", "kind": "role",
+                "holders": [hex::encode(lead)],
+                "agentSeats": [hex::encode(seat_agent)],
+            }),
+            t0,
+        )
+        .await;
+        // Mallory self-seats a root of her own: not anchored.
+        insert_org_event(
+            &pool,
+            community,
+            37010,
+            &mallory,
+            Some("fake"),
+            serde_json::json!({
+                "v": 1, "name": "Fake", "kind": "role",
+                "holders": [hex::encode(mallory)],
+            }),
+            t0,
+        )
+        .await;
+
+        for (i, reviewer) in [lead, mallory, seat_agent].iter().enumerate() {
+            let action = format!("act-{i}");
+            insert_org_event(
+                &pool,
+                community,
+                37013,
+                &agent,
+                Some(&action),
+                contribution_content("pending", &[]),
+                t0,
+            )
+            .await;
+            insert_org_event(
+                &pool,
+                community,
+                37013,
+                reviewer,
+                Some(&action),
+                contribution_content("accepted", &[]),
+                now,
+            )
+            .await;
+        }
+        let counts = db
+            .count_contribution_outcomes(cid, &agent_hex, window, &[])
+            .await
+            .expect("count");
+        assert_eq!(
+            counts.accepted, 1,
+            "only the anchored human holder's review (act-0) counts"
         );
 
         cleanup(&pool, community).await;

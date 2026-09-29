@@ -298,6 +298,23 @@ describe("activity rows", () => {
     namesByDtag: new Map([["eng", "Engineering"]]),
   };
 
+  it("names the community-default budget and lists every limit it carries", () => {
+    const rows = deriveActivityRows({
+      ...input,
+      budgets: [
+        {
+          ...budget({ subject: "*" }),
+          limits: { runs: 10, messages: 40, llmCalls: 25 },
+        },
+      ],
+    });
+    const row = rows.find((r) => r.kind === 37012);
+    assert.equal(
+      row.description,
+      "Budget set for All agents (community default): 10 runs/month, 40 messages/month, 25 LLM calls/month",
+    );
+  });
+
   it("renders every kind as a readable line with the right tone and tab", () => {
     const rows = deriveActivityRows(input);
     const byKind = new Map(rows.map((row) => [row.kind, row]));

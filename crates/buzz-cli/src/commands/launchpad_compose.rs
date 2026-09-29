@@ -19,6 +19,7 @@ pub const SELECTOR_EXIT_BID: &str = "8e4deb17"; // exitBid(uint256)
 pub const SELECTOR_CLAIM_TOKENS: &str = "46e04a2f"; // claimTokens(uint256)
 pub const SELECTOR_CLAIM_TOKENS_BATCH: &str = "b8f163d6"; // claimTokensBatch(address,uint256[])
 pub const SELECTOR_PERMIT2_APPROVE: &str = "87517c45"; // approve(address,address,uint160,uint48) on Permit2
+pub const SELECTOR_ERC20_APPROVE: &str = "095ea7b3"; // approve(address,uint256) on the bid currency
 pub const PERMIT2_ADDRESS: &str = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const Q96: u32 = 96;
 
@@ -134,6 +135,73 @@ pub fn encode_permit2_approve(
     ))
 }
 
+/// ABI-encode the standard ERC-20 `approve(spender, amount)` — the
+/// underlying-token allowance Permit2 needs before it can pull the bid. Without
+/// it a first-time bidder's `permit2TransferFrom` reverts even with a Permit2
+/// allowance set (a fresh account is always a first-time bidder).
+pub fn encode_erc20_approve(spender: &str, amount: &BigUint) -> Result<String, String> {
+    Ok(format!(
+        "0x{SELECTOR_ERC20_APPROVE}{}{}",
+        encode_address(spender)?,
+        pad32(amount)
+    ))
+}
+
+/// Largest amount `Permit2.approve`'s `uint160` field can carry.
+fn uint160_max() -> BigUint {
+    (BigUint::from(1u8) << 160u32) - BigUint::from(1u8)
+}
+
+/// The ordered unsigned calls for one bid, exactly as the desktop and web
+/// composers order them:
+///
+/// - ERC-20 currency: `currency.approve(PERMIT2, amount)` (the underlying
+///   allowance; always included because the CLI composes offline and cannot
+///   tell a first-time bidder from a returning one — a redundant approve costs
+///   gas, a missing one reverts the bid), then
+///   `PERMIT2.approve(currency, auction, amount, deadline)`, then
+///   `auction.submitBid(..)` with `value = 0`.
+/// - Native currency (`currency == None`): just `auction.submitBid(..)` with
+///   `value = amount` — the CCA requires `msg.value == amount` for native
+///   bids, so the old constant `"0x0"` made every native bid revert.
+pub fn compose_bid_calls(
+    currency: Option<&str>,
+    auction: &str,
+    amount: &BigUint,
+    bid_data: String,
+    permit2_deadline: u64,
+) -> Result<Vec<TxCall>, String> {
+    let mut calls = Vec::new();
+    match currency {
+        Some(currency_addr) => {
+            if amount > &uint160_max() {
+                return Err("bid amount exceeds Permit2's uint160 allowance width".into());
+            }
+            calls.push(TxCall {
+                to: currency_addr.to_string(),
+                value: "0x0".to_string(),
+                data: encode_erc20_approve(PERMIT2_ADDRESS, amount)?,
+            });
+            calls.push(TxCall {
+                to: PERMIT2_ADDRESS.to_string(),
+                value: "0x0".to_string(),
+                data: encode_permit2_approve(currency_addr, auction, amount, permit2_deadline)?,
+            });
+            calls.push(TxCall {
+                to: auction.to_string(),
+                value: "0x0".to_string(),
+                data: bid_data,
+            });
+        }
+        None => calls.push(TxCall {
+            to: auction.to_string(),
+            value: format!("0x{amount:x}"),
+            data: bid_data,
+        }),
+    }
+    Ok(calls)
+}
+
 pub struct BidCompose {
     pub max_price_q96: String,
     pub amount: String,
@@ -144,6 +212,8 @@ pub struct BidCompose {
 
 pub struct TxCall {
     pub to: String,
+    /// Hex quantity of native value the call carries (`"0x0"` for none).
+    pub value: String,
     pub data: String,
 }
 
@@ -222,6 +292,77 @@ mod tests {
             &big("900").unwrap()
         )
         .is_ok());
+    }
+
+    const CURRENCY: &str = "0x3333333333333333333333333333333333333333";
+    const AUCTION: &str = "0x4444444444444444444444444444444444444444";
+
+    /// `cast calldata "approve(address,uint256)" 0x000000000022D473030F116dDEE9F6B43aC78BA3 1234567890123456789`
+    #[test]
+    fn erc20_approve_matches_cast() {
+        let got =
+            encode_erc20_approve(PERMIT2_ADDRESS, &big("1234567890123456789").unwrap()).unwrap();
+        assert_eq!(
+            got,
+            "0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3\
+             000000000000000000000000000000000000000000000000112210f47de98115"
+        );
+    }
+
+    /// The bug: `launchpad compose-bid` emitted only `Permit2.approve` then
+    /// `submitBid`, so a first-time ERC-20 bidder's Permit2 pull reverted. The
+    /// ERC-20 `approve(PERMIT2, amount)` must come first, then the Permit2
+    /// approve, then the bid. Dropping the first call fails this test.
+    #[test]
+    fn erc20_bid_composes_underlying_approve_then_permit2_then_bid() {
+        let amount = big("50000000000").unwrap();
+        let calls = compose_bid_calls(
+            Some(CURRENCY),
+            AUCTION,
+            &amount,
+            "0xbeef".into(),
+            4102444800,
+        )
+        .unwrap();
+        assert_eq!(calls.len(), 3);
+        // 1. currency.approve(PERMIT2, amount)
+        assert_eq!(calls[0].to, CURRENCY);
+        assert_eq!(calls[0].value, "0x0");
+        assert_eq!(
+            calls[0].data,
+            encode_erc20_approve(PERMIT2_ADDRESS, &amount).unwrap()
+        );
+        assert!(calls[0].data.starts_with("0x095ea7b3"));
+        // 2. PERMIT2.approve(currency, auction, amount, deadline)
+        assert_eq!(calls[1].to, PERMIT2_ADDRESS);
+        assert!(calls[1].data.starts_with("0x87517c45"));
+        assert_eq!(
+            calls[1].data,
+            encode_permit2_approve(CURRENCY, AUCTION, &amount, 4102444800).unwrap()
+        );
+        // 3. auction.submitBid — no native value on an ERC-20 bid.
+        assert_eq!(calls[2].to, AUCTION);
+        assert_eq!(calls[2].value, "0x0");
+        assert_eq!(calls[2].data, "0xbeef");
+    }
+
+    /// Native-currency auctions: the CCA enforces `msg.value == amount`, so the
+    /// bid call must carry the budget as value (it used to be the constant "0x0").
+    #[test]
+    fn native_bid_carries_the_budget_as_value_and_has_no_allowance_calls() {
+        let amount = big("1000000000000000000").unwrap(); // 1 ETH
+        let calls = compose_bid_calls(None, AUCTION, &amount, "0xbeef".into(), 0).unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].to, AUCTION);
+        assert_eq!(calls[0].value, "0xde0b6b3a7640000");
+        assert_eq!(calls[0].data, "0xbeef");
+    }
+
+    #[test]
+    fn oversized_permit2_amount_is_refused() {
+        let too_big = uint160_max() + BigUint::from(1u8);
+        assert!(compose_bid_calls(Some(CURRENCY), AUCTION, &too_big, "0x".into(), 1).is_err());
+        assert!(compose_bid_calls(Some(CURRENCY), AUCTION, &uint160_max(), "0x".into(), 1).is_ok());
     }
 
     #[test]

@@ -111,7 +111,19 @@ pub struct EvmAuthConfig {
 pub struct LlmConfig {
     proxy_url: String,
     api_key: Option<String>,
+    rate_per_min: u64,
+    max_calls_per_day: u32,
+    max_tokens: u64,
+    model: Option<String>,
 }
+
+/// Default per-caller LLM gateway calls per minute (`BUZZ_LLM_RATE_PER_MIN`).
+pub const DEFAULT_LLM_RATE_PER_MIN: u64 = 20;
+/// Default per-caller daily LLM call cap when no budget covers the caller
+/// (`BUZZ_LLM_MAX_CALLS_PER_DAY`).
+pub const DEFAULT_LLM_MAX_CALLS_PER_DAY: u32 = 500;
+/// Default ceiling on `max_tokens` per gateway request (`BUZZ_LLM_MAX_TOKENS`).
+pub const DEFAULT_LLM_MAX_TOKENS: u64 = 4096;
 
 impl LlmConfig {
     /// Upstream OpenAI-compatible `/chat/completions` URL.
@@ -123,6 +135,28 @@ impl LlmConfig {
     pub(crate) fn api_key(&self) -> Option<&str> {
         self.api_key.as_deref()
     }
+
+    /// Per-caller calls per minute (`BUZZ_LLM_RATE_PER_MIN`, default 20).
+    pub(crate) fn rate_per_min(&self) -> u64 {
+        self.rate_per_min
+    }
+
+    /// Daily call cap applied when no budget covers the caller
+    /// (`BUZZ_LLM_MAX_CALLS_PER_DAY`, default 500).
+    pub(crate) fn max_calls_per_day(&self) -> u32 {
+        self.max_calls_per_day
+    }
+
+    /// Ceiling on `max_tokens` per request (`BUZZ_LLM_MAX_TOKENS`, default 4096).
+    pub(crate) fn max_tokens(&self) -> u64 {
+        self.max_tokens
+    }
+
+    /// Operator-pinned model (`BUZZ_LLM_MODEL`); when set it overrides the
+    /// caller's `model` field.
+    pub(crate) fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
 }
 
 impl std::fmt::Debug for LlmConfig {
@@ -130,6 +164,10 @@ impl std::fmt::Debug for LlmConfig {
         f.debug_struct("LlmConfig")
             .field("proxy_url", &self.proxy_url)
             .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("rate_per_min", &self.rate_per_min)
+            .field("max_calls_per_day", &self.max_calls_per_day)
+            .field("max_tokens", &self.max_tokens)
+            .field("model", &self.model)
             .finish()
     }
 }
@@ -258,12 +296,14 @@ pub struct Config {
     /// are permitted regardless of auth method (API token, NIP-42).
     pub require_relay_membership: bool,
 
-    /// When `true`, ingest of kind:37011 org grants verifies the grant
-    /// chain (attenuation, root standing, expiry) before acceptance, per
-    /// NIP-ORG "Relay behavior". Opt-in via `ORG_GRANT_ENFORCEMENT=on`;
-    /// the default is `off`, which stores and forwards grants unchanged.
+    /// When `true` (the default), ingest of kind:37011 org grants verifies
+    /// the grant chain (attenuation, root standing, expiry, and that every
+    /// node and grant it names was signed by the authority it claims — R1)
+    /// before acceptance, per NIP-ORG "Relay behavior". Set
+    /// `ORG_GRANT_ENFORCEMENT=off` to store and forward grants unchanged.
     /// When on, a grant whose chain cannot be fully verified (missing
-    /// parent/node, lookup error) is rejected — never stored as verified.
+    /// parent/node, unanchored node, lookup error) is rejected — never
+    /// stored as verified. Equity records (`"type":"equity"`) are exempt.
     pub org_grant_enforcement: bool,
 
     /// Whether this deployment can serve huddle (voice) audio.
@@ -441,7 +481,19 @@ pub struct Config {
     /// stored, so this opens no durable data: it lets browser P2P layers
     /// (e.g. Trystero over Nostr signaling) rendezvous through the relay.
     /// Defaults to off; the relay's read/write auth posture is unchanged.
+    ///
+    /// Even when on, anonymous access is confined to the
+    /// [`p2p_signaling_policy`](Self::p2p_signaling_policy): allowlisted
+    /// ephemeral kinds (never a Buzz-defined kind such as presence 20001),
+    /// Trystero-shaped `#x` topic filters/events, a per-connection
+    /// subscription cap and a per-connection frame budget.
     pub p2p_signaling: bool,
+    /// Anonymous P2P-signaling admission policy
+    /// (`BUZZ_P2P_SIGNALING_KINDS`, `BUZZ_P2P_SIGNALING_MAX_SUBSCRIPTIONS`,
+    /// `BUZZ_P2P_SIGNALING_EVENTS_PER_MIN`). Only consulted when
+    /// [`p2p_signaling`](Self::p2p_signaling) is true; a malformed value is a
+    /// startup error.
+    pub p2p_signaling_policy: crate::p2p_signaling::P2pSignalingPolicy,
 
     /// Apple Developer Team ID that signs the desktop app, paired with
     /// [`Config::passkey_bundle_id`] in the AASA served at
@@ -763,21 +815,23 @@ impl Config {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
-        // NIP-ORG grant-chain enforcement: strictly opt-in. Only the exact
-        // spellings "on"/"off" are accepted; any other value is a startup
-        // error so a typo can never silently disable (or enable) authority
-        // enforcement. Default off = byte-identical store-and-forward.
+        // NIP-ORG grant-chain enforcement: ON by default (R1 — authority is
+        // verified at ingest unless an operator explicitly turns it off).
+        // Only the exact spellings "on"/"off" are accepted; any other value
+        // is a startup error so a typo can never silently disable (or
+        // enable) authority enforcement. Unset or empty means the default
+        // (on); `off` restores byte-identical store-and-forward for grants.
         let org_grant_enforcement = match std::env::var("ORG_GRANT_ENFORCEMENT") {
             Ok(raw) => match raw.trim() {
-                "on" => true,
-                "off" | "" => false,
+                "on" | "" => true,
+                "off" => false,
                 other => {
                     return Err(ConfigError::InvalidValue(format!(
                         "ORG_GRANT_ENFORCEMENT must be \"on\" or \"off\" (got \"{other}\")"
                     )))
                 }
             },
-            Err(_) => false,
+            Err(_) => true,
         };
 
         // Defaults true → single-pod (N=1) keeps today's huddle behavior. A
@@ -826,7 +880,30 @@ impl Config {
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty());
-            proxy_url.map(|proxy_url| LlmConfig { proxy_url, api_key })
+            let model = std::env::var("BUZZ_LLM_MODEL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let rate_per_min =
+                positive_u64_from_env("BUZZ_LLM_RATE_PER_MIN", DEFAULT_LLM_RATE_PER_MIN)?;
+            let max_calls_per_day = u32::try_from(positive_u64_from_env(
+                "BUZZ_LLM_MAX_CALLS_PER_DAY",
+                u64::from(DEFAULT_LLM_MAX_CALLS_PER_DAY),
+            )?)
+            .map_err(|_| {
+                ConfigError::InvalidValue(
+                    "BUZZ_LLM_MAX_CALLS_PER_DAY must fit in 32 bits".to_string(),
+                )
+            })?;
+            let max_tokens = positive_u64_from_env("BUZZ_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS)?;
+            proxy_url.map(|proxy_url| LlmConfig {
+                proxy_url,
+                api_key,
+                rate_per_min,
+                max_calls_per_day,
+                max_tokens,
+                model,
+            })
         };
 
         let evm_auth = std::env::var("BUZZ_EVM_AUTH")
@@ -1320,6 +1397,7 @@ impl Config {
         let p2p_signaling = std::env::var("BUZZ_P2P_SIGNALING")
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
+        let p2p_signaling_policy = crate::p2p_signaling::P2pSignalingPolicy::from_env()?;
 
         // Apple passkey activation — the two halves of the AASA document this
         // relay serves at /.well-known/apple-app-site-association. No team id
@@ -1416,6 +1494,7 @@ impl Config {
             serve_git_web_gui,
             web_spa_full,
             p2p_signaling,
+            p2p_signaling_policy,
             passkey_team_id,
             passkey_bundle_id,
         })
@@ -1517,8 +1596,8 @@ mod tests {
             "require_relay_membership should default to false"
         );
         assert!(
-            !config.org_grant_enforcement,
-            "org_grant_enforcement should default to false (opt-in)"
+            config.org_grant_enforcement,
+            "org_grant_enforcement should default to true (R1: verified by default)"
         );
         assert!(
             config.relay_owner_pubkey.is_none(),
@@ -1658,12 +1737,65 @@ mod tests {
         let config = Config::from_env().expect("config with ORG_GRANT_ENFORCEMENT=off");
         assert!(!config.org_grant_enforcement);
 
-        // Empty is an explicit kill switch, not a crashloop.
+        // Empty means "use the default" (on) — never a silent disable: a
+        // templated-but-unset env var must not switch authority checks off.
         std::env::set_var("ORG_GRANT_ENFORCEMENT", "");
         let config = Config::from_env().expect("config with empty ORG_GRANT_ENFORCEMENT");
-        assert!(!config.org_grant_enforcement);
+        assert!(config.org_grant_enforcement);
 
+        // Unset is the default: on.
         std::env::remove_var("ORG_GRANT_ENFORCEMENT");
+        let config = Config::from_env().expect("config without ORG_GRANT_ENFORCEMENT");
+        assert!(config.org_grant_enforcement);
+    }
+
+    #[test]
+    fn llm_gateway_limits_default_and_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 5] = [
+            "BUZZ_LLM_PROXY_URL",
+            "BUZZ_LLM_RATE_PER_MIN",
+            "BUZZ_LLM_MAX_CALLS_PER_DAY",
+            "BUZZ_LLM_MAX_TOKENS",
+            "BUZZ_LLM_MODEL",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        std::env::set_var("BUZZ_LLM_PROXY_URL", "http://127.0.0.1:1/v1/chat/completions");
+
+        let llm = Config::from_env()
+            .expect("config with the gateway on defaults")
+            .llm
+            .expect("gateway configured");
+        assert_eq!(llm.rate_per_min(), 20);
+        assert_eq!(llm.max_calls_per_day(), 500);
+        assert_eq!(llm.max_tokens(), 4096);
+        assert_eq!(llm.model(), None);
+
+        std::env::set_var("BUZZ_LLM_RATE_PER_MIN", "7");
+        std::env::set_var("BUZZ_LLM_MAX_CALLS_PER_DAY", "42");
+        std::env::set_var("BUZZ_LLM_MAX_TOKENS", "256");
+        std::env::set_var("BUZZ_LLM_MODEL", " tiny-model ");
+        let llm = Config::from_env()
+            .expect("config with overrides")
+            .llm
+            .expect("gateway configured");
+        assert_eq!(llm.rate_per_min(), 7);
+        assert_eq!(llm.max_calls_per_day(), 42);
+        assert_eq!(llm.max_tokens(), 256);
+        assert_eq!(llm.model(), Some("tiny-model"));
+
+        // A zero or non-numeric limit is a startup error, never a silent default.
+        for bad in ["0", "many"] {
+            std::env::set_var("BUZZ_LLM_RATE_PER_MIN", bad);
+            let err = Config::from_env().expect_err("bad rate must fail startup");
+            assert!(err.to_string().contains("BUZZ_LLM_RATE_PER_MIN"), "{err}");
+        }
+
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
     }
 
     #[test]

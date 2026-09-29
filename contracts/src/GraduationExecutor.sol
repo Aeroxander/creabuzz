@@ -32,16 +32,38 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// did NOT graduate: it is `treasury`-only, runs once per auction, and refuses
 /// graduated (hence also executed) launches with `AuctionGraduated`.
 ///
+/// ONE AUCTION PER EXECUTOR. The executor is deployed before its auction (it
+/// must be the CCA's `fundsRecipient`/`tokensRecipient`), so it cannot know the
+/// auction at construction. Right after the auction is created the treasury
+/// calls the one-shot `bindAuction`; every entry point then refuses any other
+/// address. Without the bind a caller-supplied "auction" could report a
+/// `currency()`/`token()`/`lbpInitializationParams()` of its choosing and make
+/// the executor pay its own escrowed reserve to the treasury on demand.
+/// Native-currency auctions are refused at bind time: the executor has no
+/// `receive()`, so a native raise could never be swept.
+///
 /// The reserve stays escrowed until the TokenMaster/LBAMM pool deploys and
-/// the treasury records its address (`releaseReserve`). If the pool never
-/// lands, the treasury can withdraw the stuck reserve — nothing is lost to a
-/// contract that only documents.
+/// the treasury records its address (`releaseReserve`). It is NOT the treasury's
+/// to take back on demand: `withdrawStuckReserve` opens only `reserveLockSeconds`
+/// after graduation, only while no pool was recorded, and only pays the
+/// treasury. Before then the reserve can go nowhere but the recorded pool.
 contract GraduationExecutor is ILBPInitializer {
     using SafeTransferLib for address;
 
     address public immutable treasury;
     /// @notice Reserve share in basis points (e.g. 4000 = 40% to the TM floor).
     uint16 public immutable reserveBps;
+    /// @notice Seconds after graduation before an unreleased reserve may be
+    /// withdrawn back to the treasury (`withdrawStuckReserve`).
+    uint64 public immutable reserveLockSeconds;
+
+    /// @notice Shortest / longest permitted reserve lock. A lock under a day is
+    /// no lock; over a year is a reserve that is effectively burned.
+    uint64 public constant MIN_RESERVE_LOCK = 1 days;
+    uint64 public constant MAX_RESERVE_LOCK = 365 days;
+
+    /// @notice The single auction this executor serves (zero until bound).
+    address public boundAuction;
 
     struct Graduation {
         uint256 initialPriceX96;
@@ -58,6 +80,10 @@ contract GraduationExecutor is ILBPInitializer {
     /// @notice One recovery per auction: once a failed launch's sale supply has
     /// been returned to `treasury`, `recoverFailedLaunch` refuses to run again.
     mapping(address auction => bool) public launchRecovered;
+    /// @notice Timestamp `executeGraduation` ran (0 until then). Kept beside,
+    /// not inside, `Graduation` so the 8-word `graduations(address)` getter
+    /// that indexers and clients decode stays byte-stable.
+    mapping(address auction => uint64) public graduatedAt;
 
     event GraduationExecuted(
         address indexed auction,
@@ -69,7 +95,9 @@ contract GraduationExecutor is ILBPInitializer {
         uint256 unsoldTokens
     );
     event ReserveReleased(address indexed auction, address pool, uint256 amount);
-    event StuckReserveWithdrawn(address indexed auction, address currency);
+    event StuckReserveWithdrawn(address indexed auction, address currency, uint256 amount);
+    /// @notice Emitted once, when the treasury binds the executor to its auction.
+    event AuctionBound(address indexed auction, address currency);
     /// @notice Emitted when a failed launch's sale supply is returned to the treasury.
     event FailedLaunchRecovered(address indexed auction, address token, uint256 amount);
 
@@ -87,12 +115,61 @@ contract GraduationExecutor is ILBPInitializer {
     error AuctionGraduated(address auction);
     /// @notice Thrown when the failed launch's supply has already been recovered.
     error AlreadyRecovered(address auction);
+    /// @notice `auction` is not the auction this executor is bound to
+    /// (`bound` is zero while unbound).
+    error AuctionNotBound(address auction, address bound);
+    /// @notice `bindAuction` already ran; the binding is one-shot.
+    error AlreadyBound(address bound);
+    /// @notice The address handed to `bindAuction` is not a contract.
+    error NotAnAuction(address auction);
+    /// @notice The auction raises native currency, which this executor cannot receive.
+    error NativeCurrencyUnsupported(address auction);
+    /// @notice Reserve lock outside `[MIN_RESERVE_LOCK, MAX_RESERVE_LOCK]`.
+    error BadReserveLock(uint64 reserveLockSeconds);
+    /// @notice The reserve is still locked; withdrawable at `unlockAt`.
+    error ReserveLocked(address auction, uint64 unlockAt);
+    /// @notice A pool address of zero would burn the reserve.
+    error BadPool();
 
-    constructor(address treasury_, uint16 reserveBps_) {
+    constructor(address treasury_, uint16 reserveBps_, uint64 reserveLockSeconds_) {
         if (treasury_ == address(0)) revert OnlyTreasury(address(0));
         if (reserveBps_ > 10_000) revert BadReserveBps(reserveBps_);
+        if (reserveLockSeconds_ < MIN_RESERVE_LOCK || reserveLockSeconds_ > MAX_RESERVE_LOCK) {
+            revert BadReserveLock(reserveLockSeconds_);
+        }
         treasury = treasury_;
         reserveBps = reserveBps_;
+        reserveLockSeconds = reserveLockSeconds_;
+    }
+
+    /// @notice One-shot: bind this executor to the one auction it will settle.
+    /// Treasury only, called right after the auction is created (the executor
+    /// is deployed first because it must be the auction's recipient).
+    /// @dev Verifies the auction names this executor as BOTH recipients and
+    /// raises an ERC-20 (not native), so a mis-wired launch fails here — while
+    /// a fresh executor can still be deployed — not at graduation.
+    function bindAuction(address auction) external {
+        if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        if (boundAuction != address(0)) revert AlreadyBound(boundAuction);
+        if (auction.code.length == 0) revert NotAnAuction(auction);
+        IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
+        address currency = cca.currency();
+        if (currency == address(0)) revert NativeCurrencyUnsupported(auction);
+        if (cca.fundsRecipient() != address(this)) {
+            revert NotFundsRecipient(auction, address(this), cca.fundsRecipient());
+        }
+        if (cca.tokensRecipient() != address(this)) {
+            revert NotTokensRecipient(auction, address(this), cca.tokensRecipient());
+        }
+        boundAuction = auction;
+        emit AuctionBound(auction, currency);
+    }
+
+    /// @dev Every entry point serves the bound auction and nothing else.
+    function _requireBound(address auction) internal view {
+        if (auction == address(0) || auction != boundAuction) {
+            revert AuctionNotBound(auction, boundAuction);
+        }
     }
 
     /// @notice One atomic graduation. Callable by anyone; the recipient
@@ -102,6 +179,7 @@ contract GraduationExecutor is ILBPInitializer {
     /// keeper calling right after `endBlock` gets `NotGraduated` even for a
     /// launch that cleared the threshold.
     function executeGraduation(address auction) external {
+        _requireBound(auction);
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
         Graduation storage g = graduations[auction];
         if (g.executed) revert AlreadyExecuted(auction);
@@ -136,6 +214,7 @@ contract GraduationExecutor is ILBPInitializer {
         g.treasuryShare = treasuryShare;
         g.unsoldTokens = unsoldTokens;
         g.executed = true;
+        graduatedAt[auction] = uint64(block.timestamp);
 
         address currency = cca.currency();
         if (treasuryShare > 0) {
@@ -167,6 +246,7 @@ contract GraduationExecutor is ILBPInitializer {
     /// auction; the auction's own one-shot sweep is the backstop.
     function recoverFailedLaunch(address auction) external {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        _requireBound(auction);
         if (launchRecovered[auction]) revert AlreadyRecovered(auction);
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
         if (block.number < ICcaFinalization(auction).endBlock()) {
@@ -191,9 +271,12 @@ contract GraduationExecutor is ILBPInitializer {
 
     /// @notice Send the escrowed reserve to the recorded TokenMaster pool.
     /// Treasury records the pool post-deploy; the reserve releases once, to
-    /// the recorded pool only.
+    /// the recorded pool only. This is the ONLY way the reserve leaves before
+    /// the lock expires.
     function releaseReserve(address auction, address tokenMasterPool) external {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        _requireBound(auction);
+        if (tokenMasterPool == address(0)) revert BadPool();
         Graduation storage g = graduations[auction];
         if (g.tokenMasterPool != address(0)) revert AlreadyReleased(auction);
         if (g.reserveEscrow == 0) revert NothingToRelease(auction);
@@ -205,16 +288,30 @@ contract GraduationExecutor is ILBPInitializer {
         emit ReserveReleased(auction, tokenMasterPool, amount);
     }
 
-    /// @notice Governance escape hatch for an escrow whose pool never lands.
-    function withdrawStuckReserve(address auction, address to) external {
+    /// @notice Escape hatch for an escrow whose pool never lands: after
+    /// graduation + `reserveLockSeconds`, and only while no pool was recorded,
+    /// the treasury (and only the treasury) takes the reserve back. Before the
+    /// lock expires the reserve is committed to the recorded pool.
+    function withdrawStuckReserve(address auction) external {
         if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        _requireBound(auction);
         Graduation storage g = graduations[auction];
+        if (!g.executed) revert NotGraduated(auction);
+        uint64 unlockAt = reserveUnlockAt(auction);
+        if (block.timestamp < unlockAt) revert ReserveLocked(auction, unlockAt);
         if (g.tokenMasterPool != address(0)) revert AlreadyReleased(auction);
         uint256 amount = g.reserveEscrow;
+        if (amount == 0) revert NothingToRelease(auction);
         g.reserveEscrow = 0;
         address currency = IContinuousClearingAuction(auction).currency();
-        currency.safeTransfer(to, amount);
-        emit StuckReserveWithdrawn(auction, currency);
+        currency.safeTransfer(treasury, amount);
+        emit StuckReserveWithdrawn(auction, currency, amount);
+    }
+
+    /// @notice When `withdrawStuckReserve` opens for `auction` (0 before graduation).
+    function reserveUnlockAt(address auction) public view returns (uint64) {
+        uint64 at = graduatedAt[auction];
+        return at == 0 ? 0 : at + reserveLockSeconds;
     }
 
     function _tokenBalance(address token, address holder) internal view returns (uint256) {
