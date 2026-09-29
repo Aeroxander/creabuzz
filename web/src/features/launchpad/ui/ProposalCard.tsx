@@ -257,10 +257,10 @@ export function ProposalCard({
             proposal.state === "agent-draft"
               ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
               : proposal.state === "open"
-                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                 : proposal.state === "defeated"
-                  ? "bg-red-500/15 text-red-700 dark:text-red-300"
-                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  ? "bg-red-500/15 text-red-800 dark:text-red-300"
+                  : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
           }`}
         >
           {proposal.state}
@@ -304,10 +304,10 @@ export function ProposalCard({
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
               watch.status === "leading"
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                 : watch.status === "at-risk" || watch.status === "expired"
-                  ? "bg-red-500/15 text-red-700 dark:text-red-300"
-                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                  ? "bg-red-500/15 text-red-800 dark:text-red-300"
+                  : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
             }`}
           >
             {watch.status}

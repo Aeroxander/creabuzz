@@ -117,8 +117,8 @@ function VerdictBadge({ verdict }: { verdict: "approve" | "reject" }) {
     <span
       className={`rounded-full px-1.5 py-0.5 text-2xs font-medium ${
         verdict === "approve"
-          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-          : "bg-red-500/15 text-red-700 dark:text-red-300"
+          ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+          : "bg-red-500/15 text-red-800 dark:text-red-300"
       }`}
     >
       {verdict}
@@ -205,7 +205,7 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
                   <span
                     className={`rounded-full px-1.5 py-0.5 text-2xs font-medium ${
                       entry.settled
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                         : "bg-black/10 text-black/60 dark:bg-white/10 dark:text-white/60"
                     }`}
                   >

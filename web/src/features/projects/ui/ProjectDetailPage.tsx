@@ -50,7 +50,7 @@ function StatusPill({ status }: { status: RequestState["status"] }) {
   > = {
     approved: {
       label: "Recorded",
-      tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+      tone: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
       testid: "request-status-approved",
     },
     declined: {
@@ -70,7 +70,7 @@ function StatusPill({ status }: { status: RequestState["status"] }) {
     },
     pending: {
       label: "Waiting on the founder",
-      tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+      tone: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
       testid: "request-status-pending",
     },
   };
@@ -154,7 +154,7 @@ function TeamMap({
               <span
                 className={`rounded-full px-2 py-0.5 text-2xs font-medium ${
                   member.source === "grant"
-                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                     : "bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50"
                 }`}
                 data-testid={`team-source-${member.source}`}

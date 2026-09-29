@@ -26,7 +26,8 @@
 # executable (never run `playwright install` for this).
 #
 # Usage:  scripts/web-auction-e2e.sh [playwright args, e.g. -g "curated" --repeat-each=3]
-# Env:    ANVIL_PORT (default random high port), SKIP_BUILD=1 (reuse web/dist)
+# Env:    ANVIL_PORT (default random high port), SKIP_BUILD=1 (reuse web/dist),
+#         E2E_SPEC (another spec to run against the same chain)
 
 set -euo pipefail
 
@@ -97,4 +98,4 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
 fi
 step "running the browser spec"
 E2E_ANVIL_URL="$RPC" E2E_SALE_TOKEN="$SALE_TOKEN" E2E_CURRENCY="$CURRENCY" \
-  node_modules/.bin/playwright test tests/e2e/launchpad-auction.spec.ts --project=smoke --reporter=list "$@"
+  node_modules/.bin/playwright test "${E2E_SPEC:-tests/e2e/launchpad-auction.spec.ts}" --project=smoke --reporter=list "$@"

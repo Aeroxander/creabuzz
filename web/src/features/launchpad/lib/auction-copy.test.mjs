@@ -3,13 +3,19 @@ import test from "node:test";
 
 import { auctionDeployReducer, initAuctionDeployState } from "./auctionFlow.ts";
 import {
+  AUCTION_STEP_COPY,
   auctionFailureMessage,
   deployGate,
   deployStepStatusText,
+  GRADUATION_STEP_COPY,
   graduationGate,
+  graduationReadinessText,
   graduationStepStatusText,
   stepMarker,
 } from "./auction-copy.ts";
+import { AUCTION_DEPLOY_STEPS } from "./auctionFlow.ts";
+import { GRADUATION_STEPS } from "./graduationFlow.ts";
+import { USER_REJECTED_MESSAGE } from "./wallet-errors.ts";
 
 const short = (hash) => `${hash.slice(0, 6)}…`;
 const TX = `0x${"cd".repeat(32)}`;
@@ -139,9 +145,8 @@ test("step status words cover every state, and a skipped hook explains itself", 
     deployStepStatusText(already.steps.executor, short),
     "Done (already deployed)",
   );
-  assert.equal(graduationStepStatusText("active"), "In progress…");
-  assert.equal(graduationStepStatusText("skipped"), "Not planned");
-  assert.equal(graduationStepStatusText("pending"), "Pending");
+  assert.equal(graduationStepStatusText("active", true), "In progress…");
+  assert.equal(graduationStepStatusText("pending", true), "Waiting");
 });
 
 test("markers are distinct per status so state never relies on colour", () => {
@@ -227,4 +232,165 @@ test("graduation needs a wallet on the right chain, but not the treasury", () =>
     graduationGate({ ...base, walletChainId: 1, launchChainId: 5 }).reason,
     "wrong-chain",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Plain language, and the wallet rejection
+// ---------------------------------------------------------------------------
+
+// Words a founder should never have to read in a step or a status line: they
+// name contracts, functions, call mechanics or event kinds.
+const JARGON = [
+  "CREATE2",
+  "onTokensReceived",
+  "AllowlistHook",
+  "GraduationExecutor",
+  "executeGraduation",
+  "isGraduated",
+  "47005",
+  ".sol",
+  "0x",
+];
+
+test("every step the flow can run has plain copy, and none of it is jargon", () => {
+  for (const step of AUCTION_DEPLOY_STEPS) {
+    const copy = AUCTION_STEP_COPY[step.id];
+    assert.ok(copy, `no web copy for deploy step ${step.id}`);
+    assert.ok(copy.label && copy.detail, `empty copy for ${step.id}`);
+  }
+  for (const step of GRADUATION_STEPS) {
+    const copy = GRADUATION_STEP_COPY[step.id];
+    assert.ok(copy, `no web copy for graduation step ${step.id}`);
+  }
+  const all = [
+    ...Object.values(AUCTION_STEP_COPY),
+    ...Object.values(GRADUATION_STEP_COPY),
+  ].flatMap((c) => [c.label, c.detail]);
+  for (const text of all) {
+    for (const word of JARGON) {
+      assert.ok(
+        !text.includes(word),
+        `jargon "${word}" in user-facing copy: ${text}`,
+      );
+    }
+  }
+});
+
+test("copy exists for exactly the steps the flow has (no stale entries)", () => {
+  assert.deepEqual(
+    Object.keys(AUCTION_STEP_COPY).sort(),
+    AUCTION_DEPLOY_STEPS.map((s) => s.id).sort(),
+  );
+  assert.deepEqual(
+    Object.keys(GRADUATION_STEP_COPY).sort(),
+    GRADUATION_STEPS.map((s) => s.id).sort(),
+  );
+});
+
+test("declining in the wallet is reported as nothing sent, never as an unknown outcome", () => {
+  const state = run("community", [
+    { type: "begin", mode: "fresh" },
+    { type: "prepared", auctionAddress: null },
+    { type: "step_started", step: "executor" },
+    {
+      type: "step_done",
+      step: "executor",
+      txHash: TX,
+      address: EXECUTOR,
+      alreadyDeployed: false,
+    },
+    { type: "step_started", step: "auction" },
+    {
+      type: "step_failed",
+      step: "auction",
+      txHash: null,
+      outcome: "unknown",
+      // The flow appends its own explanation after the wallet's message.
+      reason: `${USER_REJECTED_MESSAGE} — the transaction may or may not have been broadcast; retry checks code at ${AUCTION} first`,
+    },
+  ]);
+  const message = auctionFailureMessage(state);
+  assert.match(message, /You declined “Auction” in your wallet/);
+  assert.match(message, /nothing was sent for this step/);
+  assert.match(message, /Already done: Graduation executor\./);
+  assert.doesNotMatch(message, /may or may not/);
+  assert.doesNotMatch(message, /Transaction:/);
+});
+
+test("a reason that ends without punctuation still reads as separate sentences", () => {
+  const state = run("community", [
+    { type: "begin", mode: "fresh" },
+    { type: "prepared", auctionAddress: null },
+    { type: "step_started", step: "executor" },
+    {
+      type: "step_failed",
+      step: "executor",
+      txHash: null,
+      outcome: "unknown",
+      reason: "rpc timed out",
+    },
+  ]);
+  const message = auctionFailureMessage(state);
+  assert.match(message, /rpc timed out\. No steps were completed\./);
+  assert.doesNotMatch(message, /rpc timed out No steps/);
+  // A reason that already ends in a full stop does not get a second one.
+  const dotted = run("community", [
+    { type: "begin", mode: "fresh" },
+    { type: "prepared", auctionAddress: null },
+    { type: "step_started", step: "executor" },
+    {
+      type: "step_failed",
+      step: "executor",
+      txHash: null,
+      outcome: "reverted",
+      reason: "execution reverted.",
+    },
+  ]);
+  assert.doesNotMatch(auctionFailureMessage(dotted), /\.\./);
+});
+
+test("graduation readiness reads in plain words for every status", () => {
+  const base = { message: "raw technical text", executor: null, params: null };
+  for (const status of [
+    "ready",
+    "running",
+    "threshold-missed",
+    "misconfigured",
+  ]) {
+    const text = graduationReadinessText({
+      ...base,
+      status,
+      finalizesOnExecute: false,
+    });
+    assert.notEqual(
+      text,
+      base.message,
+      `${status} fell through to the raw text`,
+    );
+    for (const word of JARGON) {
+      assert.ok(!text.includes(word), `jargon "${word}" in ${status}: ${text}`);
+    }
+  }
+  assert.match(
+    graduationReadinessText({
+      ...base,
+      status: "ready",
+      finalizesOnExecute: false,
+    }),
+    /execute the graduation now/,
+  );
+  assert.match(
+    graduationReadinessText({
+      ...base,
+      status: "threshold-missed",
+      finalizesOnExecute: false,
+    }),
+    /refunds/,
+  );
+});
+
+test("graduation steps read 'Not started' before the run and 'Not needed' after", () => {
+  assert.equal(graduationStepStatusText("skipped", false), "Not started");
+  assert.equal(graduationStepStatusText("skipped", true), "Not needed");
+  assert.equal(graduationStepStatusText("pending", false), "Waiting");
 });

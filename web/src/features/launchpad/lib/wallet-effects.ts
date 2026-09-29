@@ -27,7 +27,11 @@ import type {
   AuctionTxReceipt,
 } from "./auctionFlow.ts";
 import { decodeQuantity } from "../chain.ts";
+import { walletError } from "./wallet-errors.ts";
 import type { Eip1193ProviderLike } from "./wallet-sender.ts";
+
+// Re-exported: callers (and the tests) have always imported it from here.
+export { walletError };
 
 /** How often the receipt is polled. */
 export const RECEIPT_POLL_MS = 1500;
@@ -48,24 +52,6 @@ export interface WalletEffectsInput {
   sleep?: (ms: number) => Promise<void>;
   /** Test seam: monotonic clock in ms (defaults to `Date.now`). */
   now?: () => number;
-}
-
-/** EIP-1193 user-rejection code. */
-const USER_REJECTED = 4001;
-
-/** Turn a provider rejection (a plain `{code, message}`) into an `Error`. */
-export function walletError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  if (error && typeof error === "object") {
-    const { code, message } = error as { code?: unknown; message?: unknown };
-    if (code === USER_REJECTED) {
-      return new Error("You rejected the request in your wallet.");
-    }
-    if (typeof message === "string" && message.length > 0) {
-      return new Error(message);
-    }
-  }
-  return new Error("The wallet returned an error.");
 }
 
 function hexQuantity(value: unknown, what: string): bigint {

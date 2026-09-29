@@ -139,7 +139,7 @@ export function GateNote({ gate, testId }: { gate: SendGate; testId: string }) {
   if (gate.ok) return null;
   return (
     <p
-      className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+      className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 [overflow-wrap:anywhere] dark:bg-amber-950 dark:text-amber-100"
       data-testid={testId}
       role="status"
     >
@@ -158,11 +158,31 @@ export function FailureNote({
 }) {
   return (
     <p
-      className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200"
+      className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800 [overflow-wrap:anywhere] dark:bg-red-950 dark:text-red-200"
       data-testid={testId}
       role="alert"
     >
       {message}
+    </p>
+  );
+}
+
+/**
+ * The polite status line. The live region is always in the document (a region
+ * that appears together with its text is not announced), but it takes no room
+ * while empty: it is visually hidden until it has something to say.
+ */
+export function StatusLine({ text, testId }: { text: string; testId: string }) {
+  return (
+    <p
+      aria-live="polite"
+      className={
+        text ? "mt-2 text-sm text-black/60 dark:text-white/60" : "sr-only"
+      }
+      data-testid={testId}
+      role="status"
+    >
+      {text}
     </p>
   );
 }

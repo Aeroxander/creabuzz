@@ -26,10 +26,10 @@ function pct(bp: number): string {
 }
 
 const STATUS_TINT: Record<string, string> = {
-  calm: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  watch: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  flag: "bg-red-500/15 text-red-700 dark:text-red-300",
-  saturated: "bg-red-500/15 text-red-700 dark:text-red-300",
+  calm: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+  watch: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+  flag: "bg-red-500/15 text-red-800 dark:text-red-300",
+  saturated: "bg-red-500/15 text-red-800 dark:text-red-300",
 };
 
 export function OrgDiagnosticCard() {

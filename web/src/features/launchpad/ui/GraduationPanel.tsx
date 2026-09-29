@@ -3,7 +3,9 @@ import { useCallback, useEffect } from "react";
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 import {
+  GRADUATION_STEP_COPY,
   graduationGate,
+  graduationReadinessText,
   graduationStepStatusText,
   stepMarker,
 } from "../lib/auction-copy";
@@ -17,6 +19,7 @@ import {
   AddressRow,
   FailureNote,
   GateNote,
+  StatusLine,
   StepRow,
   WalletStrip,
 } from "./auction-widgets";
@@ -115,29 +118,33 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         <GateNote gate={gate} testId="graduation-gate" />
       )}
 
-      <p
-        aria-live="polite"
-        className="mt-2 text-sm text-black/60 dark:text-white/60"
-        data-testid="graduation-readiness"
-        role="status"
-      >
-        {state.phase === "checking"
-          ? "Reading the auction's graduation gates…"
-          : readiness
-            ? readiness.message
-            : ""}
-      </p>
+      <StatusLine
+        testId="graduation-readiness"
+        text={
+          state.phase === "checking"
+            ? "Reading the auction's graduation gates…"
+            : readiness
+              ? graduationReadinessText(readiness)
+              : ""
+        }
+      />
+      {readiness ? (
+        <details className="mt-1 text-xs text-black/50 dark:text-white/50">
+          <summary className="cursor-pointer">Technical detail</summary>
+          <p className="mt-1 [overflow-wrap:anywhere]">{readiness.message}</p>
+        </details>
+      ) : null}
 
       <ol aria-label="Graduation steps" className="mt-3 flex flex-col gap-1">
         {GRADUATION_STEPS.map((step) => {
           const status = state.steps[step.id];
           return (
             <StepRow
-              detail={step.detail}
+              detail={GRADUATION_STEP_COPY[step.id].detail}
               key={step.id}
-              label={step.label}
+              label={GRADUATION_STEP_COPY[step.id].label}
               marker={stepMarker(status)}
-              status={graduationStepStatusText(status)}
+              status={graduationStepStatusText(status, state.order.length > 0)}
               testId={`graduation-step-${step.id}`}
             />
           );
@@ -187,18 +194,16 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         </Button>
       </div>
 
-      <p
-        aria-live="polite"
-        className="mt-2 min-h-5 text-sm text-black/60 dark:text-white/60"
-        data-testid="graduation-status"
-        role="status"
-      >
-        {state.phase === "running"
-          ? "Graduation in progress…"
-          : state.phase === "done"
-            ? "Graduation executed and both receipts published."
-            : ""}
-      </p>
+      <StatusLine
+        testId="graduation-status"
+        text={
+          state.phase === "running"
+            ? "Graduation in progress…"
+            : state.phase === "done"
+              ? "Graduation executed and both receipts published."
+              : ""
+        }
+      />
       {state.errorMessage ? (
         <FailureNote
           message={`${state.errorMessage}${failureNote}`}

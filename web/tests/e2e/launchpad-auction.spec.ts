@@ -147,9 +147,14 @@ async function mockRelay(page: Page, initial: StoredEvent) {
 }
 
 /** `window.ethereum` forwarding to Anvil, signing as its unlocked account `account`. */
-async function installWallet(page: Page, account: string) {
+async function installWallet(
+  page: Page,
+  account: string,
+  options: { rejectFirstSend?: boolean } = {},
+) {
   await page.addInitScript(
-    ({ url, account }) => {
+    ({ url, account, rejectFirstSend }) => {
+      let sends = 0;
       Object.defineProperty(window, "ethereum", {
         configurable: true,
         value: {
@@ -162,6 +167,18 @@ async function installWallet(page: Page, account: string) {
           }) => {
             if (method === "eth_requestAccounts" || method === "eth_accounts") {
               return [account];
+            }
+            // The first send is declined (as if the user pressed Reject); every
+            // later one goes through, so the flow can be retried to the end.
+            if (
+              method === "eth_sendTransaction" &&
+              rejectFirstSend &&
+              sends++ === 0
+            ) {
+              throw {
+                code: 4001,
+                message: "User denied transaction signature",
+              };
             }
             const res = await fetch(url, {
               method: "POST",
@@ -184,7 +201,11 @@ async function installWallet(page: Page, account: string) {
         },
       });
     },
-    { url: ANVIL_URL, account },
+    {
+      url: ANVIL_URL,
+      account,
+      rejectFirstSend: options.rejectFirstSend ?? false,
+    },
   );
 }
 
@@ -388,6 +409,46 @@ test("the curated track also deploys and locks the bid gate to the auction", asy
       /Confirmed|Done/,
     );
   }
+  const auction =
+    relay.current().tags.find(([k]) => k === "auction")?.[1] ?? "";
+  expect(auction).toMatch(/^0x[0-9a-fA-F]{40}$/);
+});
+
+test("declining a transaction is recoverable: nothing was sent, and retry finishes the deploy", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await mintSaleSupply();
+  const startBlock = await nextStartBlock();
+  const relay = await mockRelay(
+    page,
+    launchRecord({ admission: "community", treasury: TREASURY, startBlock }),
+  );
+  await installWallet(page, TREASURY, { rejectFirstSend: true });
+  await openManage(page);
+  const head = String(await rpc("eth_blockNumber"));
+
+  await page.getByTestId("auction-deploy").click();
+  const failure = page.getByTestId("auction-failure");
+  await expect(failure).toBeVisible({ timeout: 30_000 });
+  // A user's "no" is a known outcome: say so, do not send them looking for a
+  // transaction that was never broadcast.
+  await expect(failure).toContainText("You declined");
+  await expect(failure).toContainText("nothing was sent for this step");
+  await expect(failure).not.toContainText("may or may not");
+  // The address shown for the never-deployed contract is labelled as expected.
+  await expect(page.getByTestId("auction-deploy-panel")).toContainText(
+    "Graduation executor (expected address)",
+  );
+  expect(String(await rpc("eth_blockNumber"))).toBe(head);
+
+  // Retry carries on from the declined step and completes the whole deploy.
+  await page.getByTestId("auction-retry").click();
+  await expect(page.getByTestId("auction-status")).toContainText(
+    "Auction deployed and linked to this launch.",
+    { timeout: 90_000 },
+  );
+  await expect(page.getByTestId("auction-failure")).toHaveCount(0);
   const auction =
     relay.current().tags.find(([k]) => k === "auction")?.[1] ?? "";
   expect(auction).toMatch(/^0x[0-9a-fA-F]{40}$/);

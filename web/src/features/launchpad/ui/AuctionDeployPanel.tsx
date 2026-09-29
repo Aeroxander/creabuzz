@@ -4,6 +4,7 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { isMainnetChain, mainnetEnabled } from "../chain";
 import {
+  AUCTION_STEP_COPY,
   auctionFailureMessage,
   deployGate,
   deployStepStatusText,
@@ -23,6 +24,7 @@ import {
   AddressRow,
   FailureNote,
   GateNote,
+  StatusLine,
   StepRow,
   WalletStrip,
 } from "./auction-widgets";
@@ -103,22 +105,33 @@ export function AuctionDeployPanel({
   const failure = auctionFailureMessage(state);
   const short = (hash: string) => truncatePubkey(hash);
 
+  // An address is shown before its contract exists (it is predicted from the
+  // wallet's transaction count), so anything not confirmed yet says so: a bare
+  // "Bid gate 0x…" after a declined transaction would claim a contract that was
+  // never deployed.
+  const addressRow = (
+    stepId: "hook" | "executor" | "auction",
+    value: string | null,
+    copyLabel: string,
+  ) => ({
+    label: `${AUCTION_STEP_COPY[stepId].label}${
+      state.steps[stepId].status === "done" ? "" : " (expected address)"
+    }`,
+    value,
+    copyLabel,
+  });
   const addresses = [
-    {
-      label: "Bid gate",
-      value: state.steps.hook.address,
-      copyLabel: "Copy bid gate address",
-    },
-    {
-      label: "Graduation executor",
-      value: state.steps.executor.address,
-      copyLabel: "Copy graduation executor address",
-    },
-    {
-      label: "Auction",
-      value: state.auctionAddress ?? state.steps.auction.address,
-      copyLabel: "Copy auction address",
-    },
+    addressRow("hook", state.steps.hook.address, "Copy bid gate address"),
+    addressRow(
+      "executor",
+      state.steps.executor.address,
+      "Copy graduation executor address",
+    ),
+    addressRow(
+      "auction",
+      state.auctionAddress ?? state.steps.auction.address,
+      "Copy auction address",
+    ),
   ];
 
   return (
@@ -149,9 +162,9 @@ export function AuctionDeployPanel({
           const stepState = state.steps[step.id];
           return (
             <StepRow
-              detail={step.detail}
+              detail={AUCTION_STEP_COPY[step.id].detail}
               key={step.id}
-              label={step.label}
+              label={AUCTION_STEP_COPY[step.id].label}
               marker={stepMarker(stepState.status)}
               status={deployStepStatusText(stepState, short)}
               testId={`auction-step-${step.id}`}
@@ -196,20 +209,18 @@ export function AuctionDeployPanel({
         )}
       </div>
 
-      <p
-        aria-live="polite"
-        className="mt-2 min-h-5 text-sm text-black/60 dark:text-white/60"
-        data-testid="auction-status"
-        role="status"
-      >
-        {state.phase === "preparing"
-          ? "Checking the sale terms and predicting the contract addresses…"
-          : state.phase === "linking"
-            ? "Every deploy transaction confirmed. Saving the auction to this launch…"
-            : state.phase === "success"
-              ? "Auction deployed and linked to this launch."
-              : ""}
-      </p>
+      <StatusLine
+        testId="auction-status"
+        text={
+          state.phase === "preparing"
+            ? "Checking the sale terms and predicting the contract addresses…"
+            : state.phase === "linking"
+              ? "Every deploy transaction confirmed. Saving the auction to this launch…"
+              : state.phase === "success"
+                ? "Auction deployed and linked to this launch."
+                : ""
+        }
+      />
       {failure ? (
         <FailureNote message={failure} testId="auction-failure" />
       ) : null}

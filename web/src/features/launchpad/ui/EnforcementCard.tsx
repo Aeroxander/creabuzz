@@ -73,9 +73,9 @@ export function EnforcementCard({ dao }: { dao: string }) {
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                   row.status === "verified"
-                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                     : row.status === "contradicted"
-                      ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                      ? "bg-red-500/15 text-red-800 dark:text-red-300"
                       : row.status === "documented"
                         ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
                         : "bg-muted text-muted-foreground"
