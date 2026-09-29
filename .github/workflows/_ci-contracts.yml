@@ -47,21 +47,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # The launchpad deploys GraduationExecutor and AllowlistHook from creation
-      # bytecode embedded in web/ and desktop/ graduationArtifact.ts (regenerate
-      # with scripts/regen-graduation-artifact.mjs). These run only the two
-      # drift tests, against the `forge build` output above. Without
-      # REQUIRE_CONTRACT_ARTIFACTS=1 a missing contracts/out makes the tests
-      # skip instead of fail, and a stale embed ships green.
-      - name: Graduation artifact drift (web)
+      # bytecode embedded in packages/creaton-core graduationArtifact.ts (shared
+      # by web and desktop; regenerate with scripts/regen-graduation-artifact.mjs).
+      # This runs the drift test against the `forge build` output above. Without
+      # REQUIRE_CONTRACT_ARTIFACTS=1 a missing contracts/out makes the test
+      # skip instead of fail, and a stale embed ships green. The web claim
+      # selectors are checked against the same build.
+      - name: Graduation artifact drift (shared core)
+        working-directory: packages/creaton-core
+        env:
+          REQUIRE_CONTRACT_ARTIFACTS: "1"
+        run: node --experimental-strip-types --test src/launchpad/graduationArtifact.test.mjs
+      - name: Milestone claim selectors (web)
         working-directory: web
         env:
           REQUIRE_CONTRACT_ARTIFACTS: "1"
-        run: node --experimental-strip-types --test src/features/launchpad/lib/graduationArtifact.test.mjs
-      - name: Graduation artifact drift (desktop)
-        working-directory: desktop
-        env:
-          REQUIRE_CONTRACT_ARTIFACTS: "1"
-        run: node --import ./test-loader.mjs --experimental-strip-types --test src/features/launchpad/lib/graduationArtifact.test.mjs
+        run: node --experimental-strip-types --test src/features/launchpad/lib/claim-tx.test.mjs
       - name: forge test
         working-directory: contracts
         env:

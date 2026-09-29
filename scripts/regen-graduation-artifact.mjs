@@ -7,7 +7,7 @@
 //
 // `forge inspect GraduationExecutor bytecode` prints the same value; reading
 // the artifact JSON here also gives the compiler version for the provenance
-// header. `desktop/.../graduationArtifact.test.mjs` fails when the constants and
+// header. `packages/creaton-core/.../graduationArtifact.test.mjs` fails when the constants and
 // the artifacts disagree, so a stale embed cannot ship.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,8 +18,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // The desktop app and the web app each embed the same bytecode (separate
 // packages, no shared module): both are rewritten together so they cannot drift.
 const targets = [
-  "desktop/src/features/launchpad/lib/graduationArtifact.ts",
-  "web/src/features/launchpad/lib/graduationArtifact.ts",
+  "packages/creaton-core/src/launchpad/graduationArtifact.ts",
 ].map((path) => resolve(repoRoot, path));
 
 /** foundry >= 1.0 writes `out/<File>.sol/<Contract>.json`. */

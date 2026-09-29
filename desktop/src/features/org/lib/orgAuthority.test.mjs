@@ -33,23 +33,6 @@ const corpus = JSON.parse(
   ),
 );
 
-test("the web twin is byte-identical to this file", () => {
-  const here = readFileSync(
-    fileURLToPath(new URL("./orgAuthority.ts", import.meta.url)),
-    "utf8",
-  );
-  const twin = readFileSync(
-    fileURLToPath(
-      new URL(
-        "../../../../../web/src/features/fleet/lib/orgAuthority.ts",
-        import.meta.url,
-      ),
-    ),
-    "utf8",
-  );
-  assert.equal(twin, here);
-});
-
 test("corpus is populated", () => {
   assert.ok(corpus.worlds.length >= 100);
   assert.ok(corpus.entailment.length >= 300);

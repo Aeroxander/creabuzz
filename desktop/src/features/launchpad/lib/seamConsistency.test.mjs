@@ -80,7 +80,10 @@ const TS_REPLY_SOURCES = {
   ],
   EvmSendResult: [
     ["./mintFlow.ts", "MintTxReceipt"],
-    ["./auctionFlow.ts", "AuctionTxReceipt"],
+    [
+      "../../../../../packages/creaton-core/src/launchpad/auctionPlan.ts",
+      "AuctionTxReceipt",
+    ],
   ],
   // `EvmFindBidIdsResult` has no TS declaration left on desktop (bidder
   // money reads moved to the web money plane; the Rust shape is still
@@ -213,10 +216,11 @@ function parseAnnotatedArgs(source, name) {
 const rustSource = readSource(RUST_WALLET_RS);
 const tsSources = new Map(IPC_MODULES.map((p) => [p, readSource(p)]));
 const tsShapes = new Map(
-  IPC_MODULES.concat(["./mintFlow.ts", "./auctionFlow.ts"]).map((p) => [
-    p,
-    parseTsShapes(readSource(p)),
-  ]),
+  IPC_MODULES.concat([
+    "./mintFlow.ts",
+    // The auction flow is shared with the web app (`@creaton/core`).
+    "../../../../../packages/creaton-core/src/launchpad/auctionPlan.ts",
+  ]).map((p) => [p, parseTsShapes(readSource(p))]),
 );
 
 // ---------------------------------------------------------------------------

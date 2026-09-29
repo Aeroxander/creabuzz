@@ -23,10 +23,7 @@ import {
 const corpus = JSON.parse(
   readFileSync(
     fileURLToPath(
-      new URL(
-        "../../../../../scripts/org-authority-corpus.json",
-        import.meta.url,
-      ),
+      new URL("../../../../scripts/org-authority-corpus.json", import.meta.url),
     ),
     "utf8",
   ),

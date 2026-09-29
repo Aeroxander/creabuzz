@@ -65,17 +65,20 @@ jobs:
               - 'scripts/normative-corpus.json'
               - 'desktop/**'
               - '!desktop/src-tauri/**'
+              - 'packages/**'
               - 'pnpm-lock.yaml'
             desktop-rust:
               - 'desktop/src-tauri/**'
             web:
               - 'web/**'
+              - 'packages/**'
               - 'pnpm-lock.yaml'
             contracts:
               - 'contracts/**'
               - '.gitmodules'
               - 'scripts/check-foundry-lock.mjs'
               - 'scripts/regen-graduation-artifact.mjs'
+              - 'packages/creaton-core/src/launchpad/graduationArtifact*'
               - '.github/workflows/_ci-contracts.yml'
               - '.github/workflows/ci.yml'
             mobile:

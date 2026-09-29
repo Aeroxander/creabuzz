@@ -287,7 +287,10 @@ test("validateProjectEventEnvelope rejects more than 64 a-tags", () => {
       `30617:${"a".repeat(64)}:repo-${String(i).padStart(2, "0")}`,
     ]);
   }
-  assert.throws(() => validateProjectEventEnvelope(tags, ""), /Project record: .*64/);
+  assert.throws(
+    () => validateProjectEventEnvelope(tags, ""),
+    /Project record: .*64/,
+  );
 });
 
 test("validateProjectEventEnvelope rejects a member address with uppercase owner hex", () => {

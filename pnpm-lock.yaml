@@ -256,6 +256,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@creaton/core':
+        specifier: workspace:*
+        version: link:../packages/creaton-core
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.2.0
@@ -308,8 +311,17 @@ importers:
         specifier: ^8.0.0
         version: 8.0.16(@types/node@25.6.0)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0)
 
+  packages/creaton-core:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.4.0
+
   web:
     dependencies:
+      '@creaton/core':
+        specifier: workspace:*
+        version: link:../packages/creaton-core
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8

@@ -821,6 +821,7 @@ web:
 # Run web lint and format checks
 web-check:
     node --test scripts/check-copy-core.test.mjs
+    cd packages/creaton-core && pnpm check
     cd {{web_dir}} && pnpm check
 
 # Fix web lint and format issues
@@ -837,6 +838,7 @@ web-build:
 
 # Run web unit tests (node:test; no browser, no relay)
 web-test:
+    cd packages/creaton-core && pnpm test
     cd {{web_dir}} && pnpm test
 
 # Check the web first-load bundle stays inside its budget (needs a build)

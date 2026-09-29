@@ -81,7 +81,7 @@ export function withoutMetadata(hex) {
 function artifactBytecode(file, contract, t) {
   const relPath = `contracts/out/${file}/${contract}.json`;
   const path = fileURLToPath(
-    new URL(`../../../../../${relPath}`, import.meta.url),
+    new URL(`../../../../${relPath}`, import.meta.url),
   );
   if (!existsSync(path)) {
     if (process.env.REQUIRE_CONTRACT_ARTIFACTS === "1") {
