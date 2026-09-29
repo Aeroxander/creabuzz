@@ -44,6 +44,7 @@ const EMPTY_DRAFTS: LimitDrafts = {
   runs: "",
   messages: "",
   llmCalls: "",
+  llmCostCents: "",
   taskCreate: "",
   proposals: "",
   taskApprove: "",

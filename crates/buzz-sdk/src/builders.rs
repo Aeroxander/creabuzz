@@ -2600,6 +2600,15 @@ pub struct BudgetLimits {
     /// gateway (counter class `llm_calls`); the wire key is `llmCalls`.
     #[serde(default, rename = "llmCalls", skip_serializing_if = "Option::is_none")]
     pub llm_calls: Option<u32>,
+    /// Maximum LLM spend in US cents in the window. Enforced by the relay's LLM
+    /// gateway from the upstream's reported token usage and the operator's
+    /// price table (`BUZZ_LLM_PRICE_*`); the wire key is `llmCostCents`.
+    #[serde(
+        default,
+        rename = "llmCostCents",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub llm_cost_cents: Option<u32>,
 }
 
 /// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
@@ -2728,6 +2737,7 @@ fn zeroed_limits() -> BudgetLimits {
         }),
         messages: Some(0),
         llm_calls: Some(0),
+        llm_cost_cents: Some(0),
     }
 }
 
@@ -5969,6 +5979,7 @@ mod tests {
                 governance: None,
                 messages: None,
                 llm_calls: None,
+                llm_cost_cents: None,
                 tasks: Some(TaskLimits {
                     create: Some(20),
                     approve: Some(0),
@@ -5997,6 +6008,7 @@ mod tests {
                         governance: None,
                         messages: None,
                         llm_calls: None,
+                        llm_cost_cents: None,
                         tasks: Some(TaskLimits {
                             create: Some(30),
                             approve: Some(0),
@@ -6014,6 +6026,7 @@ mod tests {
                         governance: None,
                         messages: None,
                         llm_calls: None,
+                        llm_cost_cents: None,
                         tasks: Some(TaskLimits {
                             create: Some(60),
                             approve: Some(2),

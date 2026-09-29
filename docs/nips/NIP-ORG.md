@@ -249,7 +249,8 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
     "tasks": { "create": 20, "approve": 0 },
     "governance": { "proposal": 2, "vote": 10, "execute": 2 },
     "messages": 500,
-    "llmCalls": 200
+    "llmCalls": 200,
+    "llmCostCents": 500
   },
   "onchain": {
     "chain": "eip155:8453",
@@ -288,8 +289,12 @@ action to approve.
   (`create` / `approve`), `governance` (`proposal` / `vote` / `execute`),
   `messages` (chat messages of kind 9 and 40002 authored by the agent) and
   `llmCalls` (calls through the relay's LLM gateway, which is metered before
-  the upstream is contacted). `spend` is enforced onchain (below), not by the
-  relay.
+  the upstream is contacted) and `llmCostCents` (US cents spent through the
+  gateway, charged after each call from the upstream's reported token usage
+  and the operator's price table; one call can overshoot the limit by its own
+  cost and the next is then refused, and a relay with no price table refuses an
+  agent covered by a cost limit instead of running it unmetered). `spend` is
+  enforced onchain (below), not by the relay.
 - Budgets apply to **agents and delegated scopes, never to a human's own
   actions** (design rule 5). A human's spending is a governance act (a vote,
   a treasury allowance), not a budget.

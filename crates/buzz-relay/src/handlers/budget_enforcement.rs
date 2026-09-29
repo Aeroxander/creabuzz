@@ -79,6 +79,9 @@ const MONTH_SECS: i64 = 2_592_000;
 pub(crate) const COUNTER_MESSAGES: &str = "messages";
 /// Counter class for LLM gateway calls.
 pub(crate) const COUNTER_LLM_CALLS: &str = "llm_calls";
+/// Counter class for LLM gateway spend, in milli-cents (thousandths of a US
+/// cent) — see [`crate::config::MILLICENTS_PER_CENT`].
+pub(crate) const COUNTER_LLM_COST: &str = "llm_cost_mc";
 
 /// Compute the window start timestamp for a budget window type.
 ///
@@ -224,16 +227,31 @@ struct ApplicableLimit {
 /// approval request instead of executing), `"messages"` for chat messages an
 /// agent authors (kinds 9/40002) and `"llm_calls"` for LLM gateway calls.
 /// `"task_approve"` is not enforced anywhere yet (see the note in `ingest.rs`).
-pub(crate) fn counter_limit(limits: &buzz_sdk::BudgetLimits, counter_type: &str) -> Option<u32> {
+pub(crate) fn counter_limit(limits: &buzz_sdk::BudgetLimits, counter_type: &str) -> Option<u64> {
     match counter_type {
-        "runs" => limits.runs,
-        "task_create" => limits.tasks.as_ref().and_then(|t| t.create),
-        "task_approve" => limits.tasks.as_ref().and_then(|t| t.approve),
-        "governance_proposal" => limits.governance.as_ref().and_then(|g| g.proposal),
-        "governance_vote" => limits.governance.as_ref().and_then(|g| g.vote),
-        "governance_execute" => limits.governance.as_ref().and_then(|g| g.execute),
-        COUNTER_MESSAGES => limits.messages,
-        COUNTER_LLM_CALLS => limits.llm_calls,
+        "runs" => limits.runs.map(u64::from),
+        "task_create" => limits.tasks.as_ref().and_then(|t| t.create).map(u64::from),
+        "task_approve" => limits.tasks.as_ref().and_then(|t| t.approve).map(u64::from),
+        "governance_proposal" => limits
+            .governance
+            .as_ref()
+            .and_then(|g| g.proposal)
+            .map(u64::from),
+        "governance_vote" => limits
+            .governance
+            .as_ref()
+            .and_then(|g| g.vote)
+            .map(u64::from),
+        "governance_execute" => limits
+            .governance
+            .as_ref()
+            .and_then(|g| g.execute)
+            .map(u64::from),
+        COUNTER_MESSAGES => limits.messages.map(u64::from),
+        COUNTER_LLM_CALLS => limits.llm_calls.map(u64::from),
+        COUNTER_LLM_COST => limits
+            .llm_cost_cents
+            .map(|cents| u64::from(cents) * crate::config::MILLICENTS_PER_CENT),
         _ => None,
     }
 }
@@ -311,13 +329,16 @@ struct WindowGroup {
 ///    never later). A concurrent ingest that races past the check trips the
 ///    post-increment guard (`consumed > limit`) and is reported as exceeded;
 ///    the counter stands (conservative).
-async fn enforce_budget_set(
+/// Group budgets by window and pick the strictest effective limit of each
+/// group — the binding budget. Shared by [`enforce_budget_set`] (check and
+/// consume one unit) and the LLM cost meter (check now, consume later).
+async fn budget_groups(
     db: &buzz_db::Db,
     tenant: &TenantContext,
     subject: &str,
     counter_type: &str,
     budgets: &[ApplicableLimit],
-) -> Result<BudgetOutcome, IngestError> {
+) -> Result<Vec<WindowGroup>, IngestError> {
     let mut groups: Vec<WindowGroup> = Vec::new();
     for (index, budget) in budgets.iter().enumerate() {
         let limit = effective_limit(db, tenant, subject, counter_type, budget).await?;
@@ -341,6 +362,17 @@ async fn enforce_budget_set(
             }),
         }
     }
+    Ok(groups)
+}
+
+async fn enforce_budget_set(
+    db: &buzz_db::Db,
+    tenant: &TenantContext,
+    subject: &str,
+    counter_type: &str,
+    budgets: &[ApplicableLimit],
+) -> Result<BudgetOutcome, IngestError> {
+    let groups = budget_groups(db, tenant, subject, counter_type, budgets).await?;
 
     for group in &groups {
         let within = db
@@ -380,6 +412,90 @@ async fn enforce_budget_set(
         Some(binding) => BudgetOutcome::Exceeded(binding),
         None => BudgetOutcome::Admitted,
     })
+}
+
+/// A subject's LLM spend budgets, checked before a gateway call and charged
+/// after it, once the upstream has reported what the call actually cost.
+#[derive(Debug)]
+pub(crate) struct LlmCostMeter {
+    subject: String,
+    windows: Vec<DateTime<Utc>>,
+}
+
+/// Before a gateway call: if any budget bounds this caller's LLM spend, the
+/// spend so far must be under the strictest limit of every window. Nothing is
+/// consumed here — the cost is unknown until the upstream answers. Returns
+/// `None` when no budget bounds LLM spend for the caller.
+///
+/// The check is against spend already recorded, so one call can overshoot a
+/// limit by its own cost; the *next* call is then refused (a soft ceiling, as
+/// with any post-paid meter).
+pub(crate) async fn begin_llm_cost(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    pubkey_hex: &str,
+) -> Result<Option<LlmCostMeter>, IngestError> {
+    let subject = pubkey_hex.to_ascii_lowercase();
+    let budgets = applicable_limits(state, tenant, &subject, COUNTER_LLM_COST).await?;
+    if budgets.is_empty() {
+        return Ok(None);
+    }
+    let groups = budget_groups(&state.db, tenant, &subject, COUNTER_LLM_COST, &budgets).await?;
+    for group in &groups {
+        let within = state
+            .db
+            .check_budget_consumption(
+                tenant.community(),
+                &subject,
+                COUNTER_LLM_COST,
+                group.window_start,
+                group.limit,
+            )
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: db error checking budget: {e}")))?;
+        if !within {
+            return Err(exceeded_error(
+                state,
+                tenant,
+                &subject,
+                COUNTER_LLM_COST,
+                &budgets[group.binding],
+            )
+            .await);
+        }
+    }
+    Ok(Some(LlmCostMeter {
+        subject,
+        windows: groups.iter().map(|g| g.window_start).collect(),
+    }))
+}
+
+/// After a gateway call: charge what it cost (milli-cents) to every window the
+/// caller's budgets cover. A failed write fails the request — an unrecorded
+/// paid call would be free spend.
+pub(crate) async fn record_llm_cost(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    meter: &LlmCostMeter,
+    cost_millicents: u64,
+) -> Result<(), IngestError> {
+    let amount = i64::try_from(cost_millicents).unwrap_or(i64::MAX);
+    for window_start in &meter.windows {
+        state
+            .db
+            .increment_budget_consumption(
+                tenant.community(),
+                &meter.subject,
+                COUNTER_LLM_COST,
+                *window_start,
+                amount,
+            )
+            .await
+            .map_err(|e| {
+                IngestError::Internal(format!("error: could not record LLM spend: {e}"))
+            })?;
+    }
+    Ok(())
 }
 
 /// A limit that applies when no budget defines one for the counter (the LLM
@@ -766,10 +882,17 @@ async fn exceeded_error(
     counter_type: &str,
     budget: &ApplicableLimit,
 ) -> IngestError {
-    let message = format!(
-        "budget exceeded: {counter_type} limit {} reached",
-        budget.limit
-    );
+    let message = if counter_type == COUNTER_LLM_COST {
+        format!(
+            "budget exceeded: LLM spend limit of {} cents reached",
+            budget.limit / crate::config::MILLICENTS_PER_CENT as i64
+        )
+    } else {
+        format!(
+            "budget exceeded: {counter_type} limit {} reached",
+            budget.limit
+        )
+    };
 
     if budget.on_exceed == "reject" {
         return IngestError::Rejected(message);
@@ -2193,6 +2316,77 @@ mod tests {
     /// Item 11: the LLM gateway's daily cap applies through the `llm_calls`
     /// counter when no budget covers the caller, and a budget's `llmCalls`
     /// governs when one does.
+    /// LLM spend budgets: nothing is charged before the call, the real cost is
+    /// charged after it, and once spend reaches the limit the next call is
+    /// refused. Callers no budget bounds are not metered at all.
+    #[tokio::test]
+    #[ignore = "requires migrated Postgres"]
+    async fn llm_cost_is_charged_after_the_call_and_bounds_the_next() {
+        let (pool, community) = pg_pool().await;
+        let tenant = tenant_of(community);
+        let budgeted = "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7";
+        let unbounded = "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8";
+        // 1 cent per day = 1,000 milli-cents, hard reject.
+        pg_insert_budget_event_by(
+            &pool,
+            community,
+            [8u8; 32],
+            serde_json::json!({
+                "v": 1, "subject": budgeted, "window": "day",
+                "limits": { "llmCostCents": 1 }, "onExceed": "reject",
+            }),
+        )
+        .await;
+        let Some(state) = pg_app_state(&pool).await else {
+            pg_cleanup(&pool, community).await;
+            eprintln!("skipping: could not build AppState (config/media unavailable)");
+            return;
+        };
+
+        assert!(
+            begin_llm_cost(&state, &tenant, unbounded)
+                .await
+                .expect("no budget bounds this caller")
+                .is_none(),
+            "a caller with no spend budget is not metered"
+        );
+
+        // Under the limit: admitted, and beginning consumes nothing by itself.
+        let meter = begin_llm_cost(&state, &tenant, budgeted)
+            .await
+            .expect("first call is within budget")
+            .expect("a budget bounds this caller");
+        begin_llm_cost(&state, &tenant, budgeted)
+            .await
+            .expect("beginning a call never charges")
+            .expect("still metered");
+
+        // 600 milli-cents charged: still under 1,000, so another call may start.
+        record_llm_cost(&state, &tenant, &meter, 600)
+            .await
+            .expect("record");
+        let meter = begin_llm_cost(&state, &tenant, budgeted)
+            .await
+            .expect("600 of 1000 is within budget")
+            .expect("metered");
+
+        // The second call overshoots (600 + 600 = 1,200): allowed once, since
+        // the cost is only known afterwards ...
+        record_llm_cost(&state, &tenant, &meter, 600)
+            .await
+            .expect("record");
+        // ... and then the next call is refused with a readable reason.
+        let err = begin_llm_cost(&state, &tenant, budgeted)
+            .await
+            .expect_err("spend is at the limit");
+        assert!(
+            matches!(&err, IngestError::Rejected(m) if m.contains("LLM spend limit of 1 cents")),
+            "{err:?}"
+        );
+
+        pg_cleanup(&pool, community).await;
+    }
+
     #[tokio::test]
     #[ignore = "requires migrated Postgres"]
     async fn llm_daily_cap_falls_back_to_config_and_yields_to_a_budget() {

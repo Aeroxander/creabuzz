@@ -117,7 +117,23 @@ pub async fn chat_completions(
     )
     .await
     .map_err(ingest_error_response)?;
+    // LLM spend budgets: refuse now if the caller is already at its limit, and
+    // charge the real cost once the upstream reports it. With no price table a
+    // cost budget cannot be metered, so refuse instead of running unmetered.
+    let cost_meter =
+        crate::handlers::budget_enforcement::begin_llm_cost(&state, &tenant, &pubkey.to_hex())
+            .await
+            .map_err(ingest_error_response)?;
+    let prices = llm.pricing();
+    if cost_meter.is_some() && prices.is_none() {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "an LLM spend budget applies, but this relay has no LLM prices configured \
+             (BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK / BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK)",
+        ));
+    }
     let body = sanitize_request(&body, llm.max_tokens(), llm.model())?;
+    let request_len = body.len();
 
     // Forward to the upstream, injecting the server-side key.
     let Some(client) = state.llm_http_client.as_ref() else {
@@ -160,6 +176,24 @@ pub async fn chat_completions(
         );
     }
 
+    // Charge the call. Only a successful answer costs anything; the reported
+    // `usage` is authoritative, and when an upstream omits it the request size
+    // and the `max_tokens` cap give a conservative overestimate.
+    if let (Some(meter), Some((price_in, price_out))) = (cost_meter.as_ref(), prices) {
+        if upstream_status.is_success() {
+            let cost = llm_cost_millicents(
+                &upstream_body,
+                request_len,
+                llm.max_tokens(),
+                price_in,
+                price_out,
+            );
+            crate::handlers::budget_enforcement::record_llm_cost(&state, &tenant, meter, cost)
+                .await
+                .map_err(ingest_error_response)?;
+        }
+    }
+
     Response::builder()
         .status(upstream_status)
         .header(header::CONTENT_TYPE, content_type)
@@ -170,6 +204,39 @@ pub async fn chat_completions(
                 "response construction failed",
             )
         })
+}
+
+/// What one gateway call cost, in milli-cents (thousandths of a US cent).
+///
+/// Uses the upstream's `usage.prompt_tokens` / `usage.completion_tokens`. When
+/// either is missing it falls back to a conservative estimate — the request
+/// body length over three bytes per token for the prompt, and the `max_tokens`
+/// cap for the completion — so an upstream that hides usage cannot make calls
+/// free. Prices are milli-cents per million tokens; the result rounds up.
+pub(crate) fn llm_cost_millicents(
+    response: &[u8],
+    request_len: usize,
+    max_tokens_cap: u64,
+    price_in: u64,
+    price_out: u64,
+) -> u64 {
+    let usage = serde_json::from_slice::<serde_json::Value>(response)
+        .ok()
+        .and_then(|v| v.get("usage").cloned());
+    let field = |name: &str| {
+        usage
+            .as_ref()
+            .and_then(|u| u.get(name))
+            .and_then(serde_json::Value::as_u64)
+    };
+    let prompt = field("prompt_tokens").unwrap_or((request_len as u64).div_ceil(3));
+    let completion = field("completion_tokens").unwrap_or(max_tokens_cap);
+    // Saturating: an upstream that reports absurd token counts must cost a lot,
+    // never wrap or panic.
+    let micro = u128::from(prompt)
+        .saturating_mul(u128::from(price_in))
+        .saturating_add(u128::from(completion).saturating_mul(u128::from(price_out)));
+    u64::try_from(micro.div_ceil(1_000_000)).unwrap_or(u64::MAX)
 }
 
 /// Per-caller per-minute rate limit (`BUZZ_LLM_RATE_PER_MIN`).
@@ -295,6 +362,47 @@ async fn read_capped(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cost_uses_the_reported_usage_and_rounds_up() {
+        // 1,000 prompt tokens at 300 mc/Mtok + 500 completion at 1,500 mc/Mtok:
+        // 1,000*300 + 500*1,500 = 1,050,000 micro-units → 1.05 → 2 (rounds up).
+        let body = br#"{"usage":{"prompt_tokens":1000,"completion_tokens":500}}"#;
+        assert_eq!(llm_cost_millicents(body, 10_000, 4096, 300, 1500), 2);
+        // Exactly one milli-cent: no spurious round up.
+        let body = br#"{"usage":{"prompt_tokens":1000,"completion_tokens":0}}"#;
+        assert_eq!(llm_cost_millicents(body, 10_000, 4096, 1000, 1500), 1);
+        // A free (unpriced) direction costs nothing.
+        assert_eq!(llm_cost_millicents(body, 10_000, 4096, 0, 1500), 0);
+    }
+
+    #[test]
+    fn cost_never_treats_missing_usage_as_free() {
+        // No usage block: prompt ≈ request bytes / 3, completion = the cap.
+        // 3,000 bytes → 1,000 tokens; 4,096 completion tokens.
+        let cost = llm_cost_millicents(b"{}", 3000, 4096, 1_000_000, 1_000_000);
+        assert_eq!(cost, 1000 + 4096);
+        // Garbage or non-JSON upstream bodies are estimated the same way.
+        assert_eq!(
+            llm_cost_millicents(b"not json", 3000, 4096, 1_000_000, 1_000_000),
+            cost
+        );
+        // A partial usage block falls back only for the missing side.
+        let partial = br#"{"usage":{"prompt_tokens":10}}"#;
+        assert_eq!(
+            llm_cost_millicents(partial, 3000, 100, 1_000_000, 1_000_000),
+            10 + 100
+        );
+    }
+
+    #[test]
+    fn cost_does_not_overflow_on_absurd_inputs() {
+        let body = br#"{"usage":{"prompt_tokens":18446744073709551615,"completion_tokens":18446744073709551615}}"#;
+        assert_eq!(
+            llm_cost_millicents(body, 0, 0, u64::MAX, u64::MAX),
+            u64::MAX
+        );
+    }
 
     fn rewritten(body: &str, cap: u64, model: Option<&str>) -> serde_json::Value {
         let out = sanitize_request(body.as_bytes(), cap, model).expect("sanitises");

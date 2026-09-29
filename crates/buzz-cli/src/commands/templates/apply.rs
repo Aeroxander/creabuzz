@@ -894,6 +894,7 @@ pub(crate) fn build_org_step_event(
                 governance: None,
                 messages: b.messages,
                 llm_calls: b.llm_calls,
+                llm_cost_cents: None,
             },
             on_exceed: OnExceed::RequireApproval,
             onchain: None,

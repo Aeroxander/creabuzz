@@ -3236,6 +3236,11 @@ pub enum OrgBudgetCmd {
         /// Maximum LLM gateway calls per window
         #[arg(long)]
         llm_calls: Option<u32>,
+        /// Maximum LLM spend per window, in US cents (needs the relay's
+        /// BUZZ_LLM_PRICE_* set; without prices a budget with a cost limit
+        /// makes the gateway refuse rather than run unmetered)
+        #[arg(long)]
+        llm_cost_cents: Option<u32>,
         /// Onchain spend binding: '<chain>|<contract>|<subject>' (NIP-ORG §37012).
         /// Example: --onchain 'eip155:8453|0xabc...def|<32-byte-hex-pubkey>'
         #[arg(long)]

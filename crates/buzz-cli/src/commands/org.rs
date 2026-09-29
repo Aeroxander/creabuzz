@@ -505,6 +505,7 @@ async fn cmd_budget_create(
     task_approve: Option<u32>,
     messages: Option<u32>,
     llm_calls: Option<u32>,
+    llm_cost_cents: Option<u32>,
     onchain: Option<&str>,
 ) -> Result<(), CliError> {
     validate_d_tag(subject_id, "budget")?;
@@ -544,6 +545,7 @@ async fn cmd_budget_create(
             governance: None,
             messages,
             llm_calls,
+            llm_cost_cents,
         },
         on_exceed: OnExceed::RequireApproval,
         onchain: onchain.map(parse_onchain_binding).transpose()?,
@@ -606,6 +608,7 @@ fn stop_budget(agent_hex: &str) -> OrgBudgetContent {
             }),
             messages: Some(0),
             llm_calls: Some(0),
+            llm_cost_cents: Some(0),
         },
         on_exceed: OnExceed::Reject,
         onchain: None,
@@ -1359,6 +1362,7 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 task_approve,
                 messages,
                 llm_calls,
+                llm_cost_cents,
                 onchain,
             } => {
                 cmd_budget_create(
@@ -1372,6 +1376,7 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                     task_approve,
                     messages,
                     llm_calls,
+                    llm_cost_cents,
                     onchain.as_deref(),
                 )
                 .await

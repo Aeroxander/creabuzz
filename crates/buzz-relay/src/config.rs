@@ -115,7 +115,15 @@ pub struct LlmConfig {
     max_calls_per_day: u32,
     max_tokens: u64,
     model: Option<String>,
+    /// Price of input tokens in milli-cents per million tokens (0 = unpriced).
+    price_input_mc_per_mtok: u64,
+    /// Price of output tokens in milli-cents per million tokens (0 = unpriced).
+    price_output_mc_per_mtok: u64,
 }
+
+/// Milli-cents per US cent: LLM spend is metered in thousandths of a cent so a
+/// call costing a fraction of a cent is neither rounded away nor rounded up.
+pub const MILLICENTS_PER_CENT: u64 = 1000;
 
 /// Default per-caller LLM gateway calls per minute (`BUZZ_LLM_RATE_PER_MIN`).
 pub const DEFAULT_LLM_RATE_PER_MIN: u64 = 20;
@@ -157,6 +165,40 @@ impl LlmConfig {
     pub(crate) fn model(&self) -> Option<&str> {
         self.model.as_deref()
     }
+
+    /// `(input, output)` prices in milli-cents per million tokens
+    /// (`BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK` / `..._OUTPUT_...`). `None` when
+    /// neither is set: LLM spend cannot be metered, so a budget that carries a
+    /// cost limit makes the gateway refuse rather than run unmetered.
+    pub(crate) fn pricing(&self) -> Option<(u64, u64)> {
+        (self.price_input_mc_per_mtok > 0 || self.price_output_mc_per_mtok > 0)
+            .then_some((self.price_input_mc_per_mtok, self.price_output_mc_per_mtok))
+    }
+}
+
+/// Parse a price in US cents per million tokens (decimals allowed, e.g.
+/// `0.75`) into milli-cents. Unset or blank means unpriced (0); a negative,
+/// non-numeric or absurd value is a startup error, never a silent default.
+fn price_mc_per_mtok_from_env(name: &str) -> Result<u64, ConfigError> {
+    let Ok(raw) = std::env::var(name) else {
+        return Ok(0);
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(0);
+    }
+    let cents: f64 = raw.parse().map_err(|_| {
+        ConfigError::InvalidValue(format!(
+            "{name} must be a number of US cents per million tokens (got \"{raw}\")"
+        ))
+    })?;
+    // Up to $1,000,000 per million tokens: far beyond any real price.
+    if !cents.is_finite() || !(0.0..=100_000_000.0).contains(&cents) {
+        return Err(ConfigError::InvalidValue(format!(
+            "{name} is out of range (got \"{raw}\")"
+        )));
+    }
+    Ok((cents * MILLICENTS_PER_CENT as f64).round() as u64)
 }
 
 impl std::fmt::Debug for LlmConfig {
@@ -168,6 +210,8 @@ impl std::fmt::Debug for LlmConfig {
             .field("max_calls_per_day", &self.max_calls_per_day)
             .field("max_tokens", &self.max_tokens)
             .field("model", &self.model)
+            .field("price_input_mc_per_mtok", &self.price_input_mc_per_mtok)
+            .field("price_output_mc_per_mtok", &self.price_output_mc_per_mtok)
             .finish()
     }
 }
@@ -904,6 +948,10 @@ impl Config {
                 )
             })?;
             let max_tokens = positive_u64_from_env("BUZZ_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS)?;
+            let price_input_mc_per_mtok =
+                price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK")?;
+            let price_output_mc_per_mtok =
+                price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK")?;
             proxy_url.map(|proxy_url| LlmConfig {
                 proxy_url,
                 api_key,
@@ -911,6 +959,8 @@ impl Config {
                 max_calls_per_day,
                 max_tokens,
                 model,
+                price_input_mc_per_mtok,
+                price_output_mc_per_mtok,
             })
         };
 
@@ -1806,6 +1856,56 @@ mod tests {
             std::env::set_var("BUZZ_LLM_RATE_PER_MIN", bad);
             let err = Config::from_env().expect_err("bad rate must fail startup");
             assert!(err.to_string().contains("BUZZ_LLM_RATE_PER_MIN"), "{err}");
+        }
+
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    #[test]
+    fn llm_prices_are_optional_decimal_cents_and_strict() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 3] = [
+            "BUZZ_LLM_PROXY_URL",
+            "BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK",
+            "BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        std::env::set_var(
+            "BUZZ_LLM_PROXY_URL",
+            "http://127.0.0.1:1/v1/chat/completions",
+        );
+        let llm = |what: &str| {
+            Config::from_env()
+                .unwrap_or_else(|e| panic!("{what}: {e}"))
+                .llm
+                .expect("gateway configured")
+        };
+
+        // Unpriced by default: a cost budget cannot be metered.
+        assert_eq!(llm("defaults").pricing(), None);
+
+        // Decimal cents per million tokens become milli-cents.
+        std::env::set_var("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK", "15");
+        std::env::set_var("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK", "0.75");
+        assert_eq!(llm("prices").pricing(), Some((15_000, 750)));
+
+        // One direction priced is enough to meter (the other is free).
+        std::env::remove_var("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK");
+        assert_eq!(llm("output only").pricing(), Some((0, 750)));
+
+        // A negative, non-numeric or absurd price is a startup error.
+        for bad in ["-1", "cheap", "NaN", "1e12"] {
+            std::env::set_var("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK", bad);
+            let err = Config::from_env().expect_err("bad price must fail startup");
+            assert!(
+                err.to_string()
+                    .contains("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK"),
+                "{err}"
+            );
         }
 
         for k in KNOBS {

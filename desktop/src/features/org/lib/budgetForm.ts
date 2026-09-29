@@ -145,6 +145,7 @@ export type BudgetLimitKey =
   | "runs"
   | "messages"
   | "llmCalls"
+  | "llmCostCents"
   | "taskCreate"
   | "proposals"
   | "taskApprove"
@@ -179,6 +180,13 @@ export const BUDGET_LIMIT_FIELDS: readonly BudgetLimitField[] = [
     label: "Max LLM Calls",
     placeholder: "e.g. 200",
     enforcement: "relay",
+  },
+  {
+    key: "llmCostCents",
+    label: "Max LLM Spend (cents)",
+    placeholder: "e.g. 500",
+    enforcement: "relay",
+    note: "Needs the relay's LLM prices configured; without them the gateway refuses the agent rather than run it unmetered.",
   },
   {
     key: "taskCreate",
@@ -229,6 +237,7 @@ export function buildBudgetLimits(
     limits.governance = { proposal: input.proposals };
   if (input.messages != null) limits.messages = input.messages;
   if (input.llmCalls != null) limits.llmCalls = input.llmCalls;
+  if (input.llmCostCents != null) limits.llmCostCents = input.llmCostCents;
   return limits;
 }
 
@@ -319,6 +328,13 @@ export function describeBudgetLimits(budget: {
   }
   if (limits.llmCalls != null) {
     rows.push(["llmCalls", `${limits.llmCalls} LLM calls/${window}`, "relay"]);
+  }
+  if (limits.llmCostCents != null) {
+    rows.push([
+      "llmCostCents",
+      `${limits.llmCostCents}¢ LLM spend/${window}`,
+      "relay",
+    ]);
   }
   if (limits.governance?.proposal != null) {
     rows.push([

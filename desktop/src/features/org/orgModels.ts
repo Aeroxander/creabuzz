@@ -210,6 +210,8 @@ export type BudgetLimits = {
   messages?: number;
   /** LLM gateway calls per window (relay-enforced); wire key `llmCalls`. */
   llmCalls?: number;
+  /** LLM spend in US cents per window (relay-enforced); wire key `llmCostCents`. */
+  llmCostCents?: number;
 };
 
 export type BudgetWindow = "epoch" | "day" | "week" | "month";

@@ -127,6 +127,18 @@ describe("buildOrgBudgetContent (the publish path)", () => {
     });
   });
 
+  it("carries the LLM spend limit as llmCostCents on the wire", () => {
+    const limitsOf = (limits) =>
+      JSON.parse(
+        buildOrgBudgetContent({ subject: AGENT_A, window: "day", limits }),
+      ).limits;
+    assert.deepEqual(limitsOf({ llmCostCents: 500, llmCalls: 20 }), {
+      llmCalls: 20,
+      llmCostCents: 500,
+    });
+    assert.deepEqual(limitsOf({ llmCostCents: 0 }), { llmCostCents: 0 });
+  });
+
   it("keeps a zero limit (0 is a real ceiling) and omits unset ones", () => {
     const content = JSON.parse(
       buildOrgBudgetContent({
@@ -278,7 +290,14 @@ describe("honest enforcement labels (NIP-ORG advisory rule)", () => {
       BUDGET_LIMIT_FIELDS.filter((f) => f.enforcement === "relay")
         .map((f) => f.key)
         .sort(),
-      ["llmCalls", "messages", "proposals", "runs", "taskCreate"],
+      [
+        "llmCalls",
+        "llmCostCents",
+        "messages",
+        "proposals",
+        "runs",
+        "taskCreate",
+      ],
     );
   });
 
