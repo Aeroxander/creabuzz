@@ -99,11 +99,11 @@ function BackToRepositories({
   );
 
   return mockPreview ? (
-    <a href="/?preview=repositories" className={className}>
+    <a href="/c?preview=repositories" className={className}>
       {content}
     </a>
   ) : (
-    <Link to="/" className={className}>
+    <Link to="/c" className={className}>
       {content}
     </Link>
   );

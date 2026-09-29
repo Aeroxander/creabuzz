@@ -4,7 +4,7 @@ import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
 
 test("home page loads with Creaton branding", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByRole("main").getByRole("img", { name: "Creaton" }),
   ).toBeVisible();
@@ -51,7 +51,7 @@ test("home page shows the community directory from the relay", async ({
   page,
 }) => {
   await mockCommunityDirectory(page);
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByRole("heading", { name: "Communities" }),
   ).toBeVisible();
@@ -72,7 +72,7 @@ test("empty directory shows the discovery empty state", async ({ page }) => {
       body: JSON.stringify({ communities: [] }),
     });
   });
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByText("No communities on this relay yet"),
   ).toBeVisible();
@@ -86,7 +86,7 @@ test("home page falls back when the directory endpoint is missing", async ({
   await page.route("**/communities", async (route) => {
     await route.fulfill({ status: 404, body: "not found" });
   });
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByRole("heading", { name: "Couldn't reach the relay" }),
   ).toBeVisible();
@@ -463,7 +463,7 @@ test("wrong relay shows connect form and stores the relay URL", async ({
   // Served from a non-relay origin (vite preview / static host), the app
   // cannot reach a WebSocket endpoint and must surface the connect form
   // instead of silently rendering the empty-community icon screen.
-  await page.goto("/");
+  await page.goto("/c");
   // Clear once up front; addInitScript would re-clear on the reload that
   // Connect triggers and race the write.
   await page.evaluate(() => window.localStorage.removeItem("buzz.relayUrl"));
@@ -497,7 +497,7 @@ test("the landing Repositories button opens the repo browser", async ({
       ws.send(JSON.stringify(["EOSE", parsed[1]]));
     });
   });
-  await page.goto("/");
+  await page.goto("/c");
   await page.getByRole("link", { name: "Repositories" }).click();
   await expect(page).toHaveURL(/\/repos$/);
   await expect(
@@ -534,7 +534,7 @@ test("a malformed relay payload shows a recoverable error, not a blank page", as
       body: JSON.stringify({ communities: "not-an-array" }),
     });
   });
-  await page.goto("/");
+  await page.goto("/c");
   const boundary = page.getByTestId("route-error");
   await expect(boundary).toBeVisible();
   await expect(boundary).toContainText("Something went wrong");

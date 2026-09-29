@@ -23,6 +23,9 @@ import {
 import { effectiveStage, type Launch } from "../models";
 import type { LaunchAction } from "../lib/deep-link";
 import { TreasuryTab } from "./TreasuryTab";
+import { LaunchDiscussion } from "@/features/feed/ui/LaunchDiscussion";
+import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
+import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 
 type TabLaunch = Launch;
 
@@ -72,6 +75,7 @@ import { useOrgMoney } from "../use-launches";
 
 type Tab =
   | "overview"
+  | "discussion"
   | "updates"
   | "proposals"
   | "treasury"
@@ -114,7 +118,7 @@ export function LaunchDetailPage({
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
     "exit" | "claim" | null
   >(null);
-  const [followed, setFollowed] = useState(false);
+  const follows = useLaunchFollows();
   const navigate = useNavigate();
 
   // Consume the deep link once: `bid` opens the bid dialog (sender picker);
@@ -182,8 +186,13 @@ export function LaunchDetailPage({
     }
   };
 
+  const coord = launchCoord(launch.record);
+  const followed = follows.followed.has(coord);
+
   const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
     { id: "overview", label: "Overview" },
+    // A simulated launch has no public discussion to join.
+    ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
     { id: "updates", label: `Updates (${launch.updates.length})` },
     { id: "proposals", label: `Proposals (${launch.proposals.length})` },
     { id: "treasury", label: "Treasury" },
@@ -224,23 +233,27 @@ export function LaunchDetailPage({
                 bid button — ownership only, never a yield. */}
             <OwnershipOnlyNote className="max-w-60 text-right" />
             <span className="flex gap-2">
-              <button
-                aria-label={followed ? "Unfollow launch" : "Follow launch"}
-                aria-pressed={followed}
-                onClick={() => setFollowed((f) => !f)}
-                className={cn(
-                  "rounded-lg border p-2",
-                  followed
-                    ? "border-amber-500/50 text-amber-500"
-                    : "border-black/15 dark:border-white/15",
-                )}
-                type="button"
-              >
-                <Star
-                  className="h-4 w-4"
-                  fill={followed ? "currentColor" : "none"}
-                />
-              </button>
+              {sandbox ? null : (
+                <button
+                  aria-label={followed ? "Unfollow launch" : "Follow launch"}
+                  aria-pressed={followed}
+                  data-testid="launch-follow"
+                  disabled={!follows.ready || follows.pending}
+                  onClick={() => follows.toggle(coord)}
+                  className={cn(
+                    "rounded-lg border p-2",
+                    followed
+                      ? "border-amber-500/50 text-amber-500"
+                      : "border-black/15 dark:border-white/15",
+                  )}
+                  type="button"
+                >
+                  <Star
+                    className="h-4 w-4"
+                    fill={followed ? "currentColor" : "none"}
+                  />
+                </button>
+              )}
               <Button onClick={() => setBidOpen(true)} size="sm">
                 Back this launch
               </Button>
@@ -290,6 +303,9 @@ export function LaunchDetailPage({
           <TrustGateCard launch={launch} />
           <OverviewTab launch={launch} />
         </>
+      ) : null}
+      {tab === "discussion" && !sandbox ? (
+        <LaunchDiscussion record={launch.record} />
       ) : null}
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
       {tab === "proposals" ? (

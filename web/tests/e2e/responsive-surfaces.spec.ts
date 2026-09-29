@@ -207,7 +207,7 @@ test.use({ viewport: MOBILE });
 
 test("landing page has no horizontal overflow", async ({ page }) => {
   await mockRelay(page);
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByRole("heading", { name: "Communities" }),
   ).toBeVisible();
@@ -266,7 +266,7 @@ test("org view fits", async ({ page }) => {
 
 test("first-run identity prompt fits", async ({ page }) => {
   await openCommunity(page);
-  await page.getByTestId("open-channel-list").click();
+  // On a phone the identity prompt lives in the app's bottom tab bar.
   await page.getByTestId("create-identity-cta").click();
   await expectNoOverflow(page, "first-run identity");
   await shot(page, "16-mobile-first-run-identity");

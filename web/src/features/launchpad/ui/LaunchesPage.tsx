@@ -1,5 +1,18 @@
 import { useState } from "react";
 import { SANDBOX_ID } from "../lib/sandbox";
+import {
+  launchCoord,
+  launchRef,
+  launchVoteTarget,
+} from "@/features/feed/ui/LaunchVoteCard";
+import { VoteButtons } from "@/features/feed/ui/VoteButtons";
+import {
+  EMPTY_TALLY,
+  type SortMode,
+  sortByMode,
+} from "@/features/feed/lib/ranking";
+import { useVoteTallies } from "@/features/feed/use-feed";
+import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Plus, Rocket, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -15,7 +28,7 @@ import {
   useLaunches,
   type CreateLaunchInput,
 } from "../use-launches";
-import { effectiveStage, type Launch } from "../models";
+import { effectiveStage } from "../models";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
@@ -23,56 +36,29 @@ import { ProgressBar, StageBadge } from "./widgets";
 import { cn } from "@/shared/lib/cn";
 
 type Filter = "all" | "mine" | "following";
-const FOLLOW_KEY = "buzz.launchpad.followed";
-
-function readFollowed(): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(FOLLOW_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return new Set(
-      Array.isArray(parsed)
-        ? parsed.filter((v): v is string => typeof v === "string")
-        : [],
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-function followKey(author: string, id: string): string {
-  return `${author}:${id}`;
-}
-
 export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
   const [filter, setFilter] = useState<Filter>("all");
   const [createOpen, setCreateOpen] = useState(false);
-  const [followed, setFollowed] = useState<Set<string>>(readFollowed);
+  const [sort, setSort] = useState<SortMode>("hot");
+  const follows = useLaunchFollows();
+  const { tallies } = useVoteTallies();
   const pubkey = existingUserPubkey();
 
   const launches = data ?? [];
-  const visible = launches.filter((launch) => {
+  const filtered = launches.filter((launch) => {
     if (filter === "mine") return launch.record.author === pubkey;
     if (filter === "following")
-      return followed.has(followKey(launch.record.author, launch.record.id));
+      return follows.followed.has(launchCoord(launch.record));
     return true;
   });
-
-  const toggleFollow = (launch: Launch) => {
-    const key = followKey(launch.record.author, launch.record.id);
-    setFollowed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      try {
-        window.localStorage.setItem(FOLLOW_KEY, JSON.stringify([...next]));
-      } catch {
-        // In-memory set still applies.
-      }
-      return next;
-    });
-  };
+  const visible = sortByMode(
+    filtered,
+    sort,
+    (launch) => tallies.get(launchCoord(launch.record))?.score ?? 0,
+    (launch) => launch.record.createdAt,
+  );
 
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
@@ -102,29 +88,45 @@ export function LaunchesPage() {
         }
       />
 
-      <div
-        className="flex flex-wrap items-center gap-2"
-        role="tablist"
-        aria-label="Launch filter"
-      >
-        {(["all", "mine", "following"] as const).map((f) => (
-          <button
-            key={f}
-            role="tab"
-            aria-selected={filter === f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide",
-              filter === f
-                ? "bg-black text-white dark:bg-white dark:text-black"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10",
-            )}
-            type="button"
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="tablist"
+          aria-label="Launch filter"
+        >
+          {(["all", "mine", "following"] as const).map((f) => (
+            <button
+              key={f}
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide",
+                filter === f
+                  ? "bg-black text-white dark:bg-white dark:text-black"
+                  : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10",
+              )}
+              type="button"
+            >
+              {f === "all" ? "All" : f === "mine" ? "Mine" : "Following"}
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+          <label className="sr-only" htmlFor="launch-sort">
+            Sort launches
+          </label>
+          <select
+            className="rounded-md border border-black/10 bg-transparent px-2 py-1 text-xs dark:border-white/15"
+            data-testid="launch-sort"
+            id="launch-sort"
+            onChange={(e) => setSort(e.target.value as SortMode)}
+            value={sort}
           >
-            {f === "all" ? "All" : f === "mine" ? "Mine" : "Following"}
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-black/60 dark:text-white/60">
+            <option value="hot">Hot</option>
+            <option value="new">New</option>
+            <option value="top">Top</option>
+          </select>
           {launches.length} launches
         </span>
       </div>
@@ -189,8 +191,8 @@ export function LaunchesPage() {
           </Link>
           <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {visible.map((launch) => {
-              const key = followKey(launch.record.author, launch.record.id);
-              const isFollowed = followed.has(key);
+              const key = launchCoord(launch.record);
+              const isFollowed = follows.followed.has(key);
               return (
                 <li key={key}>
                   <Card className="flex h-full flex-col p-4">
@@ -225,7 +227,8 @@ export function LaunchesPage() {
                           isFollowed ? "Unfollow launch" : "Follow launch"
                         }
                         aria-pressed={isFollowed}
-                        onClick={() => toggleFollow(launch)}
+                        disabled={!follows.ready || follows.pending}
+                        onClick={() => follows.toggle(key)}
                         className={cn(
                           "rounded-lg p-1.5",
                           isFollowed
@@ -241,6 +244,13 @@ export function LaunchesPage() {
                       </button>
                     </div>
                     <div className="mt-2 flex items-center gap-2">
+                      <VoteButtons
+                        label={launch.record.name}
+                        launch={launchRef(launch.record)}
+                        tally={tallies.get(key) ?? EMPTY_TALLY}
+                        target={launchVoteTarget(launch.record)}
+                        testId="launch-card-vote"
+                      />
                       <StageBadge stage={effectiveStage(launch)} />
                       <span className="text-xs text-black/60 dark:text-white/60">
                         {launch.updates.length} updates · {launch.bids.length}{" "}

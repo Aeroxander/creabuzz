@@ -185,7 +185,7 @@ test.use({ viewport: { width: 1280, height: 900 } });
 
 test("the discovery landing is accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto("/");
+  await page.goto("/c");
   await expect(
     page.getByRole("heading", { name: "Communities" }),
   ).toBeVisible();

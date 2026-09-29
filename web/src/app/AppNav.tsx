@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Compass,
+  Home,
   LayoutGrid,
   type LucideIcon,
   MessagesSquare,
@@ -13,7 +14,7 @@ import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
 
 interface NavItem {
-  to: "/" | "/discover" | "/launchpad" | "/projects";
+  to: "/" | "/c" | "/discover" | "/launchpad" | "/projects";
   label: string;
   icon: LucideIcon;
   /** Whether a pathname belongs to this section. */
@@ -23,9 +24,15 @@ interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   {
     to: "/",
+    label: "Home",
+    icon: Home,
+    matches: (p) => p === "/" || p.startsWith("/u/"),
+  },
+  {
+    to: "/c",
     label: "Communities",
     icon: MessagesSquare,
-    matches: (p) => p === "/" || p.startsWith("/c/") || p.startsWith("/repos"),
+    matches: (p) => p === "/c" || p.startsWith("/c/") || p.startsWith("/repos"),
   },
   {
     to: "/discover",

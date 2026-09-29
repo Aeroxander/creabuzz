@@ -10,7 +10,9 @@ import { Route as projectsRouteImport } from "./routes/projects";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
 import { Route as discoverRouteImport } from "./routes/discover";
+import { Route as cRouteImport } from "./routes/c";
 import { Route as indexRouteImport } from "./routes/index";
+import { Route as uDotpubkeyRouteImport } from "./routes/u.$pubkey";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
@@ -43,9 +45,19 @@ const discoverRoute = discoverRouteImport.update({
   path: "/discover",
   getParentRoute: () => rootRouteImport,
 } as any);
+const cRoute = cRouteImport.update({
+  id: "/c",
+  path: "/c",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const indexRoute = indexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const uDotpubkeyRoute = uDotpubkeyRouteImport.update({
+  id: "/u/$pubkey",
+  path: "/u/$pubkey",
   getParentRoute: () => rootRouteImport,
 } as any);
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
@@ -82,6 +94,7 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -92,10 +105,12 @@ export interface FileRoutesByFullPath {
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -106,11 +121,13 @@ export interface FileRoutesByTo {
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -121,12 +138,14 @@ export interface FileRoutesById {
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/c"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -137,10 +156,12 @@ export interface FileRouteTypes {
     | "/launchpad/$launchId"
     | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/c"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -151,10 +172,12 @@ export interface FileRouteTypes {
     | "/launchpad/$launchId"
     | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   id:
     | "__root__"
     | "/"
+    | "/c"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -165,11 +188,13 @@ export interface FileRouteTypes {
     | "/launchpad/$launchId"
     | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  cRoute: typeof cRoute;
   discoverRoute: typeof discoverRoute;
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
@@ -180,6 +205,7 @@ export interface RootRouteChildren {
   launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
   projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
+  uDotpubkeyRoute: typeof uDotpubkeyRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 
@@ -220,11 +246,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof discoverRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/c": {
+      id: "/c";
+      path: "/c";
+      fullPath: "/c";
+      preLoaderRoute: typeof cRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/": {
       id: "/";
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof indexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/u/$pubkey": {
+      id: "/u/$pubkey";
+      path: "/u/$pubkey";
+      fullPath: "/u/$pubkey";
+      preLoaderRoute: typeof uDotpubkeyRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/repos/$repoId": {
@@ -274,6 +314,7 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  cRoute: cRoute,
   discoverRoute: discoverRoute,
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
@@ -284,6 +325,7 @@ const rootRouteChildren: RootRouteChildren = {
   launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
   projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
+  uDotpubkeyRoute: uDotpubkeyRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };
 export const routeTree = rootRouteImport

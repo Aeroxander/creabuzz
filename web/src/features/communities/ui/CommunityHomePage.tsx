@@ -58,7 +58,7 @@ function CommunityLoadState({
         />
         <div className="flex justify-center">
           <Button asChild variant="outline">
-            <Link to="/">All communities</Link>
+            <Link to="/c">All communities</Link>
           </Button>
         </div>
       </div>
@@ -147,7 +147,7 @@ export function CommunityHomePage() {
     <div className="flex h-full w-full flex-1 items-start justify-center overflow-y-auto px-4 py-10">
       <div className="w-full max-w-2xl">
         <Link
-          to="/"
+          to="/c"
           className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" /> All communities

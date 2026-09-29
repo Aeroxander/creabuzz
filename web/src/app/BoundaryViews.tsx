@@ -50,7 +50,7 @@ export function RouteErrorView({
           </button>
           <Link
             className="rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium dark:border-white/15"
-            to="/"
+            to="/c"
           >
             All communities
           </Link>
@@ -75,7 +75,7 @@ export function NotFoundView() {
         </p>
         <Link
           className="mt-4 inline-block rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium dark:border-white/15"
-          to="/"
+          to="/c"
         >
           All communities
         </Link>

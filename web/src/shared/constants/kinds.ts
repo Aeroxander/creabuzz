@@ -1,6 +1,15 @@
 // Event kinds shared by the web client. Kept in sync with
 // crates/buzz-core/src/kind.rs and desktop/src/shared/constants/kinds.ts.
 
+/** Standard Nostr short note (NIP-01): feed posts and launch discussion. */
+export const KIND_TEXT_NOTE = 1;
+/** Standard follow list (NIP-02): the people someone follows. */
+export const KIND_CONTACT_LIST = 3;
+/** Standard reaction (NIP-25): `+` / `-` votes in the feed. */
+export const KIND_REACTION = 7;
+/** Standard bookmark list (NIP-51): the launches someone follows (`a` tags). */
+export const KIND_BOOKMARK_LIST = 10003;
+
 /** Agent fleet: capabilities advertisement (addressable, d = agent id). */
 export const KIND_AGENT_CAPABILITIES = 44010;
 /** Agent fleet: coordination task (addressable, d = task id, #p assignee). */

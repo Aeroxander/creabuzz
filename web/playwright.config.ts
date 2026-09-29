@@ -22,6 +22,7 @@ export default defineConfig({
         "**/smoke.spec.ts",
         "**/launchpad.spec.ts",
         "**/launchpad-auction.spec.ts",
+        "**/feed.spec.ts",
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",
         "**/a11y.spec.ts",

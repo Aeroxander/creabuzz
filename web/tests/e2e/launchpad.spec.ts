@@ -123,7 +123,10 @@ async function mockRelay(page: import("@playwright/test").Page) {
           content: string;
           tags: string[][];
         };
+        // Keep the whole signed event: a replayed launch needs its author
+        // (a real relay always serves `pubkey`).
         published.push({
+          ...(event as Record<string, unknown>),
           kind: Number((event as { kind?: number }).kind ?? 0),
           content: String(event.content ?? ""),
           tags: event.tags ?? [],
