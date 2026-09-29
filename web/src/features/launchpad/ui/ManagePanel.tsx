@@ -37,6 +37,7 @@ import {
   planClaimSubmit,
   planVerdictSubmit,
 } from "../lib/claim-submit";
+import { AuctionSection } from "./AuctionSection";
 import { TokenMintPanel } from "./TokenMintPanel";
 
 /**
@@ -613,6 +614,14 @@ export function ManagePanel({
           saving={save.isPending}
         />
       ) : null}
+
+      <AuctionSection
+        launch={launch}
+        // The deploy flow reports a failed record write and offers a retry, so
+        // this must PROPAGATE the publish error (not `handleSave`, which toasts
+        // and swallows it). `toInput` keeps every field the record holds.
+        onLink={(input) => save.mutateAsync(toInput(input))}
+      />
 
       <Card className="border-red-500/30 p-4">
         <h2 className="text-base font-semibold text-red-600">Danger zone</h2>

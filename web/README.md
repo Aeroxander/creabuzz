@@ -81,6 +81,15 @@ touching the read, write, auth, or static-serving paths — it is the only suite
 that sees the real deployment (it caught the theme bootstrap being served as
 HTML, and a NIP-42 handshake race that killed live subscriptions).
 
+`scripts/web-auction-e2e.sh` (from the repo root) deploys the auction from the
+browser against a **real local chain**: it builds the contracts, boots its own
+Anvil with the CCA factory's code at its canonical address, deploys a sale
+currency and token, and runs `tests/e2e/launchpad-auction.spec.ts` with a wallet
+that forwards to that chain. It needs foundry (`FOUNDRY_BIN` if it is not on
+`PATH`); set `PW_CHROMIUM_PATH` if the pinned Playwright wants a newer browser
+build than the machine has. The spec skips itself when its `E2E_*` variables are
+unset, so the default smoke run is unaffected.
+
 The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
 **built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or
 the suite tests a stale build.

@@ -21,6 +21,7 @@ export default defineConfig({
       testMatch: [
         "**/smoke.spec.ts",
         "**/launchpad.spec.ts",
+        "**/launchpad-auction.spec.ts",
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",
         "**/a11y.spec.ts",
@@ -37,6 +38,16 @@ export default defineConfig({
       ],
       use: {
         ...devices["Desktop Chrome"],
+        // Escape hatch for machines whose Chromium is older than the build the
+        // pinned Playwright wants (never `playwright install` for this).
+        ...(process.env.PW_CHROMIUM_PATH
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_CHROMIUM_PATH,
+                args: ["--no-sandbox"],
+              },
+            }
+          : {}),
       },
     },
     {

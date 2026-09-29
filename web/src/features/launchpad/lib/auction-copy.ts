@@ -108,3 +108,110 @@ export function auctionFailureMessage(
       : " “Retry remaining steps” runs again from this step with fresh values.";
   return `${label} ${outcome}: ${failure.reason}${txNote}${completedNote}${retryNote}`;
 }
+
+// ---------------------------------------------------------------------------
+// Gates: what must be true before the panels let anyone sign
+// ---------------------------------------------------------------------------
+
+/** Why a panel is not ready to send, or `ok` when it is. */
+export type SendGate =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "mainnet" | "plan" | "no-wallet" | "wrong-chain" | "not-treasury";
+      message: string;
+    };
+
+const sameAddress = (a: string, b: string): boolean =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * Gate for the auction deploy. Checked BEFORE the first transaction because the
+ * failures it prevents are expensive: the executor is deployed first, and the
+ * final `bindAuction` is treasury-only, so a wallet that is not the treasury
+ * would spend gas and stall at the last step. The order is the order a founder
+ * can fix things in: build restrictions, then the sale terms, then the wallet.
+ */
+export function deployGate(input: {
+  /** A mainnet launch on a build that has not enabled mainnet. */
+  mainnetBlocked: boolean;
+  /** Why the sale terms cannot be deployed (from the parameter gate), if so. */
+  planProblem: string | null;
+  /** The connected account, or null. */
+  address: string | null;
+  /** The chain the wallet is on, or null when not yet known. */
+  walletChainId: number | null;
+  /** The chain the launch is on. */
+  launchChainId: number | null;
+  /** The launch record's treasury. */
+  treasury: string | null | undefined;
+}): SendGate {
+  if (input.mainnetBlocked) {
+    return {
+      ok: false,
+      reason: "mainnet",
+      message:
+        "This launch is on a mainnet, and this build has mainnet switched off. The contracts are unaudited: use a test network.",
+    };
+  }
+  if (input.planProblem) {
+    return { ok: false, reason: "plan", message: input.planProblem };
+  }
+  if (!input.address) {
+    return {
+      ok: false,
+      reason: "no-wallet",
+      message: "Connect the treasury wallet to deploy the auction.",
+    };
+  }
+  if (
+    input.launchChainId !== null &&
+    input.walletChainId !== null &&
+    input.walletChainId !== input.launchChainId
+  ) {
+    return {
+      ok: false,
+      reason: "wrong-chain",
+      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
+    };
+  }
+  if (input.treasury && !sameAddress(input.address, input.treasury)) {
+    return {
+      ok: false,
+      reason: "not-treasury",
+      message: `Only the launch's treasury wallet can finish this deploy, because the last step binds the executor to the auction and only the treasury may do that. Connect ${input.treasury}.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Gate for executing graduation. The call itself is permissionless (funds can
+ * only go to the treasury and the reserve escrow), so it needs a wallet on the
+ * right chain and nothing more.
+ */
+export function graduationGate(input: {
+  address: string | null;
+  walletChainId: number | null;
+  launchChainId: number | null;
+}): SendGate {
+  if (!input.address) {
+    return {
+      ok: false,
+      reason: "no-wallet",
+      message: "Connect a wallet to execute the graduation.",
+    };
+  }
+  if (
+    input.launchChainId !== null &&
+    input.walletChainId !== null &&
+    input.walletChainId !== input.launchChainId
+  ) {
+    return {
+      ok: false,
+      reason: "wrong-chain",
+      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
+    };
+  }
+  return { ok: true };
+}

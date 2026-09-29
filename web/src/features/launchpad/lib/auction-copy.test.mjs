@@ -4,7 +4,9 @@ import test from "node:test";
 import { auctionDeployReducer, initAuctionDeployState } from "./auctionFlow.ts";
 import {
   auctionFailureMessage,
+  deployGate,
   deployStepStatusText,
+  graduationGate,
   graduationStepStatusText,
   stepMarker,
 } from "./auction-copy.ts";
@@ -148,4 +150,81 @@ test("markers are distinct per status so state never relies on colour", () => {
   );
   assert.equal(new Set(markers).size, 5);
   assert.equal(stepMarker("active"), stepMarker("running"));
+});
+
+// ---------------------------------------------------------------------------
+// Gates
+// ---------------------------------------------------------------------------
+
+const TREASURY = "0xAbCdEf0123456789abcdef0123456789ABCDEF01";
+const readyDeploy = {
+  mainnetBlocked: false,
+  planProblem: null,
+  address: TREASURY.toLowerCase(),
+  walletChainId: 11155111,
+  launchChainId: 11155111,
+  treasury: TREASURY,
+};
+
+test("deploy is allowed for the treasury wallet on the launch's chain (address case ignored)", () => {
+  assert.deepEqual(deployGate(readyDeploy), { ok: true });
+});
+
+test("deploy is refused, in fixable order, for each failed precondition", () => {
+  const reason = (patch) => deployGate({ ...readyDeploy, ...patch }).reason;
+  assert.equal(reason({ mainnetBlocked: true }), "mainnet");
+  assert.equal(reason({ planProblem: "floor price is not a number" }), "plan");
+  assert.equal(reason({ address: null }), "no-wallet");
+  assert.equal(reason({ walletChainId: 1 }), "wrong-chain");
+  assert.equal(
+    reason({ address: "0x1111111111111111111111111111111111111111" }),
+    "not-treasury",
+  );
+  // Order: a mainnet block outranks everything; the plan outranks the wallet.
+  assert.equal(
+    reason({ mainnetBlocked: true, planProblem: "x", address: null }),
+    "mainnet",
+  );
+  assert.equal(reason({ planProblem: "x", address: null }), "plan");
+  // A wrong wallet on the wrong chain is told about the chain first.
+  assert.equal(
+    reason({
+      walletChainId: 1,
+      address: "0x1111111111111111111111111111111111111111",
+    }),
+    "wrong-chain",
+  );
+});
+
+test("a wallet that is not the treasury is told exactly which address to connect", () => {
+  const gate = deployGate({
+    ...readyDeploy,
+    address: "0x1111111111111111111111111111111111111111",
+  });
+  assert.equal(gate.ok, false);
+  assert.ok(gate.message.includes(TREASURY));
+  assert.match(gate.message, /only the treasury may do that/);
+});
+
+test("an unknown wallet chain is not treated as a mismatch (the send-time check catches it)", () => {
+  assert.deepEqual(deployGate({ ...readyDeploy, walletChainId: null }), {
+    ok: true,
+  });
+});
+
+test("graduation needs a wallet on the right chain, but not the treasury", () => {
+  const base = { address: "0x1111111111111111111111111111111111111111" };
+  assert.deepEqual(
+    graduationGate({ ...base, walletChainId: 5, launchChainId: 5 }),
+    { ok: true },
+  );
+  assert.equal(
+    graduationGate({ address: null, walletChainId: 5, launchChainId: 5 })
+      .reason,
+    "no-wallet",
+  );
+  assert.equal(
+    graduationGate({ ...base, walletChainId: 1, launchChainId: 5 }).reason,
+    "wrong-chain",
+  );
 });
