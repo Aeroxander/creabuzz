@@ -30,10 +30,14 @@ pub mod moderation_commands;
 pub mod moderation_notices;
 /// NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
 pub mod org_grant_enforcement;
+#[cfg(test)]
+mod p2p_anon_tests;
 /// Product-feedback validation + deployment sidecar persistence.
 pub mod product_feedback;
 #[allow(dead_code, missing_docs)]
 pub mod push_lease;
+#[cfg(test)]
+mod read_gate_tests;
 /// NIP-43 relay membership admin command handler (kinds 9030–9032).
 pub mod relay_admin;
 /// NIP-56 report (kind:1984) validation + moderation queue persistence.
@@ -42,10 +46,6 @@ pub mod report;
 pub mod report_resolution;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
-#[cfg(test)]
-mod p2p_anon_tests;
-#[cfg(test)]
-mod read_gate_tests;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
 

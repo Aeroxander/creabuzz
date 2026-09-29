@@ -90,7 +90,7 @@ export function buildOrgNodeTemplate(input: {
       name: input.name,
       kind: "team",
       holders: [input.holder],
-      agent_seats: [],
+      agentSeats: [],
       ui: { blurb: input.blurb },
     }),
   };

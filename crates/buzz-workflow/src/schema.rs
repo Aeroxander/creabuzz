@@ -1111,6 +1111,9 @@ mod run_org_diag_schema_tests {
         .expect("step parses");
         assert!(matches!(step.action, ActionDef::RunOrgDiag));
         let round_trip = serde_json::to_value(&step).expect("serializable");
-        assert_eq!(round_trip.get("action").and_then(|a| a.as_str()), Some("run_org_diag"));
+        assert_eq!(
+            round_trip.get("action").and_then(|a| a.as_str()),
+            Some("run_org_diag")
+        );
     }
 }

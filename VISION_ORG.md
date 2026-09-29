@@ -38,7 +38,7 @@ off the relay and it stays a private toy.
 |---|---|---|
 | **Org chart** | flat team labels, owner-scoped | a hierarchy of role *seats* humans and agents hold |
 | **Authority** | one-hop NIP-OA provenance | transitive, attenuating delegation chains |
-| **Access** | binary channel rosters | role-scoped read/write, enforced against the graph |
+| **Access** | binary channel rosters | role-scoped read/write against the graph — *direction only; today channel membership is the sole read gate (see [docs/dao-os.md](docs/dao-os.md))* |
 | **Autonomy** | unbounded | budgets that turn overruns into approvals |
 | **Accountability** | an event log | an event log *with standing* — who was allowed to do what |
 | **Onchain** | n/a | the same graph, bound to a DAO, strictly opt-in |

@@ -49,6 +49,10 @@ export const SELECTOR_CLAIM_TOKENS = "0x46e04a2f";
 export const SELECTOR_CLAIM_TOKENS_BATCH = "0xb8f163d6";
 // approve(address,address,uint160,uint48) on Permit2
 export const SELECTOR_PERMIT2_APPROVE = "0x87517c45";
+// approve(address,uint256) on the ERC-20 currency (the holder -> Permit2 leg)
+export const SELECTOR_ERC20_APPROVE = "0x095ea7b3";
+// allowance(address,address) on the ERC-20 currency
+export const SELECTOR_ERC20_ALLOWANCE = "0xdd62ed3e";
 
 export interface BidPlan {
   maxPriceQ96: bigint;
@@ -251,6 +255,34 @@ export function encodePermit2Approve(
   );
 }
 
+/**
+ * ABI-encode `approve(spender, amount)` on the ERC-20 currency. Permit2 pulls
+ * a bid's funds with `transferFrom`, so the bidder must first approve PERMIT2
+ * on the token itself; `Permit2.approve` (above) only sets Permit2's own
+ * per-spender allowance and reverts the pull for a first-time bidder without it.
+ */
+export function encodeErc20Approve(spender: string, amount: bigint): string {
+  return `0x${SELECTOR_ERC20_APPROVE.slice(2)}${encodeAddress(spender)}${pad32(amount)}`;
+}
+
+/** ABI-encode `allowance(owner, spender)` on the ERC-20 currency. */
+export function encodeErc20Allowance(owner: string, spender: string): string {
+  return `0x${SELECTOR_ERC20_ALLOWANCE.slice(2)}${encodeAddress(owner)}${encodeAddress(spender)}`;
+}
+
+/**
+ * Whether the ERC-20 approval to Permit2 must be sent before the bid. An
+ * unknown allowance (`null`/`undefined`: the read failed) is treated as
+ * insufficient — an unneeded approve costs a little gas, a missing one reverts
+ * the whole bid.
+ */
+export function needsUnderlyingApproval(
+  allowance: bigint | null | undefined,
+  amount: bigint,
+): boolean {
+  return allowance === null || allowance === undefined || allowance < amount;
+}
+
 /** Convenience: the full unsigned tx for a bid on an ERC-20-currency auction. */
 export function buildBidTransaction(
   auctionAddress: string,
@@ -260,8 +292,9 @@ export function buildBidTransaction(
 }
 
 /**
- * Compose the full ordered call list of a bid: the Permit2 approval
- * (ERC-20-currency auctions) followed by `submitBid`. This is THE composer
+ * Compose the full ordered call list of a bid: the ERC-20 approve to Permit2
+ * (only when the bidder's allowance is short), the Permit2 approval
+ * (ERC-20-currency auctions), then `submitBid`. This is THE composer
  * behind both send paths in `ui/RecordBidDialog.tsx`: the injected wallet sends
  * these calls via sequential `eth_sendTransaction`, the passkey account sends
  * them through `identity/lib/sponsoredSender.ts`. The sender swap must never
@@ -282,10 +315,25 @@ export function buildBidCalls(input: {
   currency: string | null;
   /** Permit2 approval deadline (unix seconds). */
   deadline: bigint;
+  /**
+   * The bidder's current ERC-20 allowance to Permit2 (`allowance(owner,
+   * PERMIT2)`), when the caller could read it. Absent/`null` = unknown, which
+   * composes the ERC-20 approve.
+   */
+  underlyingAllowance?: bigint | null;
 }): UnsignedTx[] {
   const calls: UnsignedTx[] = [];
   const currency = input.currency;
   if (currency && /^0x[0-9a-fA-F]{40}$/.test(currency)) {
+    if (needsUnderlyingApproval(input.underlyingAllowance, input.plan.amount)) {
+      // Leg 1: holder -> Permit2 on the token itself.
+      calls.push({
+        to: currency,
+        value: "0x0",
+        data: encodeErc20Approve(PERMIT2_ADDRESS, input.plan.amount),
+      });
+    }
+    // Leg 2: Permit2 -> auction, bounded by amount and deadline.
     calls.push({
       to: PERMIT2_ADDRESS,
       value: "0x0",

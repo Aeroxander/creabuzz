@@ -59,18 +59,11 @@ pub fn density_bonus(skill: &str, density: &DensityConfig) -> f64 {
 }
 
 /// Fold hard/soft scores per `gate_metric` and add the optional bonus.
-pub fn composite_score(
-    hard: f64,
-    soft: f64,
-    skill: &str,
-    gate: &GateConfig,
-) -> f64 {
+pub fn composite_score(hard: f64, soft: f64, skill: &str, gate: &GateConfig) -> f64 {
     let base = match gate.metric {
         GateMetric::Hard => hard,
         GateMetric::Soft => soft,
-        GateMetric::Mixed { soft_weight } => {
-            (1.0 - soft_weight) * hard + soft_weight * soft
-        }
+        GateMetric::Mixed { soft_weight } => (1.0 - soft_weight) * hard + soft_weight * soft,
     };
     base + gate
         .semantic_density

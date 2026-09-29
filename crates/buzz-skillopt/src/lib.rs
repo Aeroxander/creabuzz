@@ -30,7 +30,9 @@ pub use edit::{
     edits_independent, resolve_conflicts, EditError, EditOp, MergedEdit, SkillDoc, SourceType,
     SLOW_UPDATE_END, SLOW_UPDATE_START,
 };
-pub use gate::{composite_score, density_bonus, gate_accepts, DensityConfig, GateConfig, GateMetric};
+pub use gate::{
+    composite_score, density_bonus, gate_accepts, DensityConfig, GateConfig, GateMetric,
+};
 pub use schedule::{learning_rate, Scheduler};
 pub use train::{
     evaluate, longitudinal, train, AnalysisRequest, Longitudinal, LongitudinalPairPolicy,

@@ -1,3 +1,4 @@
+import { UnauditedNotice } from "./UnauditedNotice";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
@@ -757,6 +758,7 @@ export function CreateLaunchDialog({
       <h2 className="text-lg font-semibold text-black dark:text-white">
         {isEdit ? "Edit launch" : "New launch"}
       </h2>
+      <UnauditedNotice />
       {relaunchNote ? (
         <p
           className="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200"

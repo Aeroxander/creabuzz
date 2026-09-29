@@ -728,7 +728,19 @@ impl ActionSink for RelayActionSink {
                 .query_events(&query)
                 .await
                 .map_err(|e| ActionSinkError::Database(e.to_string()))?;
-            let events: Vec<nostr::Event> = rows.into_iter().map(|row| row.event).collect();
+            // Open channels only: the diag reads actor + timing metadata of
+            // chat and task events, and this job has no viewer to authorize
+            // against. Events with no channel (org records) stay in.
+            let readable: std::collections::HashSet<uuid::Uuid> =
+                readable_channel_ids(&state.db, community_id)
+                    .await?
+                    .into_iter()
+                    .collect();
+            let events: Vec<nostr::Event> = rows
+                .into_iter()
+                .map(|row| row.event)
+                .filter(|event| event_in_readable_channel(event, &readable))
+                .collect();
 
             let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
             serde_json::to_value(&report).map_err(|e| ActionSinkError::EventBuild(e.to_string()))
@@ -737,6 +749,62 @@ impl ActionSink for RelayActionSink {
 }
 
 // ── Org diagnostic (`run_org_diag`) — OA.md Phase 4 ────────────────────────
+
+/// Whether a relay-run job (it has no viewer, so per-member access cannot be
+/// re-checked) may read a channel: only open, live, non-DM channels.
+///
+/// The distill and diag jobs publish or summarize community-wide, so anything
+/// they read must already be readable by every member.
+fn is_distill_readable(
+    visibility: &str,
+    channel_type: &str,
+    archived: bool,
+    deleted: bool,
+) -> bool {
+    visibility == "open" && channel_type != "dm" && !archived && !deleted
+}
+
+/// Ids of the channels a relay-run job may read (see [`is_distill_readable`]).
+async fn readable_channel_ids(
+    db: &buzz_db::Db,
+    community: CommunityId,
+) -> Result<Vec<uuid::Uuid>, ActionSinkError> {
+    let channels = db
+        .list_channels(community, Some("open"))
+        .await
+        .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+    Ok(channels
+        .iter()
+        .filter(|c| {
+            is_distill_readable(
+                &c.visibility,
+                &c.channel_type,
+                c.archived_at.is_some(),
+                c.deleted_at.is_some(),
+            )
+        })
+        .map(|c| c.id)
+        .collect())
+}
+
+/// Whether an event may feed a relay-run job: channel-less events (org
+/// records) pass; channel-scoped ones only when their `h` channel is readable.
+/// An `h` tag that is not a UUID fails closed.
+fn event_in_readable_channel(
+    event: &nostr::Event,
+    readable: &std::collections::HashSet<uuid::Uuid>,
+) -> bool {
+    let h = event.tags.iter().find_map(|tag| {
+        let parts = tag.as_slice();
+        (parts.first().map(String::as_str) == Some("h")).then(|| parts.get(1).cloned())
+    });
+    match h {
+        None => true,
+        Some(value) => value
+            .and_then(|v| uuid::Uuid::parse_str(&v).ok())
+            .is_some_and(|id| readable.contains(&id)),
+    }
+}
 
 /// The kinds the instrument reasons over (the coordination plane) — the same
 /// list `buzz diag` scans, so the CLI and the scheduled run never disagree.
@@ -789,19 +857,10 @@ mod run_org_diag_tests {
     fn mapping_is_conservative_and_reads_tables_and_coordinates() {
         let events = vec![
             event(47004, vec![]),
-            event(
-                47005,
-                vec![Tag::parse(["kind", "vote"]).expect("tag")],
-            ),
-            event(
-                47005,
-                vec![Tag::parse(["kind", "execute"]).expect("tag")],
-            ),
+            event(47005, vec![Tag::parse(["kind", "vote"]).expect("tag")]),
+            event(47005, vec![Tag::parse(["kind", "execute"]).expect("tag")]),
             event(37011, vec![Tag::parse(["kind", "revoke"]).expect("tag")]),
-            event(
-                44002,
-                vec![Tag::parse(["d", "default/diag"]).expect("tag")],
-            ),
+            event(44002, vec![Tag::parse(["d", "default/diag"]).expect("tag")]),
             event(12_345, vec![]),
         ];
         let rows = diag_events_from_nostr(&events);
@@ -826,7 +885,10 @@ mod run_org_diag_tests {
         let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
         let value = serde_json::to_value(&report).expect("serializable");
         assert_eq!(
-            value.get("wefModes").and_then(|m| m.as_array()).map(Vec::len),
+            value
+                .get("wefModes")
+                .and_then(|m| m.as_array())
+                .map(Vec::len),
             Some(5),
             "the five WEF modes travel in the step output"
         );
@@ -935,11 +997,12 @@ impl buzz_agwiki::run::DistillPorts for RelayDistillPorts<'_> {
         kinds: &[u32],
         limit: u32,
     ) -> buzz_agwiki::run::PortFut<'_, Vec<serde_json::Value>, Self::Error> {
-        let search_query = buzz_search::SearchQuery {
+        let mut search_query = buzz_search::SearchQuery {
             community: self.tenant.community(),
             q: query.to_owned(),
-            // Same scope the CLI's NIP-50 follow-up search sees: all community
-            // text (channels + forum), access-rechecked on the hydrate read.
+            // Replaced inside the async block below with the OPEN channels
+            // only: this relay-run job has no viewer, so nothing here can
+            // re-check access per member. `Any` would reach private channels.
             channel_scope: buzz_search::ChannelScope::Any,
             kinds: Some(kinds.iter().map(|k| *k as i32).collect()),
             authors: None,
@@ -950,6 +1013,11 @@ impl buzz_agwiki::run::DistillPorts for RelayDistillPorts<'_> {
             mode: buzz_search::SearchMode::FullText,
         };
         Box::pin(async move {
+            let readable = readable_channel_ids(&self.state.db, self.tenant.community()).await?;
+            if readable.is_empty() {
+                return Ok(Vec::new());
+            }
+            search_query.channel_scope = buzz_search::ChannelScope::Channels(readable);
             let result = self
                 .state
                 .search
@@ -1065,6 +1133,52 @@ fn distill_outcome_json(outcome: &buzz_agwiki::run::DistillOutcome) -> serde_jso
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn relay_jobs_read_only_open_live_non_dm_channels() {
+        use super::is_distill_readable;
+        assert!(is_distill_readable("open", "stream", false, false));
+        assert!(is_distill_readable("open", "forum", false, false));
+        assert!(!is_distill_readable("private", "stream", false, false));
+        assert!(!is_distill_readable("open", "dm", false, false));
+        assert!(!is_distill_readable("open", "stream", true, false));
+        assert!(!is_distill_readable("open", "stream", false, true));
+    }
+
+    #[test]
+    fn private_or_unparsable_channel_events_never_feed_a_relay_job() {
+        use super::event_in_readable_channel;
+        use std::collections::HashSet;
+
+        let keys = nostr::Keys::generate();
+        let open = uuid::Uuid::new_v4();
+        let private = uuid::Uuid::new_v4();
+        let readable: HashSet<uuid::Uuid> = [open].into_iter().collect();
+        let event = |tags: Vec<Vec<String>>| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(9), "hello")
+                .tags(tags.into_iter().map(|t| nostr::Tag::parse(t).unwrap()))
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let h = |id: &str| vec![vec!["h".to_string(), id.to_string()]];
+
+        assert!(event_in_readable_channel(
+            &event(h(&open.to_string())),
+            &readable
+        ));
+        assert!(
+            !event_in_readable_channel(&event(h(&private.to_string())), &readable),
+            "a private channel's message must not reach the LLM or the shared page"
+        );
+        assert!(
+            !event_in_readable_channel(&event(h("not-a-uuid")), &readable),
+            "an unparsable channel id fails closed"
+        );
+        assert!(
+            event_in_readable_channel(&event(vec![]), &readable),
+            "channel-less records (org events) are not channel-scoped"
+        );
+    }
+
     use super::*;
 
     fn m(name: &str, pubkey: &str) -> (String, String) {

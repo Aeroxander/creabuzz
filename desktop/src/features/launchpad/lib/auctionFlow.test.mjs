@@ -33,6 +33,13 @@ import {
   sweepReceiptParts,
 } from "./graduationFlow.ts";
 import {
+  SELECTOR_BIND_AUCTION,
+  SELECTOR_BOUND_AUCTION,
+  SELECTOR_ERC20_BALANCE_OF,
+  SELECTOR_ERC20_TRANSFER,
+  SELECTOR_ON_TOKENS_RECEIVED,
+} from "./evmCalls.ts";
+import {
   ALLOWLIST_HOOK_CREATION_BYTECODE,
   GRADUATION_EXECUTOR_CREATION_BYTECODE,
   predictCreateAddress,
@@ -89,7 +96,7 @@ const CAST_FACTORY_CREATE =
   "0x" +
   "4aaa5b3700000000000000000000000044444444444444444444444444444444" +
   "4444444400000000000000000000000000000000000000000000d3c21bcecced" +
-  "a100000000000000000000000000000000000000000000000000000000000000" +
+  "a0ffffff00000000000000000000000000000000000000000000000000000000" +
   "0000008000000000000000000000000000000000000000000000000000000000" +
   "0000000100000000000000000000000000000000000000000000000000000000" +
   "000001c000000000000000000000000000000000000000000000000000000000" +
@@ -111,7 +118,7 @@ const CAST_FACTORY_GET_ADDRESS =
   "0x" +
   "1bfb751b00000000000000000000000044444444444444444444444444444444" +
   "4444444400000000000000000000000000000000000000000000d3c21bcecced" +
-  "a100000000000000000000000000000000000000000000000000000000000000" +
+  "a0ffffff00000000000000000000000000000000000000000000000000000000" +
   "000000a000000000000000000000000000000000000000000000000000000000" +
   "0000000100000000000000000000000022222222222222222222222222222222" +
   "2222222200000000000000000000000000000000000000000000000000000000" +
@@ -228,7 +235,8 @@ test("uniformAuctionSteps rejects unschedulable windows", () => {
 test("deriveAuctionDeployParams maps the record fields", () => {
   const params = deriveAuctionDeployParams(PLAN);
   assert.equal(params.token, PLAN.token);
-  assert.equal(params.amount, 1_000_000n * 10n ** 18n);
+  // One wei short of the supply: StandardPool locks 1 wei in the router.
+  assert.equal(params.amount, 1_000_000n * 10n ** 18n - 1n);
   assert.equal(params.currency, "0x0000000000000000000000000000000000000000");
   assert.equal(params.floorPrice, 4294967297n);
   assert.equal(params.tickSpacing, 100n);
@@ -548,10 +556,9 @@ test("runAuctionDeploy (community) sends executor CREATE (no `to`) then factory 
   const predicted = predictCreateAddress(DEPLOYER, 7n);
   let auctionCodeChecks = 0;
   const effects = {
-    call: async ({ data }) => {
-      assert.ok(data.startsWith(SELECTOR_FACTORY_GET_ADDRESS));
-      return addrWord(AUCTION_ADDR);
-    },
+    // Every view answers with the auction address: the factory's getAddress,
+    // and (by coincidence of the fixture) "already funded / already bound".
+    call: async () => addrWord(AUCTION_ADDR),
     send: async (call) => {
       sends.push(call);
       return successReceipt(sends.length === 1 ? TX1 : TX2, null);
@@ -576,7 +583,11 @@ test("runAuctionDeploy (community) sends executor CREATE (no `to`) then factory 
     },
   });
 
-  assert.equal(sends.length, 2);
+  // executor CREATE + factory create + onTokensReceived (the funding and bind
+  // views read as already satisfied here; see the scripted-chain test below).
+  assert.equal(sends.length, 3);
+  assert.equal(sends[2].to, AUCTION_ADDR);
+  assert.ok(sends[2].data.startsWith(SELECTOR_ON_TOKENS_RECEIVED));
   // IPC contract: `to` OMITTED = contract creation.
   assert.equal(sends[0].to, undefined);
   assert.ok(sends[0].data.startsWith(GRADUATION_EXECUTOR_CREATION_BYTECODE));
@@ -624,10 +635,124 @@ test("runAuctionDeploy (curated) deploys the AllowlistHook first", async () => {
     previous: initAuctionDeployState("curated"),
     onLink: async () => {},
   });
-  assert.equal(sends.length, 3);
+  assert.equal(sends.length, 4, "hook + executor + factory + onTokensReceived");
   assert.ok(sends[0].data.startsWith(ALLOWLIST_HOOK_CREATION_BYTECODE));
   assert.ok(sends[1].data.startsWith(GRADUATION_EXECUTOR_CREATION_BYTECODE));
   assert.equal(sends[2].to, FACTORY);
+  assert.ok(sends[3].data.startsWith(SELECTOR_ON_TOKENS_RECEIVED));
+});
+
+test("runAuctionDeploy funds the auction, opens bidding and binds the executor (scripted chain)", async () => {
+  const { actions, dispatch } = collectingDispatch();
+  const sends = [];
+  const AMOUNT = 10n ** 24n - 1n;
+  const effects = {
+    call: async ({ to, data }) => {
+      if (data.startsWith(SELECTOR_FACTORY_GET_ADDRESS)) {
+        return addrWord(AUCTION_ADDR);
+      }
+      if (data.startsWith(SELECTOR_ERC20_BALANCE_OF)) {
+        // The auction holds nothing yet; the deploying wallet holds the supply.
+        return to === PLAN.token &&
+          data.toLowerCase().includes(AUCTION_ADDR.slice(2).toLowerCase())
+          ? uintWord(0n)
+          : uintWord(AMOUNT);
+      }
+      if (data.startsWith(SELECTOR_BOUND_AUCTION)) {
+        return addrWord("0x0000000000000000000000000000000000000000");
+      }
+      throw new Error(`unexpected view ${data.slice(0, 10)}`);
+    },
+    send: async (call) => {
+      sends.push(call);
+      return successReceipt(
+        `0x${String(sends.length).padStart(64, "0")}`,
+        null,
+      );
+    },
+    codeAt: async (address) => address !== AUCTION_ADDR || sends.length >= 2,
+    transactionCount: async () => 7n,
+    blockNumber: async () => 0n,
+  };
+  await runAuctionDeploy({
+    effects,
+    plan: PLAN,
+    deployer: DEPLOYER,
+    factory: FACTORY,
+    dispatch,
+    mode: "fresh",
+    previous: initAuctionDeployState("community"),
+    onLink: async () => {},
+  });
+
+  const kinds = sends.map((c) =>
+    c.to === undefined
+      ? "create"
+      : c.data.slice(0, 10) === SELECTOR_ERC20_TRANSFER
+        ? "transfer"
+        : c.data.slice(0, 10) === SELECTOR_ON_TOKENS_RECEIVED
+          ? "onTokensReceived"
+          : c.data.slice(0, 10) === SELECTOR_BIND_AUCTION
+            ? "bindAuction"
+            : "factory",
+  );
+  assert.deepEqual(kinds, [
+    "create",
+    "factory",
+    "transfer",
+    "onTokensReceived",
+    "bindAuction",
+  ]);
+  assert.equal(sends[2].to, PLAN.token, "the supply moves via the token");
+  assert.ok(
+    sends[2].data.toLowerCase().includes(AUCTION_ADDR.slice(2).toLowerCase()),
+    "…to the auction",
+  );
+  assert.equal(sends[3].to, AUCTION_ADDR);
+  const state = fold(
+    auctionDeployReducer,
+    initAuctionDeployState("community"),
+    actions,
+  );
+  assert.equal(state.phase, "success");
+  assert.equal(state.steps.fund.status, "done");
+  assert.equal(state.steps.received.status, "done");
+  assert.equal(state.steps.bind.status, "done");
+  assert.equal(state.steps.hookAuction.status, "skipped");
+});
+
+test("runAuctionDeploy names the wallet when it cannot fund the auction", async () => {
+  const { actions, dispatch } = collectingDispatch();
+  const effects = {
+    call: async ({ data }) => {
+      if (data.startsWith(SELECTOR_FACTORY_GET_ADDRESS)) {
+        return addrWord(AUCTION_ADDR);
+      }
+      return uintWord(0n); // nobody holds any of the sale token
+    },
+    send: async () => successReceipt(TX1, null),
+    codeAt: async (address) => address !== AUCTION_ADDR || true,
+    transactionCount: async () => 7n,
+    blockNumber: async () => 0n,
+  };
+  await runAuctionDeploy({
+    effects,
+    plan: PLAN,
+    deployer: DEPLOYER,
+    factory: FACTORY,
+    dispatch,
+    mode: "fresh",
+    previous: initAuctionDeployState("community"),
+    onLink: async () => {},
+  });
+  const state = fold(
+    auctionDeployReducer,
+    initAuctionDeployState("community"),
+    actions,
+  );
+  assert.equal(state.phase, "paused");
+  assert.equal(state.failure.step, "fund");
+  assert.match(state.failure.reason, new RegExp(DEPLOYER.slice(2), "i"));
 });
 
 test("runAuctionDeploy halts on a mined revert, names the step, and resumes at a fresh nonce", async () => {

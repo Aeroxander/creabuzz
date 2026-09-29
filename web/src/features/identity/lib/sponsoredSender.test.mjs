@@ -19,6 +19,7 @@ import {
 } from "./zerodev.ts";
 import {
   buildBidCalls,
+  encodeErc20Approve,
   encodePermit2Approve,
   encodeSubmitBid,
   PERMIT2_ADDRESS,
@@ -447,8 +448,15 @@ test("the bid composition handed to sendCalls is byte-identical to the injected 
   const deadline = 1_800_000_000n;
   const composed = buildBidCalls({ auction, plan, currency, deadline });
 
-  // The composer's own bytes: Permit2 approve, then submitBid — unchanged.
+  // The composer's own bytes for a bidder whose allowance is unknown: the
+  // ERC-20 approve to Permit2 (a first-time bidder's payment pull reverts
+  // without it), the Permit2 approve, then submitBid.
   assert.deepEqual(composed, [
+    {
+      to: currency,
+      value: "0x0",
+      data: encodeErc20Approve(PERMIT2_ADDRESS, plan.amount),
+    },
     {
       to: PERMIT2_ADDRESS,
       value: "0x0",
@@ -460,6 +468,27 @@ test("the bid composition handed to sendCalls is byte-identical to the injected 
       data: encodeSubmitBid(plan),
     },
   ]);
+  // A returning bidder whose allowance already covers the bid skips the extra leg.
+  const returning = buildBidCalls({
+    auction,
+    plan,
+    currency,
+    deadline,
+    underlyingAllowance: plan.amount,
+  });
+  assert.equal(returning.length, 2);
+  assert.equal(returning[0].to, PERMIT2_ADDRESS);
+  // One wei short is not enough.
+  assert.equal(
+    buildBidCalls({
+      auction,
+      plan,
+      currency,
+      deadline,
+      underlyingAllowance: plan.amount - 1n,
+    }).length,
+    3,
+  );
 
   // Injected-wallet path: capture at the eth_sendTransaction wire.
   const walletWire = [];

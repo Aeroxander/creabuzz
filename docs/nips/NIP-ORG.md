@@ -134,7 +134,9 @@ so the record carries no channel/routing tag and is stored globally.
 }
 ```
 
-- `kind` is `"role" | "team" | "agent-seat"`.
+- `kind` is `"role" | "team" | "agent_seat"` (snake_case on the wire; the
+  CLI flag spelling `agent-seat` is an input alias only and is never written
+  to an event).
 - The org is a **forest** of nodes; `parent` links form the hierarchy
   (omitted on a root, typically the founder's seat). A community's org chart
   is the set of `37010` events it holds, read-side resolved last-write-wins
@@ -148,6 +150,33 @@ so the record carries no channel/routing tag and is stored globally.
 Replacement follows NIP-33: a newer `37010` for the same `(author, d)`
 supersedes. Org edits are ordinary publishes, so they are signed and
 audit-logged like any other write.
+
+#### Authority anchor (who may publish a node)
+
+Nodes, grants and budgets are addressed by `(author, d)` but *referenced* by
+the bare `d` (`parent`, `via`, `parentGrant`, `subject`). If any member could
+publish any `d`, any member could shadow a legitimate node by publishing a
+newer record with the same id. The relay therefore anchors authority to a
+single root of trust — **owner → seats → agents**:
+
+- The **community owner/admin** may publish any node, including roots.
+- Anyone else may publish only a **child** of a node they hold a seat in
+  (`holders`; `agentSeats` never confer authority), where that parent is
+  itself anchored, the child's `scope.canGrant` is no wider than its
+  parent's, and no other author already publishes a node under the same `d`.
+- A node is **anchored** when its author is the owner/admin or holds a seat
+  in an anchored parent. A reference (`parent`, `via`) resolves to an
+  *anchored* candidate for that `d` — never to the newest unanchored one.
+- Agent seats never anchor anything. Reviewing, budgeting and creating nodes
+  are human authority.
+
+The walk is bounded (depth, candidate count and total lookups) and fails
+closed: a graph the relay cannot fully resolve denies the write. Clients MUST
+apply the same resolution when rendering (do not key nodes by bare `d`; key by
+`(author, d)` and prefer the anchored candidate).
+
+Node publication authority is enforced at ingest **always** (it is not
+governed by `ORG_GRANT_ENFORCEMENT`, below).
 
 ### `37011` — Org Grant (addressable, community-level)
 
@@ -184,6 +213,16 @@ edge that NIP-OA's single hop cannot express.
 - **Revocation** is republication of the same `(issuer, d)` with
   `"revoked": true`, or expiry. Revoking a grant transitively invalidates
   every grant naming it, because their chain no longer reaches a valid root.
+- **Parent resolution is by signer, not by id.** `parentGrant` names only a
+  `d`. A verifier resolves it to the candidate whose *stored author equals
+  its own `content.issuer`*, whose `grantee` equals the child grant's issuer,
+  and whose whole chain verifies. A record that merely shares the id (a
+  different author) is never the parent. The incoming event's signer MUST
+  equal its `content.issuer`.
+- **Equity records are not grants.** A kind:37011 event with
+  `"type": "equity"` records an ownership stake (the Project Board's equity
+  grant) and carries `"verbs": []`. It is exempt from chain verification and
+  authority views MUST ignore it — an equity record never delegates power.
 
 
 ### `37012` — Budget (addressable, community-level)
@@ -200,7 +239,9 @@ A bound on autonomous action for an agent or a delegated scope. Addressed by
     "spend": { "amount": 100000, "unit": "usd-cents" },
     "runs": 50,
     "tasks": { "create": 20, "approve": 0 },
-    "governance": { "proposal": 2, "vote": 10, "execute": 2 }
+    "governance": { "proposal": 2, "vote": 10, "execute": 2 },
+    "messages": 500,
+    "llmCalls": 200
   },
   "onchain": {
     "chain": "eip155:8453",
@@ -227,7 +268,20 @@ outside budget supervision. The gate covers an agent's ACTIONS
 (proposal/vote/execute); the owner's control of their own votes is not an
 action to approve.
 
-- `window` is `"epoch" | "day" | "week" | "month"`.
+- `window` is `"epoch" | "day" | "week" | "month"`. `day`/`week`/`month` are
+  **fixed epochs**, not calendar periods: a window starts at
+  `floor(unix_time / len) * len` with `len` = 86 400 / 604 800 / 2 592 000
+  seconds — the same numbering the onchain allowance uses (see *Epoch
+  mapping* below), so the relay, the contract and every client agree on when a
+  window rolls over. `epoch` is the all-time cumulative counter and never
+  resets; a budget that must lapse carries an explicit expiry instead. An
+  unknown `window` is rejected at ingest.
+- **Counters.** The relay meters, per subject and window: `runs`, `tasks`
+  (`create` / `approve`), `governance` (`proposal` / `vote` / `execute`),
+  `messages` (chat messages of kind 9 and 40002 authored by the agent) and
+  `llmCalls` (calls through the relay's LLM gateway, which is metered before
+  the upstream is contacted). `spend` is enforced onchain (below), not by the
+  relay.
 - Budgets apply to **agents and delegated scopes, never to a human's own
   actions** (design rule 5). A human's spending is a governance act (a vote,
   a treasury allowance), not a budget.
@@ -241,9 +295,27 @@ action to approve.
   (human-on-the-loop — agents act within bounds, humans monitor and can
   override). The distinction is worth naming so panels stop inventing words.
 - The relay enforces budgets it can observe (event-kind ceilings, run
-  counts); spend ceilings are enforced where value actually moves (the
-  harness's signing path, or onchain allowances for a bound DAO). A budget a
-  surface cannot observe is advisory and MUST be rendered as such.
+  counts, messages, LLM gateway calls); spend ceilings are enforced where
+  value actually moves — the allowance contract's `spend()` / `spendTo()`
+  (below). A budget a surface cannot observe is advisory and MUST be rendered
+  as such.
+
+#### Who may publish a budget, and the community default
+
+- The community owner/admin, or a **human holding a seat in an anchored org
+  node**, may publish a budget for any agent.
+- An agent may publish a budget for **itself** — but only ever to *add*
+  constraints: enforcement applies the **strictest** limit among every budget
+  covering the subject, so a subject-signed budget can never loosen or
+  displace an authority-signed one.
+- `subject: "*"` is the **community default budget**. It applies to every
+  agent that has no authority-signed budget of its own, so an agent is bounded
+  from the moment it joins, without anyone remembering to configure it. It may
+  be published by the **owner/admin only**, and it cannot carry an `onchain`
+  binding (an allowance binds one agent's key).
+- When several budgets cover a subject the relay enforces the strictest of
+  each limit; the default is consulted only when no authority-signed budget
+  names the agent.
 - A budget MAY carry a `performanceLink` ladder that scales its limits with
   the subject's accepted contribution records — see [Performance-linked
   autonomy](#performance-linked-autonomy-budget-ladders).
@@ -262,9 +334,13 @@ A budget's SPEND ceiling MAY declare an optional `onchain` binding:
 
 A budget without `onchain` is enforced where the surface can observe it, or
 is advisory. A budget **with** `onchain` is enforced at the value layer: the
-harness's authorized spender calls the contract's `spend()` over the key
-above **before** the action executes, so the contract rejects any spend over
-the epoch allowance. The contract is the ledger; Nostr is the record —
+authorized spender calls the contract's `spendTo(subject, token, epoch, amount, to)`
+over the key above, which debits the epoch allowance **and pays `to` from the
+treasury (`transferFrom(treasury, to, amount)`) in the same transaction**, so
+ledger and transfer revert together — there is no separate
+"settle later" step a key could skip. (`spend()` remains as the pure
+accounting entry point; a deployment that uses it without `spendTo` is
+advisory and MUST be labelled so.) The contract is the ledger; Nostr is the record —
 NIP-LP's rule, applied here unchanged. Each settled spend is mirrored as a
 kind:37014 receipt (below); the receipt is advisory and the chain is
 authoritative, so clients MUST cross-check the contract before acting on
@@ -420,15 +496,21 @@ resurrect a rejected verdict.
 
 Review authority:
 
-- Publishing `reviewStatus: "accepted"` or `"rejected"` SHOULD be done by
-  a key holding review authority: an org node seat, or a grant carrying a
-  review verb (authority bottoms out at a human-held seat, per the design
-  rules).
+- A disposition counts only when it is signed by a key with **review
+  authority** *and* that key is **not the contribution's subject**. Review
+  authority is: the community owner/admin, or a **human** holding a seat in
+  an anchored org node (`holders`; agent seats never review). A contributor
+  therefore can never approve their own work, whatever their standing.
+- The **relay** applies this rule where it consumes reviews — when it
+  evaluates a performance-linked ladder it tallies, per action, the newest
+  review by an authorized reviewer other than the subject (ties: lowest event
+  id); the subject's own `reviewStatus` is never trusted, and an action with
+  no authorized review counts as neither accepted nor rejected. Ingest still
+  admits the record (a parallel record by an unauthorized signer is harmless
+  history), so the rule bites at the decision, not at the write.
 - A client MUST label a disposition published by a key without verified
-  review authority as unverified (the desktop review queue does).
-- Relay-side enforcement of reviewer authority MAY follow the
-  `ORG_GRANT_ENFORCEMENT` opt-in pattern; until then the graph remains
-  the source of truth and the UI the honesty surface.
+  review authority as unverified (the desktop review queue does), and MUST
+  apply the same tally when it shows ladder progress.
 
 ### `37014` — Budget Spend Receipt (addressable, community-level)
 
@@ -476,11 +558,34 @@ stray `h` never channel-scopes it.
   `d`), and registers the kinds in `crates/buzz-core/src/kind.rs`. The five
   are **global-only**: like projects and launch records they are addressed by
   `(pubkey, kind, d)` and a stray `h` never channel-scopes them.
-- **Grant-chain verification is opt-in and scoped.** The relay validates
-  `37011` attenuation *only* for org-scoped writes that claim delegated
-  authority. It does **not** resolve NIP-OA owners generally, and it does
-  **not** rewrite authorship. A relay that does not enforce grants simply
-  stores and forwards them; clients can still verify chains locally.
+- **Who may write the graph is always enforced.** Ingest applies the
+  [authority anchor](#authority-anchor-who-may-publish-a-node) to `37010`
+  nodes and the [budget publication rule](#who-may-publish-a-budget-and-the-community-default)
+  to `37012` budgets. This does not depend on any switch: an unanchored write
+  is rejected, so a member cannot shadow the owner's node or set a budget on
+  an agent they have no authority over.
+- **Grant-chain verification is on by default and scoped.** The relay
+  validates `37011` attenuation, root standing and expiry for every grant
+  that claims delegated authority (equity records, `"type": "equity"`, are
+  exempt). It does **not** resolve NIP-OA owners generally, and it does
+  **not** rewrite authorship. Operators may set `ORG_GRANT_ENFORCEMENT=off`
+  to store and forward grants unchanged; clients MUST still verify chains
+  locally, because a relay may run with enforcement off.
+- **Budgets are metered where the relay sees the action.** Runs, task,
+  proposal, message and LLM-gateway counters are checked at ingest / gateway
+  entry against the strictest applicable budget (see *Who may publish a
+  budget*). An overrun becomes a durable approval request (`46010`), never a
+  silent drop.
+- **The LLM gateway is inside the budget model.** The optional
+  `/llm/chat/completions` proxy authenticates the caller as a community
+  member, applies a per-caller rate limit and daily call cap (the agent's own
+  `llmCalls` budget when one covers it, otherwise the operator default),
+  clamps `max_tokens`, may pin the model, and meters the call *before*
+  contacting the upstream. It never returns the operator's upstream key.
+- **Relay-side reads on the community's behalf see only what every member
+  could read.** Jobs the relay runs for the community (agent-wiki distillation,
+  diagnostics) are scoped to open channels; private and DM channels are never
+  read.
 - Reads request explicit `kinds`
   (`{kinds: [37010, 37011, 37012, 37013, 37014]}`, or the single kind a
   surface needs); the
@@ -498,6 +603,40 @@ stray `h` never channel-scopes it.
   are granted into, or a direct `37011` from one role's node to another
   role's agent seat. It is an edge in the graph, not a wire between
   processes.
+
+## Seeding the org from a template
+
+`buzz templates apply` may carry an `org:` block so a fresh community starts
+with a working authority structure instead of an empty graph:
+
+```yaml
+org:
+  root:
+    name: "Vanilla App Studio"
+    blurb: "The studio's founders"
+  seats:
+    - persona: app-dev            # title defaults to the persona's name
+    - persona: qa-reviewer
+      title: "QA"
+  default_budget:
+    window: day                   # epoch | day | week | month (default day)
+    runs: 200
+    tasks_create: 20
+    messages: 300
+    llm_calls: 200
+```
+
+- `root` → one `37010` role node with `d = "root"`, held by the applying
+  owner/admin (an anchored author).
+- Each seat → one `37010` node of kind `agent_seat` with
+  `d = "seat-<persona-id>"` and `parent = "root"`, **vacant** (`agentSeats: []`)
+  until the persona's agent key exists; attaching the deployed agent fills it.
+- `defaultBudget` → one `37012` budget with `d = "default-agents"` and
+  `subject: "*"` (the community default, owner/admin-signed).
+
+Apply is idempotent: it queries the signer's existing `37010`/`37012` `d`
+values and skips what already exists, so re-running (or `--resume`) never
+duplicates or clobbers a seat an owner has since edited.
 
 ## Opt-in onchain binding
 

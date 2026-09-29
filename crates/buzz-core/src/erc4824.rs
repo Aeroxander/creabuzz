@@ -306,7 +306,8 @@ mod tests {
             ],
             proposals: vec![Proposal {
                 proposal_type: "proposal".to_owned(),
-                id: "eip155:31337:0xDAB83FF458201226b851B0638C1fb444eD515230?proposalId=0x4934".to_owned(),
+                id: "eip155:31337:0xDAB83FF458201226b851B0638C1fb444eD515230?proposalId=0x4934"
+                    .to_owned(),
                 name: "Raise quorum to 600 bps".to_owned(),
                 content_uri: Some("blossom://evidence".to_owned()),
                 discussion_uri: None,
@@ -323,7 +324,8 @@ mod tests {
                 activity_type: "activity".to_owned(),
                 proposal: ActivityRef {
                     ref_type: "proposal".to_owned(),
-                    id: "eip155:31337:0xDAB83FF458201226b851B0638C1fb444eD515230?proposalId=0x4934".to_owned(),
+                    id: "eip155:31337:0xDAB83FF458201226b851B0638C1fb444eD515230?proposalId=0x4934"
+                        .to_owned(),
                 },
                 member: Member::nostr("ab".repeat(32).as_str()),
             }],
@@ -440,8 +442,14 @@ mod tests {
             "members": [{"id": format!("nostr:{}", "cd".repeat(32))}],
         });
         assert_eq!(value, expected);
-        assert!(value.get("contracts").is_none(), "contracts omitted, not faked");
-        assert!(value.get("description").is_none(), "no value -> removed, not null");
+        assert!(
+            value.get("contracts").is_none(),
+            "contracts omitted, not faked"
+        );
+        assert!(
+            value.get("description").is_none(),
+            "no value -> removed, not null"
+        );
         assert!(value.get("governanceURI").is_none());
     }
 

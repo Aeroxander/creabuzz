@@ -76,7 +76,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/dao.json", get(api::dao_json::serve_root))
         .route("/governance.md", get(api::dao_json::governance_md_root))
         .route("/{community}/dao.json", get(api::dao_json::serve))
-        .route("/{community}/governance.md", get(api::dao_json::governance_md))
+        .route(
+            "/{community}/governance.md",
+            get(api::dao_json::governance_md),
+        )
         // Apple App Site Association — desktop passkey activation (static).
         .route(AASA_PATH, get(app_site_association))
         // Health endpoints

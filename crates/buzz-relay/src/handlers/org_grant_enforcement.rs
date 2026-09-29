@@ -58,6 +58,7 @@ use crate::state::AppState;
 /// empty, which fails closed (an unparseable or empty node never grants
 /// standing).
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct NodeContent {
     /// Human seat holders (64-hex pubkeys). Absent → none.
     #[serde(default)]

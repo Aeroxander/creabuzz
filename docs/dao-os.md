@@ -74,7 +74,7 @@ for money.
 | Grant-chain attenuation, root standing | Relay ingest (default on; `ORG_GRANT_ENFORCEMENT=off` to disable) |
 | Run / task / proposal / message / LLM budgets | Relay ingest and gateway |
 | Spend ceilings | `OrgAllowance.spendTo` on chain; advisory without it |
-| Reviewer ≠ contributor for the autonomy ladder | Relay ingest and ladder query |
+| Reviewer ≠ contributor for the autonomy ladder | Relay ladder tally (unauthorized reviews are stored but never counted) |
 | Role-scoped reads (`readBelow`, `assignBelow`) | **Not implemented.** Channel membership is the only read gate. |
 
 ## Not now

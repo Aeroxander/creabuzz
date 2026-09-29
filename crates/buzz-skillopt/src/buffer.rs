@@ -43,11 +43,14 @@ impl RejectedBuffer {
         if self.entries.is_empty() {
             return String::new();
         }
-        let mut out = String::from(
-            "\n\nPREVIOUSLY REJECTED (do not repeat these edits or patterns):\n",
-        );
+        let mut out =
+            String::from("\n\nPREVIOUSLY REJECTED (do not repeat these edits or patterns):\n");
         for (i, entry) in self.entries.iter().enumerate() {
-            out.push_str(&format!("{}. patterns: {}\n", i + 1, entry.failure_patterns));
+            out.push_str(&format!(
+                "{}. patterns: {}\n",
+                i + 1,
+                entry.failure_patterns
+            ));
             for edit in &entry.edits {
                 let description = match &edit.op {
                     EditOp::Append { content } => format!("append {:?}", truncate(content)),
@@ -56,11 +59,9 @@ impl RejectedBuffer {
                         truncate(target),
                         truncate(content)
                     ),
-                    EditOp::Replace { target, content } => format!(
-                        "replace {:?} -> {:?}",
-                        truncate(target),
-                        truncate(content)
-                    ),
+                    EditOp::Replace { target, content } => {
+                        format!("replace {:?} -> {:?}", truncate(target), truncate(content))
+                    }
                     EditOp::Delete { target } => format!("delete {:?}", truncate(target)),
                 };
                 out.push_str(&format!("   - {description}\n"));

@@ -327,7 +327,10 @@ mod tests {
                 contract.contains("SLOW_UPDATE_START"),
                 "{name} must warn about the protected section"
             );
-            assert!(contract.contains("{"), "{name} must carry its JSON contract");
+            assert!(
+                contract.contains("{"),
+                "{name} must carry its JSON contract"
+            );
         }
         assert!(ANALYST_ERROR.contains("\"failure_summary\""));
         assert!(ANALYST_SUCCESS.contains("\"success_patterns\""));

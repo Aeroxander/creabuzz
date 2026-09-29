@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 use buzz_skillopt::edit::{EditOp, MergedEdit, SkillDoc};
 use buzz_skillopt::train::{
-    AnalysisRequest, LongitudinalRequest, Optimizer, Patch, Scorer, Task, Target, Trajectory,
+    AnalysisRequest, LongitudinalRequest, Optimizer, Patch, Scorer, Target, Task, Trajectory,
 };
 
 use crate::draft::decision_drafts;
@@ -155,10 +155,7 @@ pub fn parse_analysis_output(text: &str) -> Result<Patch, String> {
 /// Parse a `merge_*.md` response into merged edits (strict).
 pub fn parse_merge_output(text: &str) -> Result<Vec<MergedEdit>, String> {
     let value = json_body(text)?;
-    let edits = value
-        .get("edits")
-        .cloned()
-        .unwrap_or(serde_json::json!([]));
+    let edits = value.get("edits").cloned().unwrap_or(serde_json::json!([]));
     serde_json::from_value(edits).map_err(|e| format!("bad merged edits: {e}"))
 }
 
@@ -279,7 +276,9 @@ fn message_content(value: &serde_json::Value) -> Result<String, String> {
             format!(
                 "no string message.content (finish_reason={:?} — a reasoning \
                  model likely exhausted max_tokens thinking)",
-                choice.get("finish_reason").and_then(serde_json::Value::as_str)
+                choice
+                    .get("finish_reason")
+                    .and_then(serde_json::Value::as_str)
             )
         })?;
     Ok(content.to_string())
@@ -353,7 +352,7 @@ impl Target for DistillTarget {
         ) {
             Ok(output) => {
                 let (hard, _soft) = score_page(&output);
-        let success = validate_page_draft(&output).is_ok() && hard > 0.5;
+                let success = validate_page_draft(&output).is_ok() && hard > 0.5;
                 let clipped: String = output.chars().take(ROLLOUT_OUTPUT_CAP).collect();
                 Trajectory {
                     task: task.id.clone(),
@@ -400,10 +399,8 @@ impl Scorer for DistillScorer {
         let mut hard = 0.0;
         let mut soft = 0.0;
         for trajectory in trajectories {
-            let (h, s) = score_page_with(
-                &trajectory.output,
-                self.expectations.get(&trajectory.task),
-            );
+            let (h, s) =
+                score_page_with(&trajectory.output, self.expectations.get(&trajectory.task));
             hard += h;
             soft += s;
         }
@@ -472,7 +469,8 @@ impl Optimizer for LlmOptimizer {
         failure: &[MergedEdit],
         success: &[MergedEdit],
     ) -> Result<Vec<MergedEdit>, String> {
-        let prompt = final_merge_prompt(buzz_skillopt::prompts::MERGE_FINAL, skill, failure, success);
+        let prompt =
+            final_merge_prompt(buzz_skillopt::prompts::MERGE_FINAL, skill, failure, success);
         let output = self.call("You are the SkillOpt edit coordinator.", &prompt)?;
         parse_merge_output(&output)
     }
@@ -486,7 +484,10 @@ impl Optimizer for LlmOptimizer {
         let prompt = ranking_prompt(buzz_skillopt::prompts::RANKING, skill, pool, select);
         let output = self.call("You are the SkillOpt edit-ranking optimizer.", &prompt)?;
         let indices = parse_ranking_output(&output)?;
-        eprintln!("  [ranking] selected indices {indices:?} of {} (budget {select})", pool.len());
+        eprintln!(
+            "  [ranking] selected indices {indices:?} of {} (budget {select})",
+            pool.len()
+        );
         Ok(indices)
     }
 
@@ -541,8 +542,8 @@ pub fn load_split(dir: &std::path::Path) -> Result<Vec<Task>, String> {
             .and_then(|s| s.to_str())
             .unwrap_or_default()
             .to_string();
-        let prompt = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let prompt =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         tasks.insert(id.clone(), Task { id, prompt });
     }
     if tasks.is_empty() {
@@ -606,7 +607,10 @@ mod tests {
                 content: "New rule.".into()
             }]
         );
-        assert!(patch.notes.contains("missing rule"), "notes carry the summary");
+        assert!(
+            patch.notes.contains("missing rule"),
+            "notes carry the summary"
+        );
         // Strict: non-JSON and missing patches fail loudly, never guessed.
         assert!(parse_analysis_output("not json").is_err());
         assert!(parse_analysis_output("{\"batch_size\":1}").is_err());
@@ -711,4 +715,3 @@ mod tests {
         assert!(trajectory.output.contains("rollout failed"));
     }
 }
-

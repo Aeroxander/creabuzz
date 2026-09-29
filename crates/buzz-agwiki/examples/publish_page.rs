@@ -50,7 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tag (default `e2e-fixture`) — a trained skill publishes as
     // `<space>/skill-distill` with its training provenance in `model:`.
     let slug = std::env::args().nth(3).unwrap_or_else(|| "standup".into());
-    let model = std::env::args().nth(4).unwrap_or_else(|| "e2e-fixture".into());
+    let model = std::env::args()
+        .nth(4)
+        .unwrap_or_else(|| "e2e-fixture".into());
     let keys = Keys::parse(
         std::env::var("BUZZ_E2E_KEY")
             .expect("BUZZ_E2E_KEY (hex secret key or nsec)")

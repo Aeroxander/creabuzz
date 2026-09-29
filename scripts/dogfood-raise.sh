@@ -561,6 +561,32 @@ else
     || fail_step "verify-auction" "factory confirmed but there is no code at $AUCTION"
   echo "  ✓ auction live at $AUCTION"
   record_step "verify-auction" "$AUCTION" "ok — code present (executor $EXECUTOR)"
+
+  # -------------------------------------------------------------------------
+  # 7. Make the auction biddable and bind its executor — the same three steps
+  #    desktop/.../auctionFlow.ts runs after the factory create. Without them
+  #    every submitBid/checkpoint reverts TokensNotReceived and the executor
+  #    would accept any auction address. (Calldata is composed with `cast`; the
+  #    desktop encoders are pinned to the same selectors by evmCalls.test.mjs.)
+  #    The sale amount is the supply minus 1 wei: StandardPool locks 1 wei in
+  #    the TokenMaster router at mint, so the treasury never holds the rest.
+  # -------------------------------------------------------------------------
+  echo
+  echo "── auction: fund, open bidding, bind the executor"
+  SALE_AMOUNT=$(node -e 'console.log((BigInt(process.argv[1]) * 10n ** 18n - 1n).toString())' "$TOKEN_SUPPLY")
+  FUND_DATA=$(cast calldata "transfer(address,uint256)" "$AUCTION" "$SALE_AMOUNT")
+  broadcast_call "auction-fund" "$TOKEN" "0x0" "$FUND_DATA"
+  held=$(cast call "$TOKEN" "balanceOf(address)(uint256)" "$AUCTION" --rpc-url "$RPC_URL" | head -1)
+  held=${held%% *}
+  [[ "$held" == "$SALE_AMOUNT" ]] \
+    || fail_step "auction-fund" "auction holds $held of the sale token, expected $SALE_AMOUNT"
+  broadcast_call "auction-received" "$AUCTION" "0x0" "$(cast calldata "onTokensReceived()")"
+  broadcast_call "auction-bind" "$EXECUTOR" "0x0" "$(cast calldata "bindAuction(address)" "$AUCTION")"
+  bound=$(cast call "$EXECUTOR" "boundAuction()(address)" --rpc-url "$RPC_URL" | head -1 | tr -d ' ')
+  [[ "$(lower "$bound")" == "$(lower "$AUCTION")" ]] \
+    || fail_step "auction-bind" "executor.boundAuction()=$bound, expected $AUCTION"
+  echo "  ✓ auction funded ($SALE_AMOUNT), bidding open, executor bound to $AUCTION"
+  record_step "auction-ready" "$AUCTION" "ok — funded, onTokensReceived, executor bound (bids, graduation and exit are exercised by contracts/test/LaunchLifecycle.t.sol against the real CCA)"
 fi
 
 print_summary

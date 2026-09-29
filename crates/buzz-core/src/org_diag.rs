@@ -313,7 +313,8 @@ pub fn tomasello(events: &[DiagEvent]) -> Option<Tomasello> {
     }
     let count = |c: DiagClass| events.iter().filter(|e| e.class == c).count();
     let communicate_n = count(DiagClass::Message);
-    let trust_n = count(DiagClass::Contribution) + count(DiagClass::Grant) + count(DiagClass::Revoke);
+    let trust_n =
+        count(DiagClass::Contribution) + count(DiagClass::Grant) + count(DiagClass::Revoke);
     let inst_n = count(DiagClass::Proposal)
         + count(DiagClass::Vote)
         + count(DiagClass::Execute)
@@ -440,7 +441,8 @@ pub struct Thrash {
 }
 
 pub fn thrash(events: &[DiagEvent]) -> Option<Thrash> {
-    let mut per_coordinate: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut per_coordinate: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
     let mut revisions = 0usize;
     for e in events {
         if e.class != DiagClass::Revision {
@@ -455,14 +457,18 @@ pub fn thrash(events: &[DiagEvent]) -> Option<Thrash> {
         return None;
     }
     let coordinates = per_coordinate.len();
-    let rework = per_coordinate.values().map(|&n| n.saturating_sub(1)).sum::<usize>();
+    let rework = per_coordinate
+        .values()
+        .map(|&n| n.saturating_sub(1))
+        .sum::<usize>();
     let settled = per_coordinate.values().filter(|&&n| n == 1).count();
     let rework_rate_bp = rate_bp(rework, revisions);
     let settled_rate_bp = rate_bp(settled, coordinates);
     let reading = if rework_rate_bp >= 5_000 {
         "thrash-shaped: most revisions rework a coordinate — the busywork reading".to_string()
     } else if settled_rate_bp >= 7_000 {
-        "settled: most coordinates were written once and left alone (Cursor's nine crates)".to_string()
+        "settled: most coordinates were written once and left alone (Cursor's nine crates)"
+            .to_string()
     } else {
         "mixed: raw counts above are the honest read".to_string()
     };
@@ -793,7 +799,9 @@ mod tests {
 
     #[test]
     fn insufficient_data_is_omitted_never_zero() {
-        let small: Vec<DiagEvent> = (0..5).map(|i| ev(i, "a", i as u64, DiagClass::Message)).collect();
+        let small: Vec<DiagEvent> = (0..5)
+            .map(|i| ev(i, "a", i as u64, DiagClass::Message))
+            .collect();
         let report = diagnose(&small);
         assert!(report.time_signal.is_none());
         assert!(report.tomasello.is_none());
@@ -833,7 +841,11 @@ mod tests {
         assert_eq!(class_of_kind(37011, Some("revoke")), DiagClass::Revoke);
         assert_eq!(class_of_kind(46010, None), DiagClass::Approval);
         assert_eq!(class_of_kind(5, None), DiagClass::Tombstone);
-        assert_eq!(class_of_kind(12_345, None), DiagClass::Other, "unknown → Other");
+        assert_eq!(
+            class_of_kind(12_345, None),
+            DiagClass::Other,
+            "unknown → Other"
+        );
     }
 
     #[test]
@@ -851,7 +863,10 @@ mod tests {
             events.push(ev(i, "z", 1_000 + i as u64, DiagClass::Message));
         }
         let modes = wef_modes(&events);
-        let cascade = modes.iter().find(|m| m.mode == "cascading-effects").unwrap();
+        let cascade = modes
+            .iter()
+            .find(|m| m.mode == "cascading-effects")
+            .unwrap();
         assert_eq!(cascade.signal_events, 1, "only the first trigger is dense");
     }
 }

@@ -25,7 +25,9 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use buzz_core::erc4824::{document_bytes, Activity, ActivityRef, Call, ContractEntry, Member, OrgGraph, Proposal};
+use buzz_core::erc4824::{
+    document_bytes, Activity, ActivityRef, Call, ContractEntry, Member, OrgGraph, Proposal,
+};
 use buzz_core::kind::{KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT, KIND_ORG_NODE, KIND_WIKI_PAGE};
 use buzz_core::tenant::CommunityId;
 use buzz_core::StoredEvent;
@@ -64,7 +66,9 @@ pub fn assemble_graph(events: &[StoredEvent]) -> OrgGraph {
             if let Some(list) = body.get(key).and_then(|v| v.as_array()) {
                 for who in list {
                     if let Some(hex) = who.as_str() {
-                        members.entry(hex.to_owned()).or_insert_with(|| Member::nostr(hex));
+                        members
+                            .entry(hex.to_owned())
+                            .or_insert_with(|| Member::nostr(hex));
                     }
                 }
             }
@@ -173,18 +177,20 @@ pub fn assemble_graph(events: &[StoredEvent]) -> OrgGraph {
                 .map(|s| s.to_owned())
                 .unwrap_or_default();
             let table_owned = table.to_owned();
-            activities.entry(event.id.to_hex()).or_insert_with(|| Activity {
-                // The golden vector's shape: `<kind>:<table>:<event id>`
-                // (asserted in tests — two divergent id forms would make
-                // receipts unjoinable across surfaces).
-                id: format!("47005:{table_owned}:{}", event.id.to_hex()),
-                activity_type: "activity".to_owned(),
-                proposal: ActivityRef {
-                    ref_type: "proposal".to_owned(),
-                    id: proposal_ref,
-                },
-                member: Member::nostr(&event.pubkey.to_hex()),
-            });
+            activities
+                .entry(event.id.to_hex())
+                .or_insert_with(|| Activity {
+                    // The golden vector's shape: `<kind>:<table>:<event id>`
+                    // (asserted in tests — two divergent id forms would make
+                    // receipts unjoinable across surfaces).
+                    id: format!("47005:{table_owned}:{}", event.id.to_hex()),
+                    activity_type: "activity".to_owned(),
+                    proposal: ActivityRef {
+                        ref_type: "proposal".to_owned(),
+                        id: proposal_ref,
+                    },
+                    member: Member::nostr(&event.pubkey.to_hex()),
+                });
         }
     }
 
@@ -323,7 +329,10 @@ pub async fn governance_md(
 }
 
 /// Host-bound variant without a path community.
-pub async fn governance_md_root(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+pub async fn governance_md_root(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
     governance_inner(state, headers).await
 }
 
@@ -378,7 +387,12 @@ mod tests {
         StoredEvent::new(built, None)
     }
 
-    fn node(name: &str, holders: &[&str], agents: &[&str], onchain: Option<serde_json::Value>) -> StoredEvent {
+    fn node(
+        name: &str,
+        holders: &[&str],
+        agents: &[&str],
+        onchain: Option<serde_json::Value>,
+    ) -> StoredEvent {
         let mut body = serde_json::json!({
             "v": 1,
             "name": name,
@@ -477,7 +491,10 @@ mod tests {
         assert!(!graph.bound);
         assert!(graph.contracts.is_empty());
         assert_eq!(graph.proposals[0].calls.len(), 0, "malformed -> none");
-        assert_eq!(graph.proposals[0].id, format!("nostr:{}", events[1].event.id.to_hex()));
+        assert_eq!(
+            graph.proposals[0].id,
+            format!("nostr:{}", events[1].event.id.to_hex())
+        );
     }
 
     /// CAIP-10 ids born lowercase (ERC-8257 commitment rule: reject, never
@@ -488,7 +505,9 @@ mod tests {
             "Mixed",
             &[],
             &[],
-            Some(serde_json::json!({"chain": "eip155:31337", "dao": "0xDAB83FF458201226b851B0638C1fb444eD515230"})),
+            Some(
+                serde_json::json!({"chain": "eip155:31337", "dao": "0xDAB83FF458201226b851B0638C1fb444eD515230"}),
+            ),
         )];
         let graph = assemble_graph(&events);
         assert_eq!(
@@ -516,7 +535,10 @@ mod tests {
         assert_eq!(graph.proposals.len(), 1);
         let proposal = &graph.proposals[0];
         assert_eq!(proposal.status, "draft", "agent-draft -> DAOIP-5 draft");
-        assert_eq!(proposal.id, format!("nostr:{}", events[0].event.id.to_hex()));
+        assert_eq!(
+            proposal.id,
+            format!("nostr:{}", events[0].event.id.to_hex())
+        );
         assert_eq!(proposal.name, "Raise proposal quorum to 600 bps");
     }
 }

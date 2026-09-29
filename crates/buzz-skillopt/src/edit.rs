@@ -150,17 +150,17 @@ impl SkillDoc {
             EditOp::InsertAfter { target, content } => {
                 let range = self.locate(target)?;
                 let at = range.end;
-                let body = format!(
-                    "{}\n{}{}",
-                    &self.text[..at],
-                    content,
-                    &self.text[at..]
-                );
+                let body = format!("{}\n{}{}", &self.text[..at], content, &self.text[at..]);
                 Ok(SkillDoc::new(body))
             }
             EditOp::Replace { target, content } => {
                 let range = self.locate(target)?;
-                let body = format!("{}{}{}", &self.text[..range.start], content, &self.text[range.end..]);
+                let body = format!(
+                    "{}{}{}",
+                    &self.text[..range.start],
+                    content,
+                    &self.text[range.end..]
+                );
                 Ok(SkillDoc::new(body))
             }
             EditOp::Delete { target } => {
@@ -244,10 +244,7 @@ mod tests {
         assert!(appended.as_str().contains("Never invent numbers."));
         // Append lands in the body — before the protected tail.
         assert!(
-            appended
-                .as_str()
-                .find("Never invent numbers.")
-                .unwrap()
+            appended.as_str().find("Never invent numbers.").unwrap()
                 < appended.protected_range().unwrap().start
         );
 
@@ -283,12 +280,16 @@ mod tests {
     fn invalid_targets_are_refused_never_guessed() {
         let doc = skill();
         assert!(matches!(
-            doc.apply(&EditOp::Delete { target: "not there".into() }),
+            doc.apply(&EditOp::Delete {
+                target: "not there".into()
+            }),
             Err(EditError::TargetNotFound)
         ));
         let twice = SkillDoc::new("dup dup\n");
         assert!(matches!(
-            twice.apply(&EditOp::Delete { target: "dup".into() }),
+            twice.apply(&EditOp::Delete {
+                target: "dup".into()
+            }),
             Err(EditError::AmbiguousTarget { matches: 2 })
         ));
         assert!(matches!(

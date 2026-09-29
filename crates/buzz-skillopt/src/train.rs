@@ -92,7 +92,12 @@ pub trait Optimizer {
         success: &[MergedEdit],
     ) -> Result<Vec<MergedEdit>, String>;
     /// Return pool indices in priority order (the `ranking.md` contract).
-    fn rank(&mut self, skill: &str, pool: &[MergedEdit], select: usize) -> Result<Vec<usize>, String>;
+    fn rank(
+        &mut self,
+        skill: &str,
+        pool: &[MergedEdit],
+        select: usize,
+    ) -> Result<Vec<usize>, String>;
     fn slow_update(&mut self, req: &LongitudinalRequest<'_>) -> Result<String, String>;
     fn meta_skill(&mut self, req: &LongitudinalRequest<'_>) -> Result<String, String>;
 }
@@ -354,11 +359,8 @@ pub fn train(
             let mut failure_patches: Vec<Patch> = Vec::new();
             let mut success_patches: Vec<Patch> = Vec::new();
             for minibatch in trajectories.chunks(config.minibatch_size.max(1)) {
-                let failures: Vec<Trajectory> = minibatch
-                    .iter()
-                    .filter(|t| !t.success)
-                    .cloned()
-                    .collect();
+                let failures: Vec<Trajectory> =
+                    minibatch.iter().filter(|t| !t.success).cloned().collect();
                 let successes: Vec<Trajectory> =
                     minibatch.iter().filter(|t| t.success).cloned().collect();
                 let request = AnalysisRequest {
@@ -403,11 +405,8 @@ pub fn train(
                 config.merge_batch_size,
                 false,
             )?;
-            let mut pool = optimizer.merge_final(
-                current.as_str(),
-                &merged_failure,
-                &merged_success,
-            )?;
+            let mut pool =
+                optimizer.merge_final(current.as_str(), &merged_failure, &merged_success)?;
             pool = resolve_conflicts(pool);
 
             // Select: rank and clip to the textual learning rate.
@@ -488,7 +487,13 @@ pub fn train(
                 .as_str()
                 .split("<!-- SLOW_UPDATE_START -->")
                 .nth(1)
-                .map(|s| s.split("<!-- SLOW_UPDATE_END -->").next().unwrap_or("").trim().to_string());
+                .map(|s| {
+                    s.split("<!-- SLOW_UPDATE_END -->")
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                });
             let guidance = optimizer.slow_update(&LongitudinalRequest {
                 prev_skill: epoch_start_skill.as_str(),
                 curr_skill: current.as_str(),
@@ -553,7 +558,8 @@ mod tests {
 
     impl Optimizer for ScriptedOptimizer {
         fn analyze_error(&mut self, req: &AnalysisRequest<'_>) -> Result<Patch, String> {
-            self.calls.push(format!("analyze_error:{}", req.trajectories.len()));
+            self.calls
+                .push(format!("analyze_error:{}", req.trajectories.len()));
             if !req.buffer_note.is_empty() {
                 self.saw_buffer_note = true;
             }
@@ -572,7 +578,8 @@ mod tests {
             })
         }
         fn analyze_success(&mut self, req: &AnalysisRequest<'_>) -> Result<Patch, String> {
-            self.calls.push(format!("analyze_success:{}", req.trajectories.len()));
+            self.calls
+                .push(format!("analyze_success:{}", req.trajectories.len()));
             if !req.buffer_note.is_empty() {
                 self.saw_buffer_note = true;
             }
@@ -632,10 +639,8 @@ mod tests {
             Ok((0..pool.len().min(select)).collect())
         }
         fn slow_update(&mut self, req: &LongitudinalRequest<'_>) -> Result<String, String> {
-            self.calls.push(format!(
-                "slow_update:prev={}",
-                req.previous.is_some()
-            ));
+            self.calls
+                .push(format!("slow_update:prev={}", req.previous.is_some()));
             Ok("Prevent regressions first.".into())
         }
         fn meta_skill(&mut self, req: &LongitudinalRequest<'_>) -> Result<String, String> {
@@ -653,8 +658,8 @@ mod tests {
 
     impl Target for ScriptedTarget {
         fn rollout(&mut self, skill: &SkillDoc, task: &Task) -> Trajectory {
-            let success = skill.as_str().contains(&self.fix)
-                && !skill.as_str().contains("HARMFUL RULE");
+            let success =
+                skill.as_str().contains(&self.fix) && !skill.as_str().contains("HARMFUL RULE");
             Trajectory {
                 task: task.id.clone(),
                 success,
@@ -771,7 +776,10 @@ mod tests {
         assert!(result.history.iter().all(|s| !s.accepted));
         // Two steps: the first rejection is visible as a do-not-repeat note in
         // the second step's reflection request (C.3's buffer semantics).
-        assert!(optimizer.saw_buffer_note, "buffer feeds later optimizer calls");
+        assert!(
+            optimizer.saw_buffer_note,
+            "buffer feeds later optimizer calls"
+        );
     }
 
     #[test]
@@ -791,9 +799,7 @@ mod tests {
         };
         let (mut optimizer, mut target) = fixture_world();
         let mut scorer = AccuracyScorer;
-        let init = format!(
-            "# Skill\nBase.\n{SLOW_UPDATE_START}\nold\n{SLOW_UPDATE_END}\n"
-        );
+        let init = format!("# Skill\nBase.\n{SLOW_UPDATE_START}\nold\n{SLOW_UPDATE_END}\n");
         let result = train(
             &config,
             SkillDoc::new(init),
@@ -806,16 +812,16 @@ mod tests {
         )
         .expect("trains");
         assert!(
-            result.best_skill.as_str().contains("Prevent regressions first."),
+            result
+                .best_skill
+                .as_str()
+                .contains("Prevent regressions first."),
             "slow update lands in the protected section"
         );
         assert!(result.best_skill.as_str().contains(SLOW_UPDATE_START));
         assert!(result.best_skill.as_str().contains(SLOW_UPDATE_END));
         // Meta skill fires from epoch 2 and carries its memory forward.
-        assert!(optimizer
-            .calls
-            .iter()
-            .any(|c| c == "meta_skill:prev=false"));
+        assert!(optimizer.calls.iter().any(|c| c == "meta_skill:prev=false"));
     }
 
     #[test]

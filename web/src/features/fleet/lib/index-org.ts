@@ -37,7 +37,11 @@ export interface OrgNodeEntry {
    */
   group: string | null;
   name: string;
-  /** "role" | "team" | "agent-seat" — anything else fails open to "role". */
+  /**
+   * "role" | "team" | "agent_seat" — anything else fails open to "role". The
+   * wire value is snake_case (serde); the CLI flag spelling `agent-seat` is
+   * accepted on read as a legacy alias and normalized.
+   */
   kind: string;
   /** `d` of the parent node, or null on a root. */
   parent: string | null;
@@ -84,7 +88,11 @@ export function parseOrgNode(event: OrgNodeEvent): OrgNodeEntry | null {
     // Malformed content: the node still surfaces with defaults.
   }
   const kind =
-    body.kind === "team" || body.kind === "agent-seat" ? body.kind : "role";
+    body.kind === "team"
+      ? "team"
+      : body.kind === "agent_seat" || body.kind === "agent-seat"
+        ? "agent_seat"
+        : "role";
   const parent =
     typeof body.parent === "string" && body.parent ? body.parent : null;
   const scope =

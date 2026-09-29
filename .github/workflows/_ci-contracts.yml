@@ -1,0 +1,37 @@
+name: CI / Contracts
+on:
+  workflow_call:
+
+# The launchpad's money-plane guarantees (executor binding, reserve lock, stake
+# slashing, allowance enforcement, real-CCA lifecycle) live in Solidity. Before
+# this lane no workflow ran `forge test` and none checked out the submodules,
+# so none of them was ever gated.
+jobs:
+  forge:
+    name: Forge
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+      - name: foundry.lock matches the submodule pins
+        run: node scripts/check-foundry-lock.mjs
+      - name: Install Foundry
+        # The `stable` release channel; pin an exact version here when the
+        # suite needs reproducibility beyond the repo's foundry.toml settings.
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: forge build
+        working-directory: contracts
+        env:
+          FOUNDRY_LINT_LINT_ON_BUILD: "false"
+        run: forge build
+      - name: forge test
+        working-directory: contracts
+        env:
+          FOUNDRY_LINT_LINT_ON_BUILD: "false"
+        run: forge test

@@ -47,9 +47,16 @@
  */
 
 import {
+  buildBindAuctionCall,
+  buildFundAuctionCall,
+  buildOnTokensReceivedCall,
+  buildSetHookAuctionCall,
+  encodeErc20BalanceOf,
   encodeFunctionData,
   encodeParameters,
   selectorOf,
+  SELECTOR_BOUND_AUCTION,
+  SELECTOR_HOOK_AUCTION,
   ZERO_ADDRESS,
   type AbiType,
 } from "@/features/launchpad/lib/evmCalls";
@@ -108,6 +115,12 @@ export function auctionErrorMessage(error: unknown): string {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+/**
+ * Wei of the sale token that StandardPool locks in the TokenMaster router at
+ * mint (StandardPool.sol:127-128), and therefore can never be sold or funded.
+ */
+export const STANDARD_POOL_ROUTER_LOCK_WEI = 1n;
 
 /** Canonical CCA factory v2.1.0 (LaunchpadFork.t.sol:16). */
 export const DEFAULT_CCA_FACTORY = "0x000000001F26a0044BaA66024e7b6599c61963F8";
@@ -250,7 +263,7 @@ export function uniformAuctionSteps(
 export interface AuctionPlanInputs {
   /** `token` tag — the sale token (must already be deployed). */
   token: string;
-  /** `tokenPlan.supply` — whole tokens; the auction sells all of it (18 decimals). */
+  /** `tokenPlan.supply` — whole tokens; the auction sells all of it except the router's 1-wei lock (18 decimals). */
   tokenSupply: string;
   /** `currency` content field; null/"" = native (the zero address). */
   currency: string | null;
@@ -352,7 +365,12 @@ export function deriveAuctionDeployParams(
     decimalField(inputs.tokenSupply, "token plan supply"),
   );
   if (supply === 0n) fail("token plan supply must be positive");
-  const amount = supply * 10n ** 18n;
+  // TokenMaster's StandardPool mints 1 wei of every apptoken to its router as
+  // a permanent lock, so the treasury (the deployer) can never hold the whole
+  // supply. The CCA's `onTokensReceived()` reverts unless the auction holds at
+  // least its `TOTAL_SUPPLY`, so the sale is one wei short of the supply —
+  // selling exactly the supply would make every launch unfundable.
+  const amount = supply * 10n ** 18n - STANDARD_POOL_ROUTER_LOCK_WEI;
   // Factory gate (ContinuousClearingAuctionFactory.sol:29).
   if (amount > (1n << 128n) - 1n) {
     fail(`sale supply ${supply} exceeds the factory's uint128 inventory cap`);
@@ -572,6 +590,30 @@ export const AUCTION_DEPLOY_STEPS = [
     label: "Auction",
     detail: "Deploys the CCA auction via the factory (CREATE2).",
   },
+  {
+    id: "hookAuction",
+    label: "Lock bid gate to the auction",
+    detail:
+      "Tells the AllowlistHook which auction may call it, so nobody else can burn a bidder's cap (curated track only).",
+  },
+  {
+    id: "fund",
+    label: "Fund the auction",
+    detail:
+      "Transfers the whole sale supply from the deploying wallet to the auction.",
+  },
+  {
+    id: "received",
+    label: "Open bidding",
+    detail:
+      "Calls onTokensReceived() so the auction accepts bids. Safe to repeat.",
+  },
+  {
+    id: "bind",
+    label: "Bind the executor",
+    detail:
+      "Binds the graduation executor to this one auction — it refuses every other address.",
+  },
 ] as const;
 
 export type AuctionDeployStepId = (typeof AUCTION_DEPLOY_STEPS)[number]["id"];
@@ -666,6 +708,10 @@ function freshDeploySteps(
     hook: entry(admission !== "curated"),
     executor: entry(false),
     auction: entry(false),
+    hookAuction: entry(admission !== "curated"),
+    fund: entry(false),
+    received: entry(false),
+    bind: entry(false),
   };
 }
 
@@ -850,15 +896,194 @@ export const AUCTION_DEPLOY_STEP_LABELS: Record<AuctionDeployStepId, string> = {
   hook: "Deploy bid gate",
   executor: "Deploy graduation executor",
   auction: "Deploy auction",
+  hookAuction: "Lock bid gate to the auction",
+  fund: "Fund the auction",
+  received: "Open bidding",
+  bind: "Bind the executor",
 };
 
 function isCreateStep(step: AuctionDeployStepId): boolean {
   return step === "hook" || step === "executor";
 }
 
+type PostDeployStepId = "hookAuction" | "fund" | "received" | "bind";
+
+/** The 32-byte hex word as a bigint; an empty return (`0x`) reads as zero. */
+function wordToBigInt(raw: string): bigint {
+  return raw === "0x" || raw === "" ? 0n : BigInt(raw);
+}
+
+/**
+ * Run one step that acts on the already-deployed contracts (lock the hook,
+ * fund the auction, open bidding, bind the executor).
+ *
+ * Every step reads the chain first and is satisfied without a send when its
+ * effect is already onchain, so a retry after an unknown outcome is always
+ * safe (`onTokensReceived` is idempotent upstream). Returns whether the flow
+ * may continue; on `false` the failure has already been dispatched.
+ */
+async function runPostDeployStep(input: {
+  step: PostDeployStepId;
+  effects: AuctionEffects;
+  params: AuctionDeployParams;
+  deployer: string;
+  addresses: Record<AuctionDeployStepId, string | null>;
+  dispatch: AuctionDispatch;
+  fail: (
+    step: AuctionDeployStepId,
+    txHash: string | null,
+    outcome: "reverted" | "unknown" | null,
+    reason: string,
+  ) => void;
+}): Promise<boolean> {
+  const { step, effects, params, deployer, addresses, dispatch, fail } = input;
+  const auction = addresses.auction;
+  if (!auction) {
+    fail(
+      step,
+      null,
+      null,
+      "the auction address is unknown — run the auction step first",
+    );
+    return false;
+  }
+  const done = (address: string, txHash: string | null): void =>
+    dispatch({
+      type: "step_done",
+      step,
+      txHash,
+      address,
+      alreadyDeployed: txHash === null,
+    });
+
+  let call: AuctionSendCall;
+  let target: string;
+  try {
+    switch (step) {
+      case "hookAuction": {
+        const hook = addresses.hook;
+        if (!hook) {
+          fail(
+            step,
+            null,
+            null,
+            "the bid gate address is unknown — run the bid gate step first",
+          );
+          return false;
+        }
+        const bound = addressWordValue(
+          await effects.call({ to: hook, data: SELECTOR_HOOK_AUCTION }),
+        );
+        if (bound.toLowerCase() === auction.toLowerCase()) {
+          done(hook, null);
+          return true;
+        }
+        call = buildSetHookAuctionCall(hook, auction);
+        target = hook;
+        break;
+      }
+      case "fund": {
+        const held = wordToBigInt(
+          await effects.call({
+            to: params.token,
+            data: encodeErc20BalanceOf(auction),
+          }),
+        );
+        if (held >= params.amount) {
+          done(auction, null);
+          return true;
+        }
+        const mine = wordToBigInt(
+          await effects.call({
+            to: params.token,
+            data: encodeErc20BalanceOf(deployer),
+          }),
+        );
+        if (mine < params.amount - held) {
+          fail(
+            step,
+            null,
+            null,
+            `the deploying wallet ${deployer} holds ${mine} base units of the sale token but the auction still needs ${params.amount - held}: move the supply to this wallet, then retry`,
+          );
+          return false;
+        }
+        call = buildFundAuctionCall(
+          params.token,
+          auction,
+          params.amount - held,
+        );
+        target = auction;
+        break;
+      }
+      case "received":
+        call = buildOnTokensReceivedCall(auction);
+        target = auction;
+        break;
+      case "bind": {
+        const executor = addresses.executor;
+        if (!executor) {
+          fail(
+            step,
+            null,
+            null,
+            "the GraduationExecutor address is unknown — run the executor step first",
+          );
+          return false;
+        }
+        const bound = addressWordValue(
+          await effects.call({ to: executor, data: SELECTOR_BOUND_AUCTION }),
+        );
+        if (bound.toLowerCase() === auction.toLowerCase()) {
+          done(executor, null);
+          return true;
+        }
+        call = buildBindAuctionCall(executor, auction);
+        target = executor;
+        break;
+      }
+    }
+  } catch (error) {
+    fail(
+      step,
+      null,
+      null,
+      `reading the chain before "${AUCTION_DEPLOY_STEP_LABELS[step]}" failed: ${auctionErrorMessage(error)}`,
+    );
+    return false;
+  }
+
+  let receipt: AuctionTxReceipt;
+  try {
+    receipt = await effects.send(call);
+  } catch (error) {
+    fail(
+      step,
+      null,
+      "unknown",
+      `${auctionErrorMessage(error)} — the transaction may or may not have been broadcast; retry reads the chain first`,
+    );
+    return false;
+  }
+  if (receipt.status !== "success") {
+    fail(
+      step,
+      receipt.txHash,
+      "reverted",
+      `transaction ${receipt.txHash} reverted in block ${receipt.blockNumber}`,
+    );
+    return false;
+  }
+  done(target, receipt.txHash);
+  return true;
+}
+
 /**
  * Run the deploy: optional hook CREATE → GraduationExecutor CREATE → factory
- * CREATE2 auction → record link. Each receipt is awaited before the next
+ * CREATE2 auction → (curated) lock the hook to the auction → fund the auction
+ * with the sale supply → `onTokensReceived()` → bind the executor to the
+ * auction → record link. Without the last four steps an auction cannot take a
+ * bid (`TokensNotReceived`) and its executor would trust any address. Each receipt is awaited before the next
  * broadcast (the ordering is a hard protocol requirement — the executor must
  * exist before the auction names it as both recipients). Halts on the first
  * failure and records exactly which step failed and why (mined revert vs.
@@ -911,6 +1136,10 @@ export async function runAuctionDeploy(input: {
     hook: previous.steps.hook.address,
     executor: previous.steps.executor.address,
     auction: previous.steps.auction.address,
+    hookAuction: previous.steps.hookAuction.address,
+    fund: previous.steps.fund.address,
+    received: previous.steps.received.address,
+    bind: previous.steps.bind.address,
   };
 
   const failStep = (
@@ -925,7 +1154,11 @@ export async function runAuctionDeploy(input: {
   for (const { id: step } of AUCTION_DEPLOY_STEPS) {
     // The plan is authoritative: community-track launches deploy no hook even
     // if a stale state object says otherwise.
-    if (step === "hook" && params.hookPerWalletCap === null) continue;
+    if (
+      (step === "hook" || step === "hookAuction") &&
+      params.hookPerWalletCap === null
+    )
+      continue;
     const carried = previous.steps[step];
     if (carried.status === "done" || carried.status === "skipped") continue;
     dispatch({ type: "step_started", step });
@@ -1017,6 +1250,22 @@ export async function runAuctionDeploy(input: {
         address,
         alreadyDeployed: false,
       });
+      continue;
+    }
+
+    if (step !== "auction") {
+      // Acts on the deployed contracts; needs the auction address, which the
+      // auction step (earlier in the list) has already recorded.
+      const ok = await runPostDeployStep({
+        step,
+        effects,
+        params,
+        deployer,
+        addresses,
+        dispatch,
+        fail: failStep,
+      });
+      if (!ok) return;
       continue;
     }
 

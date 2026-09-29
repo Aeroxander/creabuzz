@@ -1762,7 +1762,10 @@ mod tests {
         for k in KNOBS {
             std::env::remove_var(k);
         }
-        std::env::set_var("BUZZ_LLM_PROXY_URL", "http://127.0.0.1:1/v1/chat/completions");
+        std::env::set_var(
+            "BUZZ_LLM_PROXY_URL",
+            "http://127.0.0.1:1/v1/chat/completions",
+        );
 
         let llm = Config::from_env()
             .expect("config with the gateway on defaults")

@@ -138,12 +138,15 @@ function SplitSection({
       <p className="mt-1 text-sm text-black/70 dark:text-white/70">
         The raise swept to the executor and split onchain:{" "}
         <strong>{amount(state.record.currencyRaised)}</strong> raised →{" "}
-        <strong>{amount(split.reserveShare)}</strong> held in reserve as the
+        <strong>{amount(split.reserveShare)}</strong> held in escrow for the
         market&apos;s price floor (reserveBps {state.reserveBps.toString()}
         /10000) + <strong>{amount(split.treasuryShare)}</strong> to the
-        treasury. Unsold launch tokens ({amount(state.record.unsoldTokens)})
-        went to the treasury; sold tokens ({amount(state.record.tokensSold)})
-        went to buyers.
+        treasury. The escrow is a promise the treasury keeps, not a guarantee:
+        it is released to the recorded pool, and if no pool is recorded the
+        treasury can withdraw it once the executor&apos;s reserve lock (30 days
+        by default) has passed. Unsold launch tokens (
+        {amount(state.record.unsoldTokens)}) went to the treasury; sold tokens (
+        {amount(state.record.tokensSold)}) went to buyers.
       </p>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/80 dark:text-white/80">
         <dt>Reserve escrow (from the record)</dt>
@@ -215,7 +218,7 @@ function ReceiptSection({
               {row.table === "sweep"
                 ? `sweep — raised ${payloadText(row.payload, "currencyRaised")}, treasury share ${payloadText(row.payload, "treasuryShare")}, unsold ${payloadText(row.payload, "unsoldTokens")}`
                 : row.table === "lock"
-                  ? `lock — reserve escrow ${payloadText(row.payload, "reserveEscrow")} (the price-floor backing)`
+                  ? `lock — reserve escrow ${payloadText(row.payload, "reserveEscrow")} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
                   : row.table === "summon"
                     ? "summon — the DAO was summoned for this launch"
                     : "ragequit — an owner burned shares and claimed treasury"}

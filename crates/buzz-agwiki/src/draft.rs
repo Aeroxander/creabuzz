@@ -218,21 +218,21 @@ pub fn body_without_decision_blocks(body: &str) -> String {
 // ── Strict value parsers (desktop's parseProposalIntent rules) ─────────────
 
 fn is_address(value: &str) -> bool {
-    value.strip_prefix("0x").is_some_and(|hex| {
-        hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit())
-    })
+    value
+        .strip_prefix("0x")
+        .is_some_and(|hex| hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn is_bytes32(value: &str) -> bool {
-    value.strip_prefix("0x").is_some_and(|hex| {
-        hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
-    })
+    value
+        .strip_prefix("0x")
+        .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn is_data(value: &str) -> bool {
-    value.strip_prefix("0x").is_some_and(|hex| {
-        hex.len() % 2 == 0 && hex.bytes().all(|b| b.is_ascii_hexdigit())
-    })
+    value
+        .strip_prefix("0x")
+        .is_some_and(|hex| hex.len() % 2 == 0 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn is_decimal(value: &str) -> bool {
@@ -441,7 +441,9 @@ pub fn validate_launch_coordinate(coordinate: &str) -> Result<(), String> {
 /// per-kind `d` grammar stays the publishing side's business.
 pub fn validate_page_event_coordinate(coordinate: &str) -> Result<(), String> {
     let Some((kind, rest)) = coordinate.split_once(':') else {
-        return Err(format!("wiki coordinate must be `<kind>:<hex>:<d>` (got {coordinate:?})"));
+        return Err(format!(
+            "wiki coordinate must be `<kind>:<hex>:<d>` (got {coordinate:?})"
+        ));
     };
     if kind != KIND_WIKI_PAGE.to_string() && kind != super::KIND_AGENT_WIKI.to_string() {
         return Err(format!(
@@ -449,7 +451,9 @@ pub fn validate_page_event_coordinate(coordinate: &str) -> Result<(), String> {
         ));
     }
     let Some((author, d)) = rest.split_once(':') else {
-        return Err(format!("wiki coordinate must be `<kind>:<hex>:<d>` (got {coordinate:?})"));
+        return Err(format!(
+            "wiki coordinate must be `<kind>:<hex>:<d>` (got {coordinate:?})"
+        ));
     };
     if author.len() != 64
         || !author
@@ -527,8 +531,10 @@ pub fn existing_anchors(events: &[Event]) -> std::collections::BTreeSet<(String,
 mod tests {
     use super::*;
 
-    const LAUNCH: &str = "37001:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:nebula-dao";
-    const PAGE_COORD: &str = "44002:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:default/standup";
+    const LAUNCH: &str =
+        "37001:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:nebula-dao";
+    const PAGE_COORD: &str =
+        "44002:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:default/standup";
 
     /// The golden corpus (docs/persona-drafting-loop.md §Test discipline):
     /// four honest blocks (two with intent/calls, one signal, one
@@ -536,7 +542,9 @@ mod tests {
     fn corpus() -> String {
         let mut s = String::new();
         s.push_str("## Standup\n\n");
-        s.push_str("Quorum is 500 bps today. The round-2 postmortem asks for a 600 bps quorum.\n\n");
+        s.push_str(
+            "Quorum is 500 bps today. The round-2 postmortem asks for a 600 bps quorum.\n\n",
+        );
         s.push_str("```decision\n");
         s.push_str("title: Raise proposal quorum to 600 bps\n");
         s.push_str("kind: plain\n");
@@ -707,10 +715,7 @@ mod tests {
         tags.sort();
         assert_eq!(
             tags,
-            vec![
-                vec!["a", LAUNCH],
-                vec!["wiki", PAGE_COORD, "1"],
-            ]
+            vec![vec!["a", LAUNCH], vec!["wiki", PAGE_COORD, "1"],]
         );
     }
 
@@ -720,9 +725,7 @@ mod tests {
         let draft = &out.drafts[0];
         assert!(build_proposal_draft_builder("nebula", PAGE_COORD, draft).is_err());
         assert!(build_proposal_draft_builder(LAUNCH, "44003:aa:bb", draft).is_err());
-        assert!(
-            build_proposal_draft_builder("37001:ABCD:nebula-dao", PAGE_COORD, draft).is_err()
-        );
+        assert!(build_proposal_draft_builder("37001:ABCD:nebula-dao", PAGE_COORD, draft).is_err());
     }
 
     #[test]

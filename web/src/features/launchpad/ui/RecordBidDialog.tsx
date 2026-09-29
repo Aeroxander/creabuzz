@@ -4,10 +4,13 @@ import { Button } from "@/shared/ui/button";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "./Modal";
-import { clearingPrice } from "../chain";
+import { UnauditedNotice } from "./UnauditedNotice";
+import { clearingPrice, decodeU256, ethCall } from "../chain";
 import {
   bidPlanWithDefaultHint,
   buildBidCalls,
+  encodeErc20Allowance,
+  PERMIT2_ADDRESS,
   validateBid,
   type BidPlan,
 } from "../lib/bid-tx";
@@ -234,11 +237,30 @@ export function RecordBidDialog({
       // budget is pulled from the CALLER onchain, so the composed calldata is
       // sender-agnostic apart from this owner choice.
       const ownerPlan = { ...plan, owner: senderAddress };
+      // A first-time bidder has never approved Permit2 on the token; without
+      // that leg the bid's payment pull reverts. Read the allowance so a
+      // returning bidder is not asked to approve again (a failed read composes
+      // the approve — see needsUnderlyingApproval).
+      let underlyingAllowance: bigint | null = null;
+      if (record.currency) {
+        try {
+          underlyingAllowance = decodeU256(
+            await ethCall(
+              rpcEndpoint,
+              record.currency,
+              encodeErc20Allowance(senderAddress, PERMIT2_ADDRESS),
+            ),
+          );
+        } catch {
+          underlyingAllowance = null;
+        }
+      }
       const calls = buildBidCalls({
         auction,
         plan: ownerPlan,
         currency: record.currency ?? null,
         deadline: BigInt(Math.floor(Date.now() / 1000)) + 3600n,
+        underlyingAllowance,
       });
       const result = await sender.sendCalls(calls);
       if (!TX_HASH_RE.test(result.txHash))
@@ -292,6 +314,7 @@ export function RecordBidDialog({
       <h2 className="text-lg font-semibold text-black dark:text-white">
         Back {launchName}
       </h2>
+      <UnauditedNotice chainId={record.chainId} />
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         Your bid is a submitBid call on the auction contract; the feed mirror
         records the transaction hash. The chain is the ledger.

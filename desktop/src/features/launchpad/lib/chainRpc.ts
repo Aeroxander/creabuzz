@@ -176,6 +176,8 @@ export interface ChainPreset {
   blockTimeSeconds?: number;
   /** Native gas symbol (all current presets are ETH). */
   nativeSymbol: string;
+  /** Real-money network; hidden unless `VITE_ENABLE_MAINNET` is set. */
+  mainnet?: boolean;
 }
 
 /** Local dev chain booted by `just dev-chain` (`scripts/dev-chain.sh`). */
@@ -213,6 +215,7 @@ export const CHAIN_PRESETS: readonly ChainPreset[] = [
     explorer: "https://basescan.org",
     blockTimeSeconds: 2,
     nativeSymbol: "ETH",
+    mainnet: true,
   },
   {
     id: "base-sepolia",
@@ -231,10 +234,40 @@ export interface ChainEnv {
   VITE_LAUNCHPAD_CHAIN_ID?: string;
   /** Overrides the default RPC endpoint in every build. */
   VITE_CHAIN_RPC_URL?: string;
+  /** "1"/"true" offers mainnet presets (default off — contracts are unaudited). */
+  VITE_ENABLE_MAINNET?: string;
 }
 
 function viteEnv(): ChainEnv | undefined {
   return (import.meta as { env?: ChainEnv }).env;
+}
+
+/**
+ * Whether this build may offer mainnet chains. Off unless `VITE_ENABLE_MAINNET`
+ * is "1"/"true": the launchpad contracts are unaudited and no legal posture
+ * exists yet (docs/dao-os.md rule R4), so a default build shows test networks
+ * only. Mirrors `web/src/features/launchpad/chain.ts`.
+ */
+export function mainnetEnabled(env: ChainEnv | undefined = viteEnv()): boolean {
+  const flag = env?.VITE_ENABLE_MAINNET?.trim().toLowerCase();
+  return flag === "1" || flag === "true";
+}
+
+/** The presets a picker may show: mainnets only when [`mainnetEnabled`]. */
+export function selectableChainPresets(
+  env: ChainEnv | undefined = viteEnv(),
+): readonly ChainPreset[] {
+  return mainnetEnabled(env)
+    ? CHAIN_PRESETS
+    : CHAIN_PRESETS.filter((preset) => preset.mainnet !== true);
+}
+
+/** Whether a chain id names a mainnet preset (real money). */
+export function isMainnetChain(
+  chainId: number | string | null | undefined,
+): boolean {
+  if (chainId === null || chainId === undefined) return false;
+  return chainPresetByChainId(chainId)?.mainnet === true;
 }
 
 /** Whether this build is a dev build (`vite dev`; false when packaged). */

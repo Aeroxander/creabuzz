@@ -3930,13 +3930,21 @@ async fn ingest_event_inner(
     // (NIP-ORG design rule 5: budgets never apply to a human's own actions).
     if kind_u32 == KIND_LAUNCH_PROPOSAL {
         let agent_hex = hex::encode(event.pubkey.to_bytes());
-        super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, "governance_proposal")
-            .await?;
+        super::budget_enforcement::enforce_counter(
+            state,
+            tenant,
+            &agent_hex,
+            "governance_proposal",
+        )
+        .await?;
     }
     if kind_u32 == KIND_LAUNCH_RECEIPT {
         let table = serde_json::from_str::<serde_json::Value>(&event.content)
             .ok()
-            .and_then(|body| body.get("table").and_then(|t| t.as_str().map(|s| s.to_owned())));
+            .and_then(|body| {
+                body.get("table")
+                    .and_then(|t| t.as_str().map(|s| s.to_owned()))
+            });
         let class = match table.as_deref() {
             Some("vote") => Some("governance_vote"),
             Some("execute") => Some("governance_execute"),

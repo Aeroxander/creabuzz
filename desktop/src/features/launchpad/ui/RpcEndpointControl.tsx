@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import {
-  CHAIN_PRESETS,
+  selectableChainPresets,
   chainPresetForEndpoint,
   DEFAULT_RPC_ENDPOINT,
   getRpcEndpoint,
@@ -82,7 +82,13 @@ export function RpcEndpointControl({
       }}
     >
       <legend className="sr-only">Chain RPC endpoint</legend>
-      {CHAIN_PRESETS.map((preset) => {
+      {active?.mainnet ? (
+        <p className="px-2 py-1 text-3xs text-destructive" role="note">
+          Mainnet selected. The launchpad contracts are unaudited — use a test
+          network.
+        </p>
+      ) : null}
+      {selectableChainPresets().map((preset) => {
         const selected = active?.id === preset.id;
         return (
           <button
