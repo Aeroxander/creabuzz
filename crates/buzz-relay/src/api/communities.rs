@@ -1,5 +1,9 @@
 //! Community directory — the unauthenticated discovery surface.
 //!
+//! Opt-in (`BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`); off by default the route
+//! answers 404, so a multi-tenant deployment does not enumerate its tenants to
+//! anonymous callers.
+//!
 //! `GET /communities` lists every active community hosted by this deployment:
 //! host, display name, description, workspace icon, member count, archived
 //! flag. This is the browse-before-join entry point for the web client (the
@@ -46,6 +50,9 @@ pub struct DirectoryResponse {
 pub(crate) async fn directory(
     State(state): State<std::sync::Arc<AppState>>,
 ) -> Result<Json<DirectoryResponse>, StatusCode> {
+    if !state.config.public_community_directory {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let records = state
         .db
         .list_directory_communities()

@@ -53,6 +53,8 @@ const ENV_AUTO_CONTRIBUTE: &str = "BUZZ_FLEET_WORKER_AUTO_CONTRIBUTE";
 const ENV_TEAM: &str = "BUZZ_FLEET_WORKER_TEAM";
 const ENV_NAME: &str = "BUZZ_FLEET_WORKER_NAME";
 const ENV_KEY: &str = "BUZZ_FLEET_WORKER_KEY";
+const ENV_KEY_FILE: &str = "BUZZ_FLEET_WORKER_KEY_FILE";
+const DEFAULT_KEY_FILE: &str = ".buzz-fleet-worker.key";
 const ENV_RELAY_URL: &str = "BUZZ_RELAY_URL";
 const KIND_AGENT_CAPABILITY: u32 = 44010;
 const KIND_AGENT_TASK: u32 = 44011;
@@ -122,15 +124,50 @@ fn env_trimmed(name: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-fn keys() -> Keys {
-    if let Ok(hex_sk) = std::env::var(ENV_KEY) {
-        let sk = hex_sk.trim();
-        if let Ok(keys) = Keys::parse(sk) {
-            return keys;
-        }
-        eprintln!("{ENV_KEY} invalid; generating a new key (state is lost unless saved).");
+/// Load the worker's identity. Budgets, the contribution ledger and the org
+/// seat all key off this pubkey, so it must survive restarts:
+///
+/// 1. `BUZZ_FLEET_WORKER_KEY` — an explicit key; an invalid value is a hard
+///    error (a typo must not silently mint a new agent with a fresh budget).
+/// 2. Otherwise a key file (`BUZZ_FLEET_WORKER_KEY_FILE`, default
+///    `.buzz-fleet-worker.key`), created with mode 0600 on first start and
+///    reused after.
+fn keys() -> Result<Keys, String> {
+    if let Some(sk) = env_trimmed(ENV_KEY) {
+        return Keys::parse(&sk).map_err(|e| format!("{ENV_KEY} is not a valid key: {e}"));
     }
-    Keys::generate()
+    let path = env_trimmed(ENV_KEY_FILE).unwrap_or_else(|| DEFAULT_KEY_FILE.to_string());
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => Keys::parse(raw.trim())
+            .map_err(|e| format!("{path} does not hold a valid worker key: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let keys = Keys::generate();
+            write_key_file(&path, &keys.secret_key().to_secret_hex())
+                .map_err(|e| format!("cannot save the generated worker key to {path}: {e}"))?;
+            eprintln!(
+                "generated worker key {} and saved it to {path}",
+                keys.public_key().to_hex()
+            );
+            Ok(keys)
+        }
+        Err(e) => Err(format!("cannot read {path}: {e}")),
+    }
+}
+
+/// Create `path` exclusively (never overwrite an existing key) and
+/// owner-readable only on Unix.
+fn write_key_file(path: &str, secret_hex: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(secret_hex.as_bytes())?;
+    file.write_all(b"\n")
 }
 
 fn t(src: &str, v: &str) -> Tag {
@@ -791,7 +828,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
 
-    let keys = keys();
+    let keys = keys()?;
     let name = std::env::var(ENV_NAME).unwrap_or_else(|_| "sandbox".into());
     let relay_url = std::env::var(ENV_RELAY_URL).unwrap_or_else(|_| "ws://localhost:3000".into());
     let cfg = LlmConfig::from_env();

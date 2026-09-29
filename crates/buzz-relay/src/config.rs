@@ -488,6 +488,14 @@ pub struct Config {
     /// Trystero-shaped `#x` topic filters/events, a per-connection
     /// subscription cap and a per-connection frame budget.
     pub p2p_signaling: bool,
+
+    /// Whether the unauthenticated `GET /communities` directory is served
+    /// (`BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`). Default off: on a multi-tenant
+    /// deployment the directory lists every hosted community's host, icon and
+    /// member count to anyone, so it is an explicit operator choice. When
+    /// off the route answers 404, exactly like a relay that predates it (the
+    /// web client already falls back gracefully).
+    pub public_community_directory: bool,
     /// Anonymous P2P-signaling admission policy
     /// (`BUZZ_P2P_SIGNALING_KINDS`, `BUZZ_P2P_SIGNALING_MAX_SUBSCRIPTIONS`,
     /// `BUZZ_P2P_SIGNALING_EVENTS_PER_MIN`). Only consulted when
@@ -1398,6 +1406,9 @@ impl Config {
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
         let p2p_signaling_policy = crate::p2p_signaling::P2pSignalingPolicy::from_env()?;
+        let public_community_directory = std::env::var("BUZZ_PUBLIC_COMMUNITY_DIRECTORY")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
 
         // Apple passkey activation — the two halves of the AASA document this
         // relay serves at /.well-known/apple-app-site-association. No team id
@@ -1494,6 +1505,7 @@ impl Config {
             serve_git_web_gui,
             web_spa_full,
             p2p_signaling,
+            public_community_directory,
             p2p_signaling_policy,
             passkey_team_id,
             passkey_bundle_id,
