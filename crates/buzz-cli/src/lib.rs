@@ -3177,10 +3177,13 @@ pub enum OrgBudgetCmd {
         /// Budget subject id (slug)
         #[arg(long)]
         id: String,
-        /// Subject: agent pubkey | org node d | grant id
+        /// Subject: an agent's 64-hex pubkey, or "*" for the community default
+        /// budget that covers every agent without its own (owner/admin only)
         #[arg(long)]
         subject: String,
-        /// Budget window: epoch | day | week | month
+        /// Budget window: epoch | day | week | month. day/week/month are fixed
+        /// epochs (86400 / 604800 / 2592000 s), not calendar periods; epoch
+        /// is the all-time counter
         #[arg(long, default_value = "epoch")]
         window: String,
         /// Spend cap in smallest currency unit (e.g. usd-cents)
@@ -3195,10 +3198,32 @@ pub enum OrgBudgetCmd {
         /// Maximum tasks that can be approved per window
         #[arg(long)]
         task_approve: Option<u32>,
+        /// Maximum chat messages (kinds 9 and 40002) an agent may author per window
+        #[arg(long)]
+        messages: Option<u32>,
+        /// Maximum LLM gateway calls per window
+        #[arg(long)]
+        llm_calls: Option<u32>,
         /// Onchain spend binding: '<chain>|<contract>|<subject>' (NIP-ORG §37012).
         /// Example: --onchain 'eip155:8453|0xabc...def|<32-byte-hex-pubkey>'
         #[arg(long)]
         onchain: Option<String>,
+    },
+    /// Approve or deny a budget-overrun request (the kind:46010 card in "Needs me")
+    ///
+    /// An agent that hits its limit gets an approval request instead of a
+    /// silent stop; granting it lets exactly one more action through. Only the
+    /// community owner or an admin may resolve it, never the budgeted agent.
+    Resolve {
+        /// The request id: the `d` tag of the kind:46010 event (64-char hex)
+        #[arg(long)]
+        request: String,
+        /// Deny the request instead of granting it
+        #[arg(long)]
+        deny: bool,
+        /// Optional note recorded with the decision
+        #[arg(long)]
+        note: Option<String>,
     },
     /// Get a budget by id
     Get {

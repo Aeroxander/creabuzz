@@ -492,6 +492,8 @@ async fn cmd_budget_create(
     runs: Option<u32>,
     task_create: Option<u32>,
     task_approve: Option<u32>,
+    messages: Option<u32>,
+    llm_calls: Option<u32>,
     onchain: Option<&str>,
 ) -> Result<(), CliError> {
     validate_d_tag(subject_id, "budget")?;
@@ -529,8 +531,8 @@ async fn cmd_budget_create(
             runs,
             tasks,
             governance: None,
-            messages: None,
-            llm_calls: None,
+            messages,
+            llm_calls,
         },
         on_exceed: OnExceed::RequireApproval,
         onchain: onchain.map(parse_onchain_binding).transpose()?,
@@ -544,6 +546,27 @@ async fn cmd_budget_create(
     println!(
         "{}",
         parse_write_response(&response, "budget already exists")?
+    );
+    Ok(())
+}
+
+/// Resolve a budget-overrun approval request: publish the grant or deny
+/// command the relay's approval surface consumes (`d` = the request's token
+/// hash, as carried by the kind:46010 event).
+async fn cmd_budget_resolve(
+    client: &BuzzClient,
+    request: &str,
+    approved: bool,
+    note: Option<&str>,
+) -> Result<(), CliError> {
+    let request = validate_pubkey_hex(request, "request id")?;
+    let builder = buzz_sdk::build_workflow_approval(&request, approved, note.unwrap_or(""))
+        .map_err(|e| CliError::Usage(e.to_string()))?;
+    let event = client.sign_event(builder)?;
+    let response = client.submit_event(event).await?;
+    println!(
+        "{}",
+        parse_write_response(&response, "approval already resolved")?
     );
     Ok(())
 }
@@ -1118,6 +1141,8 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                 runs,
                 task_create,
                 task_approve,
+                messages,
+                llm_calls,
                 onchain,
             } => {
                 cmd_budget_create(
@@ -1129,10 +1154,17 @@ pub async fn dispatch(cmd: crate::OrgCmd, client: &BuzzClient) -> Result<(), Cli
                     runs,
                     task_create,
                     task_approve,
+                    messages,
+                    llm_calls,
                     onchain.as_deref(),
                 )
                 .await
             }
+            crate::OrgBudgetCmd::Resolve {
+                request,
+                deny,
+                note,
+            } => cmd_budget_resolve(client, &request, !deny, note.as_deref()).await,
             crate::OrgBudgetCmd::Get { id } => cmd_budget_get(client, &id).await,
             crate::OrgBudgetCmd::List { limit } => cmd_budget_list(client, limit).await,
             crate::OrgBudgetCmd::Delete { id } => cmd_budget_delete(client, &id).await,

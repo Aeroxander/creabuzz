@@ -91,9 +91,12 @@ async fn ensure_test_community(host: &str) -> Uuid {
 
 async fn seed_relay_owner(keys: &Keys) {
     let url = relay_url();
+    // The relay resolves its community from the full authority (host:port),
+    // so seed that community, not the bare hostname.
     let host = url
         .trim_start_matches("ws://")
-        .split(':')
+        .trim_start_matches("wss://")
+        .split('/')
         .next()
         .unwrap_or("localhost");
     let pool = e2e_db_pool().await;
@@ -132,6 +135,9 @@ async fn collect(client: &mut BuzzTestClient, sid: &str) -> Vec<nostr::Event> {
 #[ignore]
 async fn org_node_lifecycle_lww_and_readback() {
     let keys = Keys::generate();
+    // R1: a root node (no parent) may only be published by the community
+    // owner/admin, so this key is seated as the owner first.
+    seed_relay_owner(&keys).await;
     let mut c = BuzzTestClient::connect(&relay_url(), &keys)
         .await
         .expect("connect");
@@ -241,7 +247,10 @@ async fn org_binding_requires_root_holder_or_owner() {
     let ok = oc.send_event(root).await.expect("publish root");
     assert!(ok.accepted);
 
-    // Stranger (a holder) may bind.
+    // R1: nodes are addressed by (author, d) but referenced by the bare d, so
+    // a holder republishing the ROOT id under their own key would shadow the
+    // owner's node. Only the owner/admin may publish a root record — the
+    // holder's bind attempt is refused.
     let binding = serde_json::json!({
         "v": 1,
         "name": "Root",
@@ -254,7 +263,7 @@ async fn org_binding_requires_root_holder_or_owner() {
         },
     })
     .to_string();
-    let bind_event = EventBuilder::new(Kind::Custom(KIND_ORG_NODE), binding)
+    let bind_event = EventBuilder::new(Kind::Custom(KIND_ORG_NODE), binding.clone())
         .tag(Tag::parse(["d", &d]).unwrap())
         .sign_with_keys(&stranger)
         .expect("sign binding");
@@ -263,8 +272,22 @@ async fn org_binding_requires_root_holder_or_owner() {
         .expect("holder connect");
     let okb = sc.send_event(bind_event).await.expect("holder bind");
     assert!(
-        okb.accepted,
-        "a holder must be able to bind the root they hold"
+        !okb.accepted,
+        "a holder must not shadow the owner's root record"
+    );
+    assert!(okb.message.contains("restricted"), "got: {}", okb.message);
+
+    // The owner binds by republishing their own root with the binding.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    let owner_bind = EventBuilder::new(Kind::Custom(KIND_ORG_NODE), binding)
+        .tag(Tag::parse(["d", &d]).unwrap())
+        .sign_with_keys(&owner)
+        .expect("sign owner binding");
+    let oko = oc.send_event(owner_bind).await.expect("owner bind");
+    assert!(
+        oko.accepted,
+        "the owner must be able to bind the root: {}",
+        oko.message
     );
 
     // A completely unrelated signer must be rejected.
