@@ -80,6 +80,15 @@ contract DeployOrgDao is Script {
         // 2. The binding record keeper (deploys its own majeur Summoner).
         OrgBinding binding = new OrgBinding();
 
+        // `SummonParams.molochImpl` (the implementation the summon's CREATE2
+        // DAO prediction bakes into the clone initcode) must be known BEFORE
+        // the summon: `Summoner.implementation` is an unexported immutable —
+        // no getter and no storage slot — so read it out of the Summoner
+        // constructor's `NewDAO(summoner, implementation)` log captured by
+        // the `vm.recordLogs()` above (the summon's own `NewDAO` carries a
+        // different topics[1]; see `_implementationFromLog`).
+        address implementation = _implementationFromLog(address(binding.summoner()));
+
         // 3. Summon + bind: root holders -> shares, 1:1.
         address[] memory holders = new address[](2);
         holders[0] = ownerAddr;
@@ -88,12 +97,23 @@ contract DeployOrgDao is Script {
         initShares[0] = 1e18;
         initShares[1] = 1e18;
 
+        // Governance: the SafeSummoner.summonFast preset values — threshold
+        // = 1% of the total initial shares floored at 1
+        // (SafeSummoner._defaultThreshold's exact formula), 3-day TTL, 1-day
+        // timelock. OrgBinding enforces these are production-safe.
+        uint256 totalShares = initShares[0] + initShares[1];
+        uint96 proposalThreshold = uint96(totalShares / 100 == 0 ? 1 : totalShares / 100);
+
         OrgBinding.SummonParams memory p = OrgBinding.SummonParams({
             name: vm.envOr("ORG_NAME", string("Buzz Org")),
             symbol: vm.envOr("ORG_SYMBOL", string("BUZZ")),
             uri: "",
             quorumBps: 500, // summonFast default
             ragequittable: true,
+            proposalThreshold: proposalThreshold,
+            proposalTTL: 3 days, // summonFast default
+            timelockDelay: 1 days, // summonFast default
+            molochImpl: implementation,
             salt: keccak256(abi.encodePacked(rootId)),
             holders: holders,
             shares: initShares
@@ -111,7 +131,6 @@ contract DeployOrgDao is Script {
         emit OrgDaoBound(rootId, address(binding), dao, shares, allowanceAddr);
 
         address summoner = address(binding.summoner());
-        address implementation = _implementationFromLog(summoner);
 
         string memory manifest = _writeDeploymentManifest(binding, summoner, implementation);
 

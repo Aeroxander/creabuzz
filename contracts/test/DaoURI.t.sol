@@ -42,6 +42,25 @@ contract DaoURIAdapterTest is Test {
         h.shares = new uint256[](1);
         h.holders[0] = treasury;
         h.shares[0] = 1e18;
+        // The Summoner keeps its Moloch implementation in an unexported
+        // immutable (no getter); mirror its constructor's
+        // `new Moloch{salt: bytes32(0)}()` — CREATE2(salt = 0) over Moloch's
+        // creation code — to derive the clone implementation OrgBinding's
+        // CREATE2 DAO prediction needs. (Same formula as the deploy scripts.)
+        address molochImpl = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff),
+                            address(binding.summoner()),
+                            bytes32(0),
+                            keccak256(type(Moloch).creationCode)
+                        )
+                    )
+                )
+            )
+        );
         address daoAddr = binding.summonAndBind(
             bytes32(uint256(1)),
             OrgBinding.SummonParams({
@@ -50,6 +69,10 @@ contract DaoURIAdapterTest is Test {
                 uri: uri,
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: uint96(1e18 / 100), // 1% of the 1e18 total (floor 1)
+                proposalTTL: 3 days, // summonFast preset
+                timelockDelay: 1 days, // summonFast preset
+                molochImpl: molochImpl,
                 salt: keccak256("dao-uri"),
                 holders: h.holders,
                 shares: h.shares

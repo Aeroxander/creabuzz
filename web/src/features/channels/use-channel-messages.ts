@@ -3,6 +3,19 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import {
+  KIND_HUDDLE_STARTED,
+  KIND_JOB_ACCEPTED,
+  KIND_JOB_CANCEL,
+  KIND_JOB_ERROR,
+  KIND_JOB_PROGRESS,
+  KIND_JOB_REQUEST,
+  KIND_JOB_RESULT,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_DIFF,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_SYSTEM_MESSAGE,
+} from "@/shared/constants/kinds";
 import { subscribeChannel, type SubscriptionStatus } from "./subscribe-channel";
 
 /**
@@ -10,7 +23,17 @@ import { subscribeChannel, type SubscriptionStatus } from "./subscribe-channel";
  * `CHANNEL_TIMELINE_CONTENT_KINDS` in the desktop client).
  */
 export const TIMELINE_CONTENT_KINDS = [
-  9, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 48100,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_STREAM_MESSAGE_DIFF,
+  KIND_SYSTEM_MESSAGE,
+  KIND_JOB_REQUEST,
+  KIND_JOB_ACCEPTED,
+  KIND_JOB_PROGRESS,
+  KIND_JOB_RESULT,
+  KIND_JOB_CANCEL,
+  KIND_JOB_ERROR,
+  KIND_HUDDLE_STARTED,
 ];
 
 /**

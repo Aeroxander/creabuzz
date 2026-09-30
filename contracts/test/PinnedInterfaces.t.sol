@@ -16,6 +16,7 @@ import {
 } from "liquidity-launcher/src/interfaces/ILBPInitializer.sol";
 import {IDistributorFactory} from "liquidity-launcher/src/interfaces/IDistributorFactory.sol";
 import {Summoner} from "majeur/src/Moloch.sol";
+import {OrgBinding} from "../src/OrgBinding.sol";
 import {
     IContinuousClearingAuction as MirrorAuction,
     ICcaFinalization,
@@ -141,6 +142,27 @@ contract PinnedInterfacesTest is Test {
             hex"650baad5cd8ca09b8f580be220fa04ce2ba905a041f764b6a3fe2c848eb70540"
         );
         assertEq(UpstreamAuction.BidSubmitted.selector, keccak256("BidSubmitted(uint256,address,uint256,uint128)"));
+    }
+
+    // ----------------------------------------------------------- org binding
+
+    /// `OrgBinding.summonAndBind` is the summon-and-bind entry point the
+    /// deploy scripts/CLI drive; its selector derives from the `SummonParams`
+    /// tuple, so the struct shape IS the ABI. DELIBERATE PIN MOVE (the P2
+    /// governance tightening): the struct gained proposalThreshold/
+    /// proposalTTL/timelockDelay/molochImpl and the pin moved from
+    /// `0x455eb335` (the threshold-less shape) to `0x0a330b28`. Any client
+    /// embedding the old selector is pinned to the insecure summon.
+    function test_org_binding_summon_and_bind_selector_is_pinned() public pure {
+        assertEq(
+            OrgBinding.summonAndBind.selector,
+            bytes4(
+                keccak256(
+                    "summonAndBind(bytes32,(string,string,string,uint16,bool,uint96,uint64,uint64,address,bytes32,address[],uint256[]))"
+                )
+            )
+        );
+        assertEq(OrgBinding.summonAndBind.selector, bytes4(0x0a330b28));
     }
 
     function test_majeur_summoner_links() public {

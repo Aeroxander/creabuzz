@@ -3,6 +3,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AgentSessionThreadPanel } from "@/features/channels/ui/AgentSessionThreadPanel";
 import { CommunitiesProvider } from "@/features/communities/useCommunities";
+import {
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_FORUM_COMMENT,
+  KIND_FORUM_POST,
+} from "@/shared/constants/kinds";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { emit, listen } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -4767,7 +4773,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
             id: "mock-general-welcome",
             pubkey: DEFAULT_MOCK_IDENTITY.pubkey,
             created_at: Math.floor(Date.now() / 1000) - 120,
-            kind: 9,
+            kind: KIND_STREAM_MESSAGE,
             tags: [["h", channelId]],
             content: "Welcome to #general",
             sig: "mocksig".repeat(20).slice(0, 128),
@@ -4783,7 +4789,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
             id: "mock-general-alice",
             pubkey: ALICE_PUBKEY,
             created_at: Math.floor(Date.now() / 1000) - 60,
-            kind: 9,
+            kind: KIND_STREAM_MESSAGE,
             tags: [["h", channelId]],
             content: "Hey team — checking in.",
             sig: "mocksig".repeat(20).slice(0, 128),
@@ -4797,7 +4803,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
             id: REACTION_TARGET_EVENT_ID,
             pubkey: ALICE_PUBKEY,
             created_at: Math.floor(Date.now() / 1000) - 45,
-            kind: 9,
+            kind: KIND_STREAM_MESSAGE,
             tags: [["h", channelId]],
             content: REACTION_TARGET_CONTENT,
             sig: "mocksig".repeat(20).slice(0, 128),
@@ -4895,7 +4901,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
                 id: "mock-agents-charlie",
                 pubkey: CHARLIE_PUBKEY,
                 created_at: Math.floor(Date.now() / 1000) - 90,
-                kind: 9,
+                kind: KIND_STREAM_MESSAGE,
                 tags: [["h", channelId]],
                 content: "Indexing the channel catalog now.",
                 sig: "mocksig".repeat(20).slice(0, 128),
@@ -4907,7 +4913,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
                 id: "mock-agents-owned-relay-nadia",
                 pubkey: OWNED_RELAY_AGENT_PUBKEY,
                 created_at: Math.floor(Date.now() / 1000) - 85,
-                kind: 9,
+                kind: KIND_STREAM_MESSAGE,
                 tags: [["h", channelId]],
                 content: "Indexing remotely for my owner.",
                 sig: "mocksig".repeat(20).slice(0, 128),
@@ -4925,7 +4931,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
                   id: `mock-agents-managed-${agent.pubkey.slice(0, 8)}`,
                   pubkey: agent.pubkey,
                   created_at: Math.floor(Date.now() / 1000) - 80 + index,
-                  kind: 9 as const,
+                  kind: KIND_STREAM_MESSAGE,
                   tags: [["h", channelId]],
                   content: `${agent.name} reporting in.`,
                   sig: "mocksig".repeat(20).slice(0, 128),
@@ -4939,7 +4945,7 @@ function getMockMessageStore(channelId: string): RelayEvent[] {
                   pubkey: index % 2 === 0 ? ALICE_PUBKEY : MOCK_IDENTITY_PUBKEY,
                   created_at:
                     Math.floor(Date.now() / 1000) - (count - index) * 60,
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   tags: [["h", channelId]],
                   content:
                     count > 600
@@ -8122,7 +8128,7 @@ async function handleGetFeed(
             mentions: [
               {
                 id: "mock-feed-alice-mention",
-                kind: 9,
+                kind: KIND_STREAM_MESSAGE,
                 pubkey: BOB_PUBKEY,
                 content: "Alice, can you sanity-check the new design mocks?",
                 created_at: now - 90,
@@ -8155,7 +8161,7 @@ async function handleGetFeed(
             activity: [
               {
                 id: "mock-feed-alice-self-activity",
-                kind: 9,
+                kind: KIND_STREAM_MESSAGE,
                 pubkey: ALICE_PUBKEY,
                 content: "I posted the latest design review summary.",
                 created_at: now - 25 * 60,
@@ -8166,7 +8172,7 @@ async function handleGetFeed(
               },
               {
                 id: "mock-feed-alice-activity",
-                kind: 9,
+                kind: KIND_STREAM_MESSAGE,
                 pubkey: BOB_PUBKEY,
                 content: "Engineering signed off on the desktop build.",
                 created_at: now - 42 * 60,
@@ -8196,7 +8202,7 @@ async function handleGetFeed(
               mentions: [
                 {
                   id: "mock-feed-tyler-mention",
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   pubkey: ALICE_PUBKEY,
                   content: "Tyler, can you review the DM onboarding copy?",
                   created_at: now - 90,
@@ -8229,7 +8235,7 @@ async function handleGetFeed(
               activity: [
                 {
                   id: "mock-feed-tyler-self-activity",
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   pubkey: DEFAULT_REAL_IDENTITY.pubkey,
                   content: "I sent the follow-up in the Alice DM.",
                   created_at: now - 25 * 60,
@@ -8258,7 +8264,7 @@ async function handleGetFeed(
               mentions: [
                 {
                   id: "mock-feed-mention",
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   pubkey: ALICE_PUBKEY,
                   content: "Please review the release checklist.",
                   created_at: now - 90,
@@ -8291,7 +8297,7 @@ async function handleGetFeed(
               activity: [
                 {
                   id: "mock-feed-self-activity",
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   pubkey: currentPubkey,
                   content: "I posted a note about the launch checklist.",
                   created_at: now - 25 * 60,
@@ -8302,7 +8308,7 @@ async function handleGetFeed(
                 },
                 {
                   id: "mock-feed-activity",
-                  kind: 9,
+                  kind: KIND_STREAM_MESSAGE,
                   pubkey: BOB_PUBKEY,
                   content: "Engineering shipped the desktop build.",
                   created_at: now - 42 * 60,
@@ -10038,7 +10044,7 @@ async function handleSearchMessages(
       {
         event_id: "mock-general-welcome",
         content: "Welcome to #general",
-        kind: 9,
+        kind: KIND_STREAM_MESSAGE,
         pubkey: DEFAULT_MOCK_IDENTITY.pubkey,
         channel_id: "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50",
         channel_name: "general",
@@ -10048,7 +10054,7 @@ async function handleSearchMessages(
       {
         event_id: "mock-engineering-shipped",
         content: "Engineering shipped the desktop build.",
-        kind: 9,
+        kind: KIND_STREAM_MESSAGE,
         pubkey:
           "bb22a5299220cad76ffd46190ccbeede8ab5dc260faa28b6e5a2cb31b9aff260",
         channel_id: "1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9",
@@ -10059,7 +10065,7 @@ async function handleSearchMessages(
       {
         event_id: "mock-design-critique",
         content: "Design critique notes for the browse flow.",
-        kind: 9,
+        kind: KIND_STREAM_MESSAGE,
         pubkey:
           "953d3363262e86b770419834c53d2446409db6d918a57f8f339d495d54ab001f",
         channel_id: "b5e2f8a1-3c44-5912-9e67-4a8d1f2b3c4e",
@@ -10132,7 +10138,12 @@ async function handleSearchMessages(
   // NIP-50 search via POST /query — forward operator pushdown fields.
   const limit = args.limit ?? 20;
   const filter: Record<string, unknown> = {
-    kinds: [9, 40002, 45001, 45003],
+    kinds: [
+      KIND_STREAM_MESSAGE,
+      KIND_STREAM_MESSAGE_V2,
+      KIND_FORUM_POST,
+      KIND_FORUM_COMMENT,
+    ],
     search: args.q,
     limit,
   };
@@ -10766,7 +10777,7 @@ async function resolveGetEvent(
         pubkey:
           "bb22a5299220cad76ffd46190ccbeede8ab5dc260faa28b6e5a2cb31b9aff260",
         created_at: Math.floor(Date.now() / 1000) - 42 * 60,
-        kind: 9,
+        kind: KIND_STREAM_MESSAGE,
         tags: [["h", "1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9"]],
         content: "Engineering shipped the desktop build.",
         sig: "mocksig".repeat(20).slice(0, 128),
@@ -10776,7 +10787,7 @@ async function resolveGetEvent(
         pubkey:
           "953d3363262e86b770419834c53d2446409db6d918a57f8f339d495d54ab001f",
         created_at: Math.floor(Date.now() / 1000) - 75 * 60,
-        kind: 9,
+        kind: KIND_STREAM_MESSAGE,
         tags: [["h", "b5e2f8a1-3c44-5912-9e67-4a8d1f2b3c4e"]],
         content: "Design critique notes for the browse flow.",
         sig: "mocksig".repeat(20).slice(0, 128),

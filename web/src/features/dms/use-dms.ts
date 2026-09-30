@@ -1,3 +1,7 @@
+import {
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+} from "@/shared/constants/kinds";
 /**
  * Direct-message conversations: the conversation list (relay-signed notices),
  * the hidden set (viewer visibility snapshot), live updates, and the open /
@@ -148,7 +152,7 @@ export function useDmActivity(dmIds: string[]) {
     queryKey: ["dm-activity", key],
     queryFn: async () => {
       const events = await queryEvents(relayWsUrl(), {
-        kinds: [9, 40002],
+        kinds: [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_V2],
         "#h": dmIds.slice(0, 50),
         limit: 200,
       });
@@ -168,7 +172,11 @@ export function useDmActivity(dmIds: string[]) {
     if (dmIds.length === 0) return;
     return subscribeChannel(
       relayWsUrl(),
-      { kinds: [9, 40002], "#h": dmIds.slice(0, 50), limit: 20 },
+      {
+        kinds: [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_V2],
+        "#h": dmIds.slice(0, 50),
+        limit: 20,
+      },
       {
         onEvent: (event) => {
           const h = getTag(event, "h");

@@ -248,6 +248,9 @@ pub fn project(graph: &OrgGraph) -> Erc4824Document {
 /// Canonical bytes: `serde_json`'s default map ordering is sorted, so the
 /// output is deterministic and byte-comparable (the golden-vector seam).
 pub fn document_bytes(graph: &OrgGraph) -> String {
+    // Infallible by construction: Erc4824Document holds only strings, vecs of
+    // plain structs, and string-keyed maps of serde_json::Value — no floats or
+    // keys serde_json could refuse, so serialization cannot fail.
     serde_json::to_string(&project(graph)).expect("document serializes")
 }
 

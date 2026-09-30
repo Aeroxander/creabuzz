@@ -1,3 +1,12 @@
+import {
+  KIND_AGENT_TASK,
+  KIND_GIT_ISSUE,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_DIFF,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_SYSTEM_MESSAGE,
+  KIND_WIKI_PAGE,
+} from "@/shared/constants/kinds";
 import { useQuery } from "@tanstack/react-query";
 
 import { queryEventsHttp } from "@/shared/lib/http-query";
@@ -11,7 +20,15 @@ import type { NostrEvent, NostrFilter } from "@/shared/lib/nostr-client";
  * that only runs the channel-scoped filter never sees them — which is why
  * finding a decision meant remembering where it was discussed.
  */
-const SEARCH_KINDS = [9, 40002, 40008, 40099, 44001, 44011, 1621];
+const SEARCH_KINDS = [
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_STREAM_MESSAGE_DIFF,
+  KIND_SYSTEM_MESSAGE,
+  KIND_WIKI_PAGE,
+  KIND_AGENT_TASK,
+  KIND_GIT_ISSUE,
+];
 
 /**
  * NIP-50 full-text search over the accessible channels of the current

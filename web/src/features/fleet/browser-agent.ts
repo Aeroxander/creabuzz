@@ -22,6 +22,10 @@ import {
   type PublishedAnnouncement,
 } from "@/features/fleet/lib/heartbeat";
 import {
+  agentContextFilter,
+  buildAgentTurnEvent,
+} from "@/features/fleet/lib/agent-planes";
+import {
   AGENT_NAME,
   TASK_PATTERN,
   answerWikiEdit,
@@ -534,9 +538,9 @@ class BrowserAgent {
 
   private async loadChannelContext(channelId: string): Promise<string> {
     const { queryEventsHttp } = await import("@/shared/lib/http-query");
-    const events = await queryEventsHttp([
-      { kinds: [1, 40002], "#h": [channelId], limit: 25 },
-    ]);
+    // Reads both chat planes (kind 9 history + kind 40002 v2 posts) plus
+    // plain notes — see `agent-planes.ts`.
+    const events = await queryEventsHttp([agentContextFilter(channelId)]);
     return events
       .slice(-10)
       .map((e) => `${truncatePubkey(e.pubkey)}: ${e.content.slice(0, 300)}`)
@@ -636,11 +640,9 @@ class BrowserAgent {
     if (channelId) tags.push(["h", channelId]);
     // Thread participation: delegation replies attach to the assignment message.
     if (parentEventId) tags.push(["e", parentEventId]);
-    const signed = await signAsAgent({
-      kind: 40002,
-      tags,
-      content,
-    });
+    // Posts on the live agent wire plane (kind 9), the one every producer
+    // speaks — see `agent-planes.ts`.
+    const signed = await signAsAgent(buildAgentTurnEvent(content, tags));
     const result = await publishEvent(relayWsUrl(), signed, {
       signAuth: signAsAgent,
     });

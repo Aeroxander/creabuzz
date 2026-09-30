@@ -207,7 +207,9 @@ async fn cmd_node_get(
     }
 
     for event in active {
-        println!("{}", serde_json::to_string_pretty(event).unwrap());
+        let pretty = serde_json::to_string_pretty(event)
+            .map_err(|e| CliError::Other(format!("serialize event: {e}")))?;
+        println!("{}", pretty);
     }
     Ok(())
 }
@@ -421,7 +423,9 @@ async fn cmd_grant_get(client: &BuzzClient, grant_id: &str) -> Result<(), CliErr
 
     // Return the latest (most recent created_at).
     if let Some(head) = events.iter().max_by_key(|e| e.created_at) {
-        println!("{}", serde_json::to_string_pretty(head).unwrap());
+        let pretty = serde_json::to_string_pretty(head)
+            .map_err(|e| CliError::Other(format!("serialize event: {e}")))?;
+        println!("{}", pretty);
     }
     Ok(())
 }
@@ -795,7 +799,9 @@ async fn cmd_budget_get(client: &BuzzClient, subject_id: &str) -> Result<(), Cli
     }
 
     if let Some(head) = events.iter().max_by_key(|e| e.created_at) {
-        println!("{}", serde_json::to_string_pretty(head).unwrap());
+        let pretty = serde_json::to_string_pretty(head)
+            .map_err(|e| CliError::Other(format!("serialize event: {e}")))?;
+        println!("{}", pretty);
     }
     Ok(())
 }
@@ -915,7 +921,9 @@ async fn cmd_contribution_get(client: &BuzzClient, action_id: &str) -> Result<()
     }
 
     if let Some(head) = events.iter().max_by_key(|e| e.created_at) {
-        println!("{}", serde_json::to_string_pretty(head).unwrap());
+        let pretty = serde_json::to_string_pretty(head)
+            .map_err(|e| CliError::Other(format!("serialize event: {e}")))?;
+        println!("{}", pretty);
     }
     Ok(())
 }

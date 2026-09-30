@@ -1,3 +1,9 @@
+import {
+  KIND_FORUM_COMMENT,
+  KIND_FORUM_POST,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+} from "@/shared/constants/kinds";
 import * as React from "react";
 
 import type { ParsedMessageLink } from "@/features/messages/lib/messageLink";
@@ -8,7 +14,12 @@ import { truncateNpub } from "@/shared/lib/pubkey";
 import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
 
 const MESSAGE_METADATA_RETRY_DELAY_MS = 750;
-const PREVIEWABLE_MESSAGE_KINDS = new Set([9, 40002, 45001, 45003]);
+const PREVIEWABLE_MESSAGE_KINDS = new Set([
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_FORUM_POST,
+  KIND_FORUM_COMMENT,
+]);
 
 function waitForMessageMetadataRetry(): Promise<void> {
   return new Promise((resolve) => {

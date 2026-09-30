@@ -296,7 +296,12 @@ mod tests {
 
     impl io::Write for CapturingWriter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(bytes);
+            // Poison-recover: one panicked write must not poison the capture
+            // buffer and make every later write panic too.
+            self.0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .extend_from_slice(bytes);
             Ok(bytes.len())
         }
 

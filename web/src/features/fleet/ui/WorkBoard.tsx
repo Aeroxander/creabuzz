@@ -26,6 +26,7 @@ import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import { RecentThread, TaskHistory } from "./WorkBoardThread";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useUserNames } from "@/features/profiles/use-profiles";
+import { KIND_AGENT_TASK, KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import type { TaskPriority } from "../use-agent-tasks";
 import type { Channel } from "@/features/channels/use-channels";
 import { userPubkey } from "@/shared/lib/identity";
@@ -192,7 +193,7 @@ export function WorkBoard({
     void (async () => {
       try {
         const signed = await signAsUser({
-          kind: 9,
+          kind: KIND_STREAM_MESSAGE,
           tags: [
             ["h", scope],
             ["e", parentEventId],
@@ -268,7 +269,7 @@ export function WorkBoard({
     const task = parseTask({
       id: item.id,
       pubkey: item.author,
-      kind: 44011,
+      kind: KIND_AGENT_TASK,
       created_at: Math.floor(item.updatedAt / 1000),
       tags: [
         ["d", item.id],

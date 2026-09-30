@@ -136,9 +136,9 @@ pub fn compose(
     rows.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Level-by-level tree; proofs walk the sibling at (i ^ 1) per level.
-    let mut levels: Vec<Vec<[u8; 32]>> = vec![rows.iter().map(|r| r.2).collect()];
-    while levels.last().unwrap().len() > 1 {
-        let cur = levels.last().unwrap();
+    let mut levels: Vec<Vec<[u8; 32]>> = Vec::new();
+    let mut cur: Vec<[u8; 32]> = rows.iter().map(|r| r.2).collect();
+    while cur.len() > 1 {
         let mut next = Vec::with_capacity(cur.len().div_ceil(2));
         let mut i = 0;
         while i < cur.len() {
@@ -149,15 +149,21 @@ pub fn compose(
             }
             i += 2;
         }
-        levels.push(next);
+        levels.push(cur);
+        cur = next;
     }
-    let root = levels[0..].last().unwrap()[0];
+    // `rows` is non-empty above and halving stops at one node, so `cur` holds
+    // exactly the root; fail typed rather than panic if that ever breaks.
+    let root = cur
+        .first()
+        .copied()
+        .ok_or_else(|| CliError::Other("internal: empty trust graph".into()))?;
 
     let mut proofs = BTreeMap::new();
     for (idx, (member, score, l)) in rows.iter().enumerate() {
         let mut path = Vec::new();
         let mut i = idx;
-        for level in &levels[..levels.len() - 1] {
+        for level in &levels {
             let sibling = i ^ 1;
             if sibling < level.len() {
                 path.push(level[sibling]);
@@ -224,7 +230,10 @@ pub fn build_root_event(bundle: &RootBundle) -> Result<EventBuilder, CliError> {
         content.to_string(),
     )
     .tag(Tag::parse(["d", &d]).map_err(|e| CliError::Other(format!("bad d tag: {e}")))?)
-    .tag(Tag::parse(["t", "dao-launchpad"]).unwrap()))
+    .tag(
+        Tag::parse(["t", "dao-launchpad"])
+            .map_err(|e| CliError::Other(format!("bad t tag: {e}")))?,
+    ))
 }
 
 /// `setScoreRoot(bytes32,uint256)` calldata for the gate rotation.

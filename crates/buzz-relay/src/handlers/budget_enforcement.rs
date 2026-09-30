@@ -365,6 +365,31 @@ async fn budget_groups(
     Ok(groups)
 }
 
+/// Choose which violated budget binds the rejection (pure — the policy is
+/// unit-tested below). A hard-reject budget (`on_exceed: "reject"`, e.g. an
+/// emergency stop's all-zero budget) always outranks a violated
+/// `require-approval` budget, so a stopped agent is hard-refused with NO
+/// approval queue regardless of window or discovery order. Within a class the
+/// strictest (lowest) limit binds; ties keep the first violated.
+fn select_binding(budgets: &[ApplicableLimit], violated: &[usize]) -> usize {
+    let mut best = violated[0];
+    let class = |i: usize| budgets[i].on_exceed == "reject";
+    let reject_class = class(best);
+    for &candidate in &violated[1..] {
+        let cand_class = class(candidate);
+        if cand_class != reject_class {
+            if cand_class {
+                best = candidate;
+            }
+            continue;
+        }
+        if budgets[candidate].limit < budgets[best].limit {
+            best = candidate;
+        }
+    }
+    best
+}
+
 async fn enforce_budget_set(
     db: &buzz_db::Db,
     tenant: &TenantContext,
@@ -374,6 +399,12 @@ async fn enforce_budget_set(
 ) -> Result<BudgetOutcome, IngestError> {
     let groups = budget_groups(db, tenant, subject, counter_type, budgets).await?;
 
+    // Collect EVERY violated group before choosing: a hard-reject budget (an
+    // emergency stop's limit 0) must win the binding over a violated
+    // require-approval budget in another window, or a stopped agent's refusal
+    // would report the softer budget AND record an approval request the stop
+    // design forbids.
+    let mut violated: Vec<usize> = Vec::new();
     for group in &groups {
         let within = db
             .check_budget_consumption(
@@ -386,11 +417,16 @@ async fn enforce_budget_set(
             .await
             .map_err(|e| IngestError::Internal(format!("error: db error checking budget: {e}")))?;
         if !within {
-            return Ok(BudgetOutcome::Exceeded(group.binding));
+            violated.push(group.binding);
         }
     }
+    if !violated.is_empty() {
+        return Ok(BudgetOutcome::Exceeded(select_binding(
+            budgets, &violated,
+        )));
+    }
 
-    let mut raced: Option<usize> = None;
+    let mut raced: Vec<usize> = Vec::new();
     for group in &groups {
         let consumed = db
             .increment_budget_consumption(
@@ -404,13 +440,13 @@ async fn enforce_budget_set(
             .map_err(|e| {
                 IngestError::Internal(format!("error: could not record budget consumption: {e}"))
             })?;
-        if consumed > group.limit && raced.is_none() {
-            raced = Some(group.binding);
+        if consumed > group.limit {
+            raced.push(group.binding);
         }
     }
-    Ok(match raced {
-        Some(binding) => BudgetOutcome::Exceeded(binding),
-        None => BudgetOutcome::Admitted,
+    Ok(match raced.is_empty() {
+        true => BudgetOutcome::Admitted,
+        false => BudgetOutcome::Exceeded(select_binding(budgets, &raced)),
     })
 }
 
@@ -1016,6 +1052,49 @@ mod tests {
 
     /// The counter-type vocabulary binds to the typed budget limits — this
     /// mapping IS the governance-action gate's vocabulary (S3 HITL).
+    fn applicable(id: &str, limit: i64, on_exceed: &str) -> ApplicableLimit {
+        ApplicableLimit {
+            budget_event_id_hex: id.to_string(),
+            on_exceed: on_exceed.to_string(),
+            window: "day".to_string(),
+            limit,
+            window_start: chrono::Utc::now(),
+        }
+    }
+
+    /// The emergency-stop invariant: a violated hard-reject budget binds over
+    /// a violated require-approval budget in ANY order, so a stopped agent is
+    /// refused with the stop's "limit 0" and NO approval request is recorded.
+    #[test]
+    fn hard_reject_outranks_a_violated_approval_budget() {
+        let budgets = vec![
+            applicable("day", 2, "require-approval"),
+            applicable("stop", 0, "reject"),
+        ];
+        assert_eq!(select_binding(&budgets, &[0, 1]), 1);
+        assert_eq!(select_binding(&budgets, &[1, 0]), 1);
+    }
+
+    /// Within one class the strictest limit binds regardless of order.
+    #[test]
+    fn strictest_limit_binds_within_a_class() {
+        let budgets = vec![
+            applicable("a", 5, "reject"),
+            applicable("b", 0, "reject"),
+            applicable("c", 3, "require-approval"),
+            applicable("d", 1, "require-approval"),
+        ];
+        assert_eq!(select_binding(&budgets, &[0, 1]), 1);
+        assert_eq!(select_binding(&budgets, &[3, 2]), 3);
+    }
+
+    /// Full ties keep the first violated (stable, deterministic).
+    #[test]
+    fn first_violated_binds_on_a_full_tie() {
+        let budgets = vec![applicable("a", 2, "reject"), applicable("b", 2, "reject")];
+        assert_eq!(select_binding(&budgets, &[0, 1]), 0);
+    }
+
     #[test]
     fn counter_limit_maps_every_class() {
         let mut limits = buzz_sdk::BudgetLimits::default();

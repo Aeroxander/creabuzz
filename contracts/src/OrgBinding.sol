@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {Call, Summoner} from "majeur/src/Moloch.sol";
+import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
 
 /// @title OrgBinding — onchain record keeper for the NIP-ORG "Opt-in onchain
 /// binding" of a community org root to a Moloch-family DAO.
@@ -25,8 +25,8 @@ import {Call, Summoner} from "majeur/src/Moloch.sol";
 ///   a dev chain. We therefore deploy a fresh `Summoner` in this contract's
 ///   constructor. The preset governance defaults `summonFast` builds
 ///   (proposalThreshold = 1% of initial supply, 3-day TTL, 1-day timelock,
-///   500 bps quorum, ragequit enabled) are reproduced by the caller via
-///   [[SummonParams]].
+///   500 bps quorum, ragequit enabled) are reproduced via [[SummonParams]]
+///   and PRODUCTION-SAFE VALUES ARE ENFORCED — see `summonAndBind`.
 /// - `lib/majeur/src/peripheral/MolochViewHelper.sol` — offchain read helper
 ///   for the DAO this contract binds; not needed onchain here.
 ///
@@ -42,12 +42,17 @@ import {Call, Summoner} from "majeur/src/Moloch.sol";
 ///   authority lives in the signed 37010 update the CLI verifies), so a
 ///   front-runner can still claim a root nobody has bound yet; readers must
 ///   confirm a binding against the signed 37010 head before trusting it.
-/// - `initCalls` are pinned empty, so governance knobs stay at the Moloch
-///   defaults (`proposalThreshold = 0`, no timelock/TTL changes). The
-///   validated defaults `SafeSummoner._buildCalls` assembles (KF#11: a
-///   nonzero proposal threshold, TTL > timelock, ...) are the production
-///   tightening: pass them as `initCalls` or set them by proposal after
-///   summon. Kept out here to keep the wrapper surface minimal.
+/// - The governance knobs (proposalThreshold/proposalTTL/timelockDelay) are
+///   set at summon time via `initCalls` against the PREDICTED clone address —
+///   the only channel that works, because the setters are `onlyDAO`
+///   (`msg.sender == address(this)`) and `Moloch.init` executes `initCalls`
+///   from the DAO's own context. Production-safe values are ENFORCED, not
+///   accepted: `NonProductionGovernance` unless threshold > 0, TTL > 0,
+///   timelock > 0, and TTL > timelock (the KF#11 criteria). After the
+///   summon the three values are read back off the clone and the tx reverts
+///   (`GovernanceNotApplied`) on any mismatch — a wrong `molochImpl` would
+///   otherwise make the init calls silently no-op (calls to empty targets
+///   return success) and re-create the threshold-less default.
 /// - Re-binding the same `rootId` (by its binder or its DAO, above)
 ///   overwrites the record and emits a fresh `DaoBound` — matching NIP-33
 ///   last-write-wins semantics of the 37010 head it mirrors. Indexers must
@@ -78,19 +83,34 @@ contract OrgBinding {
     /// @notice Summon parameters, mirroring the tail of
     /// `Summoner.summon` (lib/majeur/src/Moloch.sol). `renderer` is pinned
     /// to `address(0)` (Moloch.init skips zero renderers) and `initCalls`
-    /// to empty — a thin wrapper should not take on governance calls.
+    /// is built by this wrapper from the governance fields below — a thin
+    /// wrapper should not take on arbitrary governance calls.
     struct SummonParams {
         string name;
         string symbol;
         string uri;
         /// Turnout quorum in bps (500 = 5%, the `summonFast` default).
-        /// NOTE: `summonFast`'s other preset defaults (nonzero
-        /// proposalThreshold, TTL/timelock) ride on `initCalls`, which this
-        /// wrapper pins empty — see the contract-level notes.
         uint16 quorumBps;
         /// Exit right: members can ragequit with their treasury share.
         bool ragequittable;
-        /// CREATE2 salt (compose with holders+shares by the factory).
+        /// Minimum votes to open a proposal — `summonFast` preset:
+        /// 1% of the total initial shares, floored at 1. Must be > 0
+        /// (`NonProductionGovernance`).
+        uint96 proposalThreshold;
+        /// Proposal expiry in seconds — `summonFast` preset: 3 days.
+        /// Must be > 0 and greater than `timelockDelay`.
+        uint64 proposalTTL;
+        /// Delay in seconds between a proposal succeeding and its
+        /// execution — `summonFast` preset: 1 day. Must be > 0.
+        uint64 timelockDelay;
+        /// The Moloch implementation the Summoner clones: the CREATE2
+        /// implementation target baked into the clone initcode used to
+        /// predict the DAO address for `initCalls`. `Summoner` keeps it in
+        /// an unexported immutable (no getter), so the CALLER derives it —
+        /// see `summonAndBind` and the deploy scripts (NewDAO log or the
+        /// CREATE2 mirror of the Summoner constructor's `new Moloch`).
+        address molochImpl;
+        /// CREATE2 salt (composed with holders+shares by the factory).
         bytes32 salt;
         /// Initial human/agent seat holders (the 37010 root `holders`).
         address[] holders;
@@ -129,6 +149,15 @@ contract OrgBinding {
 
     error EmptyHolders();
     error HoldersSharesMismatch();
+    /// @notice The requested governance config is not production-safe:
+    ///         threshold, TTL, and timelock must all be > 0 and
+    ///         TTL must exceed timelock (the KF#11 criteria).
+    error NonProductionGovernance();
+    /// @notice The summoned clone did not take the requested governance
+    ///         values (e.g. `molochImpl` names the wrong implementation and
+    ///         the init calls silently no-op'd). The tx reverts instead of
+    ///         recording a binding to an unconfigured DAO.
+    error GovernanceNotApplied();
     /// @notice A binding for this root exists and the caller is neither its
     /// recorded binder nor its recorded DAO.
     error NotBinder(bytes32 rootId, address caller);
@@ -161,11 +190,55 @@ contract OrgBinding {
 
     /// @notice Summon a majeur DAO with the initial member set and record it
     /// as the binding of org root `rootId`, atomically in one transaction.
+    /// The governance knobs in `p` are applied at summon time via `initCalls`
+    /// against the predicted clone address (the setters are `onlyDAO`, so
+    /// this is the only channel that does not need a passed proposal) and
+    /// read back afterwards — see the contract-level notes.
     /// @return dao The summoned Moloch clone (shares minted to `p.holders`).
     function summonAndBind(bytes32 rootId, SummonParams calldata p) external returns (address dao) {
         if (p.holders.length == 0) revert EmptyHolders();
         if (p.holders.length != p.shares.length) revert HoldersSharesMismatch();
+        // Production governance is enforced, not accepted: the Moloch
+        // defaults (threshold 0, no TTL/timelock) are exactly the defect
+        // this wrapper must never re-create.
+        bool productionGovernance = p.proposalThreshold > 0
+            && p.proposalTTL > 0
+            && p.timelockDelay > 0
+            && p.proposalTTL > p.timelockDelay;
+        if (!productionGovernance) revert NonProductionGovernance();
         _authorizeBind(rootId);
+
+        // Predict the clone exactly like SafeSummoner._predictDAO /
+        // Summoner.summon: CREATE2 over the minimal-proxy initcode with
+        // `molochImpl` as its implementation target, salt =
+        // keccak256(abi.encode(holders, shares, salt)), deployed by OUR
+        // summoner. The initcode constants are copied verbatim from
+        // SafeSummoner (lib/majeur/src/peripheral/SafeSummoner.sol).
+        bytes32 create2Salt = keccak256(abi.encode(p.holders, p.shares, p.salt));
+        bytes memory creationCode = abi.encodePacked(
+            hex"602d5f8160095f39f35f5f365f5f37365f73",
+            p.molochImpl,
+            hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+        );
+        address predicted = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff), address(summoner), create2Salt, keccak256(creationCode)
+                        )
+                    )
+                )
+            )
+        );
+
+        // `summonFast` preset values, mirrored. `Moloch.init` executes these
+        // from the DAO's own context, which is what `onlyDAO` accepts.
+        Call[] memory initCalls = new Call[](3);
+        initCalls[0] =
+            Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (p.proposalThreshold)));
+        initCalls[1] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalTTL, (p.proposalTTL)));
+        initCalls[2] = Call(predicted, 0, abi.encodeCall(Moloch.setTimelockDelay, (p.timelockDelay)));
 
         dao = address(
             summoner.summon(
@@ -178,9 +251,19 @@ contract OrgBinding {
                 p.salt,
                 p.holders,
                 p.shares,
-                new Call[](0) // no governance calls at genesis
+                initCalls
             )
         );
+
+        // A call to a wrong target (bad `molochImpl` prediction) returns
+        // success without doing anything — read the values back so an
+        // unconfigured DAO can never be recorded as bound.
+        Moloch configured = Moloch(payable(dao));
+        if (
+            configured.proposalThreshold() != p.proposalThreshold
+                || configured.proposalTTL() != p.proposalTTL
+                || configured.timelockDelay() != p.timelockDelay
+        ) revert GovernanceNotApplied();
 
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});
         bindingOf[rootId] = b;

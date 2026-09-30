@@ -45,18 +45,52 @@ contract JourneyGov is Script {
         // ---- summon (DeployOrgDao's summonAndBind pattern) --------------
         vm.startBroadcast(TREASURY_KEY);
         OrgBinding binding = new OrgBinding();
-        address[] memory holders = new address[](2);
+        // The clone implementation for `SummonParams.molochImpl`:
+        // `Summoner.implementation` is an unexported immutable (no getter
+        // and no storage slot), so mirror the Summoner constructor's
+        // `new Moloch{salt: bytes32(0)}()` — CREATE2(salt = 0) from the
+        // summoner over Moloch's creation code.
+        address molochImpl = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff),
+                            address(binding.summoner()),
+                            bytes32(0),
+                            keccak256(type(Moloch).creationCode)
+                        )
+                    )
+                )
+            )
+        );
+        // The agent seat takes a small stake: the production proposal
+        // threshold (> 0, enforced) gates `openProposal` on the proposer's
+        // own votes, and in this journey the AGENT seat proposes.
+        address[] memory holders = new address[](3);
         holders[0] = treasury;
         holders[1] = voter;
-        uint256[] memory initShares = new uint256[](2);
+        holders[2] = vm.addr(AGENT_KEY);
+        uint256[] memory initShares = new uint256[](3);
         initShares[0] = 1e18;
         initShares[1] = 1e18;
+        initShares[2] = 1e17;
+        // Governance: the SafeSummoner.summonFast preset values — threshold
+        // = 1% of the total initial shares floored at 1 (its
+        // `_defaultThreshold` formula), 3-day TTL, 1-day timelock. OrgBinding
+        // enforces these are production-safe (the P2 fix).
+        uint256 totalShares = initShares[0] + initShares[1] + initShares[2];
+        uint96 proposalThreshold = uint96(totalShares / 100 == 0 ? 1 : totalShares / 100);
         OrgBinding.SummonParams memory p = OrgBinding.SummonParams({
             name: "Buzz Gov Journey",
             symbol: "GOV",
             uri: "https://relay.example/dao.json",
             quorumBps: 500,
             ragequittable: true,
+            proposalThreshold: proposalThreshold,
+            proposalTTL: 3 days,
+            timelockDelay: 1 days,
+            molochImpl: molochImpl,
             salt: keccak256("journey-gov"),
             holders: holders,
             shares: initShares
@@ -95,6 +129,9 @@ contract JourneyGov is Script {
         // human votes, the agent proposes and executes — receipts name who
         // acted at every step).
         vm.startBroadcast(AGENT_KEY);
+        // The agent seat self-delegates first: with the production threshold
+        // enforced, `openProposal` checks the proposer's CURRENT votes.
+        ISharesVotes(address(dao.shares())).delegate(vm.addr(AGENT_KEY));
         dao.openProposal(id);
         vm.stopBroadcast();
 
@@ -109,8 +146,14 @@ contract JourneyGov is Script {
         require(uint256(dao.state(id)) == uint256(Moloch.ProposalState.Succeeded), "Succeeded");
 
         vm.startBroadcast(TREASURY_KEY);
-        dao.queue(id); // timelock countdown (no-op when the delay is 0)
+        dao.queue(id); // timelock countdown (the 1-day preset delay is real now)
         vm.stopBroadcast();
+
+        // The production config carries a 1-day timelock and `executeByVotes`
+        // reverts `Timelocked` before it elapses: warp the SIM past it (same
+        // simulation-only semantics as the `vm.roll` note above — on a real
+        // node the executor runs this a day after queueing).
+        vm.warp(block.timestamp + 1 days + 1);
 
         // S3: the EXECUTOR is an agent seat — `executeByVotes` is
         // permissionless by design; the interesting fact is WHO performed it,

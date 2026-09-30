@@ -10,6 +10,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import {
+  KIND_AGENT_TASK,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+} from "@/shared/constants/kinds";
 
 export function RecentThread({ parentId }: { parentId: string }) {
   const [rows, setRows] = useState<
@@ -21,7 +26,11 @@ export function RecentThread({ parentId }: { parentId: string }) {
       void import("@/shared/lib/http-query").then(({ queryEventsHttp }) =>
         queryEventsHttp([
           {
-            kinds: [9, 40002, 44011],
+            kinds: [
+              KIND_STREAM_MESSAGE,
+              KIND_STREAM_MESSAGE_V2,
+              KIND_AGENT_TASK,
+            ],
             "#e": [parentId],
             limit: 50,
           },

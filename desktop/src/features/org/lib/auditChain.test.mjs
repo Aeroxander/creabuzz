@@ -901,7 +901,6 @@ describe("auditActionLabel", () => {
   });
 });
 
-
 describe("computeChainHash — v2 TLV vectors from the crate's own compute_hash", () => {
   it("t1: genesis under TLV — prev_hash omitted, actor/object keep tags", () => {
     assert.equal(

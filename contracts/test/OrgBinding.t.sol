@@ -31,6 +31,10 @@ contract OrgBindingTest is Test {
 
     address internal dao;
     address internal shares;
+    /// @dev Cached in `setUp` — fixture builders must not make external
+    /// calls (a `binding.summoner()` getter call inside a `vm.expectRevert`
+    /// window steals the expectation).
+    address internal molochImpl;
 
     function _holders() internal view returns (address[] memory h) {
         h = new address[](3);
@@ -39,11 +43,41 @@ contract OrgBindingTest is Test {
         h[2] = holderC;
     }
 
+    /// @dev SafeSummoner._defaultThreshold's exact formula: 1% of the total
+    /// initial shares, floored at 1.
+    function _thresholdOf(uint256 totalShares) internal pure returns (uint96) {
+        uint256 t = totalShares / 100;
+        if (t == 0) t = 1;
+        return uint96(t);
+    }
+
+    /// @dev The Moloch implementation `b.summoner()` clones. `Summoner` keeps
+    /// it in an unexported immutable (no getter), so mirror the Summoner
+    /// constructor's `new Moloch{salt: bytes32(0)}()`: CREATE2(salt = 0) from
+    /// the summoner over Moloch's creation code.
+    function _molochImplOf(OrgBinding b) internal view returns (address) {
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff),
+                            address(b.summoner()),
+                            bytes32(0),
+                            keccak256(type(Moloch).creationCode)
+                        )
+                    )
+                )
+            )
+        );
+    }
+
     function setUp() public {
         vm.prank(ownerAddr);
         allowance = new OrgAllowance();
 
         binding = new OrgBinding();
+        molochImpl = _molochImplOf(binding);
 
         address[] memory h = _holders();
         uint256[] memory s = new uint256[](3);
@@ -59,6 +93,10 @@ contract OrgBindingTest is Test {
                 uri: "",
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: _thresholdOf(4e18), // 1% of the 4e18 total
+                proposalTTL: 3 days,
+                timelockDelay: 1 days,
+                molochImpl: molochImpl,
                 salt: keccak256("phase8"),
                 holders: h,
                 shares: s
@@ -97,6 +135,10 @@ contract OrgBindingTest is Test {
                 uri: "",
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: _thresholdOf(1e18),
+                proposalTTL: 3 days,
+                timelockDelay: 1 days,
+                molochImpl: molochImpl,
                 salt: keccak256("two"),
                 holders: h,
                 shares: s
@@ -141,12 +183,54 @@ contract OrgBindingTest is Test {
         assertEq(address(m.shares()), shares);
         assertEq(m.quorumBps(), 500);
         assertTrue(m.ragequittable()); // the NIP-ORG exit right
-        // Documented thin-wrapper tradeoff: with `initCalls` pinned empty,
-        // governance knobs stay at Moloch defaults — proposalThreshold is 0
-        // (summonFast's >0 default, KF#11, rides on an initCall we do not
-        // emit; see OrgBinding NatSpec). A real deployment sets it via the
-        // preset initCalls or a follow-up governance proposal.
-        assertEq(m.proposalThreshold(), 0);
+        // The governance knobs ride on the summon's `initCalls` now — the
+        // summonFast preset values, read back off the clone (P2 fix; the
+        // Moloch default `proposalThreshold = 0` can never be summoned here).
+        assertEq(m.proposalThreshold(), 4e16, "1% of the 4e18 initial supply");
+    }
+
+    /// The summoned DAO really carries the summonFast preset governance —
+    /// asserted against the CLONE's own state, not the wrapper's inputs.
+    function test_GovernanceDefaultsMatchSummonFastPreset() public view {
+        Moloch m = Moloch(payable(dao));
+        assertEq(m.proposalThreshold(), _thresholdOf(4e18), "1% threshold");
+        assertEq(m.proposalTTL(), 3 days, "summonFast TTL");
+        assertEq(m.timelockDelay(), 1 days, "summonFast timelock");
+    }
+
+    /// The insecure Moloch defaults are hard-rejected forever: zero
+    /// threshold, missing TTL/timelock, and TTL <= timelock all revert
+    /// before anything is summoned or recorded (the P2 blocker).
+    function test_NonProductionGovernanceReverts() public {
+        bytes32 root = keccak256("gov-guard");
+        // Moloch's own defaults: threshold 0, no TTL, no timelock.
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g1"), 0, 0, 0));
+        // Thresholdless.
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g2"), 0, 3 days, 1 days));
+        // No TTL / no timelock.
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g3"), 1e16, 0, 1 days));
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g4"), 1e16, 3 days, 0));
+        // TTL <= timelock.
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g5"), 1e16, 1 days, 3 days));
+        vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
+        binding.summonAndBind(root, _govParams(keccak256("g6"), 1e16, 3 days, 3 days));
+        assertEq(binding.binderOf(root), address(0), "nothing was summoned or recorded");
+    }
+
+    /// The read-back guard: a `molochImpl` that is not the clone's real
+    /// implementation makes the init calls target the wrong predicted
+    /// address and silently no-op (calls to empty targets succeed) — the
+    /// summon must revert instead of recording an unconfigured DAO.
+    function test_WrongMolochImplReverts() public {
+        OrgBinding.SummonParams memory p = _summonParams(keccak256("bad-impl"));
+        p.molochImpl = address(0xDEAD);
+        vm.expectRevert(OrgBinding.GovernanceNotApplied.selector);
+        binding.summonAndBind(keccak256("bad-impl-root"), p);
     }
 
     // -------------------------------------------------- allowance handover
@@ -210,6 +294,10 @@ contract OrgBindingTest is Test {
                 uri: "",
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: _thresholdOf(1e18),
+                proposalTTL: 3 days,
+                timelockDelay: 1 days,
+                molochImpl: molochImpl,
                 salt: keccak256("v2"),
                 holders: h,
                 shares: s
@@ -234,6 +322,10 @@ contract OrgBindingTest is Test {
                 uri: "",
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: _thresholdOf(0),
+                proposalTTL: 3 days,
+                timelockDelay: 1 days,
+                molochImpl: molochImpl,
                 salt: keccak256("x"),
                 holders: h,
                 shares: s
@@ -254,6 +346,10 @@ contract OrgBindingTest is Test {
                 uri: "",
                 quorumBps: 500,
                 ragequittable: true,
+                proposalThreshold: _thresholdOf(1e18),
+                proposalTTL: 3 days,
+                timelockDelay: 1 days,
+                molochImpl: molochImpl,
                 salt: keccak256("y"),
                 holders: h,
                 shares: s
@@ -283,10 +379,26 @@ contract OrgBindingTest is Test {
             uri: "",
             quorumBps: 500,
             ragequittable: true,
+            proposalThreshold: _thresholdOf(1e18),
+            proposalTTL: 3 days,
+            timelockDelay: 1 days,
+            molochImpl: molochImpl,
             salt: salt,
             holders: h,
             shares: s
         });
+    }
+
+    /// `_summonParams` with the governance knobs overridden — for the
+    /// production-guard cases.
+    function _govParams(bytes32 salt, uint96 threshold, uint64 ttl, uint64 timelock)
+        internal view
+        returns (OrgBinding.SummonParams memory p)
+    {
+        p = _summonParams(salt);
+        p.proposalThreshold = threshold;
+        p.proposalTTL = ttl;
+        p.timelockDelay = timelock;
     }
 
     /// The exploit: both binders were permissionless last-write-wins, so any
