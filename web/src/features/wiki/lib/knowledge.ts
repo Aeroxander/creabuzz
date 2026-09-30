@@ -33,6 +33,12 @@
  *   per-author, parameterised-replaceable `d` means one live suggestion per
  *   author per page (a resubmission replaces the same author's earlier one).
  *
+ * - `["a", "44001:<author>:correction-for-<slug>"]` on an agent page — the
+ *   correction page versions that revision applied: the consumption record
+ *   (the agent NEVER modifies members' correction pages). A correction whose
+ *   coordinate is referenced by the LATEST agent-page revision is no longer
+ *   open; references on older revisions are history and never consume.
+ *
  * - `["t", "team:<team-node-id>"]` — this page is scoped to the org-chart team
  *   named by `<team-node-id>` (a NIP-ORG node `d`). Only that team's seat
  *   holders may edit the page; everyone else reads and may only suggest a
@@ -229,15 +235,26 @@ export function classifyEvents(events: readonly KnowledgeEvent[]): {
  * The agent-page provenance header line. The canonical form is
  * "Updated by agent X from N sources"; a missing agent or a zero source count
  * drops that segment rather than rendering "unknown" or "from 0 sources".
+ * When the agent has applied member corrections, the line gains the product
+ * phrase "· N corrections applied" (omitted at zero).
  */
-export function provenanceLine(provenance: AgentProvenance): string {
+export function provenanceLine(
+  provenance: AgentProvenance,
+  correctionsApplied = 0,
+): string {
   const agent = provenance.agent ?? "an agent";
-  if (provenance.sourceCount > 0) {
-    return `Updated by agent ${agent} from ${provenance.sourceCount} source${
-      provenance.sourceCount === 1 ? "" : "s"
-    }`;
+  const base =
+    provenance.sourceCount > 0
+      ? `Updated by agent ${agent} from ${provenance.sourceCount} source${
+          provenance.sourceCount === 1 ? "" : "s"
+        }`
+      : `Updated by agent ${agent}`;
+  if (correctionsApplied > 0) {
+    return `${base} · ${correctionsApplied} correction${
+      correctionsApplied === 1 ? "" : "s"
+    } applied`;
   }
-  return `Updated by agent ${agent}`;
+  return base;
 }
 
 // ── correction suggestions ─────────────────────────────────────────────────
@@ -284,11 +301,47 @@ export function buildSuggestion(opts: {
 }
 
 /**
- * Read correction suggestions for `slug` back out of raw events. Suggestions
- * fold per author (the newest wins, matching their replaceable `d`) and come
- * back newest-first.
+ * The `a`-tag coordinate recording that an agent page consumed the correction
+ * page `authorPubkey` filed for `slug`
+ * (`44001:<author>:correction-for-<slug>`).
  */
-export function suggestionsFor(
+function correctionCoordinate(authorPubkey: string, slug: string): string {
+  return `44001:${authorPubkey}:correction-for-${slug}`;
+}
+
+/**
+ * The consumption record of the LATEST agent-page revision for `slug`: the `a`
+ * coordinates it references. Only the live revision counts — a reference on an
+ * older revision is history, not consumption.
+ */
+function consumedCorrectionCoordinates(
+  events: readonly KnowledgeEvent[],
+  slug: string,
+): Set<string> {
+  let latest: KnowledgeEvent | null = null;
+  for (const event of events) {
+    if (event.kind !== KIND_AGENT_WIKI_PAGE) continue;
+    if (tagValue(event, "d") !== slug) continue;
+    if (
+      !latest ||
+      event.created_at > latest.created_at ||
+      (event.created_at === latest.created_at && event.id > latest.id)
+    ) {
+      latest = event;
+    }
+  }
+  const consumed = new Set<string>();
+  if (!latest) return consumed;
+  for (const tag of latest.tags) {
+    if (tag[0] === "a" && typeof tag[1] === "string" && tag[1].length > 0) {
+      consumed.add(tag[1]);
+    }
+  }
+  return consumed;
+}
+
+/** The live correction pages for `slug`, folded per author, newest first. */
+function liveSuggestions(
   events: readonly KnowledgeEvent[],
   slug: string,
 ): Suggestion[] {
@@ -313,6 +366,36 @@ export function suggestionsFor(
     }
   }
   return [...perAuthor.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * Read correction suggestions for `slug` that are still OPEN — not yet
+ * consumed by the latest agent-page revision. Suggestions fold per author
+ * (the newest wins, matching their replaceable `d`) and come back newest-first.
+ */
+export function suggestionsFor(
+  events: readonly KnowledgeEvent[],
+  slug: string,
+): Suggestion[] {
+  const consumed = consumedCorrectionCoordinates(events, slug);
+  return liveSuggestions(events, slug).filter(
+    (s) => !consumed.has(correctionCoordinate(s.authorPubkey, slug)),
+  );
+}
+
+/**
+ * Corrections for `slug` the LATEST agent-page revision has applied: the `a`
+ * coordinates on the agent's own page are the consumption record (member
+ * correction pages are never modified). Returned for display.
+ */
+export function appliedCorrectionsFor(
+  events: readonly KnowledgeEvent[],
+  slug: string,
+): Suggestion[] {
+  const consumed = consumedCorrectionCoordinates(events, slug);
+  return liveSuggestions(events, slug).filter((s) =>
+    consumed.has(correctionCoordinate(s.authorPubkey, slug)),
+  );
 }
 
 // ── team-scope edit gate ───────────────────────────────────────────────────

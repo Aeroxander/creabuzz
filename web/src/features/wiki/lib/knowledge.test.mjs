@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   KIND_AGENT_WIKI_PAGE,
   KIND_WIKI_PAGE,
+  appliedCorrectionsFor,
   buildSuggestion,
   canEditKnowledge,
   classifyEvent,
@@ -278,5 +279,88 @@ test("a seat holder may edit; everyone else may only propose", () => {
   assert.equal(
     canEditKnowledge({ scope: "design" }, null, resolver),
     "propose",
+  );
+});
+
+// ── corrections applied (the consumption record) ───────────────────────────
+
+function suggestionEvent(fields) {
+  return ev({
+    kind: KIND_WIKI_PAGE,
+    pubkey: fields.pubkey ?? BOB,
+    created_at: fields.created_at ?? 400,
+    tags: [
+      ["d", `correction-for-${fields.slug}`],
+      ["t", `correction-for:${fields.slug}`],
+    ],
+    content: fields.note ?? "fix it",
+    id: fields.id,
+  });
+}
+
+function agentRevision(fields) {
+  return ev({
+    kind: KIND_AGENT_WIKI_PAGE,
+    created_at: fields.created_at,
+    tags: [["d", fields.slug], ...(fields.aTags ?? [])],
+  });
+}
+
+test("a correction the latest agent page referenced is applied, not open", () => {
+  const events = [
+    suggestionEvent({ slug: "home" }),
+    agentRevision({
+      slug: "home",
+      created_at: 500,
+      aTags: [["a", `44001:${BOB}:correction-for-home`]],
+    }),
+  ];
+  assert.deepEqual(suggestionsFor(events, "home"), []);
+  const applied = appliedCorrectionsFor(events, "home");
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0].authorPubkey, BOB);
+  assert.equal(applied[0].note, "fix it");
+});
+
+test("only the LATEST agent-page revision consumes a correction", () => {
+  const events = [
+    suggestionEvent({ slug: "home" }),
+    // An older revision referenced the correction…
+    agentRevision({
+      slug: "home",
+      created_at: 450,
+      aTags: [["a", `44001:${BOB}:correction-for-home`]],
+    }),
+    // …but the latest does not: the reference is history, not consumption.
+    agentRevision({ slug: "home", created_at: 500 }),
+  ];
+  const open = suggestionsFor(events, "home");
+  assert.equal(open.length, 1, "older revision's reference never consumes");
+  assert.equal(open[0].authorPubkey, BOB);
+  assert.deepEqual(appliedCorrectionsFor(events, "home"), []);
+});
+
+test("a correction stays open when no agent page references it", () => {
+  const events = [
+    suggestionEvent({ slug: "home" }),
+    agentRevision({ slug: "home", created_at: 500 }),
+  ];
+  const open = suggestionsFor(events, "home");
+  assert.equal(open.length, 1);
+  assert.deepEqual(appliedCorrectionsFor(events, "home"), []);
+});
+
+test("provenanceLine adds the corrections-applied phrase only above zero", () => {
+  assert.equal(
+    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 5 }, 2),
+    "Updated by agent glm-5.3-flash from 5 sources · 2 corrections applied",
+  );
+  assert.equal(
+    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 0 }, 1),
+    "Updated by agent glm-5.3-flash · 1 correction applied",
+  );
+  assert.equal(
+    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 5 }, 0),
+    "Updated by agent glm-5.3-flash from 5 sources",
   );
 });

@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let page = compose_page(&space, &body, &model, 1);
-    let builder = build_agent_wiki_builder(&format!("{space}/{slug}"), &page, &model, 0, &[])?;
+    let builder = build_agent_wiki_builder(&format!("{space}/{slug}"), &page, &model, 0, &[], &[])?;
     let event = builder.sign_with_keys(&keys)?;
 
     let mut ws = buzz_ws_client::NostrWsConnection::connect(&relay).await?;

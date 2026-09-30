@@ -31,6 +31,7 @@ import {
   classifyEvents,
   canEditKnowledge,
   suggestionsFor,
+  appliedCorrectionsFor,
   type Suggestion,
   buildSuggestion,
   type TeamSeatResolver,
@@ -122,8 +123,10 @@ export interface KnowledgeState {
   refetch: () => void;
   /** The viewer's pubkey, or null when signed out. */
   viewerPubkey: string | null;
-  /** Correction suggestions filed against `slug`. */
+  /** Correction suggestions filed against `slug` that are still open. */
   suggestionsFor: (slug: string) => Suggestion[];
+  /** Corrections the latest agent page for `slug` has applied (for display). */
+  appliedCorrectionsFor: (slug: string) => Suggestion[];
   /** Revision history for `slug`, newest first. */
   historyFor: (slug: string) => Revision[];
   /** The team-scope edit gate (see `lib/knowledge.ts`). */
@@ -181,6 +184,10 @@ export function useKnowledge(enabled = true): KnowledgeState {
   );
   const suggestions = useCallback(
     (slug: string) => suggestionsFor(events, slug),
+    [events],
+  );
+  const appliedCorrections = useCallback(
+    (slug: string) => appliedCorrectionsFor(events, slug),
     [events],
   );
   const canEdit = useCallback(
@@ -247,6 +254,7 @@ export function useKnowledge(enabled = true): KnowledgeState {
     refetch: () => void eventsQuery.refetch(),
     viewerPubkey,
     suggestionsFor: suggestions,
+    appliedCorrectionsFor: appliedCorrections,
     historyFor,
     canEdit,
     restoreRevision,

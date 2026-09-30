@@ -225,6 +225,42 @@ impl DistillPorts for CliDistillPorts<'_> {
         })
     }
 
+    fn fetch_corrections(
+        &self,
+        coordinate: &str,
+    ) -> buzz_agwiki::run::PortFut<'_, Vec<buzz_agwiki::CorrectionNote>, Self::Error> {
+        let coordinate = coordinate.to_string();
+        Box::pin(async move {
+            // Consumption record: the `a` coordinates on the LATEST revision of
+            // this agent page. An older revision's reference is history and
+            // never consumes; the agent records consumption on its own page and
+            // never touches members' correction pages.
+            let page_filter = serde_json::json!({ "kinds": [KIND_AGENT_WIKI], "#d": [coordinate] });
+            let pages: Vec<Event> = self
+                .client
+                .query_pages_bounded(page_filter, AGWIKI_PAGE_QUERY_BOUND)
+                .await?
+                .into_iter()
+                .filter_map(|v| serde_json::from_value(v).ok())
+                .collect();
+            let consumed = consumed_corrections(&pages, &coordinate);
+            // Corrections are durable 44001 proposal pages; the read is scoped
+            // community + kind + d and every hit is re-checked on the way back.
+            let filter = serde_json::json!({
+                "kinds": [buzz_core::kind::KIND_WIKI_PAGE],
+                "#d": [format!("correction-for-{coordinate}")],
+            });
+            let events: Vec<Event> = self
+                .client
+                .query_pages_bounded(filter, CORRECTIONS_QUERY_BOUND)
+                .await?
+                .into_iter()
+                .filter_map(|v| serde_json::from_value(v).ok())
+                .collect();
+            Ok(fold_corrections(&events, &coordinate, &consumed))
+        })
+    }
+
     fn llm_model(&self) -> &str {
         &self.target.model
     }
@@ -743,13 +779,92 @@ pub async fn dispatch(cmd: crate::AgwikiCmd, client: &BuzzClient) -> Result<(), 
     }
 }
 
+/// Bounded read of the correction pages for one agent page.
+const CORRECTIONS_QUERY_BOUND: u32 = 64;
+/// Per-correction note truncation for the distill prompt.
+const CORRECTION_NOTE_MAX_CHARS: usize = 2_000;
+
+/// The consumption record of the LATEST revision of `coordinate`: the `a`
+/// coordinates it references. An older revision's reference never consumes —
+/// only the live page decides which corrections are still open.
+fn consumed_corrections(pages: &[Event], coordinate: &str) -> std::collections::HashSet<String> {
+    let mut newest: Option<&Event> = None;
+    for event in pages {
+        if !tag_values(event, "d").iter().any(|d| d == coordinate) {
+            continue;
+        }
+        if newest
+            .map(|n| n.created_at.as_secs() < event.created_at.as_secs())
+            .unwrap_or(true)
+        {
+            newest = Some(event);
+        }
+    }
+    newest
+        .into_iter()
+        .flat_map(|page| tag_values(page, "a"))
+        .collect()
+}
+
+/// Fold the live correction pages for `slug` into bounded prompt notes: one
+/// note per author (the replaceable `d` — newest wins, matching the web read
+/// side), newest first, at most [`buzz_agwiki::AGWIKI_CORRECTIONS_MAX`], each
+/// note truncated. Consumed corrections are skipped — consumption is recorded
+/// on the agent's own page, never on the member's correction page.
+fn fold_corrections(
+    events: &[Event],
+    slug: &str,
+    consumed: &std::collections::HashSet<String>,
+) -> Vec<buzz_agwiki::CorrectionNote> {
+    let d_tag = format!("correction-for-{slug}");
+    let t_tag = format!("correction-for:{slug}");
+    let mut per_author: std::collections::HashMap<String, (u64, buzz_agwiki::CorrectionNote)> =
+        std::collections::HashMap::new();
+    for event in events {
+        if event.kind.as_u16() != buzz_core::kind::KIND_WIKI_PAGE as u16 {
+            continue;
+        }
+        if !tag_values(event, "d").iter().any(|d| *d == d_tag) {
+            continue;
+        }
+        if !tag_values(event, "t").iter().any(|t| *t == t_tag) {
+            continue;
+        }
+        let author = event.pubkey.to_hex();
+        let coordinate = format!("44001:{author}:{d_tag}");
+        if consumed.contains(&coordinate) {
+            continue;
+        }
+        let created = event.created_at.as_secs();
+        if per_author
+            .get(&author)
+            .map(|(seen, _)| *seen >= created)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let note: String = event.content.chars().take(CORRECTION_NOTE_MAX_CHARS).collect();
+        per_author.insert(
+            author,
+            (created, buzz_agwiki::CorrectionNote { coordinate, note }),
+        );
+    }
+    let mut notes: Vec<(u64, buzz_agwiki::CorrectionNote)> = per_author.into_values().collect();
+    notes.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.coordinate.cmp(&b.1.coordinate)));
+    notes
+        .into_iter()
+        .take(buzz_agwiki::AGWIKI_CORRECTIONS_MAX)
+        .map(|(_, note)| note)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use buzz_agwiki::{
         parse_cursor_from_page, FRONT_MATTER_CURSOR_KEY, KIND_AGENT_WIKI as KIND_WIKI,
     };
-    use buzz_core::kind::{KIND_AGENT_TASK, KIND_CONTRIBUTION_RECORD};
+    use buzz_core::kind::{KIND_AGENT_TASK, KIND_CONTRIBUTION_RECORD, KIND_WIKI_PAGE};
     use nostr::{EventBuilder, Keys, Kind, Tag};
 
     // ── Fixtures ───────────────────────────────────────────────────────────
@@ -856,6 +971,9 @@ mod tests {
         task_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         record_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         page_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
+        correction_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
+        /// Filters the corrections query built — binds its kind + d scoping.
+        correction_filters: std::sync::Mutex<Vec<serde_json::Value>>,
         channel_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         search_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         /// Filters the production `search` built — the test binds the
@@ -879,6 +997,13 @@ mod tests {
 
         fn with_pages(&self, pages: &[&Event]) {
             *self.page_query_response.lock().unwrap() = pages
+                .iter()
+                .map(|e| serde_json::to_value(e).unwrap())
+                .collect();
+        }
+
+        fn with_corrections(&self, events: &[&Event]) {
+            *self.correction_query_response.lock().unwrap() = events
                 .iter()
                 .map(|e| serde_json::to_value(e).unwrap())
                 .collect();
@@ -938,6 +1063,13 @@ mod tests {
                             state.record_query_response.lock().unwrap().clone()
                         } else if kinds == [KIND_WIKI as u64] {
                             state.page_query_response.lock().unwrap().clone()
+                        } else if kinds == [KIND_WIKI_PAGE as u64] {
+                            state
+                                .correction_filters
+                                .lock()
+                                .unwrap()
+                                .push(parsed_filter.clone());
+                            state.correction_query_response.lock().unwrap().clone()
                         } else if kinds == [39000] {
                             state.channel_query_response.lock().unwrap().clone()
                         } else if is_search {
@@ -1000,7 +1132,164 @@ mod tests {
         }
     }
 
+    /// A member correction proposal page for `slug` from `author`.
+    fn correction_fixture(author: &Keys, note: &str, ts: u64, slug: &str) -> Event {
+        let d_tag = format!("correction-for-{slug}");
+        let t_tag = format!("correction-for:{slug}");
+        EventBuilder::new(
+            Kind::Custom(KIND_WIKI_PAGE as u16),
+            note.to_string(),
+        )
+        .tags(vec![
+            Tag::parse(["d", d_tag.as_str()]).expect("tag"),
+            Tag::parse(["t", t_tag.as_str()]).expect("tag"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(ts))
+        .sign_with_keys(author)
+        .expect("signs")
+    }
+
     // ── Command-level mock round trips (bind run_distill_inner end to end) ─
+
+    #[tokio::test]
+    async fn distill_consumes_member_corrections_in_prompt_and_tags() {
+        let task = done_task_fixture("Payments refactor", 100);
+        let author_a = Keys::generate();
+        let author_b = Keys::generate();
+        let slug = "default/standup";
+        let fix_a = correction_fixture(&author_a, "The launch date is Q3, not Q2.", 300, slug);
+        let fix_b = correction_fixture(&author_b, "The program is called Northstar.", 400, slug);
+        let state = std::sync::Arc::new(MockState::with_sources(&[&task], &[]));
+        state.with_corrections(&[&fix_a, &fix_b]);
+        state.push_chat(Ok(reflection_sufficient()));
+        state.push_chat(Ok(chat_response(&markdown_draft(), Some(900))));
+        let base_url = spawn_mock(state.clone()).await;
+
+        let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        // The corrections read is scoped by kind + d (community rides the client).
+        let filters = state.correction_filters.lock().unwrap();
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0]["kinds"][0], KIND_WIKI_PAGE);
+        assert_eq!(filters[0]["#d"][0], format!("correction-for-{slug}"));
+        drop(filters);
+
+        let chats = state.chat_calls.lock().unwrap();
+        let user = chats[1]["messages"][1]["content"].as_str().unwrap();
+        assert!(user.contains("Corrections from members to incorporate"));
+        assert!(user.contains("The launch date is Q3, not Q2."));
+        assert!(user.contains("The program is called Northstar."));
+        drop(chats);
+
+        // Consumption is recorded on the agent's own page: one sorted `a`
+        // coordinate per applied correction — never on the members' pages.
+        let posts = state.event_posts.lock().unwrap();
+        assert_eq!(posts.len(), 1, "one signed 44002 publish");
+        let a_tags: Vec<String> = posts[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t[0].as_str() == Some("a"))
+            .map(|t| t[1].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(a_tags.len(), 2);
+        assert!(a_tags.windows(2).all(|w| w[0] < w[1]), "a tags sorted");
+        assert!(a_tags.contains(&format!(
+            "44001:{}:correction-for-{slug}",
+            author_a.public_key().to_hex()
+        )));
+        assert!(a_tags.contains(&format!(
+            "44001:{}:correction-for-{slug}",
+            author_b.public_key().to_hex()
+        )));
+    }
+
+    #[tokio::test]
+    async fn distill_without_corrections_is_unchanged() {
+        let task = done_task_fixture("Payments refactor", 100);
+        let state = std::sync::Arc::new(MockState::with_sources(&[&task], &[]));
+        state.push_chat(Ok(reflection_sufficient()));
+        state.push_chat(Ok(chat_response(&markdown_draft(), Some(900))));
+        let base_url = spawn_mock(state.clone()).await;
+
+        let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        let chats = state.chat_calls.lock().unwrap();
+        let user = chats[1]["messages"][1]["content"].as_str().unwrap();
+        assert!(!user.contains("Corrections from members to incorporate"));
+        drop(chats);
+
+        let posts = state.event_posts.lock().unwrap();
+        assert_eq!(posts.len(), 1);
+        assert!(
+            !posts[0]["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t[0].as_str() == Some("a")),
+            "zero corrections → no prompt section and no consumption tags"
+        );
+    }
+
+    #[tokio::test]
+    async fn distill_bounds_corrections_and_only_the_head_consumes() {
+        let task = done_task_fixture("Payments refactor", 100);
+        let slug = "default/standup";
+        let fixtures: Vec<Event> = (0..25u64)
+            .map(|i| {
+                correction_fixture(&Keys::generate(), &format!("note number {i}"), 1000 + i, slug)
+            })
+            .collect();
+        let coordinate_of =
+            |event: &Event| format!("44001:{}:correction-for-{slug}", event.pubkey.to_hex());
+        let page_content = |body: &str| {
+            format!("---\nslug: default/standup\n{FRONT_MATTER_CURSOR_KEY}: 50\n---\n{body}")
+        };
+        // An older revision references the second-newest correction…
+        let older = EventBuilder::new(Kind::Custom(KIND_WIKI as u16), page_content("old"))
+            .tags(vec![
+                Tag::parse(["d", "default/standup"]).expect("tag"),
+                Tag::parse(["a", coordinate_of(&fixtures[23]).as_str()]).expect("tag"),
+            ])
+            .custom_created_at(nostr::Timestamp::from(4000))
+            .sign_with_keys(&Keys::generate())
+            .expect("signs");
+        // …while the LATEST revision consumed the newest one.
+        let head = EventBuilder::new(Kind::Custom(KIND_WIKI as u16), page_content("head"))
+            .tags(vec![
+                Tag::parse(["d", "default/standup"]).expect("tag"),
+                Tag::parse(["a", coordinate_of(&fixtures[24]).as_str()]).expect("tag"),
+            ])
+            .custom_created_at(nostr::Timestamp::from(5000))
+            .sign_with_keys(&Keys::generate())
+            .expect("signs");
+        let state = std::sync::Arc::new(MockState::with_sources(&[&task], &[]));
+        state.with_pages(&[&older, &head]);
+        state.with_corrections(&fixtures.iter().collect::<Vec<_>>());
+        state.push_chat(Ok(reflection_sufficient()));
+        state.push_chat(Ok(chat_response(&markdown_draft(), Some(900))));
+        let base_url = spawn_mock(state.clone()).await;
+
+        let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        let chats = state.chat_calls.lock().unwrap();
+        let user = chats[1]["messages"][1]["content"].as_str().unwrap();
+        assert!(!user.contains("note number 24"), "head-consumed correction dropped");
+        assert!(user.contains("note number 23"), "older revisions never consume");
+        // 24 open corrections fold to the newest 20 (4..=23).
+        assert!(user.contains("note number 4"), "oldest kept note present");
+        assert!(!user.contains("note number 3"), "bound drops the oldest notes");
+        assert!(!user.contains("note number 0"), "bound drops the oldest notes");
+    }
 
     #[tokio::test]
     async fn distill_previews_the_draft_without_publishing() {

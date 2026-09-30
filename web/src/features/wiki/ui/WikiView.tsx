@@ -594,7 +594,11 @@ export function WikiView({
                   data-testid="wiki-agent-provenance"
                 >
                   {activeAgent.provenance
-                    ? provenanceLine(activeAgent.provenance)
+                    ? provenanceLine(
+                        activeAgent.provenance,
+                        knowledge.appliedCorrectionsFor(activeAgent.slug)
+                          .length,
+                      )
                     : "Updated by an agent"}
                 </p>
                 <p className="text-2xs text-black/50 dark:text-white/50">

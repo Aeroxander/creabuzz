@@ -95,6 +95,17 @@ pub trait DistillPorts {
     fn publish(&self, builder: EventBuilder) -> PortFut<'_, String, Self::Error>;
 
     /// Model id recorded in front-matter + the `model` provenance tag.
+    /// Member corrections for `coordinate` not yet consumed by its latest
+    /// agent-page revision — folded into the next distill prompt and recorded
+    /// on the published page's `a` tags. Default: none (the relay job has no
+    /// correction feed).
+    fn fetch_corrections(
+        &self,
+        _coordinate: &str,
+    ) -> PortFut<'_, Vec<crate::CorrectionNote>, Self::Error> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
     fn llm_model(&self) -> &str;
 }
 
@@ -231,12 +242,21 @@ pub async fn run_distill<P: DistillPorts>(
     // community searches before drafting (fails open — enhancement, not gate).
     let (search_context, reflection_cost) = reflect_and_search(ports, &space, &bundle, diag).await;
 
+    // Unconsumed member corrections for this page: folded into the prompt and
+    // recorded on the published page's `a` tags. Consumption lives on the
+    // agent's own page — member correction pages are never modified.
+    let corrections = ports
+        .fetch_corrections(&coordinate)
+        .await
+        .map_err(DistillError::Port)?;
+
     let (system, user) = build_distill_prompt(
         &space,
         since,
         &bundle,
         existing.as_ref().map(|(c, _)| c.as_str()),
         &search_context,
+        &corrections,
     );
     // The trainable skill override (a SkillOpt `best_skill.md`): the caller
     // owns provenance and review for whatever it passes.
@@ -265,12 +285,14 @@ pub async fn run_distill<P: DistillPorts>(
         return Ok(DistillOutcome::Preview { report, page });
     }
 
+    let applied: Vec<String> = corrections.iter().map(|c| c.coordinate.clone()).collect();
     let builder = build_agent_wiki_builder(
         &report.coordinate,
         &page,
         &report.model,
         report.cost_tokens,
         &report.sources,
+        &applied,
     )
     .map_err(DistillError::Failed)?;
     let write_result = ports.publish(builder).await.map_err(DistillError::Port)?;
