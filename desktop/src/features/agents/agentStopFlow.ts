@@ -11,7 +11,8 @@ import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
 import { orgQueryKey } from "@/features/org/hooks";
-import { managedAgentsQueryKey, relayAgentsQueryKey } from "./hooks";
+import { managedAgentsQueryKey, relayAgentsQueryKey } from "./hooks.ts";
+import { fetchOwnRecords } from "@creaton/core/org/agentStopFetch.ts";
 import {
   AGENT_STOP_KIND_BAN,
   AGENT_STOP_KIND_BUDGET,
@@ -21,7 +22,7 @@ import {
   type AgentStopEvent,
   type AgentStopRecord,
   type AgentStopReport,
-} from "./lib/agentStopSequence";
+} from "./lib/agentStopSequence.ts";
 
 const STOP_KINDS = [
   AGENT_STOP_KIND_BUDGET,
@@ -30,33 +31,18 @@ const STOP_KINDS = [
   AGENT_STOP_KIND_GRANT,
 ];
 
-function dTagOf(tags: string[][]): string | null {
-  const d = tags.find((t) => t[0] === "d");
-  return d && typeof d[1] === "string" ? d[1] : null;
-}
-
 /** The caller's own stored records for `kind`, optionally one address. */
 async function fetchOwn(
   kind: number,
   dTag?: string,
 ): Promise<AgentStopRecord[]> {
   const { pubkey } = await getIdentity();
-  const events = await relayClient.fetchEvents({
-    kinds: [kind],
-    authors: [pubkey],
-    // Bounded read: an operator's own org records number in the dozens.
-    limit: 200,
-  });
-  return events
-    .map((event) => ({
-      d: dTagOf(event.tags),
-      createdAt: event.created_at,
-      content: event.content,
-    }))
-    .filter(
-      (r): r is AgentStopRecord =>
-        r.d !== null && (dTag === undefined || r.d === dTag),
-    );
+  return fetchOwnRecords(
+    (filter) => relayClient.fetchEvents(filter),
+    pubkey,
+    kind,
+    dTag,
+  );
 }
 
 async function publish(event: AgentStopEvent): Promise<void> {

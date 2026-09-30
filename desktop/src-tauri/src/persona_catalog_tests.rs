@@ -328,7 +328,7 @@ fn shared_persona_publication_is_portable_and_catalog_readable() {
         (None, Some("buzz-acp")),
     ] {
         persona.acp_command = command.map(str::to_string);
-        let published = build_persona_event(&persona)
+        let published = build_persona_event(&persona, None)
             .unwrap()
             .sign_with_keys(&keys)
             .unwrap();

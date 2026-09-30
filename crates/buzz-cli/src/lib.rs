@@ -2574,7 +2574,10 @@ pub enum RoyaltyCmd {
         #[arg(long)]
         epoch_end: u64,
         /// Latest review `created_at` that may dispose an action (unix
-        /// seconds; default: --epoch-end)
+        /// seconds; default: --epoch-end). Verdicts after the cutoff are
+        /// picked up by the next run: claim ids are derived per accepted
+        /// action, so re-running the epoch with a wider cutoff only adds
+        /// delta claims and can never re-pay a settled action.
         #[arg(long)]
         review_until: Option<u64>,
         /// Reviewer keys whose dispositions count (repeatable; owner/admin

@@ -37,6 +37,7 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
 pub(crate) async fn run_migrations_through(pool: &PgPool, target: i64) -> Result<()> {
     with_exclusive_schema_destruction_lock(pool, |mut conn| async move {
         let outcome = async {
+            renumber_fork_era_migration_rows(&mut conn).await?;
             reject_legacy_nip_rs_cardinality_ambiguity(&mut conn).await?;
             MIGRATOR.run_to(target, &mut conn).await?;
             Ok(())
@@ -48,6 +49,10 @@ pub(crate) async fn run_migrations_through(pool: &PgPool, target: i64) -> Result
 }
 
 async fn run_migrations_locked(conn: &mut PgConnection) -> Result<()> {
+    // Repair fork-era migration rows before sqlx validates applied checksums,
+    // so a database migrated by the `feat/org-graph` fork starts instead of
+    // failing checksum validation on its renumbered rows.
+    renumber_fork_era_migration_rows(conn).await?;
     reject_legacy_nip_rs_cardinality_ambiguity(conn).await?;
     MIGRATOR.run(&mut *conn).await?;
     // The replica-fence proof (see `replica_fence`) requires the commit-time
@@ -181,6 +186,52 @@ async fn reject_legacy_nip_rs_cardinality_ambiguity(conn: &mut PgConnection) -> 
             "NIP-RS migration blocked: pre-0007 database contains kind-30078 rows with ambiguous d/t tag cardinality; repair or remove those nonconforming rows before retrying"
                 .into(),
         ));
+    }
+    Ok(())
+}
+
+/// One-time startup repair for databases migrated by the `feat/org-graph`
+/// fork while its five migrations were numbered 0045-0049. The merge
+/// renumbered those files to 0054-0058 (0045-0049 now name different
+/// upstream migrations), so the fork's `_sqlx_migrations` rows pair the
+/// wrong versions with their checksums and sqlx checksum validation rejects
+/// the database at startup. The five fork files are byte-identical to their
+/// as-applied content and sqlx checksums hash only the SQL bytes, so
+/// renumbering the rows (`version + 9`) restores the version/checksum
+/// pairing without touching checksum columns. Runs in one transaction,
+/// before the migrator validates anything. Idempotent: after one run no row
+/// matches the fork descriptions and this is a no-op. The version guard plus
+/// the exact-description match never touches upstream's own 0045-0049 rows.
+async fn renumber_fork_era_migration_rows(conn: &mut PgConnection) -> Result<()> {
+    const FORK_DESCRIPTIONS: [&str; 5] = [
+        "evm identities",
+        "evm revocation",
+        "budget consumption",
+        "community write fence fork tables",
+        "backfill wiki d tag",
+    ];
+    let migrations_table: Option<String> =
+        sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations')::text")
+            .fetch_one(&mut *conn)
+            .await?;
+    if migrations_table.is_none() {
+        return Ok(());
+    }
+    let mut txn = conn.begin().await?;
+    let renumbered: Vec<i64> = sqlx::query_scalar(
+        "UPDATE _sqlx_migrations SET version = version + 9 \
+         WHERE version BETWEEN 45 AND 49 AND description = ANY($1) \
+         RETURNING version - 9",
+    )
+    .bind(&FORK_DESCRIPTIONS[..])
+    .fetch_all(&mut *txn)
+    .await?;
+    txn.commit().await?;
+    if !renumbered.is_empty() {
+        tracing::info!(
+            renumbered_from = ?renumbered,
+            "renumbered feat/org-graph fork-era _sqlx_migrations rows to their merged 0054-0058 versions"
+        );
     }
     Ok(())
 }
@@ -3071,5 +3122,163 @@ mod postgres_tests {
             .validate_catalog()
             .await
             .expect("deletion catalog validates after all current migrations");
+    }
+
+    /// Create a dedicated probe database so the fork-repair tests cannot
+    /// interfere with other DB-backed tests migrating concurrently. Returns
+    /// the admin pool, the probe pool, and the probe database name.
+    async fn create_probe_database(prefix: &str) -> (PgPool, PgPool, String) {
+        use sqlx::AssertSqlSafe;
+        let base_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| TEST_DB_URL.to_owned());
+        let admin = PgPool::connect(&base_url)
+            .await
+            .expect("connect admin database");
+        let probe_db = format!("{prefix}_{}", uuid::Uuid::new_v4().simple());
+        sqlx::query(AssertSqlSafe(format!("CREATE DATABASE {probe_db}")))
+            .execute(&admin)
+            .await
+            .expect("create probe database");
+        let (base_prefix, _) = base_url.rsplit_once('/').expect("database url has a path");
+        let pool = PgPool::connect(&format!("{base_prefix}/{probe_db}"))
+            .await
+            .expect("connect probe database");
+        (admin, pool, probe_db)
+    }
+
+    async fn drop_probe_database(admin: &PgPool, probe_db: &str) {
+        use sqlx::AssertSqlSafe;
+        sqlx::query(AssertSqlSafe(format!(
+            "DROP DATABASE {probe_db} WITH (FORCE)"
+        )))
+        .execute(admin)
+        .await
+        .expect("drop probe database");
+        admin.close().await;
+    }
+
+    /// Replay the `feat/org-graph` fork's as-applied state for its five
+    /// migrations: their SQL (byte-identical to the merged 0054-0058 files)
+    /// applied directly, plus `_sqlx_migrations` rows at 0045-0049 carrying
+    /// the checksums the fork recorded — the merged migrator computes the
+    /// same ones from the same SQL bytes.
+    async fn seed_fork_era_migration_state(pool: &PgPool) {
+        for version in 54_i64..=58 {
+            let migration = MIGRATOR
+                .iter()
+                .find(|migration| migration.version == version)
+                .expect("embedded fork migration 0054-0058");
+            sqlx::raw_sql(migration.sql.as_ref())
+                .execute(pool)
+                .await
+                .expect("apply fork-era migration SQL");
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations \
+                 (version, description, installed_on, success, checksum, execution_time) \
+                 VALUES ($1 - 9, $2, now(), true, $3, 0)",
+            )
+            .bind(version)
+            .bind(migration.description.as_ref())
+            .bind(migration.checksum.as_ref())
+            .execute(pool)
+            .await
+            .expect("record fork-era migration row");
+        }
+    }
+
+    /// The release-blocking brownfield case: a database the `feat/org-graph`
+    /// fork migrated while its five migrations were numbered 0045-0049 fails
+    /// sqlx checksum validation after the merge renumbered those files to
+    /// 0054-0058. The startup repair must renumber the fork's rows before
+    /// validation so the migrator accepts them and completes the now-pending
+    /// upstream 0045-0053.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn fork_era_rows_are_renumbered_before_checksum_validation() {
+        let (admin, pool, probe_db) = create_probe_database("buzz_fork_repair").await;
+        MIGRATOR
+            .run_to(44, &pool)
+            .await
+            .expect("apply the shared 0001-0044 base");
+        seed_fork_era_migration_state(&pool).await;
+
+        run_migrations(&pool)
+            .await
+            .expect("the runner repairs the fork-era rows and migrates cleanly");
+
+        assert_eq!(
+            applied_versions(&pool).await,
+            (1_i64..=58).collect::<Vec<i64>>(),
+            "every migration through 0058 is applied exactly once"
+        );
+        let renumbered: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT version, description FROM _sqlx_migrations \
+             WHERE version BETWEEN 54 AND 58 ORDER BY version",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("read renumbered rows");
+        let expected: Vec<(i64, String)> = (54_i64..=58)
+            .map(|version| {
+                let migration = MIGRATOR
+                    .iter()
+                    .find(|migration| migration.version == version)
+                    .expect("embedded fork migration");
+                (version, migration.description.to_string())
+            })
+            .collect();
+        assert_eq!(
+            renumbered, expected,
+            "the fork's rows land at 0054-0058 under their original descriptions"
+        );
+        drop_probe_database(&admin, &probe_db).await;
+    }
+
+    /// A database that never ran the fork must be untouched by the repair: a
+    /// fresh migrate applies 0001-0058 in order and succeeds.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn fresh_database_is_unaffected_by_fork_row_repair() {
+        let (admin, pool, probe_db) = create_probe_database("buzz_fork_fresh").await;
+        run_migrations(&pool).await.expect("fresh migrate succeeds");
+        assert_eq!(
+            applied_versions(&pool).await,
+            (1_i64..=58).collect::<Vec<i64>>(),
+            "a fresh database applies every migration in order"
+        );
+        drop_probe_database(&admin, &probe_db).await;
+    }
+
+    /// The repair must be a no-op once the rows are renumbered — a second
+    /// startup must not move them again or alter the table.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn fork_row_repair_is_idempotent() {
+        let (admin, pool, probe_db) = create_probe_database("buzz_fork_idempotent").await;
+        MIGRATOR
+            .run_to(44, &pool)
+            .await
+            .expect("apply the shared 0001-0044 base");
+        seed_fork_era_migration_state(&pool).await;
+
+        let mut conn = pool.acquire().await.expect("acquire repair connection");
+        renumber_fork_era_migration_rows(&mut conn)
+            .await
+            .expect("first repair run renumbers the fork rows");
+        let after_first = applied_versions(&pool).await;
+        assert!(
+            after_first.contains(&54) && !after_first.contains(&45),
+            "the first repair run moved 0045-0049 to 0054-0058: {after_first:?}"
+        );
+        renumber_fork_era_migration_rows(&mut conn)
+            .await
+            .expect("second repair run succeeds");
+        assert_eq!(
+            applied_versions(&pool).await,
+            after_first,
+            "a second repair run leaves _sqlx_migrations untouched"
+        );
+        drop_probe_database(&admin, &probe_db).await;
     }
 }

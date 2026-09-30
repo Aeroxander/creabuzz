@@ -47,6 +47,69 @@ pub use buzz_agwiki::{
     AGWIKI_PAGE_QUERY_BOUND, KIND_AGENT_WIKI, STANDUP_SLUG,
 };
 
+/// Upper bound on the kind:39000 channel-metadata read that resolves the open
+/// channels a search may read (bounded query; truncation drops channels, which
+/// fails closed).
+const CHANNEL_METADATA_BOUND: u32 = 200;
+
+/// The channel a kind:39000 metadata event describes, when a distill read may
+/// search it — the CLI mirror of the relay job's `is_distill_readable` rule
+/// (R5: agent distillation reads only open channels): open (the NIP-29
+/// `public` tag, no `private` tag), not a DM, not archived. The distilled page
+/// is readable by every member, so anything short of public is excluded.
+fn readable_channel_id(event: &serde_json::Value) -> Option<uuid::Uuid> {
+    let tags = event.get("tags")?.as_array()?;
+    let mut channel_id: Option<uuid::Uuid> = None;
+    let mut public = false;
+    let mut private = false;
+    let mut dm = false;
+    let mut archived = false;
+    for tag in tags.iter().filter_map(|t| t.as_array()) {
+        let key = tag.first().and_then(|v| v.as_str()).unwrap_or("");
+        let val = tag.get(1).and_then(|v| v.as_str());
+        match key {
+            "d" => channel_id = val.and_then(|v| uuid::Uuid::parse_str(v).ok()),
+            "public" => public = true,
+            "private" => private = true,
+            "t" => dm = val == Some("dm"),
+            "archived" => archived = val == Some("true"),
+            _ => {}
+        }
+    }
+    let id = channel_id?;
+    (public && !private && !dm && !archived).then_some(id)
+}
+
+/// Whether a search hit may feed distillation. The relay job searches with
+/// `ChannelScope::Channels(open)` — events inside open channels only — so a
+/// hit with no `h` tag, or one whose `h` is not an open channel's UUID, is
+/// dropped here too (a malformed `h` fails closed).
+fn search_hit_admissible(
+    event: &serde_json::Value,
+    open: &std::collections::HashSet<uuid::Uuid>,
+) -> bool {
+    let h = event
+        .get("tags")
+        .and_then(|t| t.as_array())
+        .and_then(|tags| {
+            tags.iter().filter_map(|t| t.as_array()).find_map(|tag| {
+                (tag.first().and_then(|v| v.as_str()) == Some("h"))
+                    .then(|| tag.get(1).and_then(|v| v.as_str()))
+                    .flatten()
+            })
+        });
+    uuid::Uuid::parse_str(h.unwrap_or_default()).is_ok_and(|id| open.contains(&id))
+}
+
+/// The open channels a distill search may read (bounded metadata read).
+async fn open_search_channels(client: &BuzzClient) -> Result<Vec<uuid::Uuid>, CliError> {
+    let filter = serde_json::json!({ "kinds": [39000] });
+    let events = client
+        .query_pages_bounded(filter, CHANNEL_METADATA_BOUND)
+        .await?;
+    Ok(events.iter().filter_map(readable_channel_id).collect())
+}
+
 /// CLI ports onto [`DistillPorts`] — `BuzzClient` reads/publishes and the
 /// shared classifier LLM transport.
 struct CliDistillPorts<'a> {
@@ -107,10 +170,27 @@ impl DistillPorts for CliDistillPorts<'_> {
         let query = query.to_string();
         let kinds = kinds.to_vec();
         Box::pin(async move {
-            let filter = serde_json::json!({ "kinds": kinds, "search": query, "limit": limit });
+            // Distillation reads PUBLIC channels only (R5; the relay job's
+            // `ChannelScope::Channels(open)` rule): everything found here is
+            // distilled onto a page every member can read, so a private
+            // channel or DM snippet must never reach the search context. The
+            // restriction travels in the filter (`#h` scopes the relay's
+            // search) and every hit is re-checked on the way back. No open
+            // channels means no search context at all.
+            let open = open_search_channels(self.client).await?;
+            if open.is_empty() {
+                return Ok(Vec::new());
+            }
+            let h: Vec<String> = open.iter().map(uuid::Uuid::to_string).collect();
+            let filter =
+                serde_json::json!({ "kinds": kinds, "search": query, "limit": limit, "#h": h });
             let resp = self.client.query(&filter).await?;
             let events: Vec<serde_json::Value> = serde_json::from_str(&resp).unwrap_or_default();
-            Ok(events)
+            let open: std::collections::HashSet<uuid::Uuid> = open.into_iter().collect();
+            Ok(events
+                .into_iter()
+                .filter(|event| search_hit_admissible(event, &open))
+                .collect())
         })
     }
 
@@ -716,6 +796,28 @@ mod tests {
             .expect("signs")
     }
 
+    /// A kind:39000 channel-metadata event: `open` → the NIP-29 `public` tag,
+    /// otherwise `private`.
+    fn channel_metadata(channel: &uuid::Uuid, open: bool) -> serde_json::Value {
+        serde_json::json!({
+            "kind": 39000,
+            "tags": [
+                ["d", channel.to_string()],
+                ["name", "general"],
+                [if open { "public" } else { "private" }],
+            ],
+        })
+    }
+
+    /// A channel message of the searched kinds inside `channel`.
+    fn channel_message_fixture(channel: &uuid::Uuid, text: &str, ts: u64) -> Event {
+        EventBuilder::new(Kind::Custom(9), text)
+            .tags(vec![Tag::parse(["h", &channel.to_string()]).expect("tag")])
+            .custom_created_at(nostr::Timestamp::from(ts))
+            .sign_with_keys(&Keys::generate())
+            .expect("signs")
+    }
+
     fn chat_response(content: &str, total_tokens: Option<u64>) -> serde_json::Value {
         let mut value = serde_json::json!({
             "choices": [{ "index": 0, "message": { "role": "assistant", "content": content } }]
@@ -754,7 +856,11 @@ mod tests {
         task_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         record_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         page_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
+        channel_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
         search_query_response: std::sync::Mutex<Vec<serde_json::Value>>,
+        /// Filters the production `search` built — the test binds the
+        /// open-channel restriction to the real filter construction.
+        search_filters: std::sync::Mutex<Vec<serde_json::Value>>,
     }
 
     impl MockState {
@@ -787,6 +893,11 @@ mod tests {
                 .iter()
                 .map(|e| serde_json::to_value(e).unwrap())
                 .collect();
+            self
+        }
+
+        fn with_channels(self, channels: &[serde_json::Value]) -> Self {
+            *self.channel_query_response.lock().unwrap() = channels.to_vec();
             self
         }
     }
@@ -827,7 +938,14 @@ mod tests {
                             state.record_query_response.lock().unwrap().clone()
                         } else if kinds == [KIND_WIKI as u64] {
                             state.page_query_response.lock().unwrap().clone()
+                        } else if kinds == [39000] {
+                            state.channel_query_response.lock().unwrap().clone()
                         } else if is_search {
+                            state
+                                .search_filters
+                                .lock()
+                                .unwrap()
+                                .push(parsed_filter.clone());
                             state.search_query_response.lock().unwrap().clone()
                         } else {
                             Vec::new()
@@ -1145,22 +1263,21 @@ mod tests {
     #[tokio::test]
     async fn reflection_runs_followup_searches_and_augments_context() {
         let task = done_task_fixture("Mesh rollout plan", 100);
-        let msg_a = EventBuilder::new(
-            Kind::Custom(9),
+        let open_id = uuid::Uuid::new_v4();
+        let msg_a = channel_message_fixture(
+            &open_id,
             "Decided at standup: mesh beta ships behind the consent panel toggle.",
-        )
-        .custom_created_at(nostr::Timestamp::from(150))
-        .sign_with_keys(&Keys::generate())
-        .expect("signs");
-        let msg_b = EventBuilder::new(
-            Kind::Custom(40002),
+            150,
+        );
+        let msg_b = channel_message_fixture(
+            &open_id,
             "Mesh rollout follow-up: channel templates carry the default privacy.",
-        )
-        .custom_created_at(nostr::Timestamp::from(160))
-        .sign_with_keys(&Keys::generate())
-        .expect("signs");
+            160,
+        );
         let state = std::sync::Arc::new(
-            MockState::with_sources(&[&task], &[]).with_search_results(&[&msg_a, &msg_b]),
+            MockState::with_sources(&[&task], &[])
+                .with_channels(&[channel_metadata(&open_id, true)])
+                .with_search_results(&[&msg_a, &msg_b]),
         );
         // Reflection says insufficient with one query (round 1); round 2 says sufficient.
         state.push_chat(Ok(chat_response(
@@ -1218,5 +1335,126 @@ mod tests {
         assert!(sources.contains(&msg_b.id.to_hex()));
         // Cost: 60 + 50 + 900.
         assert!(tags.iter().any(|t| t[0] == "cost_tokens" && t[1] == "1010"));
+    }
+
+    #[tokio::test]
+    async fn reflection_search_reads_open_channels_only() {
+        let task = done_task_fixture("Mesh rollout plan", 100);
+        let open_id = uuid::Uuid::new_v4();
+        let private_id = uuid::Uuid::new_v4();
+        let public_msg = channel_message_fixture(
+            &open_id,
+            "Mesh beta ships behind the consent panel toggle.",
+            150,
+        );
+        let private_msg = channel_message_fixture(
+            &private_id,
+            "Private channel leak candidate: the launch master seed is 0xdead.",
+            155,
+        );
+        let state = std::sync::Arc::new(
+            MockState::with_sources(&[&task], &[])
+                .with_channels(&[
+                    channel_metadata(&open_id, true),
+                    channel_metadata(&private_id, false),
+                ])
+                .with_search_results(&[&public_msg, &private_msg]),
+        );
+        state.push_chat(Ok(chat_response(
+            r#"{"sufficient": false, "queries": ["mesh beta"], "reason": "missing channel decisions"}"#,
+            Some(60),
+        )));
+        state.push_chat(Ok(reflection_sufficient()));
+        state.push_chat(Ok(chat_response(&markdown_draft(), Some(900))));
+        let base_url = spawn_mock(state.clone()).await;
+
+        let client = BuzzClient::new(base_url.clone(), Keys::generate(), None, None).unwrap();
+        let cfg = classifier_config(&base_url);
+        let result = run_distill_inner(&client, &cfg, "default", None, true, None).await;
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+
+        // The production search filter is restricted to the open channels.
+        let filters = state.search_filters.lock().unwrap();
+        assert_eq!(filters.len(), 1, "one follow-up search");
+        assert_eq!(
+            filters[0]["#h"],
+            serde_json::json!([open_id.to_string()]),
+            "the filter carries the open-channel restriction"
+        );
+        drop(filters);
+
+        // The private-channel snippet never reaches the distill prompt...
+        let chats = state.chat_calls.lock().unwrap();
+        let distill_user = chats[2]["messages"][1]["content"].as_str().unwrap();
+        assert!(distill_user.contains("consent panel toggle"));
+        assert!(
+            !distill_user.contains("master seed"),
+            "private-channel snippet leaked into the prompt"
+        );
+        drop(chats);
+
+        // ...nor the published page's provenance.
+        let posts = state.event_posts.lock().unwrap();
+        assert_eq!(posts.len(), 1);
+        let sources = posts[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t[0] == "sources")
+            .and_then(|t| t[1].as_str())
+            .unwrap()
+            .to_string();
+        assert!(sources.contains(&public_msg.id.to_hex()));
+        assert!(
+            !sources.contains(&private_msg.id.to_hex()),
+            "private event leaked into the provenance"
+        );
+    }
+
+    #[test]
+    fn distill_channel_metadata_admits_public_live_channels_only() {
+        let open = uuid::Uuid::new_v4();
+        assert_eq!(
+            readable_channel_id(&channel_metadata(&open, true)),
+            Some(open)
+        );
+        assert_eq!(readable_channel_id(&channel_metadata(&open, false)), None);
+
+        let mut dm = channel_metadata(&open, true);
+        dm["tags"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(["t", "dm"]));
+        assert_eq!(readable_channel_id(&dm), None);
+
+        let mut archived = channel_metadata(&open, true);
+        archived["tags"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(["archived", "true"]));
+        assert_eq!(readable_channel_id(&archived), None);
+
+        let nameless = serde_json::json!({ "tags": [["public"]] });
+        assert_eq!(readable_channel_id(&nameless), None);
+    }
+
+    #[test]
+    fn search_hits_outside_the_open_channels_fail_closed() {
+        let open_id = uuid::Uuid::new_v4();
+        let closed_id = uuid::Uuid::new_v4();
+        let open: std::collections::HashSet<uuid::Uuid> = [open_id].into_iter().collect();
+        let hit = |channel: &uuid::Uuid| {
+            serde_json::json!({ "tags": [["h", channel.to_string()]] })
+        };
+        assert!(search_hit_admissible(&hit(&open_id), &open));
+        assert!(!search_hit_admissible(&hit(&closed_id), &open));
+        assert!(!search_hit_admissible(
+            &serde_json::json!({ "tags": [["e", "abc"]] }),
+            &open
+        ));
+        assert!(!search_hit_admissible(
+            &serde_json::json!({ "tags": [["h", "not-a-uuid"]] }),
+            &open
+        ));
     }
 }

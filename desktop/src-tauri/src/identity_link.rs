@@ -5,7 +5,8 @@
 //! X-only secp256k1 keypair and a 32-byte random nonce, stores them as a
 //! single-use pending request, and opens the system browser at
 //! `https://<web-host>/link-device?pub=<hex pubkey>&nonce=<hex>&cb=creaton://identity`
-//! (web host configurable via `BUZZ_WEB_HOST`). The web page encrypts the
+//! (web host: `BUZZ_WEB_HOST` when set, otherwise the active community's
+//! relay — the relay serves the web bundle). The web page encrypts the
 //! canonical account JSON
 //! `{"v":1,"sk":"<64-hex account secret key>","nonce":"<hex>","exp":<unix secs>}`
 //! with NIP-44 (the ACCOUNT key is the sender, the one-time key the
@@ -302,9 +303,10 @@ pub(crate) fn consume_identity_payload(
     ))
 }
 
-/// Normalize a configured web host to an `https://` origin. Accepts a bare
-/// host (optionally with port) or a full `https://` origin; anything else is
-/// refused so the browser is never opened at an attacker-shaped URL.
+/// Normalize a web host to its origin. Accepts a bare host (optionally with
+/// port) or a full origin URL; anything else is refused so the browser is
+/// never opened at an attacker-shaped URL. `https` only — except loopback
+/// hosts, where a local relay serves the web bundle over plain `http`.
 fn normalize_web_origin(value: &str) -> Result<String, String> {
     let trimmed = value.trim().trim_end_matches('/');
     let with_scheme = if trimmed.contains("://") {
@@ -313,9 +315,10 @@ fn normalize_web_origin(value: &str) -> Result<String, String> {
         format!("https://{trimmed}")
     };
     let parsed = Url::parse(&with_scheme)
-        .map_err(|error| format!("BUZZ_WEB_HOST is not a valid host: {error}"))?;
-    if parsed.scheme() != "https" {
-        return Err("BUZZ_WEB_HOST must be an https host".to_string());
+        .map_err(|error| format!("The web app address is not valid: {error}"))?;
+    let local = parsed.host_str().is_some_and(is_loopback_host);
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && local) {
+        return Err("The web app address must be https (a local relay may use http)".to_string());
     }
     if parsed.host_str().is_none()
         || !parsed.username().is_empty()
@@ -323,21 +326,66 @@ fn normalize_web_origin(value: &str) -> Result<String, String> {
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        return Err("BUZZ_WEB_HOST must be just a host name (optionally with a port)".to_string());
+        return Err("The web app address must be just a host name (optionally with a port)".to_string());
     }
     Ok(with_scheme)
 }
 
-/// The web host is configuration, never a hardcoded literal.
-fn configured_web_origin() -> Result<String, String> {
-    match std::env::var("BUZZ_WEB_HOST") {
-        Ok(value) => normalize_web_origin(&value),
-        Err(_) => Err(
-            "Set BUZZ_WEB_HOST to your web app host (for example app.example.com), \
-             then try signing in again."
-                .to_string(),
-        ),
+/// Loopback hosts may serve the web bundle over plain `http`; nothing else may.
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+}
+
+/// Scheme + host + path only — NEVER the query string. Link-flow URLs carry
+/// payload material in the query (`pub`/`nonce` on the link-device URL,
+/// `p`/`from` on its callback), so this is the only form fit for a log line
+/// or an error message.
+pub(crate) fn redact_url_for_log(url: &Url) -> String {
+    let mut redacted = String::with_capacity(url.as_str().len());
+    redacted.push_str(url.scheme());
+    redacted.push_str("://");
+    if let Some(host) = url.host_str() {
+        redacted.push_str(host);
     }
+    if let Some(port) = url.port() {
+        redacted.push(':');
+        redacted.push_str(&port.to_string());
+    }
+    redacted.push_str(url.path());
+    redacted
+}
+
+/// Strip a URL's query string out of an error detail built from it (the
+/// opener's scope error embeds the full target URL).
+fn sanitized_open_error(detail: &str, url: &Url) -> String {
+    detail.replace(url.as_str(), &redact_url_for_log(url))
+}
+
+/// Resolve the web origin the browser sign-in opens against. Precedence:
+/// 1. `BUZZ_WEB_HOST` — explicit override (tests, unusual setups).
+/// 2. The active community's relay URL: the relay serves the web bundle, so
+///    the web origin is the relay's own origin — scheme mapped `wss→https` /
+///    `ws→http`, host and port kept (the same derivation
+///    [`crate::relay::relay_http_base_url`] applies to relay HTTP calls).
+/// 3. No community connected yet: an actionable error instead of a URL at a
+///    host that is not serving the web app.
+fn web_origin_from(
+    env_override: Option<&str>,
+    community_relay: Option<&str>,
+) -> Result<String, String> {
+    if let Some(value) = env_override.filter(|value| !value.trim().is_empty()) {
+        return normalize_web_origin(value);
+    }
+    match community_relay {
+        Some(relay) => normalize_web_origin(&crate::relay::relay_http_base_url(relay)),
+        None => Err("Connect a community first, then try signing in again.".to_string()),
+    }
+}
+
+fn web_origin_for_sign_in(state: &crate::app_state::AppState) -> Result<String, String> {
+    let env_host = std::env::var("BUZZ_WEB_HOST").ok();
+    let relay = crate::relay::workspace_relay_override(state);
+    web_origin_from(env_host.as_deref(), relay.as_deref())
 }
 
 /// Build the `link-device` URL the system browser opens. The `cb` value is
@@ -409,7 +457,8 @@ pub(crate) fn start_identity_link(
     app: tauri::AppHandle,
     pending: State<'_, PendingIdentityLinks>,
 ) -> Result<IdentityLinkStart, String> {
-    let origin = configured_web_origin()?;
+    let state = app.state::<crate::app_state::AppState>();
+    let origin = web_origin_for_sign_in(&state)?;
     let keys = nostr::Keys::generate();
     let nonce_hex = random_nonce_hex()?;
     let url = build_link_url(&origin, &keys.public_key().to_hex(), &nonce_hex)?;
@@ -426,9 +475,14 @@ pub(crate) fn start_identity_link(
     if let Err(error) =
         tauri_plugin_opener::OpenerExt::opener(&app).open_url(url.as_str(), None::<&str>)
     {
-        // Do not leave an orphaned request behind a failed open.
+        // Do not leave an orphaned request behind a failed open. The opener
+        // error can embed the full URL (its scope error names the target), so
+        // redact the query string (`pub`/`nonce`) before surfacing it.
         pending.discard(&id);
-        return Err(format!("Could not open the browser: {error}"));
+        return Err(format!(
+            "Could not open the browser: {}",
+            sanitized_open_error(&error.to_string(), &url)
+        ));
     }
     Ok(IdentityLinkStart {
         id,

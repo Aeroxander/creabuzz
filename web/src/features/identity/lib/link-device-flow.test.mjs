@@ -115,6 +115,8 @@ test("a malformed or foreign callback is refused with no redirect", () => {
     "http://evil.example",
     "javascript:alert(1)",
     "data:text/plain,x",
+    "creaton://other",
+    "creaton://identity/evil",
   ]) {
     const search = `?pub=${"ab".repeat(32)}&nonce=${NONCE}&cb=${encodeURIComponent(cb)}`;
     const parsed = parseLinkDeviceRequest(search);

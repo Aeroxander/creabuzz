@@ -13,37 +13,24 @@ import {
   type AgentStopEvent,
   type AgentStopRecord,
   type AgentStopReport,
-} from "./agentStopSequence";
+} from "./agentStopSequence.ts";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
-
-function dTagOf(tags: string[][]): string | null {
-  const d = tags.find((t) => t[0] === "d");
-  return d && typeof d[1] === "string" ? d[1] : null;
-}
+import { fetchOwnRecords } from "@creaton/core/org/agentStopFetch.ts";
 
 /** The caller's own stored records for `kind`, optionally one address. */
 async function fetchOwn(
   kind: number,
   dTag?: string,
 ): Promise<AgentStopRecord[]> {
-  const events = await queryEvents(relayWsUrl(), {
-    kinds: [kind],
-    authors: [userPubkey()],
-    limit: 200,
-  });
-  return events
-    .map((event) => ({
-      d: dTagOf(event.tags),
-      createdAt: event.created_at,
-      content: event.content,
-    }))
-    .filter(
-      (r): r is AgentStopRecord =>
-        r.d !== null && (dTag === undefined || r.d === dTag),
-    );
+  return fetchOwnRecords(
+    (filter) => queryEvents(relayWsUrl(), filter),
+    userPubkey(),
+    kind,
+    dTag,
+  );
 }
 
 async function publish(event: AgentStopEvent): Promise<void> {

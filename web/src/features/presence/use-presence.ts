@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
+import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import {
@@ -34,6 +34,11 @@ export const KIND_PRESENCE_UPDATE = 20001;
 const PRESENCE_ACTIVITY_THROTTLE_MS = 1_000;
 
 function publishPresence(status: PresenceStatus) {
+  // Only announce a viewer who already has an identity. `existingUserPubkey`
+  // never creates one — a read-only visitor must not be handed a permanent
+  // key (and broadcast online) just for opening a page. Anonymous visitors
+  // stay invisible; there is no minting on the presence path.
+  if (existingUserPubkey() === null) return;
   Promise.resolve()
     .then(() =>
       signAsUser({ kind: KIND_PRESENCE_UPDATE, tags: [], content: status }),
@@ -42,7 +47,7 @@ function publishPresence(status: PresenceStatus) {
       publishEvent(relayWsUrl(), signed, { signAuth: signAsUser }),
     )
     .catch(() => {
-      // Presence is best-effort: no identity or an unsupported relay all
+      // Presence is best-effort: a locked identity or an unsupported relay
       // degrade to "no presence", which is what the indicators already show.
     });
 }

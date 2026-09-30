@@ -104,3 +104,56 @@ export function commitLocalEdit(
   applyEdit(text, { index: 0, deleteCount: live.length, insert: value });
   return "replaced";
 }
+
+// ── snapshot seeding ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic seeding of a saved snapshot into a fresh document.
+ *
+ * Two browsers opening the same saved page each insert its text locally
+ * before any peer sync. Yjs treats inserts made under different client ids as
+ * independent text, so once the peers exchange state the page reads TWICE.
+ * Seeding under a client id derived from the saved snapshot's event id makes
+ * both inserts the same items — identical (client, clock) ids — which Yjs
+ * deduplicates on sync: one copy of the snapshot plus everyone's live edits.
+ *
+ * The document is rekeyed back to its own random client id straight after the
+ * seed: live edits must NOT share a client id (two concurrently editing peers
+ * minting items with the same (client, clock) ids would collide), only the
+ * identical seed insert may.
+ */
+
+/**
+ * FNV-1a over `seedKey`, folded to a non-zero Yjs client id (uint32). The
+ * same saved snapshot therefore seeds under the same client id everywhere.
+ */
+export function seedClientId(seedKey: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < seedKey.length; i++) {
+    hash ^= seedKey.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0 || 1;
+}
+
+/**
+ * Insert `content` as a fresh document's seed snapshot under the
+ * deterministic client id for `seedKey` (the saved snapshot's event id), then
+ * hand the document back its own random client id for live edits. No-op on a
+ * non-empty document or empty content.
+ */
+export function seedSnapshot(
+  text: Y.Text,
+  content: string,
+  seedKey: string,
+): void {
+  if (content.length === 0 || text.length > 0) return;
+  const doc = text.doc;
+  if (!doc) return;
+  const own = doc.clientID;
+  doc.clientID = seedClientId(seedKey);
+  doc.transact(() => {
+    text.insert(0, content);
+  }, doc.clientID);
+  doc.clientID = own;
+}

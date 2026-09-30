@@ -191,6 +191,12 @@ test("the deep-link dispatcher routes creaton://identity without logging it", ()
   assert.match(deepLink, /identity_link::handle_identity_payload/);
   // The wire envelope: `p` (with a legacy `payload` alias) plus `from`.
   assert.match(deepLink, /parse_identity_deep_link_params/);
+  // Redaction seam: no log line may print a URL's query string — it carries
+  // payload material (`pub`/`nonce`, and `p`/`from` on the callback).
+  assert.ok(
+    !deepLink.includes("{url_str}"),
+    "deep-link logs must redact URL queries",
+  );
 });
 
 test("identity_link.rs enforces the frozen validation order", () => {
@@ -204,6 +210,12 @@ test("identity_link.rs enforces the frozen validation order", () => {
   // Single-use consumption and the never-logged contract.
   assert.match(core, /queue\s*\n?\s*\.remove\(index\)/);
   assert.match(core, /never logged/i);
+  // Host derivation: the active community's relay when BUZZ_WEB_HOST is
+  // unset, an actionable "Connect a community first" without one, and the
+  // opener error path redacts the link URL's query before surfacing it.
+  assert.match(core, /workspace_relay_override/);
+  assert.match(core, /Connect a community first/);
+  assert.match(core, /sanitized_open_error/);
 });
 
 test("tauriIdentity.ts exposes the same command names", () => {

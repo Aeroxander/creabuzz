@@ -455,6 +455,18 @@ floor(amount * min(monthsActive, 12) * 1000 / 12), minus the same sum over \
 rejected/slashed actions, clamped at 0; monthsActive defaults to 12 when \
 absent, amount is required, and pending/appealed/unreviewed actions never count";
 
+/// Claim fields copied into one review record (NIP-ORG: a review republishes
+/// the record with its fields copied), keyed by review event id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReviewClaim {
+    /// The review event's content carried a non-null `amount` field.
+    pub has_amount: bool,
+    /// The carried `amount`, parsed (`None` when absent or unparseable).
+    pub amount: Option<u64>,
+    /// The carried `monthsActive`, parsed.
+    pub months_active: Option<u64>,
+}
+
 /// One kind:37013 contribution action as the settlement job sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContributionAction {
@@ -462,12 +474,18 @@ pub struct ContributionAction {
     pub d: String,
     /// Claimant (beneficiary): signer of the earliest record for `d`.
     pub subject: String,
-    /// `content.amount` from the claimant's newest record (their claim).
-    /// `None` = unpayable (excluded, reported, never silently dropped).
+    /// `content.amount` from the claimant's newest record (their claim) —
+    /// the FALLBACK paid only when the disposing review copies no amount at
+    /// all ([`paid_claim_fields`]); a post-acceptance edit to this record
+    /// never changes the payout. `None` = unpayable (excluded, reported,
+    /// never silently dropped).
     pub amount: Option<u64>,
     /// `content.monthsActive` from the claimant's newest record; `None`
     /// means full tenure ([`TENURE_CAP_MONTHS`]).
     pub months_active: Option<u64>,
+    /// Claim snapshots copied into the review events, keyed by review event
+    /// id — the reviewed fields a disposing verdict is bound to.
+    pub review_claims: BTreeMap<String, ReviewClaim>,
     /// Every record for `d` at or after the filing, as review rows — the
     /// claimant's own included; [`tally_reviews`] never counts those.
     pub reviews: Vec<ReviewRow>,
@@ -498,7 +516,8 @@ pub enum Verdict {
     Unreviewed,
 }
 
-/// Per-beneficiary settlement row — the schedule the mirror emits.
+/// Per-beneficiary settlement row — the schedules the mirror emits (one
+/// claim per accepted action).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BeneficiaryWeight {
     /// Beneficiary pubkey (lowercase 64-hex) — the claimant of its actions.
@@ -513,6 +532,12 @@ pub struct BeneficiaryWeight {
     pub accepted_actions: Vec<String>,
     /// Rejected/slashed action ids that subtracted (sorted).
     pub subtracted_actions: Vec<String>,
+    /// Per-accepted-action claim weights (sorted by action id): the
+    /// rejected/slashed clawback (`subtracted`) is absorbed by the accepted
+    /// claims in sorted order, so the claim weights sum exactly to `weight`
+    /// ([`WEIGHT_FORMULA`]) and each claim settles under its own id
+    /// ([`settlement_ids`]) — never one id over the whole accepted set.
+    pub claim_weights: Vec<(String, u32)>,
 }
 
 /// Per-record scaled claim: `floor(amount × min(months_active, 12) × 1000 / 12)`.
@@ -551,6 +576,26 @@ fn canonical_review<'a>(
     best
 }
 
+/// The claim fields one disposed action is PAID: the snapshot copied into
+/// the disposing (canonical) review — per NIP-ORG a review republishes the
+/// record with its fields copied, so the reviewed snapshot is the
+/// authoritative claim — falling back to the claimant's newest record only
+/// when the review copies no `amount` at all. A claimant edit AFTER
+/// acceptance therefore never changes the payout.
+pub fn paid_claim_fields(
+    action: &ContributionAction,
+    authorized: &HashSet<String>,
+) -> (Option<u64>, Option<u64>) {
+    if let Some(review) = canonical_review(&action.reviews, &action.subject, authorized) {
+        if let Some(claim) = action.review_claims.get(&review.event_id) {
+            if claim.has_amount {
+                return (claim.amount, claim.months_active);
+            }
+        }
+    }
+    (action.amount, action.months_active)
+}
+
 /// Resolve one action's verdict with the review machinery's semantics.
 ///
 /// The accepted/rejected split is delegated to [`tally_reviews`] (so a
@@ -586,7 +631,7 @@ pub fn compute_weights(
     struct Acc {
         credited: u128,
         subtracted: u128,
-        accepted_actions: BTreeSet<String>,
+        accepted: BTreeMap<String, u128>,
         subtracted_actions: BTreeSet<String>,
     }
     let mut by_beneficiary: BTreeMap<String, Acc> = BTreeMap::new();
@@ -597,15 +642,18 @@ pub fn compute_weights(
         if !on_accepted_side && !on_subtracted_side {
             continue;
         }
-        let Some(amount) = action.amount else {
+        // Pay the claim as it stood at the disposing review (its copied
+        // snapshot), never a later claimant edit ([`paid_claim_fields`]).
+        let (amount, months_active) = paid_claim_fields(action, authorized);
+        let Some(amount) = amount else {
             // Unpayable claim: reported by the caller's stats, never money.
             continue;
         };
-        let scaled = record_weight(amount, action.months_active.unwrap_or(TENURE_CAP_MONTHS));
+        let scaled = record_weight(amount, months_active.unwrap_or(TENURE_CAP_MONTHS));
         let acc = by_beneficiary.entry(action.subject.clone()).or_default();
         if on_accepted_side {
             acc.credited = acc.credited.saturating_add(scaled);
-            acc.accepted_actions.insert(action.d.clone());
+            acc.accepted.insert(action.d.clone(), scaled);
         } else {
             acc.subtracted = acc.subtracted.saturating_add(scaled);
             acc.subtracted_actions.insert(action.d.clone());
@@ -614,7 +662,7 @@ pub fn compute_weights(
 
     let mut out = Vec::with_capacity(by_beneficiary.len());
     for (beneficiary, acc) in by_beneficiary {
-        if acc.accepted_actions.is_empty() {
+        if acc.accepted.is_empty() {
             // Nothing payable ever existed here: a rejected-only history is
             // not a schedule row.
             continue;
@@ -626,13 +674,32 @@ pub fn compute_weights(
                  lower the claim amounts"
             ))
         })?;
+        // Fan the clamped net out over the accepted claims: the clawback for
+        // rejected/slashed work is absorbed in sorted action order, so the
+        // claim weights sum exactly to `weight` and every claim settles under
+        // its own id ([`settlement_ids`]) — the chain's one-shot claim slot
+        // turns overlapping re-runs into no-ops, never double payouts.
+        let mut carry = acc.subtracted;
+        let mut claim_weights = Vec::with_capacity(acc.accepted.len());
+        for (action_id, scaled) in &acc.accepted {
+            let applied = carry.min(*scaled);
+            carry -= applied;
+            let claim_weight = u32::try_from(scaled - applied).map_err(|_| {
+                CliError::Other(format!(
+                    "computed royalty weight for {beneficiary} exceeds u32; split the epoch or \
+                     lower the claim amounts"
+                ))
+            })?;
+            claim_weights.push((action_id.clone(), claim_weight));
+        }
         out.push(BeneficiaryWeight {
             beneficiary,
             weight,
             credited: acc.credited,
             subtracted: acc.subtracted,
-            accepted_actions: acc.accepted_actions.into_iter().collect(),
+            accepted_actions: acc.accepted.keys().cloned().collect(),
             subtracted_actions: acc.subtracted_actions.into_iter().collect(),
+            claim_weights,
         });
     }
     Ok(out)
@@ -675,13 +742,16 @@ fn event_d_tag(event: &serde_json::Value) -> Option<String> {
 /// Grouping mirrors NIP-ORG § Contribution record review: one action per `d`
 /// tag. The **claimant** is the signer of the earliest record carrying the
 /// claim (`content.amount`; ties: lowest event id) — a copy by anyone else
-/// never hijacks the action — and the claim's `amount`/`monthsActive` come
-/// from the claimant's newest record (NIP-33 LWW). An action settles in this
+/// never hijacks the action — and what is PAID is the snapshot the disposing
+/// review copied ([`paid_claim_fields`]), falling back to the claimant's
+/// newest record (NIP-33 LWW) only when the review copies no amount — a
+/// post-acceptance edit never changes the payout. An action settles in this
 /// epoch when its filing (the claimant's earliest record) is inside
 /// `[epoch_start, epoch_end)`; a review cannot predate the filing (the
 /// [`tally_reviews`] consumer rule), and reviews up to `review_until` count —
 /// so a verdict landing just after the window still disposes the work it
-/// reviews.
+/// reviews, while a verdict after the cutoff is picked up by the next run
+/// (per-action claim ids make that overlap idempotent).
 pub fn fold_settlement_actions(
     events: &[serde_json::Value],
     epoch_start: u64,
@@ -776,40 +846,55 @@ pub fn fold_settlement_actions(
             Some(c) => (c.amount, c.months_active),
             None => (None, None),
         };
-        let reviews = rows
+        let mut reviews = Vec::new();
+        let mut review_claims = BTreeMap::new();
+        for r in rows
             .iter()
             .filter(|r| r.created_at >= filing_at && r.created_at <= review_until)
-            .map(|r| ReviewRow {
+        {
+            reviews.push(ReviewRow {
                 d: d.clone(),
                 reviewer: r.signer.clone(),
                 created_at: r.created_at,
                 event_id: r.id.clone(),
                 status: r.status.clone(),
-            })
-            .collect();
+            });
+            review_claims.insert(
+                r.id.clone(),
+                ReviewClaim {
+                    has_amount: r.has_amount,
+                    amount: r.amount,
+                    months_active: r.months_active,
+                },
+            );
+        }
         folded.actions.push(ContributionAction {
             d,
             subject,
             amount,
             months_active,
+            review_claims,
             reviews,
         });
     }
     Ok(folded)
 }
 
-/// Deterministic claim/evidence ids for one beneficiary's epoch schedule:
-/// keccak over the settled window, beneficiary and accepted action ids, so
-/// re-running the job reproduces byte-identical mirrors (idempotent queue).
+/// Deterministic claim/evidence ids for ONE accepted action of one
+/// beneficiary's epoch schedule: keccak over the settled window, beneficiary
+/// and the single action id. Ids are derived per action — never one id over
+/// the whole accepted set — so overlapping re-runs re-derive the shared
+/// actions' claims byte-identically (idempotent queue: the chain's one-shot
+/// claim slot can never re-pay a settled action) and a wider cutoff only
+/// adds new ids for its delta actions.
 fn settlement_ids(
     epoch_start: u64,
     epoch_end: u64,
     beneficiary: &str,
-    accepted: &[String],
+    action: &str,
 ) -> (String, String) {
-    let joined = accepted.join(",");
-    let claim = format!("royalty-settle:{epoch_start}:{epoch_end}:{beneficiary}:{joined}");
-    let evidence = format!("royalty-settle-evidence:{epoch_start}:{epoch_end}:{joined}");
+    let claim = format!("royalty-settle:{epoch_start}:{epoch_end}:{beneficiary}:{action}");
+    let evidence = format!("royalty-settle-evidence:{epoch_start}:{epoch_end}:{action}");
     (
         format!("0x{}", hex::encode(abi::keccak256(claim.as_bytes()))),
         format!("0x{}", hex::encode(abi::keccak256(evidence.as_bytes()))),
@@ -826,7 +911,9 @@ pub struct SettleWeightsOpts<'a> {
     pub epoch_start: u64,
     /// Epoch window end (unix seconds, exclusive).
     pub epoch_end: u64,
-    /// Latest review `created_at` that may dispose an action.
+    /// Latest review `created_at` that may dispose an action. Verdicts after
+    /// the cutoff are picked up by the next run — per-action claim ids make
+    /// the overlap idempotent.
     pub review_until: u64,
     /// Bounded read cap for kind:37013 events.
     pub limit: u32,
@@ -847,8 +934,10 @@ pub struct SettleWeightsOpts<'a> {
 /// kind:37013 contribution records (bounded query), resolve each action's
 /// verdict exactly the way the review machinery does, compute per-beneficiary
 /// weights ([`WEIGHT_FORMULA`]), and emit one unsigned kind:47006 schedule per
-/// beneficiary through the existing mirror composer — the chain stays
-/// authoritative. Prints the schedule plus the exact `buzz royalty`
+/// accepted action — each under its own claim id ([`settlement_ids`]), so a
+/// re-run with a wider cutoff only adds delta claims — through the existing
+/// mirror composer — the chain stays
+/// authoritative. Prints the schedules plus the exact `buzz royalty`
 /// follow-ups to publish the mirrors and close the window on chain. An epoch
 /// with nothing payable reports `"status": "empty"` explicitly.
 pub async fn cmd_settle_weights(
@@ -919,7 +1008,8 @@ pub async fn cmd_settle_weights(
             Verdict::Unreviewed => "unreviewed",
         };
         counts[slot] = json!(counts[slot].as_u64().unwrap_or(0) + 1);
-        if action.amount.is_none() && slot != "unreviewed" {
+        let (paid_amount, _) = paid_claim_fields(action, &opts.authorized);
+        if paid_amount.is_none() && slot != "unreviewed" {
             counts["skippedNoAmount"] = json!(counts["skippedNoAmount"].as_u64().unwrap_or(0) + 1);
             unpayable.push(action.d.clone());
         }
@@ -951,25 +1041,52 @@ pub async fn cmd_settle_weights(
     let mut schedule = Vec::with_capacity(weights.len());
     let mut next_commands = Vec::with_capacity(weights.len() + 1);
     for row in &weights {
-        let (claim_id, evidence_hash) = settlement_ids(
-            opts.epoch_start,
-            opts.epoch_end,
-            &row.beneficiary,
-            &row.accepted_actions,
-        );
-        // The EXISTING compose path — same unsigned template the
-        // mirror-schedule command prints (advisory; chain is authoritative).
-        templates.push(royalty_schedule_event_json(
-            opts.chain,
-            &distributor,
-            &claim_id,
-            &evidence_hash,
-            &row.beneficiary,
-            row.weight,
-            opts.term,
-            opts.band,
-            opts.allocation,
-        ));
+        let mut claims = Vec::with_capacity(row.claim_weights.len());
+        for (action_id, claim_weight) in &row.claim_weights {
+            // One claim per accepted action — never one id over the whole
+            // accepted set — so an overlapping re-run re-derives the settled
+            // actions' claims byte-identically (the chain's one-shot claim
+            // slot makes them no-ops) and only its delta actions get new ids.
+            let (claim_id, evidence_hash) = settlement_ids(
+                opts.epoch_start,
+                opts.epoch_end,
+                &row.beneficiary,
+                action_id,
+            );
+            // The EXISTING compose path — same unsigned template the
+            // mirror-schedule command prints (advisory; chain is authoritative).
+            templates.push(royalty_schedule_event_json(
+                opts.chain,
+                &distributor,
+                &claim_id,
+                &evidence_hash,
+                &row.beneficiary,
+                *claim_weight,
+                opts.term,
+                opts.band,
+                opts.allocation,
+            ));
+            next_commands.push(format!(
+                "buzz royalty publish-schedule --chain {} --distributor {} --claim-id {} \
+                 --evidence-hash {} --contributor {} --weight {} --term {} --band {} \
+                 --allocation {}",
+                opts.chain,
+                distributor,
+                claim_id,
+                evidence_hash,
+                row.beneficiary,
+                claim_weight,
+                opts.term,
+                opts.band,
+                opts.allocation
+            ));
+            claims.push(json!({
+                "actionId": action_id,
+                "claimId": claim_id,
+                "evidenceHash": evidence_hash,
+                "weight": claim_weight,
+            }));
+        }
         schedule.push(json!({
             "beneficiary": row.beneficiary,
             "weight": row.weight,
@@ -977,21 +1094,8 @@ pub async fn cmd_settle_weights(
             "subtracted": row.subtracted.to_string(),
             "acceptedActions": row.accepted_actions,
             "subtractedActions": row.subtracted_actions,
+            "claims": claims,
         }));
-        next_commands.push(format!(
-            "buzz royalty publish-schedule --chain {} --distributor {} --claim-id {} \
-             --evidence-hash {} --contributor {} --weight {} --term {} --band {} \
-             --allocation {}",
-            opts.chain,
-            distributor,
-            claim_id,
-            evidence_hash,
-            row.beneficiary,
-            row.weight,
-            opts.term,
-            opts.band,
-            opts.allocation
-        ));
     }
     next_commands.push(format!(
         "buzz royalty settle --distributor {distributor}  # close the window on chain \
@@ -1757,6 +1861,7 @@ mod tests {
             subject: subject.into(),
             amount,
             months_active,
+            review_claims: BTreeMap::new(),
             reviews,
         }
     }
@@ -1850,8 +1955,12 @@ mod tests {
         assert_eq!(weights[0].credited, 120_000);
         assert_eq!(weights[0].subtracted, 60_000);
         assert_eq!(weights[0].subtracted_actions, vec!["t2", "t3"]);
+        // The clawback is absorbed by the accepted claims in sorted order:
+        // claim weights sum exactly to the net weight (never overpay).
+        assert_eq!(weights[0].claim_weights, vec![("t1".to_string(), 60_000)]);
         assert_eq!(weights[1].beneficiary, b);
         assert_eq!(weights[1].weight, 0);
+        assert_eq!(weights[1].claim_weights, vec![("t4".to_string(), 0)]);
     }
 
     /// Guard: pending/appealed/unreviewed actions, self-signed "accepted"
@@ -2083,8 +2192,8 @@ mod tests {
                 Some("t1"),
                 json!({"v": 1, "amount": 250, "monthsActive": 6, "reviewStatus": "accepted"}),
             ),
-            // Claimant edit: the newest claimant record wins (LWW),
-            // including its string-typed amount.
+            // Claimant edit AFTER acceptance: the newest claimant record is
+            // only the fallback claim — it must never change the payout.
             raw_event(
                 6,
                 &s,
@@ -2111,7 +2220,11 @@ mod tests {
         let t1 = &folded.actions[0];
         assert_eq!(t1.d, "t1");
         assert_eq!(t1.subject, s);
-        assert_eq!(t1.amount, Some(300), "the claimant's newest record wins");
+        assert_eq!(
+            t1.amount,
+            Some(300),
+            "the fallback claim is the claimant's newest record (LWW)"
+        );
         assert_eq!(t1.months_active, Some(6));
         assert_eq!(
             t1.reviews.len(),
@@ -2121,29 +2234,193 @@ mod tests {
         );
         let auth = authorized(&[&rev]);
         assert_eq!(verdict_of(t1, &auth), Verdict::Accepted);
-        // Only the accepted claim pays: 300×6×1000/12 = 150_000.
+        assert_eq!(
+            paid_claim_fields(t1, &auth),
+            (Some(250), Some(6)),
+            "the accepting review's copied snapshot is what pays — the \
+             post-acceptance edit to 300 must never pay"
+        );
+        // Only the REVIEWED claim pays: 250×6×1000/12 = 125_000.
         let weights = compute_weights(&folded.actions, &auth).expect("weights");
-        assert_eq!(weights[0].weight, 150_000);
+        assert_eq!(weights[0].weight, 125_000);
     }
 
     #[test]
-    fn settlement_ids_are_deterministic_and_beneficiary_bound() {
+    fn settlement_ids_are_deterministic_and_action_bound() {
         let (a, b) = (pk('a'), pk('b'));
-        let accepted = vec!["t1".to_string(), "t2".to_string()];
-        let one = settlement_ids(1_000, 2_000, &a, &accepted);
-        let two = settlement_ids(1_000, 2_000, &a, &accepted);
+        let one = settlement_ids(1_000, 2_000, &a, "t1");
+        let two = settlement_ids(1_000, 2_000, &a, "t1");
         assert_eq!(one, two, "same inputs → byte-identical mirrors");
         assert!(one.0.starts_with("0x") && one.0.len() == 66);
         assert!(one.1.starts_with("0x") && one.1.len() == 66);
         assert_ne!(
             one,
-            settlement_ids(1_000, 2_000, &b, &accepted),
-            "a schedule is bound to its beneficiary"
+            settlement_ids(1_000, 2_000, &b, "t1"),
+            "a claim is bound to its beneficiary"
         );
         assert_ne!(
             one,
-            settlement_ids(1_000, 2_000, &a, &["t1".to_string()]),
-            "a schedule is bound to its accepted action set"
+            settlement_ids(1_000, 2_000, &a, "t2"),
+            "a claim is bound to its single action — never one id over the \
+             accepted set"
+        );
+    }
+
+    /// Guard: an edit to the claimant's record AFTER the accepting review
+    /// never changes the payout — the amount/monthsActive as it stood at the
+    /// accepting review (the snapshot the review copied) is what pays. The
+    /// claimant's newest record is consulted only when the review copies no
+    /// amount at all. Mutation check: paying the claimant's newest record
+    /// instead fails this test (the edit 250 → 300 would pay 300_000).
+    #[test]
+    fn post_acceptance_edits_are_not_paid() {
+        let (s, rev) = (pk('a'), pk('r'));
+        let (start, end) = (1_000u64, 2_000u64);
+        let auth = authorized(&[&rev]);
+        let events = vec![
+            raw_event(
+                1,
+                &s,
+                start + 10,
+                Some("t1"),
+                json!({"amount": 250, "monthsActive": 6, "reviewStatus": "pending"}),
+            ),
+            // The accepting review copies the record: 250/6 as reviewed.
+            raw_event(
+                2,
+                &rev,
+                start + 20,
+                Some("t1"),
+                json!({"amount": 250, "monthsActive": 6, "reviewStatus": "accepted"}),
+            ),
+            // Post-acceptance claimant edit — must never pay.
+            raw_event(
+                3,
+                &s,
+                start + 30,
+                Some("t1"),
+                json!({"amount": 300, "monthsActive": 12}),
+            ),
+        ];
+        let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
+        let weights = compute_weights(&folded.actions, &auth).expect("weights");
+        // 250×6×1000/12 = 125_000 — the REVIEWED claim pays, not 300_000.
+        assert_eq!(weights[0].weight, 125_000);
+        assert_eq!(weights[0].claim_weights, vec![("t1".to_string(), 125_000)]);
+
+        // Fallback: a review that copies no amount at all falls back to the
+        // claimant's newest record (LWW).
+        let events = vec![
+            raw_event(4, &s, start + 10, Some("t1"), json!({"amount": 250, "monthsActive": 6})),
+            raw_event(5, &rev, start + 20, Some("t1"), json!({"reviewStatus": "accepted"})),
+            raw_event(6, &s, start + 30, Some("t1"), json!({"amount": 300, "monthsActive": 12})),
+        ];
+        let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
+        let weights = compute_weights(&folded.actions, &auth).expect("weights");
+        // 300×12×1000/12 = 300_000 — the fallback claim, newest record.
+        assert_eq!(weights[0].weight, 300_000);
+    }
+
+    /// A verdict landing after the first run's cutoff is invisible to that
+    /// run and is picked up — paid — by the next run with a wider cutoff.
+    #[test]
+    fn late_verdict_appears_in_the_next_run() {
+        let (s, rev) = (pk('a'), pk('r'));
+        let (start, end) = (1_000u64, 2_000u64);
+        let auth = authorized(&[&rev]);
+        let events = vec![
+            raw_event(1, &s, start + 10, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                2,
+                &rev,
+                start + 20,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12, "reviewStatus": "accepted"}),
+            ),
+            // Filed in-epoch, but the verdict lands after the first cutoff.
+            raw_event(3, &s, start + 30, Some("t2"), json!({"amount": 50, "monthsActive": 12})),
+            raw_event(
+                4,
+                &rev,
+                start + 50,
+                Some("t2"),
+                json!({"amount": 50, "monthsActive": 12, "reviewStatus": "accepted"}),
+            ),
+        ];
+        // Run 1: the t2 verdict is after the cutoff — invisible, unpaid.
+        let run1 = fold_settlement_actions(&events, start, end, start + 40).expect("fold");
+        let w1 = compute_weights(&run1.actions, &auth).expect("w1");
+        assert_eq!(w1[0].accepted_actions, vec!["t1"]);
+        assert_eq!(w1[0].weight, 100_000);
+        // Run 2 (same epoch, wider cutoff): the late verdict appears.
+        let run2 = fold_settlement_actions(&events, start, end, end).expect("fold");
+        let w2 = compute_weights(&run2.actions, &auth).expect("w2");
+        assert_eq!(w2[0].accepted_actions, vec!["t1", "t2"]);
+        assert_eq!(w2[0].weight, 150_000, "the late verdict is paid in run 2");
+    }
+
+    /// Same epoch + wider cutoff twice: claim ids are derived per accepted
+    /// action, so the settled action re-derives byte-identically (the chain's
+    /// one-shot claim slot can never re-pay it) and the ONLY new id binds to
+    /// the delta action alone — no run-2 id covers an already-published
+    /// action again. Mutation check: one id over the whole accepted set makes
+    /// run 2's single new id cover t1 again — this test fails.
+    #[test]
+    fn wider_cutoff_rerun_ids_exclude_settled_actions() {
+        let (s, rev) = (pk('a'), pk('r'));
+        let (start, end) = (1_000u64, 2_000u64);
+        let auth = authorized(&[&rev]);
+        let events = vec![
+            raw_event(1, &s, start + 10, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                2,
+                &rev,
+                start + 20,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12, "reviewStatus": "accepted"}),
+            ),
+            raw_event(3, &s, start + 30, Some("t2"), json!({"amount": 50, "monthsActive": 12})),
+            raw_event(
+                4,
+                &rev,
+                start + 50,
+                Some("t2"),
+                json!({"amount": 50, "monthsActive": 12, "reviewStatus": "accepted"}),
+            ),
+        ];
+        let claim_ids = |weights: &[BeneficiaryWeight]| -> BTreeSet<String> {
+            weights
+                .iter()
+                .flat_map(|row| {
+                    row.claim_weights
+                        .iter()
+                        .map(|(a, _)| settlement_ids(start, end, &row.beneficiary, a).0)
+                })
+                .collect()
+        };
+        let run1 = fold_settlement_actions(&events, start, end, start + 40).expect("fold");
+        let w1 = compute_weights(&run1.actions, &auth).expect("w1");
+        let ids1 = claim_ids(&w1);
+        let run2 = fold_settlement_actions(&events, start, end, end).expect("fold");
+        let w2 = compute_weights(&run2.actions, &auth).expect("w2");
+        let ids2 = claim_ids(&w2);
+
+        // The settled action's claim is byte-identical across runs…
+        assert!(ids1.is_subset(&ids2));
+        assert_eq!(
+            w1[0].claim_weights,
+            vec![("t1".to_string(), 100_000)],
+            "the settled claim's mirror is unchanged by the re-run"
+        );
+        // …and the only NEW id binds to the delta action alone.
+        let added: BTreeSet<&String> = ids2.difference(&ids1).collect();
+        assert_eq!(
+            added,
+            [&settlement_ids(start, end, &s, "t2").0]
+                .into_iter()
+                .collect(),
+            "the wider-cutoff run adds exactly the late action's claim id — \
+             never an id that also covers the already-published t1"
         );
     }
 }

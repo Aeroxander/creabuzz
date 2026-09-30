@@ -1230,6 +1230,8 @@ mod tests {
 
         crate::managed_agents::AgentDefinition {
             description: None,
+            acp_command: None,
+            session_policy: Default::default(),
             id: "catalog-reviewer".to_string(),
             display_name: "Catalog Reviewer".to_string(),
             avatar_url: None,

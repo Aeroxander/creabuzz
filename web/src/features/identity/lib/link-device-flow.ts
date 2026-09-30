@@ -21,7 +21,6 @@ import {
 } from "@creaton/core/link-device.ts";
 
 import {
-  getOrCreateIdentity,
   nsecToBytes,
   storedIdentityHex,
 } from "../../../shared/lib/identity.ts";
@@ -43,16 +42,25 @@ function bytesToHex(bytes: Uint8Array): string {
 
 /**
  * The account secret key to hand over: the unlocked passkey-derived key when
- * that is who the reader is, else the stored browser key (creating one only
- * through the identity module's normal path). Returns null when a passkey
- * identity exists but this session is locked — the caller must have the user
- * sign in first; sharing while locked would bypass the unlock gate.
+ * that is who the reader is, else the stored browser key. NEVER creates a key —
+ * the desktop must only ever receive an identity that already exists (and is
+ * ideally backed up), not a brand-new one minted on this page. Returns null when
+ * a passkey identity exists but this session is locked (the caller must have
+ * the user sign in first), when no identity exists at all (the caller shows a
+ * "sign in / create your identity" state), or when a stored blob is unreadable
+ * (the caller offers a recovery path — it must never hand over a fresh key).
  */
 export function linkDeviceAccountSecretHex(): string | null {
   const passkey = passkeySecretKey();
   if (passkey) return bytesToHex(passkey);
   if (hasPasskeyIdentity()) return null;
-  return storedIdentityHex() ?? getOrCreateIdentity();
+  try {
+    return storedIdentityHex();
+  } catch {
+    // Stored-but-unreadable: surfaced via identityStorageState() so the page
+    // can offer a reset. Never fall through to creating a replacement here.
+    return null;
+  }
 }
 
 /**

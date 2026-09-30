@@ -13,7 +13,11 @@ import { getPublicKey } from "nostr-tools/pure";
 import { parseLinkDeviceRequest } from "@creaton/core/link-device.ts";
 
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
-import { nsecToBytes } from "@/shared/lib/identity";
+import {
+  identityStorageState,
+  nsecToBytes,
+  rotateIdentity,
+} from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import {
   buildLinkDeviceRedirect,
@@ -28,6 +32,8 @@ import {
 type Phase =
   | "invalid"
   | "sign-in"
+  | "no-identity"
+  | "unreadable"
   | "confirm"
   | "linked"
   | "cancelled"
@@ -40,11 +46,19 @@ export function LinkDevicePage() {
   );
   const [phase, setPhase] = React.useState<Phase>(() => {
     if (!request.ok) return "invalid";
-    return hasPasskeyIdentity() && !isPasskeyUnlocked() ? "sign-in" : "confirm";
+    if (hasPasskeyIdentity() && !isPasskeyUnlocked()) return "sign-in";
+    // An unlocked passkey is a ready identity; otherwise this page must NOT
+    // create one. Only proceed when a stored identity already exists — a
+    // read-only visitor is never handed a brand-new, un-backed-up key here.
+    if (hasPasskeyIdentity()) return "confirm";
+    const state = identityStorageState();
+    if (state === "unreadable") return "unreadable";
+    return state === "ready" ? "confirm" : "no-identity";
   });
   const [npub, setNpub] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [signInError, setSignInError] = React.useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = React.useState(false);
 
   const secretHex = React.useMemo(
     () => (phase === "confirm" ? linkDeviceAccountSecretHex() : null),
@@ -130,6 +144,77 @@ export function LinkDevicePage() {
         </section>
       ) : null}
 
+      {phase === "no-identity" ? (
+        <section data-testid="link-device-no-identity">
+          <h1 className="text-base font-semibold">
+            Create your identity first
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            There is no identity on this browser yet, so there is nothing to
+            link to the desktop app. Sign in or create your identity, then open
+            the desktop link again.
+          </p>
+          <a className="mt-4 inline-block text-sm underline" href="/">
+            Go to Creaton
+          </a>
+        </section>
+      ) : null}
+
+      {phase === "unreadable" ? (
+        <section role="alert" data-testid="link-device-unreadable">
+          <h1 className="text-base font-semibold">
+            Your saved identity can&rsquo;t be read
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This browser has a saved identity but it can&rsquo;t be opened, so
+            nothing was shared with the desktop app. If you have a backup,
+            import it in the app. Otherwise you can reset to a new identity —
+            this discards the unreadable one for good.
+          </p>
+          {confirmReset ? (
+            <div className="mt-4 rounded-md border border-black/10 p-3 text-sm dark:border-white/10">
+              <p>
+                Resetting removes the unreadable saved identity and creates a
+                new one. This cannot be undone.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  data-testid="link-device-reset-confirm"
+                  className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+                  onClick={() => {
+                    rotateIdentity();
+                    window.location.assign("/");
+                  }}
+                >
+                  Reset identity
+                </button>
+                <button
+                  type="button"
+                  data-testid="link-device-reset-cancel"
+                  className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium dark:border-white/20"
+                  onClick={() => setConfirmReset(false)}
+                >
+                  Keep it
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="link-device-reset"
+              className="mt-4 rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium dark:border-white/20"
+              onClick={() => setConfirmReset(true)}
+            >
+              Reset identity
+            </button>
+          )}
+          <a className="mt-4 ml-2 inline-block text-sm underline" href="/">
+            Go to Creaton
+          </a>
+        </section>
+      ) : null}
+
       {phase === "confirm" && pubkey ? (
         <section data-testid="link-device-confirm-panel">
           <h1 className="text-base font-semibold">
@@ -171,10 +256,12 @@ export function LinkDevicePage() {
 
       {phase === "linked" ? (
         <section role="status" data-testid="link-device-linked">
-          <h1 className="text-base font-semibold">Desktop linked</h1>
+          <h1 className="text-base font-semibold">
+            Link sent — finish in your desktop app
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            This account is now signed in on the desktop app. Both this page and
-            the desktop show the same account address.
+            The handoff was opened on this device. Finish the steps in the
+            desktop app to sign in there with this account.
           </p>
           <p
             className="mt-3 break-all rounded-md border border-black/10 px-3 py-2 font-mono text-2xs dark:border-white/10"

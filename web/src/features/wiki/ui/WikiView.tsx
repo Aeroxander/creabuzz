@@ -18,7 +18,9 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
+import { canDeletePage } from "../lib/page-index";
 import { describeLive } from "../lib/live-status";
 import { useLiveWikiDoc } from "../wiki-sync";
 import { PageDialog } from "./PageDialog";
@@ -76,7 +78,7 @@ export function WikiView({
     strangers,
     rejected,
     live,
-  } = useLiveWikiDoc(activeSlug, published?.content ?? "");
+  } = useLiveWikiDoc(activeSlug, published?.content ?? "", published?.id ?? "");
   const liveText = describeLive(live, { peers, strangers, rejected });
   /** The page being edited, including one that exists only in this editor. */
   const active: WikiPage | null =
@@ -464,28 +466,31 @@ export function WikiView({
               </span>
             )}
             {active ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setDialog({ rename: active.slug })}
-                  key="rename"
-                  className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
-                  data-testid="wiki-rename"
-                  title="Rename this page"
-                >
-                  <Pencil className="h-3 w-3" /> Rename
-                </button>
-                <button
-                  type="button"
-                  key="delete"
-                  onClick={() => setPendingDelete(active)}
-                  className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 text-red-700 dark:border-white/15 dark:text-red-400"
-                  data-testid="wiki-delete"
-                  title="Delete this page"
-                >
-                  <Trash2 className="h-3 w-3" /> Delete
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setDialog({ rename: active.slug })}
+                key="rename"
+                className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+                data-testid="wiki-rename"
+                title="Rename this page"
+              >
+                <Pencil className="h-3 w-3" /> Rename
+              </button>
+            ) : null}
+            {/* The relay only accepts a delete from the newest revision's
+                author, so the button is not shown to anyone else — a control
+                that always fails has no business being clickable. */}
+            {active && canDeletePage(active, existingUserPubkey()) ? (
+              <button
+                type="button"
+                key="delete"
+                onClick={() => setPendingDelete(active)}
+                className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 text-red-700 dark:border-white/15 dark:text-red-400"
+                data-testid="wiki-delete"
+                title="Delete this page"
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </button>
             ) : null}
             {activeSlug ? (
               <button
@@ -604,7 +609,7 @@ export function WikiView({
         confirmLabel="Delete page"
         description={
           pendingDelete
-            ? `“${pendingDelete.slug}” is removed for everyone in this community. Its content is not recoverable.`
+            ? `“${pendingDelete.slug}” is removed from the wiki for everyone. Copies already on the server may remain there until server-side deletion is available.`
             : ""
         }
         onCancel={() => setPendingDelete(null)}

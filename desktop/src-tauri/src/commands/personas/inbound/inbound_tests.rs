@@ -947,7 +947,7 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
     local.acp_command = Some("/opt/custom-acp".into());
     let mut published = local.clone();
     published.shared = true;
-    let event = build_persona_event(&published)
+    let event = build_persona_event(&published, None)
         .unwrap()
         .sign_with_keys(&keys)
         .unwrap();
@@ -968,7 +968,7 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
     // the reset explicit so it also replaces an owner's legacy local command.
     personas[0].acp_command = Some("/opt/custom-acp".into());
     published.acp_command = None;
-    let reset = build_persona_event(&published)
+    let reset = build_persona_event(&published, None)
         .unwrap()
         .sign_with_keys(&keys)
         .unwrap();
@@ -977,14 +977,14 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
     // Non-catalog owner-sync keeps both legacy custom values and clears.
     published.shared = false;
     published.acp_command = Some("/opt/other-acp".into());
-    let custom = build_persona_event(&published)
+    let custom = build_persona_event(&published, None)
         .unwrap()
         .sign_with_keys(&keys)
         .unwrap();
     apply_inbound_persona(&mut personas, persona_from_event(&custom).unwrap());
     assert_eq!(personas[0].acp_command.as_deref(), Some("/opt/other-acp"));
     published.acp_command = None;
-    let clear = build_persona_event(&published)
+    let clear = build_persona_event(&published, None)
         .unwrap()
         .sign_with_keys(&keys)
         .unwrap();

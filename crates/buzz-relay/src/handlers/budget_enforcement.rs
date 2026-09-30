@@ -1050,8 +1050,7 @@ async fn emit_budget_approval_event(
 mod tests {
     use super::*;
 
-    /// The counter-type vocabulary binds to the typed budget limits — this
-    /// mapping IS the governance-action gate's vocabulary (S3 HITL).
+    /// Build a minimal [`ApplicableLimit`] for the binding tests below.
     fn applicable(id: &str, limit: i64, on_exceed: &str) -> ApplicableLimit {
         ApplicableLimit {
             budget_event_id_hex: id.to_string(),
@@ -1095,6 +1094,8 @@ mod tests {
         assert_eq!(select_binding(&budgets, &[0, 1]), 0);
     }
 
+    /// The counter-type vocabulary binds to the typed budget limits — this
+    /// mapping IS the governance-action gate's vocabulary (S3 HITL).
     #[test]
     fn counter_limit_maps_every_class() {
         let mut limits = buzz_sdk::BudgetLimits::default();

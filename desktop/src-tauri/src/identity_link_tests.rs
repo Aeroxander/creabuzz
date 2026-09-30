@@ -317,6 +317,60 @@ fn link_url_refuses_a_non_https_web_host() {
     assert!(normalize_web_origin("app.example.com").is_ok());
 }
 
+// ── Web-host resolution (sign-in must work with no environment) ────────────
+
+#[test]
+fn web_origin_prefers_the_explicit_env_override() {
+    assert_eq!(
+        web_origin_from(Some("app.example.com"), Some("wss://relay.example")).expect("origin"),
+        "https://app.example.com"
+    );
+}
+
+#[test]
+fn web_origin_derives_from_the_active_community_relay() {
+    // The relay serves the web bundle at its own origin: `wss→https` /
+    // `ws→http`, host and port kept.
+    assert_eq!(
+        web_origin_from(None, Some("wss://acme.communities.buzz.xyz")).expect("origin"),
+        "https://acme.communities.buzz.xyz"
+    );
+    assert_eq!(
+        web_origin_from(None, Some("ws://localhost:3000")).expect("origin"),
+        "http://localhost:3000"
+    );
+}
+
+#[test]
+fn web_origin_without_a_community_is_actionable_and_opens_nothing() {
+    let error = web_origin_from(None, None).expect_err("no community");
+    assert!(error.contains("Connect a community first"), "{error}");
+}
+
+#[test]
+fn web_origin_refuses_plain_http_off_loopback() {
+    assert!(web_origin_from(None, Some("ws://relay.example:3000")).is_err());
+}
+
+// ── URL redaction (query strings are payload material) ─────────────────────
+
+#[test]
+fn redaction_keeps_scheme_host_path_and_drops_the_query() {
+    let url =
+        Url::parse("https://app.example.com/link-device?pub=PUBHEX&nonce=NONCEHEX").expect("url");
+    assert_eq!(
+        redact_url_for_log(&url),
+        "https://app.example.com/link-device"
+    );
+    // The opener's scope error embeds the full target URL; the surfaced
+    // message must carry only the redacted form.
+    let detail = format!("Not allowed to open url {}", url.as_str());
+    assert_eq!(
+        sanitized_open_error(&detail, &url),
+        "Not allowed to open url https://app.example.com/link-device"
+    );
+}
+
 // ── Cross-language golden fixture ──────────────────────────────────────────
 
 /// The fixed inputs and the generated wire values, as produced by the actual

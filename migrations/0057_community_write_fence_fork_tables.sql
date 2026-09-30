@@ -1,6 +1,6 @@
 -- creabuzz: put the fork's tenant tables under the community deletion fence.
 --
--- 0054 (evm_identities) and 0056 (budget_consumption, budget_approvals) added
+-- 0045 (evm_identities) and 0047 (budget_consumption, budget_approvals) added
 -- tables carrying community_id but never attached the universal write fence.
 -- The whole-community deletion catalog (`EXPECTED_SCOPED_TABLES`) requires
 -- exact equality between the live scoped tables and the fenced tables, so

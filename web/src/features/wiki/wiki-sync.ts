@@ -48,7 +48,11 @@ import {
 } from "./lib/live-members";
 import { PeerBook } from "./lib/live-peers";
 import type { LiveStatus } from "./lib/live-status";
-import { commitLocalEdit, type CommitResult } from "./lib/text-edit";
+import {
+  commitLocalEdit,
+  seedSnapshot,
+  type CommitResult,
+} from "./lib/text-edit";
 
 const APP_ID = "buzz-wiki";
 
@@ -144,6 +148,9 @@ async function resolveSigningPubkey(): Promise<string | null> {
 export function useLiveWikiDoc(
   slug: string | null,
   initialContent: string,
+  /** Event id of the saved snapshot `initialContent` came from — the seed key
+   * that makes two browsers opening the same page converge to one copy. */
+  snapshotId: string,
 ): {
   content: string;
   setContent: (value: string) => void;
@@ -207,11 +214,10 @@ export function useLiveWikiDoc(
     const text = doc.getText("content");
     textRef.current = text;
     snapshotBaseRef.current = initialContent;
-    if (text.toString().length === 0 && initialContent.length > 0) {
-      doc.transact(() => {
-        text.insert(0, initialContent);
-      }, doc.clientID);
-    }
+    // Seed under a client id derived from the saved snapshot's event id, so
+    // two browsers opening the same page insert the SAME items and converge
+    // to one copy once they exchange state (`lib/text-edit.ts`).
+    seedSnapshot(text, initialContent, snapshotId || initialContent);
 
     // Everything async below is fenced by this flag: the effect re-runs when
     // the page changes, and a result for the previous run must not touch the
@@ -469,7 +475,7 @@ export function useLiveWikiDoc(
       doc.destroy();
       docRef.current = null;
     };
-  }, [slug, initialContent, setRendered]);
+  }, [slug, initialContent, snapshotId, setRendered]);
 
   /**
    * Merge a page snapshot published elsewhere (another tab, or another person

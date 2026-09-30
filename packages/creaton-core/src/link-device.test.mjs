@@ -9,6 +9,7 @@ import {
   checkLinkDevicePayload,
   decodeBase64Url,
   encodeBase64Url,
+  isAllowedLinkDeviceCallback,
   parseLinkDeviceCallback,
   parseLinkDevicePayload,
   parseLinkDeviceRequest,
@@ -83,6 +84,14 @@ test("foreign and malformed links are refused before any redirect", () => {
     "data:text/plain,x",
     "//evil.example",
     "creaton:evil",
+    // Narrowed to creaton://identity exactly: any other creaton target — a
+    // different host, a smuggled path, userinfo, port or query — is refused.
+    "creaton://other",
+    "creaton://identity.evil.example",
+    "creaton://identity/evil",
+    "creaton://identity:8080",
+    "creaton://user@identity",
+    "creaton://identity?x=1",
   ]) {
     const search = `?pub=${pub}&nonce=${NONCE}&cb=${encodeURIComponent(cb)}`;
     const parsed = parseLinkDeviceRequest(search);
@@ -90,6 +99,11 @@ test("foreign and malformed links are refused before any redirect", () => {
     assert.equal(parsed.error, "bad-callback");
     assert.throws(() => buildLinkDeviceCallback(cb, "cipher", OTHER_SK));
   }
+  // The single legitimate callback is accepted and nothing else is.
+  assert.equal(isAllowedLinkDeviceCallback("creaton://identity"), true);
+  assert.equal(isAllowedLinkDeviceCallback("creaton://identity/"), true);
+  assert.equal(isAllowedLinkDeviceCallback("creaton://Identity"), true);
+  assert.equal(isAllowedLinkDeviceCallback("creaton://other"), false);
   assert.equal(
     parseLinkDeviceRequest(`?nonce=${NONCE}&cb=creaton://identity`).error,
     "missing-param",

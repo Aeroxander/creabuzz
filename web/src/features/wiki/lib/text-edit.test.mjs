@@ -3,7 +3,13 @@ import test from "node:test";
 
 import * as Y from "yjs";
 
-import { applyEdit, commitLocalEdit, diffEdit } from "./text-edit.ts";
+import {
+  applyEdit,
+  commitLocalEdit,
+  diffEdit,
+  seedClientId,
+  seedSnapshot,
+} from "./text-edit.ts";
 
 /**
  * Two peers, one shared document, one local editor value.
@@ -136,4 +142,54 @@ test("applyEdit clamps a stale index instead of throwing", () => {
   text.insert(0, "ab");
   applyEdit(text, { index: 99, deleteCount: 5, insert: "!" });
   assert.equal(text.toString(), "ab!");
+});
+
+// ── snapshot seeding ────────────────────────────────────────────────────────
+
+const SNAPSHOT = "intro\n\npara2\n";
+const SNAPSHOT_ID = "9".repeat(64);
+
+test("two independent seeds of one snapshot converge to a single copy", () => {
+  // The production shape behind the doubling bug: two browsers each open the
+  // same saved page, so each inserts the snapshot into its OWN fresh document
+  // before any peer sync. Random seed ids make those two inserts independent
+  // text that both survive the state exchange — the page reads twice. With
+  // seeds keyed to the snapshot's event id both inserts are the same items
+  // and Yjs deduplicates them: one copy plus the live edit.
+  const a = new Y.Doc();
+  const b = new Y.Doc();
+  seedSnapshot(a.getText("content"), SNAPSHOT, SNAPSHOT_ID);
+  seedSnapshot(b.getText("content"), SNAPSHOT, SNAPSHOT_ID);
+  // A live edit on top of the shared seed.
+  const aText = a.getText("content");
+  aText.insert(aText.length, "live ");
+
+  // Both peers exchange full state; text must be one copy either way.
+  Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
+  Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)));
+
+  assert.equal(a.getText("content").toString(), `${SNAPSHOT}live `);
+  assert.equal(b.getText("content").toString(), `${SNAPSHOT}live `);
+});
+
+test("seeding keys on the snapshot id and rekeys live edits away", () => {
+  assert.equal(seedClientId(SNAPSHOT_ID), seedClientId(SNAPSHOT_ID));
+  assert.notEqual(seedClientId("id-one"), seedClientId("id-two"));
+  assert.notEqual(seedClientId(""), 0);
+
+  const doc = new Y.Doc();
+  const own = doc.clientID;
+  seedSnapshot(doc.getText("content"), SNAPSHOT, SNAPSHOT_ID);
+  // Live edits must run under this document's own client id — two peers
+  // editing under the shared seed id would mint colliding item ids.
+  assert.equal(doc.clientID, own);
+  assert.notEqual(doc.clientID, seedClientId(SNAPSHOT_ID));
+});
+
+test("seeding never overwrites an already-seeded document", () => {
+  const doc = new Y.Doc();
+  const text = doc.getText("content");
+  text.insert(0, "existing");
+  seedSnapshot(text, SNAPSHOT, SNAPSHOT_ID);
+  assert.equal(text.toString(), "existing");
 });

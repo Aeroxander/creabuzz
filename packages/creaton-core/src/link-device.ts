@@ -41,6 +41,9 @@ export const LINK_DEVICE_TTL_MS = 5 * 60 * 1000;
 /** The one URL scheme a handoff may return to. */
 export const LINK_DEVICE_CB_SCHEME = "creaton:";
 
+/** The one host a handoff may return to: `creaton://identity`, and nothing else. */
+export const LINK_DEVICE_CB_HOST = "identity";
+
 /** Nonce alphabet and length bounds the desktop must generate within. */
 const NONCE_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
@@ -126,9 +129,12 @@ export function decodeBase64Url(encoded: string): string {
 }
 
 /**
- * True when `cb` is a callback the handoff may redirect to: a parseable
- * `creaton://` URL with nothing smuggled in around it. Everything else —
- * http(s), javascript:, data:, relative paths — is refused.
+ * True when `cb` is exactly the one legitimate callback, `creaton://identity`,
+ * with nothing smuggled in around it. Narrowed to that single scheme + host so
+ * an attacker cannot point the handoff at another `creaton://` target (or a
+ * look-alike) and intercept the account key. Everything else — other
+ * `creaton://` hosts, a path/query/userinfo/port on the host, http(s),
+ * javascript:, data:, relative paths — is refused.
  */
 export function isAllowedLinkDeviceCallback(cb: unknown): boolean {
   if (typeof cb !== "string" || cb.length === 0 || cb.length > 2048) {
@@ -138,11 +144,21 @@ export function isAllowedLinkDeviceCallback(cb: unknown): boolean {
     return false;
   }
   if (!cb.toLowerCase().startsWith("creaton://")) return false;
+  let url: URL;
   try {
-    return new URL(cb).protocol.toLowerCase() === LINK_DEVICE_CB_SCHEME;
+    url = new URL(cb);
   } catch {
     return false;
   }
+  if (url.protocol.toLowerCase() !== LINK_DEVICE_CB_SCHEME) return false;
+  return (
+    url.host.toLowerCase() === LINK_DEVICE_CB_HOST &&
+    url.username === "" &&
+    url.password === "" &&
+    (url.pathname === "" || url.pathname === "/") &&
+    url.search === "" &&
+    url.hash === ""
+  );
 }
 
 /**

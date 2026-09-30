@@ -29,8 +29,11 @@ export interface WikiPage {
   slug: string;
   content: string;
   updatedAt: number;
-  /** Author of the winning snapshot; the delete tombstone must match it. */
+  /** Author of the winning (newest) snapshot. */
   authorPubkey?: string;
+  /** Event id of the winning snapshot — the live-edit seed key. Cache-only
+   * rows (loaded before the first relay query) do not have one. */
+  id?: string;
   /** True for a page that only exists in this editor and is not published yet. */
   draft?: boolean;
 }
@@ -176,10 +179,13 @@ export function useWikiPages(enabled: boolean) {
   }, [enabled, relayQuery.data]);
 
   const pages = useMemo(() => {
-    const bySlug = new Map<string, WikiPage>();
-    for (const page of cached) bySlug.set(page.slug, page);
-    for (const page of relayQuery.data ?? []) bySlug.set(page.slug, page);
-    return [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+    // Once the relay answers, its resolved set is the page list. The cache may
+    // still hold a page the relay has since had deleted — and a deleted page
+    // must not linger in anyone's list — so it only fills the gap before the
+    // first load (and offline).
+    const relayPages = relayQuery.data;
+    if (relayPages) return relayPages;
+    return [...cached].sort((a, b) => a.slug.localeCompare(b.slug));
   }, [cached, relayQuery.data]);
 
   /** Fresh page set straight from the relay, bypassing the query cache. */

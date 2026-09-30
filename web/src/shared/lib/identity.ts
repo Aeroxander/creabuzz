@@ -53,51 +53,89 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
-/** Encrypt and persist the account key; creates the wrap key when missing. */
-function writeEncryptedIdentity(hex: string): void {
-  try {
-    let wrap = window.localStorage.getItem(IDENTITY_WRAP_KEY);
-    if (!wrap) {
-      wrap = bytesToHex(generateSecretKey());
-      window.localStorage.setItem(IDENTITY_WRAP_KEY, wrap);
-    }
-    window.localStorage.setItem(
-      IDENTITY_STORAGE_KEY,
-      String(nip49Encrypt(nsecToBytes(hex), wrap)),
-    );
-  } catch {
-    // storage unavailable — the in-memory copy keeps this session working
+/**
+ * A stored identity blob exists but cannot be read back (missing wrap key,
+ * failed NIP-49 decrypt, or a value that is neither a valid legacy hex key nor
+ * an `ncryptsec1` blob). This is a hard error, never "treat as unstored":
+ * returning null here is exactly how a caller silently mints a brand-new key
+ * and overwrites the user's real one. Callers surface this to the user with a
+ * recovery path (reset / re-import) instead of regenerating.
+ */
+export class StoredIdentityUnreadableError extends Error {
+  constructor() {
+    super("Stored identity exists but cannot be read");
+    this.name = "StoredIdentityUnreadableError";
   }
+}
+
+/** Read a storage key without throwing (storage may be unavailable). */
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encrypt and persist the account key; creates the wrap key when missing.
+ * Write failures PROPAGATE (they used to be swallowed, which left a freshly
+ * minted key living only in memory — gone on reload). Callers on the create /
+ * import path must let the error surface so the user never believes a key was
+ * saved when it was not.
+ */
+function writeEncryptedIdentity(hex: string): void {
+  let wrap = readStorage(IDENTITY_WRAP_KEY);
+  if (!wrap) {
+    wrap = bytesToHex(generateSecretKey());
+    window.localStorage.setItem(IDENTITY_WRAP_KEY, wrap);
+  }
+  window.localStorage.setItem(
+    IDENTITY_STORAGE_KEY,
+    String(nip49Encrypt(nsecToBytes(hex), wrap)),
+  );
 }
 
 /**
  * The stored account secret key (hex), decrypting the NIP-49 form. A legacy
  * plaintext value is re-encrypted on this first read — one atomic overwrite
- * to the encrypted form, same logical identity. Returns null when nothing is
- * stored (it never creates an identity).
+ * to the encrypted form, same logical identity (best-effort: the plaintext key
+ * is still durable if that upgrade write fails, so this never turns a working
+ * key into a dead end). Returns null ONLY when nothing is stored. When a blob
+ * exists but cannot be decrypted it throws {@link StoredIdentityUnreadableError}
+ * — it must never fall through to "unstored" and let a caller regenerate over
+ * the user's identity.
  */
 export function storedIdentityHex(): string | null {
   if (cachedSecretHex) return cachedSecretHex;
-  try {
-    const raw = window.localStorage.getItem(IDENTITY_STORAGE_KEY);
-    if (!raw) return null;
-    if (/^[0-9a-fA-F]{64}$/.test(raw)) {
-      const hex = raw.toLowerCase();
+  const raw = readStorage(IDENTITY_STORAGE_KEY);
+  if (!raw) return null;
+  let hex: string;
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) {
+    hex = raw.toLowerCase();
+    try {
+      // Best-effort upgrade to the encrypted form; the plaintext remains valid
+      // if this write fails, so the identity is never lost here.
       writeEncryptedIdentity(hex);
-      cachedSecretHex = hex;
-      return hex;
+    } catch {
+      // keep the plaintext key; retry the upgrade on the next write
     }
-    if (raw.startsWith("ncryptsec1")) {
-      const wrap = window.localStorage.getItem(IDENTITY_WRAP_KEY);
-      if (!wrap) return null;
-      const hex = bytesToHex(nip49Decrypt(raw, wrap));
-      cachedSecretHex = hex;
-      return hex;
-    }
-  } catch {
-    // ignore — treat as unstored
+    cachedSecretHex = hex;
+    return hex;
   }
-  return null;
+  if (raw.startsWith("ncryptsec1")) {
+    const wrap = readStorage(IDENTITY_WRAP_KEY);
+    if (!wrap) throw new StoredIdentityUnreadableError();
+    try {
+      hex = bytesToHex(nip49Decrypt(raw, wrap));
+    } catch {
+      throw new StoredIdentityUnreadableError();
+    }
+    cachedSecretHex = hex;
+    return hex;
+  }
+  // A value that is neither form is stored-but-unreadable, not "unstored".
+  throw new StoredIdentityUnreadableError();
 }
 
 /** Drop the in-memory decrypted key (sign-out, reset, tests). */
@@ -170,12 +208,41 @@ export function existingUserPubkey(): string | null {
   return null;
 }
 
-/** Create or load the stored identity; returns the hex nsec. */
+/**
+ * The identity-storage state, for UI that must distinguish "no identity yet"
+ * (offer sign-in / create) from "identity present" from "identity present but
+ * unreadable" (offer a recovery path — reset / re-import — never silently
+ * replace it). Read-only: this never creates or overwrites anything.
+ */
+export function identityStorageState(): "empty" | "ready" | "unreadable" {
+  const raw = readStorage(IDENTITY_STORAGE_KEY);
+  if (!raw) return "empty";
+  try {
+    return storedIdentityHex() ? "ready" : "empty";
+  } catch {
+    return "unreadable";
+  }
+}
+
+/**
+ * Create or load the stored identity; returns the hex nsec.
+ *
+ * This is the only path that mints a durable key, and it MUST NOT overwrite a
+ * stored blob it cannot read. When a blob exists but is unreadable,
+ * `storedIdentityHex()` throws and that propagates here — the create path
+ * refuses to write rather than destroy the user's real identity. A write
+ * failure also propagates, so a key is never handed back memory-only.
+ */
 export function getOrCreateIdentity(): string {
-  const existing = storedIdentityHex();
+  const existing = storedIdentityHex(); // throws on stored-but-unreadable
   if (existing) return existing;
+  // Nothing is stored (storedIdentityHex returned null). Re-check the raw key
+  // as defense-in-depth: never write over any blob we could not read.
+  if (readStorage(IDENTITY_STORAGE_KEY)) {
+    throw new StoredIdentityUnreadableError();
+  }
   const hex = bytesToHex(generateSecretKey());
-  writeEncryptedIdentity(hex);
+  writeEncryptedIdentity(hex); // propagates write failure — no memory-only key
   cachedSecretHex = hex;
   return hex;
 }
