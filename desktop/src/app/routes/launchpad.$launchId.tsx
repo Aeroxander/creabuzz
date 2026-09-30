@@ -2,7 +2,6 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { LaunchDetailScreen } from "@/features/launchpad/ui/LaunchDetailScreen";
-import { usePreviewFeatureWarning } from "@/shared/features";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 export const Route = createFileRoute("/launchpad/$launchId")({
@@ -16,7 +15,6 @@ export const Route = createFileRoute("/launchpad/$launchId")({
 });
 
 function LaunchDetailRouteComponent() {
-  usePreviewFeatureWarning("launchpad");
   const { launchId } = Route.useParams();
   const { author } = Route.useSearch();
   return (

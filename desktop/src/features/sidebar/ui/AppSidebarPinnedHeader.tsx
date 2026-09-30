@@ -6,7 +6,6 @@ import {
   Inbox,
   Rocket,
   Zap,
-  Paperclip,
   Network,
 } from "lucide-react";
 
@@ -33,7 +32,6 @@ type SidebarSelectedView =
   | "pulse"
   | "projects"
   | "launchpad"
-  | "paperclip"
   | "org"
   | "wiki";
 
@@ -62,7 +60,6 @@ type AppSidebarPrimaryMenuProps = {
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
-  onSelectPaperclip: () => void;
   onSelectWiki: () => void;
   projectsOverviewActive: boolean;
   selectedView: SidebarSelectedView;
@@ -116,7 +113,6 @@ export function AppSidebarPrimaryMenu({
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
-  onSelectPaperclip,
   onSelectWiki,
   projectsOverviewActive,
   selectedView,
@@ -163,20 +159,18 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
-          <FeatureGate feature="launchpad">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                data-testid="open-launchpad-view"
-                isActive={selectedView === "launchpad"}
-                onClick={onSelectLaunchpad}
-                tooltip="Launchpad"
-                type="button"
-              >
-                <Rocket className="h-4 w-4" />
-                <SidebarMenuLabel>Launchpad</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </FeatureGate>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              data-testid="open-launchpad-view"
+              isActive={selectedView === "launchpad"}
+              onClick={onSelectLaunchpad}
+              tooltip="Launchpad"
+              type="button"
+            >
+              <Rocket className="h-4 w-4" />
+              <SidebarMenuLabel>Launchpad</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <FeatureGate feature="projects">
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -216,23 +210,6 @@ export function AppSidebarPrimaryMenu({
               >
                 <Zap className="h-4 w-4" />
                 <SidebarMenuLabel>Workflows</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </FeatureGate>
-          {/* Deprecated on-ramp: Org and Wiki replace it, so it is hidden
-              unless the `paperclip` preview feature is enabled. */}
-          <FeatureGate feature="paperclip">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                aria-current={selectedView === "paperclip" ? "page" : undefined}
-                data-testid="open-paperclip-view"
-                isActive={selectedView === "paperclip"}
-                onClick={onSelectPaperclip}
-                tooltip="Paperclip"
-                type="button"
-              >
-                <Paperclip className="h-4 w-4" />
-                <SidebarMenuLabel>Paperclip</SidebarMenuLabel>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>

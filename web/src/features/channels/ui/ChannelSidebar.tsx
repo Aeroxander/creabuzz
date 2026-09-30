@@ -1,9 +1,18 @@
-import { ChevronDown, Hash, LoaderCircle, Lock, Users } from "lucide-react";
+import {
+  ChevronDown,
+  Hash,
+  LoaderCircle,
+  Lock,
+  Plus,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/shared/ui/button";
 import { errorMessage } from "@/shared/ui/query-error";
 
 import type { Channel } from "../use-channels";
+import { CreateChannelDialog } from "./CreateChannelDialog";
 
 export function ChannelSidebar({
   channels,
@@ -24,21 +33,34 @@ export function ChannelSidebar({
   onLoadMore?: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [creating, setCreating] = useState(false);
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col">
-      <button
-        type="button"
-        onClick={() => setCollapsed((v) => !v)}
-        aria-expanded={!collapsed}
-        className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-black/70 dark:text-white/70"
-      >
-        <Users className="h-4 w-4" /> Channels
-        <ChevronDown
-          className={`ml-auto h-3.5 w-3.5 text-black/60 transition-transform dark:text-white/60 ${
-            collapsed ? "-rotate-90" : ""
-          }`}
-        />
-      </button>
+      <div className="flex items-center gap-1 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="flex items-center gap-2 text-sm font-semibold text-black/70 dark:text-white/70"
+        >
+          <Users className="h-4 w-4" /> Channels
+          <ChevronDown
+            className={`h-3.5 w-3.5 text-black/60 transition-transform dark:text-white/60 ${
+              collapsed ? "-rotate-90" : ""
+            }`}
+          />
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 gap-1 px-2 text-xs"
+          onClick={() => setCreating(true)}
+          data-testid="new-channel"
+        >
+          <Plus className="h-3.5 w-3.5" /> New channel
+        </Button>
+      </div>
       {!collapsed && (
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           {channels.map((channel) => (
@@ -107,6 +129,7 @@ export function ChannelSidebar({
       <p className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
         {channels.length} channel{channels.length === 1 ? "" : "s"}
       </p>
+      <CreateChannelDialog open={creating} onOpenChange={setCreating} />
     </aside>
   );
 }

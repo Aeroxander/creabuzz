@@ -70,6 +70,50 @@ export async function previewIdentityImport(
   });
 }
 
+export type IdentityLinkStart = {
+  /** Id of the one-time sign-in request — fences later results. */
+  id: string;
+  /** The `link-device` URL the system browser opens. */
+  url: string;
+};
+
+export type IdentityLinkResult = {
+  /** Request this result belongs to; null when no request matched. */
+  id: string | null;
+  status: "linked" | "rejected";
+  /** Linked account's public identifier (npub), on success. */
+  npub?: string | null;
+  /** Stable rejection reason code, on failure. */
+  reason?: string | null;
+};
+
+/**
+ * Begin the browser sign-in (Rust: `start_identity_link`): generates a
+ * one-time device key + nonce, registers the single-use request, and opens
+ * the system browser at the web app's link page.
+ */
+export async function startIdentityLink(): Promise<IdentityLinkStart> {
+  return invokeTauri<IdentityLinkStart>("start_identity_link");
+}
+
+/** Abandon any outstanding sign-in request (Rust: `cancel_identity_link`). */
+export async function cancelIdentityLink(): Promise<void> {
+  await invokeTauri("cancel_identity_link");
+}
+
+/**
+ * Consume the queued sign-in result, if any (Rust:
+ * `take_identity_link_result`) — picks up a result that raced the live
+ * `deep-link-identity` event subscription.
+ */
+export async function takeIdentityLinkResult(): Promise<IdentityLinkResult | null> {
+  return (
+    (await invokeTauri<IdentityLinkResult | null>(
+      "take_identity_link_result",
+    )) ?? null
+  );
+}
+
 export async function persistCurrentIdentity(): Promise<Identity> {
   return fromRawIdentity(
     await invokeTauri<RawIdentity>("persist_current_identity"),

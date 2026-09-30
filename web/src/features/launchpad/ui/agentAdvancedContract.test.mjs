@@ -27,12 +27,14 @@ const CHECKBOX_LABEL = "Sign as agent instead of me";
 
 /**
  * The disclosure lives in the dialog; the body it opens — checkbox, explainer
- * and all — moved to `create-wizard/LegacyFields.tsx` when the wizard took
- * over the happy path. Both halves are read from production, so a field that
- * escapes the drawer still fails here.
+ * and all — lives in `create-wizard/AdvancedFields.tsx`, the shared advanced
+ * fields the wizard's Advanced drawer and the edit surface both render. Both
+ * halves are read from production, so a field that escapes the drawer still
+ * fails here.
  */
 const LAUNCH_DIALOG = "src/features/launchpad/ui/CreateLaunchDialog.tsx";
-const LAUNCH_BODY = "src/features/launchpad/ui/create-wizard/LegacyFields.tsx";
+const LAUNCH_BODY =
+  "src/features/launchpad/ui/create-wizard/AdvancedFields.tsx";
 
 test("the launch agent option sits in an Advanced disclosure", () => {
   const source = read(LAUNCH_DIALOG);

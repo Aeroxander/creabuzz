@@ -10,6 +10,11 @@ import {
   useMentionCandidates,
   candidateName,
 } from "@/features/fleet/use-mention-candidates";
+import {
+  useChannelTyping,
+  useTypingBroadcast,
+} from "@/features/presence/use-typing";
+import { TypingIndicator } from "@/features/presence/ui/TypingIndicator";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 export interface EditTarget {
@@ -39,6 +44,10 @@ export function Composer({
   const [uploading, setUploading] = useState(false);
   const [identityError, setIdentityError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Typing indicators: throttled broadcast while the draft changes, and the
+  // live "X is typing…" line for everyone else in this channel.
+  const notifyTyping = useTypingBroadcast(channelId, replyTo);
+  const typingEntries = useChannelTyping(channelId);
 
   const isEditing = editTarget != null;
 
@@ -96,6 +105,7 @@ export function Composer({
 
   const onDraftChange = (value: string) => {
     setDraft(value);
+    notifyTyping();
     const caret = textareaRef.current?.selectionStart ?? value.length;
     const atIndex = value.lastIndexOf("@", caret - 1);
     if (atIndex >= 0 && (atIndex === 0 || value[atIndex - 1] === " ")) {
@@ -188,6 +198,7 @@ export function Composer({
           </button>
         </div>
       )}
+      <TypingIndicator entries={typingEntries} />
       <div className="rounded-2xl border border-black/10 bg-white px-3 pt-2.5 pb-2 shadow-xs dark:border-white/10 dark:bg-white/5">
         {mentionQuery !== null && filteredMentions.length > 0 ? (
           <div className="mb-1.5 rounded-md border border-black/10 bg-background shadow-lg dark:border-white/10">

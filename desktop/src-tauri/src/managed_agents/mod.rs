@@ -49,11 +49,6 @@ pub(crate) use team_repair::team_persona_key;
 mod teams;
 mod types;
 
-// Paperclip integration
-pub(crate) mod paperclip_env;
-pub(crate) mod paperclip_http;
-pub(crate) mod paperclip_manager;
-
 // Shared lock for tests that call `lock_path_mutex` or `lock_env_mutex`.
 // Both helpers delegate here so any two tests using either helper are mutually
 // exclusive with each other. Tests in other modules that maintain their own

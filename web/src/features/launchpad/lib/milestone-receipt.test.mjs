@@ -129,3 +129,45 @@ test("a delegate mirror records the authority assignment (and its tx)", () => {
   // and is NOT a budget-gated class (see the parts doc).
   assert.ok(parts.extraTags.some(([n, v]) => n === "kind" && v === "delegate"));
 });
+
+test("golden: a claim mirror is the CLI's record-claim shape exactly", () => {
+  // `claim_receipt_parts` in `crates/buzz-cli/src/commands/launchpad.rs` —
+  // the tag order and content members the CLI signs, element for element.
+  const evidence = "c".repeat(64);
+  const parts = claimReceiptParts({
+    claimId: "milestone-1",
+    evidenceHash: evidence,
+    tx: TX,
+  });
+  assert.deepEqual(parts.extraTags, [
+    ["kind", "claim"],
+    ["claim", "milestone-1"],
+    ["evidence", evidence],
+    ["tx", TX],
+  ]);
+  assert.deepEqual(parts.content, {
+    table: "claim",
+    claim: "milestone-1",
+    evidenceHash: evidence,
+  });
+});
+
+test("golden: a verdict mirror is the CLI's record-verdict shape exactly", () => {
+  // `verdict_receipt_parts` in `crates/buzz-cli/src/commands/launchpad.rs` —
+  // including the closed approve|reject word (a word, never a boolean).
+  const parts = verdictReceiptParts({
+    claimId: "milestone-1",
+    verdict: "reject",
+    tx: TX,
+  });
+  assert.deepEqual(parts.extraTags, [
+    ["kind", "verdict"],
+    ["claim", "milestone-1"],
+    ["tx", TX],
+  ]);
+  assert.deepEqual(parts.content, {
+    table: "verdict",
+    claim: "milestone-1",
+    verdict: "reject",
+  });
+});

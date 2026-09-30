@@ -3,7 +3,9 @@ import {
   Bot,
   ListChecks,
   Menu,
+  MessageSquare,
   Search,
+  ShieldCheck,
   Users,
   Zap,
 } from "lucide-react";
@@ -14,6 +16,7 @@ import type { Channel } from "../use-channels";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
+import { useModerationAccess } from "@/features/moderation/use-moderation-queue";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
@@ -40,6 +43,14 @@ const WorkBoard = lazy(() =>
 const SearchResults = lazy(() =>
   import("@/features/search/ui/SearchResults").then((m) => ({
     default: m.SearchResults,
+  })),
+);
+const DmView = lazy(() =>
+  import("@/features/dms/DmView").then((m) => ({ default: m.DmView })),
+);
+const ModerationQueuePanel = lazy(() =>
+  import("@/features/moderation/ui/ModerationQueuePanel").then((m) => ({
+    default: m.ModerationQueuePanel,
   })),
 );
 
@@ -98,6 +109,17 @@ export function CommunityShell({
   const [showingFleet, setShowingFleet] = useState(initialView === "fleet");
   const [showingWork, setShowingWork] = useState(initialView === "work");
   const [showingOrg, setShowingOrg] = useState(initialView === "org");
+  /**
+   * Direct messages panel. Local state like search (not a linkable URL view)
+   * so the community route stays untouched.
+   */
+  const [showingDms, setShowingDms] = useState(false);
+  /**
+   * Moderation queue (local state like DMs — not a linkable URL view).
+   * The entry is owner/moderator-gated by the server's access probe.
+   */
+  const [showingModeration, setShowingModeration] = useState(false);
+  const { access: moderationAccess } = useModerationAccess();
   /**
    * Slide-over channel list. Below `lg` the panel is off-canvas, so this is the
    * only way to reach it; at `lg` and up it is a static column and this state
@@ -167,6 +189,8 @@ export function CommunityShell({
   const setView = (view: "wiki" | "fleet" | "work" | "org") => {
     // The toggles live in the slide-over: dismiss it so the view is visible.
     setSidebarOpen(false);
+    setShowingDms(false);
+    setShowingModeration(false);
     const active =
       view === "wiki"
         ? showingWiki
@@ -241,6 +265,8 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setShowingDms(false);
+              setShowingModeration(false);
               setSidebarOpen(false);
             }}
             onOpenWork={() => setView("work")}
@@ -330,6 +356,56 @@ export function CommunityShell({
             <Users className="h-3.5 w-3.5" />
             Org
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm("");
+              setSidebarOpen(false);
+              const next = !showingDms;
+              setShowingWiki(false);
+              setShowingFleet(false);
+              setShowingWork(false);
+              setShowingOrg(false);
+              setShowingModeration(false);
+              setShowingDms(next);
+              writeView(undefined);
+            }}
+            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+              showingDms
+                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+            }`}
+            data-testid="dms-toggle"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Messages
+          </button>
+          {moderationAccess === "granted" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm("");
+                setSidebarOpen(false);
+                const next = !showingModeration;
+                setShowingWiki(false);
+                setShowingFleet(false);
+                setShowingWork(false);
+                setShowingOrg(false);
+                setShowingDms(false);
+                setShowingModeration(next);
+                writeView(undefined);
+              }}
+              className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                showingModeration
+                  ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                  : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+              }`}
+              data-testid="moderation-toggle"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Moderation
+            </button>
+          ) : null}
           <ChannelSidebar
             channels={channels}
             hasMore={
@@ -349,6 +425,8 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setShowingDms(false);
+              setShowingModeration(false);
               setSidebarOpen(false);
             }}
           />
@@ -375,7 +453,19 @@ export function CommunityShell({
             </span>
           </div>
           <div className="buzz-content-card mb-2 mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col">
-            {showingOrg ? (
+            {showingDms ? (
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading messages…" />}
+              >
+                <DmView />
+              </Suspense>
+            ) : showingModeration ? (
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading reports…" />}
+              >
+                <ModerationQueuePanel />
+              </Suspense>
+            ) : showingOrg ? (
               <Suspense fallback={<ViewLoadingFallback label="Loading org…" />}>
                 <OrgView />
               </Suspense>

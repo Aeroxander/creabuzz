@@ -114,9 +114,6 @@ pub struct AppState {
     /// itself owns direct QUIC/iroh connection establishment.
     #[cfg(feature = "mesh-llm")]
     pub mesh_coordinator: AsyncMutex<Option<crate::mesh_llm::MeshCoordinator>>,
-    /// Paperclip orchestration server manager.
-    pub paperclip_manager: AsyncMutex<crate::managed_agents::paperclip_manager::PaperclipManager>,
-    pub paperclip_stop_requested: AtomicBool,
     /// `(creator_pubkey_hex, channel_id)` pairs for channels the *named*
     /// identity created via `create_channel` and has not yet observed its own
     /// kind:39002 membership entry for. The relay provisions that entry
@@ -242,10 +239,6 @@ pub fn build_app_state() -> AppState {
         mesh_recovery: crate::mesh_llm::MeshRecoveryState::default(),
         #[cfg(feature = "mesh-llm")]
         mesh_coordinator: AsyncMutex::new(None),
-        paperclip_manager: AsyncMutex::new(
-            crate::managed_agents::paperclip_manager::PaperclipManager::new(),
-        ),
-        paperclip_stop_requested: AtomicBool::new(false),
         pending_owned_channels: Mutex::new(std::collections::HashSet::new()),
         relay_self_cache: Mutex::new(HashMap::new()),
         archive_db: crate::archive::ArchiveDb::default(),

@@ -11,6 +11,7 @@ mod egress_guard;
 mod event_sync;
 mod events;
 mod huddle;
+mod identity_link;
 mod identity_storage;
 mod initial_window;
 mod key_backup;
@@ -34,9 +35,6 @@ mod native_websocket_batch;
 mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;
-#[cfg(target_os = "macos")]
-mod passkey_ceremony;
-mod passkey_derive;
 mod persona_catalog;
 mod prevent_sleep;
 mod ptt_shortcut;
@@ -78,6 +76,10 @@ use huddle::{
     remove_agent_from_huddle, set_huddle_manual_mic_unmuted, set_huddle_transcription_enabled,
     set_tts_enabled, set_voice_input_mode, speak_agent_message, start_huddle, start_stt_pipeline,
     HuddlePhase,
+};
+use identity_link::{
+    cancel_identity_link, start_identity_link, take_identity_link_result, IdentityLinkResults,
+    PendingIdentityLinks,
 };
 use initial_window::*;
 use managed_agents::{
@@ -201,7 +203,6 @@ pub fn run() {
                 .build(),
         )
         .plugin(native_websocket::init())
-        .plugin(nip07_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init());
 
@@ -230,6 +231,8 @@ pub fn run() {
         .manage(PendingCommunityDeepLinks::default())
         .manage(PendingNavigationDeepLinks::default())
         .manage(PendingEntityDeepLinks::default())
+        .manage(PendingIdentityLinks::default())
+        .manage(IdentityLinkResults::default())
         .manage(BuilderlabSession::default())
         .manage(BuilderlabLogin::default())
         .manage(commands::pairing::PairingHandle::new())
@@ -555,9 +558,9 @@ pub fn run() {
             unarchive_builderlab_community,
             transfer_builderlab_community,
             title_bar_double_click,
-            passkey_capability,
-            passkey_create,
-            passkey_get,
+            start_identity_link,
+            cancel_identity_link,
+            take_identity_link_result,
             get_identity,
             get_nsec,
             generate_backup_passphrase,
@@ -859,13 +862,6 @@ pub fn run() {
             list_audio_output_devices,
             set_audio_output_device,
             get_audio_output_device,
-            paperclip_status,
-            start_paperclip,
-            stop_paperclip,
-            open_paperclip_window,
-            set_paperclip_window_bounds,
-            paperclip_window_is_docked,
-            close_paperclip_window,
             start_pairing,
             start_identity_recovery_pairing,
             confirm_pairing_sas,

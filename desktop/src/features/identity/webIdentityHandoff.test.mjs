@@ -1,19 +1,17 @@
 /**
- * Replace-confirmation state machine + honesty copy + Rust↔TS wire seam for
- * the interim web → desktop identity handoff
- * (`./webIdentityHandoff.ts`, `commands/identity.rs`, `shared/api/tauriIdentity.ts`).
+ * Browser → desktop account handoff state machine + copy + Rust↔TS wire
+ * seam (`./webIdentityHandoff.ts`, `src-tauri/src/identity_link.rs`,
+ * `shared/api/tauriIdentity.ts`).
  *
  * Falsifiability:
- * - The cancel guard: a reviewed candidate that is cancelled must never
- *   reach `importNsec` — the mutating command is reachable only from the
- *   `ready` phase via `confirm()`. Weaken that wiring and these tests go red.
- * - The fence: `confirm()` must pass the previewed `currentNpub` so Rust's
- *   compare-and-swap can refuse a stale replacement.
- * - The generation fence: a preview that resolves after `cancel()` must not
- *   resurrect the state (stale async result, Review-Proven Rule 2).
- * - The wire seam parses the REAL Rust and TS sources, so renaming
- *   `preview_identity_import`, dropping `expected_current_npub`, or forgetting
- *   to register the command in `lib.rs` fails here, not at runtime.
+ * - The request-id fence: a result from a previous request — or a stray
+ *   payload — must never apply to the flow on screen. Weaken the fence and
+ *   these tests go red (Review-Proven Rule 2).
+ * - The generation fence: a `start()` that resolves after `cancel()` must
+ *   not resurrect the state.
+ * - The wire seam parses the REAL Rust and TS sources, so renaming a
+ *   command, dropping the nonce check, or forgetting to register the
+ *   commands in `lib.rs` fails here, not at runtime.
  */
 
 import assert from "node:assert/strict";
@@ -22,30 +20,14 @@ import test from "node:test";
 
 import {
   createWebIdentityHandoff,
+  rejectedCopy,
   WEB_IDENTITY_HANDOFF_COPY,
 } from "./webIdentityHandoff.ts";
 
-const NSEC = "nsec1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs4rm7hz";
-const CANDIDATE_NPUB =
-  "npub1fu64hh9hes90w2808n8tjc2ajp5yhddjef0ctx4s7zmsgp6cwx4qgy4eg9";
-const CURRENT_NPUB =
-  "npub1currentcurrentcurrentcurrentcurrentcurrentcurrentcurrent2q";
-
-const PREVIEW = {
-  pubkey: "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
-  npub: CANDIDATE_NPUB,
-  currentNpub: CURRENT_NPUB,
-  matchesCurrentIdentity: false,
-};
-
-const IMPORTED_IDENTITY = {
-  pubkey: PREVIEW.pubkey,
-  displayName: "4f355b…71aa",
-  storage: "system-keyring",
-  lost: false,
-  locked: false,
-  resetFailed: false,
-};
+const REQUEST_ID = "11111111-1111-1111-1111-111111111111";
+const STALE_ID = "99999999-9999-9999-9999-999999999999";
+const LINK_URL = "https://app.example.com/link-device?pub=aa&nonce=bb&cb=x";
+const NPUB = "npub1fu64hh9hes90w2808n8tjc2ajp5yhddjef0ctx4s7zmsgp6cwx4qgy4eg9";
 
 function deferred() {
   let resolve;
@@ -57,255 +39,184 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function recordingDeps(overrides = {}) {
-  const calls = { preview: [], importNsec: [], onImported: [] };
+function harness(overrides = {}) {
+  const calls = { start: 0, cancel: 0, linked: [] };
+  let listener = () => {};
   const deps = {
-    preview: async (nsec) => {
-      calls.preview.push(nsec);
-      return overrides.previewResult ?? PREVIEW;
+    start: async () => {
+      calls.start += 1;
+      return { id: REQUEST_ID, url: LINK_URL };
     },
-    importNsec: async (nsec, expectedCurrentNpub) => {
-      calls.importNsec.push([nsec, expectedCurrentNpub]);
-      if (overrides.importError) throw overrides.importError;
-      return overrides.imported ?? IMPORTED_IDENTITY;
+    cancel: () => {
+      calls.cancel += 1;
     },
-    onImported: (identity) => {
-      calls.onImported.push(identity);
+    results: (fn) => {
+      listener = fn;
+      return () => {
+        listener = () => {};
+      };
     },
-    ...overrides.extraDeps,
+    onLinked: (npub) => {
+      calls.linked.push(npub);
+    },
+    ...overrides,
   };
-  return { deps, calls };
+  const handoff = createWebIdentityHandoff(deps);
+  return {
+    calls,
+    handoff,
+    emit: (result) => listener(result),
+  };
 }
 
-test("a cancelled review never reaches the import command", async () => {
-  const { deps, calls } = recordingDeps();
-  const handoff = createWebIdentityHandoff(deps);
-
-  await handoff.check(NSEC);
-  assert.equal(handoff.getState().phase, "ready");
-
-  handoff.cancel();
-  assert.deepEqual(handoff.getState(), { phase: "idle" });
-
-  // The falsifiable guard: nothing mutated the identity.
-  assert.deepEqual(calls.importNsec, []);
-  assert.deepEqual(calls.onImported, []);
-});
-
-test("confirm imports exactly once, fenced to the previewed current npub", async () => {
-  const { deps, calls } = recordingDeps();
-  const handoff = createWebIdentityHandoff(deps);
-
-  await handoff.check(NSEC);
-  await handoff.confirm();
-
-  assert.deepEqual(calls.importNsec, [[NSEC, CURRENT_NPUB]]);
-  assert.deepEqual(calls.onImported, [IMPORTED_IDENTITY]);
-  assert.deepEqual(handoff.getState(), {
-    phase: "replaced",
-    identity: IMPORTED_IDENTITY,
-    npub: CANDIDATE_NPUB,
+test("start opens the flow and waits for its request", async () => {
+  const view = harness();
+  await view.handoff.start();
+  assert.equal(view.calls.start, 1);
+  assert.deepEqual(view.handoff.getState(), {
+    phase: "waiting",
+    requestId: REQUEST_ID,
+    linkUrl: LINK_URL,
   });
 });
 
-test("confirm without a reviewed preview is a no-op", async () => {
-  const { deps, calls } = recordingDeps();
-  const handoff = createWebIdentityHandoff(deps);
-
-  // From idle…
-  await handoff.confirm();
-  // …and from a state the user already cancelled out of.
-  await handoff.check(NSEC);
-  handoff.cancel();
-  await handoff.confirm();
-
-  assert.deepEqual(calls.importNsec, []);
+test("a second start is ignored while one is waiting", async () => {
+  const view = harness();
+  await view.handoff.start();
+  await view.handoff.start();
+  assert.equal(view.calls.start, 1);
 });
 
-test("a preview that resolves after cancel cannot resurrect the state", async () => {
-  const pending = deferred();
-  const calls = { preview: [], importNsec: [], onImported: [] };
-  const handoff = createWebIdentityHandoff({
-    preview: (nsec) => {
-      calls.preview.push(nsec);
-      return pending.promise;
-    },
-    importNsec: async (nsec, expected) => {
-      calls.importNsec.push([nsec, expected]);
-      return IMPORTED_IDENTITY;
-    },
-    onImported: (identity) => calls.onImported.push(identity),
-  });
-
-  const inFlight = handoff.check(NSEC);
-  assert.equal(handoff.getState().phase, "checking");
-  handoff.cancel();
-  pending.resolve(PREVIEW);
-  await inFlight;
-
-  assert.deepEqual(handoff.getState(), { phase: "idle" });
-  assert.deepEqual(calls.importNsec, [], "stale preview must not become ready");
+test("the matching linked result links the account", async () => {
+  const view = harness();
+  await view.handoff.start();
+  view.emit({ id: REQUEST_ID, status: "linked", npub: NPUB });
+  assert.deepEqual(view.handoff.getState(), { phase: "linked", npub: NPUB });
+  assert.deepEqual(view.calls.linked, [NPUB]);
 });
 
-test("a stale confirm after a newer check never imports the old candidate", async () => {
-  const first = deferred();
-  const previews = [first.promise, Promise.resolve(PREVIEW)];
-  const calls = { importNsec: [] };
-  const handoff = createWebIdentityHandoff({
-    preview: () => previews.shift(),
-    importNsec: async (nsec, expected) => {
-      calls.importNsec.push([nsec, expected]);
-      return IMPORTED_IDENTITY;
-    },
-    onImported: () => {},
-  });
-
-  const firstCheck = handoff.check("nsec1firstcandidate");
-  await handoff.check(NSEC); // supersedes the in-flight check
-  first.resolve(PREVIEW); // stale result lands late
-  await firstCheck;
-
-  const state = handoff.getState();
-  assert.equal(state.phase, "ready");
-  assert.equal(state.nsec, NSEC, "the newest candidate is the reviewed one");
-  assert.deepEqual(calls.importNsec, []);
+test("a stale linked result is fenced away", async () => {
+  const view = harness();
+  await view.handoff.start();
+  view.emit({ id: STALE_ID, status: "linked", npub: NPUB });
+  assert.equal(view.handoff.getState().phase, "waiting");
+  assert.deepEqual(view.calls.linked, []);
 });
 
-test("check failures surface the parse error and never import", async () => {
-  const { deps, calls } = recordingDeps({
-    previewResult: undefined,
-    extraDeps: {
-      preview: async () => {
-        throw new Error("Invalid private key: not a key");
-      },
-    },
-  });
-  const handoff = createWebIdentityHandoff(deps);
-
-  await handoff.check("garbage");
-
-  assert.deepEqual(handoff.getState(), {
-    phase: "error",
-    stage: "check",
-    message: "Invalid private key: not a key",
-  });
-  assert.deepEqual(calls.importNsec, []);
+test("a stray result with no request id never applies", async () => {
+  const view = harness();
+  await view.handoff.start();
+  view.emit({ id: null, status: "rejected", reason: "no-pending-request" });
+  assert.equal(view.handoff.getState().phase, "waiting");
 });
 
-test("import failures surface honestly and skip the post-import re-scope", async () => {
-  const { deps, calls } = recordingDeps({
-    importError: new Error(
-      "The identity on this device changed since you reviewed this replacement.",
-    ),
-  });
-  const handoff = createWebIdentityHandoff(deps);
-
-  await handoff.check(NSEC);
-  await handoff.confirm();
-
-  const state = handoff.getState();
+test("the matching rejection maps to plain-language copy", async () => {
+  const view = harness();
+  await view.handoff.start();
+  view.emit({ id: REQUEST_ID, status: "rejected", reason: "expired" });
+  const state = view.handoff.getState();
   assert.equal(state.phase, "error");
-  assert.equal(state.stage, "replace");
-  assert.match(state.message, /changed since you reviewed/);
-  assert.deepEqual(calls.onImported, []);
+  assert.equal(state.message, rejectedCopy("expired"));
+  assert.deepEqual(view.calls.linked, []);
 });
 
-test("the replace confirmation names the exact identity being replaced", async () => {
-  const warning = WEB_IDENTITY_HANDOFF_COPY.replacesLabel(CURRENT_NPUB);
-  assert.match(warning, /replaces the identity npub1current/i);
-  assert.match(warning, /on this device/);
-  assert.match(warning, /backed it up/);
-  assert.match(warning, /web session is unaffected/);
+test("an unknown reason falls back to the generic copy", () => {
+  assert.equal(rejectedCopy("what"), WEB_IDENTITY_HANDOFF_COPY.fallbackError);
+  assert.equal(rejectedCopy(null), WEB_IDENTITY_HANDOFF_COPY.fallbackError);
 });
 
-test("the copy stays honest about the interim posture", () => {
-  // Rule 3 of the handoff brief: frame this as interim, never as a passkey
-  // export.
-  assert.match(
-    WEB_IDENTITY_HANDOFF_COPY.interimNote,
-    /passkey-native identity/,
-    "interim note names the passkey-native future",
+test("cancel abandons the flow and drops late results", async () => {
+  const deferredStart = deferred();
+  const view = harness({ start: () => deferredStart.promise });
+  const started = view.handoff.start();
+  view.handoff.cancel();
+  assert.equal(view.calls.cancel, 1);
+  deferredStart.resolve({ id: REQUEST_ID, url: LINK_URL });
+  await started;
+  // The generation fence: the cancelled start must not resurrect waiting.
+  assert.equal(view.handoff.getState().phase, "idle");
+  view.emit({ id: REQUEST_ID, status: "linked", npub: NPUB });
+  assert.equal(view.handoff.getState().phase, "idle");
+  assert.deepEqual(view.calls.linked, []);
+});
+
+test("a failed start reports what to do next", async () => {
+  const view = harness({
+    start: async () => {
+      throw new Error("Could not open the browser: nope");
+    },
+  });
+  await view.handoff.start();
+  const state = view.handoff.getState();
+  assert.equal(state.phase, "error");
+  assert.match(state.message, /Couldn't start sign-in/);
+  assert.match(state.message, /Could not open the browser/);
+});
+
+test("a result that races start() is buffered and applied", async () => {
+  const deferredStart = deferred();
+  const view = harness({ start: () => deferredStart.promise });
+  const started = view.handoff.start();
+  view.emit({ id: REQUEST_ID, status: "linked", npub: NPUB });
+  deferredStart.resolve({ id: REQUEST_ID, url: LINK_URL });
+  await started;
+  assert.deepEqual(view.handoff.getState(), { phase: "linked", npub: NPUB });
+});
+
+// ── Wire seam: bind these tests to the production Rust/TS sources ─────────
+
+const rust = (name) =>
+  readFileSync(
+    new URL(`../../../src-tauri/src/${name}`, import.meta.url),
+    "utf8",
   );
-  assert.match(
-    WEB_IDENTITY_HANDOFF_COPY.interimNote,
-    /app signing activation/,
-    "interim note says what unlocks it",
-  );
-  assert.match(
-    WEB_IDENTITY_HANDOFF_COPY.notThePasskey,
-    /keys never leave the authenticator/,
-    "the passkey itself is never claimed to move",
-  );
-  assert.match(
-    WEB_IDENTITY_HANDOFF_COPY.notThePasskey,
-    /recovery key/,
-    "the actual handoff mechanism is named",
-  );
-  for (const value of Object.values(WEB_IDENTITY_HANDOFF_COPY)) {
-    assert.doesNotMatch(
-      typeof value === "string" ? value : "",
-      /passkey (was |is )?(copied|exported|moved)/i,
-      "no copy may claim the passkey was exported",
-    );
+const ts = (name) =>
+  readFileSync(new URL(`../../shared/api/${name}`, import.meta.url), "utf8");
+
+test("lib.rs registers the identity-link commands", () => {
+  const lib = rust("lib.rs");
+  for (const command of [
+    "start_identity_link",
+    "cancel_identity_link",
+    "take_identity_link_result",
+  ]) {
+    assert.match(lib, new RegExp(command));
   }
+  assert.match(lib, /mod identity_link;/);
 });
 
-test("the wire seam agrees across Rust command, TS wrapper, and registration", () => {
-  // Falsifiable: rename the command, drop the fence parameter, or forget the
-  // lib.rs registration and this goes red.
-  const rust = readFileSync(
-    new URL("../../../src-tauri/src/commands/identity.rs", import.meta.url),
-    "utf8",
-  );
-  const lib = readFileSync(
-    new URL("../../../src-tauri/src/lib.rs", import.meta.url),
-    "utf8",
-  );
-  const api = readFileSync(
-    new URL("../../shared/api/tauriIdentity.ts", import.meta.url),
-    "utf8",
-  );
-  const card = readFileSync(
-    new URL("./WebIdentityHandoffCard.tsx", import.meta.url),
-    "utf8",
-  );
+test("the deep-link dispatcher routes creaton://identity without logging it", () => {
+  const deepLink = rust("deep_link.rs");
+  assert.match(deepLink, /Some\("identity"\)/);
+  assert.match(deepLink, /identity_link::handle_identity_payload/);
+  // The wire envelope: `p` (with a legacy `payload` alias) plus `from`.
+  assert.match(deepLink, /parse_identity_deep_link_params/);
+});
 
-  // Rust: read-only preview command with the same parse inputs as import.
-  assert.match(rust, /pub async fn preview_identity_import\(/);
-  assert.match(rust, /pub struct IdentityImportPreview \{/);
-  assert.match(
-    rust,
-    /#\[serde\(rename_all = "camelCase"\)\]\s*\npub struct IdentityImportPreview/,
-    "preview fields serialize camelCase — the TS type depends on it",
-  );
-  // Rust: the import fence the confirm click relies on.
-  assert.match(
-    rust,
-    /pub async fn import_identity\(\s*nsec: String,\s*password: Option<String>,\s*expected_current_npub: Option<String>,/s,
-    "import_identity must keep the expected_current_npub fence",
-  );
-  // Registration: an unregistered command is a runtime failure.
-  assert.match(
-    lib,
-    /\bpreview_identity_import\b/,
-    "lib.rs must register the command",
-  );
+test("identity_link.rs enforces the frozen validation order", () => {
+  const core = rust("identity_link.rs");
+  // The nonce check is the confused-deputy guard — remove it and this fails.
+  assert.match(core, /parsed\.nonce != pending\.nonce_hex/);
+  // Expiry, version, and the sender binding (`from` must derive from `sk`).
+  assert.match(core, /parsed\.exp < now_unix/);
+  assert.match(core, /parsed\.v != HANDOFF_VERSION/);
+  assert.match(core, /SenderMismatch/);
+  // Single-use consumption and the never-logged contract.
+  assert.match(core, /queue\s*\n?\s*\.remove\(index\)/);
+  assert.match(core, /never logged/i);
+});
 
-  // TS wrapper: invoke names and argument keys.
-  assert.match(
-    api,
-    /invokeTauri<IdentityImportPreview>\("preview_identity_import"/,
+test("tauriIdentity.ts exposes the same command names", () => {
+  const api = ts("tauriIdentity.ts");
+  for (const command of [
+    "start_identity_link",
+    "cancel_identity_link",
+    "take_identity_link_result",
+  ]) {
+    assert.match(api, new RegExp(`"${command}"`));
+  }
+  assert.ok(
+    !api.includes("web-identity-input"),
+    "no paste affordance on the wire",
   );
-  assert.match(api, /invokeTauri<RawIdentity>\("import_identity"/);
-  assert.match(
-    api,
-    /expectedCurrentNpub/,
-    "TS must send the camelCase fence arg",
-  );
-
-  // Card binds the production controller and copy — not a test-only helper.
-  assert.match(card, /createWebIdentityHandoff\(/);
-  assert.match(card, /WEB_IDENTITY_HANDOFF_COPY as COPY/);
-  assert.match(card, /importIdentity\(nsec, undefined, expectedCurrentNpub\)/);
-  assert.match(card, /handoff\.confirm\(\)/);
 });

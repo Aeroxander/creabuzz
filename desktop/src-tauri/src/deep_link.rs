@@ -305,6 +305,18 @@ pub(crate) fn install_deep_link_handlers(app: &mut tauri::App) {
     }
 }
 
+/// Extract the handoff ciphertext and sender from a `creaton://identity`
+/// URL. The contract parameters are `p` (`base64url` of the NIP-44
+/// ciphertext) and `from` (the 64-hex account pubkey the payload was sent
+/// from — NIP-44 payloads do not identify their sender). The early-draft
+/// name `payload` is tolerated as a legacy alias for `p`.
+fn parse_identity_deep_link_params(url: &Url) -> Option<(String, String)> {
+    let payload =
+        optional_non_empty_param(url, "p").or_else(|| optional_non_empty_param(url, "payload"))?;
+    let from = optional_non_empty_param(url, "from")?;
+    Some((payload, from))
+}
+
 /// Parse the query string of a `buzz://message?…` URL into the JSON
 /// payload emitted on `deep-link-message`. Returns `None` when a required
 /// param (`channel`, `id`) is missing or empty — mirroring the validation
@@ -610,13 +622,19 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
     let url = match Url::parse(url_str) {
         Ok(u) => u,
         Err(e) => {
-            eprintln!("buzz-desktop: invalid deep link URL {url_str:?}: {e}");
+            // Never print the URL: `identity` payloads are secret-bearing and
+            // a malformed URL may still contain one.
+            eprintln!("buzz-desktop: invalid deep link URL: {e}");
             return;
         }
     };
 
     if url.scheme() != crate::build_identity::deep_link_scheme() {
-        eprintln!("buzz-desktop: ignoring unsupported deep link scheme: {url_str}");
+        // Scheme only — the URL may carry an identity payload.
+        eprintln!(
+            "buzz-desktop: ignoring unsupported deep link scheme: {}",
+            url.scheme()
+        );
         return;
     }
 
@@ -715,6 +733,19 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
                 eprintln!("buzz-desktop: rejecting nostr-bind deep link: {error}: {url_str}");
             }
         },
+        Some("identity") => {
+            // `creaton://identity?p=<base64url>&from=<64-hex>` — the browser
+            // sign-in response (account handoff). `payload` is tolerated as a
+            // legacy alias for `p`. Validation, single-use consumption, and
+            // the keyring-first commit live in `identity_link`. The
+            // ciphertext is never logged on any path.
+            let Some((payload, from)) = parse_identity_deep_link_params(&url) else {
+                eprintln!("buzz-desktop: identity deep link missing p/from");
+                return;
+            };
+            activate_main_window(app);
+            crate::identity_link::handle_identity_payload(app, &payload, &from);
+        }
         Some(action) => {
             eprintln!("buzz-desktop: unknown deep link action: {action}");
         }

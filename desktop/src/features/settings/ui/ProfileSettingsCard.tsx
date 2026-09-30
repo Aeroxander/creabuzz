@@ -22,7 +22,6 @@ import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { Textarea } from "@/shared/ui/textarea";
-import { PasskeyIdentityCard } from "@/features/identity/PasskeyIdentityCard";
 import { WebIdentityHandoffCard } from "@/features/identity/WebIdentityHandoffCard";
 import { PrivateKeyBackupRow } from "./PrivateKeyBackupRow";
 import {
@@ -802,7 +801,6 @@ export function ProfileSettingsCard({
                                 value={nip05Handle}
                               />
                               <PrivateKeyBackupRow />
-                              <PasskeyIdentityCard />
                               <WebIdentityHandoffCard />
                             </div>
                           </details>

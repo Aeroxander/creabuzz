@@ -82,12 +82,6 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
-  const goPaperclip = React.useCallback(
-    (behavior?: NavigationBehavior) =>
-      commitNavigation({ to: "/paperclip" }, behavior),
-    [commitNavigation],
-  );
-
   const goAgents = React.useCallback(
     (behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -512,7 +506,6 @@ export function useAppNavigation() {
     goNewWorkflow,
     goNewWorkflowForChannel,
     goOrg,
-    goPaperclip,
     goProject,
     goProjects,
     goPulse,

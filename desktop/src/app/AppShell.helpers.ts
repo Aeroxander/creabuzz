@@ -11,7 +11,6 @@ export type AppView =
   | "pulse"
   | "projects"
   | "launchpad"
-  | "paperclip"
   | "org"
   | "wiki";
 
@@ -234,13 +233,6 @@ export function deriveShellRoute(pathname: string): {
     return {
       selectedChannelId: null,
       selectedView: "messages",
-    };
-  }
-
-  if (pathname === "/paperclip") {
-    return {
-      selectedChannelId: null,
-      selectedView: "paperclip",
     };
   }
 

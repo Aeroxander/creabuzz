@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 
 import { profileQueryKey } from "@/features/profile/hooks";
 import {
@@ -9,66 +10,83 @@ import {
 } from "@/features/identity/webIdentityHandoff";
 import { relayClient } from "@/shared/api/relayClient";
 import {
-  importIdentity,
-  previewIdentityImport,
+  cancelIdentityLink,
+  getIdentity,
+  startIdentityLink,
+  takeIdentityLinkResult,
+  type IdentityLinkResult,
 } from "@/shared/api/tauriIdentity";
-import type { Identity } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 
 /**
- * Settings row that adopts the web account's identity: paste the recovery
- * nsec from the web app, review what this device would switch to, confirm the
- * replacement. The preview (`preview_identity_import`) is read-only; the
- * swap happens only through `import_identity`, fenced to the npub shown in
- * the confirmation. Storage is the existing keyring-first path — no new
- * store, no plaintext.
+ * Settings row that adopts the web account's identity via the browser:
+ * "Sign in with browser" opens the web app with a one-time link, and the
+ * completed sign-in returns through a `creaton://identity` deep link. There
+ * is no key to paste — the account key is encrypted end-to-end and stored by
+ * the existing keyring-first identity storage inside Rust.
  *
- * Lives next to `PasskeyIdentityCard` on purpose: that card explains where
- * the web identity comes from; this one is how you get it onto this device
- * today. The honesty note stays visible — passkey-native identity (same
- * Touch ID on web + desktop) arrives with app signing activation and makes
- * this handoff unnecessary.
+ * Outcomes are fenced to the request that produced them (the controller in
+ * `webIdentityHandoff.ts`), so a stale or stray deep link never applies to a
+ * newer sign-in attempt.
  */
 export function WebIdentityHandoffCard() {
   const queryClient = useQueryClient();
-  const [open, setOpen] = React.useState(false);
-  const [nsecInput, setNsecInput] = React.useState("");
   const [handoff] = React.useState<WebIdentityHandoff>(() =>
     createWebIdentityHandoff({
-      preview: (nsec) => previewIdentityImport(nsec),
-      importNsec: (nsec, expectedCurrentNpub) =>
-        importIdentity(nsec, undefined, expectedCurrentNpub),
-      onImported: (identity: Identity) => {
-        // Mirror the onboarding import (`OnboardingFlow.importExistingKey`):
-        // drop the socket authenticated as the previous key, then rekey the
-        // identity query — App.tsx's replacement sentinel watches it and
-        // rebuilds the community boundary so no cached state leaks across.
+      start: () => startIdentityLink(),
+      cancel: () => cancelIdentityLink(),
+      results: (listener) => {
+        let disposed = false;
+        let unlisten: (() => void) | undefined;
+        void listen<IdentityLinkResult>("deep-link-identity", (event) => {
+          listener(event.payload);
+        }).then((stop) => {
+          if (disposed) stop();
+          else unlisten = stop;
+        });
+        return () => {
+          disposed = true;
+          unlisten?.();
+        };
+      },
+      onLinked: () => {
+        // Mirror the manual import's post-commit re-scope: drop the socket
+        // authenticated as the previous key, then rekey the identity query —
+        // App.tsx's replacement sentinel watches it and rebuilds the
+        // community boundary so no cached state leaks across.
         relayClient.disconnect();
-        queryClient.setQueryData(["identity"], identity);
         queryClient.removeQueries({ queryKey: profileQueryKey });
+        void getIdentity()
+          .then((identity) => queryClient.setQueryData(["identity"], identity))
+          .catch(() =>
+            // If the refresh read fails, refetch through the query layer so
+            // the failure is retried there instead of vanishing here.
+            queryClient.invalidateQueries({ queryKey: ["identity"] }),
+          );
       },
     }),
   );
+
+  React.useEffect(() => () => handoff.dispose(), [handoff]);
+
+  // Pick up a result that raced the event subscription (e.g. the deep link
+  // landed before this surface mounted). Consuming it here is safe: the
+  // controller ignores results that match no live request.
+  React.useEffect(() => {
+    // Best-effort race catcher: the live event is the primary path, and a
+    // failed pickup leaves the result queued (Rust only consumes on success)
+    // so the next mount or the retry picks it up.
+    void takeIdentityLinkResult()
+      .then((result) => {
+        if (result) handoff.handleResult(result);
+      })
+      .catch(() => {});
+  }, [handoff]);
+
   const state = React.useSyncExternalStore(
     handoff.subscribe,
     handoff.getState,
     handoff.getState,
-  );
-
-  const closePanel = React.useCallback(() => {
-    handoff.cancel();
-    setNsecInput("");
-    setOpen(false);
-  }, [handoff]);
-
-  const handleInput = React.useCallback(
-    (value: string) => {
-      setNsecInput(value);
-      // Editing invalidates any preview or in-flight result: the reviewed
-      // candidate no longer matches the input, so it must be re-checked.
-      if (state.phase !== "idle") handoff.cancel();
-    },
-    [handoff, state.phase],
   );
 
   return (
@@ -77,17 +95,14 @@ export function WebIdentityHandoffCard() {
         <div className="min-w-0">
           <p className="text-sm font-medium">{COPY.title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{COPY.intro}</p>
-          <p
-            className="mt-1 text-xs text-muted-foreground/75"
-            data-testid="web-identity-interim-note"
-          >
-            {COPY.interimNote}
+          <p className="mt-1 text-xs text-muted-foreground/75">
+            {COPY.replacesWarning}
           </p>
         </div>
-        {!open ? (
+        {state.phase === "idle" || state.phase === "error" ? (
           <Button
             data-testid="web-identity-open"
-            onClick={() => setOpen(true)}
+            onClick={() => void handoff.start()}
             type="button"
             variant="secondary"
           >
@@ -96,149 +111,102 @@ export function WebIdentityHandoffCard() {
         ) : null}
       </div>
 
-      {open ? (
-        <div className="mt-3" data-testid="web-identity-panel">
-          <p className="text-xs text-muted-foreground" role="note">
-            {COPY.keyWarning}
+      {state.phase === "starting" ? (
+        <p
+          aria-busy="true"
+          className="mt-2 text-sm text-muted-foreground"
+          data-testid="web-identity-status"
+          role="status"
+        >
+          {COPY.starting}
+        </p>
+      ) : null}
+
+      {state.phase === "waiting" ? (
+        <div className="mt-2">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="web-identity-waiting"
+            role="status"
+          >
+            {COPY.waiting}
           </p>
-
-          {state.phase === "replaced" ? (
-            <p
-              className="mt-2 text-sm"
-              data-testid="web-identity-done"
-              role="status"
+          <div className="mt-2">
+            <Button
+              data-testid="web-identity-cancel"
+              onClick={() => handoff.cancel()}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
-              {COPY.replaced(state.npub)}
-            </p>
-          ) : (
-            <>
-              <input
-                autoComplete="off"
-                className="mt-2 w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                data-testid="web-identity-input"
-                disabled={
-                  state.phase === "checking" || state.phase === "replacing"
-                }
-                onChange={(event) => handleInput(event.target.value)}
-                placeholder={COPY.inputPlaceholder}
-                spellCheck={false}
-                type="text"
-                value={nsecInput}
-              />
-
-              {state.phase === "ready" ? (
-                <div className="mt-2 rounded-md border border-border/60 bg-muted/30 p-2">
-                  <p
-                    className="font-mono text-xs break-all"
-                    data-testid="web-identity-candidate"
-                  >
-                    {COPY.wouldSignAs(state.preview.npub)}
-                  </p>
-                  <p
-                    className="mt-1 text-xs text-amber-700 dark:text-amber-400"
-                    data-testid="web-identity-replace-warning"
-                    role="alert"
-                  >
-                    {COPY.replacesLabel(state.preview.currentNpub)}
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Button
-                      data-testid="web-identity-replace"
-                      onClick={() => void handoff.confirm()}
-                      size="sm"
-                      type="button"
-                      variant="destructive"
-                    >
-                      {COPY.replaceButton}
-                    </Button>
-                    <Button
-                      data-testid="web-identity-cancel"
-                      onClick={closePanel}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {COPY.cancelButton}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {state.phase === "error" ? (
-                <p
-                  className="mt-2 text-sm text-destructive"
-                  data-testid="web-identity-error"
-                  role="alert"
-                >
-                  {state.message}
-                </p>
-              ) : null}
-
-              {state.phase === "idle" ||
-              state.phase === "checking" ||
-              state.phase === "error" ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <Button
-                    aria-busy={state.phase === "checking"}
-                    data-testid="web-identity-check"
-                    disabled={
-                      state.phase === "checking" ||
-                      nsecInput.trim().length === 0
-                    }
-                    onClick={() => void handoff.check(nsecInput.trim())}
-                    size="sm"
-                    type="button"
-                  >
-                    {state.phase === "checking"
-                      ? COPY.checking
-                      : COPY.checkButton}
-                  </Button>
-                  <Button
-                    data-testid="web-identity-close"
-                    onClick={closePanel}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    {COPY.cancelButton}
-                  </Button>
-                </div>
-              ) : null}
-
-              {state.phase === "replacing" ? (
-                <p
-                  className="mt-2 text-sm text-muted-foreground"
-                  data-testid="web-identity-status"
-                  role="status"
-                >
-                  {COPY.replacing}
-                </p>
-              ) : null}
-
-              <p
-                className="mt-2 text-xs text-muted-foreground/75"
-                data-testid="web-identity-passkey-note"
-              >
-                {COPY.notThePasskey}
-              </p>
-            </>
-          )}
-
-          {state.phase === "replaced" ? (
-            <div className="mt-2">
-              <Button
-                data-testid="web-identity-close"
-                onClick={closePanel}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {COPY.closeLabel}
-              </Button>
-            </div>
-          ) : null}
+              {COPY.cancelButton}
+            </Button>
+          </div>
         </div>
       ) : null}
+
+      {state.phase === "linked" ? (
+        <div className="mt-2">
+          <p
+            className="break-all font-mono text-sm"
+            data-testid="web-identity-done"
+            role="status"
+          >
+            {COPY.linked(state.npub)}
+          </p>
+          <div className="mt-2">
+            <Button
+              data-testid="web-identity-close"
+              onClick={() => handoff.cancel()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {COPY.closeLabel}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {state.phase === "error" ? (
+        <div className="mt-2">
+          <p
+            className="text-sm text-destructive"
+            data-testid="web-identity-error"
+            role="alert"
+          >
+            {state.message}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              data-testid="web-identity-retry"
+              onClick={() => void handoff.start()}
+              size="sm"
+              type="button"
+            >
+              {COPY.tryAgainButton}
+            </Button>
+            <Button
+              data-testid="web-identity-cancel"
+              onClick={() => handoff.cancel()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {COPY.cancelButton}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <details className="mt-2" data-testid="web-identity-technical">
+        <summary className="cursor-pointer text-xs text-muted-foreground/75">
+          {COPY.technicalTitle}
+        </summary>
+        <p className="mt-1 text-xs text-muted-foreground/75">
+          {COPY.technical}
+        </p>
+      </details>
     </div>
   );
 }

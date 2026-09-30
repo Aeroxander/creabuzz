@@ -16,9 +16,10 @@ import {
 import {
   existingUserPubkey,
   hasStoredIdentity,
-  importIdentity,
   rotateIdentity,
+  storedIdentityHex,
 } from "@/shared/lib/identity";
+import { WebIdentityHandoffCard } from "./WebIdentityHandoffCard";
 import {
   useProfiles,
   resolveUserName,
@@ -188,13 +189,7 @@ export function ProfileMenu({
     }
   };
 
-  const nsec = (() => {
-    try {
-      return localStorage.getItem("buzz.identity.nsec") ?? "";
-    } catch {
-      return "";
-    }
-  })();
+  const nsec = storedIdentityHex() ?? "";
 
   if (!created) {
     return (
@@ -624,7 +619,7 @@ export function ProfileMenu({
                 Close
               </button>
             </div>
-            <BackupImport onImported={() => setShowBackup(false)} />
+            <WebIdentityHandoffCard />
           </div>
         </div>
       ) : null}
@@ -688,48 +683,5 @@ function MenuItem({
       {icon}
       {label}
     </button>
-  );
-}
-
-function BackupImport({ onImported }: { onImported: () => void }) {
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const tryImport = () => {
-    try {
-      importIdentity(value);
-      localStorage.setItem(BACKED_UP_KEY, "1");
-      onImported();
-      window.location.reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "invalid key");
-    }
-  };
-  return (
-    <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/10">
-      <p className="text-xs font-medium text-black/60 dark:text-white/60">
-        Restore an existing key
-      </p>
-      <div className="mt-1.5 flex gap-2">
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Paste the 64-char hex nsec"
-          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 font-mono text-2xs outline-none focus:ring-1 focus:ring-ring"
-          data-testid="backup-import-input"
-        />
-        <button
-          type="button"
-          disabled={value.trim().length < 64}
-          onClick={tryImport}
-          className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium disabled:opacity-40"
-          data-testid="backup-import"
-        >
-          Import
-        </button>
-      </div>
-      {error ? (
-        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
-      ) : null}
-    </div>
   );
 }

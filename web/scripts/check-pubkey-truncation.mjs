@@ -17,6 +17,10 @@ const overrides = new Set([
   "src/features/repos/ui/PubkeyAvatar.tsx:29",
   // Array window (first N pubkeys), not string truncation.
   "src/features/repos/ui/OrgSidebar.tsx:22",
+  // Testid keys (stable selector prefixes), not display truncation.
+  "src/features/fleet/ui/OrgView.tsx:106",
+  "src/features/fleet/ui/OrgView.tsx:129",
+  "src/features/fleet/ui/OrgView.tsx:193",
 ]);
 
 await runPubkeyTruncationCheck({

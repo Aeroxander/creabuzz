@@ -12997,6 +12997,19 @@ export function maybeInstallE2eTauriMocks() {
         mockIdentityLockedCleared = true;
         return importMockIdentity(input);
       }
+      case "start_identity_link": {
+        // Browser sign-in handoff: mint a deterministic one-time request so
+        // the settings surface can render its waiting state. Specs deliver
+        // outcomes by emitting "deep-link-identity" with a matching id.
+        return {
+          id: "00000000-0000-4000-8000-000000000001",
+          url: "https://app.example.com/link-device?pub=mock&nonce=mock&cb=creaton%3A%2F%2Fidentity",
+        };
+      }
+      case "cancel_identity_link":
+        return;
+      case "take_identity_link_result":
+        return null;
       case "validate_repos_dir":
         // The browser harness has no host filesystem to validate. Treat the
         // seeded empty/default path as valid so Add Community can continue to

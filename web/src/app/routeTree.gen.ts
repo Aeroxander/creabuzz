@@ -7,6 +7,7 @@
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as reposRouteImport } from "./routes/repos";
 import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as linkDeviceRouteImport } from "./routes/link-device";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
 import { Route as discoverRouteImport } from "./routes/discover";
@@ -28,6 +29,11 @@ const reposRoute = reposRouteImport.update({
 const projectsRoute = projectsRouteImport.update({
   id: "/projects",
   path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const linkDeviceRoute = linkDeviceRouteImport.update({
+  id: "/link-device",
+  path: "/link-device",
   getParentRoute: () => rootRouteImport,
 } as any);
 const launchpadRoute = launchpadRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/c/$host": typeof cDothostRoute;
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
+    | "/link-device"
     | "/projects"
     | "/repos"
     | "/c/$host"
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
+    | "/link-device"
     | "/projects"
     | "/repos"
     | "/c/$host"
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
+    | "/link-device"
     | "/projects"
     | "/repos"
     | "/c/$host"
@@ -198,6 +210,7 @@ export interface RootRouteChildren {
   discoverRoute: typeof discoverRoute;
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
+  linkDeviceRoute: typeof linkDeviceRoute;
   projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
   cDothostRoute: typeof cDothostRoute;
@@ -223,6 +236,13 @@ declare module "@tanstack/react-router" {
       path: "/projects";
       fullPath: "/projects";
       preLoaderRoute: typeof projectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/link-device": {
+      id: "/link-device";
+      path: "/link-device";
+      fullPath: "/link-device";
+      preLoaderRoute: typeof linkDeviceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/launchpad": {
@@ -318,6 +338,7 @@ const rootRouteChildren: RootRouteChildren = {
   discoverRoute: discoverRoute,
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
+  linkDeviceRoute: linkDeviceRoute,
   projectsRoute: projectsRoute,
   reposRoute: reposRoute,
   cDothostRoute: cDothostRoute,

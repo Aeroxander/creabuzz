@@ -150,8 +150,11 @@ describe("buildOrgBudgetContent (the publish path)", () => {
     assert.deepEqual(content.limits, { runs: 0 });
   });
 
-  it("is what hooks.ts publishes (the production seam)", () => {
-    const hooks = readFileSync(new URL("../hooks.ts", import.meta.url), "utf8");
+  it("is what hooks/budgetHooks.ts publishes (the production seam)", () => {
+    const hooks = readFileSync(
+      new URL("../hooks/budgetHooks.ts", import.meta.url),
+      "utf8",
+    );
     const publish = hooks.slice(
       hooks.indexOf("async function publishOrgBudgetEvent"),
       hooks.indexOf("async function publishOrgBudgetDeletion"),

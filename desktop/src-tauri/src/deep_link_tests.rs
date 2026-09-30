@@ -604,3 +604,23 @@ fn parse_nostr_bind_deep_link_accepts_expired_link_for_user_facing_error() {
     let payload = parse_nostr_bind_deep_link(&url).unwrap();
     assert_eq!(payload.expires_at, "2000-01-01T00:00:00Z");
 }
+
+#[test]
+fn parse_identity_deep_link_params_reads_p_and_from() {
+    let url = Url::parse("creaton://identity?p=AAAA&from=bbbb").unwrap();
+    assert_eq!(
+        super::parse_identity_deep_link_params(&url),
+        Some(("AAAA".to_string(), "bbbb".to_string()))
+    );
+    // The early-draft `payload` name is tolerated as an alias for `p`.
+    let legacy = Url::parse("creaton://identity?payload=AAAA&from=bbbb").unwrap();
+    assert_eq!(
+        super::parse_identity_deep_link_params(&legacy),
+        Some(("AAAA".to_string(), "bbbb".to_string()))
+    );
+    // `from` is mandatory — a NIP-44 payload does not identify its sender.
+    let missing = Url::parse("creaton://identity?p=AAAA").unwrap();
+    assert_eq!(super::parse_identity_deep_link_params(&missing), None);
+    let none = Url::parse("creaton://identity").unwrap();
+    assert_eq!(super::parse_identity_deep_link_params(&none), None);
+}

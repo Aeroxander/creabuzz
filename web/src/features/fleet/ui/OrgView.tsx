@@ -25,6 +25,11 @@ import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { OrgDiagnosticCard } from "@/features/launchpad/ui/OrgDiagnosticCard";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import {
+  BudgetAuthorForm,
+  BudgetList,
+} from "@/features/budgets/ui/BudgetAuthorForm";
+import { AgentStopDialog, type AgentStopTarget } from "./AgentStopDialog";
 
 const TEAM_SUGGESTIONS = [
   "Platform",
@@ -142,6 +147,10 @@ function OrgNodeCard({
   userName: (pubkey: string) => string;
 }) {
   const occupants = [...node.entry.holders, ...node.entry.agentSeats];
+  const agentSeats = new Set(
+    node.entry.agentSeats.map((s) => s.trim().toLowerCase()),
+  );
+  const [stopTarget, setStopTarget] = useState<AgentStopTarget | null>(null);
   return (
     <div style={{ marginLeft: level > 0 ? level * 20 : 0 }}>
       <div className="flex items-start gap-2.5 rounded-lg border border-black/10 bg-white p-2.5 dark:border-white/10 dark:bg-white/5">
@@ -177,12 +186,37 @@ function OrgNodeCard({
                   <span className="max-w-24 truncate font-mono">
                     {userName(pubkey)}
                   </span>
+                  {agentSeats.has(pubkey.trim().toLowerCase()) ? (
+                    <button
+                      type="button"
+                      className="rounded-full border border-red-200 px-1.5 py-0.5 text-2xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+                      data-testid={`stop-agent-${pubkey.slice(0, 6)}`}
+                      onClick={() =>
+                        setStopTarget({
+                          pubkey: pubkey.trim().toLowerCase(),
+                          name: userName(pubkey),
+                        })
+                      }
+                    >
+                      Stop agent
+                    </button>
+                  ) : null}
                 </span>
               ))}
             </div>
           ) : null}
         </div>
       </div>
+      <AgentStopDialog
+        onFinished={() => {
+          window.location.reload();
+        }}
+        onOpenChange={(open) => {
+          if (!open) setStopTarget(null);
+        }}
+        open={stopTarget !== null}
+        targets={stopTarget ? [stopTarget] : []}
+      />
       {node.children.map((child) => (
         <div key={`${child.entry.pubkey}:${child.entry.id}`} className="mt-2">
           <OrgNodeCard node={child} level={level + 1} userName={userName} />
@@ -283,6 +317,18 @@ export function OrgView() {
       ) : (
         <OrgRosterFallback agents={agents} loading={loading} />
       )}
+      {/* Budgets: community spend/usage ceilings with their enforcement
+          honesty labels. Owns creation and the active list. */}
+      <section
+        className="space-y-2 border-t border-black/10 p-3 dark:border-white/10"
+        data-testid="org-budgets-section"
+      >
+        <h2 className="text-sm font-semibold text-black dark:text-white">
+          Budgets
+        </h2>
+        <BudgetList />
+        <BudgetAuthorForm />
+      </section>
     </div>
   );
 }

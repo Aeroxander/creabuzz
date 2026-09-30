@@ -3,10 +3,28 @@
  * channel (mentions) or the work board (task assignments).
  */
 
-import { useEffect, useState } from "react";
-import { Bell, Bot, MessageSquare, Users } from "lucide-react";
+import { Suspense, lazy, useEffect, useState } from "react";
+import { Bell, Bot, ListChecks, MessageSquare, Users } from "lucide-react";
 
+import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import { useNotifications, type NotificationItem } from "../use-notifications";
+import { ApprovalsPanel } from "./ApprovalsPanel";
+
+// The run list loads with the dialog; the dropdown itself stays light.
+const WorkflowRunsPanel = lazy(() =>
+  import("@/features/workflows/ui/WorkflowRunsPanel").then((m) => ({
+    default: m.WorkflowRunsPanel,
+  })),
+);
 
 const KIND_ICON = {
   mention: MessageSquare,
@@ -23,6 +41,7 @@ export function NotificationBell({
 }) {
   const { items, unread, markRead } = useNotifications();
   const [open, setOpen] = useState(false);
+  const [runsOpen, setRunsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +92,21 @@ export function NotificationBell({
 
       {open ? (
         <div className="absolute left-3 right-3 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-black/10 bg-background p-2 shadow-xl dark:border-white/10">
+          <ApprovalsPanel />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setRunsOpen(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            data-testid="open-workflow-runs"
+          >
+            <ListChecks className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left text-sm">
+              Workflow runs
+            </span>
+          </button>
           {items.length === 0 ? (
             <p className="px-2 py-4 text-center text-xs text-black/60 dark:text-white/60">
               Nothing new.
@@ -107,6 +141,33 @@ export function NotificationBell({
           )}
         </div>
       ) : null}
+      <AlertDialog
+        open={runsOpen}
+        onOpenChange={(next) => {
+          if (!next) setRunsOpen(false);
+        }}
+      >
+        <AlertDialogContent
+          className="max-h-[80vh] overflow-y-auto"
+          data-testid="workflow-runs-dialog"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Workflow runs</AlertDialogTitle>
+            <AlertDialogDescription>
+              Recent runs, what each step did, and anything waiting for your
+              approval.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Suspense fallback={<ViewLoadingFallback label="Loading runs…" />}>
+            <WorkflowRunsPanel />
+          </Suspense>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRunsOpen(false)} type="button">
+              Close
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -30,6 +30,7 @@ import {
   type DurationKey,
   type PricingMode,
   type WizardState,
+  type WizardStep,
 } from "../../lib/wizard";
 import type { SaleCurrency } from "../../lib/sale-currency";
 import { CurrencyChoice } from "./CurrencyChoice";
@@ -39,6 +40,12 @@ import { Field, Segmented, Select, Stepper } from "./fields";
 export interface WizardController {
   wizard: WizardState;
   patch(next: Partial<WizardState>): void;
+  /**
+   * The edit surface: the same steps, but create-time plan inputs (sale
+   * shape, duration, milestone editor) do not write the record and must not
+   * render as if they did. Fields that DO map to the record stay live.
+   */
+  editing: boolean;
   token: {
     name: string;
     onName(value: string): void;
@@ -80,26 +87,62 @@ export interface WizardController {
   stepIssues: readonly string[];
 }
 
-export function WizardSteps({ controller }: { controller: WizardController }) {
+export function WizardSteps({
+  controller,
+  variant = "stepper",
+}: {
+  controller: WizardController;
+  /**
+   * `stepper` (create): one step at a time behind the Stepper chrome.
+   * `all` (edit): every step body stacked on one page — the same components,
+   * so a field can never have two owners across the two surfaces.
+   */
+  variant?: "stepper" | "all";
+}) {
   const { wizard, stepIssues } = controller;
+  const stepBody = (key: WizardStep) =>
+    key === "token" ? (
+      <TokenStep controller={controller} />
+    ) : key === "sale" ? (
+      <SaleStep controller={controller} />
+    ) : key === "unlocks" ? (
+      <UnlockStep controller={controller} />
+    ) : (
+      <DaoStep controller={controller} />
+    );
   return (
-    <div className="flex flex-col gap-4">
-      <Stepper
-        current={wizard.step}
-        currentTitle={
-          WIZARD_STEPS.find((step) => step.key === wizard.step)?.title ?? ""
-        }
-        steps={WIZARD_STEPS.map((step) => ({
-          key: step.key,
-          label: step.label,
-        }))}
-      />
-      {wizard.step === "token" ? <TokenStep controller={controller} /> : null}
-      {wizard.step === "sale" ? <SaleStep controller={controller} /> : null}
-      {wizard.step === "unlocks" ? (
-        <UnlockStep controller={controller} />
+    <div
+      className={
+        variant === "all" ? "flex flex-col gap-6" : "flex flex-col gap-4"
+      }
+    >
+      {variant === "stepper" ? (
+        <Stepper
+          current={wizard.step}
+          currentTitle={
+            WIZARD_STEPS.find((step) => step.key === wizard.step)?.title ?? ""
+          }
+          steps={WIZARD_STEPS.map((step) => ({
+            key: step.key,
+            label: step.label,
+          }))}
+        />
       ) : null}
-      {wizard.step === "dao" ? <DaoStep controller={controller} /> : null}
+      {variant === "all"
+        ? WIZARD_STEPS.map((meta) => (
+            <section className="flex flex-col gap-3" key={meta.key}>
+              <div>
+                <h3 className="text-sm font-semibold text-black dark:text-white">
+                  {meta.title}
+                </h3>
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  {meta.blurb}
+                </p>
+              </div>
+              {stepBody(meta.key)}
+            </section>
+          ))
+        : stepBody(wizard.step)}
       {stepIssues.length > 0 ? (
         <ul
           className="space-y-0.5 text-xs text-red-600 dark:text-red-400"
@@ -180,7 +223,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
 }
 
 function SaleStep({ controller }: { controller: WizardController }) {
-  const { wizard, patch, sale } = controller;
+  const { wizard, patch, sale, editing } = controller;
   return (
     <div className="flex flex-col gap-3" data-testid="wizard-step-sale">
       <CurrencyChoice
@@ -197,48 +240,55 @@ function SaleStep({ controller }: { controller: WizardController }) {
           dollars, so check the price against today&apos;s ETH price.
         </p>
       ) : null}
-      <Select
-        hint={SALE_PLANS[wizard.saleKind].blurb}
-        id="sale-kind"
-        label="How it sells"
-        onChange={(event) =>
-          patch({ saleKind: event.target.value as SaleKind })
-        }
-        options={SALE_KINDS.map((kind) => ({
-          value: kind,
-          label: SALE_PLANS[kind].label,
-        }))}
-        testId="sale-kind"
-        value={wizard.saleKind}
-      />
-      <Select
-        id="sale-duration"
-        label="How long"
-        onChange={(event) =>
-          patch({ durationKey: event.target.value as DurationKey })
-        }
-        options={SALE_DURATIONS.map((duration) => ({
-          value: duration.key,
-          label: duration.label,
-        }))}
-        testId="sale-duration"
-        value={wizard.durationKey}
-      />
-      {wizard.durationKey === "custom" ? (
-        <Field
-          hint="The sale closes at the end of that day, UTC."
-          id="sale-end"
-          label="Sale ends on"
-        >
-          <input
-            className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm text-black dark:border-white/15 dark:text-white"
-            id="sale-end"
-            onChange={(event) => patch({ endDate: event.target.value })}
-            type="date"
-            value={wizard.endDate}
+      {/* Sale shape and duration are create-time plan inputs: the published
+          record's window and auction are its own, so they do not render on
+          the edit surface (no control that writes nothing). */}
+      {editing ? null : (
+        <>
+          <Select
+            hint={SALE_PLANS[wizard.saleKind].blurb}
+            id="sale-kind"
+            label="How it sells"
+            onChange={(event) =>
+              patch({ saleKind: event.target.value as SaleKind })
+            }
+            options={SALE_KINDS.map((kind) => ({
+              value: kind,
+              label: SALE_PLANS[kind].label,
+            }))}
+            testId="sale-kind"
+            value={wizard.saleKind}
           />
-        </Field>
-      ) : null}
+          <Select
+            id="sale-duration"
+            label="How long"
+            onChange={(event) =>
+              patch({ durationKey: event.target.value as DurationKey })
+            }
+            options={SALE_DURATIONS.map((duration) => ({
+              value: duration.key,
+              label: duration.label,
+            }))}
+            testId="sale-duration"
+            value={wizard.durationKey}
+          />
+          {wizard.durationKey === "custom" ? (
+            <Field
+              hint="The sale closes at the end of that day, UTC."
+              id="sale-end"
+              label="Sale ends on"
+            >
+              <input
+                className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm text-black dark:border-white/15 dark:text-white"
+                id="sale-end"
+                onChange={(event) => patch({ endDate: event.target.value })}
+                type="date"
+                value={wizard.endDate}
+              />
+            </Field>
+          ) : null}
+        </>
+      )}
       <Segmented
         label="You set it by"
         onChange={sale.onPricingMode}
@@ -300,7 +350,23 @@ function SaleStep({ controller }: { controller: WizardController }) {
 }
 
 function UnlockStep({ controller }: { controller: WizardController }) {
-  const { wizard, patch, unlocks } = controller;
+  const { wizard, patch, unlocks, editing } = controller;
+  if (editing) {
+    // The published unlock plan is carried through a save untouched
+    // (`FormState.unlocks`); an editor here would be a control that writes
+    // nothing. Say so instead (Review-Proven Rule 6 — never fake affordances).
+    return (
+      <div className="flex flex-col gap-3" data-testid="wizard-step-unlocks">
+        <p
+          className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+          data-testid="unlock-edit-note"
+        >
+          Unlocks are chosen when the launch is created. This launch keeps the
+          plan it published.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3" data-testid="wizard-step-unlocks">
       <Select

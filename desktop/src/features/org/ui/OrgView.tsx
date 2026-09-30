@@ -12,6 +12,7 @@ import { ContributionRecordsTable } from "./ContributionRecordsTable";
 import { OrgAuditView } from "./OrgAuditView";
 import type { AuditObjectRef } from "../lib/audit";
 import { OrgTeamsView } from "./OrgTeamsView";
+import { OrgBudgetsView } from "./OrgBudgetsView";
 import { OrgWizard } from "./OrgWizard";
 
 function ContributionRecordsTab() {
@@ -54,10 +55,13 @@ export function OrgView() {
   const [activeTab, setActiveTab] = React.useState(
     searchTab === "contributions" ||
       searchTab === "audit" ||
-      searchTab === "teams"
+      searchTab === "teams" ||
+      searchTab === "budgets"
       ? searchTab
       : "dashboard",
   );
+  /** Bumped by audit deep links so the Budgets tab scrolls its heading in. */
+  const [budgetsFocusKey, setBudgetsFocusKey] = React.useState(0);
   // The onboarding wizard auto-opens from an empty org chart and simply
   // stops appearing once a root exists (paperclip-ux-reference.md §3). It
   // owns its own open state after that so the walk survives the root's
@@ -71,10 +75,24 @@ export function OrgView() {
       setActiveTab("contributions");
       return;
     }
+    if (object.target === "budget") {
+      setBudgetsFocusKey((key) => key + 1);
+      setActiveTab("budgets");
+      return;
+    }
     if (!object.target) return;
     setChartFocus({ kind: object.target, id: object.id });
     setActiveTab("chart");
   };
+  const openBudgets = React.useCallback(() => {
+    setBudgetsFocusKey((key) => key + 1);
+    setActiveTab("budgets");
+    void navigate({
+      to: "/org",
+      search: { tab: "budgets" },
+      replace: true,
+    });
+  }, [navigate]);
   const wizardAutoOpen =
     !query.isPending && !query.isError && (query.data?.nodes.length ?? 0) === 0;
 
@@ -115,6 +133,9 @@ export function OrgView() {
             >
               Contributions
             </TabsTrigger>
+            <TabsTrigger data-testid="org-tab-budgets" value="budgets">
+              Budgets
+            </TabsTrigger>
             <TabsTrigger data-testid="org-tab-audit" value="audit">
               Audit
             </TabsTrigger>
@@ -130,7 +151,14 @@ export function OrgView() {
           <OrgDashboard onOpenTab={(tab) => setActiveTab(tab)} query={query} />
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="chart">
-          <OrgChart focus={chartFocus} query={query} />
+          <OrgChart
+            focus={chartFocus}
+            onOpenBudgets={openBudgets}
+            query={query}
+          />
+        </TabsContent>
+        <TabsContent className="min-h-0 flex-1 overflow-y-auto" value="budgets">
+          <OrgBudgetsView focusKey={budgetsFocusKey} query={query} />
         </TabsContent>
         <TabsContent
           className="min-h-0 flex-1 overflow-y-auto"

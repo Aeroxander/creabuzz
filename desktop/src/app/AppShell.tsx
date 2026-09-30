@@ -151,7 +151,6 @@ export function AppShell() {
     goLaunchpad,
     goNewMessage,
     goOrg,
-    goPaperclip,
     goProjects,
     goPulse,
     goSettings,
@@ -893,7 +892,6 @@ export function AppShell() {
                           ]}
                           onSelectHome={() => void goHome()}
                           onSelectLaunchpad={() => void goLaunchpad()}
-                          onSelectPaperclip={() => void goPaperclip()}
                           onSelectOrg={() => void goOrg()}
                           onSelectWiki={() => void goWiki()}
                           onSelectProjects={() => void goProjects()}

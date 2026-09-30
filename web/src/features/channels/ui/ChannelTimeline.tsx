@@ -35,6 +35,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { Composer, type EditTarget } from "./Composer";
 import { useAgentRoster } from "@/features/fleet/use-agent-roster";
+import { PresenceStrip } from "@/features/presence/ui/PresenceStrip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Bot } from "lucide-react";
 
@@ -499,6 +500,22 @@ export function ChannelTimeline({
 
   const roots = messages.ordered.filter((e) => !getTag(e, "e"));
 
+  // Who is here: recent participants plus the viewer, bounded. There is no
+  // member registry to read, so the timeline's authors are the honest set.
+  const memberPubkeys = useMemo(() => {
+    const seen = new Set<string>();
+    for (const event of messages.ordered) {
+      if (seen.size >= 24) break;
+      seen.add(event.pubkey.toLowerCase());
+    }
+    try {
+      seen.add(userPubkey().toLowerCase());
+    } catch {
+      // Not signed in: presence for the viewer is unavailable, fine.
+    }
+    return [...seen];
+  }, [messages.ordered]);
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
@@ -525,6 +542,7 @@ export function ChannelTimeline({
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-2">
+          <PresenceStrip memberPubkeys={memberPubkeys} />
           {agentsOnline > 0 && (
             <span
               className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs font-medium text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"

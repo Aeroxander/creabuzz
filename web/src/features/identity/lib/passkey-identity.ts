@@ -12,6 +12,8 @@
 
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
+import { storedIdentityHex } from "../../../shared/lib/identity.ts";
+
 import {
   createPasskey,
   deriveNostrSecretKey,
@@ -337,7 +339,7 @@ export function exportPasskeyNsec(): string | null {
     return bytesToHex(sk);
   }
   try {
-    return localStorage.getItem("buzz.identity.nsec");
+    return storedIdentityHex();
   } catch {
     return null;
   }

@@ -37,7 +37,6 @@ test("shipped surfaces are default-on; experiments stay default-off", () => {
   }
   // Experimental surfaces stay opt-in.
   for (const id of [
-    "launchpad",
     "pulse",
     "threadScopedAcpSessions",
     "agentManagedProfiles",
@@ -46,23 +45,23 @@ test("shipped surfaces are default-on; experiments stay default-off", () => {
   }
 });
 
-test("the deprecated Paperclip on-ramp is a default-off desktop preview feature", () => {
-  const feature = manifest.features.find(({ id }) => id === "paperclip");
-
-  assert.ok(feature, "paperclip must be in the manifest");
-  assert.deepEqual(feature.platforms, ["desktop"]);
-  assert.equal(feature.defaultEnabled, undefined, "paperclip must default off");
-  assert.match(feature.name, /deprecated/i);
+test("Launchpad and the retired Paperclip surface are not gated features", () => {
+  // Launchpad ships enabled by default with no experiment toggle, and the
+  // Paperclip surface is gone entirely; neither may linger in the manifest.
+  const ids = new Set(manifest.features.map(({ id }) => id));
+  assert.equal(ids.has("launchpad"), false);
+  assert.equal(ids.has("paperclip"), false);
 });
 
 test("the Org and Wiki entries are not behind a preview flag", () => {
-  // Hiding Paperclip must not hide the surfaces that replaced it.
+  // Shipped surfaces must not be gated just because they replaced an older
+  // surface.
   const ids = new Set(manifest.features.map(({ id }) => id));
   assert.equal(ids.has("org"), false);
   assert.equal(ids.has("wiki"), false);
 });
 
-test("the sidebar gates Paperclip behind its flag and keeps Org and Wiki visible", () => {
+test("the sidebar renders Launchpad ungated and no longer renders Paperclip", () => {
   const source = readFileSync(
     new URL(
       "../../features/sidebar/ui/AppSidebarPinnedHeader.tsx",
@@ -70,15 +69,15 @@ test("the sidebar gates Paperclip behind its flag and keeps Org and Wiki visible
     ),
     "utf8",
   );
-  const gated = source.match(
-    /<FeatureGate feature="paperclip">([\s\S]*?)<\/FeatureGate>/,
+  assert.match(source, /open-launchpad-view/);
+  assert.equal(
+    source.includes('FeatureGate feature="launchpad"'),
+    false,
+    "launchpad must render unconditionally",
   );
-  assert.ok(gated, "the Paperclip entry must sit inside its FeatureGate");
-  assert.match(gated[1], /open-paperclip-view/);
+  assert.equal(source.includes("open-paperclip-view"), false);
+  assert.equal(source.includes('feature="paperclip"'), false);
   for (const testId of ["open-org-view", "open-wiki-view"]) {
-    const at = source.indexOf(testId);
-    assert.ok(at > 0, `${testId} must still be rendered`);
-    // Not inside the paperclip gate.
-    assert.equal(gated[1].includes(testId), false, testId);
+    assert.ok(source.includes(testId), `${testId} must still be rendered`);
   }
 });

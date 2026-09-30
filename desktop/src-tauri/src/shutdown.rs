@@ -26,7 +26,6 @@ pub(crate) fn shut_down_app(app: &tauri::AppHandle, shutdown_done: &std::sync::a
         if let Err(error) = shutdown_managed_agents(app) {
             eprintln!("buzz-desktop: failed to stop managed agents: {error}");
         }
-        shutdown_paperclip(app);
         #[cfg(feature = "mesh-llm")]
         shutdown_mesh_runtime(app);
     }
@@ -48,7 +47,6 @@ pub(crate) fn install_signal_handler(
             app.state::<crate::terminal_runtime::TerminalSessions>()
                 .shutdown_all();
             let _ = shutdown_managed_agents(&app);
-            shutdown_paperclip(&app);
             #[cfg(feature = "mesh-llm")]
             shutdown_mesh_runtime(&app);
         }
@@ -123,20 +121,6 @@ pub(crate) fn shutdown_mesh_runtime(app: &tauri::AppHandle) {
         Ok(Ok(())) => {}
         Ok(Err(error)) => eprintln!("buzz-desktop: failed to stop Mesh runtime: {error}"),
         Err(error) => eprintln!("buzz-desktop: timed out stopping Mesh runtime: {error}"),
-    }
-}
-
-fn shutdown_paperclip(app: &tauri::AppHandle) {
-    use std::sync::atomic::Ordering;
-
-    let state = app.state::<AppState>();
-    state.paperclip_stop_requested.store(true, Ordering::SeqCst);
-    for _ in 0..50 {
-        if let Ok(mut manager) = state.paperclip_manager.try_lock() {
-            manager.shutdown();
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 

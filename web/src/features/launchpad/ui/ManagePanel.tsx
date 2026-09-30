@@ -40,6 +40,7 @@ import {
 } from "../lib/claim-submit";
 import { AuctionSection } from "./AuctionSection";
 import { TokenMintPanel } from "./TokenMintPanel";
+import { TrustGraphCuratorPanel } from "./TrustGraphCuratorPanel";
 
 /**
  * Founder workspace: terms, stage machine, danger zone. Each control
@@ -74,6 +75,8 @@ export function ManagePanel({
   // The milestone panel's own sender picker (the deploy card keeps its own).
   const milestoneSender = useSenderPicker();
   const [milestoneError, setMilestoneError] = useState<string | null>(null);
+  /** What the last completed milestone step did — the machine's status leg. */
+  const [milestoneStatus, setMilestoneStatus] = useState<string | null>(null);
   /** Destructive stage change: confirmed inline, like the delete below. */
   const [confirmRegress, setConfirmRegress] = useState<"failed" | null>(null);
   /** Open the editor seeded for a relaunch (fresh stage, cleared chain links). */
@@ -136,6 +139,7 @@ export function ManagePanel({
    */
   const recordClaim = async () => {
     setMilestoneError(null);
+    setMilestoneStatus(null);
     if (!EVIDENCE_HASH_RE.test(evidenceHash.trim())) {
       setMilestoneError("Evidence hash must be 64 hex characters.");
       return;
@@ -155,6 +159,7 @@ export function ManagePanel({
           tx: txHash.trim(),
         }),
       });
+      setMilestoneStatus("Claim mirror recorded.");
     } catch (err) {
       setMilestoneError(
         err instanceof Error ? err.message : "Failed to record the claim.",
@@ -164,6 +169,7 @@ export function ManagePanel({
 
   const recordVerdict = async (approve: boolean) => {
     setMilestoneError(null);
+    setMilestoneStatus(null);
     if (!isTxHash(txHash)) {
       setMilestoneError(TX_HASH_HINT);
       return;
@@ -179,6 +185,9 @@ export function ManagePanel({
           tx: txHash.trim(),
         }),
       });
+      setMilestoneStatus(
+        approve ? "Verdict recorded: approve." : "Verdict recorded: reject.",
+      );
     } catch (err) {
       setMilestoneError(
         err instanceof Error ? err.message : "Failed to record the verdict.",
@@ -203,6 +212,7 @@ export function ManagePanel({
       | "payout",
   ) => {
     setMilestoneError(null);
+    setMilestoneStatus(null);
     setOnchainSending(true);
     try {
       let calls: OnchainCall[] | null = null;
@@ -248,6 +258,7 @@ export function ManagePanel({
         throw new Error("The sender returned an invalid hash.");
       }
       setTxHash(result.txHash); // prefill for the receipt
+      setMilestoneStatus("Onchain step sent — the hash above is filled in.");
     } catch (err) {
       setMilestoneError(
         senderErrorMessage(err, "The onchain submit was not sent."),
@@ -577,6 +588,14 @@ export function ManagePanel({
                 Collect payout
               </Button>
             </div>
+            {milestoneStatus ? (
+              <p
+                className="mt-1 text-sm text-emerald-700 dark:text-emerald-400"
+                role="status"
+              >
+                <span data-testid="milestone-status">{milestoneStatus}</span>
+              </p>
+            ) : null}
             {milestoneError ? (
               <SignRecovery
                 className="mt-1"
@@ -588,6 +607,8 @@ export function ManagePanel({
           </div>
         </div>
       </details>
+
+      <TrustGraphCuratorPanel />
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">

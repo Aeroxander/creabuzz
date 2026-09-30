@@ -47,7 +47,6 @@ export type AppSidebarProps = {
     | "pulse"
     | "projects"
     | "launchpad"
-    | "paperclip"
     | "org"
     | "wiki";
   unreadChannelCounts: ReadonlyMap<string, number>;
@@ -94,7 +93,6 @@ export type AppSidebarProps = {
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   onSelectHome: () => void;
-  onSelectPaperclip: () => void;
   onSelectOrg: () => void;
   onSelectWiki: () => void;
   onSelectChannel: (channelId: string) => void;

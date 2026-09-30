@@ -3,8 +3,6 @@ import {
   GitBranch,
   Users,
   Shield,
-  DollarSign,
-  AlertTriangle,
   Plus,
   MoreHorizontal,
   Trash2,
@@ -12,9 +10,9 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import { useUsersBatchQuery } from "@/features/profile/hooks";
-import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { Button } from "@/shared/ui/button";
+import { truncatePubkey } from "@/shared/lib/pubkey";
+import { AgentStopControl } from "@/features/agents/ui/AgentStopControl";
 import { Card } from "@/shared/ui/card";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
@@ -26,21 +24,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import {
-  useAgentLivenessQuery,
-  useDeleteOrgNodeMutation,
-  useDeleteOrgBudgetMutation,
-} from "../hooks";
+import { useAgentLivenessQuery, useDeleteOrgNodeMutation } from "../hooks";
 import {
   collectAgentSeats,
   newestSeenPerSeat,
   type AgentLiveness,
 } from "../lib/nodeLiveness";
-import {
-  budgetSubjectLabel,
-  describeBudgetLimits,
-  isCommunityDefaultSubject,
-} from "../lib/budgetForm";
 import { pluralize } from "../lib/format";
 import { buildOrgTree, orgChartSummary, type OrgTreeNode } from "../lib/tree";
 import type { CanvasDensity } from "../lib/canvasLayout";
@@ -49,17 +38,10 @@ import { OrgCanvas } from "./OrgCanvas";
 import { OrgMetricRow } from "./OrgMetricRow";
 import { OrgNodeForm } from "./OrgNodeForm";
 import { OrgGrantForm } from "./OrgGrantForm";
-import { OrgBudgetForm } from "./OrgBudgetForm";
 import { OrgGrantChainView } from "./OrgGrantChainView";
-import { OrgBudgetConsumption } from "./OrgBudgetConsumption";
-import { OrgBudgetLadder } from "./OrgBudgetLadder";
 import { OnchainChip } from "./OnchainChip";
 import { OrgRagequitAction } from "./OrgRagequitDialog";
-import type {
-  OrgNode,
-  OrgBudget,
-  OrgChart as OrgChartType,
-} from "../orgModels";
+import type { OrgNode, OrgChart as OrgChartType } from "../orgModels";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 type ChartViewMode = "canvas" | "list";
@@ -68,10 +50,12 @@ type OrgChartProps = {
   query: UseQueryResult<OrgChartType, Error>;
   /**
    * Object a caller (the audit view's "affected object" links) wants opened:
-   * the node is selected, the grant's detail sheet opens, the budgets section
-   * scrolls into view. `null` means "no focus requested".
+   * the node is selected, the grant's detail sheet opens. `null` means "no
+   * focus requested". Budget links are routed to the Budgets tab instead.
    */
   focus?: OrgChartFocus | null;
+  /** Open the Budgets tab (budget metric chips and create flows). */
+  onOpenBudgets: () => void;
 };
 
 /** Where an audit row's object link should land inside the chart tab. */
@@ -83,7 +67,7 @@ export type OrgChartFocus = {
 /** Liveness decays even without new events, so re-derive it on a timer. */
 const LIVENESS_TICK_MS = 30_000;
 
-export function OrgChart({ query, focus }: OrgChartProps) {
+export function OrgChart({ query, focus, onOpenBudgets }: OrgChartProps) {
   const { data, isLoading, error } = query;
   const livenessQuery = useAgentLivenessQuery();
   const [nowTick, setNowTick] = React.useState(() =>
@@ -98,7 +82,6 @@ export function OrgChart({ query, focus }: OrgChartProps) {
   }, []);
   const [createNodeOpen, setCreateNodeOpen] = React.useState(false);
   const [createGrantOpen, setCreateGrantOpen] = React.useState(false);
-  const [createBudgetOpen, setCreateBudgetOpen] = React.useState(false);
   const [selectedParentDtag, setSelectedParentDtag] = React.useState<
     string | undefined
   >();
@@ -113,24 +96,15 @@ export function OrgChart({ query, focus }: OrgChartProps) {
   const handleSelectNode = React.useCallback((dtag: string) => {
     setSelectedNodeDtag((current) => (current === dtag ? undefined : dtag));
   }, []);
-  const budgetsHeadingRef = React.useRef<HTMLHeadingElement>(null);
-  const focusBudgets = React.useCallback(() => {
-    budgetsHeadingRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-    budgetsHeadingRef.current?.focus({ preventScroll: true });
-  }, []);
-  // Audit-row deep links: select the node, or scroll to the budgets block.
-  // Grant focus is threaded to OrgGrantChainView (its sheet owns that state).
+  // Audit-row deep links: select the node. Grant focus is threaded to
+  // OrgGrantChainView (its sheet owns that state); budget links land on the
+  // Budgets tab (OrgView routes them there).
   React.useEffect(() => {
     if (!focus) return;
     if (focus.kind === "node") {
       setSelectedNodeDtag(focus.id);
-    } else if (focus.kind === "budget") {
-      focusBudgets();
     }
-  }, [focus, focusBudgets]);
+  }, [focus]);
 
   // Liveness derivation must live before the early returns (rules of hooks).
   const agentSeats = React.useMemo(
@@ -200,7 +174,7 @@ export function OrgChart({ query, focus }: OrgChartProps) {
   return (
     <div className="p-4 space-y-4">
       {/* Metric row — one implementation shared with the dashboard. */}
-      <OrgMetricRow data={data} onFocusBudgets={focusBudgets} />
+      <OrgMetricRow data={data} onFocusBudgets={onOpenBudgets} />
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <SegmentedControl
           legend="Chart view"
@@ -254,15 +228,6 @@ export function OrgChart({ query, focus }: OrgChartProps) {
             <Plus className="mr-1 h-3 w-3" />
             Grant
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setCreateBudgetOpen(true)}
-          >
-            <Plus className="mr-1 h-3 w-3" />
-            Budget
-          </Button>
         </div>
       </div>
 
@@ -291,15 +256,6 @@ export function OrgChart({ query, focus }: OrgChartProps) {
         />
       )}
 
-      {/* Budgets */}
-      {data.budgets.length > 0 && (
-        <OrgBudgetSection
-          budgets={data.budgets}
-          headingRef={budgetsHeadingRef}
-          nodes={data.nodes}
-        />
-      )}
-
       {/* Dialogs */}
       <OrgNodeForm
         nodes={data.nodes}
@@ -311,11 +267,6 @@ export function OrgChart({ query, focus }: OrgChartProps) {
         open={createGrantOpen}
         onOpenChange={setCreateGrantOpen}
         nodes={data.nodes}
-      />
-      <OrgBudgetForm
-        nodes={data.nodes}
-        open={createBudgetOpen}
-        onOpenChange={setCreateBudgetOpen}
       />
     </div>
   );
@@ -528,10 +479,13 @@ function NodeOnchainChip({ node }: { node: OrgNode }) {
 function OccupantChips({
   pubkeys,
   liveness,
+  agentSeats,
 }: {
   pubkeys: string[];
   /** Agent-seat liveness keyed by lowercase seat pubkey. */
   liveness: ReadonlyMap<string, AgentLiveness>;
+  /** Seats held by agents (lowercase pubkeys) — these get a stop control. */
+  agentSeats: ReadonlySet<string>;
 }) {
   if (pubkeys.length === 0) return null;
   return (
@@ -546,6 +500,15 @@ function OccupantChips({
               interactive={false}
             />
             {status && <LivenessBadge status={status} />}
+            {agentSeats.has(pubkey.trim().toLowerCase()) ? (
+              <AgentStopControl
+                className="h-5 px-1.5 text-2xs"
+                target={{
+                  pubkey: pubkey.trim().toLowerCase(),
+                  name: truncatePubkey(pubkey),
+                }}
+              />
+            ) : null}
           </span>
         );
       })}
@@ -604,7 +567,13 @@ function OrgTreeNodeRow({
             </span>
             {node.depth === 0 && <NodeOnchainChip node={node.node} />}
           </div>
-          <OccupantChips liveness={liveness} pubkeys={occupants} />
+          <OccupantChips
+            agentSeats={
+              new Set(node.node.agentSeats.map((s) => s.trim().toLowerCase()))
+            }
+            liveness={liveness}
+            pubkeys={occupants}
+          />
         </div>
 
         {/* Context menu */}
@@ -664,151 +633,5 @@ function OrgNodeIcon({ kind }: { kind: OrgNode["kind"] }) {
     <span className="shrink-0 flex h-5 w-5 items-center justify-center text-muted-foreground">
       {icon}
     </span>
-  );
-}
-
-// ── Budget section ────────────────────────────────────────────────────────
-
-function OrgBudgetSection({
-  budgets,
-  headingRef,
-  nodes,
-}: {
-  budgets: OrgBudget[];
-  headingRef: React.RefObject<HTMLHeadingElement | null>;
-  nodes: OrgNode[];
-}) {
-  const deleteMutation = useDeleteOrgBudgetMutation();
-  const activeBudgets = React.useMemo(
-    () => budgets.filter((b) => !b.revoked),
-    [budgets],
-  );
-  // A budget's subject is an agent pubkey (or "*"): name it from the agent's
-  // profile, falling back to the seat it occupies, never the raw 64-hex key.
-  const agentKeys = React.useMemo(
-    () =>
-      activeBudgets
-        .filter((b) => b.subject && !isCommunityDefaultSubject(b.subject))
-        .map((b) => b.subject),
-    [activeBudgets],
-  );
-  const profiles = useUsersBatchQuery(agentKeys).data?.profiles;
-  const seatNames = React.useMemo(() => {
-    const names = new Map<string, string>();
-    for (const node of nodes) {
-      for (const seat of node.agentSeats) {
-        const key = seat.trim().toLowerCase();
-        if (!names.has(key)) names.set(key, node.name);
-      }
-    }
-    return names;
-  }, [nodes]);
-  const subjectName = (budget: OrgBudget): string =>
-    budget.subject
-      ? budgetSubjectLabel(budget.subject, (pubkey) =>
-          resolveUserLabel({
-            pubkey,
-            profiles,
-            fallbackName: seatNames.get(pubkey.trim().toLowerCase()),
-          }),
-        )
-      : budget.dtag;
-
-  if (activeBudgets.length === 0) return null;
-
-  return (
-    <div>
-      <h3
-        className="mb-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        ref={headingRef}
-        tabIndex={-1}
-      >
-        Budgets
-      </h3>
-      <div className="space-y-2">
-        {activeBudgets.map((budget) => {
-          const limitRows = describeBudgetLimits(budget);
-          const name = subjectName(budget);
-
-          return (
-            <Card key={budget.dtag} className="group p-3 relative">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">{name}</span>
-                    {budget.onchain && (
-                      <OnchainChip
-                        address={budget.onchain.contract}
-                        chain={budget.onchain.chain}
-                        label={`Spend bound onchain on ${budget.onchain.chain} to ${budget.onchain.contract}`}
-                      />
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {limitRows.length > 0 ? (
-                      <ul
-                        className="space-y-0.5"
-                        data-testid={`org-budget-limits-${budget.dtag}`}
-                      >
-                        {limitRows.map((row) => (
-                          <li
-                            className="flex flex-wrap items-center gap-1.5"
-                            key={row.key}
-                          >
-                            <span>{row.text}</span>
-                            <span
-                              className="rounded-sm bg-muted px-1 py-0.5 text-2xs font-medium text-muted-foreground"
-                              data-enforcement={row.enforcement}
-                            >
-                              {row.badge}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      "no limits"
-                    )}
-                    <span className="mt-0.5 block">
-                      <AlertTriangle className="inline h-3 w-3" />
-                      on exceed: {budget.onExceed}
-                    </span>
-                  </div>
-                  {isCommunityDefaultSubject(budget.subject) ? (
-                    <p className="mt-1.5 text-2xs text-muted-foreground">
-                      Applies to each agent that has no budget of its own; usage
-                      is tracked per agent.
-                    </p>
-                  ) : (
-                    <OrgBudgetConsumption budget={budget} />
-                  )}
-                  <OrgBudgetLadder budget={budget} />
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      aria-label={`Budget actions for ${name}`}
-                      className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted"
-                      type="button"
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => deleteMutation.mutate(budget.dtag)}
-                    >
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
   );
 }

@@ -1,7 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { usePreviewFeatureWarning } from "@/shared/features";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 const LaunchpadScreen = React.lazy(async () => {
@@ -14,7 +13,6 @@ export const Route = createFileRoute("/launchpad")({
 });
 
 function LaunchpadRouteComponent() {
-  usePreviewFeatureWarning("launchpad");
   return (
     <React.Suspense fallback={<ViewLoadingFallback kind="launchpad" />}>
       <LaunchpadScreen />

@@ -27,6 +27,7 @@
 
 import type { CreateLaunchInput } from "../use-launches.ts";
 import {
+  isEvmAddress,
   isLaunchSlug,
   isWholeTokenSupply,
   suggestSymbol,
@@ -609,6 +610,26 @@ export function publishIssues(
       message: allocationMessage,
     });
   }
+  // Form-level checks the old form enforced inline at submit: one validator
+  // for every gate (create and edit), so no surface can bypass them.
+  const chain = form.chainId.trim();
+  if (chain !== "" && !/^\d+$/.test(chain)) {
+    filtered.push({
+      field: "chainId",
+      severity: "error",
+      message: "Chain id must be a number, e.g. 11155111.",
+    });
+  }
+  for (const field of ["auction", "treasury"] as const) {
+    const value = form[field].trim();
+    if (value !== "" && !isEvmAddress(value)) {
+      filtered.push({
+        field,
+        severity: "error",
+        message: "Auction and treasury must be 0x addresses when set.",
+      });
+    }
+  }
   return filtered;
 }
 
@@ -622,6 +643,32 @@ export function canPublish(
     (meta) => wizardStepIssues(wizard, form, meta.key).length === 0,
   );
   return stepsValid && !hasBlockingIssue(publishIssues(form, window));
+}
+
+/**
+ * Everything that makes an *edit* unsavable. The edit surface validates
+ * through this — never a gate of its own: the form-owning step rules (token:
+ * name, symbol, supply, slug, imported token; dao: budget format) plus the
+ * form-level publish issues. The create-time wizard plan (schedule, unlocks)
+ * is deliberately not consulted — a record's own terms are what a save must
+ * keep.
+ */
+export function editIssues(wizard: WizardState, form: FormState): string[] {
+  const issues = [
+    ...wizardStepIssues(wizard, form, "token"),
+    ...wizardStepIssues(wizard, form, "dao"),
+  ];
+  for (const issue of publishIssues(form, null)) {
+    if (issue.severity === "error") {
+      issues.push(`${issue.field}: ${issue.message}`);
+    }
+  }
+  return issues;
+}
+
+/** True when the edit surface's save may proceed. */
+export function canSaveEdit(wizard: WizardState, form: FormState): boolean {
+  return editIssues(wizard, form).length === 0;
 }
 
 /**

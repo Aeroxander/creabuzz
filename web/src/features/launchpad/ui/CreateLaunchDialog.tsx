@@ -7,8 +7,6 @@ import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useProject } from "@/features/projects/use-projects";
 import {
   isEvmAddress,
-  isLaunchSlug,
-  isWholeTokenSupply,
   LAUNCH_DEFAULTS,
   suggestSymbol,
   type VestingConfig,
@@ -23,7 +21,7 @@ import {
   DEFAULT_PERFORMANCE_TRANCHES,
   validateVesting,
 } from "../lib/vesting-params";
-import { hasBlockingIssue, standardLaunchPreset } from "../lib/launch-params";
+import { standardLaunchPreset } from "../lib/launch-params";
 import { formatMoney, formatQ96PerToken } from "../lib/amounts";
 import { atomicToPrice, unitsToPlain, type SaleKind } from "../lib/sale-plans";
 import {
@@ -39,6 +37,7 @@ import {
   budgetShare,
   buildLegacyInput,
   canPublish,
+  canSaveEdit,
   deriveTokenName,
   effectiveLaunchId,
   initialWizardState,
@@ -76,9 +75,9 @@ import {
 } from "../lib/unlock-plans";
 import { Modal } from "./Modal";
 import {
-  legacyFields,
-  type LegacyFieldsState,
-} from "./create-wizard/LegacyFields";
+  AdvancedFields,
+  type AdvancedFieldsState,
+} from "./create-wizard/AdvancedFields";
 import {
   WizardSteps,
   type WizardController,
@@ -215,8 +214,25 @@ export function CreateLaunchDialog({
     initial?.claimBlock?.toString() ?? "",
   );
 
-  // ── The wizard's own state (create mode only) ───────────────────────────
-  const [wizard, setWizard] = useState<WizardState>(() => initialWizardState());
+  // ── The wizard's own state ──────────────────────────────────────────────
+  const [wizard, setWizard] = useState<WizardState>(() =>
+    initialWizardState(
+      initial
+        ? {
+            // Edit renders the same step components, so the plain-language
+            // boxes must show the record's own terms. Display mirroring only —
+            // nothing re-derives on load.
+            price: q96ToPlainPrice(
+              initial.floorPrice ?? "",
+              saleCurrency.decimals,
+            ),
+            raiseTarget: initial.requiredRaised
+              ? unitsToPlain(initial.requiredRaised, saleCurrency.decimals)
+              : "",
+          }
+        : {},
+    ),
+  );
   const patch = (next: Partial<WizardState>) =>
     setWizard((previous) => ({ ...previous, ...next }));
   /** The instant the dialog opened — the conversion line stays stable. */
@@ -323,30 +339,14 @@ export function CreateLaunchDialog({
       );
   const paramIssues = publishIssues(form, validationWindow);
   const stepIssues = wizardStepIssues(wizard, form, wizard.step);
-  const allStepsOk = WIZARD_STEPS.every(
-    (meta) => wizardStepIssues(wizard, form, meta.key).length === 0,
-  );
-  const tokenValid =
-    tokenMode === "mint"
-      ? tokenName.trim().length > 0 &&
-        symbol.trim().length > 0 &&
-        isWholeTokenSupply(supply)
-      : isEvmAddress(importAddress);
 
-  /** The legacy form's own gate — still what "Save changes" obeys. */
-  const legacyValid =
-    isLaunchSlug(id) &&
-    name.trim().length > 0 &&
-    (chainId.trim() === "" || /^\d+$/.test(chainId.trim())) &&
-    tokenValid &&
-    !hasBlockingIssue(paramIssues) &&
-    allocationMessage === null;
-
+  // One validator owns both gates (lib/wizard.ts): `canPublish` for a create,
+  // `canSaveEdit` for a save. No local gate — a surface that validates itself
+  // is a surface that can drift from the wizard (the editSurfaceContract test
+  // binds this).
   const publishEnabled = isEdit
-    ? legacyValid
-    : canPublish(wizard, form, validationWindow) &&
-      allStepsOk &&
-      rawBlocks !== "incomplete";
+    ? canSaveEdit(wizard, form)
+    : canPublish(wizard, form, validationWindow) && rawBlocks !== "incomplete";
 
   // ── Money derivation: the wizard's plain numbers → the record's ─────────
 
@@ -425,11 +425,34 @@ export function CreateLaunchDialog({
 
   const onPrice = (value: string) => {
     patch({ price: value });
+    if (isEdit) {
+      // Edit writes exactly the field the box names — the floor — the same
+      // semantics as the raw override below it. The create-time triple
+      // derivation stays create-time (`applyMoney`).
+      const money = patchForPrice(
+        value,
+        wizard.saleKind,
+        supply,
+        saleCurrency.decimals,
+      );
+      if (money) setFloorPrice(money.floorPrice);
+      return;
+    }
     applyMoney({ price: value, mode: "price" });
   };
 
   const onRaiseTarget = (value: string) => {
     patch({ raiseTarget: value });
+    if (isEdit) {
+      const money = patchForRaiseTarget(
+        value,
+        wizard.saleKind,
+        supply,
+        saleCurrency.decimals,
+      );
+      if (money) setRequiredRaised(money.requiredRaised);
+      return;
+    }
     applyMoney({ raiseTarget: value, mode: "raise" });
   };
 
@@ -558,12 +581,6 @@ export function CreateLaunchDialog({
 
   const runSubmit = async () => {
     if (isCreating) return;
-    for (const value of [auction, treasury]) {
-      if (value.trim() !== "" && !isEvmAddress(value)) {
-        setError("Auction and treasury must be 0x addresses when set.");
-        return;
-      }
-    }
     setError(null);
     if (isEdit) {
       void onCreate({
@@ -674,6 +691,7 @@ export function CreateLaunchDialog({
   const controller: WizardController = {
     wizard,
     patch,
+    editing: isEdit,
     token: {
       name,
       onName,
@@ -755,7 +773,7 @@ export function CreateLaunchDialog({
   };
 
   /** Everything the Advanced drawer / edit body edits, in one bag. */
-  const legacy: LegacyFieldsState = {
+  const legacy: AdvancedFieldsState = {
     id,
     setId,
     onName,
@@ -773,10 +791,6 @@ export function CreateLaunchDialog({
     setTokenMode,
     tokenName,
     setTokenName,
-    symbol,
-    setSymbol,
-    totalSupplyText,
-    onTotalSupply,
     importAddress,
     setImportAddress,
     verifyState,
@@ -853,7 +867,10 @@ export function CreateLaunchDialog({
       ) : null}
       <div className="mt-3 flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
         {isEdit ? (
-          legacyFields(legacy, true)
+          <>
+            <WizardSteps controller={controller} variant="all" />
+            <AdvancedFields {...legacy} />
+          </>
         ) : (
           <>
             <WizardSteps controller={controller} />
@@ -868,7 +885,7 @@ export function CreateLaunchDialog({
                 </span>
               </summary>
               <div className="mt-3 flex flex-col gap-3">
-                {legacyFields(legacy, false)}
+                <AdvancedFields {...legacy} />
               </div>
             </details>
           </>

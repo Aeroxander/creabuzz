@@ -11,7 +11,6 @@ type ViewLoadingFallbackKind =
   | "forum"
   | "launchpad"
   | "org"
-  | "paperclip"
   | "projects"
   | "pulse"
   | "wiki"
@@ -421,9 +420,6 @@ export function ViewLoadingFallback({
       ) : null}
       {kind === "pulse" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />
-      ) : null}
-      {kind === "paperclip" ? (
-        <BuzzLoadingState fill label="Loading Paperclip" />
       ) : null}
       {kind === "org" ? (
         <BuzzLoadingState fill label="Loading Org Chart" />

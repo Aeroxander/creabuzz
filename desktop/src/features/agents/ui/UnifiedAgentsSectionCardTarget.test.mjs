@@ -376,9 +376,18 @@ for (const kind of ["persona", "custom", "unknown"]) {
           fireEvent.keyDown(dot, { key: "Enter" });
           fireEvent.keyDown(dot, { key: " " });
           assert.deepEqual(starts, []);
+          // The RUNTIME control must not morph a live agent's affordance into
+          // Stop. The only Stop on the card is the emergency-stop control
+          // (`stop-agent-*`), a different action that is always present.
+          const runtimeStop = screen
+            .queryAllByRole("button", { name: /Stop/ })
+            .filter(
+              (b) => !b.getAttribute("data-testid")?.startsWith("stop-agent-"),
+            );
           assert.equal(
-            Boolean(screen.queryByRole("button", { name: /Stop/ })),
-            false,
+            runtimeStop.length,
+            0,
+            "an active agent must not show a runtime Stop",
           );
         }
       }
