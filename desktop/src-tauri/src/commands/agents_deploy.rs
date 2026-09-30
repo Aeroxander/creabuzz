@@ -46,6 +46,10 @@ pub(crate) fn resolve_deploy_model_provider(
 /// `descriptor.env` is the authoritative six-layer environment for ordinary
 /// values. Desktop-owned settings are reserved, stripped from that layer, and
 /// emitted through `policy_env` so local and provider launches agree.
+// One projection per policy_env key (prompt, model, bindings, session policy,
+// timeouts, title) — grouping them would trade eight flat, testable arguments
+// for a struct only this call site builds.
+#[allow(clippy::too_many_arguments)]
 fn build_launch_block_for_policy(
     record: &ManagedAgentRecord,
     descriptor: &crate::managed_agents::readiness::EffectiveHarnessDescriptor,
@@ -53,6 +57,7 @@ fn build_launch_block_for_policy(
     effective_prompt: Option<&str>,
     effective_model: Option<&str>,
     owner_pubkey: &str,
+    skill_bindings: Option<&str>,
     session_policy: crate::managed_agents::AcpSessionPolicy,
 ) -> serde_json::Value {
     use crate::managed_agents::{
@@ -83,6 +88,13 @@ fn build_launch_block_for_policy(
 
     if let Some(value) = effective_prompt {
         policy_env.insert("BUZZ_ACP_SYSTEM_PROMPT".into(), value.to_string());
+    }
+    // Persona skill bindings (`["skill", id, scope]` tags on the linked
+    // kind:30175 head) — resolved locally at deploy time exactly as local spawn
+    // does (`managed_agents/skill_bindings.rs`), so a provider-backed agent
+    // inherits the same skills as a local one.
+    if let Some(value) = skill_bindings {
+        policy_env.insert("BUZZ_ACP_SKILL_BINDINGS".into(), value.to_string());
     }
     if let Some(value) = effective_model {
         // B2: remote env-authority model key. Claude's startup model authority
@@ -173,6 +185,7 @@ pub(super) fn build_launch_block(
         effective_prompt,
         effective_model,
         owner_pubkey,
+        None,
         crate::managed_agents::AcpSessionPolicy::Channel,
     )
 }
@@ -216,6 +229,25 @@ pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
         crate::managed_agents::resolve_effective_harness_descriptor(record, &personas, &global)
             .map_err(|error| crate::managed_agents::user_facing_harness_error(&error))?;
     let owner_pubkey = super::workspace_owner_hex(state)?;
+    // Same binding resolution as local spawn (`managed_agents/skill_bindings.rs`),
+    // run here on the desktop because the provider never sees the owner's
+    // retention store. `effective_agent_relay_url` always yields the workspace
+    // relay, so this is the same scope `active_retention_scope` writes to.
+    let effective_relay_url = crate::relay::effective_agent_relay_url(
+        &record.relay_url,
+        &relay_ws_url_with_override(state),
+    );
+    let skill_bindings_persona = record.persona_id.as_deref().and_then(|persona_id| {
+        personas
+            .iter()
+            .find(|definition| definition.id == persona_id)
+    });
+    let skill_bindings = crate::managed_agents::skill_bindings::spawn_skill_bindings_json(
+        app,
+        &effective_relay_url,
+        Some(&owner_pubkey),
+        skill_bindings_persona,
+    );
     let launch = build_launch_block_for_policy(
         record,
         &descriptor,
@@ -223,6 +255,7 @@ pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
         effective.system_prompt.value.as_deref(),
         effective.model.value.as_deref(),
         &owner_pubkey,
+        skill_bindings.as_deref(),
         crate::managed_agents::effective_acp_session_policy(record, &personas),
     );
 
@@ -231,10 +264,7 @@ pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
 
     Ok(deploy_payload_json(
         record,
-        crate::relay::effective_agent_relay_url(
-            &record.relay_url,
-            &relay_ws_url_with_override(state),
-        ),
+        effective_relay_url,
         DeployProjections {
             effective_model: effective.model.value,
             effective_provider: effective.provider.value,
@@ -384,6 +414,7 @@ mod tests {
             None,
             None,
             "owner-hex",
+            None,
             crate::managed_agents::AcpSessionPolicy::Thread,
         );
 

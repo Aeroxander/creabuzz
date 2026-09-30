@@ -22,6 +22,7 @@ import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { Textarea } from "@/shared/ui/textarea";
+import { WebIdentityHandoffCard } from "@/features/identity/WebIdentityHandoffCard";
 import { PrivateKeyBackupRow } from "./PrivateKeyBackupRow";
 import {
   SettingsOptionGroup,
@@ -779,7 +780,7 @@ export function ProfileSettingsCard({
                                   className="text-sm font-normal text-muted-foreground/70"
                                   data-settings-subcopy
                                 >
-                                  Your keypair and NIP-05 handle are fixed for
+                                  Your key and verified handle are fixed for
                                   this device.
                                 </p>
                               </div>
@@ -797,11 +798,12 @@ export function ProfileSettingsCard({
                               />
                               <IdentityRow
                                 copyValue={profile?.nip05Handle ?? undefined}
-                                label="NIP-05 handle"
+                                label="Verified handle"
                                 testId="profile-nip05"
                                 value={nip05Handle}
                               />
                               <PrivateKeyBackupRow />
+                              <WebIdentityHandoffCard />
                             </div>
                           </details>
                         </SettingsOptionGroup>

@@ -215,6 +215,7 @@ async fn lifecycle_routes_duplicate_replay_delete_and_redaction() {
         f.owner.public_key().as_bytes(),
         &f.state,
         f.community,
+        false,
     )
     .await;
     let replay = f.state.db.query_events(&query).await.unwrap();

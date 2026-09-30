@@ -1,0 +1,24 @@
+name: scene-review
+description: Send each new scene or sound brief to the producer for approval, then post the approved prompt in-thread
+trigger:
+  on: message_posted
+  filter: '!trigger_is_reply'
+steps:
+  - id: request
+    name: Producer review
+    action: request_approval
+    from: "@The Producer"
+    message: "Brief for review: {{trigger.text | truncate(200)}}"
+    timeout: 24h
+  - id: publish
+    name: Publish approved prompt
+    if: 'steps_request_output_approved == true'
+    action: send_message
+    reply_in_thread: true
+    text: |
+      🎬 Brief — approved by the producer
+
+      {{trigger.text}}
+
+      Paste it into your image, video, or audio tool (ComfyUI, Midjourney, MiniMax, or whatever your studio works with). For a variant, reply in this thread and ask the matching agent — @The Scene Generator (change one dimension at a time: lens, light, or mood) or @The Sound & Music (tempo, texture, or dynamics).
+enabled: true

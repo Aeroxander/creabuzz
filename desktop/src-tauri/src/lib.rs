@@ -13,6 +13,7 @@ mod events;
 #[cfg_attr(not(test), allow(dead_code))]
 mod hpke_key_backup;
 mod huddle;
+mod identity_link;
 mod identity_storage;
 mod initial_window;
 mod key_backup;
@@ -77,6 +78,10 @@ use huddle::{
     remove_agent_from_huddle, set_huddle_manual_mic_unmuted, set_huddle_transcription_enabled,
     set_tts_enabled, set_voice_input_mode, speak_agent_message, start_huddle, start_stt_pipeline,
     HuddlePhase,
+};
+use identity_link::{
+    cancel_identity_link, start_identity_link, take_identity_link_result, IdentityLinkResults,
+    PendingIdentityLinks,
 };
 use initial_window::*;
 use managed_agents::{
@@ -228,6 +233,8 @@ pub fn run() {
         .manage(PendingCommunityDeepLinks::default())
         .manage(PendingNavigationDeepLinks::default())
         .manage(PendingEntityDeepLinks::default())
+        .manage(PendingIdentityLinks::default())
+        .manage(IdentityLinkResults::default())
         .manage(BuilderlabSession::default())
         .manage(BuilderlabLogin::default())
         .manage(commands::pairing::PairingHandle::new())
@@ -557,6 +564,9 @@ pub fn run() {
             unarchive_builderlab_community,
             transfer_builderlab_community,
             title_bar_double_click,
+            start_identity_link,
+            cancel_identity_link,
+            take_identity_link_result,
             get_identity,
             get_nsec,
             generate_backup_passphrase,
@@ -564,6 +574,7 @@ pub fn run() {
             verify_ncryptsec_backup,
             save_ncryptsec_copy,
             import_identity,
+            preview_identity_import,
             persist_current_identity,
             get_profile,
             update_profile,
@@ -604,6 +615,25 @@ pub fn run() {
             is_shared_identity,
             get_relay_ws_url,
             get_relay_http_url,
+            org_classify_task,
+            org_classify_all_done,
+            team_run,
+            team_reflect,
+            team_strategy_put,
+            team_strategies_seed,
+            templates_list,
+            templates_show,
+            templates_apply,
+            agwiki_distill,
+            evm_wallet_status,
+            evm_wallet_create,
+            evm_wallet_import,
+            evm_chain_status,
+            evm_call,
+            evm_send_transaction,
+            evm_find_bid_ids,
+            org_ragequit,
+            org_evm_status,
             get_media_proxy_port,
             fetch_link_preview_metadata,
             cancel_link_preview_metadata,
@@ -754,6 +784,10 @@ pub fn run() {
             delete_persona,
             set_persona_active,
             set_persona_shared,
+            fetch_project_skills,
+            fetch_skill_bindings,
+            publish_skill,
+            set_persona_skill_binding,
             reconcile_inbound_persona_event,
             list_channel_templates,
             create_channel_template,

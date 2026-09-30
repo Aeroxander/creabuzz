@@ -10,6 +10,13 @@ import {
   getProjectInboxReference,
   isProjectInboxItem,
 } from "@/features/home/lib/projectInbox";
+import {
+  KIND_APPROVAL_REQUEST,
+  needsMeHeadline,
+  needsMePreview,
+  parseNeedsMeApproval,
+  type NeedsMeApproval,
+} from "@/features/home/lib/needsMe";
 import type { TimelineReaction } from "@/features/messages/types";
 import type {
   Channel,
@@ -120,6 +127,127 @@ function tagValue(item: FeedItem, name: string) {
   return item.tags.find((tag) => tag[0] === name)?.[1]?.trim() || null;
 }
 
+export type AgentActivitySummary = {
+  headline: string;
+  preview: string;
+};
+
+/** Defensive JSON parse: agent content is untrusted display text. */
+function parseAgentContent(content: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Plain-text content or malformed JSON — callers fall back.
+  }
+  return null;
+}
+
+function stringField(obj: Record<string, unknown>, key: string): string | null {
+  const value = obj[key];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+/**
+ * Verb→object→outcome summary for agent-plane kinds (fleet capabilities /
+ * tasks, turn metrics, workflow lifecycle). Pure function of kind + content
+ * so it is unit-testable; `feedHeadline` / `feedPreview` delegate to it.
+ *
+ * Honesty rule: kind:44200 content is NIP-44 ciphertext — never guess at
+ * tokens or cost, say who can see them.
+ */
+export function agentActivitySummary(
+  kind: number,
+  content: string,
+): AgentActivitySummary | null {
+  switch (kind) {
+    case 44010: {
+      const parsed = parseAgentContent(content);
+      const name = (parsed && stringField(parsed, "name")) ?? "Agent";
+      const status = (parsed && stringField(parsed, "status")) ?? "updated";
+      const tools = parsed?.tools;
+      const toolList = Array.isArray(tools)
+        ? tools.filter((t): t is string => typeof t === "string").slice(0, 5)
+        : [];
+      return {
+        headline: `${name} is ${status}`,
+        preview:
+          toolList.length > 0
+            ? `Tools: ${toolList.join(", ")}`
+            : (content.trim().split("\n")[0] ?? ""),
+      };
+    }
+    case 44011: {
+      const parsed = parseAgentContent(content);
+      const title = (parsed && stringField(parsed, "title")) ?? "Task update";
+      const status = parsed && stringField(parsed, "status");
+      const description = parsed && stringField(parsed, "description");
+      return {
+        headline: status ? `Task ${status}: ${title}` : `Task: ${title}`,
+        preview: description?.split("\n")[0] ?? "",
+      };
+    }
+    case 44200:
+      return {
+        headline: "Agent turn completed",
+        preview: "Usage details are encrypted to the agent owner.",
+      };
+    case 46001:
+    case 46005:
+    case 46006: {
+      // Workflow lifecycle content may be structured JSON (step envelopes,
+      // error payloads). Render a readable field, never the raw envelope.
+      const parsed = parseAgentContent(content);
+      const structuredMessage =
+        parsed &&
+        (stringField(parsed, "message") ??
+          stringField(parsed, "error") ??
+          stringField(parsed, "workflow") ??
+          stringField(parsed, "name"));
+      const plainFirstLine = content.trim().split("\n")[0] ?? "";
+      const preview =
+        structuredMessage ??
+        (parsed === null && !content.trim().startsWith("[")
+          ? plainFirstLine
+          : "");
+      if (kind === 46001) {
+        return { headline: "Workflow started", preview };
+      }
+      if (kind === 46005) {
+        return { headline: "Workflow completed", preview };
+      }
+      return {
+        headline: "Workflow failed",
+        preview: preview || "A workflow step failed.",
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The "Needs me" view of a kind:46010 approval request — budget overrun or
+ * workflow request. Pure function of the event so headline/preview/type-label
+ * stay unit-testable.
+ */
+function needsMeApprovalForItem(item: FeedItem): NeedsMeApproval | null {
+  if (item.kind !== KIND_APPROVAL_REQUEST) {
+    return null;
+  }
+  return parseNeedsMeApproval({
+    content: item.content,
+    created_at: item.createdAt,
+    id: item.id,
+    kind: item.kind,
+    pubkey: item.pubkey,
+    sig: "",
+    tags: item.tags,
+  });
+}
+
 function projectRootItem(item: FeedItem, groupItems: readonly FeedItem[]) {
   return (
     groupItems.find(
@@ -162,9 +290,15 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
       return "Forum post";
     case 45003:
       return "Forum reply";
-    case 46010:
-      return "Approval requested";
-    default:
+    case 46010: {
+      const approval = needsMeApprovalForItem(item);
+      return approval ? needsMeHeadline(approval) : "Approval requested";
+    }
+    default: {
+      const summary = agentActivitySummary(item.kind, item.content);
+      if (summary) {
+        return summary.headline;
+      }
       if (item.category === "mention") {
         return "Mention";
       }
@@ -174,10 +308,49 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
       }
 
       return "Channel update";
+    }
   }
 }
 
 function feedPreview(item: FeedItem) {
+  // Agent-plane summaries first: kind:44200 content is NIP-44 ciphertext and
+  // must never render raw; fleet kinds render structured, not verbatim JSON.
+  const summary = agentActivitySummary(item.kind, item.content);
+  if (
+    summary &&
+    (item.kind === 44200 || item.kind === 44010 || item.kind === 44011)
+  ) {
+    return summary.preview;
+  }
+
+  // Workflow lifecycle events with structured (JSON) content render the
+  // kind-aware summary field, never the raw envelope. Plain-text workflow
+  // messages keep the full verbatim text below.
+  if (
+    summary &&
+    (item.kind === 46001 || item.kind === 46005 || item.kind === 46006)
+  ) {
+    const trimmed = item.content.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      return summary.preview;
+    }
+  }
+
+  // Budget overrun requests carry JSON content — render the kind-aware
+  // summary, never the raw envelope. Workflow requests keep their plain-text
+  // message when one was attached.
+  if (item.kind === 46010) {
+    const approval = needsMeApprovalForItem(item);
+    if (approval && approval.kind === "budget-overrun") {
+      return needsMePreview(approval);
+    }
+    // Structured (JSON) content that is not a recognized budget envelope must
+    // not render raw either — fall back to the workflow summary.
+    if (item.content.trim().startsWith("{")) {
+      return "A workflow is waiting for approval.";
+    }
+  }
+
   const content = item.content.trim();
   if (content.length > 0) {
     return content;
@@ -282,6 +455,16 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
   if (item.item.channelType === "dm") {
     return {
       text: item.senderLabel ? `DM from ${item.senderLabel}` : "DM",
+      channelLabel: null,
+    };
+  }
+
+  // NIP-ORG budget overrun requests are community-level events — they have no
+  // channel. Label the org scope instead of the generic "Needs action".
+  const needsMeApproval = needsMeApprovalForItem(item.item);
+  if (needsMeApproval?.kind === "budget-overrun") {
+    return {
+      text: "Org budget",
       channelLabel: null,
     };
   }

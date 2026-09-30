@@ -744,6 +744,20 @@ impl BuzzClient {
         Ok(events)
     }
 
+    /// Query up to `limit` events with a bounded, non-erroring read.
+    ///
+    /// Unlike [`Self::query_all_bounded`], returning fewer events than
+    /// requested is authoritative — used for presence checks where one
+    /// match proves existence (e.g. the batch classifier's skip-existing
+    /// record read).
+    pub async fn query_pages_bounded(
+        &self,
+        filter: serde_json::Value,
+        limit: u32,
+    ) -> Result<Vec<serde_json::Value>, CliError> {
+        self.query_pages(filter, Some(limit)).await
+    }
+
     /// Sign an event builder verbatim: no NIP-OA auth-tag injection, and none
     /// of [`sign_event`]'s "callers must not add auth tags" enforcement.
     ///

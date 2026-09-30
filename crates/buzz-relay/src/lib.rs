@@ -3,6 +3,7 @@
 //! NIP-01 WebSocket relay for Buzz private team communication.
 
 mod admission;
+mod audit;
 mod build_info;
 mod rejection;
 
@@ -50,6 +51,8 @@ pub mod nip_fi_config;
 pub(crate) mod nip_fi_http;
 /// Deployment-global operator-listener mention delivery worker.
 pub mod operator_listener;
+/// Anonymous P2P-signaling admission policy (`BUZZ_P2P_SIGNALING`).
+pub mod p2p_signaling;
 /// NIP-01 client/relay message parsing.
 pub mod protocol;
 /// Durable NIP-PL matcher and delivery worker.

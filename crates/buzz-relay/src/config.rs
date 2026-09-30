@@ -85,6 +85,137 @@ pub struct JoinPolicyConfig {
     pub version: String,
 }
 
+/// Optional LLM gateway (browser-agent key gateway).
+///
+/// Browser agents can't carry API keys (nor call arbitrary hosts through
+/// CORS), so the relay forwards `/llm/chat/completions` to this upstream,
+/// injecting the operator's key server-side. Auth: NIP-98, same as `/query`.
+
+#[derive(Clone, Debug)]
+pub struct EvmAuthConfig {
+    /// EIP-155 chain id the SIWE message must claim.
+    pub chain_id: Option<u64>,
+    /// Optional EIP-6492 validator address (smart-account verification).
+    pub erc6492_validator: Option<String>,
+    /// Optional JSON-RPC URL for smart-account (EIP-1271/6492) verification.
+    pub rpc_url: Option<String>,
+    /// Require the EIP-712 attestation binding EVM root -> npub at intake.
+    pub enforce_attestation: bool,
+}
+
+/// Relay-held credentials for the server-side LLM gateway.
+///
+/// The browser and sandbox agents call `POST /llm/chat/completions` with
+/// NIP-98 auth; the upstream URL and bearer key never leave the relay.
+#[derive(Clone)]
+pub struct LlmConfig {
+    proxy_url: String,
+    api_key: Option<String>,
+    rate_per_min: u64,
+    max_calls_per_day: u32,
+    max_tokens: u64,
+    model: Option<String>,
+    /// Price of input tokens in milli-cents per million tokens (0 = unpriced).
+    price_input_mc_per_mtok: u64,
+    /// Price of output tokens in milli-cents per million tokens (0 = unpriced).
+    price_output_mc_per_mtok: u64,
+}
+
+/// Milli-cents per US cent: LLM spend is metered in thousandths of a cent so a
+/// call costing a fraction of a cent is neither rounded away nor rounded up.
+pub const MILLICENTS_PER_CENT: u64 = 1000;
+
+/// Default per-caller LLM gateway calls per minute (`BUZZ_LLM_RATE_PER_MIN`).
+pub const DEFAULT_LLM_RATE_PER_MIN: u64 = 20;
+/// Default per-caller daily LLM call cap when no budget covers the caller
+/// (`BUZZ_LLM_MAX_CALLS_PER_DAY`).
+pub const DEFAULT_LLM_MAX_CALLS_PER_DAY: u32 = 500;
+/// Default ceiling on `max_tokens` per gateway request (`BUZZ_LLM_MAX_TOKENS`).
+pub const DEFAULT_LLM_MAX_TOKENS: u64 = 4096;
+
+impl LlmConfig {
+    /// Upstream OpenAI-compatible `/chat/completions` URL.
+    pub(crate) fn proxy_url(&self) -> &str {
+        &self.proxy_url
+    }
+
+    /// Optional bearer key injected server-side; browsers never see it.
+    pub(crate) fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
+    }
+
+    /// Per-caller calls per minute (`BUZZ_LLM_RATE_PER_MIN`, default 20).
+    pub(crate) fn rate_per_min(&self) -> u64 {
+        self.rate_per_min
+    }
+
+    /// Daily call cap applied when no budget covers the caller
+    /// (`BUZZ_LLM_MAX_CALLS_PER_DAY`, default 500).
+    pub(crate) fn max_calls_per_day(&self) -> u32 {
+        self.max_calls_per_day
+    }
+
+    /// Ceiling on `max_tokens` per request (`BUZZ_LLM_MAX_TOKENS`, default 4096).
+    pub(crate) fn max_tokens(&self) -> u64 {
+        self.max_tokens
+    }
+
+    /// Operator-pinned model (`BUZZ_LLM_MODEL`); when set it overrides the
+    /// caller's `model` field.
+    pub(crate) fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    /// `(input, output)` prices in milli-cents per million tokens
+    /// (`BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK` / `..._OUTPUT_...`). `None` when
+    /// neither is set: LLM spend cannot be metered, so a budget that carries a
+    /// cost limit makes the gateway refuse rather than run unmetered.
+    pub(crate) fn pricing(&self) -> Option<(u64, u64)> {
+        (self.price_input_mc_per_mtok > 0 || self.price_output_mc_per_mtok > 0)
+            .then_some((self.price_input_mc_per_mtok, self.price_output_mc_per_mtok))
+    }
+}
+
+/// Parse a price in US cents per million tokens (decimals allowed, e.g.
+/// `0.75`) into milli-cents. Unset or blank means unpriced (0); a negative,
+/// non-numeric or absurd value is a startup error, never a silent default.
+fn price_mc_per_mtok_from_env(name: &str) -> Result<u64, ConfigError> {
+    let Ok(raw) = std::env::var(name) else {
+        return Ok(0);
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(0);
+    }
+    let cents: f64 = raw.parse().map_err(|_| {
+        ConfigError::InvalidValue(format!(
+            "{name} must be a number of US cents per million tokens (got \"{raw}\")"
+        ))
+    })?;
+    // Up to $1,000,000 per million tokens: far beyond any real price.
+    if !cents.is_finite() || !(0.0..=100_000_000.0).contains(&cents) {
+        return Err(ConfigError::InvalidValue(format!(
+            "{name} is out of range (got \"{raw}\")"
+        )));
+    }
+    Ok((cents * MILLICENTS_PER_CENT as f64).round() as u64)
+}
+
+impl std::fmt::Debug for LlmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LlmConfig")
+            .field("proxy_url", &self.proxy_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("rate_per_min", &self.rate_per_min)
+            .field("max_calls_per_day", &self.max_calls_per_day)
+            .field("max_tokens", &self.max_tokens)
+            .field("model", &self.model)
+            .field("price_input_mc_per_mtok", &self.price_input_mc_per_mtok)
+            .field("price_output_mc_per_mtok", &self.price_output_mc_per_mtok)
+            .finish()
+    }
+}
+
 /// Optional KLIPY GIF-search integration owned by the relay operator.
 ///
 /// The API key deliberately stays private and its [`Debug`] implementation is
@@ -213,6 +344,16 @@ pub struct Config {
     /// are permitted regardless of auth method (API token, NIP-42).
     pub require_relay_membership: bool,
 
+    /// When `true` (the default), ingest of kind:37011 org grants verifies
+    /// the grant chain (attenuation, root standing, expiry, and that every
+    /// node and grant it names was signed by the authority it claims — R1)
+    /// before acceptance, per NIP-ORG "Relay behavior". Set
+    /// `ORG_GRANT_ENFORCEMENT=off` to store and forward grants unchanged.
+    /// When on, a grant whose chain cannot be fully verified (missing
+    /// parent/node, unanchored node, lookup error) is rejected — never
+    /// stored as verified. Equity records (`"type":"equity"`) are exempt.
+    pub org_grant_enforcement: bool,
+
     /// Whether this deployment can serve huddle (voice) audio.
     ///
     /// Huddle audio frames are relayed peer-to-peer *within a single pod*
@@ -292,6 +433,13 @@ pub struct Config {
     ///
     /// Default: `false`. Set via `BUZZ_ALLOW_NIP_OA_AUTH=true`.
     pub allow_nip_oa_auth: bool,
+
+    /// Relay-owned LLM gateway. Unset means `/llm/chat/completions` returns 404.
+    pub llm: Option<LlmConfig>,
+
+    /// SIWE onboarding (creabuzz). Unset means the /auth/siwe routes 404
+    /// and the relay stays stock-compatible.
+    pub evm_auth: Option<EvmAuthConfig>,
 
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
@@ -384,6 +532,38 @@ pub struct Config {
     /// at WebSocket upgrade. `Off` mode (the default) leaves all identity
     /// enforcement to NIP-42 alone.
     pub nip_fi: crate::nip_fi_config::NipFiRelayConfig,
+    /// When true (`BUZZ_WEB_SPA=full`), every path the relay does not own
+    /// itself falls back to the web bundle's `index.html`, enabling arbitrary
+    /// client-side routing in the web SPA.
+    pub web_spa_full: bool,
+    /// When true (`BUZZ_P2P_SIGNALING=1`), anonymous clients may subscribe and
+    /// publish NIP-01 ephemeral events (kinds 20000–29999) without NIP-42
+    /// auth. Ephemeral events are broadcast to live subscribers only and never
+    /// stored, so this opens no durable data: it lets browser P2P layers
+    /// (e.g. Trystero over Nostr signaling) rendezvous through the relay.
+    /// Defaults to off; the relay's read/write auth posture is unchanged.
+    ///
+    /// Even when on, anonymous access is confined to the
+    /// [`p2p_signaling_policy`](Self::p2p_signaling_policy): allowlisted
+    /// ephemeral kinds (never a Buzz-defined kind such as presence 20001),
+    /// Trystero-shaped `#x` topic filters/events, a per-connection
+    /// subscription cap and a per-connection frame budget.
+    pub p2p_signaling: bool,
+
+    /// Whether the unauthenticated `GET /communities` directory is served
+    /// (`BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`). Default off: on a multi-tenant
+    /// deployment the directory lists every hosted community's host, icon and
+    /// member count to anyone, so it is an explicit operator choice. When
+    /// off the route answers 404, exactly like a relay that predates it (the
+    /// web client already falls back gracefully).
+    pub public_community_directory: bool,
+    /// Anonymous P2P-signaling admission policy
+    /// (`BUZZ_P2P_SIGNALING_KINDS`, `BUZZ_P2P_SIGNALING_MAX_SUBSCRIPTIONS`,
+    /// `BUZZ_P2P_SIGNALING_EVENTS_PER_MIN`). Only consulted when
+    /// [`p2p_signaling`](Self::p2p_signaling) is true; a malformed value is a
+    /// startup error.
+    pub p2p_signaling_policy: crate::p2p_signaling::P2pSignalingPolicy,
+
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -739,6 +919,25 @@ impl Config {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
+        // NIP-ORG grant-chain enforcement: ON by default (R1 — authority is
+        // verified at ingest unless an operator explicitly turns it off).
+        // Only the exact spellings "on"/"off" are accepted; any other value
+        // is a startup error so a typo can never silently disable (or
+        // enable) authority enforcement. Unset or empty means the default
+        // (on); `off` restores byte-identical store-and-forward for grants.
+        let org_grant_enforcement = match std::env::var("ORG_GRANT_ENFORCEMENT") {
+            Ok(raw) => match raw.trim() {
+                "on" | "" => true,
+                "off" => false,
+                other => {
+                    return Err(ConfigError::InvalidValue(format!(
+                        "ORG_GRANT_ENFORCEMENT must be \"on\" or \"off\" (got \"{other}\")"
+                    )))
+                }
+            },
+            Err(_) => true,
+        };
+
         // Defaults true → single-pod (N=1) keeps today's huddle behavior. A
         // horizontally-scaled deployment sets this false; see the field doc.
         let huddle_audio_available = std::env::var("BUZZ_HUDDLE_AUDIO_AVAILABLE")
@@ -776,6 +975,70 @@ impl Config {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
+        let llm = {
+            let proxy_url = std::env::var("BUZZ_LLM_PROXY_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let api_key = std::env::var("BUZZ_LLM_API_KEY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let model = std::env::var("BUZZ_LLM_MODEL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let rate_per_min =
+                positive_u64_from_env("BUZZ_LLM_RATE_PER_MIN", DEFAULT_LLM_RATE_PER_MIN)?;
+            let max_calls_per_day = u32::try_from(positive_u64_from_env(
+                "BUZZ_LLM_MAX_CALLS_PER_DAY",
+                u64::from(DEFAULT_LLM_MAX_CALLS_PER_DAY),
+            )?)
+            .map_err(|_| {
+                ConfigError::InvalidValue(
+                    "BUZZ_LLM_MAX_CALLS_PER_DAY must fit in 32 bits".to_string(),
+                )
+            })?;
+            let max_tokens = positive_u64_from_env("BUZZ_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS)?;
+            let price_input_mc_per_mtok =
+                price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK")?;
+            let price_output_mc_per_mtok =
+                price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK")?;
+            proxy_url.map(|proxy_url| LlmConfig {
+                proxy_url,
+                api_key,
+                rate_per_min,
+                max_calls_per_day,
+                max_tokens,
+                model,
+                price_input_mc_per_mtok,
+                price_output_mc_per_mtok,
+            })
+        };
+
+        // A set-but-unparseable chain id must fail startup: silently dropping it
+        // would turn off the SIWE chain check the operator asked for.
+        let evm_chain_id: Option<u64> = match std::env::var("BUZZ_EVM_CHAIN_ID") {
+            Ok(raw) if !raw.trim().is_empty() => Some(raw.trim().parse().map_err(|_| {
+                ConfigError::InvalidValue(format!(
+                    "BUZZ_EVM_CHAIN_ID must be a positive integer chain id (got \"{}\")",
+                    raw.trim()
+                ))
+            })?),
+            _ => None,
+        };
+        let evm_auth = std::env::var("BUZZ_EVM_AUTH")
+            .ok()
+            .map(|v| v.eq_ignore_ascii_case("on") || v == "true" || v == "1")
+            .unwrap_or(false)
+            .then(|| EvmAuthConfig {
+                chain_id: evm_chain_id,
+                erc6492_validator: std::env::var("BUZZ_EVM_ERC6492_VALIDATOR").ok(),
+                rpc_url: std::env::var("BUZZ_EVM_RPC_URL").ok(),
+                enforce_attestation: std::env::var("BUZZ_EVM_ENFORCE_ATTESTATION")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+            });
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
             .map(|value| value.trim().to_string())
@@ -1310,6 +1573,16 @@ impl Config {
         let serve_git_web_gui = std::env::var("BUZZ_SERVE_GIT_WEB_GUI")
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
+        let web_spa_full = std::env::var("BUZZ_WEB_SPA")
+            .map(|value| value.eq_ignore_ascii_case("full"))
+            .unwrap_or(false);
+        let p2p_signaling = std::env::var("BUZZ_P2P_SIGNALING")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
+        let p2p_signaling_policy = crate::p2p_signaling::P2pSignalingPolicy::from_env()?;
+        let public_community_directory = std::env::var("BUZZ_PUBLIC_COMMUNITY_DIRECTORY")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
 
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
@@ -1359,6 +1632,7 @@ impl Config {
             partition_manager_create_enabled,
             pubkey_allowlist_enabled,
             require_relay_membership,
+            org_grant_enforcement,
             huddle_audio_available,
             mesh,
             mesh_demo_echo,
@@ -1367,6 +1641,8 @@ impl Config {
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
             allow_nip_oa_auth,
+            llm,
+            evm_auth,
             klipy,
             media,
             media_max_concurrent_uploads,
@@ -1393,6 +1669,10 @@ impl Config {
             web_dir,
             serve_git_web_gui,
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
+            web_spa_full,
+            p2p_signaling,
+            public_community_directory,
+            p2p_signaling_policy,
         })
     }
 
@@ -1534,6 +1814,10 @@ mod tests {
         assert!(
             !config.require_relay_membership,
             "require_relay_membership should default to false"
+        );
+        assert!(
+            config.org_grant_enforcement,
+            "org_grant_enforcement should default to true (R1: verified by default)"
         );
         assert!(
             config.relay_owner_pubkey.is_none(),
@@ -1679,6 +1963,167 @@ mod tests {
     /// changes the resolved auth mode (token auth was removed).
     const SOME_ADMIN_TOKEN: &str =
         "5f0e1d2c3b4a59687786958493a2b1c0decadebeefcafe0123456789abcdef01";
+
+    #[test]
+    fn org_grant_enforcement_parses_explicit_on_and_off() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "on");
+        let config = Config::from_env().expect("config with ORG_GRANT_ENFORCEMENT=on");
+        assert!(config.org_grant_enforcement);
+
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "off");
+        let config = Config::from_env().expect("config with ORG_GRANT_ENFORCEMENT=off");
+        assert!(!config.org_grant_enforcement);
+
+        // Empty means "use the default" (on) — never a silent disable: a
+        // templated-but-unset env var must not switch authority checks off.
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "");
+        let config = Config::from_env().expect("config with empty ORG_GRANT_ENFORCEMENT");
+        assert!(config.org_grant_enforcement);
+
+        // Unset is the default: on.
+        std::env::remove_var("ORG_GRANT_ENFORCEMENT");
+        let config = Config::from_env().expect("config without ORG_GRANT_ENFORCEMENT");
+        assert!(config.org_grant_enforcement);
+    }
+
+    #[test]
+    fn llm_gateway_limits_default_and_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 5] = [
+            "BUZZ_LLM_PROXY_URL",
+            "BUZZ_LLM_RATE_PER_MIN",
+            "BUZZ_LLM_MAX_CALLS_PER_DAY",
+            "BUZZ_LLM_MAX_TOKENS",
+            "BUZZ_LLM_MODEL",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        std::env::set_var(
+            "BUZZ_LLM_PROXY_URL",
+            "http://127.0.0.1:1/v1/chat/completions",
+        );
+
+        let llm = Config::from_env()
+            .expect("config with the gateway on defaults")
+            .llm
+            .expect("gateway configured");
+        assert_eq!(llm.rate_per_min(), 20);
+        assert_eq!(llm.max_calls_per_day(), 500);
+        assert_eq!(llm.max_tokens(), 4096);
+        assert_eq!(llm.model(), None);
+
+        std::env::set_var("BUZZ_LLM_RATE_PER_MIN", "7");
+        std::env::set_var("BUZZ_LLM_MAX_CALLS_PER_DAY", "42");
+        std::env::set_var("BUZZ_LLM_MAX_TOKENS", "256");
+        std::env::set_var("BUZZ_LLM_MODEL", " tiny-model ");
+        let llm = Config::from_env()
+            .expect("config with overrides")
+            .llm
+            .expect("gateway configured");
+        assert_eq!(llm.rate_per_min(), 7);
+        assert_eq!(llm.max_calls_per_day(), 42);
+        assert_eq!(llm.max_tokens(), 256);
+        assert_eq!(llm.model(), Some("tiny-model"));
+
+        // A zero or non-numeric limit is a startup error, never a silent default.
+        for bad in ["0", "many"] {
+            std::env::set_var("BUZZ_LLM_RATE_PER_MIN", bad);
+            let err = Config::from_env().expect_err("bad rate must fail startup");
+            assert!(err.to_string().contains("BUZZ_LLM_RATE_PER_MIN"), "{err}");
+        }
+
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    #[test]
+    fn a_bad_evm_chain_id_fails_startup_instead_of_disabling_the_check() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("BUZZ_EVM_AUTH", "on");
+        std::env::set_var("BUZZ_EVM_CHAIN_ID", "8453");
+        let config = Config::from_env().expect("a valid chain id");
+        assert_eq!(config.evm_auth.expect("evm auth on").chain_id, Some(8453));
+
+        for bad in ["mainnet", "0x2105", "-1", "8453.5"] {
+            std::env::set_var("BUZZ_EVM_CHAIN_ID", bad);
+            let err = Config::from_env().expect_err("a bad chain id must fail startup");
+            assert!(err.to_string().contains("BUZZ_EVM_CHAIN_ID"), "{err}");
+        }
+
+        std::env::remove_var("BUZZ_EVM_CHAIN_ID");
+        std::env::remove_var("BUZZ_EVM_AUTH");
+    }
+
+    #[test]
+    fn llm_prices_are_optional_decimal_cents_and_strict() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 3] = [
+            "BUZZ_LLM_PROXY_URL",
+            "BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK",
+            "BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        std::env::set_var(
+            "BUZZ_LLM_PROXY_URL",
+            "http://127.0.0.1:1/v1/chat/completions",
+        );
+        let llm = |what: &str| {
+            Config::from_env()
+                .unwrap_or_else(|e| panic!("{what}: {e}"))
+                .llm
+                .expect("gateway configured")
+        };
+
+        // Unpriced by default: a cost budget cannot be metered.
+        assert_eq!(llm("defaults").pricing(), None);
+
+        // Decimal cents per million tokens become milli-cents.
+        std::env::set_var("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK", "15");
+        std::env::set_var("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK", "0.75");
+        assert_eq!(llm("prices").pricing(), Some((15_000, 750)));
+
+        // One direction priced is enough to meter (the other is free).
+        std::env::remove_var("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK");
+        assert_eq!(llm("output only").pricing(), Some((0, 750)));
+
+        // A negative, non-numeric or absurd price is a startup error.
+        for bad in ["-1", "cheap", "NaN", "1e12"] {
+            std::env::set_var("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK", bad);
+            let err = Config::from_env().expect_err("bad price must fail startup");
+            assert!(
+                err.to_string()
+                    .contains("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK"),
+                "{err}"
+            );
+        }
+
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    #[test]
+    fn org_grant_enforcement_rejects_unknown_values() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", "true");
+        let err = Config::from_env().expect_err("non-on/off value must fail startup");
+        assert!(
+            err.to_string().contains("ORG_GRANT_ENFORCEMENT"),
+            "error must name the variable: {err}"
+        );
+        // Trimmed whitespace still rejects — only exact "on"/"off" pass.
+        std::env::set_var("ORG_GRANT_ENFORCEMENT", " true");
+        assert!(
+            Config::from_env().is_err(),
+            "whitespace-padded value must be rejected"
+        );
+        std::env::remove_var("ORG_GRANT_ENFORCEMENT");
+    }
 
     #[test]
     fn admin_token_set_is_ignored_and_warns_at_startup() {

@@ -7,9 +7,9 @@ use tracing::{debug, warn};
 
 use buzz_core::filter::filters_match;
 use buzz_core::kind::{
-    is_unshared_gated_event, AUTHOR_ONLY_KINDS, KIND_AGENT_ENGRAM, KIND_AGENT_TURN_METRIC,
-    KIND_DM_VISIBILITY, KIND_HUDDLE_LIVENESS, P_GATED_KINDS, RESULT_GATED_KINDS,
-    SHARED_GATED_KINDS,
+    is_admin_only_kind, is_unshared_gated_event, ADMIN_ONLY_KINDS, AUTHOR_ONLY_KINDS,
+    KIND_AGENT_ENGRAM, KIND_AGENT_TURN_METRIC, KIND_DM_VISIBILITY, KIND_HUDDLE_LIVENESS,
+    P_GATED_KINDS, RESULT_GATED_KINDS, SHARED_GATED_KINDS,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::EventQuery;
@@ -80,6 +80,38 @@ pub async fn handle_req(
                 }
 
                 (conn.conn_id, pk_bytes, ctx.channel_ids.clone())
+            }
+            // P2P signaling mode: an anonymous socket may subscribe only to the
+            // Trystero-shaped allowlist in `p2p_signaling` — allowlisted
+            // ephemeral kinds (never a Buzz-defined kind such as presence
+            // 20001) narrowed by `#x` topics — so it can neither read
+            // community state nor enumerate members. It is also bounded: a
+            // per-connection frame budget and a standing-subscription cap
+            // (the authenticated MAX_SUBSCRIPTIONS arm above never applies).
+            _ if state.config.p2p_signaling
+                && state.config.p2p_signaling_policy.filters_allowed(&filters) =>
+            {
+                let policy = &state.config.p2p_signaling_policy;
+                if !state.p2p_signaling_limiter.admit(
+                    conn.conn_id,
+                    crate::p2p_signaling::AnonymousFrame::Req,
+                    policy.frames_per_minute,
+                ) {
+                    conn.send(RelayMessage::closed(
+                        &sub_id,
+                        "rate-limited: anonymous signaling quota exceeded",
+                    ));
+                    return;
+                }
+                let subs = conn.subscriptions.lock().await;
+                if !subs.contains_key(&sub_id) && subs.len() >= policy.max_subscriptions {
+                    conn.send(RelayMessage::closed(
+                        &sub_id,
+                        "error: too many subscriptions",
+                    ));
+                    return;
+                }
+                (conn.conn_id, vec![0u8; 32], None)
             }
             _ => {
                 conn.send(RelayMessage::notice(
@@ -245,6 +277,22 @@ pub async fn handle_req(
         return;
     }
 
+    // Admin-only kinds (the audit chain) are readable only by the community
+    // owner/admin. Resolve the reader's role once, only when a filter can match
+    // such a kind; a lookup failure closes the REQ instead of answering with an
+    // authoritative "no entries".
+    let reader_is_admin =
+        match resolve_reader_is_admin(&state, conn.tenant.community(), &pubkey_bytes, &filters)
+            .await
+        {
+            Ok(is_admin) => is_admin,
+            Err(e) => {
+                warn!(conn_id = %conn_id, "Failed to resolve reader role: {e}");
+                conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+                return;
+            }
+        };
+
     // Applied BEFORE the NIP-50 search branch so that an authenticated member
     // cannot use `{"search":"...","kinds":[30174]}` (or similar for p-gated
     // kinds) to harvest indexed-but-globally-stored sensitive events. Search
@@ -321,6 +369,7 @@ pub async fn handle_req(
                 token_channel_ids.is_none(),
                 &conn.tenant,
                 &pubkey_bytes,
+                reader_is_admin,
                 &conn,
                 &state,
                 trace_state.as_ref(),
@@ -411,6 +460,9 @@ pub async fn handle_req(
                 };
                 let mut params =
                     filter_to_query_params(filter, per_filter_channel, conn.tenant.community());
+                // `filter_to_query_params` excludes admin-only kinds in SQL; only an
+                // authenticated owner/admin lifts that.
+                params.exclude_admin_only_kinds = !reader_is_admin;
                 params.before_id = before_ids.get(idx).cloned().flatten();
                 apply_channel_scope_to_query(
                     &mut params,
@@ -521,7 +573,7 @@ pub async fn handle_req(
                 // Also enforces author-only kinds (30300/30350) and the persona
                 // shared-gate (kind:30175 without ["shared","true"]). Single call
                 // covers all three gated event classes.
-                if !event_visible_to_reader(&stored.event, &pubkey_bytes) {
+                if !event_visible_to_reader(&stored.event, &pubkey_bytes, reader_is_admin) {
                     continue;
                 }
 
@@ -688,6 +740,7 @@ async fn handle_search_req(
     include_global: bool,
     tenant: &TenantContext,
     reader_pubkey_bytes: &[u8],
+    reader_is_admin: bool,
     conn: &ConnectionState,
     state: &AppState,
     trace_state: Option<&crate::conformance::AbstractState>,
@@ -887,7 +940,8 @@ async fn handle_search_req(
                     }
                     // Result-level gate: covers author-only, persona shared-gate,
                     // and result-gated kinds in one call.
-                    if !event_visible_to_reader(&stored.event, reader_pubkey_bytes) {
+                    if !event_visible_to_reader(&stored.event, reader_pubkey_bytes, reader_is_admin)
+                    {
                         continue;
                     }
                     // Dedup AFTER acceptance — an event that fails filter A's constraints
@@ -915,14 +969,21 @@ async fn handle_search_req(
 ///
 /// Public wrapper for use by the HTTP bridge and COUNT handler.
 /// Resolves accessible channels for the given pubkey and builds the query.
+///
+/// `reader_is_admin` is the caller-resolved community owner/admin role (see
+/// [`resolve_reader_is_admin`]). Admin-only kinds are excluded in SQL unless it
+/// is `true`, so a caller that forgets the role check fails closed.
 pub async fn build_event_query_from_filter(
     filter: &Filter,
     _pubkey_bytes: &[u8],
     _state: &AppState,
     community: buzz_core::tenant::CommunityId,
+    reader_is_admin: bool,
 ) -> EventQuery {
     let channel_id = extract_channel_id_from_filter(filter);
-    filter_to_query_params(filter, channel_id, community)
+    let mut query = filter_to_query_params(filter, channel_id, community);
+    query.exclude_admin_only_kinds = !reader_is_admin;
+    query
 }
 
 /// Maximum SQL candidate rows a non-pushable COUNT filter may inspect before
@@ -1175,6 +1236,10 @@ fn filter_to_query_params(
         ids,
         e_tags,
         d_tag_values,
+        // Fail closed: every client-facing read excludes admin-only kinds
+        // (the audit chain) unless the caller proved an owner/admin role and
+        // flips this off.
+        exclude_admin_only_kinds: true,
         ..EventQuery::for_community(community)
     }
 }
@@ -1628,6 +1693,37 @@ pub(crate) fn filter_can_match_shared_gated_kinds(filter: &Filter) -> bool {
     })
 }
 
+/// Returns `true` if the filter CAN match an admin-only kind — meaning it
+/// either has no `kinds` constraint (wildcard, including a kindless `ids`
+/// lookup) or explicitly includes a kind in [`ADMIN_ONLY_KINDS`].
+pub(crate) fn filter_can_match_admin_only_kinds(filter: &Filter) -> bool {
+    filter.kinds.as_ref().is_none_or(|ks| {
+        ks.iter()
+            .any(|k| ADMIN_ONLY_KINDS.contains(&(k.as_u16() as u32)))
+    })
+}
+
+/// Resolve whether the reader is the community owner or an admin, for the
+/// admin-only read gate ([`ADMIN_ONLY_KINDS`]).
+///
+/// Performs no lookup (and returns `false`) when no filter can match an
+/// admin-only kind, so ordinary reads pay nothing. A database error is
+/// propagated: callers must fail the request rather than treat it as
+/// "not an admin" and serve an authoritative empty audit result.
+pub(crate) async fn resolve_reader_is_admin(
+    state: &AppState,
+    community: buzz_core::tenant::CommunityId,
+    reader_pubkey_bytes: &[u8],
+    filters: &[Filter],
+) -> Result<bool, buzz_db::DbError> {
+    if !filters.iter().any(filter_can_match_admin_only_kinds) {
+        return Ok(false);
+    }
+    state
+        .is_community_admin_cached(community, reader_pubkey_bytes)
+        .await
+}
+
 /// Returns `true` if the filter CAN match result-gated kinds — meaning it
 /// either has no `kinds` constraint (wildcard) or includes at least one kind
 /// that carries a per-event result-level read gate (currently
@@ -1689,6 +1785,8 @@ pub(crate) fn is_author_only_event(event: &nostr::Event, requester_pubkey_bytes:
 ///    explicitly opted into sharing.
 /// 3. **Result-gated kinds** (kind 44200/30622 etc.): `reader_authorized_for_event`
 ///    carries the per-event ownership check.
+/// 4. **Admin-only kinds** (`ADMIN_ONLY_KINDS`, the 48001 audit chain): only a
+///    community owner/admin (`reader_is_admin`) may read them.
 ///
 /// The hex representation required by `reader_authorized_for_event` is derived
 /// internally so callers cannot supply inconsistent byte/hex identities.
@@ -1696,7 +1794,17 @@ pub(crate) fn is_author_only_event(event: &nostr::Event, requester_pubkey_bytes:
 /// Call this from every read surface — both WS (REQ/COUNT/fan-out) and HTTP
 /// (NIP-98 `/query`, `/count`, FTS search) — instead of inlining the three
 /// individual predicates at each site.
-pub(crate) fn event_visible_to_reader(event: &nostr::Event, requester_pubkey_bytes: &[u8]) -> bool {
+pub(crate) fn event_visible_to_reader(
+    event: &nostr::Event,
+    requester_pubkey_bytes: &[u8],
+    reader_is_admin: bool,
+) -> bool {
+    // Admin-only kinds (audit chain): community owner/admin only. Enforced
+    // here as well as in SQL so id-based hydration and search hits cannot
+    // bypass the query-level exclusion.
+    if !reader_is_admin && is_admin_only_kind(event.kind.as_u16() as u32) {
+        return false;
+    }
     if is_author_only_event(event, requester_pubkey_bytes) {
         return false;
     }
@@ -3050,6 +3158,60 @@ mod tests {
             &public,
             &reader_keys.public_key().to_bytes()
         ));
+    }
+
+    #[test]
+    fn admin_only_events_are_visible_to_admins_alone() {
+        let relay_keys = nostr::Keys::generate();
+        let member = nostr::Keys::generate().public_key().to_bytes();
+        let audit = nostr::EventBuilder::new(
+            nostr::Kind::Custom(buzz_core::kind::KIND_AUDIT_ENTRY as u16),
+            "{}",
+        )
+        .sign_with_keys(&relay_keys)
+        .unwrap();
+        let note = nostr::EventBuilder::new(nostr::Kind::TextNote, "note")
+            .sign_with_keys(&relay_keys)
+            .unwrap();
+
+        // Not even the event's own signer (the relay key) reads it as a member.
+        assert!(!event_visible_to_reader(&audit, &member, false));
+        assert!(!event_visible_to_reader(
+            &audit,
+            &relay_keys.public_key().to_bytes(),
+            false
+        ));
+        assert!(event_visible_to_reader(&audit, &member, true));
+        // The gate is scoped to admin-only kinds.
+        assert!(event_visible_to_reader(&note, &member, false));
+        assert!(event_visible_to_reader(&note, &member, true));
+    }
+
+    #[test]
+    fn admin_only_kind_detection_covers_wildcard_and_explicit_filters() {
+        let audit = nostr::Kind::Custom(buzz_core::kind::KIND_AUDIT_ENTRY as u16);
+        assert!(filter_can_match_admin_only_kinds(&Filter::new()));
+        assert!(filter_can_match_admin_only_kinds(
+            &Filter::new().kind(audit)
+        ));
+        assert!(filter_can_match_admin_only_kinds(
+            &Filter::new().kinds([nostr::Kind::TextNote, audit])
+        ));
+        assert!(!filter_can_match_admin_only_kinds(
+            &Filter::new().kind(nostr::Kind::TextNote)
+        ));
+    }
+
+    #[test]
+    fn client_read_queries_exclude_admin_only_kinds_unless_the_reader_is_an_admin() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::nil());
+        let filter = Filter::new().kind(nostr::Kind::Custom(
+            buzz_core::kind::KIND_AUDIT_ENTRY as u16,
+        ));
+        assert!(
+            filter_to_query_params(&filter, None, community).exclude_admin_only_kinds,
+            "the default for every client-facing query must be fail-closed"
+        );
     }
 
     #[test]

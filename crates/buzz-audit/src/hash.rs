@@ -356,4 +356,165 @@ mod tests {
         let b = serde_json::json!({"a": 2, "m": 3, "z": 1});
         assert_eq!(canonical_json(&a).unwrap(), canonical_json(&b).unwrap());
     }
+
+    /// Cross-language digest binding: the v1 vector pinned in the desktop's
+    /// committed TypeScript verifier must equal what this crate computes.
+    ///
+    /// `desktop/src/features/org/lib/auditChain.test.mjs` documents that its
+    /// vectors were produced by this crate's `compute_hash` (the v1 fixture *is*
+    /// `sample_entry()` above, `hash.rs:125-139`). The desktop recomputes every
+    /// kind:48001 digest client-side from the published envelope, so if either
+    /// implementation drifts, `verifyChain` rejects a chain this crate still
+    /// appends — or worse, accepts one it would reject. This test reads the
+    /// pinned hex out of the TS file at test time and re-derives it here, so
+    /// *any* change to the TS vectors or to `compute_hash` reds until both are
+    /// reconciled deliberately.
+    #[test]
+    fn ts_pinned_vector_v1_matches_compute_hash() {
+        let ts_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../desktop/src/features/org/lib/auditChain.test.mjs");
+        let ts = std::fs::read_to_string(&ts_path)
+            .unwrap_or_else(|e| panic!("cannot read TS vector file {} ({e})", ts_path.display()));
+
+        // Isolate the v1 block: from `it("v1:` to the start of the v2 block.
+        let v1_start = ts
+            .find("it(\"v1:")
+            .expect("TS vector file must still pin a v1 vector");
+        let v1_end = ts[v1_start..]
+            .find("it(\"v2:")
+            .map(|off| v1_start + off)
+            .expect("TS vector file must still pin a v2 vector after v1");
+        let v1_block = &ts[v1_start..v1_end];
+
+        // The expected digest is the 64-hex-digit literal in that block.
+        let ts_digest = (0..v1_block.len())
+            .find_map(|i| {
+                let candidate = &v1_block[i..];
+                let len = candidate
+                    .find(|c: char| !c.is_ascii_hexdigit())
+                    .unwrap_or(candidate.len());
+                if len == 64 && candidate.is_char_boundary(len) {
+                    let hex = &candidate[..len];
+                    if hex
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+                    {
+                        return Some(hex.to_owned());
+                    }
+                }
+                None
+            })
+            .expect("v1 block must contain a 64-hex-digit digest");
+
+        // Re-derive AS version 1: the TS block pins the legacy preimage
+        // (`sample_entry()` itself writes v2 today), and this test's job is to
+        // keep the historical encoding verifiable — `encoding_versions_have_
+        // stable_digests` covers the v2 output.
+        let mut legacy = sample_entry();
+        legacy.hash_version = 1;
+        let rust_digest: String = compute_hash(&legacy)
+            .expect("sample_entry hashes")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+
+        assert_eq!(
+            rust_digest, ts_digest,
+            "Rust compute_hash and the TS verifier's pinned v1 vector diverged — \
+             the desktop would reject chains this crate appends"
+        );
+    }
+
+    /// Golden vectors shared with `desktop/src/features/org/lib/auditChain.test.mjs`
+    /// ("computeChainHash — v2 TLV vectors from the crate's own compute_hash").
+    /// Both sides pin the same three digests: the TypeScript port and this crate
+    /// must build byte-identical v2 preimages, so changing the encoding reds one
+    /// of the two suites.
+    #[test]
+    fn v2_tlv_vectors_match_the_typescript_port() {
+        fn fixture(
+            seq: i64,
+            action: AuditAction,
+            actor: Option<Vec<u8>>,
+            object_id: Option<String>,
+            detail: serde_json::Value,
+            prev: Option<Vec<u8>>,
+            created_at: &str,
+        ) -> AuditEntry {
+            AuditEntry {
+                hash_version: CURRENT_HASH_VERSION,
+                community_id: Uuid::from_u128(1),
+                seq,
+                hash: Vec::new(),
+                prev_hash: prev,
+                action,
+                actor_pubkey: actor,
+                object_id,
+                detail,
+                created_at: chrono::DateTime::parse_from_rfc3339(created_at)
+                    .unwrap()
+                    .with_timezone(&Utc),
+            }
+        }
+        fn digest(entry: &AuditEntry) -> String {
+            compute_hash(entry)
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        }
+        fn hex32(s: &str) -> Vec<u8> {
+            (0..32)
+                .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
+                .collect()
+        }
+
+        // t1 — genesis under TLV: `prev_hash = None` is OMITTED (v1 substituted
+        // `GENESIS_HASH`), actor and object keep their tags.
+        let t1 = digest(&fixture(
+            1,
+            AuditAction::EventCreated,
+            Some(vec![0xab; 32]),
+            Some("abc123".into()),
+            serde_json::Value::Null,
+            None,
+            "2026-01-01T00:00:00Z",
+        ));
+        assert_eq!(
+            t1, "e12c899d941af9794679602ae83ef2ab1c8f029fe380349263a046a93374d580",
+            "t1: TLV genesis vector diverged from the TS port"
+        );
+
+        // t2 — chained: prev tag present, canonical key order, millisecond
+        // timestamp renders at three digits.
+        let t2 = digest(&fixture(
+            2,
+            AuditAction::ChannelCreated,
+            None,
+            None,
+            serde_json::json!({"z":1,"a":{"m":[true,null,"x"],"n":2},"b":"two"}),
+            Some(hex32(&t1)),
+            "2026-01-01T00:00:01.5Z",
+        ));
+        assert_eq!(
+            t2, "304a04c13473d8610d063d726337a04c932520fb24bdfbd410e9e5228526de43",
+            "t2: TLV chained vector diverged from the TS port"
+        );
+
+        // t3 — Some(empty) actor keeps its tag at zero length (omission is
+        // only for None), nanosecond input truncates to storage precision.
+        let t3 = digest(&fixture(
+            3,
+            AuditAction::MemberAdded,
+            Some(vec![]),
+            Some("obj-4".into()),
+            serde_json::json!({"k":1}),
+            Some(hex32(&t2)),
+            "2023-11-14T22:13:20.123456789Z",
+        ));
+        assert_eq!(
+            t3, "4c53ce1289a8055c43dcf15424b0d5216a98de03aed64e04060aab6806f670fd",
+            "t3: TLV presence-tag vector diverged from the TS port"
+        );
+    }
 }

@@ -2,10 +2,14 @@
 
 pub mod admin;
 pub mod bridge;
+pub mod communities;
+pub mod dao_json;
 pub mod events;
+pub mod evm_auth;
 pub mod gifs;
 pub mod git;
 pub mod invites;
+pub mod llm_gateway;
 pub mod media;
 pub mod mesh_demo;
 pub mod nip05;

@@ -705,12 +705,17 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 53);
+        assert_eq!(migrations.len(), 58);
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
         assert_eq!(migrations[51].version, 52);
         assert_eq!(migrations[52].version, 53);
+        assert_eq!(migrations[53].version, 54);
+        assert_eq!(migrations[54].version, 55);
+        assert_eq!(migrations[55].version, 56);
+        assert_eq!(migrations[56].version, 57);
+        assert_eq!(migrations[57].version, 58);
         assert!(migrations[48]
             .sql
             .as_str()
@@ -1376,6 +1381,54 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("CREATE TABLE artifact_heads"));
+
+        // NIP-ORG budget enforcement (0056): windowed consumption counters and
+        // durable require-approval rows, written before the best-effort
+        // kind:46010 notification.
+        assert_eq!(migrations[53].version, 54);
+        assert_eq!(migrations[54].version, 55);
+        assert_eq!(migrations[55].version, 56);
+        let budget_enforcement = migrations[55].sql.as_str();
+        assert!(budget_enforcement.contains("CREATE TABLE budget_consumption"));
+        assert!(budget_enforcement.contains("CREATE TABLE budget_approvals"));
+        assert!(budget_enforcement.contains("idx_budget_approvals_one_pending"));
+
+        // The fork's tenant tables must carry the community write fence and be
+        // declared in the desired-state schema, or every whole-community
+        // deletion fails closed with "catalog drift".
+        assert_eq!(migrations[56].version, 57);
+        let fork_fences = migrations[56].sql.as_str();
+        for table in ["evm_identities", "budget_consumption", "budget_approvals"] {
+            assert!(
+                fork_fences.contains(&format!("attach_community_write_fence('{table}')")),
+                "migration 0057 must fence {table}"
+            );
+            assert!(
+                desired_schema.contains(&format!("attach_community_write_fence('{table}')")),
+                "schema.sql must fence {table}"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+        }
+        assert!(desired_schema.contains("revoked_reason TEXT"));
+
+        // Wiki/fleet/team slugs are materialized into events.d_tag; the backfill
+        // must cover exactly the kinds the ingest-side extractor materializes.
+        assert_eq!(migrations[57].version, 58);
+        let d_tag_backfill = migrations[57].sql.as_str();
+        for kind in buzz_core::kind::D_TAG_ADDRESSED_KINDS {
+            assert!(
+                d_tag_backfill.contains(&kind.to_string()),
+                "migration 0058 must backfill kind {kind}"
+            );
+        }
+        assert!(d_tag_backfill.contains("community_write_allowed"));
+        assert!(
+            !d_tag_backfill.contains("BETWEEN 30000"),
+            "0058 is about the non-NIP-33 kinds; NIP-33 rows are already populated"
+        );
     }
 
     #[test]
@@ -2013,6 +2066,22 @@ mod postgres_tests {
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
         expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
+        // Tenant tables added after 0029 attach their own fence in migration
+        // 0057 (`evm_identities`, `budget_consumption`, `budget_approvals`);
+        // the desired-state schema must declare the same attachments.
+        let migration_0057: &str = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == 57)
+            .expect("embedded migration 0057")
+            .sql
+            .as_ref();
+        let fork_fences = surface(migration_0057).fence_attachments;
+        assert_eq!(
+            fork_fences.len(),
+            3,
+            "0057 fences exactly the three fork tenant tables: {fork_fences:?}"
+        );
+        expected_fences.extend(fork_fences);
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"
@@ -2444,14 +2513,22 @@ mod postgres_tests {
             .await
             .expect("connect migrated probe database");
         MIGRATOR
-            .run_to(47, &migrated)
+            // 57 is the last migration touching any compared table: upstream's
+            // admin tables finalize at 0047, the fork tenant tables at 0057
+            // (community write fence attachment).
+            .run_to(57, &migrated)
             .await
-            .expect("apply migrations 1-47");
+            .expect("apply migrations 1-57");
 
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
+            // Fork tenant tables (0054-0056): schema.sql must describe exactly
+            // what the migrations build, or fresh pgschema bootstraps diverge.
+            "evm_identities",
+            "budget_consumption",
+            "budget_approvals",
         ] {
             assert_eq!(
                 columns(&desired, table).await,
@@ -2466,6 +2543,27 @@ mod postgres_tests {
                  state (including per-key indoption) has drifted from the migrations. If a \
                  migration uses a construct pgschema cannot represent (e.g. NULLS FIRST), the \
                  migration and schema.sql must both use a representable shape."
+            );
+        }
+
+        // The community write fence on the fork tables must exist in BOTH
+        // bootstraps (the deletion catalog demands exact scoped == fenced).
+        for (label, pool) in [("desired-state", &desired), ("migrated", &migrated)] {
+            let fenced: Vec<String> = sqlx::query_scalar(
+                "SELECT c.relname FROM pg_trigger t \
+                 JOIN pg_class c ON c.oid = t.tgrelid \
+                 JOIN pg_proc p ON p.oid = t.tgfoid \
+                 WHERE p.proname = 'enforce_community_write_fence' AND NOT t.tgisinternal \
+                   AND c.relname IN ('evm_identities', 'budget_consumption', 'budget_approvals') \
+                 ORDER BY c.relname",
+            )
+            .fetch_all(pool)
+            .await
+            .expect("read fork-table fence triggers");
+            assert_eq!(
+                fenced,
+                vec!["budget_approvals", "budget_consumption", "evm_identities"],
+                "{label} bootstrap must fence every fork tenant table"
             );
         }
 
@@ -2960,7 +3058,11 @@ mod postgres_tests {
         );
 
         // Complete later additive migrations before comparing to the current
-        // binary's complete tenant-table inventory.
+        // binary's complete tenant-table inventory. The manifest also lists the
+        // fork tenant tables created by 0054/0056 and fenced by 0057, so bring
+        // the schema fully up to date before validating: exact equality means
+        // NIP-FI leftovers (unknown) and missing fork tables (missing) would
+        // both fail here.
         run_migrations(&pool)
             .await
             .expect("complete current migrations");
@@ -2968,6 +3070,6 @@ mod postgres_tests {
         crate::deletion::DeletionStore::new(pool.clone())
             .validate_catalog()
             .await
-            .expect("deletion catalog validates after migration 0044");
+            .expect("deletion catalog validates after all current migrations");
     }
 }

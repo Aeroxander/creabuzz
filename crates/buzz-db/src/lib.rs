@@ -24,8 +24,9 @@
 mod runtime;
 mod store;
 
-/// Database error types.
 pub mod error;
+/// Database error types.
+pub mod evm_identities;
 
 #[cfg(test)]
 mod test_support;
@@ -62,11 +63,11 @@ pub(crate) use runtime::{
     RoutePredicate,
 };
 pub use store::{
-    admin_moderation, allowlist, api_token, archived_identities, artifact, channel,
+    admin_moderation, allowlist, api_token, archived_identities, artifact, budget, channel,
     channel_members, community, deletion, dm, event, feed, git_repo, moderation, operator_listener,
-    partition, product_feedback, push, reaction, read_state, relay_admin_actions, relay_invite,
-    relay_members, relay_operators, reminder, replaceable, storage_accounting, thread,
-    thread_window, usage, user, workflow,
+    org_graph, partition, product_feedback, push, reaction, read_state, relay_admin_actions,
+    relay_invite, relay_members, relay_operators, reminder, replaceable, storage_accounting,
+    thread, thread_window, usage, user, workflow,
 };
 
 pub use allowlist::AllowlistEntry;

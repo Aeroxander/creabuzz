@@ -9,7 +9,6 @@ pub(crate) use agent_env::{
     baked_build_env, build_buzz_agent_provider_defaults, discovery_env_with_baked_floor,
 };
 mod agent_description;
-pub(crate) use agent_description::{effective_agent_description, record_effective_description};
 mod backend;
 pub(crate) mod bestie_assignment;
 pub(crate) mod claude_config;
@@ -39,6 +38,7 @@ mod runtime;
 mod runtime_commands;
 mod runtime_types;
 mod session_policy;
+pub(crate) mod skill_bindings;
 pub(crate) mod snapshot_avatar;
 pub(crate) mod spawn_snapshot;
 pub(crate) mod storage;
@@ -72,6 +72,7 @@ pub(crate) fn lock_env_mutex() -> std::sync::MutexGuard<'static, ()> {
     PROCESS_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+pub(crate) use agent_description::{effective_agent_description, record_effective_description};
 pub use backend::*;
 pub(crate) use definition_validation::{
     validate_agent_definition_text, validate_agent_description_text,

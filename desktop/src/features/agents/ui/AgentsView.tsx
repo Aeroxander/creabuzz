@@ -19,7 +19,10 @@ import { TeamShareDialog } from "./TeamShareDialog";
 import { TeamDeleteDialog } from "./TeamDeleteDialog";
 import { TeamDialog } from "./TeamDialog";
 import { TeamsSection } from "./TeamsSection";
+import { SkillsSection } from "./SkillsSection";
 import { UnifiedAgentsSection } from "./UnifiedAgentsSection";
+import { AgentStopConfirmDialog } from "./AgentStopConfirmDialog";
+import { useAgentStop } from "../agentStopFlow";
 import { useManagedAgentActions } from "./useManagedAgentActions";
 import { usePersonaActions } from "./usePersonaActions";
 import { useTeamActions } from "./useTeamActions";
@@ -136,8 +139,26 @@ export function AgentsView() {
     });
   }, []);
 
+  const [stopAllOpen, setStopAllOpen] = React.useState(false);
+  const agentStop = useAgentStop();
+
   return (
     <>
+      <AgentStopConfirmDialog
+        onFinished={agentStop.refresh}
+        onOpenChange={setStopAllOpen}
+        open={stopAllOpen}
+        run={(ban) =>
+          agentStop.run(
+            agents.managedAgents.map((a) => a.pubkey),
+            { ban },
+          )
+        }
+        targets={agents.managedAgents.map((a) => ({
+          pubkey: a.pubkey,
+          name: a.name,
+        }))}
+      />
       <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8">
         <div
           className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]"
@@ -170,6 +191,17 @@ export function AgentsView() {
                     >
                       <OctagonX />
                       Stop running agents
+                    </Button>
+                  ) : null}
+                  {agents.managedAgents.length > 0 ? (
+                    <Button
+                      data-testid="stop-all-my-agents-button"
+                      onClick={() => setStopAllOpen(true)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <OctagonX />
+                      Stop all my agents
                     </Button>
                   ) : null}
                 </div>
@@ -208,6 +240,17 @@ export function AgentsView() {
                       >
                         <OctagonX />
                         Stop running agents
+                      </DropdownMenuItem>
+                    ) : null}
+                    {agents.managedAgents.length > 0 ? (
+                      <DropdownMenuItem
+                        data-testid="stop-all-my-agents"
+                        onSelect={() => {
+                          setStopAllOpen(true);
+                        }}
+                      >
+                        <OctagonX />
+                        Stop all my agents
                       </DropdownMenuItem>
                     ) : null}
                   </DropdownMenuContent>
@@ -303,6 +346,8 @@ export function AgentsView() {
               personas={personas.libraryPersonas}
               teams={teamActions.teams}
             />
+
+            <SkillsSection />
           </div>
         </div>
       </div>

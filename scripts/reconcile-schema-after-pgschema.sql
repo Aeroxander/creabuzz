@@ -225,3 +225,36 @@ BEGIN
         RAISE EXCEPTION 'replica_heartbeat must contain its singleton row after pgschema apply';
     END IF;
 END $$;
+
+-- Fork tenant tables (migrations 0054/0056/0057) must carry the community write
+-- fence: the deletion catalog requires exact scoped-table == fenced-table
+-- equality, so a missing trigger makes every community deletion fail closed.
+-- attach_community_write_fence is idempotent; converge, then assert the live
+-- catalog rather than trusting the desired-state diff.
+SELECT attach_community_write_fence('evm_identities');
+SELECT attach_community_write_fence('budget_consumption');
+SELECT attach_community_write_fence('budget_approvals');
+
+DO $$
+DECLARE
+    unfenced TEXT;
+BEGIN
+    SELECT string_agg(t.name, ', ' ORDER BY t.name)
+      INTO unfenced
+      FROM unnest(ARRAY['evm_identities', 'budget_consumption', 'budget_approvals']) AS t(name)
+     WHERE NOT EXISTS (
+        SELECT 1
+          FROM pg_trigger trigger
+          JOIN pg_class c ON c.oid = trigger.tgrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          JOIN pg_proc p ON p.oid = trigger.tgfoid
+         WHERE n.nspname = current_schema()
+           AND c.relname = t.name
+           AND p.proname = 'enforce_community_write_fence'
+           AND NOT trigger.tgisinternal
+           AND trigger.tgenabled = 'O'
+     );
+    IF unfenced IS NOT NULL THEN
+        RAISE EXCEPTION 'community write fence missing after pgschema apply on: %', unfenced;
+    END IF;
+END $$;

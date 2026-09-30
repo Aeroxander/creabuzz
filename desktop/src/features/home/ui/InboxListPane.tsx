@@ -16,6 +16,14 @@ import {
   type InboxTypeLabel,
 } from "@/features/home/lib/inbox";
 import { buildInboxListRows } from "@/features/home/lib/inboxListRows";
+import {
+  isNeedsMeAging,
+  parseNeedsMeApproval,
+  type NeedsMeApprovalActions,
+  type NeedsMeStatus,
+} from "@/features/home/lib/needsMe";
+import { NeedsMeApprovalCard } from "@/features/home/ui/NeedsMeApprovalCard";
+import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { InboxFilterMenu } from "@/features/home/ui/InboxFilterMenu";
@@ -57,7 +65,7 @@ const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
   project: "No project work found",
   mention: "No mentions found",
   thread: "No threads found",
-  needs_action: "Nothing needs action",
+  needs_action: "No approvals waiting",
   agent_activity: "No agent updates found",
   reminders: "No reminders",
   drafts: "No drafts",
@@ -210,9 +218,54 @@ function PersonalItemRow({
   );
 }
 
+/**
+ * Inline approval card for a "Needs me" approval request row (kind 46010).
+ * The card's buttons own their accessible labels — the surrounding row's
+ * activation button stays untouched and clicks here do not select the row.
+ * Resolution publishes the same kind:46030/46031 command surface the CLI and
+ * relay use; pending-state button labels and inline publish errors come from
+ * the card itself (no toasts for on-screen state). Requests waiting longer
+ * than 24h render the amber aging treatment.
+ */
+function InboxNeedsMeCard({
+  actions,
+  isDone,
+  item,
+}: {
+  actions?: NeedsMeApprovalActions;
+  isDone: boolean;
+  item: InboxItem;
+}) {
+  const approval = React.useMemo(
+    () =>
+      isDone ? null : parseNeedsMeApproval(relayEventFromFeedItem(item.item)),
+    [isDone, item.item],
+  );
+  if (!actions || !approval) {
+    return null;
+  }
+  const isResolving = actions.resolvingEventIds.has(approval.id);
+  const status: NeedsMeStatus = isResolving ? "resolving" : "pending";
+  return (
+    <NeedsMeApprovalCard
+      approval={approval}
+      className="mt-2"
+      error={actions.resolveErrors?.get(approval.tokenHash) ?? null}
+      isAging={isNeedsMeAging(approval, status)}
+      onResolve={(target, approved) => {
+        actions.resolve(target, approved);
+      }}
+      status={status}
+      testId={`home-inbox-needs-me-${approval.id}`}
+    />
+  );
+}
+
 type InboxListPaneProps = {
   activeReminderEventIds?: ReadonlySet<string>;
   agentPubkeys?: ReadonlySet<string>;
+  /** Approve/Deny for pending "Needs me" approval rows. */
+  approvalActions?: NeedsMeApprovalActions;
   activeDraftCount: number;
   draftItems: DraftViewItem[];
   doneSet: ReadonlySet<string>;
@@ -243,6 +296,7 @@ type InboxListPaneProps = {
 export function InboxListPane({
   activeReminderEventIds,
   agentPubkeys,
+  approvalActions,
   activeDraftCount,
   draftItems,
   doneSet,
@@ -511,6 +565,11 @@ export function InboxListPane({
                   videoReviewCommentRootId={videoReviewCommentRootId}
                 />
               </div>
+              <InboxNeedsMeCard
+                actions={approvalActions}
+                isDone={isDone}
+                item={item}
+              />
             </div>
           </div>
         </div>
@@ -756,8 +815,10 @@ export function InboxListPane({
                   {unreadOnly
                     ? "Turn off Show unread only to see read activity."
                     : filter === "all"
-                      ? "New activity will appear here."
-                      : "Switch back to All to see other activity."}
+                      ? "Mentions, replies, and agent updates land here."
+                      : filter === "needs_action"
+                        ? "When an agent hits a budget or a workflow needs a decision, it appears here."
+                        : "Switch back to All to see other activity."}
                 </p>
               </div>
             </div>

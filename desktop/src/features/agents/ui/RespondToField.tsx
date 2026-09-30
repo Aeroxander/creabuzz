@@ -368,7 +368,7 @@ function AllowlistPicker({
             disabled={disabled}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder={
-              isPersona ? "Search people" : "Search by name or NIP-05."
+              isPersona ? "Search people" : "Search by name or handle."
             }
             value={query}
           />

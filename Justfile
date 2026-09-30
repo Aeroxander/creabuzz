@@ -82,6 +82,29 @@ ps:
 logs *ARGS:
     docker compose logs -f {{ARGS}}
 
+# ─── Local Dev Chain (Anvil) ─────────────────────────────────────────────────
+
+# Boot a fully-loaded local dev chain on :8545 (chain id 31337): apptoken
+# infra, the OrgBinding/DAO for org formation, a USDC-like currency mock, and
+# the funded DEV-ONLY dev accounts printed to stdout. Idempotent: re-running
+# detects the chain and skips what is already deployed. `--dry-run` prints the
+# plan without touching anything.
+dev-chain *ARGS:
+    ./scripts/dev-chain.sh {{ARGS}}
+
+# Stop the dev chain `just dev-chain` started (only the PID it recorded)
+dev-chain-down:
+    ./scripts/dev-chain.sh down
+
+# What is deployed at which address: reads contracts/deployments/*.json and
+# probes the live chain on :8545
+dev-chain-status:
+    ./scripts/dev-chain.sh status
+
+# Tests for the dev-chain plan/refusal logic — no chain, no foundry deploys
+dev-chain-test:
+    node --test scripts/dev-chain.test.mjs
+
 # ─── Build & Check ───────────────────────────────────────────────────────────
 
 # Build the Rust workspace
@@ -525,10 +548,19 @@ test-unit:
     else
         ./scripts/run-tests.sh unit
     fi
+    # Web unit tests (node:test): pure client logic such as the SIWE binding
+    # rules, which no lane ran before. Needs web deps installed, no browser.
+    cd {{web_dir}} && pnpm test
 
 # Run integration tests only (starts services if needed)
 test-integration:
     ./scripts/run-tests.sh integration
+
+# Run the DAO OS "org loop" end to end against a throwaway relay
+# (scripts/loop-test.sh). Needs DATABASE_URL plus a running Postgres and Redis;
+# dev only — it writes a test community into the database.
+loop-test:
+    ./scripts/loop-test.sh
 
 # Regenerate the model-capability normative corpus from the production Rust
 # resolver. The corpus is a golden snapshot, never hand-edited: this runs the
@@ -538,6 +570,14 @@ test-integration:
 # `corpus_matches_generated_snapshot` gate fails CI if the committed file drifts.
 regen-model-corpus:
     cargo test -p buzz-agent --lib model_capabilities::tests::regen_corpus_file -- --ignored --exact
+
+# Regenerate the NIP-ORG authority corpus (anchoring, grant chains, node and
+# budget publication, entailment, review tally) from the production Rust
+# resolver in buzz-core. The desktop and web `orgAuthority.ts` twins replay it.
+# Never hand-edit; the `corpus_matches_generated_snapshot` gate fails CI if the
+# committed file drifts.
+regen-org-corpus:
+    cargo test -p buzz-core --lib org_grant::props::regen_corpus_file -- --ignored --exact
 
 # Buzz shared compute e2e: current desktop discovery/admission logic and
 # Playwright UI coverage.
@@ -859,6 +899,8 @@ web:
 
 # Run web lint and format checks
 web-check:
+    node --test scripts/check-copy-core.test.mjs
+    cd packages/creaton-core && pnpm check
     cd {{web_dir}} && pnpm check
 
 # Fix web lint and format issues
@@ -872,6 +914,15 @@ web-typecheck:
 # Build web frontend assets
 web-build:
     cd {{web_dir}} && pnpm build
+
+# Run web unit tests (node:test; no browser, no relay)
+web-test:
+    cd packages/creaton-core && pnpm test
+    cd {{web_dir}} && pnpm test
+
+# Check the web first-load bundle stays inside its budget (needs a build)
+web-bundle-budget:
+    cd {{web_dir}} && pnpm check:bundle-size
 
 # Run web browser smoke tests
 web-e2e-smoke:

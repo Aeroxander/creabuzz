@@ -117,6 +117,35 @@ pub const KIND_PUSH_LEASE: u32 = 30350;
 /// plus exact public projection bindings. See `docs/nips/NIP-PMA.md`.
 pub const KIND_PRIVATE_MANAGED_AGENT: u32 = 30179;
 
+/// Agent skill definition — a shareable instruction set following the Agent
+/// Skills format (`skills/<name>/SKILL.md` with YAML frontmatter, see
+/// `crates/buzz-persona/PERSONA_PACK_SPEC.md` §6).
+///
+/// This NIP claims `kind:30180`. It is in the NIP-33 parameterized
+/// replaceable range (30000–39999) per NIP-01: addressed by
+/// `(pubkey, kind, d_tag)` where `d` is the skill's stable id, with only the
+/// latest event per address retained. Community-level and global-only — a
+/// stray `h` never channel-scopes it, matching the persona family.
+///
+/// Content is a JSON body: `{"name", "description", "sha256", "content",
+/// "attachments"}`. `name`/`description` are the canonical identity fields
+/// taken from the SKILL.md frontmatter (the harness load key), `content` is
+/// the full SKILL.md text, and `sha256` pins those exact bytes. `attachments`
+/// is the folder-growth extension point: reserved for hash-pinned companion
+/// files (`scripts/`, `references/`, `assets/`) as records shaped
+/// `{"role", "path", "content_type", "sha256", "source"}` — v1 writers emit
+/// an empty array and v1 readers accept its absence.
+///
+/// Template applies bind skills to agents with `["skill", "<skill-id>",
+/// "developers"|"all"]` tags on the agent's persona events (kind:30175);
+/// the third element records the inheritance scope verbatim.
+///
+/// Distinct from the channel-scoped company-brain skill catalog (kind 45011,
+/// planned on the dao-launchpad line): that kind stores loose markdown
+/// catalog entries per channel, while this kind is the globally-keyed,
+/// frontmatter-validated Agent Skills definition.
+pub const KIND_SKILL: u32 = 30180;
+
 /// Kinds whose stored events are readable only by their author.
 ///
 /// The relay must never reveal the existence, count, tags, content, schedule,
@@ -167,6 +196,27 @@ pub const P_GATED_KINDS: &[u32] = &[
     // filters — see NIP-AM §Relay Behavior.
     KIND_AGENT_TURN_METRIC,
 ];
+
+/// Kinds whose stored events are readable only by the community owner or an
+/// admin (`relay_members.role IN ('owner', 'admin')`).
+///
+/// The relay's own hash-chain audit entries ([`KIND_AUDIT_ENTRY`], 48001) are
+/// recorded for every persistent event — including gift wraps and private
+/// channels — and carry actor pubkeys and channel ids, so letting any member
+/// `REQ {"kinds":[48001]}` would reveal who did what in channels they cannot
+/// see. Every client read path must exclude these kinds for a non-admin reader
+/// and never reveal their existence: WebSocket REQ (historical + NIP-50
+/// search), live fan-out, COUNT, HTTP `POST /query` and `POST /count`, and
+/// id-based hydration. Unlike [`AUTHOR_ONLY_KINDS`] and [`P_GATED_KINDS`] the
+/// gate is a community *role*, so a plain member simply receives nothing (no
+/// error), which keeps kindless `ids` lookups indistinguishable from "no such
+/// event".
+pub const ADMIN_ONLY_KINDS: &[u32] = &[KIND_AUDIT_ENTRY];
+
+/// Returns `true` if `kind` is in [`ADMIN_ONLY_KINDS`].
+pub fn is_admin_only_kind(kind: u32) -> bool {
+    ADMIN_ONLY_KINDS.contains(&kind)
+}
 
 /// NIP-AP: Agent Persona (parameterized replaceable, owner-authored).
 ///
@@ -483,12 +533,6 @@ pub const KIND_STREAM_MESSAGE: u32 = 9;
 pub const KIND_STREAM_MESSAGE_V2: u32 = 40002;
 /// V1 used kind:10004 (replaceable range + NIP-51 collision — wrong).
 pub const KIND_STREAM_MESSAGE_EDIT: u32 = 40003;
-/// A stream message that has been pinned in a channel.
-pub const KIND_STREAM_MESSAGE_PINNED: u32 = 40004;
-/// A stream message that has been bookmarked by a user.
-pub const KIND_STREAM_MESSAGE_BOOKMARKED: u32 = 40005;
-/// A stream message scheduled for future delivery.
-pub const KIND_STREAM_MESSAGE_SCHEDULED: u32 = 40006;
 /// A reminder attached to a stream message or time.
 pub const KIND_STREAM_REMINDER: u32 = 40007;
 /// A diff/patch message showing file changes (unified diff format).
@@ -545,6 +589,118 @@ pub const KIND_MEMBER_REMOVED_NOTIFICATION: u32 = 44101;
 /// Stored globally (channel_id = NULL); owner-scoped reads only (p-gated, NIP-42).
 /// See `docs/nips/NIP-AM.md`.
 pub const KIND_AGENT_TURN_METRIC: u32 = 44200;
+
+// Agent fleet (44010–44019) — cooperation plane for multi-agent fleets.
+/// Fleet: an agent's capabilities advertisement (addressable, agent-authored).
+///
+/// Addressed by `d` = stable agent id (pubkey by default). Content is JSON:
+/// `{ "name": string, "runtype": "browser"|"desktop"|"sandbox", "status":
+/// "available"|"busy"|"offline", "tools": string[], "heartbeat": unix_sec }`.
+/// The live fleet roster is a subscription over this kind; liveness is
+/// heartbeat recency, so agents refresh this event periodically.
+pub const KIND_AGENT_CAPABILITIES: u32 = 44010;
+
+/// Statuses a kind:44011 coordination task may carry.
+///
+/// Shared by the Buzz clients, the fleet worker and the bridges so a task row
+/// written by one surface is readable by every other. `44011` is not a NIP-33
+/// addressable kind, so a reader takes the newest row per `d` tag (read-side
+/// last-write-wins) and the status vocabulary is what makes that meaningful.
+pub const TASK_STATUSES: [&str; 6] = [
+    "open",
+    "assigned",
+    "in_progress",
+    "needs_approval",
+    "done",
+    "cancelled",
+];
+
+/// Status used when a source status is missing or unrecognised.
+pub const DEFAULT_TASK_STATUS: &str = "open";
+
+/// Priorities a kind:44011 coordination task may carry.
+pub const TASK_PRIORITIES: [&str; 4] = ["low", "normal", "high", "urgent"];
+
+/// Priority used when a source priority is missing or unrecognised.
+pub const DEFAULT_TASK_PRIORITY: &str = "normal";
+
+/// Fleet: a coordination task (addressable).
+///
+/// Addressed by `d` = task id. Content is JSON:
+/// `{ "title": string, "description": string, "status":
+/// "open"|"assigned"|"in_progress"|"needs_approval"|"done"|"cancelled" }`.
+/// `p` tag = assignee pubkey, `e` tag = parent task/thread. Approvals reuse
+/// the workflow approval kinds; any fleet member may pick up an open task.
+pub const KIND_AGENT_TASK: u32 = 44011;
+
+// Self-organizing agent teams (44020–44029) — SAT slice 1.
+//
+// Fixed agent teams learn reusable `teamwork strategies` P = (S, τ, α):
+// ordered conversational PHASES (participants, rounds, local-vs-summary info
+// flow, step prompts), a shared teamwork prompt, and persistent role prompts
+// (arXiv 2609.22682, "Self-Organizing Agent Teams Learn to Reason Together").
+// See `docs/agent-teams.md`. All three kinds are community-level and
+// global-only: keyed by `(pubkey, kind, d_tag)`, never channel-scoped by a
+// stray `h` tag. They sit outside the NIP-33 parameterized-replaceable range
+// (30000–39999), so the relay stores every revision as a regular event and
+// replacement is read-side LWW — readers take the newest event per
+// `(pubkey, kind, d_tag)`, exactly like kinds 44001/44002.
+
+/// Team: a teamwork strategy definition (addressable, `d` = strategy id).
+///
+/// Content is JSON:
+/// `{ "v": 1, "name": string, "description": string, "teamworkPrompt":
+/// string, "roles": { "<slot>": "<role prompt>" }, "steps": [{ "participants":
+/// ["<slot>", ...], "rounds": int, "flow": "local"|"summary", "prompt":
+/// string, "perAgentPrompts"?: { "<slot>": string } }], "finalWriter":
+/// "<slot>" }`. Slots are persistent roster positions shared by the whole
+/// strategy; `steps` are the ordered conversational phases. Bounded at
+/// ingest (sizes, participant/phase/round caps); semantics validated by the
+/// CLI before a run.
+pub const KIND_TEAM_STRATEGY: u32 = 44020;
+
+/// Team: one executed run of a strategy (addressable, `d` = run id).
+///
+/// Content is JSON:
+/// `{ "v": 1, "strategyId": string, "problem": string, "transcript":
+/// [{ "phase": int, "agentSlot": string, "content": string, "tokens": int }],
+/// "finalAnswer": string, "totalTokens": int, "model": string, "status":
+/// "complete" }`. The transcript rows mirror the kind:44022 turn events so a
+/// reader can reconstruct the run from a single event; the turn events carry
+/// the same content as durable per-turn records.
+pub const KIND_TEAM_RUN: u32 = 44021;
+
+/// Team: one conversational turn of a run (addressable, `d` =
+/// `<run-id>/<phase>/<agentSlot>`). Content is markdown: the agent's turn,
+/// the summary digest of a summary-flow phase, or the final writer's
+/// certificate.
+pub const KIND_TEAM_TURN: u32 = 44022;
+
+// Wiki (44001) — community knowledge base pages.
+/// A wiki page (addressable, NIP-33): `d` tag = page slug, content = markdown.
+/// The community brain in the web client: humans and agents read/write the
+/// same pages through the relay data plane.
+pub const KIND_WIKI_PAGE: u32 = 44001;
+
+// Agent Wiki (44002) — agent-maintained knowledge base pages.
+/// An agent-maintained wiki page (addressable, `d` = `<space>/<slug>`, content
+/// = markdown) — the Agent Wiki: a distinct feature from the human wiki
+/// (kind:44001, Yjs/Trystero live editing). One page per space is the
+/// executive standup (`<space>/standup`), rewritten to current truth by the
+/// distillation loop; further `<space>/<slug>` pages are durable knowledge.
+///
+/// Community-level, global-only (same addressing model as the NIP-ORG kinds):
+/// keyed by `(pubkey, kind, d_tag)`, never channel-scoped by a stray `h` tag.
+///
+/// Provenance tags (all bounded at ingest): `model` (the model that produced
+/// the page), `cost_tokens` (token usage of the distillation), and `sources`
+/// (comma-separated source event ids the page was distilled from).
+///
+/// 44002 is outside the NIP-33 parameterized-replaceable range (30000–39999),
+/// so the relay stores every revision as a regular event (same as kind:44001):
+/// replacement is read-side LWW — readers take the newest event per
+/// `(pubkey, kind, d_tag)`.
+pub const KIND_AGENT_WIKI_PAGE: u32 = 44002;
 
 // Forum / social (45000–45999)
 // V1 used addressable range (30001–30003) — wrong.
@@ -639,6 +795,182 @@ pub const KIND_GIT_STATUS_DRAFT: u32 = 1633;
 /// announcement, never a project. See `docs/nips/NIP-MP.md`.
 pub const KIND_PROJECT: u32 = 30621;
 
+/// NIP-LP: DAO launch record — a named fundraise with a community link, chain
+/// addresses, and an auction parameter commitment (parameterized replaceable,
+/// d = launch id). One signer; grouping assertions only, no authority over
+/// linked projects, repositories, or channels. See `docs/nips/NIP-LP.md`.
+pub const KIND_LAUNCH_RECORD: u32 = 37001;
+/// NIP-LP: auction bid mirror (regular). Advisory — the chain is authoritative.
+pub const KIND_LAUNCH_BID: u32 = 47002;
+/// NIP-LP: founder-signed launch update (regular).
+pub const KIND_LAUNCH_UPDATE: u32 = 47003;
+/// NIP-LP: proposal record — plain, futarchy-budget, or signal (regular).
+pub const KIND_LAUNCH_PROPOSAL: u32 = 47004;
+/// NIP-LP: chain-state receipt mirror (regular). Advisory.
+pub const KIND_LAUNCH_RECEIPT: u32 = 47005;
+/// NIP-LP: royalty schedule mirror (regular). Advisory — the chain is
+/// authoritative. Published when `ClaimStake` mints a schedule in the
+/// launch's RoyaltyDistributor. See `docs/token-lifecycle-design.md`.
+pub const KIND_ROYALTY_SCHEDULE: u32 = 47006;
+/// NIP-LP: royalty settlement-close mirror (regular). Advisory. One event
+/// per closed settlement window (revenue, shares, pool, carry).
+pub const KIND_ROYALTY_CLOSE: u32 = 47007;
+/// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
+/// Published by a scoring operator with its Merkle root and proof pointer;
+/// clients verify individual score claims against the root without a prover.
+pub const KIND_SCORE_ROOT: u32 = 37006;
+
+/// NIP-ORG: org node — a role or team in a community's org chart
+/// (parameterized replaceable, d = node id). Community-level and
+/// global-only: addressed by `(pubkey, kind, d)` with no routing tag — a
+/// stray `h` never channel-scopes it. Roles are seats humans and agents
+/// hold; `parent` links form the hierarchy. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_NODE: u32 = 37010;
+/// NIP-ORG: org grant — a signed, scoped, revocable delegation of authority
+/// (parameterized replaceable, d = grant id). Community-level and
+/// global-only, no routing tag. Chains attenuate: each link conveys a
+/// subset of its parent. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_GRANT: u32 = 37011;
+/// NIP-ORG: budget — a bound on an agent's or delegated scope's autonomous
+/// action (parameterized replaceable, d = subject id). Community-level and
+/// global-only, no routing tag. Bounds autonomy, never a human's own
+/// actions. See `docs/nips/NIP-ORG.md`.
+pub const KIND_ORG_BUDGET: u32 = 37012;
+
+/// NIP-ORG: contribution record — a verified action with a multi-dimensional
+/// profile, evidence, human-vs-AI attribution, and `informed-by` chain for
+/// credit settlement (parameterized replaceable, d = action id).
+/// Community-level and global-only, no routing tag. See
+/// `docs/nips/NIP-ORG.md`.
+pub const KIND_CONTRIBUTION_RECORD: u32 = 37013;
+/// NIP-ORG: budget spend receipt — the Nostr mirror of a spend settled against
+/// an onchain allowance bound to a kind:37012 budget (parameterized
+/// replaceable, d = spend id). Community-level and global-only, no routing
+/// tag. Advisory: the contract is the ledger, Nostr the record (NIP-LP rule).
+/// See `docs/nips/NIP-ORG.md`.
+pub const KIND_BUDGET_SPEND_RECEIPT: u32 = 37014;
+
+/// NIP-ORG (Project Board): project pitch / team manifest — the board-facing
+/// pitch of a project (one-line summary, description, and the declared roles
+/// with their equity targets as `["role", <slug>, <label>, <pct>]` tags).
+/// Parameterized replaceable, `d` = the project's org-node id (same id as its
+/// kind:37010 node), so node and pitch replace together under one address.
+/// Community-level and global-only, no routing tag — a stray `h` never
+/// channel-scopes it. The org node carries the seat structure; this record
+/// carries the prose and the ownership declaration the board renders.
+pub const KIND_ORG_PITCH: u32 = 37015;
+/// NIP-ORG (Project Board): project join request — a signed request from a
+/// member to fill one declared role for a stated equity percentage.
+/// Parameterized replaceable, `d` = `<node>/<role>/<requester-16>` so each
+/// requester's thread has its own coordinate. The founder records a decline
+/// by republishing the same `d` under their own key with
+/// `content.decision = "declined"` — the NIP-ORG kind:37013 parallel-record
+/// pattern; approval is *not* an event here, it is the kind:37011 ownership
+/// grant (`["org", <pct>]` + `["role", <slug>]`), which is the canonical
+/// equity record. Community-level and global-only, no routing tag.
+pub const KIND_ORG_JOIN_REQUEST: u32 = 37016;
+
+/// NIP-ORG (Discovery plane): EVM binding record — "which address holds this
+/// seat", answerable from signed events alone (parameterized replaceable,
+/// `d` = the bound address). Community-level and global-only, no routing tag.
+///
+/// # Wire contract (CONSUMED BY CLIENTS — do not change without updating
+/// producers)
+///
+/// ```json
+/// {
+///   "v": 1,
+///   "address": "0x…",
+///   "siweMessageHash": "0x…",
+///   "attestation": <EIP-712 envelope> | null,
+///   "revoked": true
+/// }
+/// ```
+///
+/// - `d` — exactly one tag, lowercase `0x` + 40 hex of the bound EVM address.
+/// - Tags — exactly one `["address", "0x…"]` (checksummed or lowercase;
+///   must equal `d` case-insensitively), and optionally exactly one
+///   `["chain", "<EIP-155 chain id>"]` (decimal; when an attestation is
+///   present it MUST equal `attestation.domain.chain_id`).
+/// - `content.v` — `1`.
+/// - `content.address` — same address as `d` (any case; compared as bytes).
+/// - `content.siweMessageHash` — `0x` + 64 hex: the EIP-191
+///   `personal_sign` digest of the SIWE message the relay verified at bind
+///   time (`buzz_evm_auth::personal_sign_digest`). A commitment/pointer a
+///   client that holds the message can re-derive; ingest checks its shape
+///   only (see below).
+/// - `content.attestation` — the EIP-712 `NostrSigner` envelope exactly as
+///   `POST /auth/siwe/register` stores it (`buzz_evm_auth::AttestationEnvelope`:
+///   `{"attestation":{"account","npub","expires","nonce"},"domain":{…},"signature"}`),
+///   or `null` on a revocation.
+/// - `content.revoked` — optional boolean. `true` revokes the binding.
+///
+/// **Authorship**: the event MUST be signed by the bound npub itself — the
+/// record claims *the author* holds `d`, never a third party.
+///
+/// **Ingest enforcement (anti-spoof, fully offline — no RPC)**: for a live
+/// (non-revoked) record the `attestation` is REQUIRED and verified with
+/// `AttestationEnvelope::verify_for_npub(author, now)` — EIP-712 signature
+/// over the domain-separated digest, `attestation.npub` == event signer,
+/// not expired — and `attestation.account` MUST equal `content.address`
+/// (== `d`). A claim without that proof never lands. The SIWE leg
+/// (`siweMessageHash`) CANNOT be re-verified at ingest: the record carries
+/// only a hash, not the EIP-4361 message + `personal_sign` signature, so
+/// ingest does not pretend to check it — the attestation is the proof.
+///
+/// **Revocation**: same `(author, d)` republished with `content.revoked:
+/// true` (NIP-ORG kind:37011 §Revocation — "republication of the same
+/// `(issuer, d)` with `revoked: true`"). NIP-33 LWW makes it the head. A
+/// revoked record needs no attestation — withdrawal requires only control
+/// of the npub, mirroring `POST /auth/siwe/revoke` (a kind:27235 npub
+/// proof, no EVM signature). When an attestation IS present on a revoked
+/// record it must still verify signature/npub/account; expiry is not
+/// enforced on withdrawal.
+///
+/// **Reader rule**: resolve per `(author, d)` — the newest event of that
+/// coordinate wins (ties → lowest id); a foreign author's record for the
+/// same `d` never suppresses or replaces an author's own head.
+pub const KIND_EVM_BINDING: u32 = 37017;
+
+/// NIP-ORG (Discovery plane): deployment record — "where is the Summoner"
+/// (parameterized replaceable, `d` = `<chainId>:<role>`). Community-level
+/// and global-only, no routing tag — a stray `h` never channel-scopes it.
+///
+/// # Wire contract (CONSUMED BY CLIENTS — do not change without updating
+/// producers)
+///
+/// ```json
+/// { "v": 1, "block": 123, "project": "<slug>", "note": "…" }
+/// ```
+///
+/// - `d` — exactly one tag, `<chainId>:<role>`: decimal `chainId` (no
+///   leading zeros, ≤20 digits) `:` one of `summoner` | `factory` |
+///   `implementation`.
+/// - Tags — exactly one of each: `["chain", "<chainId>"]` (equal to the
+///   `d` chain segment), `["role", …]` (equal to the `d` role segment),
+///   `["address", "0x…"]` (40-hex), `["tx", "0x…"]` (32-byte deploying tx
+///   hash — required, exactly as kind:47005 receipts require theirs, so a
+///   client can verify the deployment on-chain).
+/// - `content.v` — `1`; `content.block` — non-zero decimal block number the
+///   contract was deployed in; `content.project` (optional) — launch/org slug
+///   `[a-z0-9][a-z0-9_-]{0,63}`; `content.note` (optional) — ≤256 chars.
+///
+/// **Authored by the deployer** (whoever signs with `BUZZ_PRIVATE_KEY`) —
+/// the relay never holds keys. `DeployOrgDao.s.sol` writes the
+/// `deployments/org-dao-<chainid>.json` input (roles + addresses + a
+/// `broadcast` pointer at forge's `run-latest.json`, from which the CLI fills
+/// `tx`/`block` — forge cannot expose the current run's tx hashes inside
+/// `run()`) and prints the exact
+/// `buzz launchpad deployment record --file …` command; the chain is the
+/// ledger, Nostr the record (NIP-LP rule).
+///
+/// Roles, for a `DeployOrgDao` run: `summoner` = the majeur `Summoner`
+/// CREATE2 factory (`OrgBinding.summoner()`), `factory` = the `OrgBinding`
+/// summon-and-bind entry point, `implementation` = the `Moloch`
+/// implementation the Summoner clones (emitted as `NewDAO` in the
+/// Summoner's constructor).
+pub const KIND_DEPLOYMENT_RECORD: u32 = 37018;
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -665,6 +997,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_MANAGED_AGENT,
     KIND_TEAM_CATALOG,
     KIND_PRIVATE_MANAGED_AGENT,
+    KIND_SKILL,
     KIND_REPORT,
     KIND_PRODUCT_FEEDBACK,
     KIND_NIP29_PUT_USER,
@@ -711,9 +1044,6 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE,
     KIND_STREAM_MESSAGE_V2,
     KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_PINNED,
-    KIND_STREAM_MESSAGE_BOOKMARKED,
-    KIND_STREAM_MESSAGE_SCHEDULED,
     KIND_STREAM_REMINDER,
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
@@ -734,6 +1064,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_MEMBER_ADDED_NOTIFICATION,
     KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_AGENT_TURN_METRIC,
+    KIND_AGENT_WIKI_PAGE,
     KIND_WORKFLOW_DEF,
     KIND_LONG_FORM,
     KIND_USER_STATUS,
@@ -775,6 +1106,36 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIT_STATUS_CLOSED,
     KIND_GIT_STATUS_DRAFT,
     KIND_PROJECT,
+    KIND_LAUNCH_RECORD,
+    KIND_LAUNCH_BID,
+    KIND_LAUNCH_UPDATE,
+    KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT,
+    KIND_SCORE_ROOT,
+    KIND_ORG_NODE,
+    KIND_ORG_GRANT,
+    KIND_ORG_BUDGET,
+    KIND_CONTRIBUTION_RECORD,
+    KIND_BUDGET_SPEND_RECEIPT,
+    KIND_ORG_PITCH,
+    KIND_ORG_JOIN_REQUEST,
+    KIND_EVM_BINDING,
+    KIND_DEPLOYMENT_RECORD,
+    // Registered late: the constants existed but were missing from this list,
+    // so a colliding new kind would not have been caught by
+    // `no_duplicate_kind_values`. `all_kind_constants_are_registered` now fails
+    // when a `pub const ...: u32` kind is defined but not listed here.
+    KIND_AUTH,
+    KIND_NOSTR_IDENTITY_BINDING,
+    KIND_PUSH_LEASE,
+    KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_TASK,
+    KIND_TEAM_STRATEGY,
+    KIND_TEAM_RUN,
+    KIND_TEAM_TURN,
+    KIND_WIKI_PAGE,
+    KIND_ROYALTY_SCHEDULE,
+    KIND_ROYALTY_CLOSE,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -794,6 +1155,40 @@ pub const fn is_replaceable(kind: u32) -> bool {
 /// These events are keyed by `(pubkey, kind, d_tag)` — the latest `created_at` wins.
 pub const fn is_parameterized_replaceable(kind: u32) -> bool {
     kind >= PARAM_REPLACEABLE_KIND_MIN && kind <= PARAM_REPLACEABLE_KIND_MAX
+}
+
+/// Slug-addressed fork kinds that sit OUTSIDE the NIP-33 window but are read
+/// by their `d` tag: the human wiki (44001), the agent wiki (44002), fleet
+/// capabilities/tasks (44010/44011) and the team strategy/run/turn kinds
+/// (44020–44022).
+///
+/// The relay materializes the first `d` tag of these events into the indexed
+/// `events.d_tag` column so server-side readers (`/governance.md`, the
+/// `d_tag`/`d_tags` query pushdown) can find them. They stay REGULAR events:
+/// every revision is stored and replacement is read-side last-write-wins, so
+/// this list must never be consulted by replacement logic (use
+/// [`is_parameterized_replaceable`] for that).
+pub const D_TAG_ADDRESSED_KINDS: [u32; 7] = [
+    KIND_WIKI_PAGE,
+    KIND_AGENT_WIKI_PAGE,
+    KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_TASK,
+    KIND_TEAM_STRATEGY,
+    KIND_TEAM_RUN,
+    KIND_TEAM_TURN,
+];
+
+/// Returns `true` if `kind` is one of [`D_TAG_ADDRESSED_KINDS`]: a regular
+/// (non-replaceable) kind whose `d` tag is materialized for lookup.
+pub const fn is_d_tag_addressed(kind: u32) -> bool {
+    let mut i = 0;
+    while i < D_TAG_ADDRESSED_KINDS.len() {
+        if D_TAG_ADDRESSED_KINDS[i] == kind {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Returns `true` if `kind` is a workflow execution event (46001–46012).
@@ -872,10 +1267,22 @@ const _: () = assert!(is_parameterized_replaceable(KIND_TEAM)); // 30176 ∈ 300
 const _: () = assert!(is_parameterized_replaceable(KIND_MANAGED_AGENT)); // 30177 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_TEAM_CATALOG)); // 30178 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PRIVATE_MANAGED_AGENT)); // 30179 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_SKILL)); // 30180 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WORKFLOW_DEF)); // 30620 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_EVENT_REMINDER)); // 30300 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 30622 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT)); // 30621 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD)); // 37001 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_SCORE_ROOT)); // 37006 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_NODE)); // 37010 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_GRANT)); // 37011 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_BUDGET)); // 37012 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_CONTRIBUTION_RECORD)); // 37013 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_BUDGET_SPEND_RECEIPT)); // 37014 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_PITCH)); // 37015 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_ORG_JOIN_REQUEST)); // 37016 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_EVM_BINDING)); // 37017 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_DEPLOYMENT_RECORD)); // 37018 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 
@@ -899,6 +1306,16 @@ const _: () = assert!(!is_ephemeral(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(!is_replaceable(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(!is_parameterized_replaceable(KIND_AGENT_TURN_METRIC));
 const _: () = assert!(KIND_AGENT_TURN_METRIC <= u16::MAX as u32);
+// Agent wiki pages (44002) are addressable via their `d` tag but live OUTSIDE
+// the NIP-33 parameterized-replaceable range (30000–39999), exactly like the
+// human wiki page kind 44001: every revision is stored, and the newest event
+// per (pubkey, kind, d) wins on the read side. There is deliberately NO
+// `assert!(is_parameterized_replaceable(...))` here — that predicate is
+// range-bound and 44002 must not pretend to be NIP-33 replaceable.
+const _: () = assert!(!is_ephemeral(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(!is_replaceable(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(!is_parameterized_replaceable(KIND_AGENT_WIKI_PAGE));
+const _: () = assert!(KIND_AGENT_WIKI_PAGE <= u16::MAX as u32);
 // Moderation kinds fit u16 and are neither replaceable nor ephemeral:
 // 1984 is a regular event (persisted to the queue, never fanned out);
 // 9040–9044 are direct commands (executed, never stored).
@@ -922,6 +1339,68 @@ mod tests {
     }
 
     #[test]
+    fn all_kind_constants_are_registered() {
+        // Source-level completeness check: every `pub const NAME: u32` kind
+        // defined in this file must be named in `ALL_KINDS`, otherwise
+        // duplicate detection silently skips it (as happened for the wiki,
+        // fleet, team and royalty kinds).
+        const SOURCE: &str = include_str!("kind.rs");
+        // Range bounds, not kinds.
+        const NOT_KINDS: [&str; 4] = [
+            "EPHEMERAL_KIND_MIN",
+            "EPHEMERAL_KIND_MAX",
+            "PARAM_REPLACEABLE_KIND_MIN",
+            "PARAM_REPLACEABLE_KIND_MAX",
+        ];
+        let list_start = SOURCE
+            .find("pub const ALL_KINDS: &[u32] = &[")
+            .expect("ALL_KINDS definition");
+        let list_end = list_start + SOURCE[list_start..].find("\n];").expect("end of ALL_KINDS");
+        let listed = &SOURCE[list_start..list_end];
+        let definitions_end = SOURCE.find("#[cfg(test)]").expect("test module marker");
+        let mut missing = Vec::new();
+        for line in SOURCE[..definitions_end].lines() {
+            let Some(rest) = line.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((name, ty)) = rest.split_once(':') else {
+                continue;
+            };
+            if !ty.trim_start().starts_with("u32 =") || NOT_KINDS.contains(&name) {
+                continue;
+            }
+            let registered = listed
+                .lines()
+                .any(|entry| entry.trim().trim_end_matches(',') == name);
+            if !registered {
+                missing.push(name.to_owned());
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "kind constants missing from ALL_KINDS: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn audit_entries_are_admin_only_and_registered() {
+        assert!(ADMIN_ONLY_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(is_admin_only_kind(KIND_AUDIT_ENTRY));
+        assert!(!is_admin_only_kind(KIND_STREAM_MESSAGE));
+        for kind in ADMIN_ONLY_KINDS {
+            assert!(
+                ALL_KINDS.contains(kind),
+                "admin-only kind {kind} unregistered"
+            );
+        }
+        // The admin gate is a role gate: it must not be confused with the
+        // author/#p gates, which would 403 an admin reading someone else's rows.
+        assert!(!AUTHOR_ONLY_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(!P_GATED_KINDS.contains(&KIND_AUDIT_ENTRY));
+        assert!(!RESULT_GATED_KINDS.contains(&KIND_AUDIT_ENTRY));
+    }
+
+    #[test]
     fn nip43_membership_snapshot_is_relay_only() {
         assert!(is_relay_only_kind(KIND_NIP43_MEMBERSHIP_LIST));
         assert!(!is_relay_only_kind(KIND_NIP43_LEAVE_REQUEST));
@@ -941,6 +1420,22 @@ mod tests {
         assert!(is_parameterized_replaceable(39000)); // NIP-29 group metadata
         assert!(is_parameterized_replaceable(39999));
         assert!(!is_parameterized_replaceable(40000));
+    }
+
+    #[test]
+    fn discovery_plane_kinds_join_all_kinds() {
+        // The discovery plane (37017 EVM binding / 37018 deployment record)
+        // must be registered, not merely defined: `ALL_KINDS` is what
+        // duplicate-detection and kind iteration walk, and the compile-time
+        // range asserts below only guard the NIP-33 window. Removing either
+        // kind from the list fails here.
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert!(ALL_KINDS.contains(&kind), "kind {kind} must join ALL_KINDS");
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be parameterized-replaceable"
+            );
+        }
     }
 
     #[test]

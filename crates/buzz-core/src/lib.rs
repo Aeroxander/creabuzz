@@ -12,6 +12,8 @@ pub mod channel;
 /// NIP-AE Agent Engrams — slug grammar, conversation key, d-tag derivation,
 /// body parse/serialize, envelope build/validate, head selection.
 pub mod engram;
+/// Buzz kind number registry — custom event type constants.
+pub mod erc4824;
 /// Relay-side error types.
 pub mod error;
 /// Relay-side event wrapper with verification tracking.
@@ -22,7 +24,6 @@ pub mod filter;
 pub mod git_perms;
 /// Shared invite-link contract constants.
 pub mod invite;
-/// Buzz kind number registry — custom event type constants.
 pub mod kind;
 /// Network utilities — SSRF-safe IP classification.
 pub mod network;
@@ -30,6 +31,9 @@ pub mod network;
 pub mod nip10;
 /// Agent observer frame helpers.
 pub mod observer;
+pub mod org_diag;
+/// NIP-ORG grant-chain verification — pure attenuation/standing/expiry walk.
+pub mod org_grant;
 /// NIP-AB device pairing — crypto primitives, message types, and errors.
 pub mod pairing;
 /// Presence status types shared across crates.

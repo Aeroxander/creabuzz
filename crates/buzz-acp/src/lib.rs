@@ -12,6 +12,7 @@ mod isolated_execution;
 mod observer;
 mod pool;
 mod pool_lifecycle;
+mod project_skills;
 mod prompt_framing;
 mod prompt_project;
 mod queue;
@@ -9144,6 +9145,7 @@ mod build_mcp_servers_tests {
             turn_liveness_secs: 10,
             heartbeat_prompt: None,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             team_instructions: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
@@ -9408,6 +9410,7 @@ mod error_outcome_emission_tests {
             turn_liveness_secs: 10,
             heartbeat_prompt: None,
             system_prompt: None,
+            skill_bindings: Vec::new(),
             team_instructions: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,

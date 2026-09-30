@@ -93,7 +93,13 @@ pub async fn update_persona_and_publish(
     publish_prepared_persona(&state, prepared).await
 }
 
-async fn publish_prepared_persona(
+/// Await relay acceptance for a prepared persona head, reporting `published`
+/// vs `queued` to the caller.
+///
+/// `pub(super)` so the skill-binding editor
+/// (`commands::personas::skills::set_persona_skill_binding`) awaits its own
+/// re-published head through the same acceptance path as the share toggle.
+pub(super) async fn publish_prepared_persona(
     state: &AppState,
     prepared: PreparedPersonaPublication,
 ) -> Result<SetPersonaSharedResult, String> {

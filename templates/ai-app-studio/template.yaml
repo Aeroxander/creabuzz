@@ -1,0 +1,70 @@
+id: ai-app-studio
+name: "AI App Studio"
+description: "A four-agent crew for building AI-powered apps — models, evals, product surface, and scope in one studio. Mention an agent to wake it, post eval changes for approval, and wake up to a standup that writes itself."
+channels:
+  # #dev leads so the welcome message lands in the build room (welcome always
+  # posts to channels[0]). Workflows no longer inherit channels[0] — each one
+  # declares its own `channel` below — so channel order is a presentation
+  # choice, not a binding.
+  - id: dev
+    name: dev
+    purpose: "Where the app gets built: features, architecture, and plumbing. Mention @The App Developer to build the surface or @The ML Engineer when the model is in the way."
+    seed: seeds/dev.md
+  - id: evals
+    name: evals
+    purpose: "The quality loop: model, dataset, and prompt experiments. Post an eval change as a new message — it goes to @The Product Lead's approval queue, and the verdict lands in your thread."
+    seed: seeds/evals.md
+  - id: standup
+    name: standup
+    purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+    seed: seeds/standup.md
+  - id: product
+    name: product
+    purpose: "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs."
+    seed: seeds/product.md
+personas:
+  - id: ml-engineer
+    name: "The ML Engineer"
+    prompt: personas/ml-engineer.md
+  - id: eval-writer
+    name: "The Eval Writer"
+    prompt: personas/eval-writer.md
+  - id: app-dev
+    name: "The App Developer"
+    prompt: personas/app-dev.md
+  - id: product-lead
+    name: "The Product Lead"
+    prompt: personas/product-lead.md
+workflows:
+  - file: workflows/nightly-standup.yaml
+    channel: standup
+  - file: workflows/eval-review.yaml
+    channel: evals
+docs:
+  - file: docs/model-card.md
+    title: "Model Card"
+  - file: docs/eval-plan.md
+    title: "Eval Plan"
+skills:
+  - name: eval-craft
+    source: skills/eval-craft/SKILL.md
+    applies_to: all
+welcome: welcome.md
+org:
+  # The community org this project starts with: a founder seat (you), one vacant
+  # seat per agent, and a default budget that covers every agent from day one.
+  # Overruns become approval cards in "Needs me" rather than silent stops.
+  root:
+    name: "AI App Studio"
+    blurb: "The studio's founders"
+  seats:
+    - persona: ml-engineer
+    - persona: eval-writer
+    - persona: app-dev
+    - persona: product-lead
+  default_budget:
+    window: day
+    runs: 200
+    tasks_create: 20
+    messages: 300
+    llm_calls: 200

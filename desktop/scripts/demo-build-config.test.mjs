@@ -30,7 +30,7 @@ test("production identity remains unchanged", () => {
   assert.deepEqual(productionBuildIdentity, {
     productName: "Buzz",
     identifier: "xyz.block.buzz.app",
-    deepLinkScheme: "buzz",
+    deepLinkScheme: "creaton",
     keyringService: "buzz-desktop",
     nestName: ".buzz",
     cliName: "buzz",

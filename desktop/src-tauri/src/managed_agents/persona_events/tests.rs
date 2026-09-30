@@ -257,7 +257,7 @@ fn d_tag_already_valid_slug_is_unchanged() {
 #[test]
 fn build_persona_event_produces_correct_kind() {
     let record = sample_persona();
-    let builder = build_persona_event(&record).unwrap();
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
     assert_eq!(event.kind.as_u16() as u32, KIND_PERSONA);
@@ -267,7 +267,7 @@ fn build_persona_event_produces_correct_kind() {
 fn shared_persona_event_has_exact_tag_and_round_trips() {
     let mut record = sample_persona();
     record.shared = true;
-    let event = build_persona_event(&record)
+    let event = build_persona_event(&record, None)
         .unwrap()
         .sign_with_keys(&nostr::Keys::generate())
         .unwrap();
@@ -282,11 +282,150 @@ fn shared_persona_event_has_exact_tag_and_round_trips() {
     assert!(persona_from_event(&event).unwrap().shared);
 }
 
+/// Head tags rendered as flat string slices, for exact-shape assertions.
+fn tag_shape(event: &nostr::Event) -> Vec<Vec<&str>> {
+    event
+        .tags
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect()
+}
+
+/// A signed head carrying `d`, `shared`, a skill binding, and the template
+/// marker — the four tag classes a rebuild can face.
+fn binding_head(keys: &nostr::Keys) -> nostr::Event {
+    EventBuilder::new(
+        Kind::Custom(KIND_PERSONA as u16),
+        r#"{"display_name":"Old"}"#,
+    )
+    .tags(vec![
+        Tag::parse(["d", "old-slug"]).expect("d tag"),
+        Tag::parse(["shared", "true"]).expect("shared tag"),
+        Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+        Tag::parse(["marker", "template"]).expect("marker tag"),
+    ])
+    .sign_with_keys(keys)
+    .expect("signed head")
+}
+
+/// Carry-forward unit: everything the builder cannot re-derive survives, and
+/// everything it CAN re-derive (`d`, `shared`) is excluded so it is never
+/// duplicated onto the new head.
+#[test]
+fn carried_forward_tags_keeps_bindings_and_excludes_recomputed_names() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+
+    let carried = carried_forward_tags(&head);
+    let shape: Vec<Vec<&str>> = carried
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "skill + marker carry; d/shared are recomputed by the builder"
+    );
+}
+
+/// Full rebuild through the production seam: content updates from the record,
+/// `d` and `shared` are recomputed exactly once each, and the carried
+/// `skill`/`marker` tags are byte-identical to the head's own tags.
+#[test]
+fn rebuild_carries_binding_tags_byte_identically_while_content_updates() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+
+    let mut record = sample_persona();
+    record.shared = true;
+    record.system_prompt = "Edited prompt.".to_string();
+
+    let event = build_persona_event(&record, Some(&head))
+        .expect("build")
+        .sign_with_keys(&keys)
+        .expect("signed");
+
+    assert_eq!(
+        tag_shape(&event),
+        vec![
+            vec!["d", "test-slug"],
+            vec!["shared", "true"],
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "d/shared recomputed once (head's stale `old-slug` d replaced), skill + marker carried"
+    );
+    // Byte-identity against the head's own tags, not just shape.
+    assert_eq!(event.tags.as_slice()[2], head.tags.as_slice()[2]);
+    assert_eq!(event.tags.as_slice()[3], head.tags.as_slice()[3]);
+    // Content updates from the record.
+    assert!(event.content.contains("Edited prompt."));
+}
+
+/// No head: the rebuild starts from nothing carried — `d` (plus `shared`
+/// when set) and no invented tags.
+#[test]
+fn rebuild_without_a_head_carries_nothing() {
+    let keys = nostr::Keys::generate();
+    let mut record = sample_persona();
+    record.shared = true;
+
+    let event = build_persona_event(&record, None)
+        .expect("build")
+        .sign_with_keys(&keys)
+        .expect("signed");
+
+    assert_eq!(
+        tag_shape(&event),
+        vec![vec!["d", "test-slug"], vec!["shared", "true"]]
+    );
+}
+
+/// Deliberate-removal path (the documented future removal): carry-forward
+/// never drops a tag, so an editor that CAN express a binding edit passes the
+/// full desired tag intent to `build_persona_event_with_tags` — here the
+/// carried set minus the skill binding — and the resulting head publishes the
+/// removal. An empty intent is the explicit clear: only `d` (+`shared`)
+/// remains.
+#[test]
+fn deliberate_binding_removal_is_expressed_as_explicit_tag_intent() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+    let mut record = sample_persona();
+
+    // Editor computes intent: carried tags minus the removed binding.
+    let mut intent = carried_forward_tags(&head);
+    intent.retain(|tag| tag.as_slice().first().map(String::as_str) != Some("skill"));
+    let removed = build_persona_event_with_tags(&record, intent)
+        .expect("build with explicit intent")
+        .sign_with_keys(&keys)
+        .expect("signed");
+    assert_eq!(
+        tag_shape(&removed),
+        vec![vec!["d", "test-slug"], vec!["marker", "template"]],
+        "the binding is gone while the marker survives — the removal publishes"
+    );
+
+    // Explicit clear: empty intent → head carries only the recomputed tags.
+    record.shared = true;
+    let cleared = build_persona_event_with_tags(&record, vec![])
+        .expect("build with cleared intent")
+        .sign_with_keys(&keys)
+        .expect("signed");
+    assert_eq!(
+        tag_shape(&cleared),
+        vec![vec!["d", "test-slug"], vec!["shared", "true"]]
+    );
+}
+
 #[test]
 fn round_trip_serialization() {
     let mut record = sample_persona();
     record.acp_command = Some("buzz-janet-acp".to_string());
-    let builder = build_persona_event(&record).unwrap();
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
 
@@ -417,7 +556,7 @@ fn content_matches_nip_ap_vector() {
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
-    let event = build_persona_event(&record)
+    let event = build_persona_event(&record, None)
         .unwrap()
         .sign_with_keys(&nostr::Keys::generate())
         .unwrap();
@@ -453,7 +592,7 @@ fn round_trip_minimal_persona() {
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
 
-    let builder = build_persona_event(&record).unwrap();
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
 

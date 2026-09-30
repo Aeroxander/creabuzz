@@ -139,7 +139,7 @@ async fn query(
     let reader_bytes = reader.to_bytes();
     let visible = |se: &buzz_core::StoredEvent| {
         event_in_accessible_channel(se, accessible)
-            && crate::handlers::req::event_visible_to_reader(&se.event, &reader_bytes)
+            && crate::handlers::req::event_visible_to_reader(&se.event, &reader_bytes, false)
     };
     let mut events = Vec::new();
     let page_start_bytes = budget.bytes;

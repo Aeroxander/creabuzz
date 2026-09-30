@@ -8,6 +8,8 @@ pub mod allowlist;
 pub mod api_token;
 /// Relay-scoped archived identity persistence (NIP-IA).
 pub mod archived_identities;
+/// NIP-ORG budget enforcement — windowed consumption counters.
+pub mod budget;
 /// Channel lifecycle and metadata persistence.
 pub mod channel;
 /// Channel membership and roster persistence.
@@ -28,6 +30,8 @@ pub mod git_repo;
 pub mod moderation;
 /// Deployment-global operator-listener mention registrations and delivery queues.
 pub mod operator_listener;
+/// NIP-ORG authority resolver adapter (R1 anchoring over the org graph).
+pub mod org_graph;
 /// Monthly table partition management.
 pub mod partition;
 /// Buzz product-feedback sidecar persistence.

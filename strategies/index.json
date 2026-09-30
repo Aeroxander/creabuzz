@@ -1,0 +1,74 @@
+{
+  "source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "section": "Appendix A — Deployed strategy banks (A.1 AIME-2024, A.2 GPQA-Diamond)",
+    "note": "Every strategies/<bank>/<slug>.json carries the same metadata in its `_source` field; this file is the repo-level index (bank -> strategy ids) used by `buzz team strategies bank list|seed`."
+  },
+  "banks": [
+    {
+      "id": "aime-2024",
+      "section": "Appendix A.1",
+      "title": "AIME-2024 strategy bank (10 strategies)",
+      "roster": "Agents 0/1/2 are o3-mini, Claude Sonnet 4, and DeepSeek-V3.",
+      "count": 10,
+      "strategies": [
+        "backward_constraint_validation",
+        "component_recombination_validation",
+        "constraint_inventory_then_solve",
+        "divergence_reconciliation",
+        "independent_solve_then_synthesis",
+        "mechanistic_step_audit",
+        "minority_reasoning_challenge",
+        "problem_adaptive_method_diversification",
+        "suspicious_consensus_challenger",
+        "weighted_derivation_consensus"
+      ]
+    },
+    {
+      "id": "gpqa-diamond",
+      "section": "Appendix A.2",
+      "title": "GPQA-Diamond strategy bank (10 strategies)",
+      "roster": "Agents 0/1/2 are Llama-4-Maverick, GPT-4.1, and Gemini-2.5-Flash.",
+      "count": 10,
+      "strategies": [
+        "constructive_challenge_and_preservation",
+        "corrective_step_audit",
+        "discrepancy_and_contradiction_audit",
+        "final_auditor_claim_recovery",
+        "minority_evidence_adjudication",
+        "neglected_effects_challenge",
+        "option_aware_claim_critique",
+        "option_conditions_and_absence_audit",
+        "precision_matched_effects_audit",
+        "provisional_consensus_cross_validation"
+      ]
+    }
+  ],
+  "unconverted": [],
+  "excluded": [
+    {
+      "id": "forced_role_reversal",
+      "where": "Appendix A, Figure 8(a)",
+      "reason": "Described in the paper as an earlier search result that was never selected for either deployed bank; not part of the Appendix A deployed banks, so not converted."
+    },
+    {
+      "id": "overlapping_pairwise_verification",
+      "where": "Appendix A, Figure 8(b)",
+      "reason": "Described in the paper as an earlier search result that was never selected for either deployed bank; not part of the Appendix A deployed banks, so not converted."
+    }
+  ]
+}

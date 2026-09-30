@@ -41,12 +41,54 @@ abstract final class EventKind {
   static const jobResult = 43004;
   static const jobCancel = 43005;
   static const jobError = 43006;
+  static const agentCapabilities = 44010;
+  static const agentTask = 44011;
+  static const agentWikiPage = 44002;
+  static const teamStrategy = 44020;
+  static const teamRun = 44021;
+  static const teamTurn = 44022;
+  static const agentTurnMetric = 44200;
+  static const workflowTriggered = 46001;
+  static const workflowCompleted = 46005;
+  static const workflowFailed = 46006;
   static const forumPost = 45001;
   static const forumComment = 45003;
   static const huddleStarted = 48100;
   static const huddleParticipantJoined = 48101;
   static const huddleParticipantLeft = 48102;
   static const huddleEnded = 48103;
+
+  /// NIP-ORG: community org graph (addressable, d = id). Community-level and
+  /// global-only: no `h` routing tag (`h` is the NIP-29 channel tag, and a
+  /// stray one never channel-scopes these kinds).
+  static const orgNode = 37010;
+  static const orgGrant = 37011;
+  static const orgBudget = 37012;
+  static const contributionRecord = 37013;
+  static const budgetSpendReceipt = 37014;
+
+  /// NIP-ORG (Project Board): project pitch / team manifest (d = the
+  /// project's org-node id) and a member's request to fill one declared role
+  /// (d = `<node>/<role>/<requester-16>`).
+  static const orgPitch = 37015;
+  static const orgJoinRequest = 37016;
+
+  /// NIP-ORG (Discovery plane): EVM binding — which address holds a seat,
+  /// authored by the bound npub (d = the bound `0x…` address) — and deployment
+  /// record — where the Summoner is (d = `<chainId>:<role>`).
+  static const evmBinding = 37017;
+  static const deploymentRecord = 37018;
+
+  /// Agent skill definition (addressable, d = skill id; community-level and
+  /// global-only).
+  static const skill = 30180;
+
+  /// Human wiki page (addressable, d = slug, content = markdown).
+  static const wikiPage = 44001;
+
+  /// Relay hash-chain audit entry — relay-signed, readable by community
+  /// owners and admins only.
+  static const auditEntry = 48001;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [

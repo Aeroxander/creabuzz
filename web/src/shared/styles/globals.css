@@ -3,8 +3,39 @@
 @plugin "@tailwindcss/typography";
 @config "../../../tailwind.config.js";
 
+/* Reader font-size preference: moves conversation type only. */
+:root[data-font-size="smaller"] {
+  --buzz-type-rem: calc(1rem * 13 / 14);
+}
+
+:root[data-font-size="larger"] {
+  --buzz-type-rem: calc(1rem * 15 / 14);
+}
+
+/* Compact conversation density: same type, tighter rhythm. */
+:root[data-conversation-density="compact"] {
+  --conversation-body-gap: 0rem;
+  --conversation-row-padding-block: 0.25rem;
+  --conversation-paragraph-gap: 0.375rem;
+  --conversation-list-item-gap: 0.25rem;
+}
+
 @layer base {
   :root {
+    /* The virtual typography rem. Conversation type derives from it, so a
+       reader's font-size preference moves the chat text without touching the
+       layout rem: the desktop contract is Smaller/Default/Larger = 13/14/15px. */
+    --buzz-type-rem: 1rem;
+    /* Conversation type + density (desktop's `--conversation-*` contract). */
+    --conversation-message-font-size: calc(var(--buzz-type-rem) * 0.875);
+    --conversation-message-line-height: calc(var(--buzz-type-rem) * 1.25);
+    --conversation-author-line-height: var(--buzz-type-rem);
+    --conversation-timestamp-font-size: calc(var(--buzz-type-rem) * 0.75);
+    --conversation-timestamp-line-height: var(--buzz-type-rem);
+    --conversation-body-gap: 0.125rem;
+    --conversation-row-padding-block: 0.25rem;
+    --conversation-paragraph-gap: 0.5rem;
+    --conversation-list-item-gap: 0.375rem;
     /* Catppuccin Latte (mauve accent) */
     --radius: 0.625rem;
     --background: 220 23.08% 94.9%;
@@ -18,14 +49,16 @@
     --secondary: 223 15.91% 82.75%;
     --secondary-foreground: 234 16.02% 35.49%;
     --muted: 223 15.91% 82.75%;
-    --muted-foreground: 233 12.8% 41.37%;
+    /* Darkened from 41.37%: on `--muted` the pair measured 4.05:1, under the
+       4.5:1 floor for the 11px badges it is used on. This is 4.7:1. */
+    --muted-foreground: 233 12.8% 38%;
     --accent: 223 15.91% 82.75%;
     --accent-foreground: 234 16.02% 35.49%;
     --destructive: 347 86.67% 44.12%;
     --destructive-foreground: 220 23.08% 94.9%;
     --border: 225 13.56% 76.86%;
     --input: 225 13.56% 76.86%;
-    --ring: 234 16.02% 35.49%;
+    --ring: 151 74% 58%; /* Creaton mint (#43e296) */
     --chart-1: 345 57.65% 74.12%;
     --chart-2: 185 37.25% 70.59%;
     --chart-3: 219 81.96% 78.43%;
@@ -40,6 +73,21 @@
     --sidebar-accent-foreground: 234 16.02% 35.49%;
     --sidebar-border: 225 13.56% 76.86%;
     --sidebar-ring: 225 13.56% 76.86%;
+    /* Creaton gradient wash (mint-on-midnight brand) + brand tokens. */
+    --brand-mint: #43e296;
+    --brand-mint-deep: #0e9f66;
+    --brand-indigo: #3f3a94;
+    --brand-midnight: #120821;
+    --brand-steel: #437f97;
+    /* Desktop parity: the same cream -> periwinkle wash the reference client
+       paints, so the two clients read as one product. The mint brand token
+       stays for accents, focus rings and primary actions. */
+    --buzz-gradient-light-top: #e6e6b6;
+    --buzz-gradient-light-bottom: #c4d0da;
+    --buzz-gradient-dark-top: #4a4616;
+    --buzz-gradient-dark-bottom: #0a1423;
+    /* Dark content canvas: desktop's warm neutral, not the theme base. */
+    --buzz-content-dark: 0 0% 10.1960784314%;
   }
 
   .dark {
@@ -96,5 +144,71 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
+  }
+}
+
+/* App backdrop wash painted on <body> (backgrounds always composite behind
+   content — no stacking-context games). Pale yellow -> pale blue (light),
+   deep olive -> navy (dark). */
+body {
+  background-image: linear-gradient(
+    160deg,
+    var(--buzz-gradient-light-top),
+    var(--buzz-gradient-light-bottom)
+  );
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+.dark body {
+  background-image: linear-gradient(
+    160deg,
+    var(--buzz-gradient-dark-top),
+    var(--buzz-gradient-dark-bottom)
+  );
+}
+
+/*
+ * Floating content card over the wash, ported from desktop `ContentSurface`:
+ * `rounded-2xl bg-background shadow-content-edge`, inset by a hairline on the
+ * top-left and a small margin on the right/bottom. The hairline is what makes
+ * the card read as a raised pane over the gradient — especially in dark mode,
+ * where a soft black shadow reads as nothing.
+ */
+.buzz-content-card {
+  background-color: hsl(var(--background));
+  border-radius: 1rem;
+  box-shadow:
+    -1px -1px 0 0 hsl(var(--border) / 0.45),
+    0 0 4px 0 rgb(0 0 0 / 7%);
+  overflow: hidden;
+}
+
+.dark .buzz-content-card {
+  /* The desktop uses a warm neutral for the inset content canvas in dark mode,
+     lighter than the themed background, so panes read as raised. */
+  --background: var(--buzz-content-dark);
+  background-color: hsl(var(--background));
+}
+
+/* Keyboard focus must always be visible (WCAG 2.4.7). Components that draw
+   their own ring keep it; this covers every other control, including the ones
+   added later. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Honour the reader's motion preference. The client animates spinners,
+   presence pulses, slide-overs and dialog entrances; all of it collapses to
+   near-instant when the OS asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

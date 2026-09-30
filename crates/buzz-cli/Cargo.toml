@@ -29,6 +29,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# YAML parsing — template.yaml schema deserialization
+serde_yaml = { workspace = true }
+
 # Structured error types with exit code mapping
 thiserror = { workspace = true }
 
@@ -43,7 +46,17 @@ chrono = { workspace = true }
 
 # Typed event builders for all write operations
 buzz-sdk = { workspace = true }
+buzz-agwiki = { path = "../buzz-agwiki" }
 buzz-core = { workspace = true }
+
+# Onchain spend-ceiling guard (OrgAllowance.sol) — `buzz org allowance`
+buzz-evm-allowance = { workspace = true }
+
+# EVM key handling for the ragequit exit path (`buzz org ragequit`)
+k256 = { workspace = true }
+
+# Trait impls for the mocked EvmRpc test seam
+async-trait = "0.1"
 
 # Base64 encoding — NIP-98 event serialization for Authorization header
 base64 = "0.22"
@@ -53,6 +66,10 @@ sha2 = "0.11"
 
 # Unified-diff parser and strict applier — `mem patch`
 diffy = "0.5"
+
+# Big integers — compose unsigned CCA bid/claim calldata (Q96 prices exceed u128 comfortably)
+num-bigint = "0.4"
+num-traits = "0.2"
 
 # Hex encoding — SHA-256 hash output for Blossom uploads
 hex = { workspace = true }
@@ -69,12 +86,18 @@ url = { workspace = true }
 # Persona pack parsing, validation, and resolution
 buzz-persona = { path = "../buzz-persona" }
 
+# Workflow definition schema types — `templates apply` validates template
+# workflow YAML with the SAME parser the relay's ingest uses
+# (`buzz_workflow::schema::parse_yaml`), never a loose re-validation
+buzz-workflow = { workspace = true }
+
 # Platform app-data dir resolution — locates the desktop app's
 # channel-templates.json store for `channels create --template`
 dirs = "6"
 
 # WebSocket client — ephemeral event publish (kind:20001 is WS-only on the relay)
 buzz-ws-client = { path = "../buzz-ws-client" }
+buzz-skillopt = { path = "../buzz-skillopt" }
 
 # Explicit rustls dep with ring provider — required to install the process-level
 # CryptoProvider at startup. Without this the standalone `buzz` binary panics when

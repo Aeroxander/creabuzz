@@ -30,6 +30,11 @@ fn default_true() -> bool {
     true
 }
 
+/// Default wiki space for [`ActionDef::DistillAgentWiki`].
+fn default_space() -> String {
+    "default".to_string()
+}
+
 /// Trigger definition. The `on` field is the tag.
 ///
 /// Serde internally-tagged: `on: message_posted`, `on: reaction_added`, etc.
@@ -152,6 +157,32 @@ pub enum ActionDef {
         /// Duration string (e.g. `"5m"`, `"1h"`).
         duration: String,
     },
+    /// Distill + publish the Agent Wiki standup page for one wiki space
+    /// (kind:44002) — keeps the wiki self-maintaining on a schedule.
+    ///
+    /// Runs the shared `buzz-agwiki` distillation loop relay-side: bounded
+    /// sources since the page's durable front-matter cursor, the classifier
+    /// LLM call (fail closed when unconfigured — that surfaces as a visible
+    /// run failure, never a silent no-op), strict validation, and a
+    /// kind:44002 publish. Always publishes (a scheduled maintenance run has
+    /// no interactive preview); a run with nothing new skips cleanly and
+    /// publishes nothing.
+    DistillAgentWiki {
+        /// Wiki space name — the page coordinate is `<space>/standup`.
+        /// Supports template variables. Defaults to `default`.
+        #[serde(default = "default_space")]
+        space: String,
+    },
+    /// Recompute the org diagnostic (OA.md Phase 4 — `buzz-core::org_diag`)
+    /// over the community's recent signed events: Pentland time signal,
+    /// Tomasello's three layers, the WEF five failure modes, Cursor's
+    /// thrash-vs-work scoreboard, drift probes, and supervision saturation.
+    ///
+    /// Deterministic and pure (no LLM, nothing published, no new wire
+    /// vocabulary) — the report is the step output, recorded in run history
+    /// so drift across runs is observable. Scheduled fires share the engine's
+    /// exactly-once run machinery.
+    RunOrgDiag,
 }
 
 impl WorkflowDef {
@@ -210,6 +241,20 @@ impl WorkflowDef {
                     "duplicate step id: {}",
                     step.id
                 )));
+            }
+        }
+
+        // `distill_agent_wiki` names a wiki space to distill; an empty one can
+        // only be a definition mistake — reject at save time (the run-time
+        // coordinate grammar check would fail anyway, but visibly later).
+        for step in &self.steps {
+            if let ActionDef::DistillAgentWiki { space } = &step.action {
+                if space.trim().is_empty() {
+                    return Err(WorkflowError::InvalidDefinition(format!(
+                        "step '{}': distill_agent_wiki requires a non-empty space",
+                        step.id
+                    )));
+                }
             }
         }
 
@@ -457,6 +502,50 @@ mod tests {
         let yaml = "name: No Steps\ntrigger:\n  on: message_posted\nsteps: []\n";
         let err = parse_yaml(yaml).unwrap_err();
         assert!(matches!(err, WorkflowError::InvalidDefinition(_)));
+    }
+
+    #[test]
+    fn distill_agent_wiki_parses_with_default_and_explicit_space() {
+        // Explicit space (the shape the self-maintenance YAML ships).
+        let yaml = concat!(
+            "name: agwiki-nightly\n",
+            "trigger:\n  on: schedule\n  cron: '0 9 * * 1-5'\n",
+            "steps:\n  - id: distill\n    action: distill_agent_wiki\n    space: default\n",
+        );
+        let (def, _) = parse_yaml(yaml).expect("schedule + distill parses");
+        assert!(matches!(
+            def.steps[0].action,
+            ActionDef::DistillAgentWiki { ref space } if space == "default"
+        ));
+        assert!(def.validate().is_ok());
+
+        // Omitted space defaults to `default`.
+        let yaml = concat!(
+            "name: agwiki-nightly\n",
+            "trigger:\n  on: schedule\n  cron: '0 9 * * 1-5'\n",
+            "steps:\n  - id: distill\n    action: distill_agent_wiki\n",
+        );
+        let (def, _) = parse_yaml(yaml).expect("defaulted space parses");
+        assert!(matches!(
+            def.steps[0].action,
+            ActionDef::DistillAgentWiki { ref space } if space == "default"
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_whitespace_only_distill_space() {
+        let yaml = concat!(
+            "name: agwiki-nightly\n",
+            "trigger:\n  on: schedule\n  cron: '0 9 * * 1-5'\n",
+            "steps:\n  - id: distill\n    action: distill_agent_wiki\n    space: '   '\n",
+        );
+        let err = parse_yaml(yaml).unwrap_err();
+        match &err {
+            WorkflowError::InvalidDefinition(msg) => {
+                assert!(msg.contains("space"), "expected 'space' in: {msg}");
+            }
+            other => panic!("expected InvalidDefinition, got: {other}"),
+        }
     }
 
     #[test]
@@ -997,5 +1086,34 @@ mod tests {
             trigger,
             TriggerDef::DiffPosted { filter: Some(_) }
         ));
+    }
+}
+
+#[cfg(test)]
+mod run_org_diag_schema_tests {
+    use super::{ActionDef, Step};
+
+    #[test]
+    fn run_org_diag_parses_as_the_action_tag() {
+        let action: ActionDef =
+            serde_json::from_value(serde_json::json!({ "action": "run_org_diag" }))
+                .expect("action parses");
+        assert!(matches!(action, ActionDef::RunOrgDiag));
+    }
+
+    #[test]
+    fn run_org_diag_round_trips_through_the_flattened_step_shape() {
+        // The YAML step shape: `{"id": "diag", "action": "run_org_diag"}`.
+        let step: Step = serde_json::from_value(serde_json::json!({
+            "id": "diag",
+            "action": "run_org_diag",
+        }))
+        .expect("step parses");
+        assert!(matches!(step.action, ActionDef::RunOrgDiag));
+        let round_trip = serde_json::to_value(&step).expect("serializable");
+        assert_eq!(
+            round_trip.get("action").and_then(|a| a.as_str()),
+            Some("run_org_diag")
+        );
     }
 }

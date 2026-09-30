@@ -255,6 +255,9 @@ enum Cmd {
     /// Create and manage multi-repo projects (NIP-MP)
     #[command(subcommand)]
     Projects(ProjectsCmd),
+    /// Discover and manage DAO launches (NIP-LP)
+    #[command(subcommand)]
+    Launchpad(LaunchpadCmd),
     /// Send, get, list, and set status on git patches (NIP-34)
     #[command(subcommand)]
     Patches(PatchesCmd),
@@ -279,6 +282,38 @@ enum Cmd {
     /// Community moderation — reports queue, bans, timeouts, audit trail
     #[command(subcommand)]
     Moderation(ModerationCmd),
+    /// Community org graph — roles, grants, and budgets (NIP-ORG)
+    #[command(subcommand)]
+    Org(OrgCmd),
+    /// Contributor royalty ledger — read, claim, settle, mirrors (token-lifecycle-design.md)
+    #[command(subcommand)]
+    Royalty(RoyaltyCmd),
+    /// The trustgraph scoring operator — score roots + gate rotation (NIP-LP 37006)
+    #[command(subcommand)]
+    Trustgraph(TrustgraphCmd),
+    /// Agent Wiki — agent-maintained knowledge base (kind:44002)
+    #[command(subcommand)]
+    Agwiki(AgwikiCmd),
+    /// Organizational diagnostic — the Phase 4 instrument (OA.md §6)
+    ///
+    /// Runs the differentiated instrument over the recent signed event
+    /// stream: Pentland time-signal correlation (timing-only — safe even when
+    /// identities are synonymous), Tomasello's three layers, the WEF five
+    /// multi-agent failure modes, the Cursor thrash-vs-work scoreboard,
+    /// per-actor drift probes, and supervision saturation. Deterministic and
+    /// recomputable; insufficient data reads "insufficient", never zeroed
+    /// scores.
+    Diag {
+        /// Max events to scan (default 500, cap 2000)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Self-organizing agent teams — teamwork strategies and runs (arXiv 2609.22682)
+    #[command(subcommand)]
+    Team(TeamCmd),
+    /// Project templates — turn an empty community into a working project
+    #[command(subcommand)]
+    Templates(TemplatesCmd),
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -925,6 +960,16 @@ pub enum DmsCmd {
 
 #[derive(Subcommand)]
 pub enum UsersCmd {
+    /// Print the identity of the configured key (local; no relay connection)
+    ///
+    /// With `--new`, generate a fresh keypair instead and print its secret key
+    /// too — for scripts and tests that need a throwaway identity. The secret
+    /// is printed only in that mode.
+    Whoami {
+        /// Generate a new keypair and print it (including the secret key)
+        #[arg(long)]
+        new: bool,
+    },
     /// Look up user profiles by pubkey or name
     Get {
         /// User pubkey(s) to look up (64-char hex). Omit for your own profile
@@ -1397,6 +1442,339 @@ impl ProjectVisibility {
             ProjectVisibility::Unlisted => "unlisted",
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum LaunchpadCmd {
+    /// Open a majeur proposal on a bound DAO (chain-local, opt-in via
+    /// BUZZ_EVM_*; prints the proposal id for `vote`/`process`)
+    Propose {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Operation: 0 = call, 1 = delegatecall
+        #[arg(long, default_value_t = 0)]
+        op: u8,
+        /// Target of the operation (`0x…`)
+        #[arg(long)]
+        to: String,
+        /// ETH value of the operation (decimal; default 0)
+        #[arg(long, default_value = "0")]
+        value: String,
+        /// 0x calldata of the proposed operation
+        #[arg(long)]
+        data: String,
+        /// Caller-chosen nonce (0x + 64 hex); part of the proposal id
+        #[arg(long)]
+        nonce: String,
+    },
+    /// Cast a majeur vote (for | against | abstain)
+    Vote {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Proposal id (0x + 64 hex; `propose` prints it)
+        #[arg(long)]
+        id: String,
+        /// for | against | abstain
+        #[arg(long)]
+        support: String,
+    },
+    /// Execute a passed proposal after votes + timelock
+    Process {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Operation: 0 = call, 1 = delegatecall
+        #[arg(long, default_value_t = 0)]
+        op: u8,
+        /// Target of the operation (`0x…`)
+        #[arg(long)]
+        to: String,
+        /// ETH value of the operation (decimal; default 0)
+        #[arg(long, default_value = "0")]
+        value: String,
+        /// 0x calldata of the operation
+        #[arg(long)]
+        data: String,
+        /// The same nonce `propose` used
+        #[arg(long)]
+        nonce: String,
+    },
+    /// Read a proposal's state (the D6 quorum-math input)
+    ProposalState {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Proposal id (0x + 64 hex)
+        #[arg(long)]
+        id: String,
+    },
+    /// List launches (NIP-LP kind:37001 directory)
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Show a launch with mirrors and effective stage
+    Show {
+        /// Launch id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
+    },
+    /// Publish a launch record (NIP-LP kind:37001)
+    Curate {
+        /// Launch id (slug): ^[a-z0-9][a-z0-9_-]{0,63}$
+        id: String,
+        /// Display name
+        #[arg(long)]
+        name: String,
+        /// One-paragraph pitch
+        #[arg(long, default_value = "")]
+        pitch: String,
+        /// Numeric chain id (e.g. 11155111)
+        #[arg(long)]
+        chain: Option<String>,
+        /// Raise currency (0x address, e.g. USDC)
+        #[arg(long)]
+        currency: Option<String>,
+        /// Floor price in smallest currency units
+        #[arg(long, name = "floor-price")]
+        floor_price: Option<String>,
+        /// Graduation threshold in smallest currency units
+        #[arg(long, name = "required-raised")]
+        required_raised: Option<String>,
+        /// Auction contract (0x address)
+        #[arg(long)]
+        auction: Option<String>,
+        /// Token contract (0x address)
+        #[arg(long)]
+        token: Option<String>,
+        /// Treasury contract (0x address)
+        #[arg(long)]
+        treasury: Option<String>,
+        /// Admission track: `curated` (default) or `community`
+        #[arg(long, default_value = "curated")]
+        admission: String,
+    },
+    /// Delete own launch (signer-self tombstone)
+    Delete {
+        /// Launch id (slug)
+        id: String,
+    },
+    /// Mint a ProjectToken via forge script (dev-local chains by default)
+    #[command(name = "mint-token")]
+    MintToken {
+        /// Token name (1–64 chars)
+        #[arg(long)]
+        name: String,
+        /// Token symbol (1–16 chars)
+        #[arg(long)]
+        symbol: String,
+        /// Total supply in whole tokens (18 decimals)
+        #[arg(long)]
+        supply: String,
+        /// Treasury recipient (0x address, receives full supply)
+        #[arg(long)]
+        treasury: String,
+        /// JSON-RPC endpoint (default local Anvil)
+        #[arg(long, default_value = "http://127.0.0.1:8545")]
+        rpc_url: String,
+        /// Deployer private key (default Anvil key 0 — dev only)
+        #[arg(
+            long,
+            default_value = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        )]
+        private_key: String,
+        /// Contracts workspace dir
+        #[arg(long, default_value = "contracts")]
+        contracts_dir: String,
+        /// CREATE2 salt (default: unix time, always unique)
+        #[arg(long)]
+        salt: Option<String>,
+        /// Initial paired reserve in ETH (default 0.1; native pairing requires nonzero)
+        #[arg(long, name = "paired-deposit-eth", default_value = "0.1")]
+        paired_deposit_eth: String,
+        /// Allow public-network deploys
+        #[arg(long, name = "i-know-what-i-am-doing", default_value_t = false)]
+        i_know_what_i_am_doing: bool,
+    },
+    /// Compose an unsigned bid transaction (submitBid + Permit2 approve)
+    #[command(name = "compose-bid")]
+    ComposeBid {
+        /// Launch id (slug)
+        id: String,
+        /// Author the envelope as an agent (sets the agent marker; the
+        /// mirror, when recorded, carries NIP-OA attestation from
+        /// BUZZ_AUTH_TAG)
+        #[arg(long)]
+        as_agent: bool,
+        /// Auction contract (0x address)
+        #[arg(long)]
+        auction: String,
+        /// Raise currency (0x address; omitted for native coin)
+        #[arg(long)]
+        currency: Option<String>,
+        /// Bid budget in smallest currency units
+        #[arg(long)]
+        budget: String,
+        /// Max price in smallest currency units per token (Q96 *before* snap)
+        #[arg(long, name = "max-price")]
+        max_price: String,
+        /// Tick spacing as the auction configures it (Q96)
+        #[arg(long, name = "tick-spacing")]
+        tick_spacing: String,
+        /// Current clearing price (Q96); pass --skip-clearing to compose blind
+        #[arg(long, name = "clearing-price")]
+        clearing_price: Option<String>,
+        /// Keep the max price even if it is below the clearing price
+        #[arg(long)]
+        skip_clearing: bool,
+        /// Launch floor price (Q96) — the previous-tick hint
+        #[arg(long, name = "floor-price")]
+        floor_price: String,
+        /// Chain id in the tx envelope (metadata only, no signing)
+        #[arg(long, name = "chain-id", default_value = "11155111")]
+        chain_id: String,
+        /// Bidder address (0x address; tokens/refunds settle there)
+        #[arg(long, default_value = "0x1111111111111111111111111111111111111111")]
+        owner: String,
+        /// Permit2 approve deadline as unix seconds (default +1h)
+        #[arg(long)]
+        deadline: Option<u64>,
+    },
+    /// Mirror an onchain bid into the launch feed (advisory)
+    #[command(name = "record-bid")]
+    RecordBid {
+        /// Launch id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
+        /// Auction bucket id
+        #[arg(long, default_value = "bucket-0")]
+        bucket: String,
+        /// Bid budget in smallest currency units
+        #[arg(long)]
+        budget: Option<String>,
+        /// Bid max price
+        #[arg(long, name = "max-price")]
+        max_price: Option<String>,
+        /// Bid transaction hash (0x + 64 hex)
+        #[arg(long)]
+        tx: Option<String>,
+    },
+    /// Publish a founder update (NIP-LP kind:47003)
+    #[command(name = "post-update")]
+    PostUpdate {
+        /// Launch id (slug)
+        id: String,
+        /// Update title
+        #[arg(long)]
+        title: String,
+        /// Update body (markdown)
+        #[arg(long)]
+        body: String,
+    },
+    /// Mirror a proposal record (plain, futarchy-budget, or signal)
+    #[command(name = "record-proposal")]
+    RecordProposal {
+        /// Launch id (slug)
+        id: String,
+        /// Proposal title
+        #[arg(long)]
+        title: String,
+        /// Proposal kind
+        #[arg(long, default_value = "plain")]
+        kind: String,
+        /// Linked git issue coordinate
+        #[arg(long)]
+        issue: Option<String>,
+        /// Onchain proposal id
+        #[arg(long, name = "proposal-id")]
+        proposal_id: Option<String>,
+    },
+    /// Mirror a chain-state receipt (advisory — chain is authoritative)
+    #[command(name = "record-receipt")]
+    RecordReceipt {
+        /// Launch id (slug)
+        id: String,
+        /// Receipt table (e.g. sweep, claim, unlock, graduate)
+        #[arg(long)]
+        table: String,
+        /// Chain transaction hash
+        #[arg(long)]
+        tx: String,
+    },
+    /// Record a milestone claim (47005, table = claim)
+    #[command(name = "record-claim")]
+    RecordClaim {
+        /// Launch id (slug)
+        id: String,
+        /// Milestone claim id (any stable hex/slug; must match onchain claimId)
+        #[arg(long, name = "claim-id")]
+        claim_id: String,
+        /// Evidence hash binding the claim to its content (Nostr/Blossom)
+        #[arg(long, name = "evidence-hash")]
+        evidence_hash: String,
+        /// Tx hash of the onchain claim that settled this milestone (0x + 64 hex)
+        #[arg(long)]
+        tx: String,
+    },
+    /// Record a verifier verdict on a claim (47005, table = verdict)
+    #[command(name = "record-verdict")]
+    RecordVerdict {
+        /// Launch id (slug)
+        id: String,
+        /// Milestone claim id
+        #[arg(long, name = "claim-id")]
+        claim_id: String,
+        /// approve | reject
+        #[arg(long)]
+        verdict: String,
+        /// Tx hash of the onchain attestation (0x + 64 hex)
+        #[arg(long)]
+        tx: String,
+    },
+    /// Discovery-plane deployment records (kind:37018)
+    #[command(name = "deployment")]
+    Deployment {
+        #[command(subcommand)]
+        cmd: DeploymentCmd,
+    },
+}
+
+/// `buzz launchpad deployment …` — kind:37018 records that answer "where is
+/// the Summoner" from signed events alone.
+///
+/// The deployer authors these, never the relay: `DeployOrgDao.s.sol` writes
+/// `deployments/org-dao-<chainid>.json` and prints the `record` command below.
+#[derive(Subcommand)]
+pub enum DeploymentCmd {
+    /// Publish one kind:37018 record per role in a deployments manifest
+    ///
+    /// Reads the manifest the forge script wrote (`--file`) and publishes one
+    /// record per role with `d = <chainId>:<role>`. Idempotent through NIP-33:
+    /// a re-run replaces the same coordinate instead of duplicating it, and
+    /// tags/content are rebuilt deterministically from the manifest.
+    ///
+    /// `tx` and `block` come from the manifest when it carries them; forge
+    /// cannot expose the current run's transaction hashes from inside `run()`
+    /// (broadcast artifacts are written *after* the script finishes), so a
+    /// manifest without them points at forge's `run-latest.json` through its
+    /// `broadcast` field — or pass `--broadcast` explicitly.
+    #[command(name = "record")]
+    Record {
+        /// Deployments JSON written by `DeployOrgDao.s.sol`
+        #[arg(long)]
+        file: String,
+        /// Forge broadcast artifact (`broadcast/<script>/<chainid>/run-latest.json`),
+        /// used when the manifest does not carry `tx`/`block`
+        #[arg(long)]
+        broadcast: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2012,6 +2390,45 @@ pub enum PackCmd {
     },
 }
 
+/// Project-template commands. `list`/`show` read the build-time embedded
+/// registry (local, no relay connection); `apply` writes to the relay.
+#[derive(Subcommand)]
+pub enum TemplatesCmd {
+    /// List embedded project templates (ids, names, descriptions)
+    List,
+    /// Show one embedded project template
+    Show {
+        /// Template id (from 'buzz templates list')
+        id: String,
+    },
+    /// Apply a project template to the community
+    #[command(
+        after_help = "Idempotent: re-applying skips everything that already exists (channels by \
+name, everything else by a template-managed marker tag), so a partially-applied \
+template is safe to re-run.\n\n\
+Execution is ordered (channels → seeds → skills → personas → workflows → docs → \
+welcome) and stops at the first failure. The JSON report is printed to stdout in \
+ALL outcomes and enumerates every step: created, skipped (already-exists / \
+unchanged), failed, or not-attempted. On partial failure re-run with --resume to \
+complete the remainder from the durable relay state.\n\n\
+https skill sources are fetched bounded (https-only, 10s timeout, 64KiB cap) and \
+sha256-pinned; a re-apply never refetches a skill whose recorded source is \
+unchanged.\n\n\
+Examples:\n  \
+buzz templates list\n  \
+buzz templates show ai-media-studio\n  \
+buzz templates apply ai-media-studio\n  \
+buzz templates apply ai-media-studio --resume"
+    )]
+    Apply {
+        /// Template id (from 'buzz templates list')
+        id: String,
+        /// Complete a previously interrupted apply (same plan; skips what exists)
+        #[arg(long, default_value_t = false)]
+        resume: bool,
+    },
+}
+
 /// Community moderation commands.
 ///
 /// The community (tenant) is selected by the relay host in `--relay` /
@@ -2108,6 +2525,916 @@ pub enum ModerationCmd {
     },
 }
 
+/// Contributor royalty ledger commands — docs/token-lifecycle-design.md.
+///
+/// Local-only (EVM value layer; no relay connection, no Nostr key). The
+/// mirror subcommands print UNSIGNED kind:47006/47007 event templates
+/// (advisory; the chain is authoritative).
+#[derive(Subcommand)]
+pub enum RoyaltyCmd {
+    /// Read the ledger state (credited balance, carry, window clock)
+    Show {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Pull the credited royalty balance (credited-is-owned: never expires)
+    Claim {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Close the current settlement window (permissionless)
+    Settle {
+        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        distributor: String,
+    },
+    /// Print an unsigned kind:47006 royalty-schedule mirror (JSON)
+    MirrorSchedule {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The ClaimStake claim id (0x-prefixed bytes32)
+        #[arg(long)]
+        claim_id: String,
+        /// The claim's evidence hash (0x-prefixed bytes32)
+        #[arg(long)]
+        evidence_hash: String,
+        /// The contributor's bound EVM address (`0x…`)
+        #[arg(long)]
+        contributor: String,
+        /// Schedule weight (tier band caps apply)
+        #[arg(long)]
+        weight: u32,
+        /// Schedule term in seconds
+        #[arg(long)]
+        term: u64,
+        /// Milestone badge tier (1, 2, or 3)
+        #[arg(long)]
+        band: u8,
+        /// Earned token allocation (decimal)
+        #[arg(long)]
+        allocation: u128,
+    },
+    /// Print an unsigned kind:47007 settlement-close mirror (JSON)
+    MirrorClose {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The closed window id
+        #[arg(long)]
+        window_id: u64,
+        /// Window revenue (decimal, currency units)
+        #[arg(long)]
+        revenue: u128,
+        /// Buyback share (decimal)
+        #[arg(long)]
+        buyback_share: u128,
+        /// Treasury share (decimal)
+        #[arg(long)]
+        treasury_share: u128,
+        /// Contributor pool (decimal)
+        #[arg(long)]
+        pool: u128,
+        /// Carried into the next pool (decimal)
+        #[arg(long)]
+        carried: u128,
+    },
+    /// Sign and publish the kind:47006 schedule mirror (the attestation
+    /// feed's record; the chain is authoritative). Needs a relay identity.
+    PublishSchedule {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The ClaimStake claim id (0x-prefixed bytes32)
+        #[arg(long)]
+        claim_id: String,
+        /// The claim's evidence hash (0x-prefixed bytes32)
+        #[arg(long)]
+        evidence_hash: String,
+        /// The contributor's bound EVM address (`0x…`)
+        #[arg(long)]
+        contributor: String,
+        /// Schedule weight (tier band caps apply)
+        #[arg(long)]
+        weight: u32,
+        /// Schedule term in seconds
+        #[arg(long)]
+        term: u64,
+        /// Milestone badge tier (1, 2, or 3)
+        #[arg(long)]
+        band: u8,
+        /// Earned token allocation (decimal)
+        #[arg(long)]
+        allocation: u128,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+    },
+    /// Sign and publish the kind:47007 settlement-close mirror (the
+    /// attestation feed's per-window record). Needs a relay identity.
+    PublishClose {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// The closed window id
+        #[arg(long)]
+        window_id: u64,
+        /// Window revenue (decimal, currency units)
+        #[arg(long)]
+        revenue: u128,
+        /// Buyback share (decimal)
+        #[arg(long)]
+        buyback_share: u128,
+        /// Treasury share (decimal)
+        #[arg(long)]
+        treasury_share: u128,
+        /// Contributor pool (decimal)
+        #[arg(long)]
+        pool: u128,
+        /// Carried into the next pool (decimal)
+        #[arg(long)]
+        carried: u128,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+    },
+    /// Watch a RoyaltyDistributor and publish kind:47007 close mirrors as
+    /// windows close (the attestation feed, unattended). Needs a relay
+    /// identity and BUZZ_EVM_RPC_URL. `--once` for a single pass.
+    Watch {
+        /// Chain identifier, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// Launch record author (pubkey hex) for the `a` binding tag
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// Launch record id (the `d` slug) for the `a` binding tag
+        #[arg(long)]
+        launch_id: Option<String>,
+        /// Channel id for the `h` tag
+        #[arg(long)]
+        channel: Option<String>,
+        /// Poll interval in seconds (default 30)
+        #[arg(long)]
+        interval: Option<u64>,
+        /// Single pass then exit (cron-style)
+        #[arg(long)]
+        once: bool,
+        /// Scan from this block (default 0; feed dedupe prevents doubles)
+        #[arg(long)]
+        from_block: Option<u64>,
+    },
+}
+
+/// The trustgraph scoring operator (NIP-LP kind 37006). The scoring ENGINE
+/// is external and replaceable; this is the bridge that turns any engine's
+/// scores into the roots + proofs the launchpad and `TrustGatedHook` consume.
+#[derive(Subcommand)]
+pub enum TrustgraphCmd {
+    /// Scores file -> Merkle root + per-member proofs (local; the workspace
+    /// data stays private — only the root ships)
+    ComposeRoot {
+        /// Program id (default: the launchpad community program)
+        #[arg(long)]
+        program: Option<String>,
+        /// Epoch/checkpoint the root covers
+        #[arg(long)]
+        epoch: String,
+        /// Scores JSON ([{"member": "0x..", "score": n}]; "-" = stdin)
+        #[arg(long)]
+        scores: String,
+        /// Also write just the proofs map here (the file the indexer hosts)
+        #[arg(long)]
+        proofs_out: Option<String>,
+        /// Where the full score file + proofs live (recorded in the record)
+        #[arg(long)]
+        indexer_url: Option<String>,
+        /// Block at which the root is anchored onchain, if known
+        #[arg(long)]
+        anchor_block: Option<u64>,
+    },
+    /// Sign and publish the 37006 score-root record (relay auth)
+    PublishRoot {
+        /// Program id (default: the launchpad community program)
+        #[arg(long)]
+        program: Option<String>,
+        /// Epoch the root covers
+        #[arg(long)]
+        epoch: Option<String>,
+        /// The Merkle root (0x + 64 hex)
+        #[arg(long)]
+        root: Option<String>,
+        /// Publish from a compose-root bundle JSON instead
+        #[arg(long)]
+        from_bundle: Option<String>,
+        /// Proof file location (recorded as `indexerUrl`)
+        #[arg(long)]
+        indexer_url: Option<String>,
+        /// Onchain anchor block, if known
+        #[arg(long)]
+        anchor_block: Option<u64>,
+    },
+    /// Rotate TrustGatedHook's score root (chain opt-in: the hook owner's key)
+    RotateGate {
+        /// TrustGatedHook address (`0x…`)
+        #[arg(long)]
+        hook: String,
+        /// The new Merkle root (0x + 64 hex)
+        #[arg(long)]
+        root: String,
+        /// Minimum score for community-track admission
+        #[arg(long)]
+        min_score: u128,
+        /// Print the calldata instead of sending
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// Community org graph commands — NIP-ORG kinds:37010–37013.
+#[derive(Subcommand)]
+pub enum OrgCmd {
+    /// Manage org nodes (roles, teams, agent seats)
+    #[command(subcommand)]
+    Node(OrgNodeCmd),
+    /// Manage org grants (delegated authority)
+    #[command(subcommand)]
+    Grant(OrgGrantCmd),
+    /// Manage org budgets (autonomy bounds)
+    #[command(subcommand)]
+    Budget(OrgBudgetCmd),
+
+    /// Onchain spend-ceiling guard (OrgAllowance.sol) — opt-in via BUZZ_EVM_*
+    #[command(subcommand)]
+    Allowance(OrgAllowanceCmd),
+
+    /// Manage contribution records (action verification + credit)
+    #[command(subcommand)]
+    Contribution(OrgContributionCmd),
+
+    /// Agent controls (emergency stop)
+    #[command(subcommand)]
+    Agent(OrgAgentCmd),
+
+    /// Bind the org ROOT node to an onchain DAO (NIP-ORG "Opt-in onchain
+    /// binding") — republishes the root 37010 with `content.onchain`.
+    ///
+    /// This is the NODE binding (DAO governance). Different flag surface
+    /// from the budget `--onchain` flag (the kind:37012 spend-ceiling
+    /// binding to OrgAllowance.sol): `bind` takes `--chain` + `--dao`.
+    Bind {
+        /// Root node `d` tag to bind
+        #[arg(long)]
+        root: String,
+        /// Chain identifier, e.g. `anvil-31337` or `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// Bound DAO contract address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        dao: String,
+    },
+
+    /// Exit a bound DAO by ragequitting (NIP-ORG "Opt-in onchain binding").
+    ///
+    /// Local-only (EVM value layer; no relay connection, no Nostr key).
+    /// DEV mapping: the configured value-layer spender key
+    /// (`BUZZ_SPENDER_KEY`) IS the shareholder — the Nostr-holder ↔ EVM
+    /// identity mapping is a documented simplification until the
+    /// governance/DAO-proposal handover. Burns shares (default: the full
+    /// balance) and withdraws the holder's pro-rata of each `--token`
+    /// (default: ETH).
+    Ragequit {
+        /// Bound DAO contract address (`0x…`, 40 hex chars)
+        #[arg(long)]
+        dao: String,
+        /// Shares to burn (default: the spender key's full share balance)
+        #[arg(long)]
+        shares: Option<u128>,
+        /// Treasury token to withdraw pro-rata, `0x…` (repeatable; default ETH)
+        #[arg(long = "token")]
+        tokens: Vec<String>,
+    },
+}
+
+/// Agent Wiki subcommands — kind:44002 agent-maintained knowledge base pages.
+///
+/// This is a distinct feature from the human wiki (kind:44001, Yjs/Trystero
+/// live editing): an agent distillation loop maintains an executive standup
+/// page per space. Configuration reuses the contribution classifier env vars
+/// (`BUZZ_CLASSIFIER_API_URL`, `BUZZ_CLASSIFIER_API_KEY`,
+/// `BUZZ_CLASSIFIER_MODEL`) — see `docs/agent-wiki.md`.
+#[derive(Subcommand)]
+pub enum AgwikiCmd {
+    /// Distill done tasks + contribution records into the space standup page
+    ///
+    /// Fetches a bounded source bundle (done kind:44011 tasks and published
+    /// kind:37013 contribution records) newer than the persisted cursor,
+    /// drafts an executive standup page (`<space>/standup`, rewritten to the
+    /// current truth — patch semantics, never a diary) via the classifier
+    /// endpoint, validates the markdown strictly (one retry, then fail
+    /// loudly), and either prints the draft or, with `--publish`, signs and
+    /// publishes it as kind:44002 with provenance tags (`model`,
+    /// `cost_tokens`, `sources`).
+    ///
+    /// The cursor is persisted in the standup page's front-matter
+    /// (`agwiki-cursor`) and only advances on a successful publish. A run
+    /// with nothing new never calls the LLM. Max ~1500 output tokens,
+    /// 30s timeout, 429 back-off with one retry.
+    Distill {
+        /// Wiki space (d = `<space>/standup`)
+        #[arg(long, default_value = "default")]
+        space: String,
+        /// Max source events per kind to ingest (hard cap 20)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Sign and publish the standup page instead of previewing
+        #[arg(long)]
+        publish: bool,
+        /// Use a trained skill file (a SkillOpt `best_skill.md`) as the
+        /// system prompt instead of the built-in one
+        #[arg(long)]
+        skill_file: Option<String>,
+    },
+    /// Show one agent wiki page by coordinate `<space>/<slug>`
+    Show {
+        /// Page coordinate, e.g. `default/standup`
+        page: String,
+    },
+    /// List agent wiki pages, newest revision per coordinate
+    List {
+        /// Only list pages in this space (d prefix `<space>/`)
+        #[arg(long)]
+        space: Option<String>,
+        /// Max events to scan (default 200, cap 512)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Compose `agent-draft` proposal records (47004) from wiki decision blocks
+    ///
+    /// The persona drafting loop's CLI host (docs/persona-drafting-loop.md):
+    /// scans the human wiki (44001) and agent wiki (44002) for fenced
+    /// `decision` blocks and composes one kind:47004 `agent-draft` record per
+    /// honest block — the verbatim-evidence rule strictly enforced, malformed
+    /// blocks skipped and reported, never repaired. Deterministic (no LLM in
+    /// this step). Dry-run by default; `--publish` signs and lands each draft
+    /// (agent drafts are `governance.proposal` actions at the S3 budget gate
+    /// and never broadcast onchain without a human counter-sign). Dedupe by
+    /// the `wiki` anchor tag means re-runs on unchanged pages draft nothing.
+    Draft {
+        /// Launch coordinate (`37001:<founder-hex>:<launch-id>`) drafts bind to
+        #[arg(long)]
+        launch: String,
+        /// Only scan pages in this space (d prefix `<space>/`)
+        #[arg(long)]
+        space: Option<String>,
+        /// Only scan one page (exact d match, e.g. `default/standup`)
+        #[arg(long)]
+        page: Option<String>,
+        /// Max page events to scan (default 200, cap 512)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Sign and publish the drafts instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Train the distill skill with SkillOpt (arXiv:2605.23904 port)
+    ///
+    /// The trainable artifact is the distill system prompt. Rollouts
+    /// generate standup pages from the fixture corpus under the candidate
+    /// skill; our validators are the held-out score (page validates,
+    /// decision blocks extract, evidence verbatim). Strict held-out gate —
+    /// only improvements are kept. See docs/skillopt-port.md.
+    TrainSkill {
+        /// Fixture corpus root with train/, sel/, test/ subdirs of .md prompts
+        #[arg(long)]
+        data: Option<String>,
+        /// Epochs (the paper default is 4; the CLI defaults to 1 as a cost guard)
+        #[arg(long)]
+        epochs: Option<usize>,
+        /// Where to write the trained skill
+        #[arg(long)]
+        out: Option<String>,
+        /// Reasoning effort for all LLM stages (SkillOpt's model.reasoning_effort:
+        /// low | medium | high; default medium)
+        #[arg(long)]
+        reasoning_effort: Option<String>,
+        /// Per-role override for the optimizer stages (reflection/merges/rank)
+        #[arg(long)]
+        optimizer_effort: Option<String>,
+        /// Per-role override for target rollouts (page generation)
+        #[arg(long)]
+        target_effort: Option<String>,
+    },
+}
+
+/// Self-organizing agent teams (SAT) — `buzz team`.
+///
+/// Slice 1 of the teamwork-strategy engine from arXiv 2609.22682
+/// ("Self-Organizing Agent Teams Learn to Reason Together"): fixed agent
+/// teams execute reusable teamwork strategies P = (S, τ, α) — ordered
+/// conversational phases under a shared teamwork prompt and persistent role
+/// prompts. Kinds 44020 (strategy), 44021 (run), 44022 (turn); see
+/// `docs/agent-teams.md` for the full spec.
+#[derive(Subcommand)]
+pub enum TeamCmd {
+    /// Execute a strategy's phases against a problem (LLM conductor)
+    #[command(
+        after_help = "Examples:\n  buzz team run --strategy mechanistic_step_audit --problem \"Compute 1+1\"\n  buzz team run --strategy s1 --problem \"<text>\" --max-tokens-per-turn 400 --publish\n\nDefault prints the transcript + final answer + totals (preview). With --publish, \nsigns + publishes the kind:44022 turns and the kind:44021 run. Missing \nBUZZ_CLASSIFIER_API_URL/KEY is a hard error before any network call; an LLM \nfailure mid-run publishes nothing partial."
+    )]
+    Run {
+        /// Strategy id (the kind:44020 `d` tag), e.g. `mechanistic_step_audit`
+        #[arg(long)]
+        strategy: String,
+        /// The problem the team should solve
+        #[arg(long)]
+        problem: String,
+        /// Response token cap per LLM turn (default 700, hard cap 2048)
+        #[arg(long)]
+        max_tokens_per_turn: Option<u32>,
+        /// Org node `d` to bind roster slots to (holders first, then agent
+        /// seats, in node order). Runs an ADVISORY budget pre-flight; the
+        /// relay does not enforce budgets against team runs.
+        #[arg(long)]
+        org_node: Option<String>,
+        /// Sign and publish the run + turns instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Reflect on a completed run and propose a revised strategy (§2.2)
+    #[command(
+        after_help = "Examples:\n  buzz team reflect --run <run-id>\n  buzz team reflect --run <run-id> --publish\n\nFetches the kind:44021 run + its strategy, asks the classifier endpoint for teamwork reflection (failure diagnosis, member-specific evidence, targeted mutations), and prints a diff of the revised strategy. With --publish, signs the revision as a new kind:44020 with d = <original-id>-rev<N> and a parentStrategy reference."
+    )]
+    Reflect {
+        /// The completed run's id (the kind:44021 `d` tag)
+        #[arg(long)]
+        run: String,
+        /// Sign and publish the revised strategy (kind:44020, d = <id>-rev<N>)
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Manage team strategy definitions (kind:44020)
+    #[command(subcommand)]
+    Strategy(TeamStrategyCmd),
+    /// Seed example strategies from the paper's Appendix A
+    #[command(subcommand)]
+    Strategies(TeamStrategiesCmd),
+}
+
+/// Team strategy management — kind:44020 (addressable, d = strategy id).
+#[derive(Subcommand)]
+pub enum TeamStrategyCmd {
+    /// Strictly validate and (with --publish) publish a strategy file
+    Put {
+        /// Strategy id (`d` tag), 1..=64 chars
+        #[arg(long)]
+        id: String,
+        /// Path to a strategy JSON file
+        #[arg(long)]
+        file: String,
+        /// Sign and publish instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Show the newest revision of one strategy
+    Get {
+        /// Strategy id
+        id: String,
+    },
+    /// List strategies, newest revision per id
+    List {
+        /// Max events to scan (default 50, cap 256)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+/// Seeded strategy loading.
+#[derive(Subcommand)]
+pub enum TeamStrategiesCmd {
+    /// Load 2–3 strategies transcribed from arXiv 2609.22682 Appendix A
+    ///
+    /// Without --publish, prints each seed for review. With --publish,
+    /// validates + publishes each one as kind:44020 (revisions replace via
+    /// read-side LWW).
+    SeedExamples {
+        /// Sign and publish the seeds instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+    /// Strategy banks transcribed from arXiv 2609.22682 Appendix A
+    ///
+    /// `list` prints every seedable bank under strategies/ with its strategy
+    /// count and appendix section. `seed` validates a whole bank with the
+    /// product's strict strategy schema and publishes each file as kind:44020
+    /// (`d` = file stem), skipping ids whose `d` tag already exists on the
+    /// relay — so a re-run is idempotent and never creates a second copy.
+    #[command(subcommand)]
+    Bank(BankCmd),
+}
+
+/// `buzz team strategies bank …` — the repo-root `strategies/` banks.
+#[derive(Subcommand)]
+pub enum BankCmd {
+    /// List strategy banks, their strategy counts, and appendix section
+    List {
+        /// Bank root directory (default: ./strategies)
+        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
+        dir: String,
+    },
+    /// Validate and publish one bank's strategies (idempotent by `d` tag)
+    ///
+    /// Without --publish, prints every validated strategy for review. With
+    /// --publish, each strategy reports `publish <id>` or `skip <id>: already
+    /// on the relay`, followed by a per-bank total.
+    Seed {
+        /// Bank directory name (e.g. aime-2024, gpqa-diamond)
+        bank: String,
+        /// Bank root directory (default: ./strategies)
+        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
+        dir: String,
+        /// Sign and publish instead of previewing
+        #[arg(long)]
+        publish: bool,
+    },
+}
+
+/// Org contribution record subcommands — kind:37013.
+///
+/// `contribute` is an alias for `contribution` (the canonical name), matching
+/// the classifier command family (`buzz org contribute classify ...`).
+#[derive(Subcommand)]
+#[command(visible_alias = "contribute")]
+pub enum OrgContributionCmd {
+    /// Record a contribution action with its multi-dimensional profile
+    Create {
+        /// Action id (slug): `[a-z0-9._-]{1,64}`
+        #[arg(long)]
+        id: String,
+        /// Description of the contribution action
+        #[arg(long)]
+        action: String,
+        /// Dimension in `key:value` format (repeatable)
+        #[arg(long = "dim")]
+        dim: Vec<String>,
+        /// Evidence event id (repeatable)
+        #[arg(long = "evidence")]
+        evidence: Vec<String>,
+        /// Informed-by reference (contribution record d-tag, repeatable)
+        #[arg(long = "informed-by")]
+        informed_by: Vec<String>,
+        /// Human work fraction (0.0–1.0, default 1.0)
+        #[arg(long, default_value = "1.0")]
+        human: f64,
+        /// AI work fraction (0.0–1.0, default 0.0)
+        #[arg(long, default_value = "0.0")]
+        ai: f64,
+    },
+    /// Get a contribution record by action id
+    Get {
+        /// Action id (slug)
+        #[arg(long)]
+        id: String,
+    },
+    /// List recent contribution records
+    List {
+        /// Max events to return (default 100)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Draft a kind:37013 contribution record for a completed kind-44011 task
+    /// via the LLM classifier (BUZZ_CLASSIFIER_API_URL/API_KEY/MODEL).
+    ///
+    /// The system proposes, the human disposes: without `--publish` this only
+    /// prints the validated draft (review_status stays `pending`); the
+    /// desktop Contributions tab is the review surface. With `--publish` the
+    /// record is signed with the CLI key and published with `d` = the task
+    /// event id, so re-classifying the same task replaces the same record
+    /// (NIP-33 LWW).
+    ///
+    /// LLM cost note: every drafted record spends one classifier call (plus
+    /// one retry call if the first draft fails validation). Batch mode
+    /// (`--all-done`) spends one call per drafted record, so `--limit` is a
+    /// hard cap on the per-run spend.
+    Classify {
+        /// Kind-44011 task event id (64 hex) to classify
+        #[arg(long, conflicts_with = "all_done")]
+        task: Option<String>,
+        /// Classify every done kind-44011 task that has no 37013 record yet
+        /// (batch; implies publish — previewing N drafts is not practical)
+        #[arg(long)]
+        all_done: bool,
+        /// Sign and publish the draft (default: preview only; batch always
+        /// publishes)
+        #[arg(long)]
+        publish: bool,
+        /// Max records to draft in batch mode (default 5, hard capped at 20)
+        #[arg(long, requires = "all_done")]
+        limit: Option<u32>,
+        /// Operator context appended to the task content (treated as data by
+        /// the classifier, never as instructions)
+        #[arg(long)]
+        note: Option<String>,
+    },
+}
+
+/// Org agent subcommands.
+#[derive(Subcommand)]
+pub enum OrgAgentCmd {
+    /// Emergency stop: cut an agent off from acting, then clear where it sits
+    ///
+    /// In order, each step idempotent so a re-run finishes whatever failed:
+    /// 1. publish an all-time budget of zero with a hard reject (containment
+    ///    first — runs, tasks, messages, LLM calls, governance and spend stop
+    ///    at once, with no approval queue);
+    /// 2. with --ban, ban the agent from the community;
+    /// 3. remove the agent from every org seat you authored;
+    /// 4. revoke every delegation you issued to it (ownership stakes are kept).
+    ///
+    /// Only what you authored can be changed by you; the JSON report says what
+    /// was done and the command exits non-zero if any step failed.
+    Stop {
+        /// The agent's pubkey (64-char hex)
+        #[arg(long)]
+        pubkey: String,
+        /// Also ban the agent from the community (kind 9040)
+        #[arg(long)]
+        ban: bool,
+        /// Optional private reason recorded with the ban
+        #[arg(long)]
+        reason: Option<String>,
+    },
+}
+
+/// Org node subcommands — kind:37010.
+#[derive(Subcommand)]
+pub enum OrgNodeCmd {
+    /// Create a new org node (role, team, or agent seat)
+    Create {
+        /// Node id (slug): `[a-z0-9._-]{1,64}`
+        #[arg(long)]
+        id: String,
+        /// Human-readable name for this role/team
+        #[arg(long)]
+        name: String,
+        /// Node kind: role | team | agent-seat
+        #[arg(long, default_value = "role")]
+        kind: String,
+        /// Parent node id (omit for root)
+        #[arg(long)]
+        parent: Option<String>,
+        /// Human holder pubkey(s) (64-char hex, repeatable)
+        #[arg(long = "holder")]
+        holder: Vec<String>,
+        /// Agent holder pubkey(s) (64-char hex, repeatable)
+        #[arg(long = "agent-seat")]
+        agent_seat: Vec<String>,
+    },
+    /// Get an org node by id
+    Get {
+        /// Node id
+        #[arg(long)]
+        id: String,
+        /// Author pubkey (hex) — default to your own key
+        #[arg(long)]
+        author: Option<String>,
+    },
+    /// List all org nodes
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Delete your own org node (NIP-09 tombstone)
+    Delete {
+        /// Node id
+        #[arg(long)]
+        id: String,
+    },
+    /// Seat an agent in a node you authored (or remove it with --detach).
+    ///
+    /// Republishes the node with the agent merged into `agentSeats`; holders,
+    /// scope and parent are kept. Idempotent: attaching an agent that already
+    /// sits in the seat publishes nothing. Only a node's author can change it.
+    AttachAgent {
+        /// Node id (for a template seat: `seat-<persona-id>`)
+        #[arg(long)]
+        id: String,
+        /// Agent pubkey (64-char hex)
+        #[arg(long)]
+        agent: String,
+        /// Remove the agent from the seat instead of adding it
+        #[arg(long)]
+        detach: bool,
+    },
+}
+
+/// Org grant subcommands — kind:37011.
+#[derive(Subcommand)]
+pub enum OrgGrantCmd {
+    /// Create a new grant (delegated authority)
+    Create {
+        /// Grant id (slug)
+        #[arg(long)]
+        id: String,
+        /// Grantee pubkey (64-char hex) — human or agent
+        #[arg(long)]
+        grantee: String,
+        /// Org node `d` tag the issuer acts through
+        #[arg(long)]
+        via: String,
+        /// Scoped capability verb(s) (repeatable): e.g. "read:#leadership", "task:create", "spend:100000"
+        #[arg(long = "verb")]
+        verb: Vec<String>,
+        /// Parent grant id (omit for root grants from standing)
+        #[arg(long)]
+        parent_grant: Option<String>,
+        /// Expiry unix timestamp (omit for no expiry)
+        #[arg(long)]
+        expires: Option<u64>,
+    },
+    /// Revoke a grant
+    Revoke {
+        /// Grant id
+        #[arg(long)]
+        id: String,
+    },
+    /// Get a grant by id
+    Get {
+        /// Grant id
+        #[arg(long)]
+        id: String,
+    },
+    /// List all grants
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+/// Org budget subcommands — kind:37012.
+#[derive(Subcommand)]
+pub enum OrgBudgetCmd {
+    /// Create a new budget bound
+    Create {
+        /// Budget subject id (slug)
+        #[arg(long)]
+        id: String,
+        /// Subject: an agent's 64-hex pubkey, or "*" for the community default
+        /// budget that covers every agent without its own (owner/admin only)
+        #[arg(long)]
+        subject: String,
+        /// Budget window: epoch | day | week | month. day/week/month are fixed
+        /// epochs (86400 / 604800 / 2592000 s), not calendar periods; epoch
+        /// is the all-time counter
+        #[arg(long, default_value = "epoch")]
+        window: String,
+        /// Spend cap in smallest currency unit (e.g. usd-cents)
+        #[arg(long)]
+        spend: Option<u64>,
+        /// Maximum autonomous runs per window
+        #[arg(long)]
+        runs: Option<u32>,
+        /// Maximum tasks that can be created per window
+        #[arg(long)]
+        task_create: Option<u32>,
+        /// Maximum tasks that can be approved per window
+        #[arg(long)]
+        task_approve: Option<u32>,
+        /// Maximum chat messages (kinds 9 and 40002) an agent may author per window
+        #[arg(long)]
+        messages: Option<u32>,
+        /// Maximum LLM gateway calls per window
+        #[arg(long)]
+        llm_calls: Option<u32>,
+        /// Maximum LLM spend per window, in US cents (needs the relay's
+        /// BUZZ_LLM_PRICE_* set; without prices a budget with a cost limit
+        /// makes the gateway refuse rather than run unmetered)
+        #[arg(long)]
+        llm_cost_cents: Option<u32>,
+        /// Onchain spend binding: '<chain>|<contract>|<subject>' (NIP-ORG §37012).
+        /// Example: --onchain 'eip155:8453|0xabc...def|<32-byte-hex-pubkey>'
+        #[arg(long)]
+        onchain: Option<String>,
+    },
+    /// Approve or deny a budget-overrun request (the kind:46010 card in "Needs me")
+    ///
+    /// An agent that hits its limit gets an approval request instead of a
+    /// silent stop; granting it lets exactly one more action through. Only the
+    /// community owner or an admin may resolve it, never the budgeted agent.
+    Resolve {
+        /// The request id: the `d` tag of the kind:46010 event (64-char hex)
+        #[arg(long)]
+        request: String,
+        /// Deny the request instead of granting it
+        #[arg(long)]
+        deny: bool,
+        /// Optional note recorded with the decision
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Get a budget by id
+    Get {
+        /// Budget subject id
+        #[arg(long)]
+        id: String,
+    },
+    /// List all budgets
+    List {
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Delete your own budget (NIP-09 tombstone)
+    Delete {
+        /// Budget subject id
+        #[arg(long)]
+        id: String,
+    },
+}
+
+/// Onchain spend-ceiling guard subcommands — OrgAllowance.sol client.
+///
+/// Opt-in: with `BUZZ_EVM_RPC_URL` / `BUZZ_ALLOWANCE_CONTRACT` unset, these
+/// commands fail with a usage error and nothing else in the CLI changes.
+/// `check` is read-only and needs no relay connection; `spend` records the
+/// spend from the authorized spender key (`BUZZ_SPENDER_KEY`) and mirrors a
+/// kind:37014 Budget Spend Receipt to the relay.
+#[derive(Subcommand)]
+pub enum OrgAllowanceCmd {
+    /// Check whether a spend fits the subject's onchain allowance (read-only)
+    Check {
+        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
+        #[arg(long)]
+        subject: String,
+        /// Token contract address (0x…)
+        #[arg(long)]
+        token: String,
+        /// Amount in the token's smallest unit (decimal)
+        #[arg(long)]
+        amount: String,
+        /// Budget window the epoch counter maps to: epoch | day | week | month
+        #[arg(long, default_value = "day")]
+        window: String,
+    },
+    /// Record a spend onchain (as the authorized spender) and publish a
+    /// kind:37014 Budget Spend Receipt. With `--to` the payout is ENFORCED
+    /// (`spendTo`: the contract debits the allowance and moves the tokens from
+    /// its treasury to the recipient in one transaction); without it the spend
+    /// is only recorded (`spend`, ADVISORY — no tokens move).
+    Spend {
+        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
+        #[arg(long)]
+        subject: String,
+        /// Token contract address (0x…)
+        #[arg(long)]
+        token: String,
+        /// Amount in the token's smallest unit (decimal)
+        #[arg(long)]
+        amount: String,
+        /// Budget window the epoch counter maps to: epoch | day | week | month
+        #[arg(long, default_value = "day")]
+        window: String,
+        /// Unit identifier recorded in the Nostr receipt
+        #[arg(long, default_value = "usd-cents")]
+        unit: String,
+        /// Recipient address (0x…). Uses the enforced `spendTo` payout: the
+        /// OrgAllowance treasury must have approved the contract for the token.
+        /// Omit to record an advisory (accounting-only) spend.
+        #[arg(long)]
+        to: Option<String>,
+    },
+}
+
 /// Normalize hand-authored `BUZZ_AUTH_TAG` input to strict JSON.
 ///
 /// `.env` files and shell exports sometimes carry the tag in the unquoted
@@ -2152,6 +3479,199 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             PackCmd::Validate { path } => commands::pack::cmd_validate(path),
             PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
         };
+    }
+
+    // Template browsing is local-only — the registry is embedded at build
+    // time (like `pack`, no relay connection or key needed). `templates
+    // apply` falls through to the relay path below.
+    if let Cmd::Templates(ref sub) = cli.command {
+        match sub {
+            TemplatesCmd::List => return commands::templates::cmd_list(&cli.format),
+            TemplatesCmd::Show { id } => return commands::templates::cmd_show(id),
+            TemplatesCmd::Apply { .. } => {}
+        }
+    }
+
+    // Onchain allowance checks are local-only — no relay connection and no
+    // Nostr key needed (the check is an EVM read). The spend path goes
+    // through the normal dispatch below: it publishes a kind:37014 receipt.
+    if let Cmd::Org(OrgCmd::Allowance(OrgAllowanceCmd::Check {
+        ref subject,
+        ref token,
+        ref amount,
+        ref window,
+    })) = cli.command
+    {
+        return commands::org::cmd_allowance_check(subject, token, amount, window).await;
+    }
+
+    // Ragequit is local-only — the EVM exit right needs no relay identity.
+    if let Cmd::Org(OrgCmd::Ragequit {
+        ref dao,
+        ref shares,
+        ref tokens,
+    }) = cli.command
+    {
+        return commands::org_ragequit::cmd_ragequit(dao, *shares, tokens.clone()).await;
+    }
+
+    // Royalty ledger local commands are local-only (token-lifecycle-design.md);
+    // the publish commands fall through to the relay auth below.
+    if let Cmd::Royalty(ref royalty_cmd) = cli.command {
+        if !matches!(
+            royalty_cmd,
+            RoyaltyCmd::PublishSchedule { .. }
+                | RoyaltyCmd::PublishClose { .. }
+                | RoyaltyCmd::Watch { .. }
+        ) {
+            use RoyaltyCmd::*;
+            return match royalty_cmd {
+                Show { distributor } => commands::royalty::cmd_show(distributor).await,
+                Claim { distributor } => commands::royalty::cmd_claim(distributor).await,
+                Settle { distributor } => commands::royalty::cmd_settle(distributor).await,
+                MirrorSchedule {
+                    chain,
+                    distributor,
+                    claim_id,
+                    evidence_hash,
+                    contributor,
+                    weight,
+                    term,
+                    band,
+                    allocation,
+                } => commands::royalty::cmd_mirror_schedule(
+                    chain,
+                    distributor,
+                    claim_id,
+                    evidence_hash,
+                    contributor,
+                    *weight,
+                    *term,
+                    *band,
+                    *allocation,
+                ),
+                MirrorClose {
+                    chain,
+                    distributor,
+                    window_id,
+                    revenue,
+                    buyback_share,
+                    treasury_share,
+                    pool,
+                    carried,
+                } => commands::royalty::cmd_mirror_close(
+                    chain,
+                    distributor,
+                    *window_id,
+                    *revenue,
+                    *buyback_share,
+                    *treasury_share,
+                    *pool,
+                    *carried,
+                ),
+                PublishSchedule { .. } | PublishClose { .. } | Watch { .. } => {
+                    unreachable!("publish runs after auth")
+                }
+            };
+        }
+    }
+
+    // Trustgraph operator: compose and gate rotation run before auth;
+    // publish-root falls through to the relay auth below.
+    if let Cmd::Trustgraph(ref tg_cmd) = cli.command {
+        if !matches!(tg_cmd, TrustgraphCmd::PublishRoot { .. }) {
+            use TrustgraphCmd::*;
+            return match tg_cmd {
+                ComposeRoot {
+                    program,
+                    epoch,
+                    scores,
+                    proofs_out,
+                    indexer_url,
+                    anchor_block,
+                } => commands::trustgraph::cmd_compose_root(
+                    program
+                        .as_deref()
+                        .unwrap_or(commands::trustgraph::DEFAULT_PROGRAM),
+                    epoch,
+                    scores,
+                    proofs_out.as_deref(),
+                    indexer_url.as_deref(),
+                    *anchor_block,
+                ),
+                RotateGate {
+                    hook,
+                    root,
+                    min_score,
+                    dry_run,
+                } => commands::trustgraph::cmd_rotate_gate(hook, root, *min_score, *dry_run).await,
+                PublishRoot { .. } => unreachable!("publish runs after auth"),
+            };
+        }
+    }
+
+    // Governance chain commands (agentic-governance-design.md S1) are
+    // chain-local like ragequit: they run before relay auth.
+    if let Cmd::Launchpad(ref gov_cmd) = cli.command {
+        if matches!(
+            gov_cmd,
+            LaunchpadCmd::Propose { .. }
+                | LaunchpadCmd::Vote { .. }
+                | LaunchpadCmd::Process { .. }
+                | LaunchpadCmd::ProposalState { .. }
+        ) {
+            use LaunchpadCmd::*;
+            return match gov_cmd {
+                Propose {
+                    dao,
+                    op,
+                    to,
+                    value,
+                    data,
+                    nonce,
+                } => commands::launchpad_gov::cmd_propose(dao, *op, to, value, data, nonce).await,
+                Vote { dao, id, support } => {
+                    commands::launchpad_gov::cmd_vote(dao, id, support).await
+                }
+                Process {
+                    dao,
+                    op,
+                    to,
+                    value,
+                    data,
+                    nonce,
+                } => commands::launchpad_gov::cmd_process(dao, *op, to, value, data, nonce).await,
+                ProposalState { dao, id } => {
+                    commands::launchpad_gov::cmd_proposal_state(dao, id).await
+                }
+                _ => unreachable!("only chain-local variants matched"),
+            };
+        }
+    }
+
+    // `users whoami` is local-only: it reads (or generates) a key and prints the
+    // identity, so it works with no relay and no configured key when `--new`.
+    if let Cmd::Users(UsersCmd::Whoami { new }) = &cli.command {
+        let keys = if *new {
+            Keys::generate()
+        } else {
+            let key = cli.private_key.as_deref().ok_or_else(|| {
+                CliError::Auth(
+                    "BUZZ_PRIVATE_KEY is required (use --private-key or set env var), or pass --new"
+                        .into(),
+                )
+            })?;
+            Keys::parse(key).map_err(|e| CliError::Key(format!("invalid BUZZ_PRIVATE_KEY: {e}")))?
+        };
+        let mut out = serde_json::json!({
+            "pubkey": keys.public_key().to_hex(),
+            "npub": nostr::ToBech32::to_bech32(&keys.public_key()).unwrap_or_default(),
+        });
+        if *new {
+            out["secret"] = serde_json::json!(keys.secret_key().to_secret_hex());
+        }
+        println!("{out}");
+        return Ok(());
     }
 
     // Auth: private key is required for all relay operations.
@@ -2207,6 +3727,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Notes(sub) => commands::notes::dispatch(sub, &client).await,
         Cmd::Repos(sub) => commands::repos::dispatch(sub, &client).await,
         Cmd::Projects(sub) => commands::projects::dispatch(sub, &client).await,
+        Cmd::Launchpad(sub) => commands::launchpad::dispatch(sub, &client).await,
         Cmd::Patches(sub) => commands::patches::dispatch(sub, &client).await,
         Cmd::Issues(sub) => commands::issues::dispatch(sub, &client).await,
         Cmd::Pr(sub) => commands::pr::dispatch(sub, &client).await,
@@ -2214,7 +3735,14 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
+        Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
+        Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
+        Cmd::Diag { limit } => commands::diag::cmd_diag(&client, limit).await,
+        Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
+        Cmd::Templates(sub) => commands::templates::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
+        Cmd::Royalty(sub) => commands::royalty::dispatch(sub, &client).await,
+        Cmd::Trustgraph(sub) => commands::trustgraph::dispatch(sub, &client).await,
     }
 }
 
@@ -2339,6 +3867,45 @@ mod tests {
     }
 
     #[test]
+    fn org_budget_create_accepts_onchain_flag() {
+        let subject = "a".repeat(64);
+        let spec = format!("eip155:8453|0x1234567890abcdef1234567890abcdef12345678|{subject}");
+        assert!(Cli::try_parse_from([
+            "buzz",
+            "org",
+            "budget",
+            "create",
+            "--id",
+            "spend-ceiling",
+            "--subject",
+            subject.as_str(),
+            "--spend",
+            "1000",
+            "--onchain",
+            spec.as_str(),
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn org_budget_create_onchain_flag_is_optional() {
+        let subject = "a".repeat(64);
+        assert!(Cli::try_parse_from([
+            "buzz",
+            "org",
+            "budget",
+            "create",
+            "--id",
+            "spend-ceiling",
+            "--subject",
+            subject.as_str(),
+            "--runs",
+            "5",
+        ])
+        .is_ok());
+    }
+
+    #[test]
     fn set_status_clear_rejects_text_and_emoji() {
         for extra in [["--text", "busy"], ["--emoji", "🎶"]] {
             let args = ["buzz", "users", "set-status", "--clear"]
@@ -2366,25 +3933,33 @@ mod tests {
     fn command_inventory_is_stable() {
         let expected_groups: Vec<&str> = vec![
             "agents",
+            "agwiki",
             "canvas",
             "channels",
+            "diag",
             "dms",
             "emoji",
             "feed",
             "gifs",
             "issues",
+            "launchpad",
             "media",
             "mem",
             "messages",
             "moderation",
             "notes",
+            "org",
             "pack",
             "patches",
             "pr",
             "projects",
             "reactions",
             "repos",
+            "royalty",
             "social",
+            "team",
+            "templates",
+            "trustgraph",
             "upload",
             "users",
             "workflows",
@@ -2493,7 +4068,8 @@ mod tests {
                 "presence",
                 "set-presence",
                 "set-profile",
-                "set-status"
+                "set-status",
+                "whoami"
             ]
         );
         assert_eq!(
@@ -2558,6 +4134,28 @@ mod tests {
             names(&cmd, "issues"),
             vec!["assign", "create", "get", "list", "status", "unassign"]
         );
+        assert_eq!(
+            names(&cmd, "launchpad"),
+            vec![
+                "compose-bid",
+                "curate",
+                "delete",
+                "deployment",
+                "list",
+                "mint-token",
+                "post-update",
+                "process",
+                "proposal-state",
+                "propose",
+                "record-bid",
+                "record-claim",
+                "record-proposal",
+                "record-receipt",
+                "record-verdict",
+                "show",
+                "vote"
+            ]
+        );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
         assert_eq!(names(&cmd, "upload"), vec!["file"]);
         assert_eq!(names(&cmd, "pack"), vec!["inspect", "validate"]);
@@ -2586,6 +4184,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
+            ("launchpad", 17),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),
@@ -2596,7 +4195,7 @@ mod tests {
             ("repos", 6),
             ("social", 7),
             ("upload", 1),
-            ("users", 5),
+            ("users", 6),
             ("workflows", 8),
         ];
 

@@ -47,9 +47,12 @@ fn demo_config_home_for(
 }
 
 pub(crate) fn deep_link_scheme() -> Cow<'static, str> {
+    // `buzz` is owned by the upstream Buzz app; this fork registers and
+    // accepts `creaton` so OS-deep-link routing reaches the fork, not the
+    // original app, when both are installed.
     demo_slug()
         .map(|slug| Cow::Owned(format!("buzz-demo-{slug}")))
-        .unwrap_or(Cow::Borrowed("buzz"))
+        .unwrap_or(Cow::Borrowed("creaton"))
 }
 
 pub(crate) fn is_deep_link_for_build(value: &str) -> bool {
@@ -107,7 +110,7 @@ mod tests {
     #[test]
     fn ordinary_release_defaults_remain_production_identity() {
         if demo_slug().is_none() {
-            assert_eq!(deep_link_scheme(), "buzz");
+            assert_eq!(deep_link_scheme(), "creaton");
             assert_eq!(keyring_service(), "buzz-desktop");
             assert_eq!(nest_name(false), ".buzz");
             assert_eq!(cli_name(false), "buzz");

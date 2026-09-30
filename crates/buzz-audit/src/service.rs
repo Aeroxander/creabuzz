@@ -561,4 +561,70 @@ mod postgres_tests {
             .await
             .unwrap());
     }
+
+    /// Chain integrity under concurrent writers: N tasks racing [`AuditService::log`]
+    /// for the *same* community must land as a contiguous `1..=N` seq run whose
+    /// `prev_hash` links all verify.
+    ///
+    /// The per-community advisory lock is the serialization seam — this test is
+    /// the falsifiable proof that the lock actually orders the assignment of
+    /// `seq`/`prev_hash` (without it, two writers would read the same chain head
+    /// and produce two rows at the same seq, or a `prev_hash` that skips an
+    /// entry — both of which `verify_chain` must reject).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "requires Postgres"]
+    async fn concurrent_appends_serialize_into_one_verifiable_chain() {
+        use std::sync::Arc;
+
+        let _g = db_lock().lock().await;
+        let Some(pool) = test_pool().await else {
+            return;
+        };
+        let svc = Arc::new(AuditService::new(pool.clone()));
+        let c = make_community(&pool).await;
+
+        const WRITERS: usize = 16;
+        let mut handles = Vec::with_capacity(WRITERS);
+        for i in 0..WRITERS {
+            let svc = Arc::clone(&svc);
+            handles.push(tokio::spawn(async move {
+                let mut entry = new_entry(c, AuditAction::EventCreated);
+                entry.object_id = Some(format!("concurrent_writer_{i}"));
+                svc.log(entry).await.expect("concurrent append")
+            }));
+        }
+        let mut entries = Vec::with_capacity(WRITERS);
+        for handle in handles {
+            entries.push(handle.await.expect("writer task"));
+        }
+        entries.sort_by_key(|e| e.seq);
+
+        let seqs: Vec<i64> = entries.iter().map(|e| e.seq).collect();
+        assert_eq!(
+            seqs,
+            (1..=WRITERS as i64).collect::<Vec<_>>(),
+            "concurrent appends must produce a contiguous seq run with no gaps \
+             or duplicates"
+        );
+        for pair in entries.windows(2) {
+            assert_eq!(
+                pair[1].prev_hash.as_deref(),
+                Some(pair[0].hash.as_slice()),
+                "every entry must chain to the entry one seq below it"
+            );
+        }
+
+        let community = CommunityId::from_uuid(c);
+        assert!(
+            svc.verify_chain(community, 1, WRITERS as i64)
+                .await
+                .unwrap(),
+            "the concurrently-built chain must verify end to end"
+        );
+        // Reading it back through the bounded read seam must return exactly the
+        // entries that were appended — this is the shape the desktop's REQ
+        // (kinds:[48001], limit:200) replays after publication.
+        let read_back = svc.get_entries(community, 1, WRITERS as i64).await.unwrap();
+        assert_eq!(read_back, entries);
+    }
 }

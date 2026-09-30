@@ -440,6 +440,76 @@ CREATE INDEX idx_workflow_approvals_workflow ON workflow_approvals (community_id
 CREATE INDEX idx_workflow_approvals_run ON workflow_approvals (community_id, run_id);
 CREATE INDEX idx_workflow_approvals_status ON workflow_approvals (community_id, status);
 
+-- NIP-ORG budget enforcement (migration 0056): windowed consumption counters
+-- per budget subject. The relay increments counters on ingest and rejects
+-- (or routes to approval) when limits are exceeded. Spend ceilings are NOT
+-- tracked here — they are enforced at the value layer.
+CREATE TABLE budget_consumption (
+    community_id    UUID NOT NULL REFERENCES communities(id),
+    subject         VARCHAR(128) NOT NULL,
+    counter_type    VARCHAR(32) NOT NULL,
+    window_start    TIMESTAMPTZ NOT NULL,
+    consumed        BIGINT NOT NULL DEFAULT 0 CHECK (consumed >= 0),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (community_id, subject, counter_type, window_start)
+);
+
+CREATE INDEX idx_budget_consumption_lookup
+    ON budget_consumption (community_id, subject, counter_type, window_start DESC);
+
+-- Durable budget approval requests (NIP-ORG `onExceed: "require-approval"`).
+-- Written BEFORE the best-effort kind:46010 notification, so a lost
+-- notification never loses the request. `token` stores the hashed approval
+-- token (same hashing scheme as workflow_approvals).
+CREATE TABLE budget_approvals (
+    community_id    UUID NOT NULL REFERENCES communities(id),
+    token           BYTEA NOT NULL,
+    subject         VARCHAR(128) NOT NULL,
+    counter_type    VARCHAR(32) NOT NULL,
+    window_start    TIMESTAMPTZ NOT NULL,
+    limit_value     BIGINT NOT NULL,
+    budget_event_id TEXT,
+    status          approval_status NOT NULL DEFAULT 'pending',
+    approver_pubkey BYTEA,
+    note            TEXT,
+    granted_at      TIMESTAMPTZ,
+    denied_at       TIMESTAMPTZ,
+    expires_at      TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (community_id, token)
+);
+
+CREATE INDEX idx_budget_approvals_subject
+    ON budget_approvals (community_id, subject, status);
+
+-- One pending request per (subject, counter, window): repeated overrun
+-- attempts refresh the existing request instead of growing the table
+-- without bound. Resolved (granted/denied/expired) rows are unconstrained.
+CREATE UNIQUE INDEX idx_budget_approvals_one_pending
+    ON budget_approvals (community_id, subject, counter_type, window_start)
+    WHERE status = 'pending';
+
+-- EVM identity bindings (migrations 0054 + 0055): maps a member's Nostr pubkey
+-- (hot device key) to its EVM root account, per community. Written by
+-- `POST /auth/siwe/register` after both the SIWE signature and the Nostr proof
+-- event verify. Revocation is soft (`revoked_*`) so history stays auditable.
+CREATE TABLE evm_identities (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    pubkey         TEXT NOT NULL,
+    evm_address    BYTEA NOT NULL,
+    attestation    JSONB,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at     TIMESTAMPTZ,
+    revoked_by     TEXT,
+    revoked_reason TEXT,
+    PRIMARY KEY (community_id, pubkey),
+    CHECK (octet_length(evm_address) = 20)
+);
+
+-- Multiple device npubs may share one EVM root account.
+CREATE INDEX idx_evm_identities_address ON evm_identities (community_id, evm_address);
+
 -- ── Scheduled workflow fires (cron claim) ─────────────────────────────────────
 -- Plan §5: the at-most-once cron fire claim. UNIQUE (community_id, workflow_id,
 -- scheduled_for) — only the pod that wins the claim insert creates the run.
@@ -1773,12 +1843,15 @@ $$;
 SELECT attach_community_write_fence('api_tokens');
 SELECT attach_community_write_fence('archived_identities');
 SELECT attach_community_write_fence('audit_log');
+SELECT attach_community_write_fence('budget_approvals');
+SELECT attach_community_write_fence('budget_consumption');
 SELECT attach_community_write_fence('channel_members');
 SELECT attach_community_write_fence('channels');
 SELECT attach_community_write_fence('community_bans');
 SELECT attach_community_write_fence('delivery_log');
 SELECT attach_community_write_fence('event_mentions');
 SELECT attach_community_write_fence('events');
+SELECT attach_community_write_fence('evm_identities');
 SELECT attach_community_write_fence('git_repo_names');
 SELECT attach_community_write_fence('join_policy_acceptances');
 SELECT attach_community_write_fence('moderation_actions');

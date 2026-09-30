@@ -9,8 +9,11 @@ type ViewLoadingFallbackKind =
   | "agents"
   | "channel"
   | "forum"
+  | "launchpad"
+  | "org"
   | "projects"
   | "pulse"
+  | "wiki"
   | "workflows";
 
 type ViewLoadingFallbackProps = {
@@ -406,6 +409,9 @@ export function ViewLoadingFallback({
       {kind === "projects" ? (
         <BuzzLoadingState fill label="Loading projects" />
       ) : null}
+      {kind === "launchpad" ? (
+        <BuzzLoadingState fill label="Loading launchpad" />
+      ) : null}
       {kind === "channel" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />
       ) : null}
@@ -415,6 +421,10 @@ export function ViewLoadingFallback({
       {kind === "pulse" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />
       ) : null}
+      {kind === "org" ? (
+        <BuzzLoadingState fill label="Loading Org Chart" />
+      ) : null}
+      {kind === "wiki" ? <BuzzLoadingState fill label="Loading wiki" /> : null}
     </div>
   );
 }

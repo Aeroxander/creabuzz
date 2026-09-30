@@ -162,12 +162,14 @@ export function validateProjectEventEnvelope(
   const dTags = tags.filter((tag) => tag[0] === "d");
   if (dTags.length !== 1 || !dTags[0][1]) {
     throw new Error(
-      `NIP-MP: expected exactly one non-empty 'd' tag, found ${dTags.length}.`,
+      `Project record: expected exactly one non-empty 'd' tag, found ${dTags.length}.`,
     );
   }
   const dtag = dTags[0][1];
   if (!isValidDTag(dtag)) {
-    throw new Error(`NIP-MP: 'd' tag value exceeds the maximum byte length.`);
+    throw new Error(
+      `Project record: 'd' tag value exceeds the maximum byte length.`,
+    );
   }
 
   // NIP-MP rule `metadata-cardinality`: at most one each of the singleton tags.
@@ -176,7 +178,7 @@ export function validateProjectEventEnvelope(
     const count = tags.filter((tag) => tag[0] === tagName).length;
     if (count > 1) {
       throw new Error(
-        `NIP-MP: duplicate '${tagName}' tag — at most one is permitted.`,
+        `Project record: duplicate '${tagName}' tag — at most one is permitted.`,
       );
     }
   }
@@ -186,7 +188,7 @@ export function validateProjectEventEnvelope(
     const value = tags.find((tag) => tag[0] === tagName)?.[1];
     if (value !== undefined && encoder.encode(value).byteLength > maxBytes) {
       throw new Error(
-        `NIP-MP: '${tagName}' tag value exceeds the ${maxBytes}-byte limit.`,
+        `Project record: '${tagName}' tag value exceeds the ${maxBytes}-byte limit.`,
       );
     }
   }
@@ -195,7 +197,7 @@ export function validateProjectEventEnvelope(
   const memberTags = tags.filter((tag) => tag[0] === "a");
   if (memberTags.length > MAX_PROJECT_MEMBERS) {
     throw new Error(
-      `NIP-MP: project exceeds the ${MAX_PROJECT_MEMBERS}-member limit.`,
+      `Project record: project exceeds the ${MAX_PROJECT_MEMBERS}-member limit.`,
     );
   }
 
@@ -206,21 +208,25 @@ export function validateProjectEventEnvelope(
   for (const tag of memberTags) {
     const address = tag[1];
     if (!address) {
-      throw new Error("NIP-MP: 'a' tag is missing a repository address.");
+      throw new Error(
+        "Project record: 'a' tag is missing a repository address.",
+      );
     }
     if (tag.length !== 2 && tag.length !== 3) {
       throw new Error(
-        `NIP-MP: 'a' tag for '${address}' must have 2 or 3 elements.`,
+        `Project record: 'a' tag for '${address}' must have 2 or 3 elements.`,
       );
     }
     const parsed = parseRepositoryAddress(address);
     if (!parsed) {
       throw new Error(
-        `NIP-MP: invalid repository address '${address}' — expected '30617:<lowercase-hex64>:<dtag>'.`,
+        `Project record: invalid repository address '${address}' — expected '30617:<lowercase-hex64>:<dtag>'.`,
       );
     }
     if (seenAddresses.has(address)) {
-      throw new Error(`NIP-MP: duplicate repository address '${address}'.`);
+      throw new Error(
+        `Project record: duplicate repository address '${address}'.`,
+      );
     }
     seenAddresses.add(address);
   }

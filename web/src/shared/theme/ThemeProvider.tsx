@@ -21,15 +21,32 @@ function getSystemDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function getInitialTheme(): Theme {
-  if (!import.meta.env.DEV) return "system";
+/**
+ * Storage key for the user's theme choice.
+ *
+ * `public/theme-boot.js` reads the same key before the bundle runs, so dark-mode
+ * users never see a white flash; keep the two in step.
+ */
+export const THEME_STORAGE_KEY = "buzz.theme";
 
-  const previewTheme = new URLSearchParams(window.location.search).get(
-    "previewTheme",
-  );
-  return previewTheme === "light" || previewTheme === "dark"
-    ? previewTheme
-    : "system";
+function isTheme(value: unknown): value is Theme {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+function getInitialTheme(): Theme {
+  if (import.meta.env.DEV) {
+    const previewTheme = new URLSearchParams(window.location.search).get(
+      "previewTheme",
+    );
+    if (isTheme(previewTheme) && previewTheme !== "system") return previewTheme;
+  }
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (isTheme(stored)) return stored;
+  } catch {
+    // Storage unavailable: fall through to the system preference.
+  }
+  return "system";
 }
 
 function applyClass(isDark: boolean) {
@@ -68,6 +85,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
+    try {
+      // Persisted so the next load paints the right colours immediately.
+      window.localStorage.setItem(THEME_STORAGE_KEY, t);
+    } catch {
+      // Storage unavailable: the choice holds for this session only.
+    }
   }, []);
 
   return (

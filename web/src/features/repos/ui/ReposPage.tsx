@@ -1,9 +1,18 @@
-import { BookMarked, GitBranch } from "lucide-react";
+import { BookMarked, GitBranch, WifiOff } from "lucide-react";
+import { APP_NAME } from "@/shared/constants/brand";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import buzzAppIcon from "@/assets/app-icon@3x.png";
+import {
+  normalizeRelayWsUrl,
+  relayWsUrl,
+  setStoredRelayWsUrl,
+} from "@/shared/lib/relay-url";
+import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { mockRepos } from "../mock-repos";
 import { useRepos } from "../use-repos";
 import { ConnectButton } from "./ConnectButton";
@@ -33,7 +42,7 @@ function SearchEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-        <GitBranch className="h-7 w-7 text-black/50 dark:text-white/50" />
+        <GitBranch className="h-7 w-7 text-black/60 dark:text-white/60" />
       </div>
       <h2 className="mt-4 text-lg font-semibold text-black dark:text-white">
         No matching repositories
@@ -53,16 +62,103 @@ function CommunityEmptyState() {
           className="h-16 w-16 overflow-hidden bg-black"
           style={{ borderRadius: "22.37%" }}
         >
-          <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+          <img alt="Creaton" className="h-full w-full" src={buzzAppIcon} />
         </div>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-black dark:text-white">
           This community is empty
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
           Repositories pushed to this community will show up here. Open this
-          community in the Buzz desktop app to start pushing code.
+          community in the {APP_NAME} desktop app to start pushing code.
         </p>
         <ConnectButton className="mt-6" />
+      </div>
+    </div>
+  );
+}
+
+function CommunityConnectionError({ message }: { message: string }) {
+  const queryClient = useQueryClient();
+  const currentRelay = relayWsUrl();
+  const [relayInput, setRelayInput] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const retry = () => {
+    setConnectError(null);
+    void queryClient.invalidateQueries({ queryKey: ["repos"] });
+  };
+
+  const connect = (event: FormEvent) => {
+    event.preventDefault();
+    if (!relayInput.trim()) {
+      setConnectError("Enter a relay URL to connect to.");
+      return;
+    }
+    try {
+      const normalized = normalizeRelayWsUrl(relayInput);
+      setStoredRelayWsUrl(normalized);
+      window.location.reload();
+    } catch {
+      setConnectError("That doesn't look like a valid relay URL.");
+    }
+  };
+
+  return (
+    <div className="flex flex-1 items-center justify-center bg-[#F3F3F3] px-4 py-16 text-center dark:bg-[#171717]">
+      <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
+        <div
+          className="h-16 w-16 overflow-hidden bg-black"
+          style={{ borderRadius: "22.37%" }}
+        >
+          <img alt="Creaton" className="h-full w-full" src={buzzAppIcon} />
+        </div>
+        <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
+          <WifiOff className="h-5 w-5 text-black/60 dark:text-white/60" />
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black dark:text-white">
+          Couldn't reach the relay
+        </h1>
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
+          {message}
+        </p>
+        <p className="mt-4 max-w-md text-xs leading-relaxed text-black/60 dark:text-white/60">
+          The web app is trying to reach{" "}
+          <code className="rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">
+            {currentRelay}
+          </code>
+          . If that isn't your community's relay, enter its URL to connect.
+        </p>
+        <form
+          onSubmit={connect}
+          className="mt-4 flex w-full max-w-sm flex-col items-stretch gap-2"
+        >
+          <label className="sr-only" htmlFor="relay-url">
+            Relay URL
+          </label>
+          <Input
+            id="relay-url"
+            type="text"
+            placeholder="wss://relay.example.com"
+            value={relayInput}
+            onChange={(e) => setRelayInput(e.target.value)}
+            className="border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1">
+              Connect
+            </Button>
+            <button
+              type="button"
+              onClick={retry}
+              className="flex-1 rounded-md border border-black/15 bg-white px-4 py-2 text-sm font-medium text-black shadow-xs hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+            >
+              Try again
+            </button>
+          </div>
+          {connectError && (
+            <p className="text-xs text-destructive">{connectError}</p>
+          )}
+        </form>
       </div>
     </div>
   );
@@ -87,6 +183,14 @@ export function ReposPage() {
   const isLoading = preview ? false : isLoadingRepos;
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
+
+  // Every owner label in the list comes from one batched lookup; a hook per row
+  // would be one profile query per repository.
+  const ownerPubkeys = useMemo(
+    () => [...new Set((repos ?? []).map((repo) => repo.owner))],
+    [repos],
+  );
+  const ownerNames = useUserNames(ownerPubkeys);
 
   useEffect(() => {
     if (error) {
@@ -141,6 +245,10 @@ export function ReposPage() {
     );
   }
 
+  if (error) {
+    return <CommunityConnectionError message={error.message} />;
+  }
+
   if (!repos || repos.length === 0) {
     return <CommunityEmptyState />;
   }
@@ -164,7 +272,7 @@ export function ReposPage() {
             placeholder="Find a repository..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
           />
           <select
             value={sort}
@@ -182,7 +290,12 @@ export function ReposPage() {
         {filteredRepos.length > 0 ? (
           <div className="divide-y divide-black/10 dark:divide-white/10">
             {filteredRepos.map((repo) => (
-              <RepoListItem key={repo.id} repo={repo} preview={showMockRepos} />
+              <RepoListItem
+                key={repo.id}
+                repo={repo}
+                ownerName={ownerNames(repo.owner)}
+                preview={showMockRepos}
+              />
             ))}
           </div>
         ) : (

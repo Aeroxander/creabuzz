@@ -156,12 +156,29 @@ fn migrate_personas_in_dir_at(
         // bump (F1) so a changed body always lands.
         let existing = get_retained_event(&conn, KIND_PERSONA, &pubkey, &d_tag)?;
 
-        let mut scoped_record = record.clone();
-        scoped_record.shared = existing
+        // Parse the retained head STRICTLY: its non-content tags (`skill`
+        // bindings, template marker) are metadata this rebuild cannot
+        // re-derive, so an unparsable head must fail loud rather than be
+        // silently replaced by a tag-stripped one (Review-Proven Rules 1+2 —
+        // a caught failure that would orphan committed binding state has to
+        // propagate, and derived metadata is cleared on every path ONLY when
+        // the source is unreadable, never as a silent downgrade). The head
+        // row is left untouched, so the bindings survive for the next boot.
+        let prior_head = existing
             .as_ref()
-            .and_then(|row| nostr::Event::from_json(&row.raw_event).ok())
-            .is_some_and(|event| buzz_core_pkg::kind::event_is_shared(&event));
-        let event = build_persona_event(&scoped_record)
+            .map(|row| nostr::Event::from_json(&row.raw_event))
+            .transpose()
+            .map_err(|e| {
+                format!(
+                    "failed to parse retained persona head for '{}': {e}",
+                    record.display_name
+                )
+            })?;
+        let mut scoped_record = record.clone();
+        scoped_record.shared = prior_head
+            .as_ref()
+            .is_some_and(buzz_core_pkg::kind::event_is_shared);
+        let event = build_persona_event(&scoped_record, prior_head.as_ref())
             .map_err(|e| format!("failed to build event for '{}': {e}", record.display_name))?
             .custom_created_at(monotonic_created_at(
                 existing.as_ref().map(|row| row.created_at),

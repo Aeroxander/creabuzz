@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "name": "Mechanistic step audit",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents audit the mechanics of each reasoning chain before synthesis.",
+  "teamworkPrompt": "Treat arithmetic, algebraic transformations, case splits, and counting steps as audit targets before accepting a final answer.",
+  "roles": {
+    "agent-0": "Independent solver and step auditor. Identify one concrete step from another agent that is either verified, questionable, or incorrect.",
+    "agent-1": "Independent solver and step auditor. Identify one concrete step from another agent that is either verified, questionable, or incorrect.",
+    "agent-2": "Independent solver and step auditor. Identify one concrete step from another agent that is either verified, questionable, or incorrect."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Audit the reasoning chains step by step. Each agent should identify one concrete step from another agent that is either verified, questionable, or incorrect."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Resolve the audited issues. If a step is corrected, update the downstream calculation explicitly."
+    }
+  ],
+  "finalWriter": "agent-2",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "roles + finalWriter preserved from Buzz's shipped seed-examples transcription of this strategy.",
+      "description phrasing matches the shipped seed-examples transcription."
+    ]
+  }
+}

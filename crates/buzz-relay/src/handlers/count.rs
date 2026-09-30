@@ -62,6 +62,26 @@ pub async fn handle_count(
         return;
     }
 
+    // Admin-only kinds (audit chain): resolve the reader's community role once.
+    // Non-admin COUNTs exclude those rows in SQL (fast path and fallback alike)
+    // and per event; a lookup failure fails the COUNT rather than under-counting
+    // an admin's audit entries as zero.
+    let reader_is_admin = match super::req::resolve_reader_is_admin(
+        &state,
+        conn.tenant.community(),
+        &pubkey_bytes,
+        &filters,
+    )
+    .await
+    {
+        Ok(is_admin) => is_admin,
+        Err(e) => {
+            warn!(sub_id = %sub_id, "Failed to resolve reader role: {e}");
+            conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+            return;
+        }
+    };
+
     let requested_channel_sets =
         match super::req::extract_channel_ids_from_filters_limited(&filters) {
             Ok(_) => filters
@@ -193,6 +213,7 @@ pub async fn handle_count(
                 &pubkey_bytes,
                 &state,
                 conn.tenant.community(),
+                reader_is_admin,
             )
             .await;
             super::req::apply_channel_scope_to_query(
@@ -250,7 +271,7 @@ pub async fn handle_count(
                             {
                                 continue;
                             }
-                            if !event_visible_to_reader(&se.event, &pubkey_bytes) {
+                            if !event_visible_to_reader(&se.event, &pubkey_bytes, reader_is_admin) {
                                 continue;
                             }
                             total += 1;
@@ -277,6 +298,7 @@ pub async fn handle_count(
                 &pubkey_bytes,
                 &state,
                 conn.tenant.community(),
+                reader_is_admin,
             )
             .await;
             query.channel_ids = Some(accessible_channels.to_vec());
@@ -329,7 +351,7 @@ pub async fn handle_count(
                             {
                                 continue;
                             }
-                            if !event_visible_to_reader(&se.event, &pubkey_bytes) {
+                            if !event_visible_to_reader(&se.event, &pubkey_bytes, reader_is_admin) {
                                 continue;
                             }
                             total += 1;

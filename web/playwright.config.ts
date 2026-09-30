@@ -18,7 +18,45 @@ export default defineConfig({
   projects: [
     {
       name: "smoke",
-      testMatch: ["**/smoke.spec.ts"],
+      testMatch: [
+        "**/smoke.spec.ts",
+        "**/launchpad.spec.ts",
+        "**/launchpad-auction.spec.ts",
+        "**/feed.spec.ts",
+        "**/responsive.spec.ts",
+        "**/responsive-surfaces.spec.ts",
+        "**/a11y.spec.ts",
+        "**/sandbox.spec.ts",
+        "**/multi-user.spec.ts",
+        "**/browser-agent.spec.ts",
+        "**/passkey.spec.ts",
+        "**/screenshots.spec.ts",
+        "**/usernames.spec.ts",
+        "**/org-chart.spec.ts",
+        "**/projects.spec.ts",
+        "**/discover.spec.ts",
+        "**/signing-recovery.spec.ts",
+      ],
+      use: {
+        ...devices["Desktop Chrome"],
+        // Escape hatch for machines whose Chromium is older than the build the
+        // pinned Playwright wants (never `playwright install` for this).
+        ...(process.env.PW_CHROMIUM_PATH
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_CHROMIUM_PATH,
+                args: ["--no-sandbox"],
+              },
+            }
+          : {}),
+      },
+    },
+    {
+      // Opt-in only: gated on E2E_SPONSORED_OPS=1 + ZERODEV_API_KEY and NEVER
+      // part of the default smoke — it spends real sponsorship (see
+      // tests/e2e/sponsored-op.spec.ts for the runbook).
+      name: "sponsored-op",
+      testMatch: ["**/sponsored-op.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
       },

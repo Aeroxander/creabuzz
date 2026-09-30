@@ -2,6 +2,8 @@
 pub mod admin_action_worker;
 pub mod admin_outbox_worker;
 pub mod auth;
+/// NIP-ORG budget enforcement — relay-side ingest gate.
+pub mod budget_enforcement;
 /// Pure NIP-29 channel membership-authority decisions (kinds 9000/9001/9022).
 pub mod channel_authz;
 /// Subscription close (CLOSE) handler.
@@ -26,10 +28,16 @@ pub mod moderation_authz;
 pub mod moderation_commands;
 /// Relay-signed moderation notice DMs.
 pub mod moderation_notices;
+/// NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
+pub mod org_grant_enforcement;
+#[cfg(test)]
+mod p2p_anon_tests;
 /// Product-feedback validation + deployment sidecar persistence.
 pub mod product_feedback;
 #[allow(dead_code, missing_docs)]
 pub mod push_lease;
+#[cfg(test)]
+mod read_gate_tests;
 /// NIP-43 relay membership admin command handler (kinds 9030–9032).
 pub mod relay_admin;
 /// NIP-56 report (kind:1984) validation + moderation queue persistence.

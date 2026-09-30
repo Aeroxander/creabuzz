@@ -6,8 +6,12 @@ import {
   detectBuzzDownloadPlatform,
   resolveBuzzDownloadUrlForPlatform,
 } from "@/shared/lib/buzz-download";
+import { hasStoredIdentity } from "@/shared/lib/identity";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
+
+import { hasPasskeyIdentity } from "@/features/identity/lib/passkey-identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { desktopJoinDeepLink } from "@/shared/lib/desktop-deep-link";
 import { Button } from "@/shared/ui/button";
 import * as React from "react";
 import Markdown from "react-markdown";
@@ -108,9 +112,11 @@ export function InvitePage({ code }: { code: string }) {
     setOpening(true);
     try {
       const receipt = await acceptPolicy();
-      const query = new URLSearchParams({ relay, code });
-      if (receipt) query.set("policy_receipt", receipt);
-      window.location.href = `buzz://join?${query.toString()}`;
+      window.location.href = desktopJoinDeepLink({
+        relay,
+        code,
+        policyReceipt: receipt,
+      });
     } finally {
       setOpening(false);
     }
@@ -132,7 +138,11 @@ export function InvitePage({ code }: { code: string }) {
     }
   };
 
-  const browserSigningAvailable = hasNip07Provider();
+  // Any identity that survives a reload can claim: the stored nsec this app
+  // creates for a browser reader, a passkey, or an extension. Gating on the
+  // extension alone hid the button from browser users entirely.
+  const browserSigningAvailable =
+    hasNip07Provider() || hasStoredIdentity() || hasPasskeyIdentity();
   const disabled =
     policy === undefined ||
     opening ||
@@ -197,7 +207,7 @@ export function InvitePage({ code }: { code: string }) {
             className="h-12 w-12 overflow-hidden bg-black"
             style={{ borderRadius: "22.37%" }}
           >
-            <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+            <img alt="Creaton" className="h-full w-full" src={buzzAppIcon} />
           </div>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black">
             You&apos;re invited to
@@ -244,10 +254,8 @@ export function InvitePage({ code }: { code: string }) {
                     : "bg-black text-white hover:bg-black/90 focus-visible:ring-black"
                 }`}
               >
-                <a
-                  href={`buzz://join?relay=${encodeURIComponent(relay)}&code=${encodeURIComponent(code)}`}
-                >
-                  Accept invite in Buzz
+                <a href={desktopJoinDeepLink({ relay, code })}>
+                  Accept invite in Creaton
                 </a>
               </Button>
             ) : (
@@ -260,7 +268,7 @@ export function InvitePage({ code }: { code: string }) {
                 disabled={disabled}
                 onClick={openInvite}
               >
-                Accept invite in Buzz
+                Accept invite in Creaton
               </Button>
             )}
             {browserJoinError ? (

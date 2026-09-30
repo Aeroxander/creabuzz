@@ -92,6 +92,7 @@ async fn pi_composed_prompt_uses_meta_without_capability_negotiation() {
         let standing = crate::queue::StandingContext {
             base_prompt: ctx.base_prompt.as_deref(),
             system_prompt: ctx.system_prompt.as_deref(),
+            project_skills: None,
             team_instructions: ctx.team_instructions.as_deref(),
             agent_core: Some(core),
             huddle_instructions: Some("BUZZ_HUDDLE"),

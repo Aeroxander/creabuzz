@@ -389,6 +389,12 @@ describe("SetupStep cached-ready revalidation", () => {
       container.querySelector('[data-testid="onboarding-setup-error"]'),
       "the warm rejection error stays visible alongside the retained card",
     );
+    assert.equal(
+      container.querySelector('[data-testid="onboarding-setup-next"]'),
+      null,
+      "no advance affordance renders while readiness is unconfirmed",
+    );
+
     await act(async () => {
       root.unmount();
     });

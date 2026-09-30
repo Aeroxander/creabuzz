@@ -655,6 +655,32 @@ new arbitrary text-size literal — px **or** rem/em. Genuinely decorative glyph
 (e.g. the `text-[6rem]` avatar emoji) are allowlisted by `path:line` in that
 script.
 
+### User-facing copy (plain words, one product name)
+
+People read the app; they do not read the protocol. Copy has repeatedly drifted
+toward the vocabulary of whoever wrote the logic, so these are enforced:
+
+1. **No citations in UI text** — no organisations, papers, researchers or
+   competitors ("Failure modes (WEF five)", "(Cursor)", arXiv numbers). Name
+   the thing by what it does ("Health checks").
+2. **No protocol internals in main copy** — event kind or NIP numbers,
+   contract `file:line` references, revert names, Q96, CREATE2. When a power
+   user genuinely needs them, put them in a collapsed "Technical details" /
+   "Where these numbers come from" disclosure.
+3. **Errors say what happened and what to do next.** Map revert names and
+   internal errors to sentences in a copy module (the `auction-copy.ts`
+   pattern), not inline in flow logic.
+4. **The product name comes from the brand constant** (`APP_NAME` in
+   `shared/constants/brand.ts`); the name people see is **Creaton**. Crates,
+   the `buzz` CLI and storage keys keep their internal names on purpose.
+5. **Plain terms**: prefer "server" over "relay" and "secret key" over "nsec"
+   in main copy; keep the technical term in advanced settings.
+
+`pnpm check` runs `check:copy` (`scripts/check-copy-core.mjs`), which parses
+string literals and JSX text (never comments or identifiers) and fails on these
+patterns. Accepted exceptions go in the app's `scripts/check-copy.mjs`
+allowlist with a reason — rewrite the text before reaching for the allowlist.
+
 ### Community Switching
 
 The desktop app supports multiple communities (each backed by a different relay).

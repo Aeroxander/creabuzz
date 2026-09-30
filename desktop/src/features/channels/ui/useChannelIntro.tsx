@@ -1,5 +1,12 @@
 import * as React from "react";
-import { Bot, FolderPlus, Plus, Sparkles, UserPlus } from "lucide-react";
+import {
+  AtSign,
+  Bot,
+  FolderPlus,
+  Plus,
+  Sparkles,
+  UserPlus,
+} from "lucide-react";
 
 import {
   getChannelIntroDescription,
@@ -34,6 +41,7 @@ export function useChannelIntro({
   onAddFiles,
   onBrowseChannels,
   onCreateChannel,
+  onMentionAgent,
   onOpenMembers,
   onWelcomeAddAgent,
 }: {
@@ -42,6 +50,8 @@ export function useChannelIntro({
   onAddFiles?: () => void;
   onBrowseChannels?: () => void;
   onCreateChannel?: () => void;
+  /** Composer "@" affordance; supplied only when the channel has agents. */
+  onMentionAgent?: () => void;
   onOpenMembers?: () => void;
   onWelcomeAddAgent?: () => void;
 }) {
@@ -95,6 +105,16 @@ export function useChannelIntro({
     }
 
     if (!activeChannel.archivedAt && activeChannel.isMember) {
+      if (onMentionAgent) {
+        actions.push({
+          description: "Type @ to bring an agent in.",
+          icon: <AtSign aria-hidden className="h-5 w-5" />,
+          label: "Mention an agent",
+          onClick: onMentionAgent,
+          testId: "channel-intro-action-mention-agent",
+        });
+      }
+
       if (onAddFiles) {
         actions.push({
           description: "Add a repo.",
@@ -142,6 +162,7 @@ export function useChannelIntro({
     onAddFiles,
     onBrowseChannels,
     onCreateChannel,
+    onMentionAgent,
     onOpenMembers,
     onWelcomeAddAgent,
     projectHome,

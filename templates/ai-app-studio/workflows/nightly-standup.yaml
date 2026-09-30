@@ -1,0 +1,10 @@
+name: agwiki-nightly
+description: Keep the Agent Wiki standup page current without a manual distill
+trigger:
+  on: schedule
+  cron: "0 9 * * 1-5"
+steps:
+  - id: distill
+    action: distill_agent_wiki
+    space: default
+enabled: true

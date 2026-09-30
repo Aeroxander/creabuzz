@@ -90,6 +90,7 @@ fn make_prompt_context(
         turn_liveness_interval: Duration::from_secs(config.turn_liveness_secs),
         dedup_mode: config.dedup_mode,
         system_prompt: config.system_prompt.clone(),
+        skill_bindings: config.skill_bindings.clone(),
         session_title: config.session_title.clone(),
         team_instructions: config.team_instructions.clone(),
         base_prompt: if config.no_base_prompt {

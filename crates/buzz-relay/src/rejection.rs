@@ -75,7 +75,14 @@ pub(crate) async fn enforce_ws_admission(
         ws_limit,
     )
     .await;
+    // Captured before the result is consumed: only a real quota breach is a
+    // `rate_limit_exceeded` audit fact — `Unavailable` means the shared limiter
+    // could not answer, which says nothing about the client's quota.
+    let ws_rate_limited = matches!(ws_result, Err(AdmissionError::Exceeded { .. }));
     if !send_admission_result(conn, ws_result, msg, "ws_operations") {
+        if ws_rate_limited {
+            record_rate_limit_audit(state, conn, &pubkey, "ws_events");
+        }
         return false;
     }
 
@@ -95,14 +102,39 @@ pub(crate) async fn enforce_ws_admission(
             message_limit,
         )
         .await;
-        // Only persistable EVENT attempts consume the minute quota. Ephemeral activity
-        // still passes the shared WS flood limit above and normal event auth.
+        // The per-minute message quota only applies to EVENTs, and its
+        // rejection must be as correlatable as the burst quota's.
+        let message_rate_limited = matches!(message_result, Err(AdmissionError::Exceeded { .. }));
         if !send_admission_result(conn, message_result, msg, "messages") {
+            if message_rate_limited {
+                record_rate_limit_audit(state, conn, &pubkey, "messages");
+            }
             return false;
         }
     }
 
     true
+}
+
+/// Record an admission quota rejection on the audit chain.
+///
+/// Enqueued through the load-shedding site policy ([`crate::audit::AuditSite`]):
+/// a rate-limit storm must never backpressure the very door that is shedding
+/// load, so a full audit queue sheds this record (counted) instead of blocking
+/// the connection loop. Shedding at enqueue time cannot put a hole in the
+/// chain — `seq`/`prev_hash` are assigned only when a row is appended.
+fn record_rate_limit_audit(
+    state: &AppState,
+    conn: &ConnectionState,
+    pubkey: &nostr::PublicKey,
+    limit: &'static str,
+) {
+    crate::audit::record_audit_nonblocking(
+        state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::RateLimitExceeded, &conn.tenant)
+            .actor(Some(pubkey.to_bytes().to_vec()))
+            .detail(serde_json::json!({ "limit": limit })),
+    );
 }
 
 /// Forwards an admission verdict to the client, returning whether the frame was

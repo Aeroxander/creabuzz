@@ -113,6 +113,29 @@ pub fn extract_auth_tag_json(event: &nostr::Event) -> Option<String> {
     serde_json::to_string(first.as_slice()).ok()
 }
 
+/// Record one NIP-42 auth outcome on the audit chain.
+///
+/// `actor` is only ever passed once the pubkey is cryptographically proven
+/// (i.e. inside the `Ok` branch of `verify_auth_event`); a verification
+/// failure records no actor — an unverified claim must not land on the chain.
+/// The bounded enqueue backpressures the AUTH handler under audit overload,
+/// same as every structural producer (see [`crate::audit::AuditSite`]).
+async fn record_auth_audit(
+    state: &AppState,
+    conn: &ConnectionState,
+    site: crate::audit::AuditSite,
+    actor: Option<nostr::PublicKey>,
+    detail: serde_json::Value,
+) {
+    crate::audit::record_audit(
+        state,
+        crate::audit::AuditRecord::new(site, &conn.tenant)
+            .actor(actor.map(|pk| pk.to_bytes().to_vec()))
+            .detail(detail),
+    )
+    .await;
+}
+
 /// Handle a NIP-42 AUTH message: verify the challenge response and transition
 /// the connection to authenticated state.
 ///
@@ -252,6 +275,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     if !conn.reject_auth(auth_outcome) {
                         return;
                     }
+                    record_auth_audit(
+                        &state,
+                        &conn,
+                        crate::audit::AuditSite::AuthFailure,
+                        Some(pubkey),
+                        serde_json::json!({
+                            "event_id": event_id_hex.as_str(),
+                            "reason": metric_reason,
+                        }),
+                    )
+                    .await;
                     // Decision 4: banned ⇒ OK false + immediate WebSocket close.
                     // Route the reason frame on the control channel (not `send`,
                     // which uses the data channel and would race the cancel), so
@@ -298,6 +332,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                         if !conn.reject_auth(AuthOutcome::AllowlistDenied) {
                             return;
                         }
+                        record_auth_audit(
+                            &state,
+                            &conn,
+                            crate::audit::AuditSite::AuthFailure,
+                            Some(pubkey),
+                            serde_json::json!({
+                                "event_id": event_id_hex.as_str(),
+                                "reason": "allowlist_denied",
+                            }),
+                        )
+                        .await;
                         // Fix 4a: when an FI assertion is present, use the uniform
                         // canonical NIP-FI denial frame (NOTICE, not OK) so the
                         // frame type and body are byte-identical to expiry and
@@ -359,6 +404,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     if !conn.reject_auth(AuthOutcome::NotRelayMember) {
                         return;
                     }
+                    record_auth_audit(
+                        &state,
+                        &conn,
+                        crate::audit::AuditSite::AuthFailure,
+                        Some(pubkey),
+                        serde_json::json!({
+                            "event_id": event_id_hex.as_str(),
+                            "reason": "not_relay_member",
+                        }),
+                    )
+                    .await;
                     // With an FI assertion, membership status must not be
                     // distinguishable from a ban or allowlist denial.
                     if conn.nip_fi_assertion.is_some() {
@@ -467,6 +523,17 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             }
             // The permit is held through set_authenticated_pubkey and the OK send
             // so the entire auth commit is atomic with respect to expiry.
+            record_auth_audit(
+                &state,
+                &conn,
+                crate::audit::AuditSite::AuthSuccess,
+                Some(pubkey),
+                serde_json::json!({
+                    "event_id": event_id_hex.as_str(),
+                    "method": "nip42",
+                }),
+            )
+            .await;
             state
                 .conn_manager
                 .set_authenticated_pubkey(conn_id, pubkey.to_bytes().to_vec());
@@ -479,6 +546,20 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             if !conn.reject_auth(AuthOutcome::Invalid) {
                 return;
             }
+            // The event's signature never verified, so its claimed pubkey is
+            // not an actor — record the failure with no actor rather than
+            // pinning an unproven key on the chain.
+            record_auth_audit(
+                &state,
+                &conn,
+                crate::audit::AuditSite::AuthFailure,
+                None,
+                serde_json::json!({
+                    "event_id": event_id_hex.as_str(),
+                    "reason": "nip42_invalid",
+                }),
+            )
+            .await;
             if conn.nip_fi_assertion.is_some() {
                 deny_nip_fi_auth(&conn, nip42_denial_class(&e));
                 return;

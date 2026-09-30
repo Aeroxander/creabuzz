@@ -148,10 +148,13 @@ export function AppShell() {
     goAgents,
     goChannel,
     goHome,
+    goLaunchpad,
     goNewMessage,
+    goOrg,
     goProjects,
     goPulse,
     goSettings,
+    goWiki,
     goWorkflows,
     closeSettings,
     openSearchHit,
@@ -897,6 +900,9 @@ export function AppShell() {
                             scopeSearchFocusRequest,
                           ]}
                           onSelectHome={() => void goHome()}
+                          onSelectLaunchpad={() => void goLaunchpad()}
+                          onSelectOrg={() => void goOrg()}
+                          onSelectWiki={() => void goWiki()}
                           onSelectProjects={() => void goProjects()}
                           onSelectPulse={() => void goPulse()}
                           onSelectSettings={handleOpenSettings}

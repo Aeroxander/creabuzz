@@ -39,6 +39,15 @@ fn hash_approval_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
+/// Hex-encoded SHA-256 of a raw approval token.
+///
+/// Single source of truth for the hash shared by the DB lookup and the
+/// kind:46010 `d` tag, so the two can never drift apart. Public for the
+/// workflow engine's approval-request emission (WF-08).
+pub fn approval_token_hash_hex(token: &str) -> String {
+    hex::encode(hash_approval_token(token))
+}
+
 // -- Status enums -------------------------------------------------------------
 
 /// Status of a workflow definition. Stored as ENUM('active','disabled','archived').
@@ -1196,6 +1205,69 @@ pub async fn update_approval_by_stored_hash(
     Ok(affected > 0)
 }
 
+/// Atomically suspend a run at an approval gate (WF-08).
+///
+/// Inserts the `pending` approval row AND moves the run to
+/// `WaitingApproval` in a single transaction. A single user action (hitting
+/// an approval gate) is a single atomic persist: no torn state where a
+/// grantable approval exists for a non-waiting run, or a waiting run has no
+/// approval to grant. On any error the transaction rolls back and the run
+/// keeps its prior status — the caller must surface the failure rather than
+/// pretending the gate was recorded.
+pub async fn suspend_workflow_run(
+    pool: &PgPool,
+    community_id: CommunityId,
+    run_id: Uuid,
+    step_index: i32,
+    trace: &serde_json::Value,
+    approval: CreateApprovalParams<'_>,
+) -> Result<()> {
+    let mut tx = pool.begin().await.map_err(DbError::from)?;
+
+    let token_hash = hash_approval_token(approval.token);
+    sqlx::query(
+        r#"
+        INSERT INTO workflow_approvals
+            (community_id, token, workflow_id, run_id, step_id, step_index, approver_spec, status, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(&token_hash)
+    .bind(approval.workflow_id)
+    .bind(approval.run_id)
+    .bind(approval.step_id)
+    .bind(approval.step_index)
+    .bind(approval.approver_spec)
+    .bind(approval.expires_at)
+    .execute(&mut *tx)
+    .await?;
+
+    let affected = sqlx::query(
+        r#"
+        UPDATE workflow_runs
+        SET status        = 'waiting_approval'::run_status,
+            current_step  = $1,
+            execution_trace = $2
+        WHERE community_id = $3 AND id = $4
+        "#,
+    )
+    .bind(step_index)
+    .bind(trace)
+    .bind(community_id.as_uuid())
+    .bind(run_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(DbError::NotFound(format!("workflow_run {run_id}")));
+    }
+
+    tx.commit().await.map_err(DbError::from)?;
+    Ok(())
+}
+
 // -- Row mappers --------------------------------------------------------------
 
 fn row_to_workflow_record(row: sqlx::postgres::PgRow) -> Result<WorkflowRecord> {
@@ -1394,6 +1466,27 @@ impl Db {
         params: crate::workflow::CreateApprovalParams<'_>,
     ) -> Result<()> {
         crate::workflow::create_approval(&self.pool, params).await
+    }
+
+    /// Atomically suspend a run at an approval gate (WF-08).
+    #[datastore_span(name = "suspend_workflow_run", system = "postgresql")]
+    pub async fn suspend_workflow_run(
+        &self,
+        community_id: CommunityId,
+        run_id: Uuid,
+        step_index: i32,
+        trace: &serde_json::Value,
+        approval: crate::workflow::CreateApprovalParams<'_>,
+    ) -> Result<()> {
+        crate::workflow::suspend_workflow_run(
+            &self.pool,
+            community_id,
+            run_id,
+            step_index,
+            trace,
+            approval,
+        )
+        .await
     }
 
     /// Fetch an approval by raw token.

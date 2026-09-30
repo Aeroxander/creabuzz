@@ -16,6 +16,36 @@ export default {
           "sans-serif",
         ],
       },
+      // Meta-text ramp (see AGENTS.md): the sub-`text-xs` sizes for timestamps,
+      // count badges and tracking labels. `text-2xs` and `text-3xs` were used
+      // by shared primitives but never defined here, so those elements silently
+      // inherited their parent's size. rem-based so they follow zoom.
+      fontSize: {
+        "2xs": "0.6875rem",
+        "3xs": "0.5rem",
+        // Conversation type, ported from the desktop contract: 14px/20px by
+        // default, moving with the reader's font-size preference (13/14/15px).
+        // `text-message` used to be a fixed 0.9375rem, so the web client read a
+        // point larger than the desktop and ignored the preference entirely.
+        message: [
+          "var(--conversation-message-font-size)",
+          { lineHeight: "var(--conversation-message-line-height)" },
+        ],
+        "message-timestamp": [
+          "var(--conversation-timestamp-font-size)",
+          { lineHeight: "var(--conversation-timestamp-line-height)" },
+        ],
+      },
+      lineHeight: {
+        // Keeps author names on the same baseline as the message text.
+        "message-author": "var(--conversation-author-line-height)",
+      },
+      spacing: {
+        "conversation-body": "var(--conversation-body-gap)",
+        "conversation-list": "var(--conversation-list-item-gap)",
+        "conversation-paragraph": "var(--conversation-paragraph-gap)",
+        "conversation-row": "var(--conversation-row-padding-block)",
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",

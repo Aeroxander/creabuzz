@@ -62,12 +62,15 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "artifact_heads",
     "artifact_revisions",
     "audit_log",
+    "budget_approvals",
+    "budget_consumption",
     "channel_members",
     "channels",
     "community_bans",
     "delivery_log",
     "event_mentions",
     "events",
+    "evm_identities",
     "git_repo_names",
     "join_policy_acceptances",
     "moderation_actions",
@@ -91,6 +94,12 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
 
 /// Foreign-key-safe child-before-parent order for the PostgreSQL purge.
 pub const PURGE_SCOPED_TABLES: &[&str] = &[
+    // Fork tables (migrations 0054/0056) reference only `communities`, which
+    // survives as the tombstone, so no other scoped table depends on them and
+    // they can be purged first.
+    "budget_approvals",
+    "budget_consumption",
+    "evm_identities",
     "workflow_approvals",
     "scheduled_workflow_fires",
     "workflow_runs",
@@ -3841,6 +3850,34 @@ mod tests {
     }
 
     #[test]
+    fn purge_order_is_a_permutation_of_the_expected_scoped_tables() {
+        let expected: BTreeSet<&str> = EXPECTED_SCOPED_TABLES.iter().copied().collect();
+        let purge: BTreeSet<&str> = PURGE_SCOPED_TABLES.iter().copied().collect();
+        assert_eq!(
+            expected.len(),
+            EXPECTED_SCOPED_TABLES.len(),
+            "EXPECTED_SCOPED_TABLES must not repeat a table"
+        );
+        assert_eq!(
+            purge.len(),
+            PURGE_SCOPED_TABLES.len(),
+            "PURGE_SCOPED_TABLES must not repeat a table"
+        );
+        assert_eq!(
+            expected, purge,
+            "every expected scoped table must be purged, and only those"
+        );
+        // Fork tenant tables (migrations 0054/0056) are part of the manifest;
+        // omitting one makes `validate_catalog_on` reject every deletion.
+        for table in ["evm_identities", "budget_consumption", "budget_approvals"] {
+            assert!(
+                expected.contains(table),
+                "{table} is tenant-scoped and must be in the deletion manifest"
+            );
+        }
+    }
+
+    #[test]
     fn stage_order_is_exact_and_terminal() {
         let mut stage = DeletionStage::Submitted;
         let mut seen = vec![stage];
@@ -6895,6 +6932,163 @@ mod postgres_tests {
         assert!(direct_delete
             .to_string()
             .contains("tombstones are permanent"));
+    }
+
+    /// The fork's tenant tables (`evm_identities`, `budget_consumption`,
+    /// `budget_approvals`) must be write-fenced once a deletion fences the
+    /// tenant, purged with it, and must leave other tenants' rows alone.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn purge_removes_fork_tenant_tables_for_the_target_only() {
+        const FORK_TABLES: [&str; 3] = ["evm_identities", "budget_consumption", "budget_approvals"];
+
+        async fn seed(db: &Db, community: CommunityId) -> std::result::Result<(), sqlx::Error> {
+            sqlx::query(
+                "INSERT INTO evm_identities (community_id, pubkey, evm_address) \
+                 VALUES ($1, $2, $3)",
+            )
+            .bind(community.as_uuid())
+            .bind("ab".repeat(32))
+            .bind(vec![7_u8; 20])
+            .execute(&db.pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO budget_consumption \
+                 (community_id, subject, counter_type, window_start, consumed) \
+                 VALUES ($1, 'agent-1', 'runs', now(), 3)",
+            )
+            .bind(community.as_uuid())
+            .execute(&db.pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO budget_approvals \
+                 (community_id, token, subject, counter_type, window_start, limit_value, expires_at) \
+                 VALUES ($1, $2, 'agent-1', 'runs', now(), 5, now() + interval '1 hour')",
+            )
+            .bind(community.as_uuid())
+            .bind(vec![9_u8; 32])
+            .execute(&db.pool)
+            .await?;
+            Ok(())
+        }
+
+        async fn rows(db: &Db, table: &str, community: CommunityId) -> i64 {
+            sqlx::query_scalar(AssertSqlSafe(format!(
+                "SELECT count(*)::BIGINT FROM {table} WHERE community_id = $1"
+            )))
+            .bind(community.as_uuid())
+            .fetch_one(&db.pool)
+            .await
+            .expect("count fork table rows")
+        }
+
+        let (db, store) = store().await;
+        let (request, inventory) = inventoried_request(&db, &store).await;
+        let bystander_host = format!("bystander-{}.example", Uuid::new_v4().simple());
+        let bystander = db
+            .ensure_configured_community(&bystander_host)
+            .await
+            .expect("create bystander community")
+            .id;
+        seed(&db, request.community_id)
+            .await
+            .expect("seed target fork rows");
+        seed(&db, bystander)
+            .await
+            .expect("seed bystander fork rows");
+
+        store
+            .approve(request.id, "approver", None)
+            .await
+            .expect("approve");
+        let claim = store
+            .claim_specific(request.id, "executor", DEFAULT_LEASE_DURATION)
+            .await
+            .expect("claim")
+            .expect("won claim");
+        store.begin_quiescing(&claim.lease).await.expect("quiesce");
+        let generation = store.fence(&claim.lease).await.expect("fence");
+        let token = LeaseToken {
+            fence_generation: Some(generation),
+            ..claim.lease
+        };
+
+        // Once fenced, ordinary (non-executor) writes to the target tenant are
+        // rejected by the universal write fence on every fork table. Removing
+        // an `attach_community_write_fence` call for one of them fails here.
+        let fenced_inserts = [
+            (
+                "evm_identities",
+                sqlx::query(
+                    "INSERT INTO evm_identities (community_id, pubkey, evm_address) \
+                     VALUES ($1, 'cd', $2)",
+                )
+                .bind(request.community_id.as_uuid())
+                .bind(vec![1_u8; 20]),
+            ),
+            (
+                "budget_consumption",
+                sqlx::query(
+                    "INSERT INTO budget_consumption \
+                     (community_id, subject, counter_type, window_start) \
+                     VALUES ($1, 'late', 'runs', now())",
+                )
+                .bind(request.community_id.as_uuid()),
+            ),
+            (
+                "budget_approvals",
+                sqlx::query(
+                    "INSERT INTO budget_approvals \
+                     (community_id, token, subject, counter_type, window_start, limit_value, expires_at) \
+                     VALUES ($1, $2, 'late', 'runs', now(), 1, now() + interval '1 hour')",
+                )
+                .bind(request.community_id.as_uuid())
+                .bind(vec![4_u8; 32]),
+            ),
+        ];
+        for (table, insert) in fenced_inserts {
+            let err = insert
+                .execute(&db.pool)
+                .await
+                .expect_err("fenced tenant must reject fork-table writes");
+            assert!(
+                err.to_string().contains("community write fenced"),
+                "{table} write was not rejected by the community write fence: {err}"
+            );
+        }
+        sqlx::query(
+            "INSERT INTO budget_consumption \
+             (community_id, subject, counter_type, window_start) \
+             VALUES ($1, 'still-active', 'runs', now())",
+        )
+        .bind(bystander.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("other tenants keep writing while one is fenced");
+
+        store
+            .freeze_destructive_storage_manifest(&token, &inventory.storage)
+            .await
+            .expect("freeze destructive storage");
+        store.mark_drained(&token).await.expect("drain");
+        store
+            .mark_bindings_removed(&token, serde_json::json!({"keys": 0}))
+            .await
+            .expect("bindings");
+        let purged = store.purge_postgres(&token).await.expect("purge postgres");
+
+        for table in FORK_TABLES {
+            assert_eq!(
+                purged.get(table).copied(),
+                Some(1),
+                "purge must delete the target's {table} row"
+            );
+            assert_eq!(rows(&db, table, request.community_id).await, 0);
+            assert!(
+                rows(&db, table, bystander).await >= 1,
+                "purge must not touch other tenants' {table} rows"
+            );
+        }
     }
 
     #[tokio::test]

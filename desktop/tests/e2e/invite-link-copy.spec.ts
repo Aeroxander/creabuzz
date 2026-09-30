@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installMockBridge } from "../helpers/bridge";
+import { e2eOrigin } from "../helpers/origin";
 import { openSettings } from "../helpers/settings";
 
 let invitePayloads: Record<string, unknown>[];
@@ -8,7 +9,7 @@ let invitePayloads: Record<string, unknown>[];
 test.beforeEach(async ({ page }) => {
   invitePayloads = [];
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
+    origin: e2eOrigin(),
   });
   await installMockBridge(page, {
     relayRequiresMembership: true,

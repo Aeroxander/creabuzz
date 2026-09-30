@@ -1,0 +1,20 @@
+[package]
+name = "buzz-fleet-worker"
+version = "0.1.0"
+edition = "2021"
+description = "Always-on sandbox fleet worker: consumes kind:44011 tasks assigned to it, answers via a direct OpenAI-compatible LLM or the relay gateway, and drafts pending kind:37013 contribution records for completed work."
+
+[dependencies]
+buzz-sdk = { path = "../buzz-sdk" }
+buzz-ws-client = { path = "../buzz-ws-client" }
+nostr = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+hex = { version = "0.4" }
+rand = { version = "0.8" }

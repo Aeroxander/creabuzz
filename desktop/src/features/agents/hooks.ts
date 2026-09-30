@@ -1,5 +1,8 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+import { seatDeployedAgent } from "@/features/org/seatAgent";
 
 import {
   connectAcpRuntime,
@@ -441,6 +444,26 @@ export function useCreateManagedAgentMutation() {
       // reconcile so the new agent gets a lazy pair in every other community.
       if (created.agent.backend.type === "local") {
         bootstrapManagedAgentRuntimePairs(queryClient);
+      }
+
+      // A persona applied from a template has a vacant org seat; fill it so
+      // the org chart shows who works there. A persona without a seat is the
+      // normal case; a real failure is told to the user, not swallowed.
+      const { personaId, pubkey, name } = created.agent;
+      if (personaId) {
+        seatDeployedAgent(personaId, pubkey)
+          .then((result) => {
+            if (result === "seated") {
+              toast.success(`${name} now sits in its org seat.`);
+            }
+          })
+          .catch((error: unknown) => {
+            toast.error(
+              `${name} was created, but seating it in the org chart failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
       }
     },
     onSettled: async () => {

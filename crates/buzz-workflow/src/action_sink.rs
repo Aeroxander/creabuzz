@@ -29,6 +29,12 @@ pub enum ActionSinkError {
     /// Message content is empty or whitespace-only.
     #[error("empty message content")]
     EmptyContent,
+    /// The Agent Wiki distillation loop failed (LLM contract, corrupt cursor
+    /// page, publish bounds, or unconfigured classifier). Surfaced as a
+    /// visible workflow run failure — a scheduled distill must never silently
+    /// no-op.
+    #[error("agent wiki distill failed: {0}")]
+    Distill(String),
 }
 
 impl From<ActionSinkError> for crate::WorkflowError {
@@ -74,4 +80,81 @@ pub trait ActionSink: Send + Sync {
         author_pubkey: &str,
         reply_to: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>>;
+
+    /// Publish a workflow approval request (kind:46010) for a suspended run.
+    ///
+    /// Called after the approval row is durably persisted: emission is a
+    /// notification, persistence is the contract. If emission fails, the run
+    /// stays `WaitingApproval` with a pending approval row — the durable
+    /// retry record — and the caller must surface the failure rather than
+    /// rolling the suspension back.
+    ///
+    /// - `community_id` / `channel_id`: same scoping contract as
+    ///   [`ActionSink::send_message`] — the event belongs to the run's
+    ///   community, `h`-tagged to the channel so membership gates reads.
+    /// - `token_hash_hex`: hex-encoded SHA-256 of the approval token UUID
+    ///   (`d` tag — the same value grant/deny look up).
+    /// - `approver_spec` / `message`: rendered from the stored step
+    ///   definition (`from`, `message`); trigger-controlled text must never
+    ///   reach authority-bearing tags (same rule as `authored_text` above —
+    ///   here the whole payload is definition-rendered, never raw trigger).
+    /// - `author_pubkey`: hex-encoded pubkey of the workflow owner (`p`
+    ///   attribution tag; the relay keypair signs the event).
+    ///
+    /// Returns the event ID hex string on success.
+    fn emit_approval_request(
+        &self,
+        community_id: CommunityId,
+        channel_id: &str,
+        token_hash_hex: &str,
+        approver_spec: &str,
+        message: &str,
+        author_pubkey: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>>;
+
+    /// Run the Agent Wiki distill loop for one wiki space and publish the
+    /// standup page (kind:44002) — the `distill_agent_wiki` action.
+    ///
+    /// The sink executes the shared `buzz-agwiki` core end to end: bounded
+    /// source fetch from the relay store (done kind:44011 tasks + published
+    /// kind:37013 records since the page's durable cursor), the classifier
+    /// LLM call (same `BUZZ_CLASSIFIER_*` env as `org classify` — **fail
+    /// closed** on missing config: return [`ActionSinkError::Distill`] so a
+    /// scheduled run leaves a visible run-status error instead of silently
+    /// skipping), strict draft validation, and a relay-signed kind:44002
+    /// publish through the relay's internal ingest path (which enforces the
+    /// same `validate_agent_wiki_envelope` bounds as client publishes).
+    ///
+    /// - `community_id`: the run's owning community (same scoping contract as
+    ///   [`ActionSink::send_message`]).
+    /// - `space`: wiki space name; the page coordinate is `<space>/standup`.
+    ///
+    /// Returns the step-output object recorded in workflow run history:
+    /// `{"status": "published", "space", "coordinate", "event_id", "cursor",
+    /// "cost_tokens", "model", "sources"}` or `{"status": "skipped",
+    /// "space", "coordinate", "since"}` when nothing new was found (skip
+    /// cleanly — no LLM call, nothing published).
+    fn distill_agent_wiki(
+        &self,
+        community_id: CommunityId,
+        space: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>>;
+
+    /// Recompute the org diagnostic (OA.md Phase 4 — `buzz-core::org_diag`)
+    /// over the community's recent signed events and return the report as the
+    /// step output (recorded in run history, so drift across runs is
+    /// observable). Deterministic — no LLM, nothing published, no new wire
+    /// vocabulary. The default fails visibly: a sink that does not instrument
+    /// must surface a run failure (Review-Proven Rule 1), never silently skip.
+    fn run_org_diag(
+        &self,
+        community_id: CommunityId,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        let _ = community_id;
+        Box::pin(async {
+            Err(ActionSinkError::InvalidInput(
+                "run_org_diag is not implemented by this action sink".to_string(),
+            ))
+        })
+    }
 }

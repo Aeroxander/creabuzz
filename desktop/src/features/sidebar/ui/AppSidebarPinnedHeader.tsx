@@ -1,4 +1,13 @@
-import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  BookOpen,
+  Folders,
+  Inbox,
+  Rocket,
+  Zap,
+  Network,
+} from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
@@ -21,7 +30,10 @@ type SidebarSelectedView =
   | "agents"
   | "workflows"
   | "pulse"
-  | "projects";
+  | "projects"
+  | "launchpad"
+  | "org"
+  | "wiki";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -43,9 +55,12 @@ type AppSidebarPrimaryMenuProps = {
   homeBadgeCount: number;
   onSelectAgents: () => void;
   onSelectHome: () => void;
+  onSelectLaunchpad: () => void;
+  onSelectOrg: () => void;
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
+  onSelectWiki: () => void;
   projectsOverviewActive: boolean;
   selectedView: SidebarSelectedView;
 };
@@ -93,9 +108,12 @@ export function AppSidebarPrimaryMenu({
   homeBadgeCount,
   onSelectAgents,
   onSelectHome,
+  onSelectLaunchpad,
+  onSelectOrg,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
+  onSelectWiki,
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
@@ -141,6 +159,18 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              data-testid="open-launchpad-view"
+              isActive={selectedView === "launchpad"}
+              onClick={onSelectLaunchpad}
+              tooltip="Launchpad"
+              type="button"
+            >
+              <Rocket className="h-4 w-4" />
+              <SidebarMenuLabel>Launchpad</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <FeatureGate feature="projects">
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -183,6 +213,32 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-current={selectedView === "org" ? "page" : undefined}
+              data-testid="open-org-view"
+              isActive={selectedView === "org"}
+              onClick={onSelectOrg}
+              tooltip="Org"
+              type="button"
+            >
+              <Network className="h-4 w-4" />
+              <SidebarMenuLabel>Org</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-current={selectedView === "wiki" ? "page" : undefined}
+              data-testid="open-wiki-view"
+              isActive={selectedView === "wiki"}
+              onClick={onSelectWiki}
+              tooltip="Wiki"
+              type="button"
+            >
+              <BookOpen className="h-4 w-4" />
+              <SidebarMenuLabel>Wiki</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarProjectsSection />

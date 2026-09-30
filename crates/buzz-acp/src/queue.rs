@@ -1872,6 +1872,10 @@ pub struct FormatPromptArgs<'a> {
     pub base_prompt: Option<&'a str>,
     /// System prompt content for legacy agents (protocol_version < 2).
     pub system_prompt: Option<&'a str>,
+    /// Already-framed `<project-skills>` section for legacy agents, delivered
+    /// with the rest of the standing context (see `crate::project_skills`).
+    /// Omit for modern agents — they receive it via `session/new`.
+    pub project_skills: Option<&'a str>,
     /// Team instructions for legacy agents, rendered after `<agent-instructions>`.
     pub team_instructions: Option<&'a str>,
     /// Rendered `<channel-canvas>` metadata section for legacy agents.
@@ -1904,6 +1908,11 @@ pub struct FormatPromptArgs<'a> {
 pub(crate) struct StandingContext<'a> {
     pub base_prompt: Option<&'a str>,
     pub system_prompt: Option<&'a str>,
+    /// Already-framed `<project-skills>` section — the persona's bound skill
+    /// bodies (see `crate::project_skills`). Rendered after
+    /// `<agent-instructions>` and before `<team-instructions>`, matching the
+    /// `session/new` system-prompt order.
+    pub project_skills: Option<&'a str>,
     pub team_instructions: Option<&'a str>,
     pub agent_core: Option<&'a str>,
     pub huddle_instructions: Option<&'a str>,
@@ -1913,7 +1922,7 @@ pub(crate) struct StandingContext<'a> {
 impl StandingContext<'_> {
     /// Render the sections in the order legacy agents have always seen them.
     pub(crate) fn sections(&self) -> Vec<String> {
-        let mut sections = Vec::with_capacity(6);
+        let mut sections = Vec::with_capacity(7);
         if let Some(bp) = self.base_prompt {
             sections.push(base_section(bp));
         }
@@ -1922,6 +1931,10 @@ impl StandingContext<'_> {
                 "agent-instructions",
                 sp,
             ));
+        }
+        if let Some(skills) = self.project_skills {
+            // Already framed (and byte-bounded) by the assembler — push verbatim.
+            sections.push(skills.to_string());
         }
         if let Some(team) = self
             .team_instructions
@@ -2019,6 +2032,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
             StandingContext {
                 base_prompt: args.base_prompt,
                 system_prompt: args.system_prompt,
+                project_skills: args.project_skills,
                 team_instructions: args.team_instructions,
                 agent_core: args.agent_core,
                 huddle_instructions: args.huddle_instructions,
@@ -3080,6 +3094,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_core: Some(core),
                 ..Default::default()
             },
@@ -3112,6 +3127,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_core: Some("[Agent Memory — core]\nbe helpful"),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -3144,6 +3160,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_core: Some(core),
                 ..Default::default()
             },
@@ -3198,6 +3215,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 has_system_prompt_support: false,
                 base_prompt: Some("test base prompt"),
                 system_prompt: Some("test system prompt"),
@@ -3258,6 +3276,7 @@ mod tests {
         let canvas = "[Channel Canvas]\ncanvas content";
         let core = "[Agent Memory — core]\nremember this";
         let args = |sent| FormatPromptArgs {
+            project_skills: None,
             has_system_prompt_support: false,
             base_prompt: Some("test base prompt"),
             system_prompt: Some("test system prompt"),
@@ -3313,6 +3332,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 has_system_prompt_support: true,
                 base_prompt: Some("test base prompt"),
                 system_prompt: Some("test system prompt"),
@@ -3365,6 +3385,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_core: Some(core),
                 conversation_context: Some(&ctx),
                 ..Default::default()
@@ -3947,6 +3968,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -3981,6 +4003,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -4031,6 +4054,7 @@ mod tests {
                         let prompt = format_prompt(
                             &batch,
                             &FormatPromptArgs {
+                                project_skills: None,
                                 channel_info: Some(&ci),
                                 has_system_prompt_support: modern,
                                 standing_context_sent: true,
@@ -4151,6 +4175,7 @@ mod tests {
         let complete_prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 ..Default::default()
             },
@@ -4169,6 +4194,7 @@ mod tests {
         let prompt_with_prior_delivery = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 conversation_context_had_session_events: true,
                 ..Default::default()
@@ -4190,6 +4216,7 @@ mod tests {
         let truncated_prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 ..Default::default()
             },
@@ -4214,6 +4241,7 @@ mod tests {
         let missing_root_prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 ..Default::default()
             },
@@ -4263,6 +4291,7 @@ mod tests {
         let mixed_prompt = format_prompt(
             &mixed_batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 ..Default::default()
             },
@@ -4288,6 +4317,7 @@ mod tests {
         let same_thread_prompt = format_prompt(
             &same_thread_batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 ..Default::default()
             },
@@ -4334,6 +4364,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 conversation_context: Some(&ctx),
                 ..Default::default()
@@ -4404,6 +4435,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 conversation_context: Some(&ctx),
                 profile_lookup: Some(&profiles),
                 ..Default::default()
@@ -4603,6 +4635,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 conversation_context: Some(&ctx),
                 ..Default::default()
@@ -4696,6 +4729,7 @@ mod tests {
         let trigger_only_prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -4707,6 +4741,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 conversation_context_had_session_events: true,
                 ..Default::default()
@@ -4748,6 +4783,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -5310,6 +5346,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -5377,6 +5414,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 ..Default::default()
             },
@@ -5862,6 +5900,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_canvas: Some(canvas),
                 has_system_prompt_support: false,
                 ..Default::default()
@@ -5892,6 +5931,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 agent_canvas: Some(canvas),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6395,6 +6435,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6427,6 +6468,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6466,6 +6508,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6495,6 +6538,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6571,6 +6615,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: Some(&ci),
                 has_system_prompt_support: true,
                 ..Default::default()
@@ -6592,6 +6637,7 @@ mod tests {
         let prompt = format_prompt(
             &batch,
             &FormatPromptArgs {
+                project_skills: None,
                 channel_info: None,
                 has_system_prompt_support: true,
                 ..Default::default()

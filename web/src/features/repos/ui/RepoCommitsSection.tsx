@@ -6,14 +6,14 @@ function CommitRow({ commit }: { commit: CommitInfo }) {
   const firstLine = commit.message.split("\n")[0];
   return (
     <div className="flex items-start gap-3 border-b border-black/10 px-3 py-2.5 text-sm text-black last:border-b-0 dark:border-white/10 dark:text-white">
-      <GitCommit className="mt-0.5 h-4 w-4 shrink-0 text-black/50 dark:text-white/50" />
+      <GitCommit className="mt-0.5 h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{firstLine}</p>
-        <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">
+        <p className="mt-0.5 text-xs text-black/60 dark:text-white/60">
           {commit.author.name} committed {relativeTime(commit.author.timestamp)}
         </p>
       </div>
-      <code className="shrink-0 self-center rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-black/50 dark:bg-white/10 dark:text-white/50">
+      <code className="shrink-0 self-center rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-black/60 dark:bg-white/10 dark:text-white/60">
         {commit.oid.slice(0, 7)}
       </code>
     </div>

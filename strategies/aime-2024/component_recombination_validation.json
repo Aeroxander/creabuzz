@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Component recombination validation",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents compute key quantities independently, reconstruct their implied components, and verify that those components recombine to satisfy the original constraints.",
+  "teamworkPrompt": "After individual computations, collaboratively verify that the computed value leads to a consistent set of derived components, which when recombined, fully satisfy the overall constraints. Any inconsistency should trigger a review of the intermediate arithmetic for potential overestimation.",
+  "roles": {
+    "agent-0": "Share your backward validation process and adjust your computation if inconsistencies arise.",
+    "agent-1": "Ensure that the derived components are logically consistent and sum up to meet the given constraints.",
+    "agent-2": "Advocate for the correct computation if your backward validation confirms a lower and more consistent value."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Step 1: Each agent computes the key parameter using their preferred approach and documents all critical arithmetic steps and load-bearing intermediate values.",
+      "perAgentPrompts": {
+        "agent-0": "State your computed value along with key intermediate figures.",
+        "agent-1": "Include a clear record of relevant arithmetic steps that support your computation.",
+        "agent-2": "Detail your computation and list any intermediate values used in your derivation."
+      }
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Step 2: Perform a backward validation by using your computed value to deduce the implied component values. Verify that these components, when recombined, satisfy the overall constraints provided in the problem. Confirm that all derived components are consistent and nonnegative.",
+      "perAgentPrompts": {
+        "agent-0": "Compute the derived components and demonstrate their recombination into the overall constraint.",
+        "agent-1": "Verify that your deduced values jointly satisfy the aggregate condition and discuss any discrepancies.",
+        "agent-2": "Check and confirm that all derived components are positive and consistent with the given constraints."
+      }
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles for all three agents (Agent 0, Agent 1, Agent 2); role prompts are transcribed verbatim, so no roster slot needed a derived prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

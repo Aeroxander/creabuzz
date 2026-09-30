@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  deriveShellRoute,
   markAllReadSources,
   activateDesktopNotificationTarget,
   createDesktopNotificationActivationQueue,
@@ -242,4 +243,10 @@ test("markAllReadSources skips the active marker without projected activity", ()
   });
 
   assert.deepEqual(calls, ["channels"]);
+});
+
+test("deriveShellRoute does not misroute removed or unknown paths", () => {
+  assert.equal(deriveShellRoute("/paperclip").selectedView, "home");
+  assert.equal(deriveShellRoute("/paperclip/extra").selectedView, "home");
+  assert.equal(deriveShellRoute("/paperclip2").selectedView, "home");
 });

@@ -1,0 +1,17 @@
+[package]
+name = "buzz-backend-ax"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Google AX backend provider for Buzz remote agents (docs/remote-agents.md, docs/backend-ax.md)"
+
+[[bin]]
+name = "buzz-backend-ax"
+path = "src/main.rs"
+
+[dependencies]
+nostr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

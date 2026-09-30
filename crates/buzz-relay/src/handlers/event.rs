@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use buzz_core::event::StoredEvent;
 use buzz_core::kind::{
     event_kind_u32, is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS,
-    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
+    KIND_AGENT_OBSERVER_FRAME, KIND_AUDIT_ENTRY, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
 };
 use buzz_core::observer::{
     content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -45,6 +45,7 @@ pub(crate) fn bounded_kind_label(kind: u32) -> String {
         44100..=44101 => kind.to_string(),
         44200 => kind.to_string(),
         45001..=45003 => kind.to_string(),
+        37001 | 47002..=47005 => kind.to_string(),
         46001..=46012 | 46020 | 46030..=46031 => kind.to_string(),
         48001 | 48100..=48104 | 48106 => kind.to_string(),
         49001 => kind.to_string(),
@@ -170,6 +171,47 @@ pub async fn filter_fanout_by_access(
                 !is_unshared_gated_event(&stored_event.event, &pk)
             })
             .collect()
+    } else {
+        matches
+    };
+
+    // Admin-only gate (fan-out): ADMIN_ONLY_KINDS events (the 48001 audit
+    // chain — actor pubkeys and channel ids for every persistent event,
+    // including private channels and gift wraps) are delivered only to
+    // connections whose authenticated pubkey is the community owner/admin.
+    // Mirrors the REQ/COUNT/`/query` gate; runs before the channel filter
+    // because these events are stored channel-less. Roles are resolved once
+    // per distinct pubkey, through the 10s community-admin cache. A failed
+    // lookup fails closed for this delivery only (the durable chain stays
+    // readable over REQ).
+    let matches = if buzz_core::kind::is_admin_only_kind(event_kind_u32(&stored_event.event)) {
+        let mut roles: HashMap<Vec<u8>, bool> = HashMap::new();
+        let mut allowed = Vec::with_capacity(matches.len());
+        for (conn_id, sub_id) in matches {
+            let Some(pubkey) = state.conn_manager.pubkey_for_conn(conn_id) else {
+                continue;
+            };
+            let key = pubkey.to_vec();
+            let is_admin = match roles.get(&key) {
+                Some(is_admin) => *is_admin,
+                None => match state.is_community_admin_cached(community_id, &key).await {
+                    Ok(is_admin) => {
+                        roles.insert(key, is_admin);
+                        is_admin
+                    }
+                    Err(e) => {
+                        warn!(
+                            "fan-out admin-only gate: role lookup failed, withholding delivery: {e}"
+                        );
+                        false
+                    }
+                },
+            };
+            if is_admin {
+                allowed.push((conn_id, sub_id));
+            }
+        }
+        allowed
     } else {
         matches
     };
@@ -531,6 +573,11 @@ async fn dispatch_persistent_event_inner(
         && !buzz_core::kind::is_command_kind(kind_u32)
         && !is_relay_workflow_msg
         && kind_u32 != KIND_GIFT_WRAP
+        // No-recursion/amplification fence: kind:48001 audit envelopes are
+        // evidence, never workflow triggers. A workflow matching 48001 could
+        // post messages whose own `event_created` audit rows publish more
+        // envelopes — an unbounded self-amplifying loop.
+        && kind_u32 != KIND_AUDIT_ENTRY
     {
         let workflow_engine = Arc::clone(&state.workflow_engine);
         let workflow_event = stored_event.clone();
@@ -570,36 +617,36 @@ async fn enqueue_event_created_audit(
     actor_pubkey_hex: &str,
     event_id_hex: &str,
 ) {
-    let Some(audit_tx) = &state.audit_tx else {
+    // No-recursion fence: kind:48001 events ARE the audit chain's projection,
+    // so recording `event_created` for one would append an audit row for every
+    // published row, forever. Every `event_created` enqueue funnels through
+    // `event_created_audit_site`, which returns `None` for audit publications.
+    let Some(site) = crate::audit::event_created_audit_site(kind_u32) else {
+        metrics::counter!("buzz_audit_recursion_fences_total").increment(1);
         return;
     };
-    // Audit via bounded channel (capacity 1000). Uses .send().await so entries
-    // are never silently dropped — backpressure propagates to the event handler
-    // if the queue is full. This is intentional: the audit advisory lock already
-    // serializes writes (at most 1 in-flight), so a full queue means the audit
-    // DB is genuinely overloaded and the relay should slow down rather than
-    // accumulate unbounded in-memory state. DB write failures in the worker are
-    // logged but not retried (same as the previous per-event tokio::spawn).
-    let audit_entry = buzz_audit::NewAuditEntry {
-        community_id: tenant.community(),
-        action: buzz_audit::AuditAction::EventCreated,
+    // Enqueue via the shared audit seam (bounded channel, capacity 1000):
+    // structural sites `.send().await` so entries are never silently dropped —
+    // backpressure propagates to the event handler if the queue is full. This
+    // is intentional: the audit advisory lock already serializes writes (at
+    // most 1 in-flight), so a full queue means the audit DB is genuinely
+    // overloaded and the relay should slow down rather than accumulate
+    // unbounded in-memory state. Write failures in the worker preserve the
+    // entry and retry (see `state::log_audit_entry`).
+    let record = crate::audit::AuditRecord::new(site, tenant)
         // Record the *actor* the caller resolved (authenticated principal for
         // ingest, triggering user for workflow posts), not `stored_event.event
         // .pubkey`. For relay-signed events (workflow sink, side-effect emits)
         // the claimed author is the relay key, so deriving from the event would
         // erase the human behind the action from the audit trail. This mirrors
         // the pre-rewrite semantics, ported to the raw-bytes column.
-        actor_pubkey: hex::decode(actor_pubkey_hex).ok(),
-        object_id: Some(event_id_hex.to_owned()),
-        detail: serde_json::json!({
+        .actor(hex::decode(actor_pubkey_hex).ok())
+        .object_id(event_id_hex)
+        .detail(serde_json::json!({
             "event_kind": kind_u32,
             "channel_id": stored_event.channel_id,
-        }),
-    };
-    if let Err(e) = audit_tx.send(audit_entry).await {
-        error!(event_id = %event_id_hex, "Audit channel closed — entry lost: {e}");
-        metrics::counter!("buzz_audit_send_errors_total").increment(1);
-    }
+        }));
+    crate::audit::record_audit(state, record).await;
 }
 
 /// Handle an EVENT message from a WebSocket connection.
@@ -633,7 +680,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
     )
     .increment(1);
 
-    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids) = {
+    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids, anonymous) = {
         match conn.auth_state_snapshot() {
             AuthState::Authenticated(ctx) => (
                 conn.conn_id,
@@ -641,7 +688,40 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 ctx.pubkey,
                 ctx.scopes.clone(),
                 ctx.channel_ids.clone(),
+                false,
             ),
+            // P2P signaling mode: anonymous events are accepted so browser P2P
+            // layers (e.g. Trystero over Nostr) can rendezvous through the
+            // relay — but only Trystero-shaped events of allowlisted ephemeral
+            // kinds (never a Buzz-defined kind such as presence 20001, see
+            // `p2p_signaling`), within a per-connection frame budget. They are
+            // broadcast to live subscribers and never stored, so no durable
+            // data is opened. Anything else falls through to `auth-required`.
+            _ if state.config.p2p_signaling
+                && state.config.p2p_signaling_policy.event_allowed(&event) =>
+            {
+                if !state.p2p_signaling_limiter.admit(
+                    conn.conn_id,
+                    crate::p2p_signaling::AnonymousFrame::Event,
+                    state.config.p2p_signaling_policy.frames_per_minute,
+                ) {
+                    reject("rate_limit");
+                    conn.send(RelayMessage::ok(
+                        &event_id_hex,
+                        false,
+                        "rate-limited: anonymous signaling quota exceeded",
+                    ));
+                    return;
+                }
+                (
+                    conn.conn_id,
+                    event.pubkey.to_bytes().to_vec(),
+                    event.pubkey,
+                    vec![buzz_auth::Scope::MessagesWrite],
+                    None,
+                    true,
+                )
+            }
             _ => {
                 reject("auth");
                 conn.send(RelayMessage::ok(
@@ -776,6 +856,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
             conn_id,
             pubkey_bytes,
             auth_pubkey,
+            anonymous,
             Arc::clone(&conn),
             state,
         )
@@ -877,11 +958,15 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
 /// while [`IngestError::Internal`] is a backend failure — e.g. a Redis
 /// presence-storage outage — which the dispatcher counts as `error`. Every
 /// message is a fixed, sanitized string that is forwarded verbatim.
+/// `anonymous` marks an unauthenticated P2P-signaling socket: its throwaway
+/// key must never reach member state, so the presence branch is skipped for it
+/// even though the admission policy already refuses kind 20001.
 async fn handle_ephemeral_event(
     event: Event,
     conn_id: uuid::Uuid,
     pubkey_bytes: Vec<u8>,
     auth_pubkey: nostr::PublicKey,
+    anonymous: bool,
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) -> Result<(), IngestError> {
@@ -895,8 +980,9 @@ async fn handle_ephemeral_event(
         Err(_) => return Err(IngestError::Internal("error: internal error".to_string())),
     }
 
-    // Special handling for presence events (kind:20001).
-    if event_kind_u32(&event) == KIND_PRESENCE_UPDATE {
+    // Special handling for presence events (kind:20001). Never for an
+    // anonymous socket: presence is member state, keyed by authenticated pubkey.
+    if !anonymous && event_kind_u32(&event) == KIND_PRESENCE_UPDATE {
         // Accept both bare strings ("online") and legacy JSON ({"status":"online"}).
         let raw = event.content.to_string();
         let status = if raw.starts_with('{') {
@@ -1889,6 +1975,71 @@ mod tests {
                 .execute(&pool)
                 .await
                 .unwrap();
+        }
+    }
+    /// Defense in depth behind the admission policy: even if a presence event
+    /// reached the ephemeral handler on an anonymous socket, it must not touch
+    /// member presence state. Authenticated presence still works (control).
+    #[tokio::test]
+    #[ignore = "requires Postgres and Redis"]
+    async fn anonymous_flag_keeps_presence_writes_out_of_member_state() {
+        let state = crate::test_support::test_state().await;
+        let host = format!("presence-guard-{}.example", Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("community")
+            .id;
+        let tenant = buzz_core::TenantContext::resolved(community, host);
+        let make_conn = || {
+            let (send_tx, _send_rx) = mpsc::channel(8);
+            let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
+            Arc::new(crate::connection::ConnectionState {
+                conn_id: Uuid::new_v4(),
+                tenant: tenant.clone(),
+                remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
+                auth_state: std::sync::Mutex::new(crate::connection::AuthState::Failed),
+                subscriptions: Arc::new(Mutex::new(HashMap::new())),
+                send_tx,
+                ctrl_tx,
+                terminal_ctrl_tx: tokio::sync::mpsc::channel(1).0,
+                cancel: CancellationToken::new(),
+                backpressure_count: Arc::new(AtomicU8::new(0)),
+                grace_limit: 3,
+                nip_fi_assertion: None,
+                session_deadline: None,
+                nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
+                    CancellationToken::new(),
+                ),
+            })
+        };
+
+        for (anonymous, expected) in [(true, None), (false, Some("online".to_string()))] {
+            let keys = Keys::generate();
+            let event = EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), "online")
+                .sign_with_keys(&keys)
+                .expect("sign presence");
+            super::handle_ephemeral_event(
+                event,
+                Uuid::new_v4(),
+                keys.public_key().to_bytes().to_vec(),
+                keys.public_key(),
+                anonymous,
+                make_conn(),
+                Arc::clone(&state),
+            )
+            .await
+            .expect("ephemeral handler accepts the event");
+            assert_eq!(
+                state
+                    .pubsub
+                    .get_presence(&tenant, &keys.public_key())
+                    .await
+                    .expect("read presence"),
+                expected,
+                "anonymous={anonymous}"
+            );
         }
     }
 

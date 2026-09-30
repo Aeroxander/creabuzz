@@ -6,9 +6,19 @@
 
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as reposRouteImport } from "./routes/repos";
+import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as linkDeviceRouteImport } from "./routes/link-device";
+import { Route as launchpadRouteImport } from "./routes/launchpad";
+import { Route as identityDemoRouteImport } from "./routes/identity-demo";
+import { Route as discoverRouteImport } from "./routes/discover";
+import { Route as cRouteImport } from "./routes/c";
 import { Route as indexRouteImport } from "./routes/index";
+import { Route as uDotpubkeyRouteImport } from "./routes/u.$pubkey";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
+import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
+import { Route as cDothostRouteImport } from "./routes/c.$host";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
 
 const reposRoute = reposRouteImport.update({
@@ -16,9 +26,44 @@ const reposRoute = reposRouteImport.update({
   path: "/repos",
   getParentRoute: () => rootRouteImport,
 } as any);
+const projectsRoute = projectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const linkDeviceRoute = linkDeviceRouteImport.update({
+  id: "/link-device",
+  path: "/link-device",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadRoute = launchpadRouteImport.update({
+  id: "/launchpad",
+  path: "/launchpad",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const identityDemoRoute = identityDemoRouteImport.update({
+  id: "/identity-demo",
+  path: "/identity-demo",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const discoverRoute = discoverRouteImport.update({
+  id: "/discover",
+  path: "/discover",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const cRoute = cRouteImport.update({
+  id: "/c",
+  path: "/c",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const indexRoute = indexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const uDotpubkeyRoute = uDotpubkeyRouteImport.update({
+  id: "/u/$pubkey",
+  path: "/u/$pubkey",
   getParentRoute: () => rootRouteImport,
 } as any);
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
@@ -26,9 +71,24 @@ const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
   path: "/repos/$repoId",
   getParentRoute: () => rootRouteImport,
 } as any);
+const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
+  id: "/projects/$projectId",
+  path: "/projects/$projectId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
+  id: "/launchpad/$launchId",
+  path: "/launchpad/$launchId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
   id: "/invite/$code",
   path: "/invite/$code",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const cDothostRoute = cDothostRouteImport.update({
+  id: "/c/$host",
+  path: "/c/$host",
   getParentRoute: () => rootRouteImport,
 } as any);
 const reposDotrepoIdDotblobDotsplatRoute =
@@ -40,55 +100,125 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/c"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/projects"
     | "/repos"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/c"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/projects"
     | "/repos"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   id:
     | "__root__"
     | "/"
+    | "/c"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/projects"
     | "/repos"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/u/$pubkey"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  cRoute: typeof cRoute;
+  discoverRoute: typeof discoverRoute;
+  identityDemoRoute: typeof identityDemoRoute;
+  launchpadRoute: typeof launchpadRoute;
+  linkDeviceRoute: typeof linkDeviceRoute;
+  projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
+  cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
+  launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
+  projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
+  uDotpubkeyRoute: typeof uDotpubkeyRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 
@@ -101,11 +231,60 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof reposRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof projectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/link-device": {
+      id: "/link-device";
+      path: "/link-device";
+      fullPath: "/link-device";
+      preLoaderRoute: typeof linkDeviceRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad": {
+      id: "/launchpad";
+      path: "/launchpad";
+      fullPath: "/launchpad";
+      preLoaderRoute: typeof launchpadRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/identity-demo": {
+      id: "/identity-demo";
+      path: "/identity-demo";
+      fullPath: "/identity-demo";
+      preLoaderRoute: typeof identityDemoRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/discover": {
+      id: "/discover";
+      path: "/discover";
+      fullPath: "/discover";
+      preLoaderRoute: typeof discoverRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/c": {
+      id: "/c";
+      path: "/c";
+      fullPath: "/c";
+      preLoaderRoute: typeof cRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/": {
       id: "/";
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof indexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/u/$pubkey": {
+      id: "/u/$pubkey";
+      path: "/u/$pubkey";
+      fullPath: "/u/$pubkey";
+      preLoaderRoute: typeof uDotpubkeyRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/repos/$repoId": {
@@ -115,11 +294,32 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof reposDotrepoIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/projects/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof projectsDotprojectIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad/$launchId": {
+      id: "/launchpad/$launchId";
+      path: "/launchpad/$launchId";
+      fullPath: "/launchpad/$launchId";
+      preLoaderRoute: typeof launchpadDotlaunchIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/invite/$code": {
       id: "/invite/$code";
       path: "/invite/$code";
       fullPath: "/invite/$code";
       preLoaderRoute: typeof inviteDotcodeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/c/$host": {
+      id: "/c/$host";
+      path: "/c/$host";
+      fullPath: "/c/$host";
+      preLoaderRoute: typeof cDothostRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/repos/$repoId/blob/$": {
@@ -134,9 +334,19 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  cRoute: cRoute,
+  discoverRoute: discoverRoute,
+  identityDemoRoute: identityDemoRoute,
+  launchpadRoute: launchpadRoute,
+  linkDeviceRoute: linkDeviceRoute,
+  projectsRoute: projectsRoute,
   reposRoute: reposRoute,
+  cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
+  launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
+  projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
+  uDotpubkeyRoute: uDotpubkeyRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };
 export const routeTree = rootRouteImport

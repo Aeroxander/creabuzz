@@ -855,6 +855,14 @@ pub struct AppState {
     /// Per-community channel visibility string, used to gate the private-channel fan-out
     /// access check so open channels stay zero-cost. Invalidated on a flip.
     pub channel_visibility_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), String>>,
+    /// Community owner/admin role cache: (community_id, pubkey_bytes) →
+    /// `relay_members.role IN ('owner', 'admin')`. Backs the admin-only read
+    /// gate ([`buzz_core::kind::ADMIN_ONLY_KINDS`]). Short TTL (10s) bounds how
+    /// long a demoted admin keeps read access to audit entries on this pod.
+    /// Only successful lookups are cached; an error is never turned into a
+    /// cached "not an admin".
+    #[allow(clippy::type_complexity)]
+    pub community_admin_cache: Arc<moka::sync::Cache<(CommunityId, Vec<u8>), bool>>,
 
     /// Bounded channel for audit logging, absent when audit logging is disabled.
     pub audit_tx: Option<mpsc::Sender<buzz_audit::NewAuditEntry>>,
@@ -898,8 +906,19 @@ pub struct AppState {
     /// Shared HTTP client for relay-proxied GIF provider requests. Reusing the
     /// connection pool avoids a fresh TLS handshake for every search/share.
     pub gif_http_client: reqwest::Client,
+    /// Shared HTTP client for the relay-owned LLM gateway, built once at
+    /// startup (redirects disabled: a provider 3xx must never replay the
+    /// key-bearing request elsewhere). `None` when the gateway is not
+    /// configured, or when the client could not be built — the gateway then
+    /// answers 503 instead of panicking or rebuilding a client per request.
+    pub llm_http_client: Option<reqwest::Client>,
     /// Shared Redis-backed admission limits for ordinary HTTP and WebSocket work.
     pub admission_rate_limiter: Arc<RedisRateLimiter>,
+
+    /// Per-connection frame budget for anonymous P2P-signaling EVENT/REQ
+    /// (`BUZZ_P2P_SIGNALING`). Keyed by connection id; entries expire after
+    /// one window and the map is capacity-bounded.
+    pub p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter,
 
     /// Per-agent sliding-window rate limiter for observer frames (kind 24200).
     /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
@@ -990,43 +1009,8 @@ impl AppState {
         let search_arc = Arc::new(search);
 
         let audit_arc = audit.into().map(Arc::new);
-        let (audit_tx, mut audit_rx) = mpsc::channel::<buzz_audit::NewAuditEntry>(1000);
-        let audit_for_worker = audit_arc.clone();
+        let (audit_tx, audit_rx) = mpsc::channel::<buzz_audit::NewAuditEntry>(1000);
         let audit_cancel = CancellationToken::new();
-        let audit_cancel_worker = audit_cancel.clone();
-        let audit_worker_handle = tokio::spawn(async move {
-            let Some(audit_for_worker) = audit_for_worker else {
-                audit_cancel_worker.cancelled().await;
-                return;
-            };
-            // Normal operation: process entries as they arrive.
-            loop {
-                tokio::select! {
-                    entry = audit_rx.recv() => {
-                        match entry {
-                            Some(entry) => log_audit_entry(&audit_for_worker, entry).await,
-                            None => break, // channel closed
-                        }
-                    }
-                    _ = audit_cancel_worker.cancelled() => {
-                        // Close the receiver: rejects future sends and lets us
-                        // drain everything already buffered without a race.
-                        audit_rx.close();
-                        break;
-                    }
-                }
-            }
-            // Drain: recv() returns buffered entries, then None once empty.
-            let mut drained = 0u32;
-            while let Some(entry) = audit_rx.recv().await {
-                log_audit_entry(&audit_for_worker, entry).await;
-                drained += 1;
-            }
-            if drained > 0 {
-                tracing::info!(drained, "audit worker flushed remaining entries");
-            }
-            tracing::warn!("audit log worker exited (expected on shutdown)");
-        });
 
         let git_max_concurrent_ops = config.git_max_concurrent_ops;
         let media_max_concurrent_uploads = config.media_max_concurrent_uploads;
@@ -1050,6 +1034,17 @@ impl AppState {
         let nip98_replay: Arc<dyn Nip98ReplayGuard> =
             Arc::new(RedisNip98ReplayGuard::new(redis_pool.clone()));
         let gif_http_client = crate::api::gifs::build_gif_http_client();
+        let llm_http_client = if config.llm.is_some() {
+            match crate::api::llm_gateway::build_llm_http_client() {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    tracing::error!(%error, "LLM gateway HTTP client could not be built; /llm/chat/completions will answer 503");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let admission_rate_limiter = Arc::new(RedisRateLimiter::new(redis_pool.clone()));
         let audit_enabled = audit_arc.is_some();
         // Build NIP-FI components before moving config into the state Arc.
@@ -1102,6 +1097,12 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            community_admin_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(std::time::Duration::from_secs(10))
+                    .build(),
+            ),
             audit_tx: audit_enabled.then_some(audit_tx),
             media_storage: Arc::new(media_storage),
             storage_sweep: Arc::new(tokio::sync::Mutex::new(
@@ -1118,7 +1119,9 @@ impl AppState {
             started_at: Instant::now(),
             nip98_replay,
             gif_http_client,
+            llm_http_client,
             admission_rate_limiter,
+            p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter::new(),
             observer_rate_limiter: Arc::new(DashMap::new()),
             media_upload_rate_limiter: Arc::new(DashMap::new()),
             invite_claim_rate_limiter: Arc::new(
@@ -1149,6 +1152,16 @@ impl AppState {
             nip_fi_verifier,
             nip_fi_jwks_source,
         };
+
+        // Spawn the audit worker *after* the state exists: appending a chain
+        // entry is only half the pipeline — each persisted entry is also
+        // published as a kind:48001 event through the guarded dispatch path,
+        // which needs the shared state (event store, relay signer, fan-out).
+        // The worker takes its own cheap clone (all shared state lives in
+        // inner `Arc`s) and detaches the audit *producer* channel inside
+        // [`spawn_audit_worker`]: it only consumes.
+        let audit_worker_handle = spawn_audit_worker(state.clone(), audit_rx, audit_cancel.clone());
+
         (
             state,
             AuditShutdownHandle {
@@ -1228,6 +1241,32 @@ impl AppState {
         let result = self.db.is_member(community_id, channel_id, pubkey).await?;
         self.membership_cache.insert(key, result);
         Ok(result)
+    }
+
+    /// Whether `pubkey` is the community owner or an admin
+    /// (`relay_members.role IN ('owner', 'admin')`), with a 10-second cache.
+    ///
+    /// This is the reader-role check behind the admin-only read gate
+    /// ([`buzz_core::kind::ADMIN_ONLY_KINDS`]). A database error is returned to
+    /// the caller — never cached and never mapped to `false` — so a read path
+    /// can fail the request instead of answering with an authoritative "no
+    /// entries".
+    pub async fn is_community_admin_cached(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+    ) -> Result<bool, buzz_db::DbError> {
+        let key = (community_id, pubkey.to_vec());
+        if let Some(cached) = self.community_admin_cache.get(&key) {
+            return Ok(cached);
+        }
+        let is_admin = self
+            .db
+            .get_relay_member(community_id, &hex::encode(pubkey))
+            .await?
+            .is_some_and(|member| matches!(member.role.as_str(), "owner" | "admin"));
+        self.community_admin_cache.insert(key, is_admin);
+        Ok(is_admin)
     }
 
     /// Invalidate caches after a membership change (add/remove member).
@@ -1628,35 +1667,211 @@ fn build_nip_fi_components(config: &crate::config::Config) -> NipFiComponents {
     (Some(verifier), Some(source))
 }
 
-/// Log a single audit entry with metrics. Extracted so the normal loop
-/// and the post-cancel drain share the same logic.
-async fn log_audit_entry(audit: &buzz_audit::AuditService, entry: buzz_audit::NewAuditEntry) {
+/// Spawn the audit worker task.
+///
+/// The worker is the single chokepoint of the audit pipeline: it consumes the
+/// bounded queue, appends each entry to the per-community hash chain (with
+/// `buzz-audit`'s advisory-lock serialization), and then publishes the persisted
+/// entry as a kind:48001 event so the chain is readable over a normal REQ.
+/// Append-then-publish in one task also fixes the order: envelopes land in seq
+/// order, and a publication retry can never interleave between two appends.
+///
+/// The worker's state clone has `audit_tx` detached — the worker only
+/// consumes, and dropping the *last* producer-side sender must still close the
+/// channel (`recv() -> None`) even though the worker keeps a state clone alive.
+fn spawn_audit_worker(
+    state: AppState,
+    mut audit_rx: mpsc::Receiver<buzz_audit::NewAuditEntry>,
+    cancel: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    let audit_for_worker = state.audit.clone();
+    let cancel_worker = cancel.clone();
+    let mut worker_state = state;
+    worker_state.audit_tx = None;
+    let worker_state = Arc::new(worker_state);
+
+    tokio::spawn(async move {
+        let Some(audit_for_worker) = audit_for_worker else {
+            cancel_worker.cancelled().await;
+            return;
+        };
+        // Normal operation: process entries as they arrive.
+        loop {
+            tokio::select! {
+                entry = audit_rx.recv() => {
+                    match entry {
+                        Some(entry) => {
+                            process_audit_entry(
+                                &worker_state,
+                                &audit_for_worker,
+                                &cancel_worker,
+                                entry,
+                            )
+                            .await
+                        }
+                        None => break, // channel closed
+                    }
+                }
+                _ = cancel_worker.cancelled() => {
+                    // Close the receiver: rejects future sends and lets us
+                    // drain everything already buffered without a race.
+                    audit_rx.close();
+                    break;
+                }
+            }
+        }
+        // Drain: recv() returns buffered entries, then None once empty.
+        let mut drained = 0u32;
+        while let Some(entry) = audit_rx.recv().await {
+            process_audit_entry(&worker_state, &audit_for_worker, &cancel_worker, entry).await;
+            drained += 1;
+        }
+        if drained > 0 {
+            tracing::info!(drained, "audit worker flushed remaining entries");
+        }
+        tracing::warn!("audit log worker exited (expected on shutdown)");
+    })
+}
+
+/// One queue entry through the whole pipeline: append to the chain, then
+/// publish the persisted entry as kind:48001.
+async fn process_audit_entry(
+    state: &Arc<AppState>,
+    audit: &buzz_audit::AuditService,
+    cancel: &CancellationToken,
+    entry: buzz_audit::NewAuditEntry,
+) {
+    let Some(persisted) = log_audit_entry(audit, cancel, entry).await else {
+        // Terminal append failure (the entry's community no longer exists) —
+        // already logged and counted inside `log_audit_entry`.
+        return;
+    };
+    publish_audit_entry_with_retry(state, &persisted, cancel).await;
+}
+
+/// Append one entry to the chain with metrics.
+///
+/// Failure semantics (the "durable retry queue" decision): the queued entry is
+/// the retry record, so every error that is not provably terminal preserves it
+/// and retries with capped backoff — the chain stops rather than records a
+/// hole. The one terminal case is the FK row for a deleted community
+/// ([`crate::audit::AppendFailure::TenantGone`]): that tenant's chain was
+/// removed with it, and retrying would block every other community's chain.
+/// Cancellation (shutdown) stops the retry loop; the entry is reported as
+/// unwritten rather than silently dropped.
+async fn log_audit_entry(
+    audit: &buzz_audit::AuditService,
+    cancel: &CancellationToken,
+    entry: buzz_audit::NewAuditEntry,
+) -> Option<buzz_audit::AuditEntry> {
     let t = std::time::Instant::now();
-    let mut retry_delay_ms = 50u64;
+    let mut retry_delay_ms = crate::audit::initial_retry_delay_ms();
     let mut retries = 0u64;
     loop {
         match audit.log(entry.clone()).await {
-            Ok(_) => {
+            Ok(audit_entry) => {
                 metrics::histogram!("buzz_audit_log_seconds").record(t.elapsed().as_secs_f64());
-                return;
-            }
-            Err(buzz_audit::AuditError::Database(sqlx::Error::Database(database_error)))
-                if database_error.code().as_deref() == Some("55P03") =>
-            {
-                retries += 1;
-                metrics::counter!("buzz_audit_log_lock_retries_total").increment(1);
-                tracing::warn!(
-                    retries,
-                    retry_delay_ms,
-                    "Audit advisory lock timed out; preserving entry for retry"
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(retry_delay_ms)).await;
-                retry_delay_ms = (retry_delay_ms * 2).min(1_000);
+                return Some(audit_entry);
             }
             Err(error) => {
-                metrics::counter!("buzz_audit_log_errors_total").increment(1);
-                tracing::error!("Audit log failed: {error}");
+                retries += 1;
+                match crate::audit::classify_append_failure(&error) {
+                    crate::audit::AppendFailure::LockTimeout => {
+                        metrics::counter!("buzz_audit_log_lock_retries_total").increment(1);
+                        tracing::warn!(
+                            retries,
+                            retry_delay_ms,
+                            "Audit advisory lock timed out; preserving entry for retry"
+                        );
+                    }
+                    crate::audit::AppendFailure::Retryable => {
+                        metrics::counter!("buzz_audit_log_errors_total").increment(1);
+                        tracing::error!(
+                            retries,
+                            action = entry.action.as_str(),
+                            object = ?entry.object_id,
+                            "Audit log write failed; preserving entry for retry: {error}"
+                        );
+                    }
+                    crate::audit::AppendFailure::TenantGone => {
+                        metrics::counter!("buzz_audit_log_errors_total").increment(1);
+                        metrics::counter!("buzz_audit_log_tenant_gone_total").increment(1);
+                        tracing::warn!(
+                            action = entry.action.as_str(),
+                            object = ?entry.object_id,
+                            "Audit entry dropped: its community no longer exists \
+                             (chain removed with the tenant): {error}"
+                        );
+                        return None;
+                    }
+                }
+                if crate::audit::audit_backoff(cancel, &mut retry_delay_ms).await {
+                    tracing::error!(
+                        action = entry.action.as_str(),
+                        object = ?entry.object_id,
+                        "Audit append cancelled on shutdown — queued entry not written"
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// Publish a persisted chain entry as a kind:48001 event, retrying failures.
+///
+/// The `audit_log` row written by the append step is the durable journal: a
+/// failed publication is retried from it (idempotently — the envelope event id
+/// is derived from the entry, so a retry can never duplicate a `seq` in the
+/// served window) and is never logged as success. Only shutdown cancellation
+/// stops the loop, and then the log states exactly what is outstanding: the
+/// entry is durable in `audit_log` but not yet served.
+pub(crate) async fn publish_audit_entry_with_retry(
+    state: &Arc<AppState>,
+    entry: &buzz_audit::AuditEntry,
+    cancel: &CancellationToken,
+) {
+    let t = std::time::Instant::now();
+    let mut retry_delay_ms = crate::audit::initial_retry_delay_ms();
+    let mut retries = 0u64;
+    loop {
+        match crate::audit::publish_audit_entry(state, entry).await {
+            Ok(crate::audit::PublishOutcome::TenantGone) => {
+                metrics::counter!("buzz_audit_publish_total", "outcome" => "tenant_gone")
+                    .increment(1);
+                tracing::warn!(
+                    seq = entry.seq,
+                    "kind:48001 publication skipped: community no longer resolves to a host"
+                );
                 return;
+            }
+            Ok(outcome) => {
+                metrics::histogram!("buzz_audit_publish_seconds").record(t.elapsed().as_secs_f64());
+                tracing::debug!(
+                    seq = entry.seq,
+                    ?outcome,
+                    "audit entry published as kind:48001"
+                );
+                return;
+            }
+            Err(error) => {
+                retries += 1;
+                metrics::counter!("buzz_audit_publish_errors_total").increment(1);
+                tracing::error!(
+                    retries,
+                    seq = entry.seq,
+                    action = entry.action.as_str(),
+                    "kind:48001 publication failed (entry durable in audit_log; \
+                     retrying): {error}"
+                );
+                if crate::audit::audit_backoff(cancel, &mut retry_delay_ms).await {
+                    tracing::error!(
+                        seq = entry.seq,
+                        "kind:48001 publication cancelled on shutdown — entry is \
+                         durable in audit_log but not yet served"
+                    );
+                    return;
+                }
             }
         }
     }
@@ -1839,7 +2054,7 @@ pub(crate) mod tests {
         let audit = Arc::new(AuditService::new(audit_pool));
         let worker = tokio::spawn({
             let audit = Arc::clone(&audit);
-            async move { log_audit_entry(&audit, entry).await }
+            async move { log_audit_entry(&audit, &CancellationToken::new(), entry).await }
         });
 
         // Observe one timed-out advisory-lock attempt and then a second wait.

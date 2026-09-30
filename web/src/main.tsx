@@ -5,6 +5,7 @@ import { App } from "@/app/App";
 import "@fontsource-variable/inter/wght.css";
 import "@/shared/styles/globals.css";
 import { ThemeProvider } from "@/shared/theme/ThemeProvider";
+import { TypographyProvider } from "@/shared/theme/TypographyProvider";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 
@@ -26,10 +27,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TooltipProvider delayDuration={300}>
-          <App />
-          <Toaster />
-        </TooltipProvider>
+        <TypographyProvider>
+          <TooltipProvider delayDuration={300}>
+            <App />
+            <Toaster />
+          </TooltipProvider>
+        </TypographyProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>,

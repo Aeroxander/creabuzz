@@ -1,0 +1,76 @@
+name: CI / Contracts
+on:
+  workflow_call:
+
+# The launchpad's money-plane guarantees (executor binding, reserve lock, stake
+# slashing, allowance enforcement, real-CCA lifecycle) live in Solidity. Before
+# this lane no workflow ran `forge test` and none checked out the submodules,
+# so none of them was ever gated. The lane also byte-matches the deployment
+# bytecode embedded in the web/desktop graduationArtifact.ts twins against
+# `forge build` output and runs the foundry.lock checker's unit tests.
+jobs:
+  forge:
+    name: Forge
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: foundry.lock matches the submodule pins
+        run: node scripts/check-foundry-lock.mjs
+      - name: check-foundry-lock unit tests
+        run: node --test scripts/check-foundry-lock.test.mjs
+      - name: Install Foundry
+        # The `stable` release channel; pin an exact version here when the
+        # suite needs reproducibility beyond the repo's foundry.toml settings.
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: forge build
+        working-directory: contracts
+        env:
+          FOUNDRY_LINT_LINT_ON_BUILD: "false"
+        run: forge build
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # The launchpad deploys GraduationExecutor and AllowlistHook from creation
+      # bytecode embedded in packages/creaton-core graduationArtifact.ts (shared
+      # by web and desktop; regenerate with scripts/regen-graduation-artifact.mjs).
+      # This runs the drift test against the `forge build` output above. Without
+      # REQUIRE_CONTRACT_ARTIFACTS=1 a missing contracts/out makes the test
+      # skip instead of fail, and a stale embed ships green. The web claim
+      # selectors are checked against the same build.
+      - name: Graduation artifact drift (shared core)
+        working-directory: packages/creaton-core
+        env:
+          REQUIRE_CONTRACT_ARTIFACTS: "1"
+        run: node --experimental-strip-types --test src/launchpad/graduationArtifact.test.mjs
+      - name: Milestone claim selectors (web)
+        working-directory: web
+        env:
+          REQUIRE_CONTRACT_ARTIFACTS: "1"
+        run: node --experimental-strip-types --test src/features/launchpad/lib/claim-tx.test.mjs
+      - name: forge test
+        working-directory: contracts
+        env:
+          FOUNDRY_LINT_LINT_ON_BUILD: "false"
+        run: forge test
+      - name: Save pnpm store cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}

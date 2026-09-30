@@ -18,7 +18,6 @@ use axum::{
     Json,
 };
 use base64::Engine;
-use buzz_audit::{AuditAction, NewAuditEntry};
 use buzz_auth::DenialClass;
 use buzz_core::tenant::TenantContext;
 use buzz_media::auth::BlossomStrictness;
@@ -575,27 +574,20 @@ async fn upload_blob_result(
     )
     .increment(1);
 
-    // Audit via bounded channel — same pattern as event audit.
-    if let Some(audit_tx) = &state.audit_tx {
-        let desc = descriptor.clone();
-        if let Err(e) = audit_tx
-            .send(NewAuditEntry {
-                community_id: auth.tenant.community(),
-                action: AuditAction::MediaUploaded,
-                actor_pubkey: Some(auth.auth_event.pubkey.to_bytes().to_vec()),
-                object_id: Some(desc.sha256.clone()),
-                detail: serde_json::json!({
-                    "sha256": desc.sha256,
-                    "size": desc.size,
-                    "mime": desc.mime_type,
-                }),
-            })
-            .await
-        {
-            tracing::error!("Media audit channel closed — entry lost: {e}");
-            metrics::counter!("buzz_audit_send_errors_total").increment(1);
-        }
-    }
+    // Audit via the shared bounded-channel seam (backpressure like event audit;
+    // closed-queue failures are logged and counted inside `record_audit`).
+    crate::audit::record_audit(
+        &state,
+        crate::audit::AuditRecord::new(crate::audit::AuditSite::MediaUploaded, &auth.tenant)
+            .actor(Some(auth.auth_event.pubkey.to_bytes().to_vec()))
+            .object_id(descriptor.sha256.clone())
+            .detail(serde_json::json!({
+                "sha256": descriptor.sha256,
+                "size": descriptor.size,
+                "mime": descriptor.mime_type,
+            })),
+    )
+    .await;
 
     serving_write.finish().await.map_err(serving_lease_lost)?;
     Ok(Json(descriptor))

@@ -81,6 +81,7 @@ import {
   KIND_TEXT_NOTE,
   KIND_TEAM_CATALOG,
   KIND_USER_STATUS,
+  LAUNCHPAD_EVENT_KINDS,
 } from "@/shared/constants/kinds";
 import type {
   RawAcpAuthMethodsResult,
@@ -218,6 +219,8 @@ type E2eConfig = {
     };
     /** Native picker boundary result for Pocket voice import tests. */
     pocketVoiceImportResult?: "success" | "cancel" | "invalid";
+    /** Override the org EVM value-layer status served to the exit affordance. */
+    evmStatus?: { rpcConfigured: boolean; spenderConfigured: boolean };
     /** Advertised HEAD for the first mock project without adding that branch. */
     projectHeadBranch?: string;
     /** Override the repository access channel for project authorization states. */
@@ -338,6 +341,9 @@ type E2eConfig = {
     personas?: MockPersonaSeed[];
     /** Community catalog replaceable-event heads returned by relay queries. */
     personaCatalogEvents?: RelayEvent[];
+    /** Launchpad feed events (kinds 37001/47002-47005) returned by relay
+     *  queries — seed read-only launch state for the ops-cockpit surfaces. */
+    launchpadEvents?: RelayEvent[];
     /** Outcomes for successive explicit persona share publications. */
     personaSharePublicationStatuses?: Array<"published" | "queued">;
     teams?: MockTeamSeed[];
@@ -1520,6 +1526,7 @@ declare global {
       slotId: string;
     }) => unknown;
     __BUZZ_E2E_SEED_MOCK_REMINDERS__?: (reminders: RelayEvent[]) => void;
+    __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__?: (events: RelayEvent[]) => void;
     __BUZZ_E2E_QUERY_CLIENT__?: {
       invalidateQueries: (filters: {
         queryKey: readonly unknown[];
@@ -3336,6 +3343,21 @@ const deferredSendMessageLiveEchoes: Array<{
 }> = [];
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
+
+// NIP-ORG + agent-metric events served to org-surface reads. Seeded by
+// specs via __BUZZ_E2E_SEED_MOCK_ORG_EVENTS__; the real relay is the
+// system of record, this is only the mock's read model. 44010 (agent
+// capabilities) feeds the org dashboard liveness; 46010/46030/46031
+// (approval request/grant/deny) feed the dashboard activity feed, and
+// 37014 spend receipts likewise.
+const MOCK_ORG_KINDS = new Set([
+  37010, 37011, 37012, 37013, 37014, 44002, 44010, 44200, 46010, 46030, 46031,
+  // Self-organizing agent teams kinds (44020-44022): strategy bank, runs,
+  // and per-turn events served to the org Teams surface reads.
+  44020, 44021, 44022,
+]);
+const mockOrgEvents: RelayEvent[] = [];
+const mockLaunchpadEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
@@ -3528,6 +3550,16 @@ function resetMockPersonaCatalogEvents(config: E2eConfig | undefined) {
   mockPersonaEvents.length = 0;
   for (const event of config?.mock?.personaCatalogEvents ?? []) {
     mockPersonaEvents.push({
+      ...event,
+      tags: event.tags.map((tag) => [...tag]),
+    });
+  }
+}
+
+function resetMockLaunchpadEvents(config: E2eConfig | undefined) {
+  mockLaunchpadEvents.length = 0;
+  for (const event of config?.mock?.launchpadEvents ?? []) {
+    mockLaunchpadEvents.push({
       ...event,
       tags: event.tags.map((tag) => [...tag]),
     });
@@ -11062,6 +11094,45 @@ function sendToMockSocket(args: {
       return;
     }
 
+    // NIP-ORG org kinds and agent turn metrics: community-level, no #h.
+    // Match kind, #d, #p, and authors like the relay's global read path.
+    if (filter.kinds?.some((kind) => MOCK_ORG_KINDS.has(kind))) {
+      const dValues = filter["#d"];
+      const pValues = filter["#p"];
+      const authors = filter.authors?.map((a) => a.toLowerCase());
+      for (const event of mockOrgEvents) {
+        if (filter.kinds && !filter.kinds.includes(event.kind)) continue;
+        if (authors && !authors.includes(event.pubkey.toLowerCase())) {
+          continue;
+        }
+        const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+        if (dValues && (!dTag || !dValues.includes(dTag))) continue;
+        if (pValues) {
+          const pTags = event.tags.filter((t) => t[0] === "p").map((t) => t[1]);
+          if (!pValues.some((p) => pTags.includes(p))) continue;
+        }
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
+    // Launchpad feed (read-only): seeded launch records, bid mirrors,
+    // updates, proposals, and receipts for the ops-cockpit surfaces. The
+    // bidder money plane lives on the web app — desktop only reads this feed.
+    if (
+      filter.kinds?.some((kind) =>
+        (LAUNCHPAD_EVENT_KINDS as readonly number[]).includes(kind),
+      )
+    ) {
+      for (const event of mockLaunchpadEvents) {
+        if (filter.kinds && !filter.kinds.includes(event.kind)) continue;
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     // Project queries: NIP-34 kinds, or kind:1 comments scoped by repo `a`
     // tag or by issue/PR root `e` tag (discussions, approvals, review
     // requests, assignment operations). Channel messages are kind 9, so a
@@ -11360,6 +11431,25 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (MOCK_ORG_KINDS.has(event.kind)) {
+      // NIP-33 LWW upsert like the relay: newest republish of a (pubkey,
+      // kind, d-tag) replaces the stored one. Keeps wizard publishes and
+      // revocations visible to the org read model.
+      const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+      if (dTag) {
+        const idx = mockOrgEvents.findIndex(
+          (e) =>
+            e.pubkey.toLowerCase() === event.pubkey.toLowerCase() &&
+            e.kind === event.kind &&
+            e.tags.some((t) => t[0] === "d" && t[1] === dTag),
+        );
+        if (idx >= 0) mockOrgEvents.splice(idx, 1);
+      }
+      mockOrgEvents.push(event);
+      sendWsText(socket.handler, ["OK", event.id, true, ""]);
+      return;
+    }
+
     const channelId = getChannelIdFromTags(event.tags);
     if (!channelId) {
       sendWsText(socket.handler, [
@@ -11476,6 +11566,7 @@ export function maybeInstallE2eTauriMocks() {
   resetMockMesh();
   resetMockUserStatuses();
   resetMockPersonaCatalogEvents(config);
+  resetMockLaunchpadEvents(config);
   resetMockObservedUnread();
   resetMockTeamCatalogEvents(config);
   resetMockSaveSubscriptions(config);
@@ -11882,6 +11973,13 @@ export function maybeInstallE2eTauriMocks() {
     mockReminderEvents.length = 0;
     for (const r of reminders) {
       mockReminderEvents.push(r);
+    }
+  };
+
+  window.__BUZZ_E2E_SEED_MOCK_ORG_EVENTS__ = (events) => {
+    mockOrgEvents.length = 0;
+    for (const event of events) {
+      mockOrgEvents.push(event);
     }
   };
 
@@ -12781,6 +12879,181 @@ export function maybeInstallE2eTauriMocks() {
             pubkey === (identity?.pubkey ?? DEFAULT_MOCK_IDENTITY.pubkey),
         };
       }
+      case "org_classify_task": {
+        const request = (payload ?? null) as {
+          taskEventId?: string;
+          publish?: boolean;
+        } | null;
+        if (!request?.taskEventId) {
+          throw new Error("org_classify_task requires taskEventId");
+        }
+        if (request.publish) {
+          return {
+            mode: "published",
+            taskEventId: request.taskEventId,
+            eventId: `mock-record-${request.taskEventId.slice(0, 12)}`,
+          };
+        }
+        return {
+          mode: "preview",
+          taskEventId: request.taskEventId,
+          draft: {
+            action: "Mock drafted contribution for the completed task",
+            dimensions: { build: 0.8, coordinate: 0.2 },
+            humanVsAi: { human: 0.7, ai: 0.3 },
+            reviewStatus: "pending",
+          },
+        };
+      }
+      case "org_classify_all_done": {
+        return {
+          ok: 2,
+          skipped: 1,
+          failed: 0,
+          tasks: [
+            {
+              status: "ok",
+              detail: "published mock-record-aaa",
+              line: "[ok]     1111aaaa Ship the release -> published mock-record-aaa",
+            },
+            {
+              status: "ok",
+              detail: "published mock-record-bbb",
+              line: "[ok]     2222bbbb Harden retries -> published mock-record-bbb",
+            },
+            {
+              status: "skip",
+              detail: "record already exists",
+              line: "[skip]   3333cccc Older task (37013 record with d = task id already exists)",
+            },
+          ],
+        };
+      }
+      case "org_evm_status": {
+        // The e2e mock always presents a configured EVM value layer so the
+        // exit affordance renders as an action (tests also cover the hint
+        // path by overriding the response to "unconfigured").
+        const override = activeConfig?.mock?.evmStatus;
+        if (override) return override;
+        return { rpcConfigured: true, spenderConfigured: true };
+      }
+      case "team_run": {
+        const request = (payload ?? null) as {
+          strategyId?: string;
+          problem?: string;
+          orgNode?: string | null;
+        } | null;
+        if (!request?.strategyId || !request?.problem) {
+          throw new Error("team_run requires strategyId and problem");
+        }
+        const runId = `${request.strategyId}-${Math.floor(Date.now() / 1000)}`;
+        return {
+          runId,
+          eventId: `mock-run-${runId}`,
+          turns: 4,
+        };
+      }
+      case "team_reflect": {
+        const request = (payload ?? null) as { runId?: string } | null;
+        if (!request?.runId) {
+          throw new Error("team_reflect requires runId");
+        }
+        return {
+          revisionD: "sat-smoke-2-rev1",
+          eventId: "mock-revision-sat-smoke-2-rev1",
+          revised: {
+            v: 1,
+            name: "Mock reflected strategy",
+            description: "Revision produced by the mocked reflection.",
+            teamworkPrompt: "Keep auditing.",
+            roles: { "agent-0": "Solver." },
+            steps: [
+              {
+                participants: ["agent-0"],
+                rounds: 1,
+                flow: "local",
+                prompt: "Solve.",
+              },
+            ],
+            finalWriter: "agent-0",
+            parentStrategy: "sat-smoke-2",
+          },
+        };
+      }
+      case "agwiki_distill": {
+        const request = (payload ?? null) as { space?: string } | null;
+        const space = request?.space ?? "default";
+        // A published run: exit 0 + the normalized write response line the
+        // frontend's `publishedEventId` seam parses.
+        return {
+          ok: true,
+          stdout: `{"event_id":"mock-agwiki-${space}","accepted":true,"message":""}\npublished ${space}/standup`,
+          stderr: "",
+        };
+      }
+      case "team_strategy_put": {
+        const request = (payload ?? null) as { id?: string } | null;
+        if (!request?.id) {
+          throw new Error("team_strategy_put requires id");
+        }
+        return {
+          eventId: `mock-strategy-${request.id}`,
+          accepted: true,
+          message: "",
+        };
+      }
+      case "team_strategies_seed": {
+        return {
+          published: 3,
+          ids: [
+            "mechanistic_step_audit",
+            "independent_solve_then_synthesis",
+            "suspicious_consensus_challenger",
+          ],
+        };
+      }
+      case "evm_wallet_status": {
+        // The e2e mock always holds a wallet so the send affordances render
+        // (tests cover the no-wallet path by overriding the response).
+        return {
+          hasWallet: true,
+          address: `0x${"42".repeat(20)}`,
+        };
+      }
+      case "evm_wallet_create":
+      case "evm_wallet_import": {
+        return { address: `0x${"42".repeat(20)}` };
+      }
+      case "evm_chain_status": {
+        return { chainId: 31337 };
+      }
+      case "evm_call": {
+        return { returnData: "0x" };
+      }
+      case "evm_send_transaction": {
+        return {
+          txHash: `0x${"cd".repeat(32)}`,
+          status: "success",
+          blockNumber: 1,
+          gasUsed: "21000",
+          contractAddress: null,
+        };
+      }
+      case "org_ragequit": {
+        const request = (payload ?? null) as {
+          dao?: string;
+          shares?: string | null;
+        } | null;
+        const dao =
+          request?.dao ?? "0x1234567890abcdef1234567890abcdef12345678";
+        return {
+          txHash: `0x${"ab".repeat(32)}`,
+          dao,
+          sharesBurned: request?.shares ?? "1",
+          sharesRemaining: "0",
+          lootRemaining: "0",
+        };
+      }
       case "get_nsec": {
         const nsecSequence = activeConfig?.mock?.nsecErrors;
         if (nsecSequence && nsecSequence.length > 0) {
@@ -12839,6 +13112,19 @@ export function maybeInstallE2eTauriMocks() {
         mockIdentityLockedCleared = true;
         return importMockIdentity(input);
       }
+      case "start_identity_link": {
+        // Browser sign-in handoff: mint a deterministic one-time request so
+        // the settings surface can render its waiting state. Specs deliver
+        // outcomes by emitting "deep-link-identity" with a matching id.
+        return {
+          id: "00000000-0000-4000-8000-000000000001",
+          url: "https://app.example.com/link-device?pub=mock&nonce=mock&cb=creaton%3A%2F%2Fidentity",
+        };
+      }
+      case "cancel_identity_link":
+        return;
+      case "take_identity_link_result":
+        return null;
       case "validate_repos_dir":
         // The browser harness has no host filesystem to validate. Treat the
         // seeded empty/default path as valid so Add Community can continue to

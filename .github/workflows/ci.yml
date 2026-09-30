@@ -22,11 +22,16 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      # Runtime suites go through upstream's conservative PR-file-list-limit
+      # selection; contracts is not a runtime suite and passes through the raw
+      # paths-filter output (scripts/ci-runtime-selection.mjs only knows the
+      # five runtime keys).
       rust: ${{ steps.selection.outputs.rust }}
       desktop: ${{ steps.selection.outputs.desktop }}
       desktop-rust: ${{ steps.selection.outputs.desktop-rust }}
       web: ${{ steps.selection.outputs.web }}
       mobile: ${{ steps.selection.outputs.mobile }}
+      contracts: ${{ steps.filter.outputs.contracts }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -69,12 +74,23 @@ jobs:
               - 'scripts/model-capabilities.json'
               - 'scripts/normative-corpus.json'
               - 'desktop/**'
+              - '!desktop/src-tauri/**'
+              - 'packages/**'
               - 'pnpm-lock.yaml'
             desktop-rust:
               - 'desktop/src-tauri/**'
             web:
               - 'web/**'
+              - 'packages/**'
               - 'pnpm-lock.yaml'
+            contracts:
+              - 'contracts/**'
+              - '.gitmodules'
+              - 'scripts/check-foundry-lock.mjs'
+              - 'scripts/regen-graduation-artifact.mjs'
+              - 'packages/creaton-core/src/launchpad/graduationArtifact*'
+              - '.github/workflows/_ci-contracts.yml'
+              - '.github/workflows/ci.yml'
             mobile:
               - 'mobile/**'
               - 'scripts/mobile-release.sh'
@@ -242,6 +258,12 @@ jobs:
       web: ${{ needs.changes.outputs.web == 'true' }}
       mobile: ${{ needs.changes.outputs.mobile == 'true' }}
       lane: mobile-swift
+
+  contracts:
+    name: Contracts
+    needs: [changes]
+    if: github.event_name == 'push' || needs.changes.outputs.contracts == 'true'
+    uses: ./.github/workflows/_ci-contracts.yml
 
   security-domain:
     name: Security Domain

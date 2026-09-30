@@ -5,6 +5,7 @@ import { expect, test, type Locator } from "@playwright/test";
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 import { expectCornerRadiusPx, expectSmoothCorners } from "../helpers/css";
+import { e2eOrigin } from "../helpers/origin";
 import { openSettings } from "../helpers/settings";
 
 const LINK_PREVIEW_IMAGE = readFileSync(
@@ -1771,7 +1772,7 @@ test("copy a rendered code block and paste it back as code", async ({
   page,
 }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
+    origin: e2eOrigin(),
   });
 
   const code = "# not a heading\nconst answer = 42;\n  indented();";
@@ -1814,7 +1815,7 @@ test("pasting a long copied code block scrolls composer to cursor", async ({
   page,
 }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
+    origin: e2eOrigin(),
   });
 
   const longCode = Array.from(
@@ -1858,7 +1859,7 @@ test("code block shows language label when language is specified", async ({
   page,
 }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
+    origin: e2eOrigin(),
   });
 
   await page.goto("/");

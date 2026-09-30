@@ -40,6 +40,45 @@ pub use error::{PartialProgress, WorkflowError};
 pub use executor::ExecutionResult;
 pub use schema::{ActionDef, Step, TriggerDef, WorkflowDef};
 
+/// Outcome of [`WorkflowEngine::suspend_run`] (WF-08).
+#[derive(Debug)]
+pub struct SuspensionOutcome {
+    /// Event ID of the emitted kind:46010 notification, if emission succeeded.
+    /// `None` when the run has no channel scope or emission failed — the
+    /// suspension itself is still durable either way.
+    pub approval_event_id: Option<String>,
+    /// Sink error text when emission failed after durable persistence.
+    /// Always `None` when `approval_event_id` is `Some`.
+    pub emission_error: Option<String>,
+    /// When the pending approval expires (parsed from the step timeout).
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Shared context for settling a workflow run (WF-08).
+///
+/// Bundles the identifiers every execution path already carries so
+/// `suspend_run` / `finish_execution` stay under the argument-count lint.
+/// Borrowed: the caller retains ownership of the definition and context.
+pub struct Suspension<'a> {
+    /// Server-resolved community owning the workflow and run.
+    pub community_id: CommunityId,
+    /// Workflow definition id.
+    pub workflow_id: Uuid,
+    /// Channel scope for the kind:46010 notification (`None` skips emission;
+    /// persistence still happens).
+    pub channel_id: Option<Uuid>,
+    /// Workflow owner pubkey bytes (hex-encoded for attribution tags).
+    pub author_pubkey: &'a [u8],
+    /// Run being settled.
+    pub run_id: Uuid,
+    /// Parsed workflow definition (step lookup + template rendering).
+    pub def: &'a WorkflowDef,
+    /// Trigger context for template rendering.
+    pub trigger_ctx: &'a executor::TriggerContext,
+    /// Pre-approval trace entries, prepended on the resume path.
+    pub existing_trace: Option<Vec<serde_json::Value>>,
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -204,8 +243,11 @@ impl WorkflowEngine {
 
     /// Finalize a workflow run after execution completes or fails.
     ///
-    /// This is the **single** place that maps an executor result to a DB status
-    /// update. All execution paths (event-triggered, manual trigger/webhook,
+    /// Together with [`WorkflowEngine::suspend_run`], this is the single
+    /// choke point mapping executor results to DB status updates — terminal
+    /// outcomes here, approval suspensions in `suspend_run`. Prefer
+    /// [`WorkflowEngine::finish_execution`], which branches correctly.
+    /// All execution paths (event-triggered, manual trigger/webhook,
     /// approval resume) call this instead of duplicating the 3-way match.
     ///
     /// `existing_trace` is prepended to the executor's trace — used by the
@@ -227,12 +269,15 @@ impl WorkflowEngine {
                 let step_count = result.step_index as i32;
 
                 if result.approval_token.is_some() {
-                    // Approval gates are not yet implemented (WF-08).
-                    // Fail explicitly rather than creating unreachable WaitingApproval rows.
-                    tracing::warn!(
+                    // Defensive net only: callers must branch on
+                    // `approval_token.is_some()` and call `suspend_run`
+                    // instead of `finalize_run`. Reaching here means a caller
+                    // bug — fail closed with a distinct code so it is
+                    // diagnosable rather than silently completing.
+                    tracing::error!(
                         run_id = %run_id,
                         step_index = result.step_index,
-                        "Workflow hit approval gate — not yet implemented, marking as failed"
+                        "Workflow hit approval gate but suspend_run was not called — caller bug, marking as failed"
                     );
                     if let Err(e) = self
                         .db
@@ -243,8 +288,8 @@ impl WorkflowEngine {
                             step_count,
                             &trace_json,
                             Some(buzz_db::workflow::WorkflowRunFailure {
-                                code: "approval_not_supported",
-                                message: "approval gates not yet implemented — see WF-08",
+                                code: "approval_not_suspended",
+                                message: "approval gate reached without suspend_run — caller bug",
                             }),
                         )
                         .await
@@ -300,6 +345,200 @@ impl WorkflowEngine {
                         "Failed to update run to Failed: {db_err}"
                     );
                 }
+            }
+        }
+    }
+
+    /// Suspend a run at an approval gate (WF-08).
+    ///
+    /// The terminal counterpart to [`WorkflowEngine::finalize_run`]: callers
+    /// branch on `result.approval_token.is_some()` and call this instead of
+    /// `finalize_run`. It durably records the suspension (approval row +
+    /// `WaitingApproval` in one transaction) and then emits the kind:46010
+    /// notification as best effort.
+    ///
+    /// - Persistence is the contract: if `suspend_workflow_run` fails, this
+    ///   returns `Err` and the run keeps its prior status — the caller must
+    ///   surface the failure, never pretend the gate was recorded.
+    /// - Emission is a notification: if the sink fails, the suspension stands
+    ///   (the approval row is the durable retry record) and the returned
+    ///   outcome carries `approval_event_id: None` plus the error.
+    /// - `channel_id` is `None` for channel-less runs (cron/schedule without
+    ///   a channel scope): persistence still happens, emission is skipped —
+    ///   approvals remain actionable through `get_run_approvals`.
+    pub async fn suspend_run(
+        &self,
+        ctx: Suspension<'_>,
+        result: ExecutionResult,
+    ) -> Result<SuspensionOutcome, WorkflowError> {
+        let Suspension {
+            community_id,
+            workflow_id,
+            channel_id,
+            author_pubkey,
+            run_id,
+            def,
+            trigger_ctx,
+            existing_trace,
+        } = ctx;
+        let token = result.approval_token.ok_or_else(|| {
+            WorkflowError::InvalidDefinition("suspend_run called without an approval token".into())
+        })?;
+        let step = def.steps.get(result.step_index).ok_or_else(|| {
+            WorkflowError::InvalidDefinition(format!(
+                "approval suspend at out-of-range step index {}",
+                result.step_index
+            ))
+        })?;
+        let ActionDef::RequestApproval {
+            from,
+            message,
+            timeout,
+        } = &step.action
+        else {
+            return Err(WorkflowError::InvalidDefinition(format!(
+                "approval suspend at non-approval step '{}'",
+                step.id
+            )));
+        };
+
+        // Render from/message against trigger context + accumulated outputs.
+        // A render failure fails closed: suspending with unrendered
+        // `{{...}}` literals would notify the wrong approver.
+        let rendered_from = executor::resolve_template(from, trigger_ctx, &result.step_outputs)?;
+        let rendered_message =
+            executor::resolve_template(message, trigger_ctx, &result.step_outputs)?;
+
+        let timeout_secs = match timeout.as_deref() {
+            None => 24 * 3600,
+            Some(raw) => executor::parse_duration_secs(raw)?,
+        };
+        let expires_at = Utc::now() + chrono::Duration::seconds(timeout_secs as i64);
+
+        let mut full_trace = existing_trace.unwrap_or_default();
+        full_trace.extend(result.trace);
+        let trace_json = serde_json::Value::Array(full_trace);
+
+        self.db
+            .suspend_workflow_run(
+                community_id,
+                run_id,
+                result.step_index as i32,
+                &trace_json,
+                buzz_db::workflow::CreateApprovalParams {
+                    community_id,
+                    token: &token,
+                    workflow_id,
+                    run_id,
+                    step_id: &step.id,
+                    step_index: result.step_index as i32,
+                    approver_spec: &rendered_from,
+                    expires_at,
+                },
+            )
+            .await
+            .map_err(WorkflowError::from)?;
+
+        tracing::info!(
+            run_id = %run_id,
+            step_index = result.step_index,
+            "Workflow run suspended at approval gate"
+        );
+
+        // Best-effort notification. The suspension is already durable; an
+        // emission failure is logged with the run context, never rolled back.
+        let mut approval_event_id = None;
+        let mut emission_error = None;
+        if let Some(channel) = channel_id {
+            let token_hash_hex = buzz_db::workflow::approval_token_hash_hex(&token);
+            let author_hex = hex::encode(author_pubkey);
+            match self
+                .action_sink()?
+                .emit_approval_request(
+                    community_id,
+                    &channel.to_string(),
+                    &token_hash_hex,
+                    &rendered_from,
+                    &rendered_message,
+                    &author_hex,
+                )
+                .await
+            {
+                Ok(event_id) => approval_event_id = Some(event_id),
+                Err(e) => {
+                    tracing::error!(
+                        run_id = %run_id,
+                        "Approval persisted but kind:46010 emission failed: {e}"
+                    );
+                    emission_error = Some(e.to_string());
+                }
+            }
+        }
+
+        Ok(SuspensionOutcome {
+            approval_event_id,
+            emission_error,
+            expires_at,
+        })
+    }
+
+    /// Settle a workflow run after execution: suspend at approval gates,
+    /// finalize terminal outcomes (WF-08).
+    ///
+    /// This is the choke point every execution path must use instead of
+    /// calling `finalize_run` directly: it branches suspended results
+    /// (`approval_token.is_some()`) to [`WorkflowEngine::suspend_run`] and
+    /// everything else to [`WorkflowEngine::finalize_run`].
+    ///
+    /// If suspension itself fails, the run is marked `Failed` with code
+    /// `approval_suspend_failed` so the stall is visible rather than silent —
+    /// a run stuck in a non-terminal status with no pending approval would
+    /// otherwise wait out its expiry with nobody able to act.
+    pub async fn finish_execution(
+        &self,
+        ctx: Suspension<'_>,
+        result: Result<ExecutionResult, (WorkflowError, PartialProgress)>,
+    ) {
+        let community_id = ctx.community_id;
+        let run_id = ctx.run_id;
+        let existing_trace = ctx.existing_trace.clone();
+        match result {
+            Ok(suspended) if suspended.approval_token.is_some() => {
+                let run_id = ctx.run_id;
+                let community_id = ctx.community_id;
+                match self.suspend_run(ctx, suspended).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!(
+                            run_id = %run_id,
+                            "Failed to suspend run at approval gate: {e} — marking Failed"
+                        );
+                        if let Err(db_err) = self
+                            .db
+                            .update_workflow_run(
+                                community_id,
+                                run_id,
+                                RunStatus::Failed,
+                                0,
+                                &serde_json::Value::Array(vec![]),
+                                Some(buzz_db::workflow::WorkflowRunFailure {
+                                    code: "approval_suspend_failed",
+                                    message: &e.to_string(),
+                                }),
+                            )
+                            .await
+                        {
+                            tracing::error!(
+                                run_id = %run_id,
+                                "Failed to mark unsuspended run as Failed: {db_err}"
+                            );
+                        }
+                    }
+                }
+            }
+            other => {
+                self.finalize_run(community_id, run_id, other, existing_trace)
+                    .await;
             }
         }
     }
@@ -428,13 +667,27 @@ impl WorkflowEngine {
             let engine = Arc::clone(self);
             let def_clone = def.clone();
             let ctx_clone = trigger_ctx.clone();
+            let workflow_id = workflow.id;
+            let owner_pubkey = workflow.owner_pubkey.clone();
 
             tokio::spawn(async move {
                 let result =
                     executor::execute_run(&engine, community_id, run_id, &def_clone, &ctx_clone)
                         .await;
                 engine
-                    .finalize_run(community_id, run_id, result, None)
+                    .finish_execution(
+                        Suspension {
+                            community_id,
+                            workflow_id,
+                            channel_id: Some(channel_id),
+                            author_pubkey: &owner_pubkey,
+                            run_id,
+                            def: &def_clone,
+                            trigger_ctx: &ctx_clone,
+                            existing_trace: None,
+                        },
+                        result,
+                    )
                     .await;
             });
         }
@@ -723,6 +976,9 @@ impl WorkflowEngine {
                 let engine = Arc::clone(self);
                 let def_clone = def.clone();
                 let ctx_clone = trigger_ctx.clone();
+                let workflow_id = workflow.id;
+                let workflow_channel_id = workflow.channel_id;
+                let owner_pubkey = workflow.owner_pubkey.clone();
                 tokio::spawn(async move {
                     let result = executor::execute_run(
                         &engine,
@@ -733,7 +989,19 @@ impl WorkflowEngine {
                     )
                     .await;
                     engine
-                        .finalize_run(community_id, run_id, result, None)
+                        .finish_execution(
+                            Suspension {
+                                community_id,
+                                workflow_id,
+                                channel_id: workflow_channel_id,
+                                author_pubkey: &owner_pubkey,
+                                run_id,
+                                def: &def_clone,
+                                trigger_ctx: &ctx_clone,
+                                existing_trace: None,
+                            },
+                            result,
+                        )
                         .await;
                 });
             }
@@ -2085,6 +2353,676 @@ steps:
             owner_runs.len(),
             1,
             "channel owner's call_webhook workflow fires"
+        );
+    }
+
+    // -- WF-08: approval suspend/resume (requires Postgres) -------------------
+
+    struct ApprovalEmission {
+        channel_id: String,
+        token_hash_hex: String,
+        approver_spec: String,
+        message: String,
+        author_pubkey: String,
+    }
+
+    struct RecordingSink {
+        emissions: std::sync::Mutex<Vec<ApprovalEmission>>,
+    }
+
+    impl crate::ActionSink for RecordingSink {
+        fn send_message(
+            &self,
+            _community_id: CommunityId,
+            _channel_id: &str,
+            _text: &str,
+            _authored_text: &str,
+            _author_pubkey: &str,
+            _reply_to: Option<&str>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async move { Ok("test-message-event".to_string()) })
+        }
+
+        fn emit_approval_request(
+            &self,
+            _community_id: CommunityId,
+            channel_id: &str,
+            token_hash_hex: &str,
+            approver_spec: &str,
+            message: &str,
+            author_pubkey: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            let emission = ApprovalEmission {
+                channel_id: channel_id.to_string(),
+                token_hash_hex: token_hash_hex.to_string(),
+                approver_spec: approver_spec.to_string(),
+                message: message.to_string(),
+                author_pubkey: author_pubkey.to_string(),
+            };
+            self.emissions
+                .lock()
+                .expect("emission log poisoned")
+                .push(emission);
+            Box::pin(async move { Ok("test-approval-event".to_string()) })
+        }
+
+        fn distill_agent_wiki(
+            &self,
+            _community_id: CommunityId,
+            space: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<serde_json::Value, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            let space = space.to_owned();
+            Box::pin(async move {
+                Ok(serde_json::json!({
+                    "status": "published",
+                    "space": space,
+                    "event_id": "test-distill-event",
+                }))
+            })
+        }
+    }
+
+    fn approval_def() -> WorkflowDef {
+        let (def, _) = WorkflowEngine::parse_yaml(concat!(
+            "name: wf08-gate\n",
+            "trigger:\n  on: message_posted\n",
+            "steps:\n",
+            "  - id: ask\n",
+            "    action: request_approval\n",
+            "    from: '@manager'\n",
+            "    message: Ship it?\n",
+            "    timeout: 4h\n",
+            "  - id: announce\n",
+            "    action: send_message\n",
+            "    text: shipped\n",
+        ))
+        .expect("parse approval def");
+        def
+    }
+
+    /// Hitting a `request_approval` step must durably suspend — pending
+    /// approval row + `WaitingApproval` in one transaction — and emit the
+    /// approval notification. Pre-WF-08 behavior marked the run `Failed`
+    /// with no approval row; this test fails on both halves of that.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn approval_gate_suspends_with_pending_row_and_emission() {
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def = approval_def();
+        let def_json = serde_json::to_value(&def).expect("def json");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "wf08-gate",
+                &def_json.to_string(),
+                &[2u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let sink = Arc::new(RecordingSink {
+            emissions: std::sync::Mutex::new(Vec::new()),
+        });
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        engine.set_action_sink(sink.clone());
+
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        let ctx = executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            ..Default::default()
+        };
+        let result = executor::execute_run(&engine, community, run_id, &def, &ctx)
+            .await
+            .expect("execute_run reaches gate");
+        assert!(
+            result.approval_token.is_some(),
+            "executor must suspend at the approval step"
+        );
+
+        // Settle through the production choke point (`finish_execution`),
+        // not `suspend_run` directly — this binds the branch that routes
+        // suspended results to suspension. Reverting a call site to
+        // `finalize_run` fails this test (run lands `Failed`, no row).
+        engine
+            .finish_execution(
+                Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: Some(channel_id),
+                    author_pubkey: &member,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &ctx,
+                    existing_trace: None,
+                },
+                Ok(result),
+            )
+            .await;
+
+        let outcome_approvals = db
+            .get_run_approvals(community, workflow_id, run_id)
+            .await
+            .expect("fetch approvals");
+        assert_eq!(
+            outcome_approvals.len(),
+            1,
+            "finish_execution must persist the suspension"
+        );
+
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("fetch run");
+        assert_eq!(
+            run.status,
+            buzz_db::workflow::RunStatus::WaitingApproval,
+            "run must wait, not fail, at an approval gate"
+        );
+
+        let approvals = db
+            .get_run_approvals(community, workflow_id, run_id)
+            .await
+            .expect("fetch approvals");
+        assert_eq!(approvals.len(), 1, "exactly one pending approval");
+        assert_eq!(
+            approvals[0].status,
+            buzz_db::workflow::ApprovalStatus::Pending
+        );
+        assert_eq!(approvals[0].step_id, "ask");
+        assert_eq!(approvals[0].approver_spec, "@manager");
+
+        let emissions = sink.emissions.lock().expect("emission log");
+        assert_eq!(emissions.len(), 1, "exactly one approval notification");
+        assert_eq!(
+            emissions[0].token_hash_hex,
+            hex::encode(&approvals[0].token),
+            "emitted d-tag must equal the stored token hash"
+        );
+        assert_eq!(emissions[0].channel_id, channel_id.to_string());
+        assert_eq!(
+            emissions[0].approver_spec, "@manager",
+            "emission must carry the rendered approver spec"
+        );
+        assert_eq!(
+            emissions[0].message, "Ship it?",
+            "emission must carry the rendered approval message"
+        );
+        assert_eq!(
+            emissions[0].author_pubkey,
+            hex::encode(&member),
+            "emission must attribute the workflow owner"
+        );
+    }
+
+    /// Suspending at a non-approval step index (or without a token) must fail
+    /// closed — no approval row, no status change, no emission.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn suspend_run_rejects_non_approval_suspension() {
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def = approval_def();
+        let def_json = serde_json::to_value(&def).expect("def json");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "wf08-gate-reject",
+                &def_json.to_string(),
+                &[3u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let sink = Arc::new(RecordingSink {
+            emissions: std::sync::Mutex::new(Vec::new()),
+        });
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        engine.set_action_sink(sink.clone());
+
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        let ctx = executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            ..Default::default()
+        };
+
+        // No token at all.
+        let no_token = ExecutionResult {
+            approval_token: None,
+            step_index: 0,
+            step_outputs: Default::default(),
+            trace: vec![],
+        };
+        let suspension_ctx = || Suspension {
+            community_id: community,
+            workflow_id,
+            channel_id: Some(channel_id),
+            author_pubkey: &member,
+            run_id,
+            def: &def,
+            trigger_ctx: &ctx,
+            existing_trace: None,
+        };
+        assert!(
+            engine
+                .suspend_run(suspension_ctx(), no_token)
+                .await
+                .is_err(),
+            "suspend without a token must fail"
+        );
+
+        // Token pointing at the send_message step (index 1), not the gate.
+        let wrong_step = ExecutionResult {
+            approval_token: Some("bogus".to_string()),
+            step_index: 1,
+            step_outputs: Default::default(),
+            trace: vec![],
+        };
+        assert!(
+            engine
+                .suspend_run(suspension_ctx(), wrong_step)
+                .await
+                .is_err(),
+            "suspend at a non-approval step must fail"
+        );
+
+        let approvals = db
+            .get_run_approvals(community, workflow_id, run_id)
+            .await
+            .expect("fetch approvals");
+        assert!(
+            approvals.is_empty(),
+            "rejected suspensions must leave no approval rows"
+        );
+        assert!(
+            sink.emissions.lock().expect("emission log").is_empty(),
+            "rejected suspensions must emit nothing"
+        );
+    }
+
+    // -- Self-maintaining Agent Wiki: scheduled distill smoke ----------------
+
+    /// Sink recording `distill_agent_wiki` invocations (the action the cron
+    /// smoke drives end to end through `execute_run`).
+    #[derive(Default)]
+    struct DistillRecordingSink {
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl crate::ActionSink for DistillRecordingSink {
+        fn send_message(
+            &self,
+            _community_id: CommunityId,
+            _channel_id: &str,
+            _text: &str,
+            _authored_text: &str,
+            _author_pubkey: &str,
+            _reply_to: Option<&str>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async move { Ok("unused".to_string()) })
+        }
+
+        fn emit_approval_request(
+            &self,
+            _community_id: CommunityId,
+            _channel_id: &str,
+            _token_hash_hex: &str,
+            _approver_spec: &str,
+            _message: &str,
+            _author_pubkey: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(async move { Ok("unused".to_string()) })
+        }
+
+        fn distill_agent_wiki(
+            &self,
+            _community_id: CommunityId,
+            space: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<serde_json::Value, crate::ActionSinkError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            self.calls
+                .lock()
+                .expect("distill call log poisoned")
+                .push(space.to_string());
+            let space = space.to_owned();
+            Box::pin(async move {
+                Ok(serde_json::json!({
+                    "status": "published",
+                    "space": space,
+                    "event_id": "test-distill-event",
+                    "cursor": 200,
+                }))
+            })
+        }
+    }
+
+    /// The claim key a scheduled fire dedupes on must be stable across all
+    /// scheduler ticks inside one cron window: `WorkflowEngine::run` computes
+    /// `scheduled_for` from `cron_fire_instant` on every 60s tick, and the
+    /// durable `(community, workflow, scheduled_for)` claim lets only one of
+    /// those ticks (or pods) create the run. If two ticks in the window could
+    /// compute different keys, the at-most-once boundary would leak.
+    #[test]
+    fn cron_claim_key_is_stable_within_window() {
+        use chrono::{Duration, TimeZone};
+        let workflow_id = Uuid::new_v4();
+        // 09:00:00 UTC on a Monday, per the shipped `0 9 * * 1-5` schedule.
+        let base = Utc.with_ymd_and_hms(2026, 1, 5, 9, 0, 0).unwrap();
+        let first = cron_fire_instant("0 9 * * 1-5", base + Duration::seconds(3), 60, workflow_id)
+            .expect("tick 3s after the window fires");
+        // A drifted tick (another pod, 45s later) lands on the same claim key.
+        let second =
+            cron_fire_instant("0 9 * * 1-5", base + Duration::seconds(48), 60, workflow_id)
+                .expect("drifted tick within the window fires");
+        assert_eq!(first, second, "both ticks claim one fire → executes once");
+        assert_eq!(first, base, "claim key anchors on the scheduled time");
+
+        // The next day's window is a NEW claim key (the schedule advances).
+        let next = cron_fire_instant(
+            "0 9 * * 1-5",
+            base + Duration::days(1) + Duration::seconds(3),
+            60,
+            workflow_id,
+        )
+        .expect("next-day window fires");
+        assert_ne!(first, next, "the next window is a fresh fire");
+    }
+
+    /// A scheduled `distill_agent_wiki` fire executes the action exactly once:
+    /// the durable claim dedupes duplicate ticks/pods, the won claim runs the
+    /// step through the action sink once, and the result is visible in run
+    /// history (execution trace). Follows the engine's per-fire body from
+    /// `WorkflowEngine::run` (claim → create run → execute → finalize).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn scheduled_distill_fire_executes_action_once_and_claim_dedupes() {
+        use chrono::TimeZone;
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def: WorkflowDef = serde_json::from_value(serde_json::json!({
+            "name": "agwiki-nightly",
+            "trigger": {"on": "schedule", "cron": "0 9 * * 1-5"},
+            "steps": [{"id": "distill", "action": "distill_agent_wiki", "space": "default"}],
+            "enabled": true,
+        }))
+        .expect("distill definition parses");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "agwiki-nightly",
+                &serde_json::to_value(&def)
+                    .expect("serialize def")
+                    .to_string(),
+                &[7u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        let sink = Arc::new(DistillRecordingSink::default());
+        engine.set_action_sink(sink.clone());
+
+        let scheduled_for = Utc.with_ymd_and_hms(2026, 1, 5, 9, 0, 0).unwrap();
+
+        // First claim wins — this is the scheduler's at-most-once boundary.
+        let claim = db
+            .claim_scheduled_workflow_fire(community, workflow_id, scheduled_for)
+            .await
+            .expect("claim fire")
+            .expect("first claim must win");
+
+        // Per-fire body: create the run and execute it (as `run()` does).
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        db.attach_scheduled_workflow_run(community, workflow_id, claim.scheduled_for, run_id)
+            .await
+            .expect("attach run to claim");
+        let trigger_ctx = crate::executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            timestamp: scheduled_for.timestamp().to_string(),
+            ..Default::default()
+        };
+        let result = executor::execute_run(&engine, community, run_id, &def, &trigger_ctx)
+            .await
+            .expect("execute scheduled distill run");
+        engine
+            .finish_execution(
+                Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: Some(channel_id),
+                    author_pubkey: &member,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &trigger_ctx,
+                    existing_trace: None,
+                },
+                Ok(result),
+            )
+            .await;
+
+        // The action ran exactly once, for the definition's space …
+        assert_eq!(
+            sink.calls.lock().expect("call log").as_slice(),
+            ["default".to_string()],
+            "the scheduled fire executes the action once"
+        );
+
+        // … and its result is visible in workflow run history.
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("load run");
+        assert_eq!(run.status, RunStatus::Completed);
+        let trace = run.execution_trace.as_array().expect("trace is an array");
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0]["step_id"], "distill");
+        assert_eq!(trace[0]["status"], "completed");
+        assert_eq!(trace[0]["output"]["status"], "published");
+        assert_eq!(trace[0]["output"]["space"], "default");
+
+        // Duplicate fire (a re-tick or a second pod) must NOT claim again —
+        // the first claim already consumed this instant.
+        let duplicate = db
+            .claim_scheduled_workflow_fire(community, workflow_id, scheduled_for)
+            .await
+            .expect("duplicate claim attempt");
+        assert!(duplicate.is_none(), "duplicate-fire claim must be refused");
+        assert_eq!(
+            sink.calls.lock().expect("call log").len(),
+            1,
+            "a refused duplicate claim must never execute the action again"
+        );
+    }
+
+    /// A failed distill (here: the sink's fail-closed LLM-config error path
+    /// surface) must leave a visible run-status failure — never a silent
+    /// no-op (Review-Proven Rule 1).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn scheduled_distill_failure_is_visible_in_run_status() {
+        struct FailingSink;
+        impl crate::ActionSink for FailingSink {
+            fn send_message(
+                &self,
+                _community_id: CommunityId,
+                _channel_id: &str,
+                _text: &str,
+                _authored_text: &str,
+                _author_pubkey: &str,
+                _reply_to: Option<&str>,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                        + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move { Ok("unused".to_string()) })
+            }
+
+            fn emit_approval_request(
+                &self,
+                _community_id: CommunityId,
+                _channel_id: &str,
+                _token_hash_hex: &str,
+                _approver_spec: &str,
+                _message: &str,
+                _author_pubkey: &str,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<String, crate::ActionSinkError>>
+                        + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move { Ok("unused".to_string()) })
+            }
+
+            fn distill_agent_wiki(
+                &self,
+                _community_id: CommunityId,
+                _space: &str,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<serde_json::Value, crate::ActionSinkError>,
+                        > + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async move {
+                    Err(crate::ActionSinkError::Distill(
+                        "BUZZ_CLASSIFIER_API_URL is required (OpenAI-compatible classifier base URL)"
+                            .to_string(),
+                    ))
+                })
+            }
+        }
+
+        let db = setup_db().await;
+        let creator = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let member = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let (community, channel_id) = setup_channel(&db, &creator, &member).await;
+
+        let def: WorkflowDef = serde_json::from_value(serde_json::json!({
+            "name": "agwiki-nightly",
+            "trigger": {"on": "schedule", "cron": "0 9 * * 1-5"},
+            "steps": [{"id": "distill", "action": "distill_agent_wiki", "space": "default"}],
+            "enabled": true,
+        }))
+        .expect("distill definition parses");
+        let workflow_id = db
+            .create_workflow(
+                community,
+                Some(channel_id),
+                &member,
+                "agwiki-nightly",
+                &serde_json::to_value(&def)
+                    .expect("serialize def")
+                    .to_string(),
+                &[8u8; 32],
+            )
+            .await
+            .expect("create workflow");
+
+        let engine = Arc::new(WorkflowEngine::new(db.clone(), WorkflowConfig::default()));
+        engine.set_action_sink(Arc::new(FailingSink));
+
+        let run_id = db
+            .create_workflow_run(community, workflow_id, None, None)
+            .await
+            .expect("create run");
+        let trigger_ctx = crate::executor::TriggerContext {
+            channel_id: channel_id.to_string(),
+            ..Default::default()
+        };
+        let result = executor::execute_run(&engine, community, run_id, &def, &trigger_ctx).await;
+        engine
+            .finish_execution(
+                Suspension {
+                    community_id: community,
+                    workflow_id,
+                    channel_id: Some(channel_id),
+                    author_pubkey: &member,
+                    run_id,
+                    def: &def,
+                    trigger_ctx: &trigger_ctx,
+                    existing_trace: None,
+                },
+                result,
+            )
+            .await;
+
+        let run = db
+            .get_workflow_run(community, run_id)
+            .await
+            .expect("load run");
+        assert_eq!(run.status, RunStatus::Failed, "failure must be visible");
+        let code = run.error_code.as_deref().unwrap_or_default();
+        assert!(!code.is_empty(), "failure must carry a machine code");
+        let message = run.error_message.as_deref().unwrap_or_default();
+        assert!(
+            message.contains("BUZZ_CLASSIFIER_API_URL"),
+            "failure message must name the missing config: {message}"
         );
     }
 }

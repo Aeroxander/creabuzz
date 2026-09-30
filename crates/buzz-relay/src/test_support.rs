@@ -8,6 +8,65 @@ pub(crate) fn database_url() -> String {
         .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned())
 }
 
+/// A fully wired [`crate::state::AppState`] against the local test Postgres
+/// (`DATABASE_URL`) and Redis (`REDIS_URL`, default `redis://127.0.0.1:6379`),
+/// with relay membership enforcement off. For `#[ignore = "requires
+/// Postgres"]` tests that drive the real WS/HTTP handlers.
+#[cfg(test)]
+pub(crate) async fn test_state() -> std::sync::Arc<crate::state::AppState> {
+    test_state_with(|_| {}).await
+}
+
+/// [`test_state`] with a caller hook to adjust the [`crate::config::Config`]
+/// (e.g. enable `p2p_signaling`) before the state is built.
+#[cfg(test)]
+pub(crate) async fn test_state_with(
+    configure: impl FnOnce(&mut crate::config::Config),
+) -> std::sync::Arc<crate::state::AppState> {
+    let mut config = crate::config::Config::from_env().expect("default config loads");
+    config.database_url = database_url();
+    config.redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    config.relay_url = "wss://relay-test.local".to_string();
+    config.require_auth_token = false;
+    config.require_relay_membership = false;
+    configure(&mut config);
+
+    let pool = sqlx::PgPool::connect(&config.database_url)
+        .await
+        .expect("connect test Postgres (set DATABASE_URL)");
+    let db = buzz_db::Db::from_pool(pool.clone());
+    let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
+        .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+        .expect("redis pool");
+    let pubsub = std::sync::Arc::new(
+        buzz_pubsub::PubSubManager::new(&config.redis_url, redis_pool.clone())
+            .await
+            .expect("pubsub manager (set REDIS_URL)"),
+    );
+    let audit = buzz_audit::AuditService::new(pool.clone());
+    let auth = buzz_auth::AuthService::new(config.auth.clone());
+    let search = buzz_search::SearchService::new(pool.clone());
+    let workflow_engine = std::sync::Arc::new(buzz_workflow::WorkflowEngine::new(
+        db.clone(),
+        buzz_workflow::WorkflowConfig::default(),
+    ));
+    let media_storage = buzz_media::MediaStorage::new(&config.media).expect("media storage");
+    let (state, _audit_shutdown) = crate::state::AppState::new(
+        config,
+        db,
+        redis_pool,
+        audit,
+        pubsub,
+        auth,
+        search,
+        workflow_engine,
+        nostr::Keys::generate(),
+        media_storage,
+    );
+    std::sync::Arc::new(state)
+}
+
 #[cfg(test)]
 const CHILD_TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 #[cfg(test)]

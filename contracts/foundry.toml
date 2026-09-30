@@ -1,0 +1,24 @@
+[profile.default]
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+# vm.ffi for the pinned P-256 fixture signer in test/kernel-sign.mjs
+# (KernelWebAuthnUserOp.t.sol).
+ffi = true
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+# The desktop deploys these two contracts from creation bytecode embedded in
+# desktop/src/features/launchpad/lib/graduationArtifact.ts (regenerate with
+# scripts/regen-graduation-artifact.mjs; graduationArtifact.test.mjs byte-matches it against
+# contracts/out). Pin their compiler so the artifact is reproducible: without
+# this, tests that import them beside the =0.8.26-pinned CCA graph produce a
+# second artifact (`GraduationExecutor.0.8.26.json`) next to the newest-solc one,
+# and CI would silently pick a different solc than a laptop.
+compilation_restrictions = [
+  { paths = "src/GraduationExecutor.sol", version = "=0.8.26" },
+  { paths = "src/hooks/AllowlistHook.sol", version = "=0.8.26" },
+]
+
+[rpc_endpoints]
+anvil = "http://127.0.0.1:8545"
+sepolia = "${SEPOLIA_RPC_URL}"

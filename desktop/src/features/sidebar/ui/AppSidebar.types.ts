@@ -45,7 +45,10 @@ export type AppSidebarProps = {
     | "agents"
     | "workflows"
     | "pulse"
-    | "projects";
+    | "projects"
+    | "launchpad"
+    | "org"
+    | "wiki";
   unreadChannelCounts: ReadonlyMap<string, number>;
   unreadChannelIds: ReadonlySet<string>;
   highPriorityUnreadChannelIds: ReadonlySet<string>;
@@ -85,10 +88,13 @@ export type AppSidebarProps = {
   onRemoveCommunity: (id: string) => Promise<LeaveCommunityResult | undefined>;
   onCreateAgent: () => void;
   onSelectAgents: () => void;
+  onSelectLaunchpad: () => void;
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   onSelectHome: () => void;
+  onSelectOrg: () => void;
+  onSelectWiki: () => void;
   onSelectChannel: (channelId: string) => void;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
   /** Full channel set for global search, including channels outside the joined sidebar list. */

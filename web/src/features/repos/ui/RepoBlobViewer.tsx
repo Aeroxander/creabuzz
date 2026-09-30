@@ -158,12 +158,23 @@ const RUN_SANDBOX = "allow-scripts";
 
 function HtmlRunView({ doc }: { doc: string }) {
   return (
-    <iframe
-      title="Repository page (sandboxed)"
-      srcDoc={doc}
-      sandbox={RUN_SANDBOX}
-      className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
-    />
+    <div className="space-y-1.5">
+      <iframe
+        title="Repository page (sandboxed)"
+        srcDoc={doc}
+        sandbox={RUN_SANDBOX}
+        className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
+      />
+      <p
+        className="text-xs text-black/60 dark:text-white/60"
+        data-testid="repo-html-preview-note"
+      >
+        Sandboxed preview. The page's own scripts do not run here: the
+        document's Content-Security-Policy applies to this frame, and relaxing
+        it would also relax it for the app. Static content, styles and inlined
+        assets render.
+      </p>
+    </div>
   );
 }
 
@@ -275,7 +286,7 @@ export function RepoBlobPage() {
       <BackLink repoId={repoId} preview={showMockBlob} />
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <FileText className="h-4 w-4 text-black/50 dark:text-white/50" />
+        <FileText className="h-4 w-4 text-black/60 dark:text-white/60" />
         <h1 className="min-w-0 truncate font-mono text-sm">{filepath}</h1>
         <div className="ml-auto flex items-center gap-2">
           {view &&

@@ -55,7 +55,7 @@ export function getChannelIntroKind(
   if (isEphemeral) {
     return "ephemeral channel";
   }
-  return "regular channel";
+  return "channel";
 }
 
 export function getChannelIntroDescription(channel: Channel): string | null {

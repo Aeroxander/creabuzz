@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "name": "Constraint inventory then solve",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents first enumerate constraints and then use them to audit candidate answers.",
+  "teamworkPrompt": "Before accepting a final answer, build and use an explicit inventory of constraints from the problem.",
+  "roles": {
+    "agent-0": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-1": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-2": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Do not finalize yet. List constraints any valid solution must satisfy: bounds, integrality, parity, congruences, case coverage, geometric conditions, or counting totals."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Use the constraint inventory to check the candidate solutions. Revise only when a concrete constraint is violated or a missing case is found."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

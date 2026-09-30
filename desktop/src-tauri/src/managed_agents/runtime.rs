@@ -688,6 +688,33 @@ pub fn spawn_agent_child(
     } else {
         command.env_remove("BUZZ_ACP_SYSTEM_PROMPT");
     }
+    // Persona → skill bindings: the `["skill", "<id>", "<scope>"]` tags on the
+    // linked kind:30175 head. Resolved here from the retained, owner-signed
+    // event because the harness authenticates as the agent and kind:30175 is
+    // author-only-unless-shared — see `skill_bindings.rs`. `buzz-acp` turns the
+    // payload into the `<project-skills>` section and re-reads the kind:30180
+    // skill heads on every resolve, so a skill edit reaches the agent on its
+    // next session without a respawn; a *re-tagged persona* is spawn-time state
+    // like the prompt itself and needs a restart.
+    let skill_bindings_persona = record.persona_id.as_deref().and_then(|persona_id| {
+        personas
+            .iter()
+            .find(|definition| definition.id == persona_id)
+    });
+    match super::skill_bindings::spawn_skill_bindings_json(
+        app,
+        &effective_relay_url,
+        owner_hex,
+        skill_bindings_persona,
+    ) {
+        Some(payload) => {
+            command.env(super::skill_bindings::SKILL_BINDINGS_ENV, payload);
+        }
+        None => {
+            // Never inherit a previous spawn's bindings from a reused command.
+            command.env_remove(super::skill_bindings::SKILL_BINDINGS_ENV);
+        }
+    }
     // Shared compute stores `auto`, but the wire name is MeshLLM's virtual
     // `mesh` model. Translate here too, so the harness and the LLM client are
     // told the same thing: `BUZZ_ACP_MODEL=auto` would name a model the mesh

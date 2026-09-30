@@ -1,19 +1,44 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Per-run server identity, exported by `scripts/e2e-run.mjs` before
+// Playwright starts: every run gets its own free port and its own immutable
+// build output (`.e2e-dist/<runId>`), so concurrent e2e runs — and the
+// `web/` suite's `vite preview`, the `just desktop-screenshot` python
+// server, and other checkouts — can never collide on a shared `dist/` +
+// `:4173` (the cross-test asset-staleness class: a desktop suite silently
+// executing a foreign bundle, e.g. `web/dist`'s `assets/ReposPage-*.js`).
+// Bare `playwright test` runs (CI shards, `--only-changed`) fall back to
+// the legacy port 4173 + `dist`.
+const e2ePort = process.env.BUZZ_E2E_PORT ?? "4173";
+const baseURL = `http://127.0.0.1:${e2ePort}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  // CI shards keep their historical serialization (1 worker per shard); local
+  // runs parallelize across spec files. 6 measured best on this 10-core
+  // machine (8 oversubscribed it under sibling-session load: 38m / 51 fails
+  // vs 28m / 31). Override with BUZZ_E2E_WORKERS.
+  workers: Number(process.env.BUZZ_E2E_WORKERS ?? (process.env.CI ? 1 : 6)),
   reporter: [
     ["list"],
     ["html", { open: "never", outputFolder: "playwright-report" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL,
     screenshot: "only-on-failure",
     trace: "on-first-retry",
-    video: "retain-on-failure",
+    // `retain-on-failure` *records every test* and only discards passing
+    // footage at the end — a per-worker screencast + ffmpeg process for the
+    // whole suite. On this machine that is pure CPU the tests do not have
+    // (measured: 98% busy / load 47 at 6 workers), which both inflates wall
+    // time and pushes the load-sensitive timing/visual assertions over their
+    // budget. Local runs default to no video; CI keeps it, and anyone
+    // debugging locally can opt back in with BUZZ_E2E_VIDEO=retain-on-failure.
+    video:
+      process.env.BUZZ_E2E_VIDEO ??
+      (process.env.CI ? "retain-on-failure" : "off"),
   },
   projects: [
     {
@@ -52,6 +77,7 @@ export default defineConfig({
         "**/channel-star.spec.ts",
         "**/channel-controls.spec.ts",
         "**/channel-activity-popover.spec.ts",
+        "**/launchpad.spec.ts",
         "**/active-turn-resilience.spec.ts",
         "**/agent-control-regressions.spec.ts",
         "**/profile-active-turn.spec.ts",
@@ -162,12 +188,12 @@ export default defineConfig({
         "**/profile-backup-settings.spec.ts",
         "**/signout-confirmation.spec.ts",
         "**/settings-section-layout.spec.ts",
-        "**/experimental-features.spec.ts",
         "**/agent-provider-dropdowns.spec.ts",
         "**/agent-lifecycle-feedback.spec.ts",
         "**/agent-access-warning.spec.ts",
         "**/edit-agent-run-on.spec.ts",
         "**/inbox-live-update.spec.ts",
+        "**/needsme-ux.spec.ts",
         "**/mesh-compute.spec.ts",
         "**/observer-archive-policy.spec.ts",
         "**/harness-management.spec.ts",
@@ -178,6 +204,7 @@ export default defineConfig({
         "**/agent-numeric-tuning.spec.ts",
         "**/needs-restart-screenshots.spec.ts",
         "**/team-catalog-screenshots.spec.ts",
+        "**/org-screenshots.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
@@ -214,9 +241,17 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "python3 -m http.server 4173 -d dist",
+    // `scripts/e2e-static-server.mjs` serves `BUZZ_E2E_DIST` with
+    // `Cache-Control: no-store` on every response and exposes
+    // `GET /__e2e_server__` ({dir, port}) so reaching a foreign server is
+    // diagnosable instead of a phantom failure.
+    command: "node scripts/e2e-static-server.mjs",
     cwd: ".",
-    reuseExistingServer: !process.env.CI,
-    url: "http://127.0.0.1:4173",
+    // Never silently reuse a server on this port: if anything else already
+    // answers (a hung server from a killed run, the `web/` suite), fail with
+    // Playwright's clear "port is already used" error instead of executing
+    // its build as if it were ours.
+    reuseExistingServer: false,
+    url: `${baseURL}/`,
   },
 });

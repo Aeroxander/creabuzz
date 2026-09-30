@@ -2524,6 +2524,971 @@ pub fn build_delete_addressable(
     Ok(EventBuilder::new(Kind::Custom(KIND_DELETION as u16), "").tags(tags))
 }
 
+// ─── NIP-ORG: Community org graph (kinds:37010–37014) ─────────────────────
+//
+//  Public surface:
+//  • `validate_org_envelope`  — Layer A protocol validator (mirrors relay ingest)
+//  • `OrgNodeContent`        — parsed org node content body
+//  • `OrgGrantContent`       — parsed org grant content body
+//  • `OrgBudgetContent`      — parsed org budget content body (with optional
+//                              `onchain` spend binding)
+//  • `build_org_node`        — build a kind:37010 event
+//  • `build_org_grant`       — build a kind:37011 event
+//  • `build_org_budget`      — build a kind:37012 event
+//  • `BudgetSpendReceiptContent` / `build_budget_spend_receipt`
+//                            — kind:37014 spend receipt (mirror of an
+//                              onchain allowance spend)
+
+use buzz_core::kind::{KIND_BUDGET_SPEND_RECEIPT, KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
+
+/// Maximum byte length of an org `d` tag value (matches relay constant).
+pub const ORG_D_MAX_LEN: usize = 64;
+/// Maximum character count of an org `name` tag value.
+pub const ORG_NAME_MAX_LEN: usize = 128;
+/// Maximum byte length of org event content.
+pub const ORG_CONTENT_MAX_LEN: usize = 16384;
+/// Maximum number of `seat` tags per org event.
+pub const ORG_SEAT_CAP: usize = 256;
+
+/// The kind of an org node in the org hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgNodeKind {
+    /// A named role (e.g. "CTO", "Verifier").
+    Role,
+    /// A team or working group.
+    Team,
+    /// An agent's seat in the org.
+    AgentSeat,
+}
+
+impl std::fmt::Display for OrgNodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Role => write!(f, "role"),
+            Self::Team => write!(f, "team"),
+            Self::AgentSeat => write!(f, "agent-seat"),
+        }
+    }
+}
+
+impl std::str::FromStr for OrgNodeKind {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "role" => Ok(Self::Role),
+            "team" => Ok(Self::Team),
+            "agent-seat" => Ok(Self::AgentSeat),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown org node kind: {other:?}"
+            ))),
+        }
+    }
+}
+
+pub use buzz_core::org_grant::{
+    verify_grant_chain, GrantChainError, OrgGrantContent, OrgScope, ResolvedGrant, ResolvedOrgNode,
+};
+
+/// UI metadata for rendering an org node.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OrgNodeUi {
+    /// Color hex string (e.g. `"#ff0000"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Icon identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Short human-readable blurb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blurb: Option<String>,
+}
+
+/// Content body of a kind:37010 org node event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`agentSeats`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgNodeContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Human-readable name for this role/team.
+    pub name: String,
+    /// The kind of org node.
+    #[serde(rename = "kind")]
+    pub node_kind: OrgNodeKind,
+    /// `d` tag of the parent node in the hierarchy (omit for root).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Human seat holders (64-char hex pubkeys).
+    #[serde(default)]
+    pub holders: Vec<String>,
+    /// Agent seat holders (NIP-OA keys, 64-char hex).
+    #[serde(default)]
+    pub agent_seats: Vec<String>,
+    /// Delegation scope for this node.
+    #[serde(default)]
+    pub scope: OrgScope,
+    /// UI rendering hints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<OrgNodeUi>,
+    /// Optional onchain binding for the org ROOT node (NIP-ORG "Opt-in
+    /// onchain binding"). Set by `buzz org bind` after a majeur DAO is
+    /// summoned for the community; absent = pure coordination data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OrgOnchainBinding>,
+}
+
+/// Optional onchain binding of an org ROOT node to a Moloch-family DAO
+/// (NIP-ORG "Opt-in onchain binding"). Distinct from [`OnchainBinding`],
+/// which is the per-budget spend-ceiling binding on kind:37012.
+///
+/// On binding, the root node's `holders` map to initial DAO shares (minted
+/// once at bind time; later seat changes are governance proposals, never
+/// auto-mutations) and budgets map to treasury allowances. The exit right
+/// is ragequit.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgOnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Bound DAO (Moloch clone) address (`0x…`).
+    pub dao: String,
+    /// Unix seconds when the binding was recorded onchain.
+    pub bound_at: u64,
+}
+
+/// Spend limit within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SpendLimit {
+    /// Amount in the specified unit.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`).
+    #[serde(default = "default_spend_unit")]
+    pub unit: String,
+}
+
+fn default_spend_unit() -> String {
+    "usd-cents".to_string()
+}
+
+/// Task limits within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskLimits {
+    /// Maximum tasks that can be created in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create: Option<u32>,
+    /// Maximum tasks that can be approved in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approve: Option<u32>,
+}
+
+/// Governance-action limits within a budget (agentic-governance S3: the
+/// supervision gate). The observable governance actions an agent takes are
+/// its own mirrors — a proposal record (47004) and vote/execute receipts
+/// (47005) — and each class gets its own per-window ceiling. Over the
+/// ceiling with `onExceed: "require-approval"` the action becomes a 46010
+/// approval request instead of executing (HITL), which is also OAv2 §4.6's
+/// supervision rate limit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GovernanceLimits {
+    /// Maximum proposal records (kind:47004) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<u32>,
+    /// Maximum vote receipts (kind:47005, table `vote`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vote: Option<u32>,
+    /// Maximum execute receipts (kind:47005, table `execute`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execute: Option<u32>,
+}
+
+/// How the budget window resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetWindow {
+    /// Resets each governance epoch.
+    Epoch,
+    /// Daily reset.
+    Day,
+    /// Weekly reset.
+    Week,
+    /// Monthly reset.
+    Month,
+}
+
+impl std::fmt::Display for BudgetWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Epoch => write!(f, "epoch"),
+            Self::Day => write!(f, "day"),
+            Self::Week => write!(f, "week"),
+            Self::Month => write!(f, "month"),
+        }
+    }
+}
+
+impl std::str::FromStr for BudgetWindow {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "epoch" => Ok(Self::Epoch),
+            "day" => Ok(Self::Day),
+            "week" => Ok(Self::Week),
+            "month" => Ok(Self::Month),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown budget window: {other:?} (expected \"epoch\", \"day\", \"week\", or \"month\")"
+            ))),
+        }
+    }
+}
+
+/// What happens when a budget limit is exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnExceed {
+    /// Route the action into workflow approval (46010–46012).
+    RequireApproval,
+    /// Refuse the action outright, with no approval request — a hard stop
+    /// (used by an emergency stop, where a human queue would only be noise).
+    Reject,
+}
+
+/// Limits within a budget record.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BudgetLimits {
+    /// Spend cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spend: Option<SpendLimit>,
+    /// Maximum autonomous runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runs: Option<u32>,
+    /// Task creation/approval caps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<TaskLimits>,
+    /// Governance-action caps (proposal / vote / execute — the HITL gate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub governance: Option<GovernanceLimits>,
+    /// Maximum chat messages (kinds 9 and 40002) an agent may author in the
+    /// window. Enforced by the relay at ingest (counter class `messages`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages: Option<u32>,
+    /// Maximum LLM gateway calls in the window. Enforced by the relay's LLM
+    /// gateway (counter class `llm_calls`); the wire key is `llmCalls`.
+    #[serde(default, rename = "llmCalls", skip_serializing_if = "Option::is_none")]
+    pub llm_calls: Option<u32>,
+    /// Maximum LLM spend in US cents in the window. Enforced by the relay's LLM
+    /// gateway from the upstream's reported token usage and the operator's
+    /// price table (`BUZZ_LLM_PRICE_*`); the wire key is `llmCostCents`.
+    #[serde(
+        default,
+        rename = "llmCostCents",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub llm_cost_cents: Option<u32>,
+}
+
+/// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
+///
+/// When present, the spend limit is enforced at the value layer: the harness's
+/// authorized spender calls `OrgAllowance.sol` `spend()` over the key
+/// `(bytes32 subject, address token, uint64 epoch)` before an action
+/// executes. The contract is the ledger; Nostr is the record (NIP-LP rule).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+    /// The budgeted subject's 32-byte pubkey — same value as
+    /// [`OrgBudgetContent::subject`].
+    pub subject: String,
+}
+
+/// Performance-linked autonomy ("budget ladder", NIP-ORG §
+/// Performance-linked autonomy): a pre-authorized escalation on a kind:37012
+/// budget. The budgeted subject's ACTIVE limits rise with the number of its
+/// *accepted* kind:37013 contribution records in the window and fall when
+/// records are rejected.
+///
+/// The ladder is signed once by the budget author — publishing it IS the
+/// human approval — and every tier is a standing pre-authorization the
+/// author could have granted directly (the root-standing rule applies to
+/// the highest tier). Evaluation is deterministic over signed events; any
+/// client MUST derive the same active limits from the same inputs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceLink {
+    /// Contribution window the accepted/rejected counts are taken over.
+    pub window: BudgetWindow,
+    /// When set, only records carrying at least one of these dimensions
+    /// count toward the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<Vec<String>>,
+    /// Escalation tiers, strictly ascending by `minAccepted`. The highest
+    /// tier is the maximum pre-authorized autonomy.
+    pub tiers: Vec<PerformanceTier>,
+    /// What happens when rejections cross the violation threshold.
+    #[serde(default)]
+    pub on_violation: OnViolation,
+    /// Rejected records in the window that trigger `onViolation`.
+    /// `None` means violations never gate the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub violation_threshold: Option<ViolationThreshold>,
+}
+
+/// One rung of a [`PerformanceLink`] ladder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceTier {
+    /// Accepted contribution records required in the window.
+    pub min_accepted: u32,
+    /// Limits active while this tier holds. Every component present on the
+    /// base budget MUST be present here and >= the base component.
+    pub limits: BudgetLimits,
+}
+
+/// What happens when the violation threshold is crossed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnViolation {
+    /// Drop to the budget's base limits until the window heals (default).
+    #[default]
+    Base,
+    /// Zero autonomy while violated; every action routes through the
+    /// workflow approval flow (same machinery as `onExceed`).
+    RequireApproval,
+    /// Zero autonomy while violated, hard-rejected — no approval path.
+    Revoke,
+}
+
+/// Rejected-record count that triggers [`PerformanceLink::on_violation`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViolationThreshold {
+    /// Rejected contribution records in the window.
+    pub rejected: u32,
+}
+
+/// Deterministic per-window outcome counts for one contributor, as fed to
+/// [`evaluate_performance_link`]. The caller derives these from kind:37013
+/// events (see the NIP-ORG counting rules); this crate only resolves tiers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContributionSummary {
+    /// Accepted (`reviewStatus: "accepted"`) records in the window.
+    pub accepted: u32,
+    /// Rejected (`reviewStatus: "rejected"`) records in the window.
+    pub rejected: u32,
+}
+
+/// The ladder state resolved against a [`ContributionSummary`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LadderResolution {
+    /// Limits the subject currently holds.
+    pub limits: BudgetLimits,
+    /// Matched tier index into [`PerformanceLink::tiers`] (`None` = the
+    /// base limits hold).
+    pub tier: Option<usize>,
+    /// True when the violation threshold is crossed.
+    pub violated: bool,
+}
+
+/// Zero autonomy, expressed as explicit zeros so a consumer can never read
+/// an absent component as "uncapped".
+fn zeroed_limits() -> BudgetLimits {
+    BudgetLimits {
+        spend: Some(SpendLimit {
+            amount: 0,
+            unit: "usd-cents".into(),
+        }),
+        runs: Some(0),
+        tasks: Some(TaskLimits {
+            create: Some(0),
+            approve: Some(0),
+        }),
+        governance: Some(GovernanceLimits {
+            proposal: Some(0),
+            vote: Some(0),
+            execute: Some(0),
+        }),
+        messages: Some(0),
+        llm_calls: Some(0),
+        llm_cost_cents: Some(0),
+    }
+}
+
+/// Resolve a budget ladder against deterministic contribution counts.
+///
+/// - Violated (`rejected >= threshold`) collapses to `onViolation`:
+///   `Base` returns the base limits, `RequireApproval`/`Revoke` return
+///   explicit zero limits (the caller distinguishes approval routing from
+///   hard rejection via [`PerformanceLink::on_violation`]).
+/// - Otherwise the highest tier with `minAccepted <= accepted` holds;
+///   below the first tier the base limits hold.
+pub fn evaluate_performance_link(
+    link: &PerformanceLink,
+    summary: &ContributionSummary,
+    base_limits: &BudgetLimits,
+) -> LadderResolution {
+    let violated = match link.violation_threshold {
+        Some(t) => summary.rejected >= t.rejected,
+        None => false,
+    };
+    if violated {
+        let limits = match link.on_violation {
+            OnViolation::Base => base_limits.clone(),
+            OnViolation::RequireApproval | OnViolation::Revoke => zeroed_limits(),
+        };
+        return LadderResolution {
+            limits,
+            tier: None,
+            violated: true,
+        };
+    }
+    let tier = link
+        .tiers
+        .iter()
+        .rposition(|t| summary.accepted >= t.min_accepted);
+    let limits = match tier {
+        Some(i) => link.tiers[i].limits.clone(),
+        None => base_limits.clone(),
+    };
+    LadderResolution {
+        limits,
+        tier,
+        violated: false,
+    }
+}
+
+/// Validate a ladder against its base budget. Fail-closed: a malformed
+/// ladder never publishes.
+pub fn validate_performance_link(
+    link: &PerformanceLink,
+    base_limits: &BudgetLimits,
+) -> Result<(), SdkError> {
+    if link.tiers.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at least one tier".into(),
+        ));
+    }
+    if link.tiers.len() > 8 {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at most 8 tiers".into(),
+        ));
+    }
+    let mut prev = 0u32;
+    for (i, tier) in link.tiers.iter().enumerate() {
+        if tier.min_accepted <= prev {
+            return Err(SdkError::InvalidInput(format!(
+                "performanceLink tier {i}: minAccepted must be strictly ascending (got {prev} then {})",
+                tier.min_accepted
+            )));
+        }
+        prev = tier.min_accepted;
+        // Every component the base caps, a tier must cap at least as high —
+        // a tier may introduce a component the base leaves uncapped (that is
+        // a pre-authorized widening the author signed for).
+        if let (Some(b), Some(t)) = (&base_limits.spend, &tier.limits.spend) {
+            if t.amount < b.amount {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: spend {} is below the base spend {}",
+                    t.amount, b.amount
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (base_limits.runs, tier.limits.runs) {
+            if t < b {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: runs {t} is below the base runs {b}"
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (&base_limits.tasks, &tier.limits.tasks) {
+            if let (Some(bc), Some(tc)) = (b.create, t.create) {
+                if tc < bc {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.create {tc} is below the base {bc}"
+                    )));
+                }
+            }
+            if let (Some(ba), Some(ta)) = (b.approve, t.approve) {
+                if ta < ba {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.approve {ta} is below the base {ba}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Some(t) = &link.violation_threshold {
+        if t.rejected == 0 {
+            return Err(SdkError::InvalidInput(
+                "violationThreshold.rejected must be >= 1 (0 would violate every budget)".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Content body of a kind:37012 budget event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`onExceed`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgBudgetContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// What this budget bounds: an agent pubkey, an org node `d`, or a grant id.
+    pub subject: String,
+    /// Budget window.
+    pub window: BudgetWindow,
+    /// Limits within the window.
+    pub limits: BudgetLimits,
+    /// What happens when limits are exceeded.
+    pub on_exceed: OnExceed,
+    /// Optional onchain binding for the spend ceiling (omit when off-chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OnchainBinding>,
+    /// Optional performance-linked autonomy ladder (NIP-ORG §
+    /// Performance-linked autonomy). Omit for a flat budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance_link: Option<PerformanceLink>,
+}
+
+fn is_lower_hex_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// **Layer A**: Validate a NIP-ORG event envelope (37010–37012).
+/// Mirrors relay's `validate_org_envelope` in `buzz-relay/src/handlers/ingest.rs`.
+pub fn validate_org_envelope(tags: &[Tag], content: &str) -> Result<(), SdkError> {
+    let d_tags: Vec<&Tag> = tags.iter().filter(|t| tag_name(t) == Some("d")).collect();
+    match d_tags.len() {
+        0 => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+        1 => {}
+        _ => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+    }
+    let d_val = tag_value(d_tags[0]).unwrap_or("");
+    if d_val.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG 'd' tag must not be empty".into(),
+        ));
+    }
+    if d_val.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG 'd' tag exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let mut seat_count = 0usize;
+    let mut name_count = 0usize;
+    for t in tags {
+        let parts = t.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "seat" => {
+                seat_count += 1;
+                if !is_lower_hex_pubkey(value) {
+                    return Err(SdkError::InvalidInput(
+                        "NIP-ORG 'seat' tag must hold a lowercase 64-hex pubkey".into(),
+                    ));
+                }
+            }
+            "grantee" if !is_lower_hex_pubkey(value) => {
+                return Err(SdkError::InvalidInput(
+                    "NIP-ORG 'grantee' tag must hold a lowercase 64-hex pubkey".into(),
+                ));
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > ORG_NAME_MAX_LEN {
+                    return Err(SdkError::InvalidInput(format!(
+                        "NIP-ORG 'name' tag too long (max {ORG_NAME_MAX_LEN} chars)"
+                    )));
+                }
+            }
+            _ => {}
+        }
+    }
+    if seat_count > ORG_SEAT_CAP {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG event must have at most {ORG_SEAT_CAP} 'seat' tags (got {seat_count})"
+        )));
+    }
+    if name_count > 1 {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG event must have at most one 'name' tag".into(),
+        ));
+    }
+
+    if content.len() > ORG_CONTENT_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG content too long (max {ORG_CONTENT_MAX_LEN} bytes)"
+        )));
+    }
+    match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(SdkError::InvalidInput(
+            "NIP-ORG content must be a JSON object".into(),
+        )),
+    }
+}
+
+/// Build a kind:37010 org node event.
+pub fn build_org_node(node_id: &str, content: &OrgNodeContent) -> Result<EventBuilder, SdkError> {
+    if node_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'node_id' must not be empty".into(),
+        ));
+    }
+    if node_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org node 'node_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.name.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'name' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", node_id])?);
+    tags.push(tag(&["name", &content.name])?);
+
+    for holder in &content.holders {
+        let pk = check_pubkey_hex(holder, "seat holder")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+    for agent in &content.agent_seats {
+        let pk = check_pubkey_hex(agent, "agent seat")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org node content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_NODE as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37011 org grant event.
+pub fn build_org_grant(
+    grant_id: &str,
+    content: &OrgGrantContent,
+) -> Result<EventBuilder, SdkError> {
+    if grant_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org grant 'grant_id' must not be empty".into(),
+        ));
+    }
+    if grant_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org grant 'grant_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let grantee_pk = check_pubkey_hex(&content.grantee, "grantee")?;
+    let _issuer_pk = check_pubkey_hex(&content.issuer, "issuer")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", grant_id])?, tag(&["grantee", &grantee_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org grant content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_GRANT as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37012 org budget event.
+pub fn build_org_budget(
+    subject_id: &str,
+    content: &OrgBudgetContent,
+) -> Result<EventBuilder, SdkError> {
+    if subject_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org budget 'subject_id' must not be empty".into(),
+        ));
+    }
+    if subject_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org budget 'subject_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    if let Some(link) = &content.performance_link {
+        validate_performance_link(link, &content.limits)?;
+    }
+
+    let tags: Vec<Tag> = vec![tag(&["d", subject_id])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org budget content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_BUDGET as u16), &content_json).tags(tags))
+}
+
+/// Content body of a kind:37014 budget spend receipt event.
+///
+/// The receipt mirror of a spend settled against an onchain allowance bound to
+/// a kind:37012 budget — the NIP-ORG analogue of NIP-LP's 47005 receipt.
+/// Serialized with camelCase keys per NIP-ORG (`txHash`, …). Advisory: the
+/// contract is the ledger, Nostr the record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetSpendReceiptContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// The budgeted subject's 32-byte pubkey (mirrors the 37012 `subject`).
+    pub subject: String,
+    /// Token address the spend moved (`0x…`).
+    pub token: String,
+    /// Amount spent in `unit`.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`, or the token's smallest unit).
+    pub unit: String,
+    /// Allowance epoch key the spend was settled over (`uint64`).
+    pub epoch: u64,
+    /// Budget window the epoch counter maps to (`"epoch" | "day" | "week" | "month"`).
+    pub window: BudgetWindow,
+    /// Hash of the chain transaction that settled the spend.
+    pub tx_hash: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+}
+
+/// Build a kind:37014 budget spend receipt event.
+///
+/// Tags are:
+/// - `d`: `spend_id` — stable spend id, NIP-33 replacement key
+/// - `p`: the budgeted subject pubkey
+pub fn build_budget_spend_receipt(
+    spend_id: &str,
+    content: &BudgetSpendReceiptContent,
+) -> Result<EventBuilder, SdkError> {
+    if spend_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "budget spend receipt 'spend_id' must not be empty".into(),
+        ));
+    }
+    if spend_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "budget spend receipt 'spend_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    let subject_pk = check_pubkey_hex(&content.subject, "subject")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", spend_id])?, tag(&["p", &subject_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize budget spend receipt content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(
+        Kind::Custom(KIND_BUDGET_SPEND_RECEIPT as u16),
+        &content_json,
+    )
+    .tags(tags))
+}
+
+// ─── NIP-ORG: Contribution records (kind:37013) ──────────────────────────
+//
+//  Evidence-gated contribution profiles attached to org-graph seats.
+//  Fills the gap: "no language for what someone contributed" (NIP-ORG draft).
+//  Record shape from ResonantDAO §2.2 Appendix A.3.
+
+use buzz_core::kind::KIND_CONTRIBUTION_RECORD;
+
+/// Maximum byte length of a contribution record `d` tag value.
+pub const CONTRIBUTION_D_MAX_LEN: usize = 64;
+
+/// Human-vs-AI work attribution for a contribution.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HumanVsAi {
+    /// Fraction of work done by humans (0.0–1.0).
+    #[serde(default)]
+    pub human: f64,
+    /// Fraction of work done by AI (0.0–1.0).
+    #[serde(default)]
+    pub ai: f64,
+}
+
+/// Review status of a contribution record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewStatus {
+    /// Claim submitted, awaiting verification.
+    Pending,
+    /// Verified by the verifier panel.
+    Accepted,
+    /// Rejected by the verifier panel.
+    Rejected,
+    /// Under appeal.
+    Appealed,
+}
+
+impl std::fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Accepted => write!(f, "accepted"),
+            Self::Rejected => write!(f, "rejected"),
+            Self::Appealed => write!(f, "appealed"),
+        }
+    }
+}
+
+impl std::str::FromStr for ReviewStatus {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "appealed" => Ok(Self::Appealed),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown review status: {other:?}"
+            ))),
+        }
+    }
+}
+
+/// An entry in the appeal history of a contribution record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AppealEntry {
+    /// Appeal status at the time of the entry.
+    pub status: String,
+    /// Unix timestamp of the appeal.
+    pub at: u64,
+}
+
+/// Content body of a kind:37013 contribution record event.
+///
+/// Record shape from ResonantDAO §2.2 Appendix A.3, adapted for Nostr events.
+/// Serialized with camelCase keys, matching the other NIP-ORG content bodies
+/// (`humanVsAi`, `informedBy`, `classifierVersion`, `reviewStatus`,
+/// `appealHistory`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionRecordContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Description of the contribution action.
+    pub action: String,
+    /// Multi-dimensional contribution profile (plain names: build, teach, care, research, etc.).
+    #[serde(default)]
+    pub dimensions: std::collections::HashMap<String, f64>,
+    /// Outcome: verified effect, net of harm.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<ContributionOutcome>,
+    /// Evidence links (event ids, imeta urls).
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    /// Human-vs-AI work attribution.
+    #[serde(default)]
+    pub human_vs_ai: HumanVsAi,
+    /// `informed-by` references for chain settlement (contribution record d-tags, task ids).
+    #[serde(default)]
+    pub informed_by: Vec<String>,
+    /// Classifier version used to compute the profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub classifier_version: Option<String>,
+    /// Review status of the contribution.
+    pub review_status: ReviewStatus,
+    /// Appeal history.
+    #[serde(default)]
+    pub appeal_history: Vec<AppealEntry>,
+}
+
+/// Outcome of a contribution action.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContributionOutcome {
+    /// Verified positive effect description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+    /// Verified harm description (if any). A damaging result cannot pay gross.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harm: Option<String>,
+}
+
+/// Build a kind:37013 contribution record event.
+///
+/// Tags are:
+/// - `d`: `action_id`
+/// - `p`: contributor pubkey (from content.author if set, else signer)
+/// - `h`: community tag (optional, set by caller)
+/// - `e`: each evidence link
+/// - `a`: each informed-by reference (contribution record coordinates)
+pub fn build_contribution_record(
+    action_id: &str,
+    content: &ContributionRecordContent,
+) -> Result<EventBuilder, SdkError> {
+    if action_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action_id' must not be empty".into(),
+        ));
+    }
+    if action_id.len() > CONTRIBUTION_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "contribution record 'action_id' exceeds {CONTRIBUTION_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.action.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", action_id])?);
+
+    for evidence in &content.evidence {
+        tags.push(tag(&["e", evidence])?);
+    }
+
+    for informed_by in &content.informed_by {
+        tags.push(tag(&["a", informed_by])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize contribution record content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_CONTRIBUTION_RECORD as u16), &content_json).tags(tags))
+}
+
+// ── Grant-chain verification ───────────────────────────────────────────
+//
+// The pure chain-walk verifier (`verify_grant_chain`, `ResolvedGrant`,
+// `ResolvedOrgNode`, `GrantChainError`, verb entailment) lives in
+// `buzz-core::org_grant` so the relay's opt-in ingest gate can share it.
+// Re-exported below — the SDK's public API is unchanged.
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5374,5 +6339,662 @@ mod tests {
 
         assert_eq!(accept_count, 11, "expected 11 accept cases");
         assert_eq!(reject_count, 20, "expected 20 reject cases");
+    }
+
+    // ── NIP-ORG: org node, grant, budget builders ─────────────────────────
+
+    fn sample_node_content() -> OrgNodeContent {
+        OrgNodeContent {
+            v: 1,
+            name: "CTO".into(),
+            node_kind: OrgNodeKind::Role,
+            parent: None,
+            holders: vec!["a".repeat(64)],
+            agent_seats: vec![],
+            scope: OrgScope::default(),
+            ui: None,
+            onchain: None,
+        }
+    }
+
+    fn sample_grant_content() -> OrgGrantContent {
+        OrgGrantContent {
+            v: 1,
+            issuer: "a".repeat(64),
+            grantee: "b".repeat(64),
+            via: "cto".into(),
+            verbs: vec!["read:#leadership".into(), "task:create".into()],
+            parent_grant: None,
+            expires: None,
+            revoked: false,
+        }
+    }
+
+    fn sample_budget_content() -> OrgBudgetContent {
+        OrgBudgetContent {
+            v: 1,
+            subject: "b".repeat(64),
+            window: BudgetWindow::Epoch,
+            limits: BudgetLimits {
+                spend: Some(SpendLimit {
+                    amount: 100000,
+                    unit: "usd-cents".into(),
+                }),
+                runs: Some(50),
+                governance: None,
+                messages: None,
+                llm_calls: None,
+                llm_cost_cents: None,
+                tasks: Some(TaskLimits {
+                    create: Some(20),
+                    approve: Some(0),
+                }),
+            },
+            on_exceed: OnExceed::RequireApproval,
+            onchain: None,
+            performance_link: None,
+        }
+    }
+
+    fn ladder_budget() -> OrgBudgetContent {
+        let mut c = sample_budget_content();
+        c.performance_link = Some(PerformanceLink {
+            window: BudgetWindow::Week,
+            dimensions: Some(vec!["build".into()]),
+            tiers: vec![
+                PerformanceTier {
+                    min_accepted: 3,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 200000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(80),
+                        governance: None,
+                        messages: None,
+                        llm_calls: None,
+                        llm_cost_cents: None,
+                        tasks: Some(TaskLimits {
+                            create: Some(30),
+                            approve: Some(0),
+                        }),
+                    },
+                },
+                PerformanceTier {
+                    min_accepted: 10,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 500000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(200),
+                        governance: None,
+                        messages: None,
+                        llm_calls: None,
+                        llm_cost_cents: None,
+                        tasks: Some(TaskLimits {
+                            create: Some(60),
+                            approve: Some(2),
+                        }),
+                    },
+                },
+            ],
+            on_violation: OnViolation::Revoke,
+            violation_threshold: Some(ViolationThreshold { rejected: 1 }),
+        });
+        c
+    }
+
+    #[test]
+    fn performance_link_ladder_resolves_tiers() {
+        let link = ladder_budget().performance_link.unwrap();
+        let base = ladder_budget().limits;
+
+        // Below the first tier: base limits hold.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 2,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, None);
+        assert!(!r.violated);
+        assert_eq!(r.limits.runs, base.runs);
+
+        // First tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(0));
+        assert_eq!(r.limits.runs, Some(80));
+
+        // Top tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 25,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(1));
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 500000);
+    }
+
+    #[test]
+    fn performance_link_violation_semantics() {
+        let mut c = ladder_budget();
+        let base = c.limits.clone();
+        let link = c.performance_link.take().unwrap();
+
+        // Revoke: explicit zero limits.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 1,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 0);
+        assert_eq!(r.limits.runs, Some(0));
+
+        // Base: falls back to the budget's own limits.
+        let mut softened = link.clone();
+        softened.on_violation = OnViolation::Base;
+        let r = evaluate_performance_link(
+            &softened,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 5,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits, base);
+
+        // No threshold: rejections never gate the ladder.
+        let mut no_threshold = link.clone();
+        no_threshold.violation_threshold = None;
+        let r = evaluate_performance_link(
+            &no_threshold,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 9,
+            },
+            &base,
+        );
+        assert!(!r.violated);
+        assert_eq!(r.tier, Some(0));
+    }
+
+    #[test]
+    fn performance_link_validation_rejects_bad_ladders() {
+        let base = ladder_budget().limits;
+        let mut c = ladder_budget();
+        let link = c.performance_link.take().unwrap();
+
+        // Non-ascending tiers.
+        let mut bad = link.clone();
+        bad.tiers[1].min_accepted = 3;
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Tier spend below base spend.
+        let mut bad = link.clone();
+        bad.tiers[0].limits.spend = Some(SpendLimit {
+            amount: 1,
+            unit: "usd-cents".into(),
+        });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Zero violation threshold.
+        let mut bad = link.clone();
+        bad.violation_threshold = Some(ViolationThreshold { rejected: 0 });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Empty ladder.
+        let mut bad = link;
+        bad.tiers.clear();
+        assert!(validate_performance_link(&bad, &base).is_err());
+    }
+
+    #[test]
+    fn budget_with_ladder_builds_and_round_trips_camel_case() {
+        let content = ladder_budget();
+        let builder = build_org_budget("subject-agent", &content).unwrap();
+        let event = sign(builder);
+        assert!(event.content.contains("\"performanceLink\""));
+        assert!(event.content.contains("\"minAccepted\""));
+        assert!(event.content.contains("\"onViolation\":\"revoke\""));
+
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
+    }
+
+    #[test]
+    fn org_node_builds_valid_event() {
+        let content = sample_node_content();
+        let builder = build_org_node("cto", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_NODE as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "cto"]));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["name", "CTO"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "seat"));
+        // Content must parse back.
+        let parsed: OrgNodeContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.name, "CTO");
+    }
+
+    #[test]
+    fn org_grant_builds_valid_event() {
+        let content = sample_grant_content();
+        let builder = build_org_grant("grant-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_GRANT as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "grant-1"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "grantee"));
+        let parsed: OrgGrantContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.via, "cto");
+        assert_eq!(parsed.verbs.len(), 2);
+    }
+
+    #[test]
+    fn org_budget_builds_valid_event() {
+        let content = sample_budget_content();
+        let builder = build_org_budget("agent-budget", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_BUDGET as u16));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["d", "agent-budget"]));
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.window, BudgetWindow::Epoch);
+        assert_eq!(parsed.limits.runs, Some(50));
+    }
+
+    #[test]
+    fn budget_spend_receipt_builds_valid_event() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 2500,
+            unit: "usd-cents".into(),
+            epoch: 7,
+            window: BudgetWindow::Week,
+            tx_hash: "0xdeadbeef".into(),
+            contract: "0xabc".into(),
+        };
+        let builder = build_budget_spend_receipt("spend-1", &content).unwrap();
+        let keys = Keys::generate();
+        let event = builder.sign_with_keys(&keys).unwrap();
+        assert_eq!(event.kind.as_u16() as u32, KIND_BUDGET_SPEND_RECEIPT);
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "spend-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["p", &"c".repeat(64)]));
+        let parsed: BudgetSpendReceiptContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
+        // camelCase wire key for the tx hash.
+        let json: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert!(json.get("txHash").is_some());
+        assert!(json.get("tx_hash").is_none());
+    }
+
+    #[test]
+    fn budget_spend_receipt_rejects_empty_id() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 1,
+            unit: "usd-cents".into(),
+            epoch: 0,
+            window: BudgetWindow::Day,
+            tx_hash: "0x1".into(),
+            contract: "0xabc".into(),
+        };
+        let err = build_budget_spend_receipt("", &content).unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_id() {
+        let content = sample_node_content();
+        let err = build_org_node("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_overlong_id() {
+        let content = sample_node_content();
+        let err = build_org_node(&"a".repeat(65), &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_name() {
+        let mut content = sample_node_content();
+        content.name = "".into();
+        let err = build_org_node("cto", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_grant_rejects_bad_grantee() {
+        let mut content = sample_grant_content();
+        content.grantee = "not-a-pubkey".into();
+        let err = build_org_grant("g1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_duplicate_d() {
+        // Manually construct tags with two 'd' tags.
+        let tags = vec![tag(&["d", "x"]).unwrap(), tag(&["d", "y"]).unwrap()];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_bad_seat_pubkey() {
+        let tags = vec![
+            tag(&["d", "x"]).unwrap(),
+            tag(&["seat", "not-hex"]).unwrap(),
+        ];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_json_content() {
+        let tags = vec![tag(&["d", "x"]).unwrap()];
+        let err = validate_org_envelope(&tags, "not json").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_budget_window_from_str() {
+        assert!(matches!(
+            "epoch".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Epoch)
+        ));
+        assert!(matches!(
+            "day".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Day)
+        ));
+        assert!(matches!(
+            "week".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Week)
+        ));
+        assert!(matches!(
+            "month".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Month)
+        ));
+        assert!("invalid".parse::<BudgetWindow>().is_err());
+    }
+
+    #[test]
+    fn org_node_kind_from_str() {
+        assert!(matches!(
+            "role".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Role)
+        ));
+        assert!(matches!(
+            "team".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Team)
+        ));
+        assert!(matches!(
+            "agent-seat".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::AgentSeat)
+        ));
+        assert!("invalid".parse::<OrgNodeKind>().is_err());
+    }
+
+    #[test]
+    fn org_content_serializes_camel_case_keys() {
+        let node = sample_node_content();
+        let json = serde_json::to_value(&node).unwrap();
+        assert!(json.get("agentSeats").is_some());
+        assert!(json.get("agent_seats").is_none());
+
+        let scope = serde_json::to_value(OrgScope {
+            read_below: true,
+            assign_below: false,
+            can_grant: vec!["spend:100000".into()],
+        })
+        .unwrap();
+        assert_eq!(scope.get("readBelow"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            scope.get("assignBelow"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert!(scope.get("canGrant").is_some());
+        assert!(scope.get("can_grant").is_none());
+
+        // parentGrant is present when set (skip_serializing_if omits None).
+        let child_grant = OrgGrantContent {
+            parent_grant: Some("root-grant".into()),
+            ..sample_grant_content()
+        };
+        let json = serde_json::to_value(&child_grant).unwrap();
+        assert_eq!(
+            json.get("parentGrant"),
+            Some(&serde_json::Value::String("root-grant".into()))
+        );
+        assert!(json.get("parent_grant").is_none());
+        let json = serde_json::to_value(sample_grant_content()).unwrap();
+        assert!(json.get("parentGrant").is_none());
+
+        // Contribution record (37013) follows the same camelCase contract.
+        let record = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi {
+                human: 1.0,
+                ai: 0.0,
+            },
+            informed_by: vec!["a".into()],
+            classifier_version: Some("v1".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![AppealEntry {
+                status: "pending".into(),
+                at: 1,
+            }],
+        };
+        let json = serde_json::to_value(&record).unwrap();
+        assert!(json.get("humanVsAi").is_some());
+        assert!(json.get("informedBy").is_some());
+        assert_eq!(
+            json.get("classifierVersion"),
+            Some(&serde_json::Value::String("v1".into()))
+        );
+        assert_eq!(
+            json.get("reviewStatus"),
+            Some(&serde_json::Value::String("pending".into()))
+        );
+        assert!(json.get("appealHistory").is_some());
+        assert!(json.get("human_vs_ai").is_none());
+        assert!(json.get("review_status").is_none());
+
+        let budget = sample_budget_content();
+        let json = serde_json::to_value(&budget).unwrap();
+        assert_eq!(
+            json.get("onExceed"),
+            Some(&serde_json::Value::String("require-approval".into()))
+        );
+        assert!(json.get("on_exceed").is_none());
+        // An absent onchain binding is skipped entirely (camelCase contract).
+        assert!(json.get("onchain").is_none());
+
+        // A present onchain binding serializes as the flat camelCase object.
+        let mut bound = sample_budget_content();
+        bound.onchain = Some(OnchainBinding {
+            chain: "anvil-31337".into(),
+            contract: "0xabc".into(),
+            subject: "b".repeat(64),
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("contract"),
+            Some(&serde_json::Value::String("0xabc".into()))
+        );
+        assert_eq!(
+            onchain.get("subject"),
+            Some(&serde_json::Value::String("b".repeat(64)))
+        );
+        assert!(onchain.get("subject_pubkey").is_none());
+    }
+
+    #[test]
+    fn org_node_onchain_binding_serializes_camel_case() {
+        // An absent root binding is skipped entirely (serde default).
+        let json = serde_json::to_value(sample_node_content()).unwrap();
+        assert!(json.get("onchain").is_none());
+
+        // A present root binding serializes as the flat camelCase object.
+        let mut bound = sample_node_content();
+        bound.onchain = Some(OrgOnchainBinding {
+            chain: "anvil-31337".into(),
+            dao: "0xdao".into(),
+            bound_at: 1_798_765_432,
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("dao"),
+            Some(&serde_json::Value::String("0xdao".into()))
+        );
+        assert_eq!(
+            onchain.get("boundAt"),
+            Some(&serde_json::Value::from(1_798_765_432u64))
+        );
+        assert!(onchain.get("bound_at").is_none());
+
+        // Round-trips through a pre-binding event payload unchanged.
+        let parsed: OrgNodeContent =
+            serde_json::from_value(serde_json::to_value(sample_node_content()).unwrap()).unwrap();
+        assert_eq!(parsed, sample_node_content());
+    }
+
+    // ── Contribution record (37013) tests ──────────────────────────────────
+
+    #[test]
+    fn contribution_record_builds_valid_event() {
+        let mut dims = std::collections::HashMap::new();
+        dims.insert("build".into(), 0.8);
+        dims.insert("teach".into(), 0.3);
+
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "Implemented NIP-ORG SDK builders".into(),
+            dimensions: dims,
+            outcome: Some(ContributionOutcome {
+                effect: Some("SDK compiles and passes 326 tests".into()),
+                harm: None,
+            }),
+            evidence: vec!["event-id-1".into()],
+            human_vs_ai: HumanVsAi {
+                human: 0.7,
+                ai: 0.3,
+            },
+            informed_by: vec![],
+            classifier_version: Some("2026-Q3".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+
+        let builder = build_contribution_record("action-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_CONTRIBUTION_RECORD as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "action-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["e", "event-id-1"]));
+
+        let parsed: ContributionRecordContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.action, "Implemented NIP-ORG SDK builders");
+        assert_eq!(parsed.dimensions.get("build"), Some(&0.8));
+        assert_eq!(parsed.human_vs_ai.human, 0.7);
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_id() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_action() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("action-1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn review_status_from_str() {
+        assert!(matches!(
+            "pending".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Pending)
+        ));
+        assert!(matches!(
+            "accepted".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Accepted)
+        ));
+        assert!(matches!(
+            "rejected".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Rejected)
+        ));
+        assert!(matches!(
+            "appealed".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Appealed)
+        ));
+        assert!("invalid".parse::<ReviewStatus>().is_err());
     }
 }

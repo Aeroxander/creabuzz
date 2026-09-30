@@ -62,6 +62,8 @@ pub enum LimitType {
     ApiCalls,
     /// Relay-proxied GIF metadata searches.
     GifSearches,
+    /// Relay-owned LLM gateway calls (`POST /llm/chat/completions`).
+    LlmCalls,
     /// All WebSocket events (broader than `Messages`).
     WsEvents,
     /// Concurrent WebSocket connections from a single IP address.
@@ -75,6 +77,7 @@ impl LimitType {
             Self::Messages => "msg",
             Self::ApiCalls => "api",
             Self::GifSearches => "gif",
+            Self::LlmCalls => "llm",
             Self::WsEvents => "ws",
             Self::IpConnections => "conn",
         }
@@ -281,6 +284,17 @@ mod tests {
             "key {key} should start with {expected_prefix}"
         );
         assert!(key.ends_with(":msg"));
+    }
+
+    #[test]
+    fn llm_calls_have_an_independent_quota_key() {
+        let ctx = fixture_ctx("relay-a.example");
+        let keys = Keys::generate();
+        let llm_key = rate_limit_key(&ctx, &keys.public_key(), &LimitType::LlmCalls);
+        let api_key = rate_limit_key(&ctx, &keys.public_key(), &LimitType::ApiCalls);
+
+        assert!(llm_key.ends_with(":llm"));
+        assert_ne!(llm_key, api_key);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
-use buzz_core::kind::KIND_STREAM_MESSAGE;
+use buzz_core::kind::{KIND_STREAM_MESSAGE, KIND_WORKFLOW_APPROVAL_REQUESTED};
 use buzz_core::tenant::CommunityId;
 use buzz_workflow::action_sink::{ActionSink, ActionSinkError};
 use chrono::Utc;
@@ -473,10 +473,712 @@ impl ActionSink for RelayActionSink {
             Ok(event_id_hex)
         })
     }
+
+    fn emit_approval_request(
+        &self,
+        community_id: CommunityId,
+        channel_id: &str,
+        token_hash_hex: &str,
+        approver_spec: &str,
+        message: &str,
+        author_pubkey: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>> {
+        let channel_id = channel_id.to_owned();
+        let token_hash_hex = token_hash_hex.to_owned();
+        let approver_spec = approver_spec.to_owned();
+        let message = message.to_owned();
+        let author_pubkey = author_pubkey.to_owned();
+
+        Box::pin(async move {
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Same community contract as send_message: the run's community,
+            // never re-derived. Fail closed if unmapped.
+            let host = state
+                .db
+                .lookup_community_host(community_id)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?
+                .ok_or_else(|| {
+                    ActionSinkError::Database(format!(
+                        "workflow run community {community_id} is not mapped to a host"
+                    ))
+                })?;
+            let tenant = buzz_core::tenant::TenantContext::resolved(community_id, host);
+
+            // Channel must exist and not be archived — an approval nobody can
+            // read is worse than no notification (it hides the recovery path).
+            let channel_uuid = Uuid::parse_str(&channel_id)
+                .map_err(|e| ActionSinkError::InvalidInput(format!("invalid UUID: {e}")))?;
+            let channel_id_canonical = channel_uuid.to_string();
+            let channel = state
+                .db
+                .get_channel_for_event_write(tenant.community(), channel_uuid)
+                .await
+                .map_err(|e| match &e {
+                    buzz_db::DbError::ChannelNotFound(_) | buzz_db::DbError::NotFound(_) => {
+                        ActionSinkError::ChannelNotFound(channel_id_canonical.clone())
+                    }
+                    _ => ActionSinkError::Database(e.to_string()),
+                })?;
+            if channel.archived_at.is_some() {
+                return Err(ActionSinkError::ChannelArchived(
+                    channel_id_canonical.clone(),
+                ));
+            }
+
+            let author_pubkey = nostr::PublicKey::from_hex(&author_pubkey).map_err(|e| {
+                ActionSinkError::InvalidInput(format!("invalid author pubkey: {e}"))
+            })?;
+            let author_pubkey_bytes = author_pubkey.to_bytes().to_vec();
+            let author_pubkey_hex = author_pubkey.to_hex();
+            let is_member = state
+                .is_member_cached(tenant.community(), channel_uuid, &author_pubkey_bytes)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            if !is_member && channel.visibility != "open" {
+                return Err(ActionSinkError::InvalidInput(
+                    "workflow owner does not have access to destination channel".into(),
+                ));
+            }
+
+            if token_hash_hex.trim().is_empty() {
+                return Err(ActionSinkError::InvalidInput(
+                    "approval token hash must not be empty".into(),
+                ));
+            }
+
+            // Content is definition-rendered (from/message templates), never
+            // raw trigger text. An empty message falls back rather than
+            // failing — suspension is already persisted; emission is best
+            // effort and must not fail on cosmetic input.
+            let text = if message.trim().is_empty() {
+                format!("Approval requested (from {approver_spec})")
+            } else {
+                message
+            };
+
+            // kind:46010 tags: `h` scopes to the channel (membership-gated
+            // reads), `d` carries the token hash (the value grant/deny look
+            // up), `p` attributes the workflow owner, `buzz:workflow`
+            // excludes the event from re-triggering workflows.
+            let tags = vec![
+                Tag::parse(["h", &channel_id_canonical])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("h tag: {e}")))?,
+                Tag::parse(["d", &token_hash_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("d tag: {e}")))?,
+                Tag::parse(["p", &author_pubkey_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("p tag: {e}")))?,
+                Tag::parse(["buzz:workflow", "true"])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("workflow tag: {e}")))?,
+                Tag::parse(["buzz:workflow-owner", &author_pubkey_hex])
+                    .map_err(|e| ActionSinkError::EventBuild(format!("workflow owner tag: {e}")))?,
+            ];
+
+            let kind = Kind::from(KIND_WORKFLOW_APPROVAL_REQUESTED as u16);
+            let event = EventBuilder::new(kind, &text)
+                .tags(tags)
+                .sign_with_keys(&state.relay_keypair)
+                .map_err(|e| ActionSinkError::EventBuild(format!("signing: {e}")))?;
+
+            let event_id_hex = event.id.to_hex();
+            let event_id_bytes = event.id.as_bytes().to_vec();
+            let kind_u32 = KIND_WORKFLOW_APPROVAL_REQUESTED;
+
+            let event_created_at = {
+                let ts = event.created_at.as_secs() as i64;
+                chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now)
+            };
+
+            info!(
+                event_id = %event_id_hex,
+                channel_id = %channel_id_canonical,
+                author = %author_pubkey,
+                "Workflow approval requested: emitting kind 46010 event"
+            );
+
+            let thread_meta = Some(buzz_db::event::ThreadMetadataParams {
+                event_id: &event_id_bytes,
+                event_created_at,
+                channel_id: channel_uuid,
+                parent_event_id: None,
+                parent_event_created_at: None,
+                root_event_id: None,
+                root_event_created_at: None,
+                depth: 0,
+                broadcast: false,
+            });
+
+            let (stored_event, was_inserted) = state
+                .db
+                .insert_event_with_thread_metadata(
+                    tenant.community(),
+                    &event,
+                    Some(channel_uuid),
+                    thread_meta,
+                )
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+
+            if was_inserted {
+                let _ = dispatch_persistent_event(
+                    &tenant,
+                    &state,
+                    &stored_event,
+                    kind_u32,
+                    &author_pubkey_hex,
+                    None,
+                )
+                .await;
+            }
+
+            Ok(event_id_hex)
+        })
+    }
+
+    fn distill_agent_wiki(
+        &self,
+        community_id: CommunityId,
+        space: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        let space = space.to_owned();
+
+        Box::pin(async move {
+            // 0. Upgrade weak reference — fails only during shutdown.
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Fail closed when the classifier endpoint is unconfigured: a
+            // scheduled maintenance run must leave a visible run-status error,
+            // never silently skip (Review-Proven Rule 1). Same
+            // `BUZZ_CLASSIFIER_*` env/config as `org classify` and
+            // `buzz agwiki distill`.
+            let target = classifier_target()?;
+
+            // Same community scoping contract as `send_message`: the run
+            // carries its owning community; read its host back only to form a
+            // complete TenantContext (labelling), never to re-derive the
+            // community from the deployment default.
+            let host = state
+                .db
+                .lookup_community_host(community_id)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?
+                .ok_or_else(|| {
+                    ActionSinkError::Database(format!(
+                        "workflow run community {community_id} is not mapped to a host"
+                    ))
+                })?;
+            let tenant = buzz_core::tenant::TenantContext::resolved(community_id, host);
+
+            info!(community = %community_id, space = %space, "DistillAgentWiki: running the distill loop");
+            let ports = RelayDistillPorts {
+                state: &state,
+                tenant: &tenant,
+                target: &target,
+            };
+            let outcome = buzz_agwiki::run::run_distill(
+                &ports,
+                &buzz_agwiki::run::DistillOptions {
+                    space: &space,
+                    limit: None,
+                    publish: true,
+                    system_prompt: None,
+                },
+                &|msg| tracing::warn!(target: "agwiki", "{msg}"),
+            )
+            .await
+            .map_err(|e| match e {
+                buzz_agwiki::run::DistillError::Failed(m) => ActionSinkError::Distill(m),
+                buzz_agwiki::run::DistillError::Port(e) => e,
+            })?;
+            Ok(distill_outcome_json(&outcome))
+        })
+    }
+
+    fn run_org_diag(
+        &self,
+        community_id: CommunityId,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ActionSinkError>> + Send + '_>> {
+        Box::pin(async move {
+            // 0. Upgrade weak reference — fails only during shutdown.
+            let state = self
+                .state
+                .upgrade()
+                .ok_or_else(|| ActionSinkError::Database("relay is shutting down".into()))?;
+
+            // Community-scoped bounded read of the coordination plane — the
+            // same kinds `buzz diag` scans. The lookback is a stated default
+            // (7 days, cap 5000 events), never a claim about the window.
+            let now = chrono::Utc::now().timestamp().max(0) as u64;
+            let since = now.saturating_sub(DIAG_LOOKBACK_S);
+            let query = buzz_db::EventQuery {
+                kinds: Some(DIAG_KINDS.iter().map(|&k| i32::from(k as u16)).collect()),
+                since: chrono::DateTime::from_timestamp(since as i64, 0),
+                limit: Some(DIAG_EVENT_CAP),
+                ..buzz_db::EventQuery::for_community(community_id)
+            };
+            let rows = state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            // Open channels only: the diag reads actor + timing metadata of
+            // chat and task events, and this job has no viewer to authorize
+            // against. Events with no channel (org records) stay in.
+            let readable: std::collections::HashSet<uuid::Uuid> =
+                readable_channel_ids(&state.db, community_id)
+                    .await?
+                    .into_iter()
+                    .collect();
+            let events: Vec<nostr::Event> = rows
+                .into_iter()
+                .map(|row| row.event)
+                .filter(|event| event_in_readable_channel(event, &readable))
+                .collect();
+
+            let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
+            serde_json::to_value(&report).map_err(|e| ActionSinkError::EventBuild(e.to_string()))
+        })
+    }
+}
+
+// ── Org diagnostic (`run_org_diag`) — OA.md Phase 4 ────────────────────────
+
+/// Whether a relay-run job (it has no viewer, so per-member access cannot be
+/// re-checked) may read a channel: only open, live, non-DM channels.
+///
+/// The distill and diag jobs publish or summarize community-wide, so anything
+/// they read must already be readable by every member.
+fn is_distill_readable(
+    visibility: &str,
+    channel_type: &str,
+    archived: bool,
+    deleted: bool,
+) -> bool {
+    visibility == "open" && channel_type != "dm" && !archived && !deleted
+}
+
+/// Ids of the channels a relay-run job may read (see [`is_distill_readable`]).
+async fn readable_channel_ids(
+    db: &buzz_db::Db,
+    community: CommunityId,
+) -> Result<Vec<uuid::Uuid>, ActionSinkError> {
+    let channels = db
+        .list_channels(community, Some("open"))
+        .await
+        .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+    Ok(channels
+        .iter()
+        .filter(|c| {
+            is_distill_readable(
+                &c.visibility,
+                &c.channel_type,
+                c.archived_at.is_some(),
+                c.deleted_at.is_some(),
+            )
+        })
+        .map(|c| c.id)
+        .collect())
+}
+
+/// Whether an event may feed a relay-run job: channel-less events (org
+/// records) pass; channel-scoped ones only when their `h` channel is readable.
+/// An `h` tag that is not a UUID fails closed.
+fn event_in_readable_channel(
+    event: &nostr::Event,
+    readable: &std::collections::HashSet<uuid::Uuid>,
+) -> bool {
+    let h = event.tags.iter().find_map(|tag| {
+        let parts = tag.as_slice();
+        (parts.first().map(String::as_str) == Some("h")).then(|| parts.get(1).cloned())
+    });
+    match h {
+        None => true,
+        Some(value) => value
+            .and_then(|v| uuid::Uuid::parse_str(&v).ok())
+            .is_some_and(|id| readable.contains(&id)),
+    }
+}
+
+/// The kinds the instrument reasons over (the coordination plane) — the same
+/// list `buzz diag` scans, so the CLI and the scheduled run never disagree.
+pub(crate) const DIAG_KINDS: [u32; 10] = [
+    47004, 47005, 37013, 37011, 46010, 44001, 44002, 5, 44011, 40002,
+];
+/// Stated lookback default: one week.
+pub(crate) const DIAG_LOOKBACK_S: u64 = 7 * 24 * 3600;
+/// Stated scan cap.
+pub(crate) const DIAG_EVENT_CAP: i64 = 5_000;
+
+/// Map wire events to instrument rows — conservative: unparseable rows drop,
+/// unknown kinds classify as `Other`, the `kind` tag refines receipt/grant
+/// tables, `d` is the acted-on coordinate. Never guessed at.
+pub(crate) fn diag_events_from_nostr(
+    events: &[nostr::Event],
+) -> Vec<buzz_core::org_diag::DiagEvent> {
+    events
+        .iter()
+        .map(|event| {
+            let table = buzz_agwiki::tag_values(event, "kind");
+            let d = buzz_agwiki::tag_values(event, "d");
+            buzz_core::org_diag::DiagEvent {
+                id: event.id.to_hex(),
+                actor: event.pubkey.to_hex(),
+                at: event.created_at.as_secs(),
+                class: buzz_core::org_diag::class_of_kind(
+                    u32::from(event.kind.as_u16()),
+                    table.first().map(String::as_str),
+                ),
+                coordinate: d.first().map(|d| d.to_string()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod run_org_diag_tests {
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, Tag};
+
+    fn event(kind: u32, tags: Vec<Tag>) -> nostr::Event {
+        EventBuilder::new(Kind::Custom(kind as u16), "{}")
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .expect("event")
+    }
+
+    #[test]
+    fn mapping_is_conservative_and_reads_tables_and_coordinates() {
+        let events = vec![
+            event(47004, vec![]),
+            event(47005, vec![Tag::parse(["kind", "vote"]).expect("tag")]),
+            event(47005, vec![Tag::parse(["kind", "execute"]).expect("tag")]),
+            event(37011, vec![Tag::parse(["kind", "revoke"]).expect("tag")]),
+            event(44002, vec![Tag::parse(["d", "default/diag"]).expect("tag")]),
+            event(12_345, vec![]),
+        ];
+        let rows = diag_events_from_nostr(&events);
+        assert_eq!(rows.len(), 6);
+        use buzz_core::org_diag::DiagClass;
+        assert_eq!(rows[0].class, DiagClass::Proposal);
+        assert_eq!(rows[1].class, DiagClass::Vote);
+        assert_eq!(rows[2].class, DiagClass::Execute);
+        assert_eq!(rows[3].class, DiagClass::Revoke);
+        assert_eq!(rows[4].class, DiagClass::Revision);
+        assert_eq!(rows[4].coordinate.as_deref(), Some("default/diag"));
+        assert_eq!(rows[5].class, DiagClass::Other, "unknown kind → Other");
+    }
+
+    #[test]
+    fn the_step_output_is_the_report_json() {
+        let mut events = Vec::new();
+        for i in 0..25 {
+            events.push(event(40002, vec![]));
+            let _ = i;
+        }
+        let report = buzz_core::org_diag::diagnose(&diag_events_from_nostr(&events));
+        let value = serde_json::to_value(&report).expect("serializable");
+        assert_eq!(
+            value
+                .get("wefModes")
+                .and_then(|m| m.as_array())
+                .map(Vec::len),
+            Some(5),
+            "the five WEF modes travel in the step output"
+        );
+        assert!(value.get("events").is_some());
+    }
+}
+
+// ── Agent Wiki self-maintenance (`distill_agent_wiki`) ─────────────────────
+
+/// Resolve the classifier endpoint through a provider (injectable for tests).
+/// Fail closed — an unconfigured deployment surfaces a visible run-status
+/// error instead of silently skipping a scheduled maintenance run.
+fn classifier_target_from(
+    get: impl Fn(&str) -> Option<String>,
+) -> Result<buzz_agwiki::llm::LlmTarget, ActionSinkError> {
+    buzz_agwiki::llm::classifier_target_from_provider(get).map_err(ActionSinkError::Distill)
+}
+
+/// Resolve the classifier endpoint from the shared `BUZZ_CLASSIFIER_*` env
+/// (same config as `org classify` / `buzz agwiki distill`).
+fn classifier_target() -> Result<buzz_agwiki::llm::LlmTarget, ActionSinkError> {
+    classifier_target_from(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+}
+
+/// Sign a composed Agent Wiki page and enforce the relay's kind:44002
+/// envelope before the internal publish — the same
+/// [`validate_agent_wiki_envelope`] bounds a client-side publish must satisfy
+/// (malformed pages must never win read-side LWW against a valid head). This
+/// is the production publish path's validation seam: `RelayDistillPorts::
+/// publish` signs and validates through exactly this function.
+fn sign_and_validate_agent_wiki_page(
+    keys: &nostr::Keys,
+    builder: EventBuilder,
+) -> Result<nostr::Event, ActionSinkError> {
+    let event = builder
+        .sign_with_keys(keys)
+        .map_err(|e| ActionSinkError::EventBuild(format!("signing: {e}")))?;
+    crate::handlers::ingest::validate_agent_wiki_envelope(&event)
+        .map_err(ActionSinkError::Distill)?;
+    Ok(event)
+}
+
+/// Relay-side ports for the shared `buzz-agwiki` distill core: bounded reads
+/// from the relay's own store, NIP-50 reflection search via Postgres FTS, the
+/// shared classifier LLM transport, and the internal relay-signed publish.
+struct RelayDistillPorts<'a> {
+    state: &'a Arc<AppState>,
+    tenant: &'a buzz_core::tenant::TenantContext,
+    target: &'a buzz_agwiki::llm::LlmTarget,
+}
+
+impl buzz_agwiki::run::DistillPorts for RelayDistillPorts<'_> {
+    type Error = ActionSinkError;
+
+    fn fetch_kind_events(
+        &self,
+        kind: u32,
+        since: u64,
+        bound: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, Vec<nostr::Event>, Self::Error> {
+        let query = buzz_db::EventQuery {
+            kinds: Some(vec![kind as i32]),
+            since: (since > 0)
+                .then(|| chrono::DateTime::from_timestamp(since as i64, 0))
+                .flatten(),
+            limit: Some(i64::from(bound)),
+            ..buzz_db::EventQuery::for_community(self.tenant.community())
+        };
+        Box::pin(async move {
+            let rows = self
+                .state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            Ok(rows.into_iter().map(|row| row.event).collect())
+        })
+    }
+
+    fn fetch_existing_page(
+        &self,
+        coordinate: &str,
+    ) -> buzz_agwiki::run::PortFut<'_, Option<(String, u64)>, Self::Error> {
+        let query = buzz_db::EventQuery {
+            kinds: Some(vec![i32::from(buzz_agwiki::KIND_AGENT_WIKI as u16)]),
+            d_tag: Some(coordinate.to_owned()),
+            limit: Some(i64::from(buzz_agwiki::AGWIKI_PAGE_QUERY_BOUND)),
+            ..buzz_db::EventQuery::for_community(self.tenant.community())
+        };
+        let coordinate = coordinate.to_owned();
+        Box::pin(async move {
+            let rows = self
+                .state
+                .db
+                .query_events(&query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            let events: Vec<nostr::Event> = rows.into_iter().map(|row| row.event).collect();
+            Ok(buzz_agwiki::newest_page(&events, &coordinate))
+        })
+    }
+
+    fn search(
+        &self,
+        query: &str,
+        kinds: &[u32],
+        limit: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, Vec<serde_json::Value>, Self::Error> {
+        let mut search_query = buzz_search::SearchQuery {
+            community: self.tenant.community(),
+            q: query.to_owned(),
+            // Replaced inside the async block below with the OPEN channels
+            // only: this relay-run job has no viewer, so nothing here can
+            // re-check access per member. `Any` would reach private channels.
+            channel_scope: buzz_search::ChannelScope::Any,
+            kinds: Some(kinds.iter().map(|k| *k as i32).collect()),
+            authors: None,
+            since: None,
+            until: None,
+            page: 1,
+            per_page: limit,
+            mode: buzz_search::SearchMode::FullText,
+        };
+        Box::pin(async move {
+            let readable = readable_channel_ids(&self.state.db, self.tenant.community()).await?;
+            if readable.is_empty() {
+                return Ok(Vec::new());
+            }
+            search_query.channel_scope = buzz_search::ChannelScope::Channels(readable);
+            let result = self
+                .state
+                .search
+                .search(&search_query)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            let hit_ids: Vec<[u8; 32]> = result.hits.into_iter().map(|h| h.event_id).collect();
+            let id_refs: Vec<&[u8]> = hit_ids.iter().map(|b| b.as_slice()).collect();
+            let events = self
+                .state
+                .db
+                .get_events_by_ids_routed(
+                    "agwiki_reflection_search",
+                    self.tenant.community(),
+                    &id_refs,
+                )
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            Ok(events
+                .iter()
+                .map(|stored| {
+                    serde_json::json!({
+                        "id": stored.event.id.to_hex(),
+                        "content": stored.event.content,
+                    })
+                })
+                .collect())
+        })
+    }
+
+    fn chat(
+        &self,
+        http: &reqwest::Client,
+        system: &str,
+        user: &str,
+        max_tokens: u32,
+    ) -> buzz_agwiki::run::PortFut<'_, serde_json::Value, Self::Error> {
+        // Capture owned copies (the reqwest client is Arc-backed) so the
+        // boxed future is bound only by `&self`, matching the trait.
+        let http = http.clone();
+        let target = self.target.clone();
+        let system = system.to_owned();
+        let user = user.to_owned();
+        Box::pin(async move {
+            buzz_agwiki::llm::chat_completion(&http, &target, &system, &user, max_tokens)
+                .await
+                .map_err(|e| ActionSinkError::Distill(e.to_string()))
+        })
+    }
+
+    fn publish(&self, builder: EventBuilder) -> buzz_agwiki::run::PortFut<'_, String, Self::Error> {
+        Box::pin(async move {
+            // Relay-signed internal publish — but the envelope bounds are the
+            // same as the client ingest path (fail closed on violations).
+            let event = sign_and_validate_agent_wiki_page(&self.state.relay_keypair, builder)?;
+            let (stored_event, was_inserted) = self
+                .state
+                .db
+                .insert_event_with_thread_metadata(self.tenant.community(), &event, None, None)
+                .await
+                .map_err(|e| ActionSinkError::Database(e.to_string()))?;
+            if was_inserted {
+                let _ = dispatch_persistent_event(
+                    self.tenant,
+                    self.state,
+                    &stored_event,
+                    buzz_agwiki::KIND_AGENT_WIKI,
+                    &event.pubkey.to_hex(),
+                    None,
+                )
+                .await;
+            }
+            Ok(event.id.to_hex())
+        })
+    }
+
+    fn llm_model(&self) -> &str {
+        &self.target.model
+    }
+}
+
+/// Map the core outcome to the step output recorded in workflow run history.
+fn distill_outcome_json(outcome: &buzz_agwiki::run::DistillOutcome) -> serde_json::Value {
+    use buzz_agwiki::run::DistillOutcome;
+    match outcome {
+        DistillOutcome::Skipped { coordinate, since } => serde_json::json!({
+            "status": "skipped",
+            "space": coordinate.split('/').next().unwrap_or_default(),
+            "coordinate": coordinate,
+            "since": since,
+        }),
+        DistillOutcome::Preview { report, .. } | DistillOutcome::Published { report, .. } => {
+            serde_json::json!({
+                "status": if matches!(outcome, DistillOutcome::Published { .. }) {
+                    "published"
+                } else {
+                    "preview"
+                },
+                "space": report.space,
+                "coordinate": report.coordinate,
+                "event_id": match outcome {
+                    DistillOutcome::Published { write_result, .. } => write_result.clone(),
+                    _ => String::new(),
+                },
+                "cursor": report.cursor,
+                "cost_tokens": report.cost_tokens,
+                "model": report.model,
+                "sources": report.sources,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn relay_jobs_read_only_open_live_non_dm_channels() {
+        use super::is_distill_readable;
+        assert!(is_distill_readable("open", "stream", false, false));
+        assert!(is_distill_readable("open", "forum", false, false));
+        assert!(!is_distill_readable("private", "stream", false, false));
+        assert!(!is_distill_readable("open", "dm", false, false));
+        assert!(!is_distill_readable("open", "stream", true, false));
+        assert!(!is_distill_readable("open", "stream", false, true));
+    }
+
+    #[test]
+    fn private_or_unparsable_channel_events_never_feed_a_relay_job() {
+        use super::event_in_readable_channel;
+        use std::collections::HashSet;
+
+        let keys = nostr::Keys::generate();
+        let open = uuid::Uuid::new_v4();
+        let private = uuid::Uuid::new_v4();
+        let readable: HashSet<uuid::Uuid> = [open].into_iter().collect();
+        let event = |tags: Vec<Vec<String>>| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(9), "hello")
+                .tags(tags.into_iter().map(|t| nostr::Tag::parse(t).unwrap()))
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let h = |id: &str| vec![vec!["h".to_string(), id.to_string()]];
+
+        assert!(event_in_readable_channel(
+            &event(h(&open.to_string())),
+            &readable
+        ));
+        assert!(
+            !event_in_readable_channel(&event(h(&private.to_string())), &readable),
+            "a private channel's message must not reach the LLM or the shared page"
+        );
+        assert!(
+            !event_in_readable_channel(&event(h("not-a-uuid")), &readable),
+            "an unparsable channel id fails closed"
+        );
+        assert!(
+            event_in_readable_channel(&event(vec![]), &readable),
+            "channel-less records (org events) are not channel-scoped"
+        );
+    }
+
     use super::*;
 
     fn m(name: &str, pubkey: &str) -> (String, String) {
@@ -768,6 +1470,165 @@ mod tests {
 
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].as_slice(), ["p", owner.as_str()]);
+    }
+
+    // ── `distill_agent_wiki` publish path: envelope bounds ─────────────────
+
+    /// One envelope-violation case: a composed page whose (d, content, tags)
+    /// trip exactly one of the relay's kind:44002 bounds. The publish path
+    /// (`sign_and_validate_agent_wiki_page`) must reject every case — these
+    /// are the same bounds `validate_agent_wiki_envelope` enforces at ingest.
+    struct EnvelopeCase<'a> {
+        name: &'static str,
+        d: &'a str,
+        content: &'a str,
+        tags: Vec<(&'static str, &'a str)>,
+    }
+
+    #[test]
+    fn agent_wiki_publish_path_enforces_envelope_bounds() {
+        let keys = nostr::Keys::generate();
+
+        // The composed shape the distill loop publishes passes.
+        let valid = EventBuilder::new(
+            Kind::Custom(buzz_agwiki::KIND_AGENT_WIKI as u16),
+            "---\nslug: default/standup\nagwiki-cursor: 1\n---\n# body",
+        )
+        .tags(vec![
+            Tag::parse(["d", "default/standup"]).expect("d tag"),
+            Tag::parse(["model", "test-model"]).expect("model tag"),
+            Tag::parse(["cost_tokens", "1500"]).expect("cost tag"),
+            Tag::parse(["sources", &"a".repeat(64)]).expect("sources tag"),
+        ]);
+        assert!(
+            sign_and_validate_agent_wiki_page(&keys, valid).is_ok(),
+            "a well-formed page must pass the publish path"
+        );
+
+        let long_d = "a".repeat(257);
+        let long_content = "x".repeat(65_537);
+        let cases = [
+            EnvelopeCase {
+                name: "d without '/'",
+                d: "standalone",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "uppercase d segment",
+                d: "Default/standup",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "empty d segment",
+                d: "default//standup",
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "over-long d",
+                d: long_d.as_str(),
+                content: "body",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "empty content",
+                d: "default/standup",
+                content: "",
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "over-long content",
+                d: "default/standup",
+                content: long_content.as_str(),
+                tags: vec![],
+            },
+            EnvelopeCase {
+                name: "duplicate model tags",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("model", "a"), ("model", "b")],
+            },
+            EnvelopeCase {
+                name: "empty model value",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("model", "")],
+            },
+            EnvelopeCase {
+                name: "non-digit cost_tokens",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("cost_tokens", "1.5k")],
+            },
+            EnvelopeCase {
+                name: "duplicate cost_tokens",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("cost_tokens", "1"), ("cost_tokens", "2")],
+            },
+            EnvelopeCase {
+                name: "duplicate sources",
+                d: "default/standup",
+                content: "body",
+                tags: vec![
+                    (
+                        "sources",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ),
+                    (
+                        "sources",
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    ),
+                ],
+            },
+            EnvelopeCase {
+                name: "malformed source id",
+                d: "default/standup",
+                content: "body",
+                tags: vec![("sources", "not-hex")],
+            },
+        ];
+
+        for case in &cases {
+            let mut builder = EventBuilder::new(
+                Kind::Custom(buzz_agwiki::KIND_AGENT_WIKI as u16),
+                case.content,
+            )
+            .tag(Tag::parse(["d", case.d]).expect("d tag parses"));
+            for (name, value) in &case.tags {
+                builder = builder.tag(Tag::parse([*name, *value]).expect("tag parses"));
+            }
+            let result = sign_and_validate_agent_wiki_page(&keys, builder);
+            assert!(
+                matches!(result, Err(ActionSinkError::Distill(_))),
+                "publish path must reject envelope violation '{}', got: {result:?}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_target_fails_closed_without_config() {
+        // Missing config must surface as a visible Distill error naming the
+        // missing variable — never a silent skip (Review-Proven Rule 1).
+        let missing = classifier_target_from(|name| {
+            (name == "BUZZ_CLASSIFIER_API_KEY").then(|| "k".to_string())
+        });
+        match missing {
+            Err(ActionSinkError::Distill(m)) => {
+                assert!(m.contains("BUZZ_CLASSIFIER_API_URL"), "got: {m}");
+            }
+            other => panic!("expected a Distill error, got: {other:?}"),
+        }
+
+        let ok = classifier_target_from(|name| match name {
+            "BUZZ_CLASSIFIER_API_URL" => Some("http://x".to_string()),
+            "BUZZ_CLASSIFIER_API_KEY" => Some("k".to_string()),
+            _ => None,
+        });
+        assert!(ok.is_ok(), "a configured target resolves: {ok:?}");
     }
 }
 

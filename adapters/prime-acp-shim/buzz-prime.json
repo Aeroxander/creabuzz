@@ -1,0 +1,9 @@
+{
+  "id": "prime",
+  "label": "Prime Agent",
+  "command": "prime-acp-shim",
+  "args": [],
+  "env": {},
+  "installInstructionsUrl": "https://github.com/PrimeIntellect-ai/prime-agent",
+  "installHint": "Install Prime Agent (prime-agent on PATH, then /login) and buzz's prime-acp-shim. Prime Agent runs via prime-acp-shim's ACP mode."
+}

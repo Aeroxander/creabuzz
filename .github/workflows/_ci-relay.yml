@@ -602,6 +602,17 @@ jobs:
         env:
           RELAY_URL: ws://localhost:3000
           GIT_CREDENTIAL_NOSTR_BIN: ${{ github.workspace }}/target/ci/git-credential-nostr
+      - name: Org graph e2e
+        # NIP-ORG conformance over the live WebSocket seam (LWW lifecycle,
+        # p-gate, binding authority) with direct DB fixture setup. Must run in
+        # CI: these tests pin the org authority model — see
+        # docs/production-readiness-audit.md and
+        # docs/app-readiness-audit-2026-09-22.md.
+        run: |
+          cargo test -p buzz-test-client --test e2e_org -- --ignored --nocapture
+        env:
+          RELAY_URL: ws://localhost:3000
+          DATABASE_URL: postgres://buzz:buzz_dev@localhost:5432/buzz
       - name: Media read-auth e2e
         # Reads require kind:24242 `t=get` auth, so these binaries are the only
         # coverage that a real relay rejects bare reads and honours host- and

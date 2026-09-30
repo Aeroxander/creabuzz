@@ -290,10 +290,25 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
     let api_router = Router::new()
+        // SIWE onboarding (creabuzz) — handlers 404 when BUZZ_EVM_AUTH is off.
+        .route("/auth/siwe/nonce", get(api::evm_auth::issue_nonce))
+        .route("/auth/siwe/register", post(api::evm_auth::register))
+        .route("/auth/siwe/revoke", post(api::evm_auth::revoke))
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
         .route("/info", get(relay_info_handler))
+        .route("/communities", get(api::communities::directory))
         .route("/.well-known/nostr.json", get(api::nip05::nostr_nip05))
+        // ERC-4824 dao.json + the charter flatfile (OA.md Phase 2) — public
+        // discovery; tenant binds from Host like NIP-05, path segment is
+        // URL shape only.
+        .route("/dao.json", get(api::dao_json::serve_root))
+        .route("/governance.md", get(api::dao_json::governance_md_root))
+        .route("/{community}/dao.json", get(api::dao_json::serve))
+        .route(
+            "/{community}/governance.md",
+            get(api::dao_json::governance_md),
+        )
         // Health endpoints
         .route("/health", get(health_handler))
         .route("/_liveness", get(liveness_handler))
@@ -304,6 +319,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/count", post(api::bridge::count_events))
         // Relay-owned third-party GIF metadata proxy (NIP-98 auth).
         .route(api::gifs::SEARCH_PATH, post(api::gifs::search))
+        // Relay-owned LLM gateway for browser agents (NIP-98 auth, opt-in).
+        .route(
+            api::llm_gateway::LLM_CHAT_PATH,
+            post(api::llm_gateway::chat_completions),
+        )
         .route(api::gifs::SHARE_PATH, post(api::gifs::share))
         .route(
             "/workflows/{workflow_id}/runs",
@@ -400,6 +420,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
         let web_files = web_dir.map(ServeDir::new);
         let serve_git_web_gui = state.config.serve_git_web_gui;
+        let web_spa_full = state.config.web_spa_full;
         let fallback_state = state.clone();
         let spa_fallback = tower::service_fn(move |req: axum::extract::Request| {
             let admin_index = admin_index.clone();
@@ -427,10 +448,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
                 if let (Some(index), Some(files)) = (web_index, web_files) {
                     if path.starts_with("/assets/") {
-                        return files.oneshot(req).await.map(IntoResponse::into_response);
+                        return files
+                            .oneshot(req)
+                            .await
+                            .map(|response| with_spa_coi(response.into_response()));
                     }
-                    if should_serve_spa(path, serve_git_web_gui) {
-                        return Ok(read_spa_index(&index).await);
+                    if should_serve_spa(path, serve_git_web_gui, web_spa_full) {
+                        return Ok(with_spa_coi(read_spa_index(&index).await));
                     }
                 }
                 Ok(StatusCode::NOT_FOUND.into_response())
@@ -483,8 +507,40 @@ fn is_invite_landing_path(path: &str) -> bool {
         .is_some_and(|code| !code.is_empty() && !code.contains('/'))
 }
 
-fn should_serve_spa(path: &str, serve_git_web_gui: bool) -> bool {
+/// Decide whether a public-web request should receive the SPA shell.
+///
+/// Without full-SPA mode, only the invite landing page and (optionally) the
+/// git web GUI paths fall back to the shell. With `BUZZ_WEB_SPA=full`, any
+/// path the relay does not own itself falls back to the shell, which is what
+/// lets the web client own arbitrary client-side routes without a per-route
+/// predicate.
+fn should_serve_spa(path: &str, serve_git_web_gui: bool, web_spa_full: bool) -> bool {
+    if web_spa_full {
+        return !is_server_owned_path(path);
+    }
     is_invite_landing_path(path) || (serve_git_web_gui && is_git_web_gui_path(path))
+}
+
+/// Server-owned path prefixes that must never fall through to the SPA shell.
+/// In full-SPA mode a mistyped API call 404s instead of returning HTML that a
+/// client would then try to parse as JSON.
+fn is_server_owned_path(path: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "/api/",
+        "/git/",
+        "/hooks/",
+        "/media/",
+        "/upload",
+        "/.well-known/",
+        "/_",
+        "/events",
+        "/query",
+        "/count",
+        "/info",
+        "/health",
+        "/moderation",
+    ];
+    PREFIXES.iter().any(|prefix| path.starts_with(prefix))
 }
 
 fn is_git_web_gui_path(path: &str) -> bool {
@@ -510,6 +566,24 @@ fn with_admin_csp(mut response: axum::response::Response) -> axum::response::Res
     response.headers_mut().insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(ADMIN_CSP),
+    );
+    response
+}
+
+/// Same-origin isolation for the public web bundle.
+///
+/// `Cross-Origin-Opener-Policy: same-origin` plus
+/// `Cross-Origin-Embedder-Policy: require-corp` let the web client use
+/// OPFS-backed SQLite-WASM (op-sqlite web): the feature is not available
+/// without a cross-origin-isolated document.
+fn with_spa_coi(mut response: axum::response::Response) -> axum::response::Response {
+    response.headers_mut().insert(
+        header::HeaderName::from_static("cross-origin-opener-policy"),
+        header::HeaderValue::from_static("same-origin"),
+    );
+    response.headers_mut().insert(
+        header::HeaderName::from_static("cross-origin-embedder-policy"),
+        header::HeaderValue::from_static("require-corp"),
     );
     response
 }
@@ -721,13 +795,14 @@ async fn nip11_or_ws_handler(
                 .into_response()
         }
         Err(_) => {
-            // Browser requesting HTML and Git web GUI is enabled → serve SPA.
-            if state.config.serve_git_web_gui {
+            // Browser requesting HTML → serve the SPA when the git web GUI is
+            // enabled or the deployment is in full-SPA mode.
+            if state.config.serve_git_web_gui || state.config.web_spa_full {
                 if let Some(ref dir) = state.config.web_dir {
                     if accept.contains("text/html") {
                         let index = dir.join("index.html");
                         if let Ok(body) = tokio::fs::read(&index).await {
-                            return axum::response::Html(body).into_response();
+                            return with_spa_coi(axum::response::Html(body).into_response());
                         }
                     }
                 }
@@ -1025,27 +1100,49 @@ mod tests {
 
     #[test]
     fn invite_is_always_served_but_git_gui_requires_opt_in() {
-        assert!(should_serve_spa("/invite/payload.mac", false));
-        assert!(should_serve_spa("/invite/payload.mac", true));
-        assert!(!should_serve_spa("/", false));
-        assert!(!should_serve_spa("/repos/example", false));
-        assert!(should_serve_spa("/", true));
-        assert!(should_serve_spa("/repos/example", true));
-        assert!(!should_serve_spa("/arbitrary", true));
+        assert!(should_serve_spa("/invite/payload.mac", false, false));
+        assert!(should_serve_spa("/invite/payload.mac", true, false));
+        assert!(!should_serve_spa("/", false, false));
+        assert!(!should_serve_spa("/repos/example", false, false));
+        assert!(should_serve_spa("/", true, false));
+        assert!(should_serve_spa("/repos/example", true, false));
+        assert!(!should_serve_spa("/arbitrary", true, false));
+
+        // Full-SPA mode: any non-server-owned path is a client route.
+        assert!(should_serve_spa("/", false, true));
+        assert!(should_serve_spa("/channels/general", false, true));
+        assert!(should_serve_spa("/c/relay.example.com", false, true));
+        // Server-owned paths still 404 rather than returning HTML.
+        for owned in [
+            "/api/events",
+            "/git/owner/repo.git/info/refs",
+            "/hooks/abc",
+            "/media/abc123",
+            "/upload",
+            "/.well-known/nostr.json",
+            "/.well-known/apple-app-site-association",
+            "/_liveness",
+            "/events",
+            "/query",
+            "/count",
+            "/info",
+            "/health",
+            "/moderation",
+        ] {
+            assert!(
+                !should_serve_spa(owned, false, true),
+                "{owned} must not fall through to the SPA shell"
+            );
+        }
     }
 
-    /// Relay state serving both bundles: the admin SPA on `admin.example` and
-    /// the public SPA on any other host.
-    async fn spa_state(admin_dir: &std::path::Path, web_dir: &std::path::Path) -> Arc<AppState> {
+    /// Build relay state with config applied before construction: default
+    /// config, no membership requirement, unreachable Redis (pools are lazy).
+    async fn state_with(configure: impl FnOnce(&mut crate::config::Config)) -> Arc<AppState> {
         let mut config = crate::config::Config::for_test(); // [FI-TRACE-ENV-RACE]
         config.require_relay_membership = false;
         config.redis_url = "redis://127.0.0.1:1".to_string();
-        config.web_dir = Some(web_dir.to_path_buf());
-        config.admin = Some(crate::config::AdminConfig {
-            host: "admin.example".to_string(),
-            auth: crate::config::AdminAuth::Disabled,
-            web_dir: Some(admin_dir.to_path_buf()),
-        });
+        configure(&mut config);
         let pool = sqlx::PgPool::connect_lazy(&config.database_url).expect("lazy pg pool");
         let db = buzz_db::Db::from_pool(pool.clone());
         let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
@@ -1077,6 +1174,20 @@ mod tests {
             media_storage,
         );
         Arc::new(state)
+    }
+
+    /// Relay state serving both bundles: the admin SPA on `admin.example` and
+    /// the public SPA on any other host.
+    async fn spa_state(admin_dir: &std::path::Path, web_dir: &std::path::Path) -> Arc<AppState> {
+        state_with(|config| {
+            config.web_dir = Some(web_dir.to_path_buf());
+            config.admin = Some(crate::config::AdminConfig {
+                host: "admin.example".to_string(),
+                auth: crate::config::AdminAuth::Disabled,
+                web_dir: Some(admin_dir.to_path_buf()),
+            });
+        })
+        .await
     }
 
     async fn readiness_state(evaluator: Arc<dyn readiness::DependencyEvaluator>) -> Arc<AppState> {
@@ -1852,6 +1963,40 @@ mod tests {
                     .get(header::CONTENT_SECURITY_POLICY)
                     .is_none(),
                 "{path} on the public host must keep its own headers"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn other_well_known_paths_are_never_served_and_never_the_spa_shell() {
+        // Deployment shape that serves a bundle: the fallback decides, and the
+        // server-owned `/.well-known/` prefix must keep 404ing — no `.well-known`
+        // sibling may start answering, and none may fall through to HTML.
+        let web_dir = tempfile::tempdir().expect("public bundle dir");
+        write_bundle(web_dir.path());
+        let state = state_with(|config| {
+            config.web_dir = Some(web_dir.path().to_path_buf());
+        })
+        .await;
+
+        for path in ["/.well-known/security.txt", "/.well-known/change-password"] {
+            let response = build_router(state.clone())
+                .oneshot(
+                    Request::get(path)
+                        .header(axum::http::header::HOST, "relay.example")
+                        .body(Body::empty())
+                        .expect("well-known request"),
+                )
+                .await
+                .expect("well-known response");
+            let status = response.status();
+            let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("well-known body");
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+            assert!(
+                !String::from_utf8_lossy(&body).contains("<!doctype html>"),
+                "{path} must not fall through to the SPA shell"
             );
         }
     }

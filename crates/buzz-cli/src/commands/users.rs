@@ -556,6 +556,7 @@ pub async fn dispatch(
             )
             .await
         }
+        UsersCmd::Whoami { .. } => unreachable!("handled before a relay client is built"),
         UsersCmd::Presence { pubkeys } => cmd_get_presence(client, &pubkeys).await,
         UsersCmd::SetPresence { status } => cmd_set_presence(client, &status.to_string()).await,
         UsersCmd::SetStatus { text, emoji, clear } => {

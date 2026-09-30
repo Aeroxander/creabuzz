@@ -26,6 +26,7 @@ import { AgentIdentityCard } from "./AgentIdentityCard";
 import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 import { CreateIdentityCard } from "./CreateIdentityCard";
 import { PersonaActionsMenu } from "./PersonaActionsMenu";
+import { AgentStopControl } from "./AgentStopControl";
 import { buildUnifiedGroups } from "./unifiedAgentGroups";
 
 type UnifiedAgentsSectionProps = {
@@ -132,6 +133,17 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
 
       {!isLoading ? (
         <div className="space-y-3" data-testid="unified-agents-groups">
+          {groups.length === 0 &&
+          ungrouped.length === 0 &&
+          unknown.length === 0 ? (
+            <p
+              className="text-sm leading-5 text-muted-foreground"
+              data-testid="agents-empty-hint"
+            >
+              No agents yet. Create one to answer questions and run work in your
+              channels.
+            </p>
+          ) : null}
           <div className={IDENTITY_CARD_GRID_CLASS}>
             <CreateIdentityCard
               ariaLabel="New agent"
@@ -338,7 +350,13 @@ function AgentPersonaCard({
       dataTestId={`persona-agent-row-${persona.id}`}
       footerAccessory={
         agent ? (
-          <ProtectedBestieCardBadge agent={agent} isBestie={isBestie} />
+          <>
+            <ProtectedBestieCardBadge agent={agent} isBestie={isBestie} />
+            <AgentStopControl
+              className="ml-1"
+              target={{ pubkey: agent.pubkey, name: title }}
+            />
+          </>
         ) : null
       }
       label={title}
@@ -430,7 +448,13 @@ function StandaloneAgentCard({
       avatarUrl={profileQuery.data?.avatarUrl}
       dataTestId={`managed-agent-${agent.pubkey}`}
       footerAccessory={
-        <ProtectedBestieCardBadge agent={agent} isBestie={isBestie} />
+        <>
+          <ProtectedBestieCardBadge agent={agent} isBestie={isBestie} />
+          <AgentStopControl
+            className="ml-1"
+            target={{ pubkey: agent.pubkey, name: title }}
+          />
+        </>
       }
       label={title}
       subtitle={

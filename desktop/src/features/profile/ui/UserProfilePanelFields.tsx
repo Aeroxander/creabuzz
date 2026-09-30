@@ -50,7 +50,7 @@ export type ProfileField = {
 const AGENT_INFO_LABELS = new Set([
   "Public key",
   "Managed by",
-  "NIP-05",
+  "Verified handle",
   "Agent type",
   "Capabilities",
   "Backend",
@@ -188,7 +188,7 @@ export function buildPublicFields({
       copyValue: profile.nip05Handle,
       displayValue: profile.nip05Handle,
       icon: UserRound,
-      label: "NIP-05",
+      label: "Verified handle",
       testId: "user-profile-nip05",
     });
   }

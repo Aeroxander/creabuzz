@@ -7,7 +7,8 @@ import {
   MessageSquare,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { APP_NAME } from "@/shared/constants/brand";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -25,7 +26,7 @@ import {
 import type { CommitInfo, ReadmeResult, TreeEntry } from "../git-client";
 import { useGitTree, useGitLog, useGitReadme } from "../use-git-browse";
 import { ConnectButton } from "./ConnectButton";
-import { PubkeyAvatar } from "./PubkeyAvatar";
+import { PeopleAvatars } from "./PeopleAvatars";
 import { RepoRefsSection } from "./RepoRefsSection";
 import { RepoTreeSection } from "./RepoTreeSection";
 import { RepoCommitsSection } from "./RepoCommitsSection";
@@ -53,7 +54,7 @@ function CopyableUrl({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+        className="shrink-0 text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
         aria-label="Copy clone URL"
       >
         {copied ? (
@@ -98,11 +99,11 @@ function BackToRepositories({
   );
 
   return mockPreview ? (
-    <a href="/?preview=repositories" className={className}>
+    <a href="/c?preview=repositories" className={className}>
       {content}
     </a>
   ) : (
-    <Link to="/" className={className}>
+    <Link to="/c" className={className}>
       {content}
     </Link>
   );
@@ -141,7 +142,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "code"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Code
@@ -152,7 +153,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "commits"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Commits
@@ -212,11 +213,11 @@ export function RepoDetailPage() {
     isLoading: areCommitsLoading,
     error: commitsError,
   } = useGitLog(browseOwner, repoName, defaultRef);
-  const { data: fetchedReadme, isLoading: isReadmeLoading } = useGitReadme(
-    browseOwner,
-    repoName,
-    defaultRef,
-  );
+  const {
+    data: fetchedReadme,
+    isLoading: isReadmeLoading,
+    error: readmeError,
+  } = useGitReadme(browseOwner, repoName, defaultRef);
   const treeEntries = showMockRepo ? mockRepoTree : fetchedTreeEntries;
   const commits = showMockRepo ? mockRepoCommits : fetchedCommits;
   const readme = showMockRepo ? mockRepoReadme : fetchedReadme;
@@ -224,8 +225,11 @@ export function RepoDetailPage() {
   const commitsLoading = showMockRepo ? false : areCommitsLoading;
   const readmeLoading = showMockRepo ? false : isReadmeLoading;
 
-  // Surface clone/browse errors — these are otherwise silent
-  const browseError = treeError || commitsError;
+  // Surface clone/browse errors. The git read queries are chained off the
+  // clone query (`enabled: !!cloneQuery.data`), so a failed clone leaves them
+  // permanently disabled and their own `error` is never set — the hooks now
+  // propagate the clone error, which is what makes this banner reachable.
+  const browseError = treeError || commitsError || readmeError;
   useEffect(() => {
     if (browseError) {
       console.error("[git-browse]", browseError);
@@ -240,6 +244,13 @@ export function RepoDetailPage() {
     }
   }, [error]);
 
+  // The people row: the owner first, then the contributors, as one list — the
+  // row resolves every name in a single batched profile query.
+  const people = useMemo(
+    () => (repo ? [...new Set([repo.owner, ...repo.contributors])] : []),
+    [repo],
+  );
+
   if (isLoading) return <DetailSkeleton />;
 
   if (!repo) {
@@ -248,7 +259,7 @@ export function RepoDetailPage() {
         <div className="min-w-0 flex-1">
           <BackToRepositories />
           <div className="mt-12 text-center">
-            <BookMarked className="mx-auto h-10 w-10 text-black/50 dark:text-white/50" />
+            <BookMarked className="mx-auto h-10 w-10 text-black/60 dark:text-white/60" />
             <h1 className="mt-4 text-xl font-semibold text-black dark:text-white">
               Repository not found
             </h1>
@@ -278,7 +289,7 @@ export function RepoDetailPage() {
         {/* Header */}
         <div className="mt-6">
           <div className="flex items-center gap-3">
-            <BookMarked className="h-6 w-6 shrink-0 text-black/50 dark:text-white/50" />
+            <BookMarked className="h-6 w-6 shrink-0 text-black/60 dark:text-white/60" />
             <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-white">
               {repo.name}
             </h1>
@@ -294,7 +305,7 @@ export function RepoDetailPage() {
               {repo.description}
             </p>
           )}
-          <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-2 text-xs text-black/60 dark:text-white/60">
             Updated {relativeTime(repo.createdAt)}
           </p>
         </div>
@@ -303,12 +314,22 @@ export function RepoDetailPage() {
         <RepoRefsSection refs={refs} isLoading={refsLoading} />
 
         {/* Clone/browse error banner */}
-        {browseError && (
-          <div className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            Failed to load repository contents:{" "}
-            {browseError instanceof Error
-              ? browseError.message
-              : String(browseError)}
+        {browseError && !isLoading && (
+          <div
+            role="alert"
+            className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            <p className="font-semibold">Couldn't load repository contents</p>
+            <p className="mt-1 opacity-90">
+              {browseError instanceof Error
+                ? browseError.message
+                : String(browseError)}
+            </p>
+            <p className="mt-2 text-xs opacity-80">
+              Repository reads require an authenticated member of this
+              community. Install a Nostr signer extension to sign in, or open
+              this repository in the {APP_NAME} desktop app.
+            </p>
           </div>
         )}
 
@@ -386,7 +407,7 @@ export function RepoDetailPage() {
       {/* Sidebar */}
       <aside className="hidden w-72 shrink-0 border-l border-black/10 pl-8 dark:border-white/10 lg:block">
         <div className="space-y-6">
-          {/* Open in Buzz */}
+          {/* Open in Creaton */}
           <ConnectButton className="w-full" />
 
           {/* People */}
@@ -396,12 +417,7 @@ export function RepoDetailPage() {
               People
             </h3>
             <div className="flex flex-wrap gap-2">
-              <PubkeyAvatar pubkey={repo.owner} />
-              {repo.contributors
-                .filter((c) => c !== repo.owner)
-                .map((c) => (
-                  <PubkeyAvatar key={c} pubkey={c} />
-                ))}
+              <PeopleAvatars pubkeys={people} />
             </div>
           </div>
         </div>
