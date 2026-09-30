@@ -421,9 +421,7 @@ async fn enforce_budget_set(
         }
     }
     if !violated.is_empty() {
-        return Ok(BudgetOutcome::Exceeded(select_binding(
-            budgets, &violated,
-        )));
+        return Ok(BudgetOutcome::Exceeded(select_binding(budgets, &violated)));
     }
 
     let mut raced: Vec<usize> = Vec::new();

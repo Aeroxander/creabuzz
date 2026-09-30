@@ -90,10 +90,16 @@ export type IdentityLinkResult = {
 /**
  * Begin the browser sign-in (Rust: `start_identity_link`): generates a
  * one-time device key + nonce, registers the single-use request, and opens
- * the system browser at the web app's link page.
+ * the system browser at the web app's link page. `fallbackOrigin` is the web
+ * app to sign in against when no community is connected yet; a connected
+ * community's relay-derived web app always wins.
  */
-export async function startIdentityLink(): Promise<IdentityLinkStart> {
-  return invokeTauri<IdentityLinkStart>("start_identity_link");
+export async function startIdentityLink(options?: {
+  fallbackOrigin?: string;
+}): Promise<IdentityLinkStart> {
+  return invokeTauri<IdentityLinkStart>("start_identity_link", {
+    fallbackOrigin: options?.fallbackOrigin,
+  });
 }
 
 /** Abandon any outstanding sign-in request (Rust: `cancel_identity_link`). */

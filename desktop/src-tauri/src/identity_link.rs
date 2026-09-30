@@ -367,25 +367,34 @@ fn sanitized_open_error(detail: &str, url: &Url) -> String {
 ///    the web origin is the relay's own origin — scheme mapped `wss→https` /
 ///    `ws→http`, host and port kept (the same derivation
 ///    [`crate::relay::relay_http_base_url`] applies to relay HTTP calls).
-/// 3. No community connected yet: an actionable error instead of a URL at a
-///    host that is not serving the web app.
+/// 3. `fallback_origin` — the caller-supplied default (onboarding passes the
+///    hosted web app) when no community is connected yet.
+/// 4. Neither present: an actionable error instead of a URL at a host that is
+///    not serving the web app.
 fn web_origin_from(
     env_override: Option<&str>,
     community_relay: Option<&str>,
+    fallback_origin: Option<&str>,
 ) -> Result<String, String> {
     if let Some(value) = env_override.filter(|value| !value.trim().is_empty()) {
         return normalize_web_origin(value);
     }
-    match community_relay {
-        Some(relay) => normalize_web_origin(&crate::relay::relay_http_base_url(relay)),
+    if let Some(relay) = community_relay {
+        return normalize_web_origin(&crate::relay::relay_http_base_url(relay));
+    }
+    match fallback_origin.filter(|value| !value.trim().is_empty()) {
+        Some(value) => normalize_web_origin(value),
         None => Err("Connect a community first, then try signing in again.".to_string()),
     }
 }
 
-fn web_origin_for_sign_in(state: &crate::app_state::AppState) -> Result<String, String> {
+fn web_origin_for_sign_in(
+    state: &crate::app_state::AppState,
+    fallback_origin: Option<&str>,
+) -> Result<String, String> {
     let env_host = std::env::var("BUZZ_WEB_HOST").ok();
     let relay = crate::relay::workspace_relay_override(state);
-    web_origin_from(env_host.as_deref(), relay.as_deref())
+    web_origin_from(env_host.as_deref(), relay.as_deref(), fallback_origin)
 }
 
 /// Build the `link-device` URL the system browser opens. The `cb` value is
@@ -456,9 +465,10 @@ pub(crate) struct IdentityLinkStart {
 pub(crate) fn start_identity_link(
     app: tauri::AppHandle,
     pending: State<'_, PendingIdentityLinks>,
+    fallback_origin: Option<String>,
 ) -> Result<IdentityLinkStart, String> {
     let state = app.state::<crate::app_state::AppState>();
-    let origin = web_origin_for_sign_in(&state)?;
+    let origin = web_origin_for_sign_in(&state, fallback_origin.as_deref())?;
     let keys = nostr::Keys::generate();
     let nonce_hex = random_nonce_hex()?;
     let url = build_link_url(&origin, &keys.public_key().to_hex(), &nonce_hex)?;

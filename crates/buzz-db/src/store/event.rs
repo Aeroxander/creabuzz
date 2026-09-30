@@ -1297,6 +1297,84 @@ pub async fn soft_delete_wiki_page_by_slug(
     Ok(result.rows_affected())
 }
 
+/// Tombstone **every** live revision of a wiki page — all rows in the
+/// community with the given wiki kind (44001/44002) and `d` slug, across ALL
+/// authors — WITHOUT stripping content.
+///
+/// The author-delete tier of the wiki delete semantics: a restorable
+/// tombstone. Rows get `deleted_at` (hidden from queries — readers filter
+/// `deleted_at IS NULL`) but content is deliberately kept, so an authorized
+/// editor publishing a new revision restores the page. Only a community
+/// admin/owner's delete marker purges content (see
+/// [`soft_delete_wiki_page_by_slug`]). Same at-or-before scoping, same single
+/// atomic UPDATE; returns the number of rows tombstoned.
+pub async fn tombstone_wiki_page_by_slug(
+    pool: &PgPool,
+    community_id: CommunityId,
+    kind: i32,
+    d_tag: &str,
+    deletion_created_at_secs: i64,
+) -> Result<u64> {
+    let deletion_created_at = DateTime::from_timestamp(deletion_created_at_secs, 0)
+        .ok_or(DbError::InvalidTimestamp(deletion_created_at_secs))?;
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::EventWrite,
+    )
+    .await?;
+    let result = sqlx::query(
+        "UPDATE events SET deleted_at = NOW() \
+         WHERE community_id = $1 AND kind = $2 AND d_tag = $3 AND deleted_at IS NULL \
+         AND created_at <= $4",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(d_tag)
+    .bind(deletion_created_at)
+    .execute(&mut *connection)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+/// Distinct `t: team:<node-id>` team-scope values carried by ANY revision of
+/// a `d`-tag-addressed wiki page (44001) — INCLUDING tombstoned revisions.
+///
+/// The sticky-scope input for team-scoped wiki pages at ingest: the scope is
+/// a property of the page's whole history, not just its surviving rows, so a
+/// delete + re-publish can never reset a team page back to open membership.
+/// Returns the `team:<node-id>` tag values (bounded; the page key keeps the
+/// scan to one page) — more than one distinct value means a corrupt scope
+/// history and the caller must fail closed.
+pub async fn wiki_page_team_scopes(
+    pool: &PgPool,
+    community_id: CommunityId,
+    kind: i32,
+    d_tag: &str,
+) -> Result<Vec<String>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT t.val ->> 1 \
+         FROM events e, jsonb_array_elements(e.tags) AS t(val) \
+         WHERE e.community_id = $1 AND e.kind = $2 AND e.d_tag = $3 \
+           AND jsonb_typeof(t.val) = 'array' \
+           AND t.val ->> 0 = 't' \
+           AND t.val ->> 1 LIKE 'team:%' \
+         LIMIT 32",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(d_tag)
+    .fetch_all(&mut *connection)
+    .await?;
+
+    Ok(rows.into_iter().map(|(scope,)| scope).collect())
+}
+
 /// Distinct authors of a `d`-tag-addressed page and whether each still has a
 /// surviving (non-deleted) revision, keyed by `(community_id, kind, d_tag)`.
 ///
@@ -2554,6 +2632,40 @@ impl Db {
         d_tag: &str,
     ) -> Result<Vec<(Vec<u8>, bool)>> {
         crate::event::wiki_page_revision_authors(&self.pool, community_id, kind, d_tag).await
+    }
+
+    /// Tombstone every live revision of a wiki page without stripping content
+    /// (the restorable author-delete tier). See
+    /// [`tombstone_wiki_page_by_slug`](crate::event::tombstone_wiki_page_by_slug).
+    #[datastore_span(name = "tombstone_wiki_page_by_slug", system = "postgresql")]
+    pub async fn tombstone_wiki_page_by_slug(
+        &self,
+        community_id: CommunityId,
+        kind: i32,
+        d_tag: &str,
+        deletion_created_at_secs: i64,
+    ) -> Result<u64> {
+        crate::event::tombstone_wiki_page_by_slug(
+            &self.pool,
+            community_id,
+            kind,
+            d_tag,
+            deletion_created_at_secs,
+        )
+        .await
+    }
+
+    /// Team-scope tags of a wiki page across its whole revision history
+    /// (sticky-scope input at ingest). See
+    /// [`wiki_page_team_scopes`](crate::event::wiki_page_team_scopes).
+    #[datastore_span(name = "wiki_page_team_scopes", system = "postgresql")]
+    pub async fn wiki_page_team_scopes(
+        &self,
+        community_id: CommunityId,
+        kind: i32,
+        d_tag: &str,
+    ) -> Result<Vec<String>> {
+        crate::event::wiki_page_team_scopes(&self.pool, community_id, kind, d_tag).await
     }
 
     /// Atomically soft-delete an event and decrement thread reply counters.

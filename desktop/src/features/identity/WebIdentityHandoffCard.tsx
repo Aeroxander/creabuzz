@@ -1,21 +1,5 @@
-import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
-
-import { profileQueryKey } from "@/features/profile/hooks";
-import {
-  createWebIdentityHandoff,
-  type WebIdentityHandoff,
-  WEB_IDENTITY_HANDOFF_COPY as COPY,
-} from "@/features/identity/webIdentityHandoff";
-import { relayClient } from "@/shared/api/relayClient";
-import {
-  cancelIdentityLink,
-  getIdentity,
-  startIdentityLink,
-  takeIdentityLinkResult,
-  type IdentityLinkResult,
-} from "@/shared/api/tauriIdentity";
+import { WEB_IDENTITY_HANDOFF_COPY as COPY } from "@/features/identity/webIdentityHandoff";
+import { useWebIdentityHandoff } from "@/features/identity/useWebIdentityHandoff";
 import { Button } from "@/shared/ui/button";
 
 /**
@@ -30,64 +14,9 @@ import { Button } from "@/shared/ui/button";
  * newer sign-in attempt.
  */
 export function WebIdentityHandoffCard() {
-  const queryClient = useQueryClient();
-  const [handoff] = React.useState<WebIdentityHandoff>(() =>
-    createWebIdentityHandoff({
-      start: () => startIdentityLink(),
-      cancel: () => cancelIdentityLink(),
-      results: (listener) => {
-        let disposed = false;
-        let unlisten: (() => void) | undefined;
-        void listen<IdentityLinkResult>("deep-link-identity", (event) => {
-          listener(event.payload);
-        }).then((stop) => {
-          if (disposed) stop();
-          else unlisten = stop;
-        });
-        return () => {
-          disposed = true;
-          unlisten?.();
-        };
-      },
-      onLinked: () => {
-        // Mirror the manual import's post-commit re-scope: drop the socket
-        // authenticated as the previous key, then rekey the identity query —
-        // App.tsx's replacement sentinel watches it and rebuilds the
-        // community boundary so no cached state leaks across.
-        relayClient.disconnect();
-        queryClient.removeQueries({ queryKey: profileQueryKey });
-        void getIdentity()
-          .then((identity) => queryClient.setQueryData(["identity"], identity))
-          .catch(() =>
-            // If the refresh read fails, refetch through the query layer so
-            // the failure is retried there instead of vanishing here.
-            queryClient.invalidateQueries({ queryKey: ["identity"] }),
-          );
-      },
-    }),
-  );
-
-  React.useEffect(() => () => handoff.dispose(), [handoff]);
-
-  // Pick up a result that raced the event subscription (e.g. the deep link
-  // landed before this surface mounted). Consuming it here is safe: the
-  // controller ignores results that match no live request.
-  React.useEffect(() => {
-    // Best-effort race catcher: the live event is the primary path, and a
-    // failed pickup leaves the result queued (Rust only consumes on success)
-    // so the next mount or the retry picks it up.
-    void takeIdentityLinkResult()
-      .then((result) => {
-        if (result) handoff.handleResult(result);
-      })
-      .catch(() => {});
-  }, [handoff]);
-
-  const state = React.useSyncExternalStore(
-    handoff.subscribe,
-    handoff.getState,
-    handoff.getState,
-  );
+  // Settings passes no fallback origin: sign-in targets the connected
+  // community's own web app. The shared hook owns the request fencing.
+  const { handoff, state } = useWebIdentityHandoff();
 
   return (
     <div className="px-4 py-3" data-testid="web-identity-handoff">

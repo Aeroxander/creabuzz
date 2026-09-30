@@ -54,6 +54,7 @@ import {
   seedSnapshot,
   type CommitResult,
 } from "./lib/text-edit";
+import { liveUpdatePermitted, type TeamSeatResolver } from "./lib/knowledge";
 
 /** Ephemeral wiki live-sync events (relay-scoped, never stored). */
 export const KIND_WIKI_SYNC = 20003;
@@ -182,12 +183,35 @@ class RelayWikiTransport implements WikiSyncTransport {
  * CRDT-aware editor binding (`y-prosemirror` through TipTap's collaboration
  * extension) is the end state that removes even that case.
  */
+/**
+ * The page's edit gate for inbound live updates: the team scope of the page
+ * plus how to resolve it to seat holders (see `lib/knowledge.ts`). When a
+ * caller supplies no gate the page is treated as unscoped — open editing,
+ * exactly today's behavior.
+ */
+export interface LiveEditGate {
+  /** Team scope of the page (`t: team:<id>`), or null (open editing). */
+  scope: string | null;
+  /** Resolves a team scope to its seat holders. */
+  resolveTeamSeats: TeamSeatResolver;
+}
+
+/**
+ * An empty Yjs update: a non-editor's discarded update is replaced by this
+ * before it reaches the sync loop, so the update cannot change the document
+ * while the peer announcement still runs the handshake (a read-only viewer's
+ * sync traffic keeps flowing and converges via the late-joiner echo).
+ */
+const SYNC_PROBE = Y.encodeStateAsUpdate(new Y.Doc());
+
 export function useLiveWikiDoc(
   slug: string | null,
   initialContent: string,
   /** Event id of the saved snapshot `initialContent` came from — the seed key
    * that makes two browsers opening the same page converge to one copy. */
   snapshotId: string,
+  /** The page's edit gate. Updates from authors it denies are discarded. */
+  gate?: LiveEditGate,
 ): {
   content: string;
   setContent: (value: string) => void;
@@ -204,7 +228,8 @@ export function useLiveWikiDoc(
   peers: number;
   /** Peers in the room that have not proved membership; they receive nothing. */
   strangers: number;
-  /** Received updates dropped for being unsigned, invalid, or not from a member. */
+  /** Received updates dropped for being unsigned, invalid, not from a member,
+   * or sent by an author who cannot edit this page. */
   rejected: number;
   /** Whether live co-editing is running, and if not, why. */
   live: LiveStatus;
@@ -235,6 +260,15 @@ export function useLiveWikiDoc(
     renderedRef.current = value;
     setContentState(value);
   }, []);
+
+  /**
+   * The edit gate read at event time, not at effect-run time: the team scope
+   * can resolve after mount (the org chart loads async) and a stale gate would
+   * leave exactly the window this closes. Refs are stable, so the effect needs
+   * no `gate` dependency and never restarts on a fresh gate object identity.
+   */
+  const gateRef = useRef(gate);
+  gateRef.current = gate;
 
   useEffect(() => {
     if (!slug) return;
@@ -270,6 +304,8 @@ export function useLiveWikiDoc(
 
     let sync: WikiDocSync | null = null;
     let transport: RelayWikiTransport | null = null;
+    /** Who we sign as; own updates pass the scope gate unconditionally. */
+    let selfPubkey: string | null = null;
 
     const onInbound = (author: string, update: Uint8Array) => {
       if (disposed || !sync) return;
@@ -283,7 +319,30 @@ export function useLiveWikiDoc(
           rejectedCount += 1;
           return;
         }
-        const advanced = sync.handleRemoteUpdate(author, update);
+        // Team-scope gate — the UI blocks non-editors and the relay enforces the
+        // same rule on ingest; this closes the transport back door where a
+        // non-editor's update was applied over the wire anyway. Denied content
+        // is discarded silently (counted for debugging, never an error); the
+        // empty probe in its place keeps the peer's sync announcement flowing
+        // through the handshake, so a read-only viewer still converges via the
+        // late-joiner echo while its updates can never change the document.
+        const permitted = liveUpdatePermitted({
+          authorPubkey: author,
+          selfPubkey,
+          page: { scope: gateRef.current?.scope ?? null },
+          resolveTeamSeats: gateRef.current?.resolveTeamSeats ?? (() => null),
+        });
+        if (!permitted) {
+          rejectedCount += 1;
+          console.debug(
+            "[wiki-sync] discarded a live update from a non-editor",
+            author,
+          );
+        }
+        const advanced = sync.handleRemoteUpdate(
+          author,
+          permitted ? update : SYNC_PROBE,
+        );
         if (advanced) {
           book.markVerified(author, author);
           setPeers(book.verifiedCount);
@@ -296,6 +355,7 @@ export function useLiveWikiDoc(
 
     const startLive = async () => {
       const me = await resolveSigningPubkey();
+      selfPubkey = me;
       if (disposed) return;
       if (!me) {
         setLive({ state: "unavailable", reason: "no-identity" });

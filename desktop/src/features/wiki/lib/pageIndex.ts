@@ -22,6 +22,7 @@
 import {
   KIND_AGENT_WIKI_PAGE,
   KIND_DELETION,
+  KIND_WIKI_CORRECTION,
   KIND_WIKI_PAGE,
 } from "@/shared/constants/kinds";
 
@@ -102,7 +103,12 @@ function tagValue(event: WikiPageEvent, name: string): string | undefined {
 export function eventToHumanWikiPage(
   event: WikiPageEvent,
 ): HumanWikiPage | null {
-  if (event.kind !== KIND_WIKI_PAGE) return null;
+  // Corrections (kind:44003, and legacy kind:44001 pages with a
+  // `correction-for-<slug>` `d`) ride the human page index and are grouped
+  // separately by `lib/wikiGroups.ts`.
+  if (event.kind !== KIND_WIKI_PAGE && event.kind !== KIND_WIKI_CORRECTION) {
+    return null;
+  }
   const slug = tagValue(event, "d") || event.id;
   return {
     kind: "human",

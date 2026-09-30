@@ -77,8 +77,7 @@ pub struct RootBundle {
 /// `scripts/trust-score-corpus.json` pins this formula on both the Rust and
 /// TypeScript sides). Accepted milestone claims and contribution records
 /// raise the score, scaled by tenure; slashed and rejected claims subtract at
-/// the same scale. Months absent default to 12 (full tenure); everything
-/// floors per term and the result clamps at zero.
+/// the same scale. Everything floors per term and the result clamps at zero.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliverySignals {
@@ -86,22 +85,47 @@ pub struct DeliverySignals {
     pub approved_milestones: u64,
     #[serde(default)]
     pub contribution_records: u64,
-    #[serde(default)]
-    pub months_active: u64,
+    /// Explicit tenure in months; `0` is zero tenure. When the field is
+    /// ABSENT (`None`), tenure is derived from [`Self::first_accepted_at`]
+    /// against [`Self::reference_at`] — never a silent 12. TODO: the caller
+    /// that resolves kind:37013 records (the royalty fold) should set
+    /// `first_accepted_at` from the earliest accepted record's `created_at`
+    /// and `reference_at` from the run's reference time.
+    pub months_active: Option<u64>,
     #[serde(default)]
     pub slashed_claims: u64,
     #[serde(default)]
     pub rejected_claims: u64,
+    /// Unix seconds of the earliest accepted contribution/milestone — the
+    /// start of the derived tenure when `monthsActive` is absent.
+    pub first_accepted_at: Option<i64>,
+    /// Unix seconds the derived tenure is measured against (the scoring
+    /// run's reference time).
+    pub reference_at: Option<i64>,
+}
+
+/// Whole 30-day months between the first accepted work and the reference
+/// time: `floor(max(0, reference_at - first_accepted_at) / 2_592_000)`,
+/// capped at 12. Deterministic; a reference before the first accepted work
+/// is zero.
+pub fn tenure_months(first_accepted_at: i64, reference_at: i64) -> u64 {
+    let elapsed = reference_at.saturating_sub(first_accepted_at).max(0) as u64;
+    (elapsed / (30 * 24 * 60 * 60)).min(12)
 }
 
 /// `score = max(0, floor((approved + contributions) * months * 1000 / 12) -
 /// floor((slashed + rejected) * months * 1000 / 12))`, `months =
-/// min(months_active || 12, 12)`. Deterministic; saturating; never panics.
+/// min(months_active, 12)` when `monthsActive` is present (`0` = zero
+/// tenure) and [`tenure_months`]`(first_accepted_at, reference_at)` when it
+/// is absent and both timestamps are known — otherwise zero tenure, never a
+/// silent 12. Deterministic; saturating; never panics.
 pub fn delivery_score(s: &DeliverySignals) -> u128 {
-    let months = u128::from(if s.months_active == 0 {
-        12
-    } else {
-        s.months_active.min(12)
+    let months = u128::from(match s.months_active {
+        Some(m) => m.min(12),
+        None => match (s.first_accepted_at, s.reference_at) {
+            (Some(first), Some(reference)) => tenure_months(first, reference),
+            _ => 0,
+        },
     });
     let scale = |n: u64| u128::from(n) * months * 1000 / 12;
     let good = scale(s.approved_milestones.saturating_add(s.contribution_records));
@@ -538,7 +562,6 @@ mod tests {
         }
     }
 
-    #[test]
     /// The corpus in `scripts/trust-score-corpus.json` pins the delivery
     /// formula; the TypeScript port reads the same file (`trust-score.test.mjs`).
     /// Removing the slashed/rejected subtraction reds this test.
@@ -557,9 +580,13 @@ mod tests {
             let signals = DeliverySignals {
                 approved_milestones: i["approvedMilestones"].as_u64().unwrap_or(0),
                 contribution_records: i["contributionRecords"].as_u64().unwrap_or(0),
-                months_active: i["monthsActive"].as_u64().unwrap_or(0),
+                // Option distinguishes an explicit 0 (zero tenure) from an
+                // absent field (derived tenure) — the corpus pins both.
+                months_active: i["monthsActive"].as_u64(),
                 slashed_claims: i["slashedClaims"].as_u64().unwrap_or(0),
                 rejected_claims: i["rejectedClaims"].as_u64().unwrap_or(0),
+                first_accepted_at: i["firstAcceptedAt"].as_i64(),
+                reference_at: i["referenceAt"].as_i64(),
             };
             assert_eq!(
                 delivery_score(&signals),

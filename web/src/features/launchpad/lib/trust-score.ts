@@ -104,21 +104,52 @@ export function scoreStatus(
 export interface DeliverySignals {
   approvedMilestones?: number;
   contributionRecords?: number;
-  /** Full tenure at 12; absent counts as 12. */
+  /**
+   * Explicit tenure in months; `0` is zero tenure. When the field is
+   * ABSENT (undefined), tenure is derived from `firstAcceptedAt` against
+   * `referenceAt` — never a silent 12.
+   */
   monthsActive?: number;
   slashedClaims?: number;
   rejectedClaims?: number;
+  /** Unix seconds of the earliest accepted contribution/milestone. */
+  firstAcceptedAt?: number;
+  /** Unix seconds the derived tenure is measured against. */
+  referenceAt?: number;
+}
+
+/**
+ * Whole 30-day months between the first accepted work and the reference
+ * time: `floor(max(0, referenceAt - firstAcceptedAt) / 2_592_000)`, capped
+ * at 12. A reference before the first accepted work is zero. Mirrors
+ * `trustgraph.rs::tenure_months`.
+ */
+export function tenureMonths(
+  firstAcceptedAt: number,
+  referenceAt: number,
+): number {
+  return Math.min(
+    12,
+    Math.max(0, Math.floor((referenceAt - firstAcceptedAt) / 2_592_000)),
+  );
 }
 
 /**
  * `score = max(0, floor((approved + contributions) * months * 1000 / 12) -
- * floor((slashed + rejected) * months * 1000 / 12))` with
- * `months = min(monthsActive || 12, 12)`. Accepted milestones and
- * contributions raise the score scaled by tenure; slashed and rejected claims
- * subtract at the same scale.
+ * floor((slashed + rejected) * months * 1000 / 12))` with `months =
+ * min(monthsActive, 12)` when `monthsActive` is present (`0` = zero
+ * tenure) and `tenureMonths(firstAcceptedAt, referenceAt)` when it is
+ * absent and both timestamps are known — otherwise zero tenure, never a
+ * silent 12. Accepted milestones and contributions raise the score scaled
+ * by tenure; slashed and rejected claims subtract at the same scale.
  */
 export function deliveryScore(s: DeliverySignals): number {
-  const months = Math.min(s.monthsActive ?? 12, 12);
+  const months =
+    s.monthsActive !== undefined
+      ? Math.min(s.monthsActive, 12)
+      : s.firstAcceptedAt !== undefined && s.referenceAt !== undefined
+        ? tenureMonths(s.firstAcceptedAt, s.referenceAt)
+        : 0;
   const scale = (n: number) => Math.floor((n * months * 1000) / 12);
   const good = scale(
     (s.approvedMilestones ?? 0) + (s.contributionRecords ?? 0),

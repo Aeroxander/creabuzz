@@ -7,6 +7,7 @@ import { useRelayConnection } from "@/shared/api/useRelayConnection";
 import { useReconnectRelay } from "@/shared/api/useReconnectRelay";
 import { cn } from "@/shared/lib/cn";
 import { isRelayUnreachableError } from "@/shared/lib/relayError";
+import { WebIdentitySignInButton } from "@/features/identity/WebIdentitySignInButton";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 import { ONBOARDING_PRIMARY_CTA_CLASS } from "./OnboardingChrome";
@@ -349,16 +350,19 @@ export function ProfileStep({
         ) : null}
 
         {!usesExistingIdentity ? (
-          <Button
-            className="text-muted-foreground hover:text-accent-foreground"
-            data-testid="onboarding-import-key"
-            disabled={isSaving}
-            onClick={importExistingKey}
-            type="button"
-            variant="ghost"
-          >
-            I already have a key
-          </Button>
+          <>
+            <Button
+              className="text-muted-foreground hover:text-accent-foreground"
+              data-testid="onboarding-import-key"
+              disabled={isSaving}
+              onClick={importExistingKey}
+              type="button"
+              variant="ghost"
+            >
+              I already have a key
+            </Button>
+            <WebIdentitySignInButton />
+          </>
         ) : null}
 
         {saveRecovery.canSkipForNow || saveRecovery.canAdvanceWithoutSaving ? (

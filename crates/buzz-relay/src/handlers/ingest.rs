@@ -36,9 +36,9 @@ use buzz_core::kind::{
     KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_SCORE_ROOT, KIND_SKILL,
     KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
     KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN,
-    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_PAGE,
-    KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
-    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_CORRECTION,
+    KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -638,7 +638,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_GIT_STATUS_DRAFT => Ok(Scope::MessagesWrite),
         // Command kinds — DM management, workflows, approvals
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
-        KIND_WIKI_PAGE | KIND_AGENT_WIKI_PAGE => Ok(Scope::MessagesWrite),
+        KIND_WIKI_PAGE | KIND_AGENT_WIKI_PAGE | KIND_WIKI_CORRECTION => Ok(Scope::MessagesWrite),
         KIND_AGENT_CAPABILITIES | KIND_AGENT_TASK => Ok(Scope::MessagesWrite),
         // SAT slice 1: team strategies, runs, and turns are agent-authored
         // community-level records (same write scope as fleet tasks).
@@ -838,6 +838,10 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // Agent Wiki pages (44002): community-level knowledge base pages,
             // keyed by (pubkey, kind, d). A stray `h` tag must not channel-scope them.
             | KIND_AGENT_WIKI_PAGE
+            // Wiki corrections (44003): per-author community-level notes keyed
+            // by (pubkey, kind, d), `h`-less by design — a stray `h` must not
+            // channel-scope them either.
+            | KIND_WIKI_CORRECTION
             // SAT slice 1 (44020–44022): team strategies, runs, and turns are
             // community-level records keyed by (pubkey, kind, d), exactly like
             // the NIP-ORG kinds and Agent Wiki pages. A stray `h` tag must
@@ -2280,6 +2284,242 @@ const AGENT_WIKI_COST_TOKENS_MAX_LEN: usize = 16;
 const AGENT_WIKI_SOURCES_MAX: usize = 64;
 /// Max length of one source event id (64 hex chars) plus one separator.
 const AGENT_WIKI_SOURCE_ID_MAX_LEN: usize = 65;
+
+/// Prefix of the sticky team-scope tag on kind:44001 wiki pages:
+/// `t: team:<team-node-id>`, where `<team-node-id>` is the `d` tag of an org
+/// node in the `agentSeats`/`holders` graph (`store/org_graph.rs`).
+const WIKI_TEAM_TAG_PREFIX: &str = "team:";
+
+/// The team node id this wiki revision is scoped to — the value of its single
+/// `t: team:<node-id>` tag, if any. More than one team scope tag is a
+/// malformed envelope.
+fn wiki_team_scope(event: &Event) -> Result<Option<String>, String> {
+    let mut scope: Option<String> = None;
+    for tag in event.tags.iter() {
+        if tag.kind().to_string() != "t" {
+            continue;
+        }
+        let Some(value) = tag.content() else { continue };
+        let Some(node) = value.strip_prefix(WIKI_TEAM_TAG_PREFIX) else {
+            continue;
+        };
+        if node.is_empty() {
+            return Err("invalid: `t: team:` tag must name a team node id".into());
+        }
+        if scope.is_some() {
+            return Err(
+                "invalid: wiki revision may carry at most one `t: team:<node-id>` scope tag".into(),
+            );
+        }
+        scope = Some(node.to_string());
+    }
+    Ok(scope)
+}
+
+/// Validate the envelope of a kind:44003 wiki correction.
+///
+/// Pinned shape: exactly one bounded `d` tag shaped `correction-for-<slug>`
+/// and one `t` tag shaped `correction-for:<slug>` naming the SAME slug, plus
+/// bounded markdown content. Any member may publish one (`MessagesWrite`) and
+/// nothing in it is interpreted — the distillation loop folds unconsumed
+/// corrections in as untrusted data. Corrections are per-author coordinates;
+/// deletion is scoped to the signer's own correction (see `side_effects`).
+pub(crate) fn validate_wiki_correction_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "wiki correction";
+    const D_MAX_LEN: usize = 256;
+    const CONTENT_MAX_LEN: usize = 65536;
+
+    let d_values: Vec<&str> = event
+        .tags
+        .iter()
+        .filter(|t| t.kind().to_string() == "d")
+        .filter_map(|t| t.content())
+        .collect();
+    let [d] = d_values[..] else {
+        return Err(format!(
+            "{LABEL} must carry exactly one `d` tag shaped `correction-for-<slug>`"
+        ));
+    };
+    if d.len() > D_MAX_LEN {
+        return Err(format!("{LABEL} `d` tag too long (max {D_MAX_LEN} bytes)"));
+    }
+    let Some(slug) = d.strip_prefix("correction-for-").filter(|s| !s.is_empty()) else {
+        return Err(format!(
+            "{LABEL} `d` tag must be shaped `correction-for-<slug>`"
+        ));
+    };
+    let expected_t = format!("correction-for:{slug}");
+    let carries_t = event
+        .tags
+        .iter()
+        .filter(|t| t.kind().to_string() == "t")
+        .filter_map(|t| t.content())
+        .any(|t| t == expected_t);
+    if !carries_t {
+        return Err(format!(
+            "{LABEL} must carry a `t` tag shaped `correction-for:<slug>` matching its `d` tag"
+        ));
+    }
+    if event.content.len() > CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    Ok(())
+}
+
+/// Whether the signer is a community owner/admin (`relay_members.role`) — the
+/// authority tier that bypasses team-seat checks and purges on delete.
+async fn is_community_admin_or_owner(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    author_hex: &str,
+) -> Result<bool, IngestError> {
+    let role = state
+        .db
+        .get_relay_member(tenant.community(), author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking member role: {e}")))?
+        .map(|m| m.role);
+    Ok(matches!(role.as_deref(), Some("owner" | "admin")))
+}
+
+/// Enforce sticky team scoping on an incoming kind:44001 wiki page revision.
+///
+/// The page's scope is STICKY across its whole revision history (tombstoned
+/// revisions included — see `wiki_page_team_scopes`, so a delete + re-publish
+/// can never reset a team page to open membership):
+///
+/// (a) if ANY revision carries `t: team:<node>`, every further revision MUST
+///     carry the same tag — dropping or changing it is REJECTED — and its
+///     signer must hold a seat in that team (its node's `agentSeats`/`holders`
+///     per `org_graph`) or be a community admin/owner;
+/// (b) unscoped pages accept members as today;
+/// (c) scoping a previously unscoped page is allowed for team seats/admins
+///     only (it narrows the page's audience — a governance act).
+///
+/// A page whose history carries conflicting scopes is refused outright (fail
+/// closed). Enforcement is at INGEST, the same seam as the R1 authority
+/// anchor. A tombstoned page restores when an authorized editor publishes a
+/// new revision: the insert is the restore (the new row is live; tombstoned
+/// rows keep their preserved content but stay hidden).
+pub(crate) async fn enforce_wiki_page_scope(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let scope = wiki_team_scope(event).map_err(IngestError::Rejected)?;
+    let Some(d) = event
+        .tags
+        .iter()
+        .find(|t| t.kind().to_string() == "d")
+        .and_then(|t| t.content())
+    else {
+        // No `d` tag: not a page revision at all — nothing to scope.
+        return Ok(());
+    };
+
+    let mut prior = state
+        .db
+        .wiki_page_team_scopes(tenant.community(), KIND_WIKI_PAGE as i32, d)
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error reading wiki page scope: {e}"))
+        })?;
+    // The store returns raw tag values (`team:<node>`); normalize to the bare
+    // team node id so they compare equal to the incoming revision's scope.
+    let mut prior: Vec<String> = prior
+        .drain(..)
+        .filter_map(|value| value.strip_prefix(WIKI_TEAM_TAG_PREFIX).map(str::to_owned))
+        .collect();
+    if prior.len() > 1 {
+        return Err(IngestError::Rejected(
+            "restricted: wiki page carries conflicting `t: team:` scopes; refusing revision".into(),
+        ));
+    }
+    match (prior.pop(), scope) {
+        // (a) team-scoped page: keep the scope and hold a seat in it.
+        (Some(page_scope), Some(new_scope)) => {
+            if new_scope != page_scope {
+                return Err(IngestError::Rejected(
+                    "restricted: wiki page is team-scoped; a revision may not change its `t: team:<node-id>` team".into(),
+                ));
+            }
+            require_wiki_team_authority(state, tenant, event, &page_scope, "editing a team-scoped wiki page").await
+        }
+        (Some(_), None) => Err(IngestError::Rejected(
+            "restricted: wiki page is team-scoped; a revision may not drop its `t: team:<node-id>` tag".into(),
+        )),
+        // (c) scoping an unscoped page is a governance act.
+        (None, Some(new_scope)) => {
+            require_wiki_team_authority(state, tenant, event, &new_scope, "scoping a wiki page to a team").await
+        }
+        // (b) unscoped pages accept members as today.
+        (None, None) => Ok(()),
+    }
+}
+
+/// The signer must hold a seat in team node `node_id` (its `agentSeats`/
+/// `holders` per `org_graph`) or be a community admin/owner.
+async fn require_wiki_team_authority(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+    node_id: &str,
+    what: &str,
+) -> Result<(), IngestError> {
+    let author_hex = event.pubkey.to_hex();
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    let seated = state
+        .db
+        .org_graph(tenant.community())
+        .holds_node_seat(node_id, &author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking team seat: {e}")))?;
+    if seated {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(format!(
+        "restricted: {what} requires a seat in team {node_id} or community admin/owner"
+    )))
+}
+
+/// Enforce who may publish kind:44002 Agent Wiki pages. The "agent name" is a
+/// forgeable model tag, so shape proves nothing: a 44002 publish is accepted
+/// only when the signer is a SEATED agent (pubkey in some node's
+/// `agentSeats`), or a human authority holder publishing on the agent's
+/// behalf (community owner/admin, or a seat holder — the distillation loop
+/// runs under the human runner's key and must keep working).
+pub(crate) async fn enforce_agent_wiki_authority(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let author_hex = event.pubkey.to_hex();
+    let graph = state.db.org_graph(tenant.community());
+    if graph
+        .is_seated_agent(&author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking agent seat: {e}")))?
+    {
+        return Ok(());
+    }
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    if graph
+        .holds_any_seat(&author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking holder seat: {e}")))?
+    {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(
+        "restricted: agent wiki pages require a seated agent signer or a human authority holder (community owner/admin/seat holder)".into(),
+    ))
+}
 
 /// Validate the envelope of a kind:44002 Agent Wiki page event.
 ///
@@ -4207,8 +4447,23 @@ async fn ingest_event_inner(
         super::budget_enforcement::validate_budget_publication(state, tenant, &event).await?;
     }
 
+    if kind_u32 == KIND_WIKI_PAGE {
+        // Sticky team scope: a page scoped to a team node (t: team:<node-id>)
+        // can never be opened by a client that drops the tag. Always on.
+        enforce_wiki_page_scope(state, tenant, &event).await?;
+    }
+
     if kind_u32 == KIND_AGENT_WIKI_PAGE {
         validate_agent_wiki_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Agent wiki pages are written by seated agents — or by a human
+        // authority holder publishing on the agent's behalf (the distillation
+        // runner). A plain member cannot forge one. Always on.
+        enforce_agent_wiki_authority(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_WIKI_CORRECTION {
+        validate_wiki_correction_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 

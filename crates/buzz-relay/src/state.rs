@@ -915,11 +915,6 @@ pub struct AppState {
     /// Shared Redis-backed admission limits for ordinary HTTP and WebSocket work.
     pub admission_rate_limiter: Arc<RedisRateLimiter>,
 
-    /// Per-connection frame budget for anonymous P2P-signaling EVENT/REQ
-    /// (`BUZZ_P2P_SIGNALING`). Keyed by connection id; entries expire after
-    /// one window and the map is capacity-bounded.
-    pub p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter,
-
     /// Per-agent sliding-window rate limiter for observer frames (kind 24200).
     /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
     /// 100 events/sec per agent — prevents relay/DB pressure from bursty telemetry.
@@ -1123,7 +1118,6 @@ impl AppState {
             gif_http_client,
             llm_http_client,
             admission_rate_limiter,
-            p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter::new(),
             observer_rate_limiter: Arc::new(DashMap::new()),
             wiki_sync_rate_limiter: Arc::new(DashMap::new()),
             media_upload_rate_limiter: Arc::new(DashMap::new()),

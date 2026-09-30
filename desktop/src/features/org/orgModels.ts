@@ -413,6 +413,14 @@ export type ContributionRecord = {
   reviewStatus: ReviewStatus;
   appealHistory: AppealEntry[];
   createdAt: number;
+  /**
+   * The parsed content snapshot rendered on screen — reviews copy this exact
+   * version (never a click-time refetch), so an Accept always applies to the
+   * record the reviewer saw.
+   */
+  content: Record<string, unknown>;
+  /** The event tags rendered on screen — carried through the review republish. */
+  tags: string[][];
 };
 
 export function eventToContributionRecord(
@@ -454,6 +462,8 @@ export function eventToContributionRecord(
       ? (content.appealHistory as AppealEntry[])
       : [],
     createdAt: event.created_at,
+    content: { ...content },
+    tags: event.tags.map((tag) => [...tag]),
   };
 }
 

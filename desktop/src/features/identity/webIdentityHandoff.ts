@@ -59,6 +59,7 @@ export const WEB_IDENTITY_HANDOFF_COPY = {
   replacesWarning:
     "This replaces the account on this device. Back up the current key first if you haven't.",
   openButton: "Sign in with browser",
+  onboardingHint: "Use your Creaton account from the web",
   starting: "Opening your browser…",
   waiting:
     "Finish signing in in your browser — this window links up automatically.",

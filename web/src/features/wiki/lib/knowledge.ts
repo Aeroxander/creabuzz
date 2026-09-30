@@ -26,18 +26,23 @@
  * distinct prefix so a reader can tell them apart:
  *
  * - `["t", "correction-for:<slug>"]` — this event is a correction suggestion
- *   for the page whose `d` is `<slug>`. The suggestion itself is a `kind:44001`
- *   proposal page (the simplest durable record the relay already stores) whose
- *   `d` is `correction-for-<slug>`, so it never collides with — or overwrites —
- *   the page it corrects. A `t` filter (`#t`) renders suggestions back; the
- *   per-author, parameterised-replaceable `d` means one live suggestion per
- *   author per page (a resubmission replaces the same author's earlier one).
+ *   for the page whose `d` is `<slug>`. The suggestion itself is a
+ *   `kind:44003` correction (`KIND_WIKI_CORRECTION`) whose `d` is
+ *   `correction-for-<slug>`, so it never collides with — or overwrites — the
+ *   page it corrects. Corrections moved off `kind:44001` so a correction is a
+ *   per-author record of its own: relay deletion addresses the author's own
+ *   correction coordinate (`44003:<author>:correction-for-<slug>`) only, so
+ *   deleting your correction can no longer risk anyone else's. A `t` filter
+ *   (`#t`) renders suggestions back; one live suggestion per author per page
+ *   (a resubmission replaces the same author's earlier one). Legacy corrections
+ *   filed as `kind:44001` are still read back the same way until migrated.
  *
- * - `["a", "44001:<author>:correction-for-<slug>"]` on an agent page — the
- *   correction page versions that revision applied: the consumption record
- *   (the agent NEVER modifies members' correction pages). A correction whose
- *   coordinate is referenced by the LATEST agent-page revision is no longer
- *   open; references on older revisions are history and never consume.
+ * - `["a", "44003:<author>:correction-for-<slug>"]` (legacy pages carry
+ *   `44001:<author>:…`) on an agent page — the correction page that revision
+ *   applied: the consumption record (the agent NEVER modifies members'
+ *   correction pages). A correction whose coordinate is referenced by the
+ *   LATEST agent-page revision is no longer open; references on older
+ *   revisions are history and never consume.
  *
  * - `["t", "team:<team-node-id>"]` — this page is scoped to the org-chart team
  *   named by `<team-node-id>` (a NIP-ORG node `d`). Only that team's seat
@@ -52,6 +57,17 @@
 export const KIND_WIKI_PAGE = 44001;
 /** The agent page kind (agent wiki). Product name: "Agent page". */
 export const KIND_AGENT_WIKI_PAGE = 44002;
+/**
+ * The correction suggestion kind (`KIND_WIKI_CORRECTION`, 44003).
+ *
+ * Kept as a local constant because this module is deliberately alias-free for
+ * `node --test`; the number is pinned against the generated table
+ * (`@creaton/core/kinds`) and `crates/buzz-core/src/kind.rs`'s
+ * `KIND_WIKI_CORRECTION` by `knowledge-corrections.test.mjs`. Corrections
+ * moved off `kind:44001` so a correction is a per-author record of its own
+ * (see the module docs above).
+ */
+export const KIND_WIKI_CORRECTION = 44003;
 
 /** `t`-tag prefix marking a correction suggestion. */
 export const SUGGESTION_TAG_PREFIX = "correction-for:";
@@ -172,10 +188,10 @@ export function pageScope(event: KnowledgeEvent): string | null {
   return prefixedTag(event, SCOPE_TAG_PREFIX);
 }
 
-/** True when this 44001 event is a correction suggestion, not a page. */
+/** True when this event is a correction suggestion, not a page. */
 export function isSuggestionEvent(event: KnowledgeEvent): boolean {
   return (
-    event.kind === KIND_WIKI_PAGE &&
+    (event.kind === KIND_WIKI_CORRECTION || event.kind === KIND_WIKI_PAGE) &&
     prefixedTag(event, SUGGESTION_TAG_PREFIX) !== null
   );
 }
@@ -263,6 +279,8 @@ export function provenanceLine(
 export interface Suggestion {
   authorPubkey: string;
   createdAt: number;
+  /** The kind the correction was filed under (44003, or legacy 44001). */
+  kind: number;
   /** The suggested correction, as plain text/markdown. */
   note: string;
 }
@@ -278,10 +296,11 @@ export interface SuggestionPayload {
 /**
  * Build the durable record for a correction suggestion against `slug`.
  *
- * It is a `kind:44001` proposal page whose `d` is `correction-for-<slug>` (so
- * it can never overwrite the page it corrects) and whose `t` tag marks it for
- * render-back. Parameterised-replaceable semantics make this one live
- * suggestion per author per page.
+ * It is a `kind:44003` correction (`KIND_WIKI_CORRECTION`) whose `d` is
+ * `correction-for-<slug>` (so it can never overwrite the page it corrects) and
+ * whose `t` tag marks it for render-back. One live suggestion per author per
+ * page: a resubmission replaces the same author's earlier one, and relay
+ * deletion addresses only the author's own correction coordinate.
  */
 export function buildSuggestion(opts: {
   slug: string;
@@ -290,7 +309,7 @@ export function buildSuggestion(opts: {
   now: number;
 }): SuggestionPayload {
   return {
-    kind: KIND_WIKI_PAGE,
+    kind: KIND_WIKI_CORRECTION,
     tags: [
       ["d", `correction-for-${opts.slug}`],
       ["t", `${SUGGESTION_TAG_PREFIX}${opts.slug}`],
@@ -302,11 +321,34 @@ export function buildSuggestion(opts: {
 
 /**
  * The `a`-tag coordinate recording that an agent page consumed the correction
- * page `authorPubkey` filed for `slug`
- * (`44001:<author>:correction-for-<slug>`).
+ * `authorPubkey` filed for `slug` under `kind`
+ * (`<kind>:<author>:correction-for-<slug>`).
  */
-function correctionCoordinate(authorPubkey: string, slug: string): string {
-  return `44001:${authorPubkey}:correction-for-${slug}`;
+function correctionCoordinate(
+  kind: number,
+  authorPubkey: string,
+  slug: string,
+): string {
+  return `${kind}:${authorPubkey}:correction-for-${slug}`;
+}
+
+/** Every generation a correction may have been filed or referenced under. */
+const CORRECTION_KINDS = [KIND_WIKI_CORRECTION, KIND_WIKI_PAGE];
+
+/**
+ * Whether the author's correction for `slug` was consumed, whichever
+ * generation the reference rode: an agent page recorded consumption under the
+ * coordinate it saw, and both the 44003 and the legacy 44001 form name the
+ * same author's correction for that page.
+ */
+function isConsumed(
+  consumed: ReadonlySet<string>,
+  authorPubkey: string,
+  slug: string,
+): boolean {
+  return CORRECTION_KINDS.some((kind) =>
+    consumed.has(correctionCoordinate(kind, authorPubkey, slug)),
+  );
 }
 
 /**
@@ -340,7 +382,11 @@ function consumedCorrectionCoordinates(
   return consumed;
 }
 
-/** The live correction pages for `slug`, folded per author, newest first. */
+/**
+ * The live correction pages for `slug`, folded per author, newest first.
+ * Corrections are read from `kind:44003` and legacy `kind:44001` alike
+ * (back-compat until the legacy ones are migrated).
+ */
 function liveSuggestions(
   events: readonly KnowledgeEvent[],
   slug: string,
@@ -348,7 +394,9 @@ function liveSuggestions(
   const marker = `${SUGGESTION_TAG_PREFIX}${slug}`;
   const perAuthor = new Map<string, Suggestion>();
   for (const event of events) {
-    if (event.kind !== KIND_WIKI_PAGE) continue;
+    if (event.kind !== KIND_WIKI_CORRECTION && event.kind !== KIND_WIKI_PAGE) {
+      continue;
+    }
     const target = prefixedTag(event, SUGGESTION_TAG_PREFIX);
     if (target !== slug) continue;
     // `marker` guards the exact `t` value; a bare prefix match is not enough.
@@ -361,6 +409,7 @@ function liveSuggestions(
       perAuthor.set(event.pubkey, {
         authorPubkey: event.pubkey,
         createdAt: event.created_at,
+        kind: event.kind,
         note: typeof event.content === "string" ? event.content : "",
       });
     }
@@ -371,7 +420,7 @@ function liveSuggestions(
 /**
  * Read correction suggestions for `slug` that are still OPEN — not yet
  * consumed by the latest agent-page revision. Suggestions fold per author
- * (the newest wins, matching their replaceable `d`) and come back newest-first.
+ * (the newest wins) and come back newest-first.
  */
 export function suggestionsFor(
   events: readonly KnowledgeEvent[],
@@ -379,7 +428,7 @@ export function suggestionsFor(
 ): Suggestion[] {
   const consumed = consumedCorrectionCoordinates(events, slug);
   return liveSuggestions(events, slug).filter(
-    (s) => !consumed.has(correctionCoordinate(s.authorPubkey, slug)),
+    (s) => !isConsumed(consumed, s.authorPubkey, slug),
   );
 }
 
@@ -394,7 +443,7 @@ export function appliedCorrectionsFor(
 ): Suggestion[] {
   const consumed = consumedCorrectionCoordinates(events, slug);
   return liveSuggestions(events, slug).filter((s) =>
-    consumed.has(correctionCoordinate(s.authorPubkey, slug)),
+    isConsumed(consumed, s.authorPubkey, slug),
   );
 }
 
@@ -433,4 +482,29 @@ export function canEditKnowledge(
   if (holders == null || holders.length === 0) return "edit";
   if (viewerPubkey != null && holders.includes(viewerPubkey)) return "edit";
   return "propose";
+}
+
+/**
+ * Whether one INBOUND live co-edit update may modify the shared document.
+ *
+ * The editor UI already blocks non-editors, and the relay enforces the same
+ * gate on ingest; this closes the transport back door where a non-editor's
+ * update was applied over the wire anyway. Own updates always pass (a reader's
+ * own announcement/sync traffic must keep flowing) and everyone else is
+ * checked against {@link canEditKnowledge} — whose open-editing fallbacks are
+ * preserved exactly: an unscoped or unresolvable page never drops anyone.
+ */
+export function liveUpdatePermitted(opts: {
+  authorPubkey: string;
+  selfPubkey: string | null;
+  page: { scope: string | null };
+  resolveTeamSeats: TeamSeatResolver;
+}): boolean {
+  if (opts.selfPubkey != null && opts.authorPubkey === opts.selfPubkey) {
+    return true;
+  }
+  return (
+    canEditKnowledge(opts.page, opts.authorPubkey, opts.resolveTeamSeats) ===
+    "edit"
+  );
 }

@@ -5,3 +5,11 @@
  * people's stored keys and settings).
  */
 export const APP_NAME = "Creaton";
+
+/**
+ * The hosted Creaton web app — where people use their Creaton account in a
+ * browser. Used as the fallback "Sign in with browser" address when no
+ * community is connected yet (a connected community's own relay serves its
+ * web app and always wins).
+ */
+export const DEFAULT_WEB_ORIGIN = "https://app.creaton.app";

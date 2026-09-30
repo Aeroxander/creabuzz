@@ -17,8 +17,10 @@ import {
   existingUserPubkey,
   hasStoredIdentity,
   rotateIdentity,
+  StoredIdentityUnreadableError,
   storedIdentityHex,
 } from "@/shared/lib/identity";
+import { IdentityRecoveryBanner } from "./IdentityRecoveryBanner";
 import { WebIdentityHandoffCard } from "./WebIdentityHandoffCard";
 import {
   useProfiles,
@@ -189,7 +191,21 @@ export function ProfileMenu({
     }
   };
 
-  const nsec = storedIdentityHex() ?? "";
+  // Render boundary for the always-mounted nav: a stored-but-unreadable key
+  // must degrade to the inline recovery banner below, never throw through the
+  // root error boundary — where the Import/Reset recovery would be unreachable.
+  let nsec = "";
+  let identityUnreadable = false;
+  try {
+    nsec = storedIdentityHex() ?? "";
+  } catch (error) {
+    if (!(error instanceof StoredIdentityUnreadableError)) throw error;
+    identityUnreadable = true;
+  }
+
+  if (identityUnreadable) {
+    return <IdentityRecoveryBanner />;
+  }
 
   if (!created) {
     return (

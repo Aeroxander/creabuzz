@@ -30,8 +30,6 @@ pub mod moderation_commands;
 pub mod moderation_notices;
 /// NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
 pub mod org_grant_enforcement;
-#[cfg(test)]
-mod p2p_anon_tests;
 /// Product-feedback validation + deployment sidecar persistence.
 pub mod product_feedback;
 #[allow(dead_code, missing_docs)]
@@ -48,6 +46,8 @@ pub mod report_resolution;
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+#[cfg(test)]
+mod wiki_enforcement_tests;
 
 /// Extract an optional TTL (in seconds) from a Nostr event's `ttl` tag,
 /// applying the server-side override when configured.

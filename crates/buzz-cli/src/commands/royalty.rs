@@ -475,10 +475,11 @@ pub struct ContributionAction {
     /// Claimant (beneficiary): signer of the earliest record for `d`.
     pub subject: String,
     /// `content.amount` from the claimant's newest record (their claim) —
-    /// the FALLBACK paid only when the disposing review copies no amount at
-    /// all ([`paid_claim_fields`]); a post-acceptance edit to this record
-    /// never changes the payout. `None` = unpayable (excluded, reported,
-    /// never silently dropped).
+    /// the informational snapshot, never what a disposing review pays: the
+    /// FALLBACK paid is the claimant's newest record at or before the
+    /// disposing review's timestamp ([`paid_claim_fields`]), so a
+    /// post-acceptance edit to this record never changes the payout.
+    /// `None` = unpayable (excluded, reported, never silently dropped).
     pub amount: Option<u64>,
     /// `content.monthsActive` from the claimant's newest record; `None`
     /// means full tenure ([`TENURE_CAP_MONTHS`]).
@@ -579,19 +580,39 @@ fn canonical_review<'a>(
 /// The claim fields one disposed action is PAID: the snapshot copied into
 /// the disposing (canonical) review — per NIP-ORG a review republishes the
 /// record with its fields copied, so the reviewed snapshot is the
-/// authoritative claim — falling back to the claimant's newest record only
-/// when the review copies no `amount` at all. A claimant edit AFTER
-/// acceptance therefore never changes the payout.
+/// authoritative claim. When the review copies no `amount` at all, the
+/// fallback is the claimant's newest record **at or before the disposing
+/// review's timestamp** (ties: lowest event id) — never a record created
+/// after the review, so a post-review edit can never be paid. Only when the
+/// action carries no claim history at all does the unbounded
+/// [`ContributionAction::amount`] snapshot (informational; the settlement
+/// fold always records per-row history) resolve the fallback.
 pub fn paid_claim_fields(
     action: &ContributionAction,
     authorized: &HashSet<String>,
 ) -> (Option<u64>, Option<u64>) {
-    if let Some(review) = canonical_review(&action.reviews, &action.subject, authorized) {
-        if let Some(claim) = action.review_claims.get(&review.event_id) {
-            if claim.has_amount {
-                return (claim.amount, claim.months_active);
-            }
+    let Some(review) = canonical_review(&action.reviews, &action.subject, authorized) else {
+        return (action.amount, action.months_active);
+    };
+    if let Some(claim) = action.review_claims.get(&review.event_id) {
+        if claim.has_amount {
+            return (claim.amount, claim.months_active);
         }
+    }
+    // Fallback: the claimant's newest record at or before the disposing
+    // review's timestamp (ties: lowest event id) — a claim edited AFTER the
+    // review must never be paid its edited amount.
+    let bounded = action
+        .reviews
+        .iter()
+        .filter(|r| r.reviewer == action.subject && r.created_at <= review.created_at)
+        .max_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| b.event_id.cmp(&a.event_id))
+        });
+    if let Some(claim) = bounded.and_then(|row| action.review_claims.get(&row.event_id)) {
+        return (claim.amount, claim.months_active);
     }
     (action.amount, action.months_active)
 }
@@ -744,8 +765,9 @@ fn event_d_tag(event: &serde_json::Value) -> Option<String> {
 /// claim (`content.amount`; ties: lowest event id) — a copy by anyone else
 /// never hijacks the action — and what is PAID is the snapshot the disposing
 /// review copied ([`paid_claim_fields`]), falling back to the claimant's
-/// newest record (NIP-33 LWW) only when the review copies no amount — a
-/// post-acceptance edit never changes the payout. An action settles in this
+/// newest record at or before the disposing review's timestamp only when the
+/// review copies no amount — a post-acceptance edit never changes the
+/// payout. An action settles in this
 /// epoch when its filing (the claimant's earliest record) is inside
 /// `[epoch_start, epoch_end)`; a review cannot predate the filing (the
 /// [`tally_reviews`] consumer rule), and reviews up to `review_until` count —
@@ -836,7 +858,8 @@ pub fn fold_settlement_actions(
             continue;
         }
         // Claim fields: the claimant's newest record (NIP-33 LWW; ties:
-        // lowest event id).
+        // lowest event id) — the informational snapshot; the paid fallback
+        // is bounded by the disposing review's timestamp ([`paid_claim_fields`]).
         let claim = rows.iter().filter(|r| r.signer == subject).max_by(|a, b| {
             a.created_at
                 .cmp(&b.created_at)
@@ -881,20 +904,16 @@ pub fn fold_settlement_actions(
 }
 
 /// Deterministic claim/evidence ids for ONE accepted action of one
-/// beneficiary's epoch schedule: keccak over the settled window, beneficiary
-/// and the single action id. Ids are derived per action — never one id over
-/// the whole accepted set — so overlapping re-runs re-derive the shared
-/// actions' claims byte-identically (idempotent queue: the chain's one-shot
-/// claim slot can never re-pay a settled action) and a wider cutoff only
-/// adds new ids for its delta actions.
-fn settlement_ids(
-    epoch_start: u64,
-    epoch_end: u64,
-    beneficiary: &str,
-    action: &str,
-) -> (String, String) {
-    let claim = format!("royalty-settle:{epoch_start}:{epoch_end}:{beneficiary}:{action}");
-    let evidence = format!("royalty-settle-evidence:{epoch_start}:{epoch_end}:{action}");
+/// beneficiary's epoch schedule: keccak over the distributor, beneficiary
+/// and the single action id — never the epoch bounds, so a re-run over a
+/// different window re-derives byte-identical ids and the chain's one-shot
+/// claim slot reports `AlreadySettled` instead of double-paying. Ids are
+/// derived per action — never one id over the whole accepted set — so
+/// overlapping re-runs re-derive the shared actions' claims byte-identically
+/// and only their delta actions get new ids.
+fn settlement_ids(distributor: &str, beneficiary: &str, action: &str) -> (String, String) {
+    let claim = format!("royalty-settle:{distributor}:{beneficiary}:{action}");
+    let evidence = format!("royalty-settle-evidence:{distributor}:{beneficiary}:{action}");
     (
         format!("0x{}", hex::encode(abi::keccak256(claim.as_bytes()))),
         format!("0x{}", hex::encode(abi::keccak256(evidence.as_bytes()))),
@@ -1047,12 +1066,11 @@ pub async fn cmd_settle_weights(
             // accepted set — so an overlapping re-run re-derives the settled
             // actions' claims byte-identically (the chain's one-shot claim
             // slot makes them no-ops) and only its delta actions get new ids.
-            let (claim_id, evidence_hash) = settlement_ids(
-                opts.epoch_start,
-                opts.epoch_end,
-                &row.beneficiary,
-                action_id,
-            );
+            // Ids bind (distributor, beneficiary, action) only — never the
+            // epoch window — so a rerun over a different window hits
+            // `AlreadySettled` instead of paying twice.
+            let (claim_id, evidence_hash) =
+                settlement_ids(&distributor, &row.beneficiary, action_id);
             // The EXISTING compose path — same unsigned template the
             // mirror-schedule command prints (advisory; chain is authoritative).
             templates.push(royalty_schedule_event_json(
@@ -2192,8 +2210,9 @@ mod tests {
                 Some("t1"),
                 json!({"v": 1, "amount": 250, "monthsActive": 6, "reviewStatus": "accepted"}),
             ),
-            // Claimant edit AFTER acceptance: the newest claimant record is
-            // only the fallback claim — it must never change the payout.
+            // Claimant edit AFTER acceptance — must never change the payout:
+            // the paid fallback is bounded by the accepting review's
+            // timestamp ([`paid_claim_fields`]).
             raw_event(
                 6,
                 &s,
@@ -2223,7 +2242,8 @@ mod tests {
         assert_eq!(
             t1.amount,
             Some(300),
-            "the fallback claim is the claimant's newest record (LWW)"
+            "the fold records the newest claim overall — informational; \
+             the paid fallback is review-bounded ([`paid_claim_fields`])"
         );
         assert_eq!(t1.months_active, Some(6));
         assert_eq!(
@@ -2248,30 +2268,71 @@ mod tests {
     #[test]
     fn settlement_ids_are_deterministic_and_action_bound() {
         let (a, b) = (pk('a'), pk('b'));
-        let one = settlement_ids(1_000, 2_000, &a, "t1");
-        let two = settlement_ids(1_000, 2_000, &a, "t1");
+        let one = settlement_ids("0xd1", &a, "t1");
+        let two = settlement_ids("0xd1", &a, "t1");
         assert_eq!(one, two, "same inputs → byte-identical mirrors");
         assert!(one.0.starts_with("0x") && one.0.len() == 66);
         assert!(one.1.starts_with("0x") && one.1.len() == 66);
         assert_ne!(
             one,
-            settlement_ids(1_000, 2_000, &b, "t1"),
+            settlement_ids("0xd1", &b, "t1"),
             "a claim is bound to its beneficiary"
         );
         assert_ne!(
             one,
-            settlement_ids(1_000, 2_000, &a, "t2"),
+            settlement_ids("0xd1", &a, "t2"),
             "a claim is bound to its single action — never one id over the \
              accepted set"
+        );
+        assert_ne!(
+            one,
+            settlement_ids("0xd2", &a, "t1"),
+            "a claim is bound to its distributor"
+        );
+    }
+
+    /// Guard: the claim id binds (distributor, beneficiary, action) only —
+    /// never the epoch window — so the same action settled under two
+    /// different windows re-derives the SAME id and the chain's one-shot
+    /// claim slot reports `AlreadySettled` instead of paying twice.
+    /// Mutation check: hashing the epoch bounds back in fails this test.
+    #[test]
+    fn same_action_across_windows_yields_the_same_claim_id() {
+        let (s, rev) = (pk('a'), pk('r'));
+        let auth = authorized(&[&rev]);
+        let events = vec![
+            raw_event(1, &s, 1_010, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                2,
+                &rev,
+                1_020,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12, "reviewStatus": "accepted"}),
+            ),
+        ];
+        let claim_id = |start: u64, end: u64| -> String {
+            let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
+            let weights = compute_weights(&folded.actions, &auth).expect("weights");
+            let row = &weights[0];
+            let (action_id, _) = &row.claim_weights[0];
+            settlement_ids("0xd1", &row.beneficiary, action_id).0
+        };
+        // The same filing/action settles under two DIFFERENT windows…
+        assert_eq!(
+            claim_id(1_000, 2_000),
+            claim_id(900, 3_000),
+            "the claim id is window-stable — a rerun over a different window \
+             must hit AlreadySettled, never double-pay"
         );
     }
 
     /// Guard: an edit to the claimant's record AFTER the accepting review
     /// never changes the payout — the amount/monthsActive as it stood at the
-    /// accepting review (the snapshot the review copied) is what pays. The
-    /// claimant's newest record is consulted only when the review copies no
-    /// amount at all. Mutation check: paying the claimant's newest record
-    /// instead fails this test (the edit 250 → 300 would pay 300_000).
+    /// accepting review (the snapshot the review copied) is what pays. When
+    /// the review copies no amount at all, the fallback is the claimant's
+    /// newest record AT OR BEFORE the review's timestamp — never the newest
+    /// overall. Mutation check: restoring the "newest overall" fallback
+    /// fails this test (the post-review edit 250 → 300 would pay 300_000).
     #[test]
     fn post_acceptance_edits_are_not_paid() {
         let (s, rev) = (pk('a'), pk('r'));
@@ -2309,7 +2370,8 @@ mod tests {
         assert_eq!(weights[0].claim_weights, vec![("t1".to_string(), 125_000)]);
 
         // Fallback: a review that copies no amount at all falls back to the
-        // claimant's newest record (LWW).
+        // claimant's newest record AT OR BEFORE the review's timestamp —
+        // the post-review edit must not be paid its edited amount.
         let events = vec![
             raw_event(4, &s, start + 10, Some("t1"), json!({"amount": 250, "monthsActive": 6})),
             raw_event(5, &rev, start + 20, Some("t1"), json!({"reviewStatus": "accepted"})),
@@ -2317,8 +2379,10 @@ mod tests {
         ];
         let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
         let weights = compute_weights(&folded.actions, &auth).expect("weights");
-        // 300×12×1000/12 = 300_000 — the fallback claim, newest record.
-        assert_eq!(weights[0].weight, 300_000);
+        // 250×6×1000/12 = 125_000 — the claim as it stood at the accepting
+        // review, NOT the edited 300×12 = 300_000.
+        assert_eq!(weights[0].weight, 125_000);
+        assert_eq!(weights[0].claim_weights, vec![("t1".to_string(), 125_000)]);
     }
 
     /// A verdict landing after the first run's cutoff is invisible to that
@@ -2394,7 +2458,7 @@ mod tests {
                 .flat_map(|row| {
                     row.claim_weights
                         .iter()
-                        .map(|(a, _)| settlement_ids(start, end, &row.beneficiary, a).0)
+                        .map(|(a, _)| settlement_ids("0xd1", &row.beneficiary, a).0)
                 })
                 .collect()
         };
@@ -2416,7 +2480,7 @@ mod tests {
         let added: BTreeSet<&String> = ids2.difference(&ids1).collect();
         assert_eq!(
             added,
-            [&settlement_ids(start, end, &s, "t2").0]
+            [&settlement_ids("0xd1", &s, "t2").0]
                 .into_iter()
                 .collect(),
             "the wider-cutoff run adds exactly the late action's claim id — \

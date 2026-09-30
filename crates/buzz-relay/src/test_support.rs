@@ -18,7 +18,7 @@ pub(crate) async fn test_state() -> std::sync::Arc<crate::state::AppState> {
 }
 
 /// [`test_state`] with a caller hook to adjust the [`crate::config::Config`]
-/// (e.g. enable `p2p_signaling`) before the state is built.
+/// before the state is built.
 #[cfg(test)]
 pub(crate) async fn test_state_with(
     configure: impl FnOnce(&mut crate::config::Config),

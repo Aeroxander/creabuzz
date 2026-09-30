@@ -556,6 +556,23 @@ export const KIND_WIKI_PAGE = 44001;
 /// `(pubkey, kind, d_tag)`.
 export const KIND_AGENT_WIKI_PAGE = 44002;
 
+// Wiki corrections (44003) — member "Suggest a correction" notes.
+/// A member's correction suggestion for a wiki page (addressable, content =
+/// markdown). Any member may publish one; the distillation loop folds
+/// unconsumed corrections into the next page revision as untrusted data.
+///
+/// Pinned shape: exactly one `d` tag shaped `correction-for-<slug>` plus one
+/// `t` tag shaped `correction-for:<slug>` naming the same slug. Corrections
+/// are per-AUTHOR coordinates (`44003:<author>:correction-for-<slug>`) —
+/// deletion is scoped to the signer's own correction and must never touch
+/// another author's. A correction never participates in the slug-wide page
+/// deletion of kinds 44001/44002.
+///
+/// Outside the NIP-33 parameterized-replaceable range (30000–39999): every
+/// revision is stored and replacement is read-side LWW per
+/// `(pubkey, kind, d_tag)`, exactly like kinds 44001/44002.
+export const KIND_WIKI_CORRECTION = 44003;
+
 // Forum / social (45000–45999)
 // V1 used addressable range (30001–30003) — wrong.
 /// A forum post (thread root).

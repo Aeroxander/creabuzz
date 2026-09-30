@@ -81,38 +81,6 @@ pub async fn handle_req(
 
                 (conn.conn_id, pk_bytes, ctx.channel_ids.clone())
             }
-            // P2P signaling mode: an anonymous socket may subscribe only to the
-            // Trystero-shaped allowlist in `p2p_signaling` — allowlisted
-            // ephemeral kinds (never a Buzz-defined kind such as presence
-            // 20001) narrowed by `#x` topics — so it can neither read
-            // community state nor enumerate members. It is also bounded: a
-            // per-connection frame budget and a standing-subscription cap
-            // (the authenticated MAX_SUBSCRIPTIONS arm above never applies).
-            _ if state.config.p2p_signaling
-                && state.config.p2p_signaling_policy.filters_allowed(&filters) =>
-            {
-                let policy = &state.config.p2p_signaling_policy;
-                if !state.p2p_signaling_limiter.admit(
-                    conn.conn_id,
-                    crate::p2p_signaling::AnonymousFrame::Req,
-                    policy.frames_per_minute,
-                ) {
-                    conn.send(RelayMessage::closed(
-                        &sub_id,
-                        "rate-limited: anonymous signaling quota exceeded",
-                    ));
-                    return;
-                }
-                let subs = conn.subscriptions.lock().await;
-                if !subs.contains_key(&sub_id) && subs.len() >= policy.max_subscriptions {
-                    conn.send(RelayMessage::closed(
-                        &sub_id,
-                        "error: too many subscriptions",
-                    ));
-                    return;
-                }
-                (conn.conn_id, vec![0u8; 32], None)
-            }
             _ => {
                 conn.send(RelayMessage::notice(
                     "auth-required: authenticate before subscribing",

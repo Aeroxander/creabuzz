@@ -536,20 +536,6 @@ pub struct Config {
     /// itself falls back to the web bundle's `index.html`, enabling arbitrary
     /// client-side routing in the web SPA.
     pub web_spa_full: bool,
-    /// When true (`BUZZ_P2P_SIGNALING=1`), anonymous clients may subscribe and
-    /// publish NIP-01 ephemeral events (kinds 20000–29999) without NIP-42
-    /// auth. Ephemeral events are broadcast to live subscribers only and never
-    /// stored, so this opens no durable data: it lets browser P2P layers
-    /// (e.g. Trystero over Nostr signaling) rendezvous through the relay.
-    /// Defaults to off; the relay's read/write auth posture is unchanged.
-    ///
-    /// Even when on, anonymous access is confined to the
-    /// [`p2p_signaling_policy`](Self::p2p_signaling_policy): allowlisted
-    /// ephemeral kinds (never a Buzz-defined kind such as presence 20001),
-    /// Trystero-shaped `#x` topic filters/events, a per-connection
-    /// subscription cap and a per-connection frame budget.
-    pub p2p_signaling: bool,
-
     /// Whether the unauthenticated `GET /communities` directory is served
     /// (`BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`). Default off: on a multi-tenant
     /// deployment the directory lists every hosted community's host, icon and
@@ -557,13 +543,6 @@ pub struct Config {
     /// off the route answers 404, exactly like a relay that predates it (the
     /// web client already falls back gracefully).
     pub public_community_directory: bool,
-    /// Anonymous P2P-signaling admission policy
-    /// (`BUZZ_P2P_SIGNALING_KINDS`, `BUZZ_P2P_SIGNALING_MAX_SUBSCRIPTIONS`,
-    /// `BUZZ_P2P_SIGNALING_EVENTS_PER_MIN`). Only consulted when
-    /// [`p2p_signaling`](Self::p2p_signaling) is true; a malformed value is a
-    /// startup error.
-    pub p2p_signaling_policy: crate::p2p_signaling::P2pSignalingPolicy,
-
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -1576,10 +1555,6 @@ impl Config {
         let web_spa_full = std::env::var("BUZZ_WEB_SPA")
             .map(|value| value.eq_ignore_ascii_case("full"))
             .unwrap_or(false);
-        let p2p_signaling = std::env::var("BUZZ_P2P_SIGNALING")
-            .map(|value| value == "true" || value == "1")
-            .unwrap_or(false);
-        let p2p_signaling_policy = crate::p2p_signaling::P2pSignalingPolicy::from_env()?;
         let public_community_directory = std::env::var("BUZZ_PUBLIC_COMMUNITY_DIRECTORY")
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
@@ -1670,9 +1645,7 @@ impl Config {
             serve_git_web_gui,
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
             web_spa_full,
-            p2p_signaling,
             public_community_directory,
-            p2p_signaling_policy,
         })
     }
 

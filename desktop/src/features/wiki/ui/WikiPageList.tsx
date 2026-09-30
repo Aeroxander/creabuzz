@@ -8,6 +8,7 @@ import { BookOpen, Bot } from "lucide-react";
 import { SubsectionLabel } from "@/shared/ui/PageHeader";
 import { cn } from "@/shared/lib/cn";
 
+import { groupWikiPages, WIKI_GROUP_LABELS } from "../lib/wikiGroups";
 import type { WikiPage } from "../lib/pageIndex";
 
 type WikiPageListProps = {
@@ -63,27 +64,42 @@ export function WikiPageList({
   activeKey,
   onSelect,
 }: WikiPageListProps) {
-  const humans = pages.filter((page) => page.kind === "human");
-  const agents = pages.filter((page) => page.kind === "agent");
+  const groups = groupWikiPages(pages);
   return (
     <nav
       aria-label="Wiki pages"
       className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-3"
       data-testid="wiki-page-list"
     >
-      {humans.length > 0 ? (
+      {groups.team.length > 0 ? (
         <div>
-          <SubsectionLabel className="px-2">Wiki pages</SubsectionLabel>
+          <SubsectionLabel className="px-2">
+            {WIKI_GROUP_LABELS.team}
+          </SubsectionLabel>
           <div className="mt-1 space-y-0.5">
-            {humans.map((page) => pageRow(page, activeKey, onSelect))}
+            {groups.team.map((page) => pageRow(page, activeKey, onSelect))}
           </div>
         </div>
       ) : null}
-      {agents.length > 0 ? (
-        <div>
-          <SubsectionLabel className="px-2">Agent standups</SubsectionLabel>
+      {groups.corrections.length > 0 ? (
+        <div data-testid="wiki-corrections-group">
+          <SubsectionLabel className="px-2">
+            {WIKI_GROUP_LABELS.corrections}
+          </SubsectionLabel>
           <div className="mt-1 space-y-0.5">
-            {agents.map((page) => pageRow(page, activeKey, onSelect))}
+            {groups.corrections.map((page) =>
+              pageRow(page, activeKey, onSelect),
+            )}
+          </div>
+        </div>
+      ) : null}
+      {groups.agent.length > 0 ? (
+        <div>
+          <SubsectionLabel className="px-2">
+            {WIKI_GROUP_LABELS.agent}
+          </SubsectionLabel>
+          <div className="mt-1 space-y-0.5">
+            {groups.agent.map((page) => pageRow(page, activeKey, onSelect))}
           </div>
         </div>
       ) : null}

@@ -691,38 +691,9 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 ctx.channel_ids.clone(),
                 false,
             ),
-            // P2P signaling mode: anonymous events are accepted so browser P2P
-            // layers (e.g. Trystero over Nostr) can rendezvous through the
-            // relay — but only Trystero-shaped events of allowlisted ephemeral
-            // kinds (never a Buzz-defined kind such as presence 20001, see
-            // `p2p_signaling`), within a per-connection frame budget. They are
-            // broadcast to live subscribers and never stored, so no durable
-            // data is opened. Anything else falls through to `auth-required`.
-            _ if state.config.p2p_signaling
-                && state.config.p2p_signaling_policy.event_allowed(&event) =>
-            {
-                if !state.p2p_signaling_limiter.admit(
-                    conn.conn_id,
-                    crate::p2p_signaling::AnonymousFrame::Event,
-                    state.config.p2p_signaling_policy.frames_per_minute,
-                ) {
-                    reject("rate_limit");
-                    conn.send(RelayMessage::ok(
-                        &event_id_hex,
-                        false,
-                        "rate-limited: anonymous signaling quota exceeded",
-                    ));
-                    return;
-                }
-                (
-                    conn.conn_id,
-                    event.pubkey.to_bytes().to_vec(),
-                    event.pubkey,
-                    vec![buzz_auth::Scope::MessagesWrite],
-                    None,
-                    true,
-                )
-            }
+            // P2P signaling mode removed: the anonymous signaling surface
+            // (BUZZ_P2P_SIGNALING) is gone with its WebRTC consumer. Anything
+            // unauthenticated falls through to `auth-required`.
             _ => {
                 reject("auth");
                 conn.send(RelayMessage::ok(
@@ -2691,9 +2662,7 @@ mod tests {
             super::fanout_access::test_state().await
         }
 
-        fn event_from_ws_message(
-            msg: axum::extract::ws::Message,
-        ) -> nostr::Event {
+        fn event_from_ws_message(msg: axum::extract::ws::Message) -> nostr::Event {
             let axum::extract::ws::Message::Text(text) = msg else {
                 panic!("expected text ws message");
             };
@@ -2796,10 +2765,12 @@ mod tests {
                 .await
                 .expect("wiki sync event is admitted");
 
-            let delivered = event_from_ws_message(
-                rx.try_recv().expect("wiki sync fanned out to subscriber"),
+            let delivered =
+                event_from_ws_message(rx.try_recv().expect("wiki sync fanned out to subscriber"));
+            assert_eq!(
+                delivered.id, event_id,
+                "subscriber must receive the live update"
             );
-            assert_eq!(delivered.id, event_id, "subscriber must receive the live update");
         }
 
         /// Ephemeral fan-out only — KIND_WIKI_SYNC can never reach the persistent
@@ -2830,7 +2801,10 @@ mod tests {
                 IngestError::Rejected(m) => m,
                 other => panic!("expected Rejected, got {other:?}"),
             };
-            assert!(msg.contains("exceeds"), "rejection names the size cap: {msg}");
+            assert!(
+                msg.contains("exceeds"),
+                "rejection names the size cap: {msg}"
+            );
         }
 
         /// Per-author rate cap: the 21st publish inside a window is refused.

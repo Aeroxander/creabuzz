@@ -322,7 +322,8 @@ fn link_url_refuses_a_non_https_web_host() {
 #[test]
 fn web_origin_prefers_the_explicit_env_override() {
     assert_eq!(
-        web_origin_from(Some("app.example.com"), Some("wss://relay.example")).expect("origin"),
+        web_origin_from(Some("app.example.com"), Some("wss://relay.example"), None)
+            .expect("origin"),
         "https://app.example.com"
     );
 }
@@ -332,24 +333,45 @@ fn web_origin_derives_from_the_active_community_relay() {
     // The relay serves the web bundle at its own origin: `wss→https` /
     // `ws→http`, host and port kept.
     assert_eq!(
-        web_origin_from(None, Some("wss://acme.communities.buzz.xyz")).expect("origin"),
+        web_origin_from(None, Some("wss://acme.communities.buzz.xyz"), None).expect("origin"),
         "https://acme.communities.buzz.xyz"
     );
     assert_eq!(
-        web_origin_from(None, Some("ws://localhost:3000")).expect("origin"),
+        web_origin_from(None, Some("ws://localhost:3000"), None).expect("origin"),
         "http://localhost:3000"
     );
 }
 
 #[test]
-fn web_origin_without_a_community_is_actionable_and_opens_nothing() {
-    let error = web_origin_from(None, None).expect_err("no community");
+fn web_origin_prefers_the_community_over_the_supplied_fallback() {
+    assert_eq!(
+        web_origin_from(
+            None,
+            Some("wss://acme.communities.buzz.xyz"),
+            Some("app.example.com")
+        )
+        .expect("origin"),
+        "https://acme.communities.buzz.xyz"
+    );
+}
+
+#[test]
+fn web_origin_falls_back_to_the_supplied_default_without_a_community() {
+    assert_eq!(
+        web_origin_from(None, None, Some("app.creaton.app")).expect("origin"),
+        "https://app.creaton.app"
+    );
+}
+
+#[test]
+fn web_origin_without_a_community_or_fallback_is_actionable_and_opens_nothing() {
+    let error = web_origin_from(None, None, None).expect_err("no community");
     assert!(error.contains("Connect a community first"), "{error}");
 }
 
 #[test]
 fn web_origin_refuses_plain_http_off_loopback() {
-    assert!(web_origin_from(None, Some("ws://relay.example:3000")).is_err());
+    assert!(web_origin_from(None, Some("ws://relay.example:3000"), None).is_err());
 }
 
 // ── URL redaction (query strings are payload material) ─────────────────────

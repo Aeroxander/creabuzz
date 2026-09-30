@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "formula": "score = max(0, floor((approvedMilestones + contributionRecords) * min(monthsActive, 12) * 1000 / 12) - floor((slashedClaims + rejectedClaims) * min(monthsActive, 12) * 1000 / 12)); monthsActive defaults to 12 when absent",
+  "formula": "score = max(0, floor((approvedMilestones + contributionRecords) * months * 1000 / 12) - floor((slashedClaims + rejectedClaims) * months * 1000 / 12)); months = min(monthsActive, 12) when monthsActive is present (explicit 0 = zero tenure); when monthsActive is ABSENT months = min(floor(max(0, referenceAt - firstAcceptedAt) / 2592000), 12) (whole 30-day months) when both timestamps are present, else 0 — never a silent 12",
   "cases": [
     {
       "name": "no signals scores zero",
@@ -58,10 +58,12 @@
       "score": 250
     },
     {
-      "name": "monthsActive absent defaults to full tenure",
+      "name": "monthsActive absent derives tenure from the first accepted work",
       "inputs": {
         "approvedMilestones": 4,
         "contributionRecords": 0,
+        "firstAcceptedAt": 1500000000,
+        "referenceAt": 1534560000,
         "slashedClaims": 0,
         "rejectedClaims": 0
       },
@@ -132,6 +134,63 @@
         "rejectedClaims": 0
       },
       "score": 83
+    },
+    {
+      "name": "explicit zero monthsActive is zero tenure",
+      "inputs": {
+        "approvedMilestones": 5,
+        "contributionRecords": 2,
+        "monthsActive": 0,
+        "slashedClaims": 1,
+        "rejectedClaims": 0
+      },
+      "score": 0
+    },
+    {
+      "name": "monthsActive absent with no timestamps is zero tenure",
+      "inputs": {
+        "approvedMilestones": 5,
+        "contributionRecords": 0,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 0
+    },
+    {
+      "name": "monthsActive absent derives a six-month tenure",
+      "inputs": {
+        "approvedMilestones": 2,
+        "contributionRecords": 0,
+        "firstAcceptedAt": 1600000000,
+        "referenceAt": 1615552000,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 1000
+    },
+    {
+      "name": "derived tenure floors whole thirty-day months",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "firstAcceptedAt": 1600000000,
+        "referenceAt": 1603888000,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 83
+    },
+    {
+      "name": "derived tenure from an inverted range is zero",
+      "inputs": {
+        "approvedMilestones": 3,
+        "contributionRecords": 0,
+        "firstAcceptedAt": 1600000000,
+        "referenceAt": 1599000000,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 0
     }
   ]
 }

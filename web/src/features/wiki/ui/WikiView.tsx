@@ -120,6 +120,12 @@ export function WikiView({
     isAgentPage ? null : activeSlug,
     published?.content ?? "",
     published?.id ?? "",
+    // The live transport applies the same edit gate the editor UI shows:
+    // updates from authors outside the page's team scope are discarded.
+    {
+      scope: activeTeamMeta?.scope ?? null,
+      resolveTeamSeats: knowledge.resolveTeamSeats,
+    },
   );
   const liveText = describeLive(live, { peers, strangers, rejected });
   /** The page being edited, including one that exists only in this editor. */

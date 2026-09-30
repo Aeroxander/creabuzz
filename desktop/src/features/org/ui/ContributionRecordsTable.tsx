@@ -83,8 +83,10 @@ function ReviewActions({ record }: { record: ContributionRecord }) {
 
   const run = (reviewStatus: ReviewStatus, appealNote?: string) => {
     setErrorMessage(null);
+    // The displayed record is the version being reviewed — pass the on-screen
+    // snapshot in, never refetch at click time.
     mutation.mutate(
-      { dtag: record.dtag, reviewStatus, appealNote },
+      { record, reviewStatus, appealNote },
       {
         onSuccess: () => setAppealNote(""),
         onError: (error) =>

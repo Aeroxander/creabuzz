@@ -35,10 +35,39 @@ test("slashed and rejected claims subtract at tenure scale", () => {
   );
 });
 
-test("absent tenure counts as full; the floor never goes negative", () => {
-  assert.equal(deliveryScore({ approvedMilestones: 1 }), 1000);
+test("explicit zero tenure is zero; absent tenure derives or is zero", () => {
   assert.equal(
-    deliveryScore({ approvedMilestones: 0, slashedClaims: 5 }),
+    deliveryScore({
+      approvedMilestones: 5,
+      contributionRecords: 2,
+      monthsActive: 0,
+    }),
+    0,
+    "monthsActive: 0 is zero tenure — never read as full tenure",
+  );
+  assert.equal(
+    deliveryScore({ approvedMilestones: 1 }),
+    0,
+    "absent with no timestamps is zero tenure — never a silent 12",
+  );
+  assert.equal(
+    deliveryScore({
+      approvedMilestones: 1,
+      firstAcceptedAt: 1_600_000_000,
+      referenceAt: 1_615_552_000,
+    }),
+    500,
+    "absent derives six whole 30-day months from the first accepted work",
+  );
+});
+
+test("the floor never goes negative", () => {
+  assert.equal(
+    deliveryScore({
+      approvedMilestones: 0,
+      slashedClaims: 5,
+      monthsActive: 12,
+    }),
     0,
     "clamped at zero",
   );

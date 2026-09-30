@@ -419,7 +419,12 @@ pub async fn validate_standard_deletion_event(
                 }
             }
             if !authorized {
-                return Err(anyhow::anyhow!("must be event author"));
+                // Rule 3(b): a community admin/owner may delete (and thereby
+                // purge) any page; anyone else must be an author of the page.
+                let actor_hex = hex::encode(&actor_bytes);
+                if !wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await? {
+                    return Err(anyhow::anyhow!("must be event author"));
+                }
             }
             return Ok(());
         }
@@ -2428,12 +2433,29 @@ pub(crate) async fn persist_workflow_deletion(
     Ok((stored, dispatch))
 }
 
+/// Whether the actor is a community owner/admin (`relay_members.role`) — the
+/// wiki delete tier that purges content (rule 3(b)).
+async fn wiki_actor_is_admin_or_owner(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    actor_hex: &str,
+) -> anyhow::Result<bool> {
+    let role = state
+        .db
+        .get_relay_member(tenant.community(), actor_hex)
+        .await?
+        .map(|m| m.role);
+    Ok(matches!(role.as_deref(), Some("owner" | "admin")))
+}
+
 /// Handle NIP-09 deletion via `a` tag (addressable/parameterized-replaceable events).
 /// Parses "kind:pubkey:d-tag" and deletes the corresponding DB record.
 /// Wiki pages (44001/44002) are addressed the same way but the PAGE is the
-/// unit of deletion: every revision of the same `d` slug across all authors is
-/// tombstoned and content-stripped (see `soft_delete_wiki_page_by_slug`).
-async fn handle_a_tag_deletion(
+/// unit of deletion, with split semantics (rule 3): an author's delete is a
+/// restorable tombstone (content preserved), a community admin/owner's delete
+/// marker purges content + FTS (see `tombstone_wiki_page_by_slug` /
+/// `soft_delete_wiki_page_by_slug`).
+pub(crate) async fn handle_a_tag_deletion(
     tenant: &TenantContext,
     event: &Event,
     state: &Arc<AppState>,
@@ -2467,29 +2489,42 @@ async fn handle_a_tag_deletion(
             ));
         }
         // Wiki pages (44001/44002): `d` is the page slug and the PAGE is the
-        // unit of deletion. Every revision of the page across ALL authors is
-        // soft-deleted and content-stripped in one statement — deleting one
-        // member's revision deletes the page, exactly as the client's
-        // page-wide tombstone rule claims — so a leaked secret cannot survive
-        // on a co-author's older revision or in a raw table dump. Scope,
-        // content-strip and search-purge semantics live in
-        // `soft_delete_wiki_page_by_slug`.
+        // unit of deletion — with split semantics (rule 3): a page author's
+        // delete is a RESTORABLE TOMBSTONE (rows hidden from queries, content
+        // NOT stripped — an authorized editor's new revision un-tombstones the
+        // page), and only a community admin/owner's delete marker PURGES:
+        // content stripped + FTS gone (`events.search_tsv` is GENERATED
+        // STORED and recomputes on UPDATE). Wiki corrections (44003) are
+        // excluded — they are per-author coordinates (see below).
         buzz_core::kind::KIND_WIKI_PAGE | buzz_core::kind::KIND_AGENT_WIKI_PAGE => {
-            let deleted = state
-                .db
-                .soft_delete_wiki_page_by_slug(
-                    tenant.community(),
-                    kind_num as i32,
-                    d_tag,
-                    event.created_at.as_secs() as i64,
-                )
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!("failed to soft-delete wiki page {kind_num}:{d_tag}: {e}")
-                })?;
+            let actor_bytes = effective_message_author(event, &state.relay_keypair.public_key());
+            let actor_hex = hex::encode(&actor_bytes);
+            let purge = wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await?;
+            let deleted = if purge {
+                state
+                    .db
+                    .soft_delete_wiki_page_by_slug(
+                        tenant.community(),
+                        kind_num as i32,
+                        d_tag,
+                        event.created_at.as_secs() as i64,
+                    )
+                    .await
+            } else {
+                state
+                    .db
+                    .tombstone_wiki_page_by_slug(
+                        tenant.community(),
+                        kind_num as i32,
+                        d_tag,
+                        event.created_at.as_secs() as i64,
+                    )
+                    .await
+            }
+            .map_err(|e| {
+                anyhow::anyhow!("failed to soft-delete wiki page {kind_num}:{d_tag}: {e}")
+            })?;
             if deleted > 0 {
-                let actor_bytes =
-                    effective_message_author(event, &state.relay_keypair.public_key());
                 crate::audit::record_audit(
                     state,
                     crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
@@ -2500,6 +2535,7 @@ async fn handle_a_tag_deletion(
                             "kind": kind_num,
                             "d_tag": d_tag,
                             "deleted_rows": deleted,
+                            "purge": purge,
                             "moderation": false,
                         })),
                 )
@@ -2508,6 +2544,7 @@ async fn handle_a_tag_deletion(
                     kind = kind_num,
                     d_tag = d_tag,
                     deleted_rows = deleted,
+                    purge,
                     "NIP-09 a-tag deletion: tombstoned wiki page across all authors"
                 );
             } else {
@@ -2515,6 +2552,31 @@ async fn handle_a_tag_deletion(
                     kind = kind_num,
                     d_tag = d_tag,
                     "NIP-09 a-tag deletion: no live wiki revision matched slug"
+                );
+            }
+        }
+        // Wiki corrections (44003): per-author coordinates. An a-tag deletion
+        // targets exactly `44003:<author>:correction-for-<slug>` and tombstones
+        // only that signer's own correction rows — never slug-wide, never
+        // anyone else's (and never a 44001/44002 page).
+        buzz_core::kind::KIND_WIKI_CORRECTION => {
+            let pubkey_bytes = hex::decode(pubkey_hex)
+                .map_err(|_| anyhow::anyhow!("invalid pubkey hex in a-tag {pubkey_hex}"))?;
+            let deleted = state
+                .db
+                .soft_delete_by_coordinate(
+                    tenant.community(),
+                    buzz_core::kind::KIND_WIKI_CORRECTION as i32,
+                    &pubkey_bytes,
+                    d_tag,
+                    event.created_at.as_secs() as i64,
+                )
+                .await?;
+            if deleted {
+                tracing::info!(
+                    kind = buzz_core::kind::KIND_WIKI_CORRECTION,
+                    d_tag,
+                    "NIP-09 a-tag deletion: tombstoned own wiki correction"
                 );
             }
         }
@@ -2562,7 +2624,8 @@ async fn handle_a_tag_deletion(
                 // workflow definition rather than an event row, and the closed
                 // action set has no workflow action, so it deliberately does
                 // not produce a row here.)
-                let actor_bytes = effective_message_author(event, &state.relay_keypair.public_key());
+                let actor_bytes =
+                    effective_message_author(event, &state.relay_keypair.public_key());
                 crate::audit::record_audit(
                     state,
                     crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
@@ -4327,6 +4390,21 @@ mod deletion_postgres_tests {
                 .expect("insert wiki revision");
         }
 
+        // Rule 3(b): only a community admin/owner's delete marker PURGES
+        // content — seed alice as admin so the page-wide delete runs the
+        // strip path this test is the mutation oracle for (scope
+        // `soft_delete_wiki_page_by_slug`'s WHERE clause back to a
+        // single-author row and the assertions below fail).
+        sqlx::query(
+            "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'admin') \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(community.as_uuid())
+        .bind(pubkey_hex(&alice))
+        .execute(state.db.pool())
+        .await
+        .expect("seat purging admin");
+
         // Authorized by alice's revision coordinate — the signer is an author
         // of a surviving revision of the page.
         let delete = a_tag_deletion(
@@ -4348,7 +4426,11 @@ mod deletion_postgres_tests {
         let mut query = buzz_db::EventQuery::for_community(community);
         query.kinds = Some(vec![buzz_core::kind::KIND_WIKI_PAGE as i32]);
         query.d_tag = Some(slug.to_string());
-        let live = state.db.query_events(&query).await.expect("query live page");
+        let live = state
+            .db
+            .query_events(&query)
+            .await
+            .expect("query live page");
         assert!(
             live.is_empty(),
             "no live kind:44001 revision of `{slug}` may remain (got {})",
@@ -4384,7 +4466,11 @@ mod deletion_postgres_tests {
 
         state
             .db
-            .insert_event(community, &wiki_revision(&alice, slug, "alice text", BASE), None)
+            .insert_event(
+                community,
+                &wiki_revision(&alice, slug, "alice text", BASE),
+                None,
+            )
             .await
             .expect("insert wiki revision");
 
@@ -4427,14 +4513,12 @@ mod deletion_postgres_tests {
         let slug = "shared-slug";
 
         for (keys, content) in [(&alice, "alice project"), (&bob, "bob project")] {
-            let version = EventBuilder::new(
-                Kind::Custom(buzz_core::kind::KIND_PROJECT as u16),
-                content,
-            )
-            .tags(vec![Tag::parse(["d", slug]).expect("d tag")])
-            .custom_created_at(Timestamp::from(BASE))
-            .sign_with_keys(keys)
-            .expect("sign project version");
+            let version =
+                EventBuilder::new(Kind::Custom(buzz_core::kind::KIND_PROJECT as u16), content)
+                    .tags(vec![Tag::parse(["d", slug]).expect("d tag")])
+                    .custom_created_at(Timestamp::from(BASE))
+                    .sign_with_keys(keys)
+                    .expect("sign project version");
             state
                 .db
                 .replace_parameterized_event(community, &version, slug, None)
@@ -4469,7 +4553,10 @@ mod deletion_postgres_tests {
         assert_eq!(rows.len(), 2);
         for (pubkey, deleted_at) in &rows {
             if *pubkey == alice.public_key().to_bytes() {
-                assert!(deleted_at.is_some(), "alice's coordinate row must be deleted");
+                assert!(
+                    deleted_at.is_some(),
+                    "alice's coordinate row must be deleted"
+                );
             } else {
                 assert!(
                     deleted_at.is_none(),
@@ -4494,6 +4581,18 @@ mod deletion_postgres_tests {
             .insert_event(community, &wiki_revision(&alice, slug, "once", BASE), None)
             .await
             .expect("insert wiki revision");
+
+        // Admin delete = purge tier (rule 3(b)), so the replay below asserts
+        // the content stays stripped.
+        sqlx::query(
+            "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'admin') \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(community.as_uuid())
+        .bind(pubkey_hex(&alice))
+        .execute(state.db.pool())
+        .await
+        .expect("seat purging admin");
 
         for created_at in [BASE + 10, BASE + 20] {
             let delete = a_tag_deletion(

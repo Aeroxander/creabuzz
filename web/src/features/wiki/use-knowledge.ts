@@ -24,6 +24,7 @@ import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 
 import {
   KIND_AGENT_WIKI_PAGE,
+  KIND_WIKI_CORRECTION,
   KIND_WIKI_PAGE,
   type KnowledgeEvent,
   type KnowledgePage,
@@ -64,7 +65,12 @@ function toKnowledgeEvent(event: NostrEvent): KnowledgeEvent {
 /** Fetch every wiki record + tombstone in one kinds-explicit query. */
 export async function fetchKnowledgeEvents(): Promise<KnowledgeEvent[]> {
   const events = await queryEvents(relayWsUrl(), {
-    kinds: [KIND_WIKI_PAGE, KIND_AGENT_WIKI_PAGE, KIND_DELETE],
+    kinds: [
+      KIND_WIKI_PAGE,
+      KIND_AGENT_WIKI_PAGE,
+      KIND_WIKI_CORRECTION,
+      KIND_DELETE,
+    ],
     limit: KNOWLEDGE_FETCH_LIMIT,
   });
   return events.map(toKnowledgeEvent);
@@ -131,6 +137,8 @@ export interface KnowledgeState {
   historyFor: (slug: string) => Revision[];
   /** The team-scope edit gate (see `lib/knowledge.ts`). */
   canEdit: (page: { scope: string | null }) => "edit" | "propose";
+  /** Resolves a team scope to its seat holders, for the live-edit gate. */
+  resolveTeamSeats: (teamId: string) => string[] | null;
   /** Publish an old revision's content as a NEW revision. */
   restoreRevision: (slug: string, revision: Revision) => Promise<void>;
   /** File a durable correction suggestion against an agent page. */
@@ -257,6 +265,7 @@ export function useKnowledge(enabled = true): KnowledgeState {
     appliedCorrectionsFor: appliedCorrections,
     historyFor,
     canEdit,
+    resolveTeamSeats: resolver,
     restoreRevision,
     fileSuggestion,
   };

@@ -1,7 +1,8 @@
 -- creabuzz: backfill events.d_tag for the slug-addressed fork kinds.
 --
--- The human wiki (44001), agent wiki (44002), fleet capabilities/tasks
--- (44010/44011) and team strategy/run/turn kinds (44020-44022) are addressed
+-- The human wiki (44001), agent wiki (44002), wiki corrections (44003), fleet
+-- capabilities/tasks (44010/44011) and team strategy/run/turn kinds
+-- (44020-44022) are addressed
 -- by their `d` tag but live outside the NIP-33 window (30000-39999), so
 -- `extract_d_tag` used to store NULL for them and every query that pushes a
 -- `d_tag` predicate into SQL (`GET /governance.md` reads kind 44001 by slug)
@@ -32,7 +33,7 @@ WITH first_slug AS (
                AND elem->>1 IS NOT NULL
              LIMIT 1) AS slug
       FROM events e
-     WHERE e.kind IN (44001, 44002, 44010, 44011, 44020, 44021, 44022)
+     WHERE e.kind IN (44001, 44002, 44003, 44010, 44011, 44020, 44021, 44022)
        AND e.d_tag IS NULL
        AND jsonb_typeof(e.tags) = 'array'
 )

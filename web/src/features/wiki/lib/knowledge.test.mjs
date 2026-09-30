@@ -144,7 +144,11 @@ test("a suggestion payload records the correction and never clobbers the page", 
     authorPubkey: BOB,
     now: 500,
   });
-  assert.equal(payload.kind, KIND_WIKI_PAGE);
+  assert.equal(
+    payload.kind,
+    44003,
+    "corrections publish as KIND_WIKI_CORRECTION (see knowledge-corrections.test.mjs)",
+  );
   assert.equal(payload.content, "The date is wrong.");
   assert.equal(payload.created_at, 500);
   // The proposal has its own `d`, distinct from the corrected page's slug.

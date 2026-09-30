@@ -1,5 +1,6 @@
 import { CircleSlash2, HardDriveDownload, ShieldCheck } from "lucide-react";
 
+import { WebIdentitySignInButton } from "@/features/identity/WebIdentitySignInButton";
 import { Button } from "@/shared/ui/button";
 import { IdentityKeyHelpDialog } from "./IdentityKeyHelpDialog";
 import { ONBOARDING_PRIMARY_CTA_CLASS } from "./OnboardingChrome";
@@ -102,6 +103,7 @@ export function IdentityKeyIntroduction({
         >
           {disabled ? "Creating key…" : "Create my private key"}
         </Button>
+        <WebIdentitySignInButton />
       </OnboardingFooter>
     </OnboardingSlideTransition>
   );
