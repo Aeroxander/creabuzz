@@ -27,6 +27,11 @@ import { signAsUser, userPubkey } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK, KIND_GIT_ISSUE } from "@/shared/constants/kinds";
 import {
+  keepRecentRows,
+  mergeTaskRows,
+  type TaskRowEvent,
+} from "./lib/task-planning";
+import {
   parseTask,
   type FleetTask,
   type TaskPriority,
@@ -66,6 +71,16 @@ export interface WorkItem {
   priority: TaskPriority;
   due: number | null;
   labels: string[];
+  /** Milestone the task counts toward, or null (always null for issues). */
+  milestone: string | null;
+  /** Points the task earns once its contribution is accepted, or null. */
+  reward: number | null;
+  /** Who created the item: the task's first row signer, the issue author. */
+  creator: string;
+  /** Newest task row id — what a backing reaction points at (tasks only). */
+  latestRowId: string | null;
+  /** Row that marked the task done, while it is done (tasks only). */
+  doneRowId: string | null;
   updatedAt: number;
 }
 
@@ -138,6 +153,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
     priority?: TaskPriority;
     due?: number | null;
     labels?: string[];
+    milestone?: string | null;
+    reward?: number | null;
   }) => Promise<void>;
   requestApproval: (task: FleetTask) => Promise<void>;
   approve: (task: FleetTask) => Promise<void>;
@@ -158,6 +175,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
       due?: number | null;
       labels?: string[];
       title?: string;
+      milestone?: string | null;
+      reward?: number | null;
     },
   ) => Promise<void>;
 } {
@@ -195,40 +214,79 @@ export function useWorkBoard(channels?: { id: string }[]): {
     });
   }, []);
 
-  const upsertTask = useCallback((event: NostrEvent) => {
-    const task = parseTask(event);
-    if (!task) return;
-    setTasks((prev) => {
-      const existing = prev[task.key];
-      const needParent =
-        existing && !existing.parentEventId && task.parentEventId;
-      if (existing && existing.updatedAt >= task.updatedAt && !needParent) {
-        return prev;
-      }
-      const item: WorkItem = {
-        type: "task",
-        id: task.id,
-        key: task.key,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        assignee: task.assignee,
-        scope: task.channelId,
-        scopeLabel: "channel",
-        // Never lose the thread link: newer rows keep it, but if one drops
-        // the e-tag, retain the previously known parent.
-        parentEventId:
-          task.parentEventId ?? prev[task.id]?.parentEventId ?? null,
-        author: task.author,
-        priority: task.priority,
-        due: task.due,
-        labels: task.labels,
-        approver: taskApprover(event),
-        updatedAt: task.updatedAt,
-      };
-      return { ...prev, [task.id]: item };
-    });
+  // Every row of every task, by `d`. The item is re-merged from all of a
+  // task's rows (`mergeTaskRows`): arrival order never matters (history after
+  // live cannot resurrect a stale status), and a writer that omits a field —
+  // the fleet worker's `{title, status}` pickup row — cannot erase it.
+  const rowsByTask = useRef(new Map<string, NostrEvent[]>());
+
+  const taskItemFromRows = useCallback((d: string): WorkItem | null => {
+    const rows = rowsByTask.current.get(d) ?? [];
+    const merged = mergeTaskRows(rows as TaskRowEvent[]);
+    if (!merged) return null;
+    const newest = merged.event as NostrEvent;
+    const task = parseTask(newest);
+    if (!task) return null;
+    // Never lose the thread link: newer rows keep it, and a row that drops
+    // the e-tag falls back to the newest row that carried one.
+    const parent =
+      task.parentEventId ??
+      [...rows]
+        .reverse()
+        .find((row) => getTag(row, "e"))
+        ?.tags.find((t) => t[0] === "e")?.[1] ??
+      null;
+    return {
+      type: "task",
+      id: task.id,
+      // Stable across updates by other people: keyed by the task's creator.
+      key: `${merged.creator}:${task.id}`,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      assignee: task.assignee,
+      scope: task.channelId,
+      scopeLabel: "channel",
+      parentEventId: parent,
+      author: task.author,
+      priority: task.priority,
+      due: task.due,
+      labels: task.labels,
+      milestone: task.milestone,
+      reward: task.reward,
+      creator: merged.creator,
+      latestRowId: merged.latestRowId,
+      doneRowId: merged.doneRowId,
+      approver: taskApprover(newest),
+      updatedAt: task.updatedAt,
+    };
   }, []);
+
+  /** Record rows (bounded per task) and return the task ids they touched. */
+  const ingestTaskRows = useCallback((events: readonly NostrEvent[]) => {
+    const touched = new Set<string>();
+    for (const event of events) {
+      const d = getTag(event, "d");
+      if (!d) continue;
+      const rows = rowsByTask.current.get(d) ?? [];
+      rowsByTask.current.set(
+        d,
+        keepRecentRows([...rows, event] as TaskRowEvent[]) as NostrEvent[],
+      );
+      touched.add(d);
+    }
+    return touched;
+  }, []);
+
+  const upsertTask = useCallback(
+    (event: NostrEvent) => {
+      for (const d of ingestTaskRows([event])) {
+        const item = taskItemFromRows(d);
+        if (item) setTasks((prev) => ({ ...prev, [d]: item }));
+      }
+    },
+    [ingestTaskRows, taskItemFromRows],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `reloadToken` is a restart key — bumping it must re-run this effect even though the body reads only refs and setters.
   useEffect(() => {
@@ -295,6 +353,11 @@ export function useWorkBoard(channels?: { id: string }[]): {
               priority: "normal",
               due: null,
               labels: [],
+              milestone: null,
+              reward: null,
+              creator: event.pubkey,
+              latestRowId: null,
+              doneRowId: null,
               updatedAt: event.created_at * 1000,
             },
           }));
@@ -355,43 +418,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
           approverByTask.set(target, approval.pubkey);
         }
         const tasksNext: Record<string, WorkItem> = {};
-        // Oldest-first so a row that drops the e-tag (earlier agent status
-        // rows) never loses the thread link established on creation.
-        const byTask = new Map<string, NostrEvent[]>();
-        for (const event of taskEvents) {
-          const taskId = event.tags.find((t) => t[0] === "d")?.[1] ?? event.id;
-          const rows = byTask.get(taskId) ?? [];
-          rows.push(event);
-          byTask.set(taskId, rows);
-        }
-        for (const rows of byTask.values()) {
-          rows.sort((a, b) => a.created_at - b.created_at);
-          let parent: string | null = null;
-          for (const event of rows) {
-            const task = parseTask(event);
-            if (!task) continue;
-            if (task.parentEventId && !parent) parent = task.parentEventId;
-            const existing = tasksNext[task.key];
-            if (existing && existing.updatedAt >= task.updatedAt) continue;
-            tasksNext[task.key] = {
-              type: "task",
-              id: task.id,
-              key: task.key,
-              title: task.title,
-              description: task.description,
-              status: task.status,
-              assignee: task.assignee,
-              scope: task.channelId,
-              scopeLabel: "channel",
-              parentEventId: task.parentEventId ?? parent,
-              author: task.author,
-              priority: task.priority,
-              due: task.due,
-              labels: task.labels,
-              approver: taskApprover(event),
-              updatedAt: task.updatedAt,
-            };
-          }
+        for (const d of ingestTaskRows(taskEvents)) {
+          const item = taskItemFromRows(d);
+          if (item) tasksNext[d] = item;
         }
         setTasks((prev) => ({ ...prev, ...tasksNext }));
 
@@ -425,6 +454,11 @@ export function useWorkBoard(channels?: { id: string }[]): {
             priority: "normal",
             due: null,
             labels: [],
+            milestone: null,
+            reward: null,
+            creator: issue.pubkey,
+            latestRowId: null,
+            doneRowId: null,
             updatedAt: issue.created_at * 1000,
           };
         }
@@ -446,7 +480,14 @@ export function useWorkBoard(channels?: { id: string }[]): {
       for (const cleanup of cleanups) cleanup();
       issueUnsub();
     };
-  }, [upsertTask, upsertIssueStatus, channelIds, reloadToken]);
+  }, [
+    upsertTask,
+    upsertIssueStatus,
+    ingestTaskRows,
+    taskItemFromRows,
+    channelIds,
+    reloadToken,
+  ]);
 
   const createTask = useCallback(
     async (input: {
@@ -457,6 +498,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
       priority?: TaskPriority;
       due?: number | null;
       labels?: string[];
+      milestone?: string | null;
+      reward?: number | null;
     }) => {
       const id =
         "task-" +
@@ -475,6 +518,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
           priority: input.priority ?? "normal",
           due: input.due ?? null,
           labels: input.labels ?? [],
+          milestone: input.milestone ?? null,
+          reward: input.reward ?? null,
         }),
       });
       const result = await publishEvent(relayWsUrl(), signed, {
@@ -505,6 +550,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
           priority: task.priority,
           due: task.due,
           labels: task.labels,
+          milestone: task.milestone,
+          reward: task.reward,
           _taskId: task.id,
         }),
       });
@@ -570,6 +617,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
         due?: number | null;
         labels?: string[];
         title?: string;
+        milestone?: string | null;
+        reward?: number | null;
       },
     ) => {
       await publishTaskRow(
@@ -580,6 +629,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
           priority: patch.priority ?? task.priority,
           due: patch.due !== undefined ? patch.due : task.due,
           labels: patch.labels !== undefined ? patch.labels : task.labels,
+          milestone:
+            patch.milestone !== undefined ? patch.milestone : task.milestone,
+          reward: patch.reward !== undefined ? patch.reward : task.reward,
         },
         task.status,
         null,

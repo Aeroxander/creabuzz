@@ -255,9 +255,10 @@ export function acceptedWork(
     if (review?.status !== "accepted") continue;
 
     const reviewedAt = review.at;
-    const asReviewed = rows
-      .filter((r) => r.signer === claimant && r.at <= reviewedAt)
-      .at(-1);
+    const claimRows = rows.filter(
+      (r) => r.signer === claimant && r.at <= reviewedAt,
+    );
+    const asReviewed = claimRows[claimRows.length - 1];
     const points =
       positiveOrNull(review.amount) ?? positiveOrNull(asReviewed?.amount) ?? 1;
     out.push({ who: claimant, points, acceptedAt: review.at, action });
