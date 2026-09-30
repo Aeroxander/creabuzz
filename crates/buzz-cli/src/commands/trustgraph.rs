@@ -73,6 +73,42 @@ pub struct RootBundle {
     pub proofs: BTreeMap<String, MemberProof>,
 }
 
+/// Delivery signals that feed the trust score (the corpus in
+/// `scripts/trust-score-corpus.json` pins this formula on both the Rust and
+/// TypeScript sides). Accepted milestone claims and contribution records
+/// raise the score, scaled by tenure; slashed and rejected claims subtract at
+/// the same scale. Months absent default to 12 (full tenure); everything
+/// floors per term and the result clamps at zero.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliverySignals {
+    #[serde(default)]
+    pub approved_milestones: u64,
+    #[serde(default)]
+    pub contribution_records: u64,
+    #[serde(default)]
+    pub months_active: u64,
+    #[serde(default)]
+    pub slashed_claims: u64,
+    #[serde(default)]
+    pub rejected_claims: u64,
+}
+
+/// `score = max(0, floor((approved + contributions) * months * 1000 / 12) -
+/// floor((slashed + rejected) * months * 1000 / 12))`, `months =
+/// min(months_active || 12, 12)`. Deterministic; saturating; never panics.
+pub fn delivery_score(s: &DeliverySignals) -> u128 {
+    let months = u128::from(if s.months_active == 0 {
+        12
+    } else {
+        s.months_active.min(12)
+    });
+    let scale = |n: u64| u128::from(n) * months * 1000 / 12;
+    let good = scale(s.approved_milestones.saturating_add(s.contribution_records));
+    let bad = scale(s.slashed_claims.saturating_add(s.rejected_claims));
+    good.saturating_sub(bad)
+}
+
 fn cli_error(context: &'static str) -> impl Fn(AllowanceError) -> CliError {
     move |e| CliError::Other(format!("{context}: {e}"))
 }
@@ -255,6 +291,17 @@ pub fn encode_set_score_root(root: &str, min_score: u128) -> Result<Vec<u8>, Cli
 
 // ── CLI commands ────────────────────────────────────────────────────────────
 
+/// One scores-file row: either a literal `score`, or delivery `signals` the
+/// score derives from (`compose-root` counts milestones/contributions scaled
+/// by tenure and subtracts slashed/rejected — the plan's trust-score inputs).
+#[derive(serde::Deserialize)]
+struct ScoreRow {
+    member: String,
+    score: Option<u128>,
+    #[serde(flatten)]
+    signals: DeliverySignals,
+}
+
 fn read_scores(path: &str) -> Result<Vec<TrustScore>, CliError> {
     let raw = if path == "-" {
         use std::io::Read;
@@ -266,7 +313,15 @@ fn read_scores(path: &str) -> Result<Vec<TrustScore>, CliError> {
     } else {
         std::fs::read_to_string(path).map_err(|e| CliError::Other(format!("read {path}: {e}")))?
     };
-    serde_json::from_str(&raw).map_err(|e| CliError::Other(format!("scores JSON: {e}")))
+    let rows: Vec<ScoreRow> =
+        serde_json::from_str(&raw).map_err(|e| CliError::Other(format!("scores JSON: {e}")))?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TrustScore {
+            score: r.score.unwrap_or_else(|| delivery_score(&r.signals)),
+            member: r.member,
+        })
+        .collect())
 }
 
 /// `buzz trustgraph compose-root` — scores file -> root bundle (local).
@@ -484,6 +539,37 @@ mod tests {
     }
 
     #[test]
+    /// The corpus in `scripts/trust-score-corpus.json` pins the delivery
+    /// formula; the TypeScript port reads the same file (`trust-score.test.mjs`).
+    /// Removing the slashed/rejected subtraction reds this test.
+    #[test]
+    fn delivery_score_matches_the_shared_corpus() {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/trust-score-corpus.json"
+        ))
+        .expect("trust-score corpus is readable");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("corpus JSON");
+        let cases = v["cases"].as_array().expect("cases");
+        assert!(!cases.is_empty(), "corpus must pin at least one case");
+        for case in cases {
+            let i = &case["inputs"];
+            let signals = DeliverySignals {
+                approved_milestones: i["approvedMilestones"].as_u64().unwrap_or(0),
+                contribution_records: i["contributionRecords"].as_u64().unwrap_or(0),
+                months_active: i["monthsActive"].as_u64().unwrap_or(0),
+                slashed_claims: i["slashedClaims"].as_u64().unwrap_or(0),
+                rejected_claims: i["rejectedClaims"].as_u64().unwrap_or(0),
+            };
+            assert_eq!(
+                delivery_score(&signals),
+                case["score"].as_u64().expect("score") as u128,
+                "case {:?} diverged from the corpus formula",
+                case["name"]
+            );
+        }
+    }
+
     fn input_order_does_not_change_the_root() {
         let a = vec![
             TrustScore {

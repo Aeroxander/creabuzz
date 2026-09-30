@@ -42,10 +42,13 @@ test("pages to exhaustion: records beyond the first window are found", async () 
     maxPages: 10,
   });
   assert.equal(found.length, 5);
-  assert.deepEqual(
-    found.map((r) => r.d).sort(),
-    ["seat-1", "seat-2", "seat-3", "seat-4", "seat-5"],
-  );
+  assert.deepEqual(found.map((r) => r.d).sort(), [
+    "seat-1",
+    "seat-2",
+    "seat-3",
+    "seat-4",
+    "seat-5",
+  ]);
 });
 
 test("the d-tag filter still scopes after paging", async () => {

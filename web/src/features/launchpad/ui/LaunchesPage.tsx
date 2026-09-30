@@ -11,7 +11,11 @@ import {
   type SortMode,
   sortByMode,
 } from "@/features/feed/lib/ranking";
-import { useVoteTallies } from "@/features/feed/use-feed";
+import {
+  closingSoonLaunches,
+  graduatedLaunches,
+} from "@/features/feed/lib/launch-filters";
+import { useChainBlockHeight, useVoteTallies } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Plus, Rocket, Star } from "lucide-react";
@@ -35,7 +39,15 @@ import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { ProgressBar, StageBadge } from "./widgets";
 import { cn } from "@/shared/lib/cn";
 
-type Filter = "all" | "mine" | "following";
+type Filter = "all" | "mine" | "following" | "closing-soon" | "graduated";
+
+const FILTER_LABELS: Record<Filter, string> = {
+  all: "All",
+  mine: "Mine",
+  following: "Following",
+  "closing-soon": "Closing soon",
+  graduated: "Graduated",
+};
 export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
@@ -47,18 +59,29 @@ export function LaunchesPage() {
   const pubkey = existingUserPubkey();
 
   const launches = data ?? [];
-  const filtered = launches.filter((launch) => {
-    if (filter === "mine") return launch.record.author === pubkey;
-    if (filter === "following")
-      return follows.followed.has(launchCoord(launch.record));
-    return true;
-  });
-  const visible = sortByMode(
-    filtered,
-    sort,
-    (launch) => tallies.get(launchCoord(launch.record))?.score ?? 0,
-    (launch) => launch.record.createdAt,
-  );
+  const blockHeight = useChainBlockHeight();
+  // "Closing soon" is chain-truth and sorts by soonest end; the other filters
+  // keep the person's usual ranking.
+  const filtered =
+    filter === "closing-soon"
+      ? closingSoonLaunches(launches, blockHeight)
+      : filter === "graduated"
+        ? graduatedLaunches(launches)
+        : launches.filter((launch) => {
+            if (filter === "mine") return launch.record.author === pubkey;
+            if (filter === "following")
+              return follows.followed.has(launchCoord(launch.record));
+            return true;
+          });
+  const visible =
+    filter === "closing-soon"
+      ? filtered
+      : sortByMode(
+          filtered,
+          sort,
+          (launch) => tallies.get(launchCoord(launch.record))?.score ?? 0,
+          (launch) => launch.record.createdAt,
+        );
 
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
@@ -94,11 +117,12 @@ export function LaunchesPage() {
           role="tablist"
           aria-label="Launch filter"
         >
-          {(["all", "mine", "following"] as const).map((f) => (
+          {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
             <button
               key={f}
               role="tab"
               aria-selected={filter === f}
+              data-testid={`launch-filter-${f}`}
               onClick={() => setFilter(f)}
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide",
@@ -108,7 +132,7 @@ export function LaunchesPage() {
               )}
               type="button"
             >
-              {f === "all" ? "All" : f === "mine" ? "Mine" : "Following"}
+              {FILTER_LABELS[f]}
             </button>
           ))}
         </div>

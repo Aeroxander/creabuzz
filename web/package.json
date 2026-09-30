@@ -10,7 +10,8 @@
     "check:file-sizes": "node ./scripts/check-file-sizes.mjs",
     "check:pubkey-truncation": "node ./scripts/check-pubkey-truncation.mjs",
     "lint": "biome lint .",
-    "check": "biome check . && pnpm check:pubkey-truncation && pnpm check:px-text && pnpm check:copy",
+    "check": "biome check . && pnpm check:pubkey-truncation && pnpm check:px-text && pnpm check:copy && pnpm check:kinds",
+    "check:kinds": "node ../scripts/regen-kinds.mjs --check",
     "format": "biome format --write .",
     "preview": "vite preview",
     "test:e2e": "pnpm build && playwright test",
@@ -52,7 +53,6 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tiptap-markdown": "^0.9.0",
-    "trystero": "^0.25.4",
     "yjs": "^13.6.32"
   },
   "devDependencies": {

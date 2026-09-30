@@ -4799,7 +4799,7 @@ mod postgres_tests {
     use buzz_core::kind::{
         KIND_CANVAS, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_LONG_FORM,
         KIND_MANAGED_AGENT, KIND_PERSONA, KIND_PRESENCE_UPDATE, KIND_STREAM_MESSAGE,
-        KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS,
+        KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS, KIND_WIKI_SYNC,
     };
     use nostr::{EventBuilder, Kind};
 
@@ -5369,6 +5369,9 @@ mod postgres_tests {
     #[test]
     fn ephemeral_kinds_not_in_scope_allowlist() {
         assert!(required_scope_for_kind(KIND_PRESENCE_UPDATE, &make_dummy_event()).is_err());
+        // Wiki live-sync (20003) is ephemeral fan-out only — it must never be
+        // admissible to the persistent ingest path, or it would be stored.
+        assert!(required_scope_for_kind(KIND_WIKI_SYNC, &make_dummy_event()).is_err());
     }
 
     #[test]

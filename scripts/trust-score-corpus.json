@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "formula": "score = max(0, floor((approvedMilestones + contributionRecords) * min(monthsActive, 12) * 1000 / 12) - floor((slashedClaims + rejectedClaims) * min(monthsActive, 12) * 1000 / 12)); monthsActive defaults to 12 when absent",
+  "cases": [
+    {
+      "name": "no signals scores zero",
+      "inputs": {
+        "approvedMilestones": 0,
+        "contributionRecords": 0,
+        "monthsActive": 12,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 0
+    },
+    {
+      "name": "one approved milestone at full tenure",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "monthsActive": 12,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 1000
+    },
+    {
+      "name": "approved milestones and contribution records both count",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 2,
+        "monthsActive": 12,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 3000
+    },
+    {
+      "name": "half-year tenure scales the count",
+      "inputs": {
+        "approvedMilestones": 2,
+        "contributionRecords": 2,
+        "monthsActive": 6,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 2000
+    },
+    {
+      "name": "quarter-year tenure floors",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "monthsActive": 3,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 250
+    },
+    {
+      "name": "monthsActive absent defaults to full tenure",
+      "inputs": {
+        "approvedMilestones": 4,
+        "contributionRecords": 0,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 4000
+    },
+    {
+      "name": "tenure caps at twelve months",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "monthsActive": 24,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 1000
+    },
+    {
+      "name": "slashed claims subtract",
+      "inputs": {
+        "approvedMilestones": 3,
+        "contributionRecords": 2,
+        "monthsActive": 12,
+        "slashedClaims": 2,
+        "rejectedClaims": 0
+      },
+      "score": 3000
+    },
+    {
+      "name": "rejected claims subtract",
+      "inputs": {
+        "approvedMilestones": 3,
+        "contributionRecords": 2,
+        "monthsActive": 12,
+        "slashedClaims": 0,
+        "rejectedClaims": 1
+      },
+      "score": 4000
+    },
+    {
+      "name": "subtraction clamps at zero",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "monthsActive": 12,
+        "slashedClaims": 2,
+        "rejectedClaims": 3
+      },
+      "score": 0
+    },
+    {
+      "name": "the scaled sum floors",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 1,
+        "monthsActive": 5,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 833
+    },
+    {
+      "name": "one-month tenure floors to eighty-three",
+      "inputs": {
+        "approvedMilestones": 1,
+        "contributionRecords": 0,
+        "monthsActive": 1,
+        "slashedClaims": 0,
+        "rejectedClaims": 0
+      },
+      "score": 83
+    }
+  ]
+}

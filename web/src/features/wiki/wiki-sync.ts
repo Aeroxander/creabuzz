@@ -1,27 +1,27 @@
 /**
- * Live multi-user wiki editing: Yjs documents synced peer-to-peer over
- * Trystero (WebRTC with the community relay as Nostr signaling only) and
- * snapshotted to the relay (kind:44001) on save.
+ * Live multi-user wiki editing: Yjs documents synced through the community
+ * relay and snapshotted to the relay (kind:44001) on save.
  *
- * Protocol (y-webrtc-style): connect → announce → when a peer proves it is a
- * community member, send it the full state; live edits broadcast as throttled
- * Yjs update deltas; every received update that taught us something echoes our
- * state back (throttled) so late joiners fully converge. The relay stays the
- * durable source of truth via explicit saves.
+ * The live layer sends coalesced Yjs updates as short-lived relay events
+ * (kind:20003) scoped to the page (`d` slug), so the relay's auth, membership
+ * and real-time fan-out carry them — no peer-to-peer room, no NAT/TURN, and no
+ * one learns another's IP. The document layer is transport-pluggable
+ * (`lib/wiki-doc.ts`), so a native/Iroh transport can slot in later; this file
+ * only supplies the relay-backed transport and the React binding.
  *
- * Authentication: the room is joinable by anyone who knows the relay and the
- * slug, so EVERY message travels in a signed envelope and is applied only when
- * its signer is a community member (`lib/live-auth.ts` documents the envelope
- * and the accept rules; `lib/live-apply.ts` is the single path from a message
- * to the document). Page content is only ever sent to peers that have proved
- * membership; a peer that has not is sent nothing. Live editing is off when
- * this identity cannot sign, or the relay publishes no member list to check
- * peers against; the editor says so (`lib/live-status.ts`).
+ * Durable history is unchanged: a save still publishes a kind:44001 revision,
+ * and an offline editor converges from the newest saved revision on next open.
+ * The live layer only narrows the window where two open editors see each other.
+ *
+ * Membership: the relay refuses non-member senders, and we re-check each
+ * received update's signer against the published member list as defense in
+ * depth (`lib/live-members.ts`). Live editing is off when this identity cannot
+ * sign, or the relay publishes no member list to check against; the editor says
+ * so (`lib/live-status.ts`).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
-import { joinRoom, selfId } from "trystero/nostr";
 
 import {
   existingUserPubkey,
@@ -29,16 +29,17 @@ import {
   signAsUser,
 } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
+import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
+import { subscribeChannel } from "@/features/channels/subscribe-channel";
 
 import {
-  LiveSignError,
-  createLiveReceiver,
-  liveRoomId,
-  signEnvelope,
-  type LiveEnvelope,
-} from "./lib/live-auth";
-import { receiveIntoDoc } from "./lib/live-apply";
+  WikiDocSync,
+  type WikiSyncTransport,
+  toBase64,
+  wikiSyncUpdateFromEvent,
+} from "./lib/wiki-doc";
 import {
   KIND_NIP43_MEMBERSHIP_LIST,
   createMemberDirectory,
@@ -54,49 +55,13 @@ import {
   type CommitResult,
 } from "./lib/text-edit";
 
-const APP_ID = "buzz-wiki";
+/** Ephemeral wiki live-sync events (relay-scoped, never stored). */
+export const KIND_WIKI_SYNC = 20003;
 
-/** An empty Yjs update: a "hello" that proves who we are and carries no content. */
-const EMPTY_UPDATE = Y.encodeStateAsUpdate(new Y.Doc());
-/** A signed hello is bound to our peer id, not the recipient, so it is reusable. */
-const HELLO_REUSE_MS = 120_000;
-
-interface WikiAction {
-  onMessage: ((data: unknown, context: { peerId: string }) => void) | null;
-  send: (
-    data: unknown,
-    options?: { target?: string | string[] | null },
-  ) => unknown;
-}
-
-interface RoomHandle {
-  action: WikiAction;
-  raw: {
-    onPeerJoin: ((id: string) => void) | null;
-    onPeerLeave: ((id: string) => void) | null;
-    getPeers: () => Record<string, unknown>;
-  };
-  destroy: () => void;
-}
-
-function openRoom(roomId: string): RoomHandle | null {
-  try {
-    const room = joinRoom(
-      { appId: APP_ID, relayConfig: { urls: [relayWsUrl()] } },
-      roomId,
-    );
-    return {
-      action: room.makeAction("updates") as unknown as WikiAction,
-      raw: room as unknown as RoomHandle["raw"],
-      destroy: () => {
-        void room.leave();
-      },
-    };
-  } catch (error) {
-    console.warn("[wiki-sync] joinRoom failed", error);
-    return null;
-  }
-}
+/** How often coalesced updates are published — the "≤1/s" bound. */
+const PUBLISH_THROTTLE_MS = 1_000;
+/** Per-publish size target; a coalesced batch is sent whole if larger. */
+const PUBLISH_MAX_BYTES = 24 * 1024;
 
 /** One member directory per relay: it caches the list across page switches. */
 const memberDirectories = new Map<string, MemberDirectory>();
@@ -133,8 +98,80 @@ async function resolveSigningPubkey(): Promise<string | null> {
   }
 }
 
+interface RelayTransportOptions {
+  relayUrl: string;
+  slug: string;
+  /** Community channel scope, when the page is bound to one. */
+  channel: string | null;
+  /** Deliver a received peer update (author pubkey, raw Yjs bytes). */
+  onInbound: (author: string, update: Uint8Array) => void;
+  /** Report the live subscription state ("open" / "reconnecting"). */
+  onStatus: (status: "open" | "reconnecting") => void;
+  /** Report a publish/sign failure so the UI can surface "cannot-sign". */
+  onError: (error: unknown) => void;
+}
+
 /**
- * Bind a page slug to a Yjs document synced over Trystero.
+ * The relay-backed transport: subscribes to kind:20003 for this page and
+ * publishes each coalesced update as a signed, page-scoped relay event. The
+ * relay fans it out live and never stores it.
+ */
+class RelayWikiTransport implements WikiSyncTransport {
+  private readonly options: RelayTransportOptions;
+  private unsubscribe: (() => void) | null = null;
+
+  constructor(options: RelayTransportOptions) {
+    this.options = options;
+  }
+
+  /** Open the inbound subscription. Outbound is available immediately. */
+  open(): void {
+    const { relayUrl, slug, channel, onInbound, onStatus } = this.options;
+    const tags: [string, string][] = [["d", slug]];
+    if (channel) tags.push(["h", channel]);
+    const filter: Parameters<typeof subscribeChannel>[1] = {
+      kinds: [KIND_WIKI_SYNC],
+      "#d": [slug],
+    };
+    this.unsubscribe = subscribeChannel(relayUrl, filter, {
+      onEvent: (event: SignedNostrEvent) => {
+        const update = wikiSyncUpdateFromEvent(event, slug, KIND_WIKI_SYNC);
+        if (!update) return;
+        onInbound(event.pubkey, update);
+      },
+      onStatus: (status) => {
+        onStatus(status === "open" ? "open" : "reconnecting");
+      },
+    });
+  }
+
+  publish(update: Uint8Array): void {
+    const { relayUrl, slug, channel, onError } = this.options;
+    void (async () => {
+      const tags: [string, string][] = [["d", slug]];
+      if (channel) tags.push(["h", channel]);
+      const signed = await signAsUser({
+        kind: KIND_WIKI_SYNC,
+        tags,
+        content: toBase64(update),
+      });
+      const result = await publishEvent(relayUrl, signed, {
+        signAuth: signAsUser,
+      });
+      if (!result.accepted) {
+        onError(new Error(result.message ?? "relay rejected the live update"));
+      }
+    })().catch(onError);
+  }
+
+  close(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+  }
+}
+
+/**
+ * Bind a page slug to a Yjs document synced through the relay.
  *
  * Returns the live text content plus a setter that writes through to the
  * shared Y.Text (peers converge); the caller publishes to the relay on save.
@@ -182,14 +219,6 @@ export function useLiveWikiDoc(
   const snapshotBaseRef = useRef(initialContent);
   const [content, setContentState] = useState(initialContent);
   const [touched, setTouched] = useState(false);
-  /**
-   * Verified editing peers, excluding this tab.
-   *
-   * Peer-to-peer editing needs the relay to accept the trystero signalling
-   * events (`BUZZ_P2P_SIGNALING`), so "editing alone" is the honest state on a
-   * relay that has not enabled them — and without surfacing it the feature
-   * looks broken rather than unavailable.
-   */
   const [peers, setPeers] = useState(0);
   const [strangers, setStrangers] = useState(0);
   const [rejected, setRejected] = useState(0);
@@ -223,176 +252,47 @@ export function useLiveWikiDoc(
     // the page changes, and a result for the previous run must not touch the
     // new document or the new status.
     let disposed = false;
-    const roomId = liveRoomId(slug);
     const relayUrl = relayWsUrl();
     const book = new PeerBook();
-    let room: RoomHandle | null = null;
-    let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
-    let echoTimer: ReturnType<typeof setTimeout> | null = null;
     let rejectedCount = 0;
     let reportedRejected = 0;
-    const pendingUpdate: Uint8Array[] = [];
-    let hello: Promise<LiveEnvelope> | null = null;
-    let helloAt = 0;
 
     setLive({ state: "connecting" });
     setPeers(0);
     setStrangers(0);
     setRejected(0);
 
-    const syncCounts = () => {
-      if (disposed || !room) return;
-      const total = Object.keys(room.raw.getPeers()).length;
-      setPeers(book.verifiedCount);
-      setStrangers(Math.max(0, total - book.verifiedCount));
-    };
-
     const signingFailed = (error: unknown) => {
       if (disposed) return;
-      console.warn("[wiki-sync] could not sign a live update", error);
-      setLive({
-        state: "unavailable",
-        reason:
-          error instanceof LiveSignError && error.reason === "too-large"
-            ? "too-large"
-            : "cannot-sign",
-      });
+      console.warn("[wiki-sync] could not publish a live update", error);
+      setLive({ state: "unavailable", reason: "cannot-sign" });
     };
 
-    /** A signature worked again: leave a "cannot sign" state we set ourselves. */
-    const signingWorked = () => {
-      setLive((current) =>
-        current.state === "unavailable" && current.reason === "cannot-sign"
-          ? { state: "verified" }
-          : current,
-      );
-    };
+    let sync: WikiDocSync | null = null;
+    let transport: RelayWikiTransport | null = null;
 
-    const sendEnvelope = (envelope: LiveEnvelope, targets: string[]) => {
-      const handle = room;
-      if (disposed || !handle) return;
-      void Promise.resolve(
-        handle.action.send(envelope, { target: targets }),
-      ).catch((error: unknown) => {
-        console.warn("[wiki-sync] live send failed", error);
-      });
-    };
-
-    /** Sign an update and send it to these peers only (verified ones). */
-    const sendSigned = (bytes: Uint8Array, targets: string[]) => {
-      if (disposed || !room || targets.length === 0) return;
-      void signEnvelope({
-        room: roomId,
-        peer: selfId,
-        update: bytes,
-        sign: (template) => signAsUser(template),
-        nowSecs: Math.floor(Date.now() / 1000),
-      })
-        .then((envelope) => {
-          if (disposed) return;
-          signingWorked();
-          sendEnvelope(envelope, targets);
-        })
-        .catch(signingFailed);
-    };
-
-    /**
-     * Prove who we are to one peer without sending it any content. The signed
-     * hello names our peer id, not the recipient's, so one signature serves
-     * every peer that joins within HELLO_REUSE_MS — a stranger joining and
-     * leaving cannot make an extension-backed signer prompt on every join.
-     */
-    const sendHello = (peerId: string) => {
-      const nowMs = Date.now();
-      if (!hello || nowMs - helloAt >= HELLO_REUSE_MS) {
-        helloAt = nowMs;
-        hello = signEnvelope({
-          room: roomId,
-          peer: selfId,
-          update: EMPTY_UPDATE,
-          sign: (template) => signAsUser(template),
-          nowSecs: Math.floor(nowMs / 1000),
-        });
-      }
-      hello
-        .then((envelope) => {
-          if (disposed) return;
-          signingWorked();
-          sendEnvelope(envelope, [peerId]);
-        })
-        .catch((error: unknown) => {
-          hello = null;
-          helloAt = 0;
-          signingFailed(error);
-        });
-    };
-
-    const flushUpdates = () => {
-      if (pendingUpdate.length === 0) return;
-      const merged = Y.mergeUpdates(pendingUpdate);
-      pendingUpdate.length = 0;
-      sendSigned(merged, book.verifiedPeerIds());
-    };
-
-    const onDocUpdate = (update: Uint8Array, origin: unknown) => {
-      if (origin === "remote") return;
-      pendingUpdate.push(update);
-      if (broadcastTimer == null) {
-        broadcastTimer = setTimeout(() => {
-          broadcastTimer = null;
-          flushUpdates();
-        }, 150);
-      }
-    };
-    doc.on("update", onDocUpdate);
-
-    const onPeerMessage = (data: unknown, peerId: string) => {
-      const activeRoom = room;
-      if (!activeRoom || disposed) return;
-      void receiveIntoDoc({
-        doc,
-        receiver,
-        book,
-        data,
-        peerId,
-        isCancelled: () => disposed,
-      }).then((result) => {
+    const onInbound = (author: string, update: Uint8Array) => {
+      if (disposed || !sync) return;
+      // Defense in depth: the relay already refuses non-member senders; re-check
+      // the signer against the published list before applying page content.
+      void (async () => {
+        const directory = memberDirectoryFor(relayUrl);
+        const verdict = await directory.check(author);
         if (disposed) return;
-        if (!result.accepted) {
-          if (result.reason !== "cancelled") rejectedCount += 1;
+        if (verdict === "not-member") {
+          rejectedCount += 1;
           return;
         }
-        if (result.newlyVerified) {
-          syncCounts();
-          // The peer has proved it is a member: now, and only now, hand it the
-          // document so it converges.
-          sendSigned(Y.encodeStateAsUpdate(doc), [peerId]);
+        const advanced = sync.handleRemoteUpdate(author, update);
+        if (advanced) {
+          book.markVerified(author, author);
+          setPeers(book.verifiedCount);
+          setRendered(text.toString());
         }
-        if (!result.advanced) {
-          // Already had it. Echoing here would be answered by the peer's own
-          // echo, and the two peers would keep trading full-state messages for
-          // as long as the room lives.
-          return;
-        }
-        setRendered(text.toString());
-        // Echo our state (throttled) so a peer that joined mid-edit converges
-        // on everything we have.
-        if (echoTimer == null) {
-          echoTimer = setTimeout(() => {
-            echoTimer = null;
-            sendSigned(Y.encodeStateAsUpdate(doc), book.verifiedPeerIds());
-          }, 500);
-        }
+      })().catch(() => {
+        if (!disposed) rejectedCount += 1;
       });
     };
-
-    let receiver: ReturnType<typeof createLiveReceiver>;
-    const rejectedReporter = setInterval(() => {
-      if (rejectedCount !== reportedRejected) {
-        reportedRejected = rejectedCount;
-        setRejected(rejectedCount);
-      }
-    }, 2_000);
 
     const startLive = async () => {
       const me = await resolveSigningPubkey();
@@ -419,35 +319,47 @@ export function useLiveWikiDoc(
         return;
       }
       if (disposed) return;
-      const handle = openRoom(roomId);
-      if (!handle) {
-        setLive({ state: "unavailable", reason: "room-failed" });
-        return;
-      }
-      room = handle;
-      receiver = createLiveReceiver({ room: roomId, members: directory });
-      handle.raw.onPeerJoin = (peerId) => {
-        sendHello(peerId);
-        syncCounts();
-      };
-      handle.raw.onPeerLeave = (peerId) => {
-        book.leave(peerId);
-        syncCounts();
-      };
-      handle.action.onMessage = (data, context) =>
-        onPeerMessage(data, context.peerId);
-      for (const peerId of Object.keys(handle.raw.getPeers())) {
-        sendHello(peerId);
-      }
-      syncCounts();
+
+      transport = new RelayWikiTransport({
+        relayUrl,
+        slug,
+        channel: null,
+        onInbound,
+        onStatus: (status) => {
+          if (disposed) return;
+          setLive(
+            status === "open" ? { state: "verified" } : { state: "connecting" },
+          );
+        },
+        onError: signingFailed,
+      });
+      sync = new WikiDocSync(doc, transport, {
+        throttleMs: PUBLISH_THROTTLE_MS,
+        maxBatchBytes: PUBLISH_MAX_BYTES,
+        onRemoteChange: () => {
+          if (!disposed) setRendered(text.toString());
+        },
+        onPeerUpdate: (author) => {
+          if (disposed) return;
+          book.markVerified(author, author);
+          setPeers(book.verifiedCount);
+        },
+      });
+      transport.open();
+      sync.start();
       setLive({ state: "verified" });
     };
     void startLive().catch((error: unknown) => {
-      // Unreachable in practice (each step reports its own failure); if it
-      // happens the editor must not stay "connecting" forever.
       console.warn("[wiki-sync] live co-editing failed to start", error);
       if (!disposed) setLive({ state: "unavailable", reason: "room-failed" });
     });
+
+    const rejectedReporter = setInterval(() => {
+      if (rejectedCount !== reportedRejected) {
+        reportedRejected = rejectedCount;
+        setRejected(rejectedCount);
+      }
+    }, 2_000);
 
     const onTextChange = () => {
       const value = text.toString();
@@ -466,25 +378,19 @@ export function useLiveWikiDoc(
 
     return () => {
       disposed = true;
-      doc.off("update", onDocUpdate);
       text.unobserve(onTextChange);
-      if (broadcastTimer != null) clearTimeout(broadcastTimer);
-      if (echoTimer != null) clearTimeout(echoTimer);
       clearInterval(rejectedReporter);
-      room?.destroy();
+      sync?.stop();
       doc.destroy();
       docRef.current = null;
     };
   }, [slug, initialContent, snapshotId, setRendered]);
 
   /**
-   * Merge a page snapshot published elsewhere (another tab, or another person
-   * on a relay without P2P signalling).
-   *
-   * Returns the merge result so callers can observe the unresolvable-overlap
-   * fallback. Applied as a delta from the previous snapshot, which is what
-   * makes two people editing different parts of a page converge without a P2P
-   * room.
+   * Merge a page snapshot published elsewhere (another tab, or another person's
+   * save). Applied as a delta from the previous snapshot, which is what makes
+   * two people editing different parts of a page converge without sharing a
+   * live window.
    */
   const mergeRemoteSnapshot = useCallback(
     (snapshot: string): { result: CommitResult; content: string } => {

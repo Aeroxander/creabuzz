@@ -1238,6 +1238,98 @@ pub async fn soft_delete_by_coordinate(
     Ok(result.rows_affected() > 0)
 }
 
+/// Soft-delete **every** live revision of a wiki page — all rows in the
+/// community with the given wiki kind (44001/44002) and `d` slug, across ALL
+/// authors — and strip their content in the same statement.
+///
+/// Wiki pages are `d`-tag addressed but deliberately NOT NIP-33 replaceable:
+/// every revision is a regular row keyed by `(pubkey, kind, d_tag)`, so the
+/// per-author [`soft_delete_by_coordinate`] leaves co-authors' revisions alive
+/// and a "deleted" page readable. The page slug is the `d` tag — deleting one
+/// revision deletes the page — so the UPDATE is scoped by
+/// `(community_id, kind, d_tag)` only, with deliberately **no** `pubkey`
+/// predicate.
+///
+/// Content is stripped to `''`: wiki content is markdown, so the empty string
+/// is the natural tombstone (not a JSON envelope — that shape belongs to
+/// kind:9005 message tombstones, not raw rows). The point is that a leaked
+/// secret must not remain readable from a raw table dump either, not merely
+/// hidden from queries. `deleted_at` keeps the usual soft-delete semantics —
+/// readers filter `deleted_at IS NULL` — and `events.search_tsv` is a
+/// GENERATED STORED column that recomputes on UPDATE, so full-text search
+/// purges itself with this same statement (`buzz-search` queries the `events`
+/// table with `deleted_at IS NULL`; there is no separate index to hook).
+///
+/// The NIP-09 at-or-before scoping from [`soft_delete_by_coordinate`] applies:
+/// only revisions with `created_at <= deletion_created_at_secs` are
+/// tombstoned, so a stale or replayed tombstone can never erase a page
+/// revision written after it.
+///
+/// A single UPDATE is one atomic persist: every matched row is deleted and
+/// stripped together, or none is. Returns the number of rows tombstoned
+/// (0 = already deleted / nothing matched).
+pub async fn soft_delete_wiki_page_by_slug(
+    pool: &PgPool,
+    community_id: CommunityId,
+    kind: i32,
+    d_tag: &str,
+    deletion_created_at_secs: i64,
+) -> Result<u64> {
+    let deletion_created_at = DateTime::from_timestamp(deletion_created_at_secs, 0)
+        .ok_or(DbError::InvalidTimestamp(deletion_created_at_secs))?;
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::EventWrite,
+    )
+    .await?;
+    let result = sqlx::query(
+        "UPDATE events SET deleted_at = NOW(), content = '' \
+         WHERE community_id = $1 AND kind = $2 AND d_tag = $3 AND deleted_at IS NULL \
+         AND created_at <= $4",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(d_tag)
+    .bind(deletion_created_at)
+    .execute(&mut *connection)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+/// Distinct authors of a `d`-tag-addressed page and whether each still has a
+/// surviving (non-deleted) revision, keyed by `(community_id, kind, d_tag)`.
+///
+/// The authorization input for page-wide wiki deletion: "must be event author"
+/// generalizes to "must be an author of the page". The lookup is bounded by the
+/// page key and grouped per pubkey (one row per author), so it cannot fan out
+/// over the events table. The `bool` is `true` when the author has at least one
+/// revision with `deleted_at IS NULL`.
+pub async fn wiki_page_revision_authors(
+    pool: &PgPool,
+    community_id: CommunityId,
+    kind: i32,
+    d_tag: &str,
+) -> Result<Vec<(Vec<u8>, bool)>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::EventWrite,
+    )
+    .await?;
+    let rows: Vec<(Vec<u8>, bool)> = sqlx::query_as(
+        "SELECT pubkey, bool_or(deleted_at IS NULL) AS has_live \
+         FROM events WHERE community_id = $1 AND kind = $2 AND d_tag = $3 \
+         GROUP BY pubkey",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(d_tag)
+    .fetch_all(&mut *connection)
+    .await?;
+
+    Ok(rows)
+}
+
 /// Atomically soft-delete an event and decrement thread reply counters.
 ///
 /// Wraps the delete + counter update in a single transaction so a crash between
@@ -2426,6 +2518,42 @@ impl Db {
             deletion_created_at_secs,
         )
         .await
+    }
+
+    /// Soft-delete every live revision of a wiki page (all authors sharing the
+    /// `d` slug) and strip their content in one statement. Used by NIP-09
+    /// a-tag deletion for the wiki kinds (44001/44002); see
+    /// [`soft_delete_wiki_page_by_slug`](crate::event::soft_delete_wiki_page_by_slug).
+    #[datastore_span(name = "soft_delete_wiki_page_by_slug", system = "postgresql")]
+    pub async fn soft_delete_wiki_page_by_slug(
+        &self,
+        community_id: CommunityId,
+        kind: i32,
+        d_tag: &str,
+        deletion_created_at_secs: i64,
+    ) -> Result<u64> {
+        crate::event::soft_delete_wiki_page_by_slug(
+            &self.pool,
+            community_id,
+            kind,
+            d_tag,
+            deletion_created_at_secs,
+        )
+        .await
+    }
+
+    /// Distinct page authors and whether each still has a live revision, keyed
+    /// by `(community_id, kind, d_tag)`; the authorization input for page-wide
+    /// wiki deletion. See
+    /// [`wiki_page_revision_authors`](crate::event::wiki_page_revision_authors).
+    #[datastore_span(name = "wiki_page_revision_authors", system = "postgresql")]
+    pub async fn wiki_page_revision_authors(
+        &self,
+        community_id: CommunityId,
+        kind: i32,
+        d_tag: &str,
+    ) -> Result<Vec<(Vec<u8>, bool)>> {
+        crate::event::wiki_page_revision_authors(&self.pool, community_id, kind, d_tag).await
     }
 
     /// Atomically soft-delete an event and decrement thread reply counters.

@@ -305,7 +305,7 @@ export function LaunchDetailPage({
         </>
       ) : null}
       {tab === "discussion" && !sandbox ? (
-        <LaunchDiscussion record={launch.record} />
+        <LaunchDiscussion record={launch.record} updates={launch.updates} />
       ) : null}
       {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
       {tab === "proposals" ? (

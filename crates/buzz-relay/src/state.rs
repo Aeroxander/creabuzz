@@ -924,6 +924,8 @@ pub struct AppState {
     /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
     /// 100 events/sec per agent — prevents relay/DB pressure from bursty telemetry.
     pub observer_rate_limiter: Arc<ScopedRateLimiter>,
+    /// Per-author publish budget for wiki live-sync events (kind:20003).
+    pub wiki_sync_rate_limiter: Arc<ScopedRateLimiter>,
     /// Per-uploader sliding-window rate limiter for media upload starts.
     /// Key: (community_id, uploader pubkey bytes). Value: (count, window_start).
     pub media_upload_rate_limiter: Arc<ScopedRateLimiter>,
@@ -1123,6 +1125,7 @@ impl AppState {
             admission_rate_limiter,
             p2p_signaling_limiter: crate::p2p_signaling::AnonymousFrameLimiter::new(),
             observer_rate_limiter: Arc::new(DashMap::new()),
+            wiki_sync_rate_limiter: Arc::new(DashMap::new()),
             media_upload_rate_limiter: Arc::new(DashMap::new()),
             invite_claim_rate_limiter: Arc::new(
                 moka::sync::Cache::builder()

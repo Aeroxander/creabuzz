@@ -94,3 +94,33 @@ export function scoreStatus(
     ? { status: "proven", source: root }
     : { status: "unverified", source: null };
 }
+
+/**
+ * Delivery signals that feed the trust score. The formula is pinned on both
+ * the Rust (`buzz-cli/commands/trustgraph.rs::delivery_score`) and TypeScript
+ * sides by `scripts/trust-score-corpus.json` — both suites read the same
+ * fixture, so any drift reds one of them.
+ */
+export interface DeliverySignals {
+  approvedMilestones?: number;
+  contributionRecords?: number;
+  /** Full tenure at 12; absent counts as 12. */
+  monthsActive?: number;
+  slashedClaims?: number;
+  rejectedClaims?: number;
+}
+
+/**
+ * `score = max(0, floor((approved + contributions) * months * 1000 / 12) -
+ * floor((slashed + rejected) * months * 1000 / 12))` with
+ * `months = min(monthsActive || 12, 12)`. Accepted milestones and
+ * contributions raise the score scaled by tenure; slashed and rejected claims
+ * subtract at the same scale.
+ */
+export function deliveryScore(s: DeliverySignals): number {
+  const months = Math.min(s.monthsActive ?? 12, 12);
+  const scale = (n: number) => Math.floor((n * months * 1000) / 12);
+  const good = scale((s.approvedMilestones ?? 0) + (s.contributionRecords ?? 0));
+  const bad = scale((s.slashedClaims ?? 0) + (s.rejectedClaims ?? 0));
+  return Math.max(0, good - bad);
+}

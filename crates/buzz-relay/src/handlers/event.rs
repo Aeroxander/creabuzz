@@ -9,6 +9,7 @@ use buzz_core::event::StoredEvent;
 use buzz_core::kind::{
     event_kind_u32, is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS,
     KIND_AGENT_OBSERVER_FRAME, KIND_AUDIT_ENTRY, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
+    KIND_WIKI_SYNC,
 };
 use buzz_core::observer::{
     content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -1046,6 +1047,36 @@ async fn handle_ephemeral_event(
         // publish/fan-out path below so other relay nodes receive the live delta.
     }
 
+    // Wiki live co-editing sync (kind:20003): short-lived Yjs updates scoped to
+    // one page (`d` slug), fanned out like presence (kind:20001) and never
+    // stored. Mirrors the ephemeral admission shape of the other live kinds:
+    // reject anonymous senders (page content is member state), require the page
+    // slug, and bound both payload size and per-author publish rate. Once it
+    // passes, it falls through to the shared ephemeral fan-out below (channel
+    // topic when an `h` tag is present, global otherwise).
+    if event_kind_u32(&event) == KIND_WIKI_SYNC {
+        if anonymous {
+            return Err(IngestError::Rejected(
+                "invalid: wiki sync requires an authenticated sender".to_string(),
+            ));
+        }
+        if !wiki_sync_has_page_slug(&event) {
+            return Err(IngestError::Rejected(
+                "invalid: wiki sync event must name a page slug".to_string(),
+            ));
+        }
+        if event.content.len() > WIKI_SYNC_MAX_CONTENT_BYTES {
+            return Err(IngestError::Rejected(format!(
+                "invalid: wiki sync update exceeds {WIKI_SYNC_MAX_CONTENT_BYTES} bytes"
+            )));
+        }
+        if wiki_sync_rate_limited(&state, conn.tenant.community(), auth_pubkey.to_bytes()) {
+            return Err(IngestError::Rejected(
+                "rate-limited: wiki sync quota exceeded".to_string(),
+            ));
+        }
+    }
+
     // Check channel membership before publishing other ephemeral events.
     if let Some(ch_id) = super::ingest::extract_channel_id(&event) {
         // Membership refusals are client-input rejections, and the shared
@@ -1107,6 +1138,49 @@ async fn handle_ephemeral_event(
     }
 
     Ok(())
+}
+
+/// Max base64 payload for one wiki live-sync event (kind:20003). The web
+/// coalesces Yjs deltas well under this, so a single oversized blob is abuse.
+const WIKI_SYNC_MAX_CONTENT_BYTES: usize = 32 * 1024;
+/// Sustained per-author wiki-sync publish cap (events per window).
+const WIKI_SYNC_RATE_MAX: u32 = 20;
+/// Wiki-sync per-author rate window, in seconds.
+const WIKI_SYNC_RATE_WINDOW_SECS: u64 = 1;
+
+/// Whether a wiki-sync event names its page via a non-empty `d` slug tag.
+fn wiki_sync_has_page_slug(event: &Event) -> bool {
+    event.tags.iter().any(|tag| {
+        tag.as_slice()
+            .first()
+            .map(String::as_str)
+            .is_some_and(|k| k == "d")
+            && tag.as_slice().get(1).is_some_and(|slug| !slug.is_empty())
+    })
+}
+
+/// Per-author publish budget for wiki live-sync events (kind:20003), keyed by
+/// (community, author) exactly like the observer telemetry budget so one
+/// author's flood cannot starve another's page.
+fn wiki_sync_rate_limited(
+    state: &AppState,
+    community_id: CommunityId,
+    author_key: [u8; 32],
+) -> bool {
+    let now = std::time::Instant::now();
+    let mut entry = state
+        .wiki_sync_rate_limiter
+        .entry((community_id, author_key))
+        .or_insert((0, now));
+    let (count, window_start) = entry.value_mut();
+    if now.duration_since(*window_start).as_secs() >= WIKI_SYNC_RATE_WINDOW_SECS {
+        *count = 1;
+        *window_start = now;
+        false
+    } else {
+        *count += 1;
+        *count > WIKI_SYNC_RATE_MAX
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2595,6 +2669,206 @@ mod tests {
                     .expect("verify B"),
                 "B's chain must verify independently"
             );
+        }
+    }
+
+    mod wiki_sync {
+        use std::collections::HashMap;
+        use std::sync::atomic::AtomicU8;
+        use std::sync::Arc;
+
+        use buzz_core::kind::KIND_WIKI_SYNC;
+        use nostr::{EventBuilder, Filter, Keys, Kind, Tag};
+        use tokio::sync::{mpsc, Mutex};
+        use tokio_util::sync::CancellationToken;
+        use uuid::Uuid;
+
+        use crate::handlers::event::{handle_ephemeral_event, WIKI_SYNC_RATE_MAX};
+        use crate::handlers::ingest::IngestError;
+        use crate::state::AppState;
+
+        async fn test_state() -> Arc<AppState> {
+            super::fanout_access::test_state().await
+        }
+
+        fn event_from_ws_message(
+            msg: axum::extract::ws::Message,
+        ) -> nostr::Event {
+            let axum::extract::ws::Message::Text(text) = msg else {
+                panic!("expected text ws message");
+            };
+            let v: serde_json::Value = serde_json::from_str(&text).expect("EVENT frame JSON");
+            assert_eq!(v[0], "EVENT");
+            serde_json::from_value(v[2].clone()).expect("nostr event")
+        }
+
+        fn wiki_filter() -> Filter {
+            Filter::new().kind(Kind::Custom(KIND_WIKI_SYNC as u16))
+        }
+
+        /// Register a live subscriber for KIND_WIKI_SYNC on the global topic and
+        /// return its connection id + inbound queue.
+        fn register_wiki_sub(
+            state: &AppState,
+            sub_id: &str,
+        ) -> (Uuid, mpsc::Receiver<axum::extract::ws::Message>) {
+            let conn_id = Uuid::new_v4();
+            let (tx, rx) = mpsc::channel(16);
+            let (ctrl_tx, _ctrl_rx) = mpsc::channel(8);
+            state.conn_manager.register(
+                conn_id,
+                tx,
+                ctrl_tx,
+                None,
+                CancellationToken::new(),
+                buzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                Arc::new(AtomicU8::new(0)),
+                Arc::new(Mutex::new(HashMap::new())),
+                3,
+            );
+            state
+                .sub_registry
+                .register(conn_id, sub_id.to_string(), vec![wiki_filter()], None);
+            (conn_id, rx)
+        }
+
+        fn wiki_event(author: &Keys, slug: &str, content: &str) -> nostr::Event {
+            EventBuilder::new(Kind::Custom(KIND_WIKI_SYNC as u16), content)
+                .tags([Tag::parse(["d", slug]).expect("d tag")])
+                .sign_with_keys(author)
+                .expect("sign wiki sync")
+        }
+
+        fn make_conn() -> Arc<crate::connection::ConnectionState> {
+            let (send_tx, _send_rx) = mpsc::channel(8);
+            let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
+            Arc::new(crate::connection::ConnectionState {
+                conn_id: Uuid::new_v4(),
+                tenant: buzz_core::TenantContext::resolved(
+                    buzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                    "wiki-sync.example".to_string(),
+                ),
+                remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
+                auth_state: std::sync::Mutex::new(crate::connection::AuthState::Failed),
+                subscriptions: Arc::new(Mutex::new(HashMap::new())),
+                send_tx,
+                ctrl_tx,
+                terminal_ctrl_tx: tokio::sync::mpsc::channel(1).0,
+                cancel: CancellationToken::new(),
+                backpressure_count: Arc::new(AtomicU8::new(0)),
+                grace_limit: 3,
+                nip_fi_assertion: None,
+                session_deadline: None,
+                nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
+                    CancellationToken::new(),
+                ),
+            })
+        }
+
+        async fn dispatch(
+            state: &Arc<AppState>,
+            event: nostr::Event,
+            author: &Keys,
+        ) -> Result<(), IngestError> {
+            handle_ephemeral_event(
+                event,
+                Uuid::new_v4(),
+                author.public_key().to_bytes().to_vec(),
+                author.public_key(),
+                false,
+                make_conn(),
+                Arc::clone(state),
+            )
+            .await
+        }
+
+        /// The production acceptance path: a well-formed wiki-sync event is
+        /// admitted and fanned out live to matching page subscribers.
+        #[tokio::test]
+        async fn wiki_sync_event_is_admitted_and_fanned_out() {
+            let state = test_state().await;
+            let (_conn_id, mut rx) = register_wiki_sub(&state, "wiki");
+            let author = Keys::generate();
+            let event = wiki_event(&author, "home", "eJyrVkrLz1eyUkpUslIqLU4tUqoFAFpHBE0=");
+            let event_id = event.id;
+
+            dispatch(&state, event, &author)
+                .await
+                .expect("wiki sync event is admitted");
+
+            let delivered = event_from_ws_message(
+                rx.try_recv().expect("wiki sync fanned out to subscriber"),
+            );
+            assert_eq!(delivered.id, event_id, "subscriber must receive the live update");
+        }
+
+        /// Ephemeral fan-out only — KIND_WIKI_SYNC can never reach the persistent
+        /// ingest map, so no query can ever return it after the live window. The
+        /// persistent-side refusal is asserted in `ingest.rs`
+        /// (`ephemeral_kinds_not_in_scope_allowlist`).
+        #[tokio::test]
+        async fn wiki_sync_update_is_not_persisted() {
+            use buzz_core::kind::is_ephemeral;
+            assert!(
+                is_ephemeral(KIND_WIKI_SYNC),
+                "20003 lives in the ephemeral range (never stored)"
+            );
+        }
+
+        /// Size cap: an oversized payload is refused before fan-out. Removing the
+        /// WIKI_SYNC_MAX_CONTENT_BYTES guard must make this fail.
+        #[tokio::test]
+        async fn wiki_sync_oversized_content_is_rejected() {
+            let state = test_state().await;
+            let author = Keys::generate();
+            let oversized = "x".repeat(32 * 1024 + 1);
+            let event = wiki_event(&author, "home", &oversized);
+            let err = dispatch(&state, event, &author)
+                .await
+                .expect_err("oversized wiki sync must be rejected");
+            let msg = match err {
+                IngestError::Rejected(m) => m,
+                other => panic!("expected Rejected, got {other:?}"),
+            };
+            assert!(msg.contains("exceeds"), "rejection names the size cap: {msg}");
+        }
+
+        /// Per-author rate cap: the 21st publish inside a window is refused.
+        #[tokio::test]
+        async fn wiki_sync_rate_cap_is_enforced() {
+            let state = test_state().await;
+            let author = Keys::generate();
+            for i in 0..WIKI_SYNC_RATE_MAX {
+                let event = wiki_event(&author, "home", &format!("u{i}"));
+                dispatch(&state, event, &author)
+                    .await
+                    .unwrap_or_else(|e| panic!("publish {i} should pass: {e:?}"));
+            }
+            let event = wiki_event(&author, "home", "overflow");
+            let err = dispatch(&state, event, &author)
+                .await
+                .expect_err("publish beyond the per-author cap must be rate-limited");
+            match err {
+                IngestError::Rejected(m) => assert!(m.contains("rate-limited"), "got {m}"),
+                other => panic!("expected rate-limit Rejected, got {other:?}"),
+            }
+        }
+
+        /// Every live-sync event must name its page via a non-empty `d` slug.
+        #[tokio::test]
+        async fn wiki_sync_requires_page_slug() {
+            let state = test_state().await;
+            let author = Keys::generate();
+            let event = EventBuilder::new(Kind::Custom(KIND_WIKI_SYNC as u16), "eJyrVg==")
+                .sign_with_keys(&author)
+                .expect("sign");
+            let err = dispatch(&state, event, &author)
+                .await
+                .expect_err("wiki sync without a page slug must be rejected");
+            match err {
+                IngestError::Rejected(m) => assert!(m.contains("page slug"), "got {m}"),
+                other => panic!("expected Rejected, got {other:?}"),
+            }
         }
     }
 

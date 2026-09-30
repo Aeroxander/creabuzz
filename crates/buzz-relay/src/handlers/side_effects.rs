@@ -385,6 +385,44 @@ pub async fn validate_standard_deletion_event(
         }
         let target_pubkey_bytes =
             hex::decode(parts[1]).map_err(|_| anyhow::anyhow!("invalid pubkey in a-tag"))?;
+        // Wiki pages (44001/44002) are `d`-tag addressed across ALL authors, so
+        // the a-tag's pubkey names only one revision's author. Trusting it the
+        // way the strict rule does would let any non-author name her own pubkey
+        // and tombstone the whole page. The rule generalizes to "must be an
+        // author of the page": the signer must be — or own (NIP-OA agent-owner
+        // delegation, same as the strict rule) — the author of a SURVIVING
+        // revision. When no revision survives, any prior page author may replay
+        // the tombstone: the side effect then matches zero rows, so deleting
+        // twice is an idempotent no-op rather than a spurious failure. Non-wiki
+        // kinds keep the strict per-event-author semantics below unchanged.
+        if let (Some(wiki_kind), Some(d_tag)) =
+            (wiki_page_deletion_kind(parts[0]), parts.get(2).copied())
+        {
+            let authors = state
+                .db
+                .wiki_page_revision_authors(tenant.community(), wiki_kind as i32, d_tag)
+                .await?;
+            let any_live = authors.iter().any(|(_, live)| *live);
+            let mut authorized = false;
+            for (author, live) in &authors {
+                if any_live && !*live {
+                    continue;
+                }
+                if *author == actor_bytes
+                    || state
+                        .db
+                        .is_agent_owner(tenant.community(), author, &actor_bytes)
+                        .await?
+                {
+                    authorized = true;
+                    break;
+                }
+            }
+            if !authorized {
+                return Err(anyhow::anyhow!("must be event author"));
+            }
+            return Ok(());
+        }
         if target_pubkey_bytes != actor_bytes
             && !state
                 .db
@@ -2392,6 +2430,9 @@ pub(crate) async fn persist_workflow_deletion(
 
 /// Handle NIP-09 deletion via `a` tag (addressable/parameterized-replaceable events).
 /// Parses "kind:pubkey:d-tag" and deletes the corresponding DB record.
+/// Wiki pages (44001/44002) are addressed the same way but the PAGE is the
+/// unit of deletion: every revision of the same `d` slug across all authors is
+/// tombstoned and content-stripped (see `soft_delete_wiki_page_by_slug`).
 async fn handle_a_tag_deletion(
     tenant: &TenantContext,
     event: &Event,
@@ -2424,6 +2465,58 @@ async fn handle_a_tag_deletion(
             return Err(anyhow::anyhow!(
                 "workflow deletion requires atomic persistence"
             ));
+        }
+        // Wiki pages (44001/44002): `d` is the page slug and the PAGE is the
+        // unit of deletion. Every revision of the page across ALL authors is
+        // soft-deleted and content-stripped in one statement — deleting one
+        // member's revision deletes the page, exactly as the client's
+        // page-wide tombstone rule claims — so a leaked secret cannot survive
+        // on a co-author's older revision or in a raw table dump. Scope,
+        // content-strip and search-purge semantics live in
+        // `soft_delete_wiki_page_by_slug`.
+        buzz_core::kind::KIND_WIKI_PAGE | buzz_core::kind::KIND_AGENT_WIKI_PAGE => {
+            let deleted = state
+                .db
+                .soft_delete_wiki_page_by_slug(
+                    tenant.community(),
+                    kind_num as i32,
+                    d_tag,
+                    event.created_at.as_secs() as i64,
+                )
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("failed to soft-delete wiki page {kind_num}:{d_tag}: {e}")
+                })?;
+            if deleted > 0 {
+                let actor_bytes =
+                    effective_message_author(event, &state.relay_keypair.public_key());
+                crate::audit::record_audit(
+                    state,
+                    crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
+                        .actor(Some(actor_bytes))
+                        .object_id(a_value.clone())
+                        .detail(serde_json::json!({
+                            "event_id": event.id.to_hex(),
+                            "kind": kind_num,
+                            "d_tag": d_tag,
+                            "deleted_rows": deleted,
+                            "moderation": false,
+                        })),
+                )
+                .await;
+                tracing::info!(
+                    kind = kind_num,
+                    d_tag = d_tag,
+                    deleted_rows = deleted,
+                    "NIP-09 a-tag deletion: tombstoned wiki page across all authors"
+                );
+            } else {
+                tracing::debug!(
+                    kind = kind_num,
+                    d_tag = d_tag,
+                    "NIP-09 a-tag deletion: no live wiki revision matched slug"
+                );
+            }
         }
         // Other NIP-33 events have no executable workflow projection.
         k if is_parameterized_replaceable(k) => {
@@ -2710,6 +2803,19 @@ fn effective_message_author(event: &Event, relay_pubkey: &nostr::PublicKey) -> V
         }
     }
     event.pubkey.to_bytes().to_vec()
+}
+
+/// Some(kind) when an a-tag's kind names a wiki page (44001/44002) whose
+/// deletion is PAGE-wide: the `d` slug identifies the page across all authors,
+/// not a single NIP-33 coordinate row. Used by the deletion validator and the
+/// a-tag side effect to share one dispatch rule.
+fn wiki_page_deletion_kind(kind_str: &str) -> Option<u32> {
+    let kind: u32 = kind_str.parse().ok()?;
+    if kind == buzz_core::kind::KIND_WIKI_PAGE || kind == buzz_core::kind::KIND_AGENT_WIKI_PAGE {
+        Some(kind)
+    } else {
+        None
+    }
 }
 
 /// True if the event carries any `e` tag at all, regardless of whether its
@@ -4111,5 +4217,303 @@ mod tests {
         }];
 
         assert!(actor_is_channel_owner_or_admin(&members, &actor));
+    }
+}
+
+#[cfg(test)]
+mod deletion_postgres_tests {
+    //! DB-backed coverage for the NIP-09 a-tag deletion side effects
+    //! (`#[ignore]` — needs Postgres/Redis, like the other DB-backed lanes).
+    //!
+    //! These tests drive the PRODUCTION seams (`validate_standard_deletion_event`
+    //! → `handle_side_effects` → `handle_a_tag_deletion`), never the DB helpers
+    //! directly, so the page-wide scope guard is falsifiable: reverting
+    //! `soft_delete_wiki_page_by_slug`'s WHERE clause to a single-author row
+    //! delete fails `wiki_page_delete_tombstones_all_revisions_and_strips_content`.
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+    /// Fixed clock so NIP-09 at-or-before scoping is deterministic.
+    const BASE: u64 = 1_700_000_000;
+
+    fn wiki_revision(keys: &Keys, d_tag: &str, content: &str, created_at: u64) -> Event {
+        EventBuilder::new(
+            Kind::Custom(buzz_core::kind::KIND_WIKI_PAGE as u16),
+            content,
+        )
+        .tags(vec![Tag::parse(["d", d_tag]).expect("d tag")])
+        .custom_created_at(Timestamp::from(created_at))
+        .sign_with_keys(keys)
+        .expect("sign wiki revision")
+    }
+
+    fn a_tag_deletion(
+        keys: &Keys,
+        kind: u32,
+        author_hex: &str,
+        d_tag: &str,
+        created_at: u64,
+    ) -> Event {
+        let a_value = format!("{kind}:{author_hex}:{d_tag}");
+        EventBuilder::new(Kind::EventDeletion, "")
+            .tags(vec![Tag::parse(["a", &a_value]).expect("a tag")])
+            .custom_created_at(Timestamp::from(created_at))
+            .sign_with_keys(keys)
+            .expect("sign deletion")
+    }
+
+    fn pubkey_hex(keys: &Keys) -> String {
+        hex::encode(keys.public_key().to_bytes())
+    }
+
+    async fn seed_community(state: &AppState) -> (buzz_core::CommunityId, TenantContext) {
+        let community_uuid = Uuid::new_v4();
+        let host = format!("wiki-del-{}.example", community_uuid.simple());
+        sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+            .bind(community_uuid)
+            .bind(&host)
+            .execute(state.db.pool())
+            .await
+            .expect("seed community");
+        let community = buzz_core::CommunityId::from_uuid(community_uuid);
+        (community, TenantContext::resolved(community, host))
+    }
+
+    /// Raw `(pubkey, content, deleted_at)` for every row of the page slug —
+    /// including tombstoned ones, which query paths filter out.
+    async fn raw_page_rows(
+        state: &AppState,
+        community: buzz_core::CommunityId,
+        d_tag: &str,
+    ) -> Vec<(Vec<u8>, String, Option<String>)> {
+        sqlx::query_as(
+            "SELECT pubkey, content, deleted_at::text FROM events \
+             WHERE community_id = $1 AND kind = $2 AND d_tag = $3 ORDER BY created_at",
+        )
+        .bind(community.as_uuid())
+        .bind(buzz_core::kind::KIND_WIKI_PAGE as i32)
+        .bind(d_tag)
+        .fetch_all(state.db.pool())
+        .await
+        .expect("read raw page rows")
+    }
+
+    /// The core privacy fix: deleting ONE member's revision of a multi-author
+    /// page tombstones EVERY revision across all authors and strips the content
+    /// from the raw rows, so a leaked secret survives neither queries nor a DB
+    /// dump. Mutation oracle: scope `soft_delete_wiki_page_by_slug` back to a
+    /// single-author row and this test fails on bob's surviving revision.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn wiki_page_delete_tombstones_all_revisions_and_strips_content() {
+        let state = crate::test_support::test_state().await;
+        let (community, tenant) = seed_community(&state).await;
+        let alice = Keys::generate();
+        let bob = Keys::generate();
+        let slug = "leaked-secret";
+
+        for (keys, content, offset) in [
+            (&alice, "alice secret: hunter2", 0_u64),
+            (&bob, "bob secret: hunter2", 1),
+        ] {
+            state
+                .db
+                .insert_event(
+                    community,
+                    &wiki_revision(keys, slug, content, BASE + offset),
+                    None,
+                )
+                .await
+                .expect("insert wiki revision");
+        }
+
+        // Authorized by alice's revision coordinate — the signer is an author
+        // of a surviving revision of the page.
+        let delete = a_tag_deletion(
+            &alice,
+            buzz_core::kind::KIND_WIKI_PAGE,
+            &pubkey_hex(&alice),
+            slug,
+            BASE + 10,
+        );
+        validate_standard_deletion_event(&tenant, &delete, &state)
+            .await
+            .expect("page author may delete the page");
+        handle_side_effects(&tenant, 5, &delete, &state)
+            .await
+            .expect("apply page-wide deletion");
+
+        // The production query path (kinds + d_tag, `deleted_at IS NULL`) sees
+        // no live revision of the page.
+        let mut query = buzz_db::EventQuery::for_community(community);
+        query.kinds = Some(vec![buzz_core::kind::KIND_WIKI_PAGE as i32]);
+        query.d_tag = Some(slug.to_string());
+        let live = state.db.query_events(&query).await.expect("query live page");
+        assert!(
+            live.is_empty(),
+            "no live kind:44001 revision of `{slug}` may remain (got {})",
+            live.len()
+        );
+
+        // Both raw rows keep their soft-delete marker but the content is
+        // stripped — the secret must not be readable from the table either.
+        let rows = raw_page_rows(&state, community, slug).await;
+        assert_eq!(rows.len(), 2, "both revisions tombstoned, not hard-purged");
+        for (i, (pubkey, content, deleted_at)) in rows.iter().enumerate() {
+            assert_eq!(content, "", "revision {i} content must be stripped");
+            assert!(deleted_at.is_some(), "revision {i} must carry deleted_at");
+            assert!(
+                *pubkey == alice.public_key().to_bytes() || *pubkey == bob.public_key().to_bytes(),
+                "revision {i} belongs to a page author"
+            );
+        }
+    }
+
+    /// A non-author cannot trigger the page-wide delete — including by naming
+    /// her OWN pubkey in the a-tag (the hole: the strict `target == actor`
+    /// check would authorize that) or by spoofing an author's coordinate. The
+    /// pre-existing "must be event author" error is preserved.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn non_author_cannot_trigger_page_wide_delete() {
+        let state = crate::test_support::test_state().await;
+        let (community, tenant) = seed_community(&state).await;
+        let alice = Keys::generate();
+        let mallory = Keys::generate();
+        let slug = "guards";
+
+        state
+            .db
+            .insert_event(community, &wiki_revision(&alice, slug, "alice text", BASE), None)
+            .await
+            .expect("insert wiki revision");
+
+        for (label, author_hex) in [
+            ("self-named coordinate", pubkey_hex(&mallory)),
+            ("spoofed author coordinate", pubkey_hex(&alice)),
+        ] {
+            let forged = a_tag_deletion(
+                &mallory,
+                buzz_core::kind::KIND_WIKI_PAGE,
+                &author_hex,
+                slug,
+                BASE + 10,
+            );
+            let err = validate_standard_deletion_event(&tenant, &forged, &state)
+                .await
+                .expect_err("non-author must be rejected");
+            assert!(
+                err.to_string().contains("must be event author"),
+                "{label}: unexpected error {err}"
+            );
+        }
+
+        let rows = raw_page_rows(&state, community, slug).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].1, "alice text", "page content must be untouched");
+        assert!(rows[0].2.is_none(), "row must stay live");
+    }
+
+    /// Non-wiki kinds keep today's strict per-coordinate semantics: a 3xxxx
+    /// a-tag delete removes only the named `(pubkey, kind, d)` row — another
+    /// author's same-slug row survives.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn n33_coordinate_delete_still_deletes_only_the_target_row() {
+        let state = crate::test_support::test_state().await;
+        let (community, tenant) = seed_community(&state).await;
+        let alice = Keys::generate();
+        let bob = Keys::generate();
+        let slug = "shared-slug";
+
+        for (keys, content) in [(&alice, "alice project"), (&bob, "bob project")] {
+            let version = EventBuilder::new(
+                Kind::Custom(buzz_core::kind::KIND_PROJECT as u16),
+                content,
+            )
+            .tags(vec![Tag::parse(["d", slug]).expect("d tag")])
+            .custom_created_at(Timestamp::from(BASE))
+            .sign_with_keys(keys)
+            .expect("sign project version");
+            state
+                .db
+                .replace_parameterized_event(community, &version, slug, None)
+                .await
+                .expect("store project version");
+        }
+
+        let delete = a_tag_deletion(
+            &alice,
+            buzz_core::kind::KIND_PROJECT,
+            &pubkey_hex(&alice),
+            slug,
+            BASE + 10,
+        );
+        validate_standard_deletion_event(&tenant, &delete, &state)
+            .await
+            .expect("author may delete own coordinate");
+        handle_side_effects(&tenant, 5, &delete, &state)
+            .await
+            .expect("apply coordinate deletion");
+
+        let rows: Vec<(Vec<u8>, Option<String>)> = sqlx::query_as(
+            "SELECT pubkey, deleted_at::text FROM events \
+             WHERE community_id = $1 AND kind = $2 AND d_tag = $3",
+        )
+        .bind(community.as_uuid())
+        .bind(buzz_core::kind::KIND_PROJECT as i32)
+        .bind(slug)
+        .fetch_all(state.db.pool())
+        .await
+        .expect("read project rows");
+        assert_eq!(rows.len(), 2);
+        for (pubkey, deleted_at) in &rows {
+            if *pubkey == alice.public_key().to_bytes() {
+                assert!(deleted_at.is_some(), "alice's coordinate row must be deleted");
+            } else {
+                assert!(
+                    deleted_at.is_none(),
+                    "bob's row must survive a foreign coordinate delete"
+                );
+            }
+        }
+    }
+
+    /// Deleting twice is idempotent: the replay by the same page author is
+    /// authorized (nothing survives to guard) and applies as a zero-row no-op.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn wiki_page_delete_twice_is_idempotent() {
+        let state = crate::test_support::test_state().await;
+        let (community, tenant) = seed_community(&state).await;
+        let alice = Keys::generate();
+        let slug = "double-delete";
+
+        state
+            .db
+            .insert_event(community, &wiki_revision(&alice, slug, "once", BASE), None)
+            .await
+            .expect("insert wiki revision");
+
+        for created_at in [BASE + 10, BASE + 20] {
+            let delete = a_tag_deletion(
+                &alice,
+                buzz_core::kind::KIND_WIKI_PAGE,
+                &pubkey_hex(&alice),
+                slug,
+                created_at,
+            );
+            validate_standard_deletion_event(&tenant, &delete, &state)
+                .await
+                .expect("page author replay stays authorized");
+            handle_side_effects(&tenant, 5, &delete, &state)
+                .await
+                .expect("replay applies as a no-op");
+        }
+
+        let rows = raw_page_rows(&state, community, slug).await;
+        assert_eq!(rows.len(), 1, "still exactly one tombstoned row");
+        assert_eq!(rows[0].1, "", "content stays stripped");
+        assert!(rows[0].2.is_some(), "row stays soft-deleted");
     }
 }

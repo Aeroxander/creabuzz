@@ -18,7 +18,7 @@ void main() {
   setUp(() {
     PackageInfo.setMockInitialValues(
       appName: 'Creaton',
-      packageName: 'xyz.block.buzz',
+      packageName: 'xyz.block.creaton',
       version: '0.16.0',
       buildNumber: '432',
       buildSignature: '',
@@ -35,7 +35,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       PackageInfo.setMockInitialValues(
         appName: 'Creaton',
-        packageName: 'xyz.block.buzz',
+        packageName: 'xyz.block.creaton',
         version: '0.16.0',
         buildNumber: buildNumber,
         buildSignature: '',

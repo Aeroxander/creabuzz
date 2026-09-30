@@ -2,7 +2,7 @@
  * Which peers in a live room have proved they are community members.
  *
  * A peer is verified once it has sent one envelope that passed the whole
- * accept path (`live-auth.ts`), and stops being verified when it leaves. Only
+ * accept path (the relay + `live-members.ts`), and stops being verified when it leaves. Only
  * verified peers are sent page content: a room is joinable by strangers, so
  * "everyone in the room" must never be the audience of a broadcast.
  *

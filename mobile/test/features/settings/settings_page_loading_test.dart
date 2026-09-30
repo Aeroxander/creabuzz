@@ -57,7 +57,7 @@ void main() {
     expect(find.byTooltip('Close settings'), findsOneWidget);
     metadata.complete({
       'appName': 'Creaton',
-      'packageName': 'xyz.block.buzz',
+      'packageName': 'xyz.block.creaton',
       'version': '0.16.0',
       'buildNumber': '432',
       'buildSignature': '',

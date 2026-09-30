@@ -517,6 +517,13 @@ pub const KIND_PRESENCE_UPDATE: u32 = 20001;
 pub const KIND_PAIRING: u32 = 24134;
 /// Ephemeral: typing indicator for a channel.
 pub const KIND_TYPING_INDICATOR: u32 = 20002;
+/// Ephemeral: live wiki co-editing sync (human wiki pages, kind:44001).
+///
+/// Content is base64 of a Yjs sync/update message. A `d` tag names the page
+/// slug; an `h` tag may scope the event to a channel. The relay fans the
+/// event out to live subscribers and never stores it — offline peers converge
+/// from the newest saved revision (kind:44001) on next open instead.
+pub const KIND_WIKI_SYNC: u32 = 20003;
 /// Ephemeral: owner-scoped encrypted agent observer telemetry and control frame.
 pub const KIND_AGENT_OBSERVER_FRAME: u32 = 24200;
 /// Ephemeral: huddle emoji reaction burst. Channel-scoped to the ephemeral
@@ -1036,6 +1043,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_THREAD_WINDOW_BOUNDS,
     KIND_PRESENCE_UPDATE,
     KIND_TYPING_INDICATOR,
+    KIND_WIKI_SYNC,
     KIND_HUDDLE_REACTION,
     KIND_BLOSSOM_AUTH,
     KIND_PAIRING,

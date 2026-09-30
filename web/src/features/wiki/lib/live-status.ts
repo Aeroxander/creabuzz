@@ -2,7 +2,7 @@
  * What the wiki tells the user about live co-editing.
  *
  * Live co-editing runs peer-to-peer and applies a peer's update only if the
- * peer proves it is a community member (`live-auth.ts`). That makes three
+ * peer proves it is a community member (the relay + `live-members.ts`). That makes three
  * honest states, and the editor must say which one it is in:
  *
  * - unavailable: it cannot run here (no identity to prove membership, no

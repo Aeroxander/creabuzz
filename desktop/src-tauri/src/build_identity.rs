@@ -67,8 +67,8 @@ fn is_deep_link_for_scheme(value: &str, scheme: &str) -> bool {
 
 pub(crate) fn keyring_service() -> Cow<'static, str> {
     demo_slug()
-        .map(|slug| Cow::Owned(format!("buzz-desktop-demo.{slug}")))
-        .unwrap_or(Cow::Borrowed("buzz-desktop"))
+        .map(|slug| Cow::Owned(format!("creaton-desktop-demo.{slug}")))
+        .unwrap_or(Cow::Borrowed("creaton-desktop"))
 }
 
 pub(crate) fn nest_name(is_dev: bool) -> Cow<'static, str> {
@@ -111,7 +111,7 @@ mod tests {
     fn ordinary_release_defaults_remain_production_identity() {
         if demo_slug().is_none() {
             assert_eq!(deep_link_scheme(), "creaton");
-            assert_eq!(keyring_service(), "buzz-desktop");
+            assert_eq!(keyring_service(), "creaton-desktop");
             assert_eq!(nest_name(false), ".buzz");
             assert_eq!(cli_name(false), "buzz");
         }

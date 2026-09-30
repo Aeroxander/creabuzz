@@ -6,19 +6,27 @@ import { KIND_REACTION, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
 
+import { closingSoonLaunches, graduatedLaunches } from "../lib/launch-filters";
 import { followedLaunches, followedPeople } from "../lib/lists";
 import { EMPTY_TALLY, type SortMode, sortByMode } from "../lib/ranking";
-import { useFeedNotes, useMyLists, useVoteTallies } from "../use-feed";
+import {
+  useChainBlockHeight,
+  useFeedNotes,
+  useMyLists,
+  useVoteTallies,
+} from "../use-feed";
 import { Composer } from "./Composer";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ThreadList } from "./ThreadList";
 
-type Tab = "for-you" | "hot" | "new";
+type Tab = "for-you" | "hot" | "new" | "closing-soon" | "graduated";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "for-you", label: "For you" },
   { id: "hot", label: "Hot" },
   { id: "new", label: "New" },
+  { id: "closing-soon", label: "Closing soon" },
+  { id: "graduated", label: "Graduated" },
 ];
 
 /**
@@ -79,6 +87,17 @@ export function FeedPage() {
 
   const mode: SortMode = tab === "new" ? "new" : "hot";
 
+  const launchTab = tab === "closing-soon" || tab === "graduated";
+  const blockHeight = useChainBlockHeight();
+  const filteredLaunches = useMemo(() => {
+    const all = launches.data ?? [];
+    return tab === "closing-soon"
+      ? closingSoonLaunches(all, blockHeight)
+      : tab === "graduated"
+        ? graduatedLaunches(all)
+        : [];
+  }, [launches.data, tab, blockHeight]);
+
   return (
     <div className="flex h-full w-full flex-1 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -116,7 +135,44 @@ export function FeedPage() {
             ))}
           </div>
           <div className="mt-3">
-            {notes.isError ? (
+            {launchTab ? (
+              <ul
+                className="flex flex-col gap-2"
+                data-testid="feed-launch-list"
+              >
+                {tab === "closing-soon" && blockHeight === null ? (
+                  <li
+                    className="rounded-xl border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60"
+                    data-testid="feed-launches-unknown"
+                  >
+                    Closing times come from the chain, and its latest block
+                    could not be read right now.
+                  </li>
+                ) : filteredLaunches.length === 0 ? (
+                  <li
+                    className="rounded-xl border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60"
+                    data-testid="feed-launches-empty"
+                  >
+                    {tab === "closing-soon"
+                      ? "Nothing is closing in the next while."
+                      : "No launch has graduated yet."}
+                  </li>
+                ) : (
+                  filteredLaunches.map((launch) => {
+                    const coord = launchCoord(launch.record);
+                    return (
+                      <li key={coord}>
+                        <LaunchVoteCard
+                          comments={postsPerLaunch.get(coord) ?? 0}
+                          record={launch.record}
+                          tally={tallies.get(coord) ?? EMPTY_TALLY}
+                        />
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            ) : notes.isError ? (
               <QueryError
                 description="The server did not answer the feed query, so no posts can be shown."
                 error={notes.error}

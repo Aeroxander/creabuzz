@@ -9,7 +9,9 @@ import {
   KIND_ORG_NODE,
   KIND_REACTION,
   KIND_TEXT_NOTE,
+  KIND_THREAD_SUMMARY,
 } from "@/shared/constants/kinds";
+import { ethBlockNumber, getRpcEndpoint } from "@/features/launchpad/chain";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -21,10 +23,14 @@ import {
   parseNote,
 } from "./lib/feed-events";
 import { latestList } from "./lib/lists";
+import { type ThreadSummary, parseThreadSummary } from "./lib/launch-thread";
 import {
-  DEFAULT_PUBLIC_RELAYS,
   isMirrorable,
+  KIND_RELAY_LIST,
+  MIRROR_TIMEOUT_MS,
+  outboxRelays,
   readMirrorSetting,
+  withTimeout,
 } from "./lib/mirror";
 import { tallyVotes, type VoteTally } from "./lib/ranking";
 import { orgGraphFromEvents, voteWeights } from "./lib/trust-weight";
@@ -148,9 +154,34 @@ export function useMyLists() {
 
 /**
  * Sign and publish to the community's relay; then, when the person turned it
- * on, copy a post or vote to public relays. The copy is best-effort and never
- * fails the publish: the community relay is the record.
+ * on, copy a post or vote to their NIP-65 outbox relays. The copy is
+ * best-effort: one bounded attempt per relay on its own socket, failures
+ * logged and dropped. The community relay is the record — and the only copy
+ * `useVoteTallies` counts — so a mirror never blocks or fails a publish.
  */
+async function mirrorToOutbox(signed: NostrEvent): Promise<void> {
+  let relayList: NostrEvent | null = null;
+  try {
+    const lists = await queryEvents(relayWsUrl(), {
+      kinds: [KIND_RELAY_LIST],
+      authors: [signed.pubkey],
+      limit: 1,
+    });
+    relayList = lists[0] ?? null;
+  } catch {
+    relayList = null; // No list readable: the public defaults stand in.
+  }
+  for (const relay of outboxRelays(relayList)) {
+    await withTimeout(
+      publishEvent(relay, signed, { signAuth: signAsUser }),
+      MIRROR_TIMEOUT_MS,
+      `mirror to ${relay}`,
+    ).catch((error) => {
+      console.info("[feed] mirror skipped", relay, String(error));
+    });
+  }
+}
+
 export async function publishFeedEvent(
   template: EventTemplate,
 ): Promise<NostrEvent> {
@@ -162,13 +193,44 @@ export async function publishFeedEvent(
     throw new Error(result.message ?? "The server refused this post.");
   }
   if (readMirrorSetting() && isMirrorable(signed)) {
-    for (const relay of DEFAULT_PUBLIC_RELAYS) {
-      void publishEvent(relay, signed, { signAuth: signAsUser }).catch(() => {
-        // A public relay being down never affects the post itself.
-      });
-    }
+    void mirrorToOutbox(signed);
   }
   return signed;
+}
+
+/** The chain head, for filters that are true only at a block height. */
+export function useChainBlockHeight(): bigint | null {
+  const height = useQuery({
+    queryKey: ["chain", "block-height"],
+    queryFn: () => ethBlockNumber(getRpcEndpoint()),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  return height.data ?? null;
+}
+
+/** The launch's agent thread summaries (kind 39005), best first. */
+export function useLaunchSummaries(coord: string | null): {
+  summaries: ThreadSummary[];
+  isLoading: boolean;
+} {
+  const query = useQuery({
+    queryKey: ["feed", "thread-summaries", coord ?? ""],
+    queryFn: async () => {
+      const events = await queryEvents(relayWsUrl(), {
+        kinds: [KIND_THREAD_SUMMARY],
+        "#a": [coord as string],
+        limit: 20,
+      });
+      return events
+        .map((e) => parseThreadSummary(e))
+        .filter((s): s is ThreadSummary => s !== null);
+    },
+    enabled: Boolean(coord),
+    staleTime: 60_000,
+  });
+  return { summaries: query.data ?? [], isLoading: query.isLoading };
 }
 
 /** Publish a note, vote or list and refresh what it affects. */

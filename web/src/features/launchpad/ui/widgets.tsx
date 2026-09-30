@@ -7,6 +7,7 @@ import {
   progressPercent,
   type AuctionProgress,
 } from "../chain";
+import { formatMoney } from "../lib/amounts";
 import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { effectiveStage } from "../models";
@@ -93,6 +94,14 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
           }}
         />
       </div>
+      {measurable && data.goal !== null && data.goal > 0n ? (
+        <p
+          className="mt-1 text-2xs text-black/60 dark:text-white/60"
+          data-testid="launch-raise-line"
+        >
+          {formatMoney(data.raised)} of {formatMoney(data.goal)} raised
+        </p>
+      ) : null}
     </div>
   );
 }

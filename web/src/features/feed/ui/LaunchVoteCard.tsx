@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 
 import type { LaunchRecord } from "@/features/launchpad/models";
+import { ProgressBar } from "@/features/launchpad/ui/widgets";
 import { KIND_LAUNCH_RECORD } from "@/shared/constants/kinds";
 
 import {
@@ -78,6 +79,9 @@ export function LaunchVoteCard({
         <p className="mt-0.5 line-clamp-2 text-sm text-black/70 dark:text-white/70">
           {record.pitch}
         </p>
+        <div className="mt-1.5">
+          <ProgressBar record={record} />
+        </div>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-black/60 dark:text-white/60">
           <span className="rounded-full bg-black/5 px-2 py-0.5 dark:bg-white/10">
             {STAGE_LABEL[record.stage] ?? record.stage}

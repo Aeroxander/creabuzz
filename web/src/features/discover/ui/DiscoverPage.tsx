@@ -27,6 +27,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { CategoryBrowse } from "./CategoryBrowse";
 
 import {
   directoryNotice,
@@ -167,6 +168,8 @@ export function DiscoverPage() {
             : `${daos.length} DAOs · ${launches.length} launches · ${projects.length} projects`}
         </span>
       </div>
+
+      <CategoryBrowse />
 
       {isLoading ? (
         <p className="py-8 text-center text-sm text-black/60 dark:text-white/60">

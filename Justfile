@@ -579,6 +579,13 @@ regen-model-corpus:
 regen-org-corpus:
     cargo test -p buzz-core --lib org_grant::props::regen_corpus_file -- --ignored --exact
 
+# Regenerate the shared event-kind tables (@creaton/core TS + mobile Dart) from
+# the registry source of truth, crates/buzz-core/src/kind.rs. Run after any
+# kind change and commit the regenerated files. `node scripts/regen-kinds.mjs
+# --check` (wired into web/desktop `pnpm check`) fails when they are stale.
+regen-kinds:
+    node scripts/regen-kinds.mjs
+
 # Buzz shared compute e2e: current desktop discovery/admission logic and
 # Playwright UI coverage.
 mesh-e2e:
