@@ -6,13 +6,17 @@
  * web-only for now.
  */
 import * as React from "react";
+import { Pencil, Save, X } from "lucide-react";
 
 import { Button } from "@/shared/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
+import { relayClient } from "@/shared/api/relayClient";
+import { signRelayEvent } from "@/shared/api/tauri";
 
 import type { WikiPage } from "../lib/pageIndex";
+import { buildPageSavePayload } from "../lib/pageEdit";
 import { useWikiPages } from "../useWikiPages";
 import { WikiGraph } from "./WikiGraph";
 import { WikiPageList } from "./WikiPageList";
@@ -25,9 +29,60 @@ export function WikiView() {
   const [tab, setTab] = React.useState<WikiTab>("page");
   const [activeKey, setActiveKey] = React.useState<string | null>(null);
 
+  // Team-page editing. Agent pages stay read-only; only a human page (kind
+  // 44001) is editable here, published through the same event shape the web
+  // client uses (`lib/pageEdit.ts`).
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
   const pages = React.useMemo(() => pagesQuery.data ?? [], [pagesQuery.data]);
   const active: WikiPage | null =
     pages.find((page) => page.key === activeKey) ?? pages[0] ?? null;
+
+  // Reset the editor whenever the open page changes.
+  const activeRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const key = active?.key ?? null;
+    if (key === activeRef.current) return;
+    activeRef.current = key;
+    setEditing(false);
+    setDraft(active?.content ?? "");
+    setSaveError(null);
+  }, [active?.key, active?.content]);
+
+  const editable = active !== null && active.kind === "human";
+
+  const save = async () => {
+    if (active?.kind !== "human") return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const payload = buildPageSavePayload({
+        slug: active.slug,
+        content: draft,
+        now: Math.floor(Date.now() / 1000),
+      });
+      const event = await signRelayEvent({
+        kind: payload.kind,
+        content: payload.content,
+        tags: payload.tags,
+        createdAt: payload.created_at,
+      });
+      await relayClient.publishEvent(
+        event,
+        "Timed out while saving the page.",
+        "Failed to save the page.",
+      );
+      setEditing(false);
+      await pagesQuery.refetch();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   let body: React.ReactNode;
   if (pagesQuery.isPending) {
@@ -97,17 +152,74 @@ export function WikiView() {
             >
               {active?.key ?? "wiki"}
             </span>
-            <TabsList aria-label="Wiki views">
-              <TabsTrigger data-testid="wiki-tab-page" value="page">
-                Page
-              </TabsTrigger>
-              <TabsTrigger data-testid="wiki-tab-graph" value="graph">
-                Graph
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex items-center gap-2">
+              {/* Agent pages are read-only; only a team page offers editing. */}
+              {editable && !editing ? (
+                <Button
+                  data-testid="wiki-edit"
+                  onClick={() => setEditing(true)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Pencil aria-hidden="true" className="h-3.5 w-3.5" /> Edit
+                </Button>
+              ) : null}
+              {editable && editing ? (
+                <>
+                  <Button
+                    data-testid="wiki-edit-cancel"
+                    onClick={() => {
+                      setDraft(active?.content ?? "");
+                      setEditing(false);
+                      setSaveError(null);
+                    }}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <X aria-hidden="true" className="h-3.5 w-3.5" /> Cancel
+                  </Button>
+                  <Button
+                    data-testid="wiki-edit-save"
+                    disabled={saving}
+                    onClick={() => void save()}
+                    size="sm"
+                  >
+                    <Save aria-hidden="true" className="h-3.5 w-3.5" />
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                </>
+              ) : null}
+              <TabsList aria-label="Wiki views">
+                <TabsTrigger data-testid="wiki-tab-page" value="page">
+                  Page
+                </TabsTrigger>
+                <TabsTrigger data-testid="wiki-tab-graph" value="graph">
+                  Graph
+                </TabsTrigger>
+              </TabsList>
+            </div>
           </div>
           <TabsContent className="flex min-h-0 flex-1 flex-col" value="page">
-            {active ? (
+            {active && editing && active.kind === "human" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {saveError ? (
+                  <p
+                    className="border-b bg-destructive/10 px-4 py-2 text-2xs text-destructive"
+                    data-testid="wiki-edit-error"
+                    role="status"
+                  >
+                    Couldn&apos;t save: {saveError}
+                  </p>
+                ) : null}
+                <textarea
+                  aria-label={`Edit ${active.slug}`}
+                  className="min-h-0 w-full flex-1 resize-none border-none bg-background p-4 font-mono text-sm outline-none"
+                  data-testid="wiki-edit-area"
+                  onChange={(e) => setDraft(e.target.value)}
+                  value={draft}
+                />
+              </div>
+            ) : active ? (
               <WikiPageReader page={active} />
             ) : (
               <p className="p-4 text-xs text-muted-foreground">

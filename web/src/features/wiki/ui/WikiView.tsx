@@ -7,6 +7,8 @@ import {
   CloudUpload,
   Download,
   FilePlus2,
+  History,
+  MessageSquarePlus,
   Pencil,
   Save,
   Sparkles,
@@ -20,15 +22,35 @@ import { toast } from "sonner";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
+import { useKnowledge } from "../use-knowledge";
+import { provenanceLine, type KnowledgePage } from "../lib/knowledge";
 import { canDeletePage } from "../lib/page-index";
 import { describeLive } from "../lib/live-status";
 import { useLiveWikiDoc } from "../wiki-sync";
 import { PageDialog } from "./PageDialog";
+import { KnowledgeIndex } from "./KnowledgeIndex";
+import { VersionHistory } from "./VersionHistory";
+import { SuggestCorrectionDialog } from "./SuggestCorrectionDialog";
 import { WikiEditor } from "./WikiEditor";
 import { WikiGraph } from "./WikiGraph";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 type Tab = "edit" | "graph";
+
+/** Strip the agent page's leading front-matter block before rendering. */
+function stripFrontMatter(content: string): string {
+  const lines = content.split("\n");
+  if (lines.length === 0 || lines[0].trim() !== "---") return content;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      return lines
+        .slice(i + 1)
+        .join("\n")
+        .replace(/^\n+/, "");
+    }
+  }
+  return content;
+}
 
 export function WikiView({
   initialSlug,
@@ -50,6 +72,7 @@ export function WikiView({
     refetchPages,
   } = useWikiPages(true);
   const queryClient = useQueryClient();
+  const knowledge = useKnowledge(true);
   const [tab, setTab] = useState<Tab>("edit");
   const [activeSlug, setActiveSlug] = useState<string | null>(
     () => initialSlug ?? pages[0]?.slug ?? null,
@@ -62,12 +85,27 @@ export function WikiView({
   /** Open naming dialog: `new` creates, otherwise it renames that page. */
   const [dialog, setDialog] = useState<null | "new" | { rename: string }>(null);
   const [pendingDelete, setPendingDelete] = useState<WikiPage | null>(null);
+  /** Whether the version-history panel is showing for the active page. */
+  const [showHistory, setShowHistory] = useState(false);
+  /** Whether the "Suggest a correction" dialog is open. */
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  /** In-flight flags for the Knowledge actions. */
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [suggestBusy, setSuggestBusy] = useState(false);
   /**
    * Slugs published in this tab. The relay's page list refreshes on a poll, so
    * until it does the page still looks unpublished — the badge would claim
    * "not published" for a page the relay just accepted.
    */
   const [publishedHere, setPublishedHere] = useState<Set<string>>(new Set());
+
+  // Knowledge classification of the active page. Agent pages are read-only and
+  // never enter the live-edit document; team pages are the editable surface.
+  const activeAgent: KnowledgePage | null =
+    knowledge.agent.find((p) => p.slug === activeSlug) ?? null;
+  const activeTeamMeta: KnowledgePage | null =
+    knowledge.team.find((p) => p.slug === activeSlug) ?? null;
+  const isAgentPage = activeAgent !== null;
 
   const published = pages.find((p) => p.slug === activeSlug) ?? null;
   const {
@@ -78,7 +116,11 @@ export function WikiView({
     strangers,
     rejected,
     live,
-  } = useLiveWikiDoc(activeSlug, published?.content ?? "", published?.id ?? "");
+  } = useLiveWikiDoc(
+    isAgentPage ? null : activeSlug,
+    published?.content ?? "",
+    published?.id ?? "",
+  );
   const liveText = describeLive(live, { peers, strangers, rejected });
   /** The page being edited, including one that exists only in this editor. */
   const active: WikiPage | null =
@@ -109,27 +151,39 @@ export function WikiView({
   };
 
   /**
-   * Pages to show in the list. A page created here exists only in the editor
-   * until it is published, so it is listed as a draft — otherwise "New page"
-   * appears to do nothing.
+   * Team pages for the Knowledge index, with a local-only draft folded in so
+   * "New page" is visible before its first save. Agent pages come straight from
+   * the Knowledge read.
    */
-  const visiblePages = useMemo(() => {
-    const term = pageSearch.trim().toLowerCase();
-    const matches = (slug: string) =>
-      term.length === 0 || slug.toLowerCase().includes(term);
-    const known = pages.filter((page) => matches(page.slug));
-    if (!activeSlug || pages.some((page) => page.slug === activeSlug)) {
-      return known;
-    }
-    if (!matches(activeSlug)) return known;
-    const draft: WikiPage = {
-      slug: activeSlug,
+  const teamForIndex = useMemo<KnowledgePage[]>(() => {
+    const known = knowledge.team;
+    const slug = activeSlug;
+    if (!slug) return known;
+    const represented =
+      known.some((p) => p.slug === slug) ||
+      knowledge.agent.some((p) => p.slug === slug);
+    if (represented) return known;
+    const draft: KnowledgePage = {
+      kind: "team",
+      slug,
       content,
       updatedAt: 0,
-      draft: true,
+      authorPubkey: existingUserPubkey() ?? "",
+      provenance: null,
+      scope: null,
     };
     return [draft, ...known];
-  }, [pages, pageSearch, activeSlug, content]);
+  }, [knowledge.team, knowledge.agent, activeSlug, content]);
+
+  /**
+   * The team-scope edit gate (lib/knowledge.ts). Agent pages are always
+   * read-only, so they never grant edit. A scoped team page is editable only by
+   * its team's seat holders; everyone else may only propose a correction.
+   */
+  const editVerdict = isAgentPage
+    ? "propose"
+    : knowledge.canEdit({ scope: activeTeamMeta?.scope ?? null });
+  const canEditThis = editVerdict === "edit";
 
   /**
    * Publish the live document, folding in anything saved since we last looked.
@@ -284,82 +338,48 @@ export function WikiView({
             <FilePlus2 className="h-4 w-4" />
           </button>
         </div>
-        {pages.length > 3 ? (
-          <div className="px-2 pb-2">
-            <input
-              aria-label="Find a page"
-              className="w-full rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-black outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
-              data-testid="wiki-page-search"
-              onChange={(e) => setPageSearch(e.target.value)}
-              placeholder="Find a page…"
-              value={pageSearch}
+        {loadError ? (
+          <p
+            className="mx-2 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300"
+            data-testid="wiki-cache-warning"
+            role="status"
+          >
+            Showing saved pages — the relay did not answer.
+          </p>
+        ) : null}
+        {isLoading &&
+        teamForIndex.length === 0 &&
+        knowledge.agent.length === 0 ? (
+          <div className="space-y-2 p-2">
+            {["a", "b", "c"].map((k) => (
+              <div
+                key={k}
+                className="h-8 animate-pulse rounded-md bg-black/5 dark:bg-white/10"
+              />
+            ))}
+          </div>
+        ) : loadError &&
+          teamForIndex.length === 0 &&
+          knowledge.agent.length === 0 ? (
+          <div className="p-2">
+            <QueryError
+              description="The relay did not answer the wiki page query, so there is no known list of pages."
+              message={errorMessage(loadError)}
+              onRetry={() => void refetchPages()}
+              testId="wiki-load-error"
+              title="Couldn't load pages"
             />
           </div>
-        ) : null}
-        <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          {loadError && visiblePages.length > 0 ? (
-            <p
-              className="mx-2 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300"
-              data-testid="wiki-cache-warning"
-              role="status"
-            >
-              Showing saved pages — the relay did not answer.
-            </p>
-          ) : null}
-          {isLoading && pages.length === 0 ? (
-            <div className="space-y-2 p-2">
-              {["a", "b", "c"].map((k) => (
-                <div
-                  key={k}
-                  className="h-8 animate-pulse rounded-md bg-black/5 dark:bg-white/10"
-                />
-              ))}
-            </div>
-          ) : visiblePages.length === 0 && pageSearch.trim().length > 0 ? (
-            <p
-              className="px-2 py-3 text-xs text-black/60 dark:text-white/60"
-              data-testid="wiki-page-search-empty"
-            >
-              No page matches “{pageSearch.trim()}”.
-            </p>
-          ) : visiblePages.length === 0 && loadError ? (
-            <div className="p-2">
-              <QueryError
-                description="The relay did not answer the wiki page query, so there is no known list of pages."
-                message={errorMessage(loadError)}
-                onRetry={() => void refetchPages()}
-                testId="wiki-load-error"
-                title="Couldn't load pages"
-              />
-            </div>
-          ) : visiblePages.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-black/60 dark:text-white/60">
-              No pages yet. Create the first one.
-            </p>
-          ) : (
-            visiblePages.map((page) => (
-              <button
-                key={page.slug}
-                type="button"
-                onClick={() => selectPage(page)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
-                  page.slug === activeSlug
-                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
-                }`}
-                data-testid={`wiki-page-${page.slug}`}
-              >
-                <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{page.slug}</span>
-                {page.draft && !publishedHere.has(page.slug) ? (
-                  <span className="ml-auto shrink-0 text-2xs text-amber-700 dark:text-amber-400">
-                    draft
-                  </span>
-                ) : null}
-              </button>
-            ))
-          )}
-        </nav>
+        ) : (
+          <KnowledgeIndex
+            agent={knowledge.agent}
+            activeSlug={activeSlug}
+            onSearchChange={setPageSearch}
+            onSelect={(page) => openPage(page.slug)}
+            search={pageSearch}
+            team={teamForIndex}
+          />
+        )}
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -465,7 +485,7 @@ export function WikiView({
                 {links.length === 1 ? "" : "s"}
               </span>
             )}
-            {active ? (
+            {active && !isAgentPage ? (
               <button
                 type="button"
                 onClick={() => setDialog({ rename: active.slug })}
@@ -479,8 +499,11 @@ export function WikiView({
             ) : null}
             {/* The relay only accepts a delete from the newest revision's
                 author, so the button is not shown to anyone else — a control
-                that always fails has no business being clickable. */}
-            {active && canDeletePage(active, existingUserPubkey()) ? (
+                that always fails has no business being clickable. Agent pages
+                are read-only, so they never offer delete. */}
+            {active &&
+            !isAgentPage &&
+            canDeletePage(active, existingUserPubkey()) ? (
               <button
                 type="button"
                 key="delete"
@@ -493,6 +516,38 @@ export function WikiView({
               </button>
             ) : null}
             {activeSlug ? (
+              <button
+                type="button"
+                onClick={() => setShowHistory((v) => !v)}
+                aria-pressed={showHistory}
+                className={`inline-flex items-center gap-1 rounded border px-2 py-1 dark:border-white/15 ${
+                  showHistory
+                    ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
+                    : "border-black/15"
+                }`}
+                data-testid="wiki-history-toggle"
+                title="Show this page's version history"
+              >
+                <History className="h-3 w-3" /> History
+              </button>
+            ) : null}
+            {activeSlug && (isAgentPage || editVerdict === "propose") ? (
+              <button
+                type="button"
+                onClick={() => setSuggestOpen(true)}
+                className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+                data-testid="wiki-suggest"
+                title={
+                  isAgentPage
+                    ? "Suggest a correction to this agent page"
+                    : "Propose a change to this page"
+                }
+              >
+                <MessageSquarePlus className="h-3 w-3" />
+                {isAgentPage ? "Suggest a correction" : "Propose a change"}
+              </button>
+            ) : null}
+            {activeSlug && canEditThis ? (
               <button
                 type="button"
                 onClick={() => void save()}
@@ -513,41 +568,105 @@ export function WikiView({
 
         {tab === "graph" ? (
           <WikiGraph pages={pages} />
+        ) : showHistory && activeSlug ? (
+          <VersionHistory
+            revisions={knowledge.historyFor(activeSlug)}
+            restoring={historyBusy}
+            onRestore={(revision) => {
+              setHistoryBusy(true);
+              void knowledge
+                .restoreRevision(activeSlug, revision)
+                .then(() => toast.success("Version restored"))
+                .catch((error: unknown) =>
+                  toast.error("Couldn't restore that version", {
+                    description: errorMessage(error),
+                  }),
+                )
+                .finally(() => setHistoryBusy(false));
+            }}
+          />
+        ) : activeAgent ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl space-y-3 p-4">
+              <div className="space-y-1">
+                <p
+                  className="text-2xs text-black/60 dark:text-white/60"
+                  data-testid="wiki-agent-provenance"
+                >
+                  {activeAgent.provenance
+                    ? provenanceLine(activeAgent.provenance)
+                    : "Updated by an agent"}
+                </p>
+                <p className="text-2xs text-black/50 dark:text-white/50">
+                  This page is kept up to date by an agent and can&apos;t be
+                  edited here. Suggest a correction to propose a change.
+                </p>
+              </div>
+              <article
+                className="prose prose-sm max-w-none dark:prose-invert [&_pre]:overflow-x-auto"
+                data-testid="wiki-agent-reader"
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {stripFrontMatter(activeAgent.content)}
+                </ReactMarkdown>
+              </article>
+            </div>
+          </div>
         ) : activeSlug ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {mode === "preview" ? (
-                <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {content}
-                  </ReactMarkdown>
-                </article>
-              ) : mode === "source" ? (
-                <textarea
-                  value={content}
-                  onChange={(e) => {
-                    setDirty(true);
-                    setContent(e.target.value);
-                  }}
-                  className="h-full min-h-[60vh] w-full resize-none rounded-md border border-black/10 bg-white p-3 font-mono text-sm text-black outline-none focus:ring-1 focus:ring-black dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-white"
-                  placeholder="Write in markdown. [[Other Page]] links create the graph."
-                  data-testid="wiki-editor"
-                />
-              ) : (
-                <div
-                  className="border-b border-black/10 dark:border-white/10"
-                  data-testid="wiki-wysiwyg"
+            {!canEditThis ? (
+              <>
+                <p
+                  className="border-b border-black/10 bg-amber-500/10 px-3 py-1.5 text-2xs text-amber-700 dark:border-white/10 dark:text-amber-300"
+                  data-testid="wiki-edit-locked"
+                  role="status"
                 >
-                  <WikiEditor
-                    content={content}
-                    onChange={(markdown) => {
-                      setDirty(true);
-                      setContent(markdown);
-                    }}
-                  />
+                  Only this team&apos;s seat holders can edit this page. You can
+                  read it and propose a change.
+                </p>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {content}
+                    </ReactMarkdown>
+                  </article>
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {mode === "preview" ? (
+                  <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {content}
+                    </ReactMarkdown>
+                  </article>
+                ) : mode === "source" ? (
+                  <textarea
+                    value={content}
+                    onChange={(e) => {
+                      setDirty(true);
+                      setContent(e.target.value);
+                    }}
+                    className="h-full min-h-[60vh] w-full resize-none rounded-md border border-black/10 bg-white p-3 font-mono text-sm text-black outline-none focus:ring-1 focus:ring-black dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-white"
+                    placeholder="Write in markdown. [[Other Page]] links create the graph."
+                    data-testid="wiki-editor"
+                  />
+                ) : (
+                  <div
+                    className="border-b border-black/10 dark:border-white/10"
+                    data-testid="wiki-wysiwyg"
+                  >
+                    <WikiEditor
+                      content={content}
+                      onChange={(markdown) => {
+                        setDirty(true);
+                        setContent(markdown);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
@@ -645,6 +764,29 @@ export function WikiView({
         open={pendingDelete !== null}
         title="Delete this page?"
       />
+
+      {suggestOpen && activeSlug ? (
+        <SuggestCorrectionDialog
+          slug={activeSlug}
+          submitting={suggestBusy}
+          onCancel={() => setSuggestOpen(false)}
+          onSubmit={(note) => {
+            setSuggestBusy(true);
+            void knowledge
+              .fileSuggestion(activeSlug, note)
+              .then(() => {
+                toast.success("Correction suggested");
+                setSuggestOpen(false);
+              })
+              .catch((error: unknown) =>
+                toast.error("Couldn't send your suggestion", {
+                  description: errorMessage(error),
+                }),
+              )
+              .finally(() => setSuggestBusy(false));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

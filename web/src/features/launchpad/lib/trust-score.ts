@@ -120,7 +120,9 @@ export interface DeliverySignals {
 export function deliveryScore(s: DeliverySignals): number {
   const months = Math.min(s.monthsActive ?? 12, 12);
   const scale = (n: number) => Math.floor((n * months * 1000) / 12);
-  const good = scale((s.approvedMilestones ?? 0) + (s.contributionRecords ?? 0));
+  const good = scale(
+    (s.approvedMilestones ?? 0) + (s.contributionRecords ?? 0),
+  );
   const bad = scale((s.slashedClaims ?? 0) + (s.rejectedClaims ?? 0));
   return Math.max(0, good - bad);
 }
