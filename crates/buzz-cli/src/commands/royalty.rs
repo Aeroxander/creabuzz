@@ -16,10 +16,11 @@
 //! explicit timeout, gas is hard-capped, the receipt wait has a deadline,
 //! and the network is never touched by unit tests (`EvmRpc` is the seam).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use buzz_core::org_grant::{tally_reviews, ReviewRow};
 use buzz_evm_allowance::tx;
 use buzz_evm_allowance::{abi, AllowanceClient, AllowanceError, EvmRpc, HttpEvmRpc};
 use nostr::{EventBuilder, Kind, Tag};
@@ -436,6 +437,584 @@ pub fn cmd_mirror_close(
     Ok(())
 }
 
+// ── settlement job: kind:37013 contributions → kind:47006 schedules ────────
+
+/// Default bounded read of kind:37013 events per settlement run.
+pub const SETTLEMENT_QUERY_DEFAULT: u32 = 500;
+/// Hard cap on that read; a `--limit` above this is a usage error.
+pub const SETTLEMENT_QUERY_CAP: u32 = 2_000;
+/// Tenure factor denominator: `min(months_active, 12) / 12`.
+pub const TENURE_CAP_MONTHS: u64 = 12;
+/// Integer weights carry three decimals (×1000) so they fit `u32`.
+pub const WEIGHT_SCALE: u128 = 1_000;
+
+/// The weight formula, quoted in the command's help and echoed in its JSON
+/// output so a printed weight can be re-derived from the same text.
+pub const WEIGHT_FORMULA: &str = "weight(b) = sum over accepted actions of \
+floor(amount * min(monthsActive, 12) * 1000 / 12), minus the same sum over \
+rejected/slashed actions, clamped at 0; monthsActive defaults to 12 when \
+absent, amount is required, and pending/appealed/unreviewed actions never count";
+
+/// One kind:37013 contribution action as the settlement job sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributionAction {
+    /// Action id (`d` tag).
+    pub d: String,
+    /// Claimant (beneficiary): signer of the earliest record for `d`.
+    pub subject: String,
+    /// `content.amount` from the claimant's newest record (their claim).
+    /// `None` = unpayable (excluded, reported, never silently dropped).
+    pub amount: Option<u64>,
+    /// `content.monthsActive` from the claimant's newest record; `None`
+    /// means full tenure ([`TENURE_CAP_MONTHS`]).
+    pub months_active: Option<u64>,
+    /// Every record for `d` at or after the filing, as review rows — the
+    /// claimant's own included; [`tally_reviews`] never counts those.
+    pub reviews: Vec<ReviewRow>,
+}
+
+/// The result of folding raw query events into settlement inputs.
+#[derive(Debug, Default)]
+pub struct FoldedActions {
+    /// Per-action inputs, ordered by action id (deterministic).
+    pub actions: Vec<ContributionAction>,
+    /// Events with no `d` tag (action id) — cannot settle.
+    pub skipped_no_action_id: u64,
+    /// Events missing `id`/`pubkey`/`created_at` — malformed.
+    pub skipped_malformed: u64,
+}
+
+/// Canonical verdict for one action (only `Accepted` pays).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// The canonical authorized review says `accepted` — payable.
+    Accepted,
+    /// The canonical authorized review says `rejected` — subtracts.
+    Rejected,
+    /// The canonical authorized review says `slashed` — subtracts.
+    Slashed,
+    /// No authorized non-subject review, or a non-terminal disposition
+    /// (`pending`, `appealed`, …) — excluded entirely.
+    Unreviewed,
+}
+
+/// Per-beneficiary settlement row — the schedule the mirror emits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeneficiaryWeight {
+    /// Beneficiary pubkey (lowercase 64-hex) — the claimant of its actions.
+    pub beneficiary: String,
+    /// Net schedule weight in `u32`, scaled ×1000 ([`WEIGHT_FORMULA`]).
+    pub weight: u32,
+    /// Accepted scaled sum before subtraction (audit trail).
+    pub credited: u128,
+    /// Rejected/slashed scaled sum subtracted from `credited`.
+    pub subtracted: u128,
+    /// Accepted action ids that built the weight (sorted).
+    pub accepted_actions: Vec<String>,
+    /// Rejected/slashed action ids that subtracted (sorted).
+    pub subtracted_actions: Vec<String>,
+}
+
+/// Per-record scaled claim: `floor(amount × min(months_active, 12) × 1000 / 12)`.
+///
+/// All arithmetic is `u128` intermediate (a `u64` amount at full tenure
+/// cannot overflow it); the floor keeps the result an integer.
+pub fn record_weight(amount: u64, months_active: u64) -> u128 {
+    let capped = months_active.min(TENURE_CAP_MONTHS) as u128;
+    u128::from(amount) * capped * WEIGHT_SCALE / 12
+}
+
+/// The canonical disposition for one action: the newest review by an
+/// authorized reviewer other than the subject (ties: lowest event id) —
+/// the exact pick [`tally_reviews`] makes internally.
+fn canonical_review<'a>(
+    rows: &'a [ReviewRow],
+    subject: &str,
+    authorized: &HashSet<String>,
+) -> Option<&'a ReviewRow> {
+    let mut best: Option<&ReviewRow> = None;
+    for row in rows {
+        if row.reviewer.eq_ignore_ascii_case(subject) || !authorized.contains(&row.reviewer) {
+            continue;
+        }
+        let replace = match best {
+            None => true,
+            Some(cur) => {
+                row.created_at > cur.created_at
+                    || (row.created_at == cur.created_at && row.event_id < cur.event_id)
+            }
+        };
+        if replace {
+            best = Some(row);
+        }
+    }
+    best
+}
+
+/// Resolve one action's verdict with the review machinery's semantics.
+///
+/// The accepted/rejected split is delegated to [`tally_reviews`] (so a
+/// self-review or an unauthorized reviewer can never decide anything);
+/// `slashed` is recognized from the same canonical pick, and anything else
+/// is [`Verdict::Unreviewed`] — excluded.
+pub fn verdict_of(action: &ContributionAction, authorized: &HashSet<String>) -> Verdict {
+    let (accepted, rejected) = tally_reviews(&action.reviews, &action.subject, authorized);
+    if accepted == 1 {
+        return Verdict::Accepted;
+    }
+    if rejected == 1 {
+        return Verdict::Rejected;
+    }
+    match canonical_review(&action.reviews, &action.subject, authorized) {
+        Some(row) if row.status.as_deref() == Some("slashed") => Verdict::Slashed,
+        _ => Verdict::Unreviewed,
+    }
+}
+
+/// Compute per-beneficiary weights deterministically ([`WEIGHT_FORMULA`]).
+///
+/// Beneficiaries are ordered by pubkey; accepted actions add, rejected and
+/// slashed actions subtract (net clamped at 0 per beneficiary), and
+/// everything else — unreviewed verdicts and claims without an `amount` —
+/// contributes nothing. A net that cannot fit `u32` is an explicit error,
+/// never a wraparound.
+pub fn compute_weights(
+    actions: &[ContributionAction],
+    authorized: &HashSet<String>,
+) -> Result<Vec<BeneficiaryWeight>, CliError> {
+    #[derive(Default)]
+    struct Acc {
+        credited: u128,
+        subtracted: u128,
+        accepted_actions: BTreeSet<String>,
+        subtracted_actions: BTreeSet<String>,
+    }
+    let mut by_beneficiary: BTreeMap<String, Acc> = BTreeMap::new();
+    for action in actions {
+        let verdict = verdict_of(action, authorized);
+        let on_accepted_side = verdict == Verdict::Accepted;
+        let on_subtracted_side = matches!(verdict, Verdict::Rejected | Verdict::Slashed);
+        if !on_accepted_side && !on_subtracted_side {
+            continue;
+        }
+        let Some(amount) = action.amount else {
+            // Unpayable claim: reported by the caller's stats, never money.
+            continue;
+        };
+        let scaled = record_weight(amount, action.months_active.unwrap_or(TENURE_CAP_MONTHS));
+        let acc = by_beneficiary.entry(action.subject.clone()).or_default();
+        if on_accepted_side {
+            acc.credited = acc.credited.saturating_add(scaled);
+            acc.accepted_actions.insert(action.d.clone());
+        } else {
+            acc.subtracted = acc.subtracted.saturating_add(scaled);
+            acc.subtracted_actions.insert(action.d.clone());
+        }
+    }
+
+    let mut out = Vec::with_capacity(by_beneficiary.len());
+    for (beneficiary, acc) in by_beneficiary {
+        if acc.accepted_actions.is_empty() {
+            // Nothing payable ever existed here: a rejected-only history is
+            // not a schedule row.
+            continue;
+        }
+        let net = acc.credited.saturating_sub(acc.subtracted);
+        let weight = u32::try_from(net).map_err(|_| {
+            CliError::Other(format!(
+                "computed royalty weight for {beneficiary} exceeds u32; split the epoch or \
+                 lower the claim amounts"
+            ))
+        })?;
+        out.push(BeneficiaryWeight {
+            beneficiary,
+            weight,
+            credited: acc.credited,
+            subtracted: acc.subtracted,
+            accepted_actions: acc.accepted_actions.into_iter().collect(),
+            subtracted_actions: acc.subtracted_actions.into_iter().collect(),
+        });
+    }
+    Ok(out)
+}
+
+/// Normalize a reviewer/subject pubkey: trim, lowercase, 64 hex chars.
+pub fn normalize_pubkey_hex(value: &str) -> Result<String, CliError> {
+    let clean = value.trim().to_ascii_lowercase();
+    if clean.len() != 64 || !clean.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CliError::Usage(format!(
+            "expected a 64-hex pubkey, got: {value}"
+        )));
+    }
+    Ok(clean)
+}
+
+fn content_u64(content: &serde_json::Value, key: &str) -> Option<u64> {
+    match content.get(key) {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Number(n)) => n.as_u64(),
+        Some(serde_json::Value::String(s)) => s.trim().parse::<u64>().ok(),
+        Some(_) => None,
+    }
+}
+
+fn event_d_tag(event: &serde_json::Value) -> Option<String> {
+    event["tags"].as_array().and_then(|tags| {
+        tags.iter().find_map(|tag| {
+            let pair = tag.as_array()?;
+            match (pair.first().and_then(|k| k.as_str()), pair.get(1)) {
+                (Some("d"), Some(v)) => v.as_str().map(|s| s.to_owned()),
+                _ => None,
+            }
+        })
+    })
+}
+
+/// Fold raw kind:37013 query events into per-action settlement inputs.
+///
+/// Grouping mirrors NIP-ORG § Contribution record review: one action per `d`
+/// tag. The **claimant** is the signer of the earliest record carrying the
+/// claim (`content.amount`; ties: lowest event id) — a copy by anyone else
+/// never hijacks the action — and the claim's `amount`/`monthsActive` come
+/// from the claimant's newest record (NIP-33 LWW). An action settles in this
+/// epoch when its filing (the claimant's earliest record) is inside
+/// `[epoch_start, epoch_end)`; a review cannot predate the filing (the
+/// [`tally_reviews`] consumer rule), and reviews up to `review_until` count —
+/// so a verdict landing just after the window still disposes the work it
+/// reviews.
+pub fn fold_settlement_actions(
+    events: &[serde_json::Value],
+    epoch_start: u64,
+    epoch_end: u64,
+    review_until: u64,
+) -> Result<FoldedActions, CliError> {
+    struct Raw {
+        id: String,
+        signer: String,
+        created_at: u64,
+        status: Option<String>,
+        has_amount: bool,
+        amount: Option<u64>,
+        months_active: Option<u64>,
+    }
+
+    let mut by_action: BTreeMap<String, Vec<Raw>> = BTreeMap::new();
+    let mut folded = FoldedActions::default();
+    for event in events {
+        if event["kind"].as_u64() != Some(u64::from(buzz_core::kind::KIND_CONTRIBUTION_RECORD)) {
+            continue;
+        }
+        let (Some(id), Some(signer), Some(created_at)) = (
+            event["id"].as_str().map(|s| s.to_ascii_lowercase()),
+            event["pubkey"].as_str().map(|s| s.to_ascii_lowercase()),
+            event["created_at"].as_u64(),
+        ) else {
+            folded.skipped_malformed += 1;
+            continue;
+        };
+        let Some(d) = event_d_tag(event) else {
+            folded.skipped_no_action_id += 1;
+            continue;
+        };
+        let content = match event["content"].as_str() {
+            Some(raw) => {
+                serde_json::from_str::<serde_json::Value>(raw).unwrap_or(serde_json::Value::Null)
+            }
+            None => serde_json::Value::Null,
+        };
+        by_action.entry(d).or_default().push(Raw {
+            id,
+            signer,
+            created_at,
+            status: content
+                .get("reviewStatus")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
+            has_amount: content.get("amount").is_some_and(|v| !v.is_null()),
+            amount: content_u64(&content, "amount"),
+            months_active: content_u64(&content, "monthsActive"),
+        });
+    }
+
+    for (d, mut rows) in by_action {
+        rows.sort_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        // Claimant = signer of the earliest claim-carrying record; an action
+        // whose records never carry `amount` falls back to the earliest
+        // signer and settles as unpayable (reported, never silent). The
+        // claimant's own reviews never count ([`tally_reviews`]).
+        let Some(subject) = rows
+            .iter()
+            .find(|r| r.has_amount)
+            .or_else(|| rows.first())
+            .map(|r| r.signer.clone())
+        else {
+            continue;
+        };
+        let Some(filing_at) = rows
+            .iter()
+            .filter(|r| r.signer == subject)
+            .map(|r| r.created_at)
+            .min()
+        else {
+            continue;
+        };
+        if filing_at < epoch_start || filing_at >= epoch_end {
+            continue;
+        }
+        // Claim fields: the claimant's newest record (NIP-33 LWW; ties:
+        // lowest event id).
+        let claim = rows.iter().filter(|r| r.signer == subject).max_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        let (amount, months_active) = match claim {
+            Some(c) => (c.amount, c.months_active),
+            None => (None, None),
+        };
+        let reviews = rows
+            .iter()
+            .filter(|r| r.created_at >= filing_at && r.created_at <= review_until)
+            .map(|r| ReviewRow {
+                d: d.clone(),
+                reviewer: r.signer.clone(),
+                created_at: r.created_at,
+                event_id: r.id.clone(),
+                status: r.status.clone(),
+            })
+            .collect();
+        folded.actions.push(ContributionAction {
+            d,
+            subject,
+            amount,
+            months_active,
+            reviews,
+        });
+    }
+    Ok(folded)
+}
+
+/// Deterministic claim/evidence ids for one beneficiary's epoch schedule:
+/// keccak over the settled window, beneficiary and accepted action ids, so
+/// re-running the job reproduces byte-identical mirrors (idempotent queue).
+fn settlement_ids(
+    epoch_start: u64,
+    epoch_end: u64,
+    beneficiary: &str,
+    accepted: &[String],
+) -> (String, String) {
+    let joined = accepted.join(",");
+    let claim = format!("royalty-settle:{epoch_start}:{epoch_end}:{beneficiary}:{joined}");
+    let evidence = format!("royalty-settle-evidence:{epoch_start}:{epoch_end}:{joined}");
+    (
+        format!("0x{}", hex::encode(abi::keccak256(claim.as_bytes()))),
+        format!("0x{}", hex::encode(abi::keccak256(evidence.as_bytes()))),
+    )
+}
+
+/// Inputs for [`cmd_settle_weights`].
+pub struct SettleWeightsOpts<'a> {
+    /// Chain identifier for the emitted mirrors, e.g. `eip155:8453`.
+    pub chain: &'a str,
+    /// RoyaltyDistributor address (`0x…`).
+    pub distributor: &'a str,
+    /// Epoch window start (unix seconds, inclusive).
+    pub epoch_start: u64,
+    /// Epoch window end (unix seconds, exclusive).
+    pub epoch_end: u64,
+    /// Latest review `created_at` that may dispose an action.
+    pub review_until: u64,
+    /// Bounded read cap for kind:37013 events.
+    pub limit: u32,
+    /// Reviewer keys whose dispositions count (NIP-ORG review authority,
+    /// supplied by the operator: owner/admin + seated humans).
+    pub authorized: HashSet<String>,
+    /// Schedule term (seconds) applied to every emitted schedule.
+    pub term: u64,
+    /// Badge tier (1–3) applied to every emitted schedule.
+    pub band: u8,
+    /// Earned token allocation applied to every emitted schedule.
+    pub allocation: u128,
+}
+
+/// `buzz royalty settle-weights` — the contribution→payout bridge.
+///
+/// For the connected relay's community and the given epoch: collect the
+/// kind:37013 contribution records (bounded query), resolve each action's
+/// verdict exactly the way the review machinery does, compute per-beneficiary
+/// weights ([`WEIGHT_FORMULA`]), and emit one unsigned kind:47006 schedule per
+/// beneficiary through the existing mirror composer — the chain stays
+/// authoritative. Prints the schedule plus the exact `buzz royalty`
+/// follow-ups to publish the mirrors and close the window on chain. An epoch
+/// with nothing payable reports `"status": "empty"` explicitly.
+pub async fn cmd_settle_weights(
+    client: &BuzzClient,
+    opts: SettleWeightsOpts<'_>,
+) -> Result<(), CliError> {
+    let distributor = distributor_addr(opts.distributor)?;
+    if opts.epoch_start >= opts.epoch_end {
+        return Err(CliError::Usage(
+            "--epoch-start must be before --epoch-end".into(),
+        ));
+    }
+    if opts.review_until < opts.epoch_end {
+        return Err(CliError::Usage(
+            "--review-until must be at least --epoch-end (a verdict inside the epoch \
+             must be able to dispose it)"
+                .into(),
+        ));
+    }
+    if opts.limit == 0 || opts.limit > SETTLEMENT_QUERY_CAP {
+        return Err(CliError::Usage(format!(
+            "--limit must be 1..={SETTLEMENT_QUERY_CAP}"
+        )));
+    }
+    if !(1..=3).contains(&opts.band) {
+        return Err(CliError::Usage("--band must be 1, 2, or 3".into()));
+    }
+    if opts.term == 0 {
+        return Err(CliError::Usage("--term must be at least 1 second".into()));
+    }
+    if opts.authorized.is_empty() {
+        return Err(CliError::Usage(
+            "settle-weights needs at least one --authorized-reviewer (owner/admin or seated \
+             humans): without one every action reads as unreviewed"
+                .into(),
+        ));
+    }
+
+    // Bounded read: `query_all_bounded` errors on truncation rather than
+    // letting a silent cap fabricate an authoritative empty settlement.
+    let filter = json!({
+        "kinds": [buzz_core::kind::KIND_CONTRIBUTION_RECORD],
+        "since": opts.epoch_start,
+        "until": opts.review_until,
+    });
+    let events = client.query_all_bounded(filter, opts.limit).await?;
+    let folded =
+        fold_settlement_actions(&events, opts.epoch_start, opts.epoch_end, opts.review_until)?;
+    let weights = compute_weights(&folded.actions, &opts.authorized)?;
+
+    let mut counts = json!({
+        "events": events.len(),
+        "actions": folded.actions.len(),
+        "skippedNoActionId": folded.skipped_no_action_id,
+        "skippedMalformed": folded.skipped_malformed,
+        "accepted": 0,
+        "rejected": 0,
+        "slashed": 0,
+        "unreviewed": 0,
+        "skippedNoAmount": 0,
+    });
+    let mut unpayable: Vec<String> = Vec::new();
+    for action in &folded.actions {
+        let slot = match verdict_of(action, &opts.authorized) {
+            Verdict::Accepted => "accepted",
+            Verdict::Rejected => "rejected",
+            Verdict::Slashed => "slashed",
+            Verdict::Unreviewed => "unreviewed",
+        };
+        counts[slot] = json!(counts[slot].as_u64().unwrap_or(0) + 1);
+        if action.amount.is_none() && slot != "unreviewed" {
+            counts["skippedNoAmount"] = json!(counts["skippedNoAmount"].as_u64().unwrap_or(0) + 1);
+            unpayable.push(action.d.clone());
+        }
+    }
+
+    let epoch = json!({
+        "start": opts.epoch_start,
+        "end": opts.epoch_end,
+        "reviewUntil": opts.review_until,
+    });
+
+    if weights.is_empty() {
+        println!(
+            "{}",
+            json!({
+                "status": "empty",
+                "message": "no accepted contributions this epoch — nothing to schedule",
+                "epoch": epoch,
+                "records": counts,
+                "unpayableActions": unpayable,
+                "note": "only actions whose newest authorized review is 'accepted' pay; \
+                         pass --authorized-reviewer keys if you expected payable work",
+            })
+        );
+        return Ok(());
+    }
+
+    let mut templates = Vec::with_capacity(weights.len());
+    let mut schedule = Vec::with_capacity(weights.len());
+    let mut next_commands = Vec::with_capacity(weights.len() + 1);
+    for row in &weights {
+        let (claim_id, evidence_hash) = settlement_ids(
+            opts.epoch_start,
+            opts.epoch_end,
+            &row.beneficiary,
+            &row.accepted_actions,
+        );
+        // The EXISTING compose path — same unsigned template the
+        // mirror-schedule command prints (advisory; chain is authoritative).
+        templates.push(royalty_schedule_event_json(
+            opts.chain,
+            &distributor,
+            &claim_id,
+            &evidence_hash,
+            &row.beneficiary,
+            row.weight,
+            opts.term,
+            opts.band,
+            opts.allocation,
+        ));
+        schedule.push(json!({
+            "beneficiary": row.beneficiary,
+            "weight": row.weight,
+            "credited": row.credited.to_string(),
+            "subtracted": row.subtracted.to_string(),
+            "acceptedActions": row.accepted_actions,
+            "subtractedActions": row.subtracted_actions,
+        }));
+        next_commands.push(format!(
+            "buzz royalty publish-schedule --chain {} --distributor {} --claim-id {} \
+             --evidence-hash {} --contributor {} --weight {} --term {} --band {} \
+             --allocation {}",
+            opts.chain,
+            distributor,
+            claim_id,
+            evidence_hash,
+            row.beneficiary,
+            row.weight,
+            opts.term,
+            opts.band,
+            opts.allocation
+        ));
+    }
+    next_commands.push(format!(
+        "buzz royalty settle --distributor {distributor}  # close the window on chain \
+         (the payout; ClaimStake settles the matching schedule mints)"
+    ));
+
+    println!(
+        "{}",
+        json!({
+            "status": "ok",
+            "epoch": epoch,
+            "formula": WEIGHT_FORMULA,
+            "records": counts,
+            "unpayableActions": unpayable,
+            "schedule": schedule,
+            "templates": templates,
+            "nextCommands": next_commands,
+            "note": "unsigned kind:47006 mirrors — the chain is authoritative",
+        })
+    );
+    Ok(())
+}
+
 // ── publishing: the attestation feed on the ordinary signed event path ──────
 
 /// The `WindowClosed` event signature (topic0 = keccak of it), pinned against
@@ -708,6 +1287,39 @@ pub async fn dispatch(sub: crate::RoyaltyCmd, client: &BuzzClient) -> Result<(),
                 from_block.unwrap_or(0),
             )
             .await
+        }
+        SettleWeights {
+            epoch_start,
+            epoch_end,
+            review_until,
+            authorized_reviewer,
+            limit,
+            chain,
+            distributor,
+            term,
+            band,
+            allocation,
+        } => {
+            let mut authorized = HashSet::new();
+            for key in &authorized_reviewer {
+                authorized.insert(normalize_pubkey_hex(key)?);
+            }
+            return cmd_settle_weights(
+                client,
+                SettleWeightsOpts {
+                    chain: &chain,
+                    distributor: &distributor,
+                    epoch_start,
+                    epoch_end,
+                    review_until: review_until.unwrap_or(epoch_end),
+                    limit: limit.unwrap_or(SETTLEMENT_QUERY_DEFAULT),
+                    authorized,
+                    term,
+                    band,
+                    allocation,
+                },
+            )
+            .await;
         }
         _ => {
             return Err(CliError::Usage(
@@ -1115,5 +1727,423 @@ mod tests {
         assert_eq!(closes.len(), 2);
         assert_eq!(closes[0].window_id, 1);
         assert_eq!(closes[1].pool, 4_000);
+    }
+
+    // ── settlement job: kind:37013 contributions → schedule weights ────────
+
+    fn pk(c: char) -> String {
+        c.to_string().repeat(64)
+    }
+
+    fn row(d: &str, reviewer: &str, at: u64, id: u64, status: &str) -> ReviewRow {
+        ReviewRow {
+            d: d.into(),
+            reviewer: reviewer.into(),
+            created_at: at,
+            event_id: format!("{id:064x}"),
+            status: Some(status.into()),
+        }
+    }
+
+    fn action(
+        d: &str,
+        subject: &str,
+        amount: Option<u64>,
+        months_active: Option<u64>,
+        reviews: Vec<ReviewRow>,
+    ) -> ContributionAction {
+        ContributionAction {
+            d: d.into(),
+            subject: subject.into(),
+            amount,
+            months_active,
+            reviews,
+        }
+    }
+
+    fn authorized(keys: &[&str]) -> HashSet<String> {
+        keys.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn settle_weights_are_exact_and_deterministic() {
+        let (a, b, rev) = (pk('a'), pk('b'), pk('r'));
+        let auth = authorized(&[&rev]);
+        let actions = vec![
+            action(
+                "t1",
+                &a,
+                Some(120),
+                Some(12),
+                vec![row("t1", &rev, 10, 1, "accepted")],
+            ),
+            action(
+                "t2",
+                &a,
+                Some(100),
+                Some(6),
+                vec![row("t2", &rev, 11, 2, "accepted")],
+            ),
+            action(
+                "t3",
+                &b,
+                Some(120),
+                Some(12),
+                vec![row("t3", &rev, 12, 3, "accepted")],
+            ),
+        ];
+        let weights = compute_weights(&actions, &auth).expect("weights");
+        assert_eq!(weights.len(), 2);
+        // 120×12×1000/12 = 120000; 100×6×1000/12 = 50000.
+        assert_eq!(weights[0].beneficiary, a);
+        assert_eq!(weights[0].weight, 170_000);
+        assert_eq!(weights[0].credited, 170_000);
+        assert_eq!(weights[0].accepted_actions, vec!["t1", "t2"]);
+        assert_eq!(weights[1].beneficiary, b);
+        assert_eq!(weights[1].weight, 120_000);
+    }
+
+    #[test]
+    fn rejected_and_slashed_subtract_and_clamp_at_zero() {
+        let (a, b, rev) = (pk('a'), pk('b'), pk('r'));
+        let auth = authorized(&[&rev]);
+        let actions = vec![
+            action(
+                "t1",
+                &a,
+                Some(120),
+                Some(12),
+                vec![row("t1", &rev, 10, 1, "accepted")],
+            ),
+            action(
+                "t2",
+                &a,
+                Some(40),
+                Some(12),
+                vec![row("t2", &rev, 10, 2, "rejected")],
+            ),
+            action(
+                "t3",
+                &a,
+                Some(20),
+                Some(12),
+                vec![row("t3", &rev, 10, 3, "slashed")],
+            ),
+            // Net clamps at 0 per beneficiary, never negative.
+            action(
+                "t4",
+                &b,
+                Some(10),
+                Some(12),
+                vec![row("t4", &rev, 10, 4, "accepted")],
+            ),
+            action(
+                "t5",
+                &b,
+                Some(50),
+                Some(12),
+                vec![row("t5", &rev, 10, 5, "rejected")],
+            ),
+        ];
+        let weights = compute_weights(&actions, &auth).expect("weights");
+        assert_eq!(weights[0].weight, 60_000);
+        assert_eq!(weights[0].credited, 120_000);
+        assert_eq!(weights[0].subtracted, 60_000);
+        assert_eq!(weights[0].subtracted_actions, vec!["t2", "t3"]);
+        assert_eq!(weights[1].beneficiary, b);
+        assert_eq!(weights[1].weight, 0);
+    }
+
+    /// Guard: pending/appealed/unreviewed actions, self-signed "accepted"
+    /// claims and unauthorized reviewers never pay. Mutation check —
+    /// dropping the exclusion rule (e.g. treating [`Verdict::Unreviewed`] as
+    /// payable) fails this test.
+    #[test]
+    fn unreviewed_and_self_reviewed_records_are_excluded() {
+        let (a, rev, outsider) = (pk('a'), pk('r'), pk('o'));
+        let auth = authorized(&[&rev]);
+        let actions = vec![
+            action(
+                "t1",
+                &a,
+                Some(100),
+                Some(12),
+                vec![row("t1", &rev, 10, 1, "accepted")],
+            ),
+            // Authorized reviewer left it pending: no weight.
+            action(
+                "t2",
+                &a,
+                Some(100),
+                Some(12),
+                vec![row("t2", &rev, 10, 2, "pending")],
+            ),
+            // The subject grades itself: never counts.
+            action(
+                "t3",
+                &a,
+                Some(100),
+                Some(12),
+                vec![row("t3", &a, 10, 3, "accepted")],
+            ),
+            // An unauthorized key cannot make a claim payable.
+            action(
+                "t4",
+                &a,
+                Some(100),
+                Some(12),
+                vec![row("t4", &outsider, 10, 4, "accepted")],
+            ),
+            // Nobody reviewed at all.
+            action("t5", &a, Some(100), Some(12), vec![]),
+        ];
+        let weights = compute_weights(&actions, &auth).expect("weights");
+        assert_eq!(weights.len(), 1);
+        assert_eq!(weights[0].weight, 100_000, "only t1 may pay");
+        assert_eq!(weights[0].accepted_actions, vec!["t1"]);
+    }
+
+    #[test]
+    fn tenure_caps_at_twelve_months() {
+        assert_eq!(record_weight(1_000, 12), 1_000_000);
+        assert_eq!(
+            record_weight(1_000, 36),
+            record_weight(1_000, 12),
+            "tenure is capped at 12 months"
+        );
+        assert_eq!(record_weight(1_000, 0), 0);
+        // Floor division: 100×1×1000/12 = 8333.33… → 8333.
+        assert_eq!(record_weight(100, 1), 8_333);
+        // Absent tenure = full tenure.
+        let (a, rev) = (pk('a'), pk('r'));
+        let auth = authorized(&[&rev]);
+        let actions = vec![action(
+            "t1",
+            &a,
+            Some(1_000),
+            None,
+            vec![row("t1", &rev, 10, 1, "accepted")],
+        )];
+        let weights = compute_weights(&actions, &auth).expect("weights");
+        assert_eq!(weights[0].weight, 1_000_000);
+    }
+
+    #[test]
+    fn weight_overflow_is_an_explicit_error() {
+        let (a, rev) = (pk('a'), pk('r'));
+        let auth = authorized(&[&rev]);
+        let actions = vec![action(
+            "t1",
+            &a,
+            Some(u64::MAX),
+            Some(12),
+            vec![row("t1", &rev, 10, 1, "accepted")],
+        )];
+        let err = compute_weights(&actions, &auth).expect_err("must not wrap u32");
+        assert!(
+            format!("{err:?}").contains("exceeds u32"),
+            "overflow must name the failure, got {err:?}"
+        );
+    }
+
+    /// Verdict resolution must agree with [`tally_reviews`] on every
+    /// accepted/rejected fixture — same-`d` self-reviews never count, the
+    /// canonical pick is the newest authorized review (ties: lowest id), and
+    /// an unauthorized verdict can never supersede an authorized one.
+    #[test]
+    fn verdicts_follow_tally_reviews_semantics() {
+        let (s, r1, r2, outsider) = (pk('a'), pk('b'), pk('c'), pk('z'));
+        let auth = authorized(&[&r1, &r2]);
+
+        // Self-review + authorized accept: only the authorized one counts.
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &s, 10, 1, "accepted"),
+                row("t1", &r1, 11, 2, "accepted"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Accepted);
+        assert_eq!(tally_reviews(&a.reviews, &s, &auth), (1, 0));
+
+        // A newer authorized `pending` supersedes an earlier `accepted`.
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &r1, 10, 1, "accepted"),
+                row("t1", &r2, 20, 2, "pending"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Unreviewed);
+        assert_eq!(tally_reviews(&a.reviews, &s, &auth), (0, 0));
+
+        // Equal timestamps: the lowest event id wins, deterministically.
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &r1, 10, 5, "accepted"),
+                row("t1", &r2, 10, 4, "rejected"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Rejected);
+        assert_eq!(tally_reviews(&a.reviews, &s, &auth), (0, 1));
+
+        // An unauthorized newer verdict cannot supersede an authorized one.
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &r1, 10, 1, "accepted"),
+                row("t1", &outsider, 20, 2, "rejected"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Accepted);
+        assert_eq!(tally_reviews(&a.reviews, &s, &auth), (1, 0));
+
+        // `slashed` rides the same canonical pick; newest still wins.
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &r1, 10, 1, "slashed"),
+                row("t1", &r2, 20, 2, "accepted"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Accepted, "newest wins");
+        let a = action(
+            "t1",
+            &s,
+            Some(1),
+            Some(12),
+            vec![
+                row("t1", &r1, 10, 1, "accepted"),
+                row("t1", &r2, 20, 2, "slashed"),
+            ],
+        );
+        assert_eq!(verdict_of(&a, &auth), Verdict::Slashed);
+        assert_eq!(
+            tally_reviews(&a.reviews, &s, &auth),
+            (0, 0),
+            "slashed is not accepted and not rejected"
+        );
+    }
+
+    fn raw_event(
+        id: u64,
+        signer: &str,
+        at: u64,
+        d: Option<&str>,
+        content: serde_json::Value,
+    ) -> serde_json::Value {
+        let tags: Vec<serde_json::Value> = match d {
+            Some(d) => vec![json!(["d", d])],
+            None => vec![],
+        };
+        json!({
+            "id": format!("{id:064x}"),
+            "pubkey": signer,
+            "kind": buzz_core::kind::KIND_CONTRIBUTION_RECORD,
+            "created_at": at,
+            "content": content.to_string(),
+            "tags": tags,
+        })
+    }
+
+    #[test]
+    fn folding_groups_actions_and_windows_the_epoch() {
+        let (s, rev) = (pk('a'), pk('r'));
+        let (start, end) = (1_000u64, 2_000u64);
+        let events = vec![
+            // Filing: the claimant's first claim-carrying record (in window).
+            raw_event(
+                1,
+                &s,
+                start + 10,
+                Some("t1"),
+                json!({"v": 1, "amount": 250, "monthsActive": 6, "reviewStatus": "pending"}),
+            ),
+            // Review inside the window: accepted (amount copied along).
+            raw_event(
+                2,
+                &rev,
+                start + 20,
+                Some("t1"),
+                json!({"v": 1, "amount": 250, "monthsActive": 6, "reviewStatus": "accepted"}),
+            ),
+            // Claimant edit: the newest claimant record wins (LWW),
+            // including its string-typed amount.
+            raw_event(
+                6,
+                &s,
+                start + 30,
+                Some("t1"),
+                json!({"v": 1, "amount": "300", "monthsActive": 6}),
+            ),
+            // A copy predating the filing never counts as a review.
+            raw_event(
+                4,
+                &rev,
+                start - 5,
+                Some("t1"),
+                json!({"reviewStatus": "accepted"}),
+            ),
+            // A filing after the epoch end settles in the next epoch.
+            raw_event(3, &s, end + 5, Some("t2"), json!({"amount": 999})),
+            // No action id: cannot settle, counted explicitly.
+            raw_event(5, &s, start + 10, None, json!({"amount": 1})),
+        ];
+        let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
+        assert_eq!(folded.actions.len(), 1);
+        assert_eq!(folded.skipped_no_action_id, 1);
+        let t1 = &folded.actions[0];
+        assert_eq!(t1.d, "t1");
+        assert_eq!(t1.subject, s);
+        assert_eq!(t1.amount, Some(300), "the claimant's newest record wins");
+        assert_eq!(t1.months_active, Some(6));
+        assert_eq!(
+            t1.reviews.len(),
+            3,
+            "the pre-filing copy is excluded; the claimant's own rows ride \
+             along so tally_reviews can drop them"
+        );
+        let auth = authorized(&[&rev]);
+        assert_eq!(verdict_of(t1, &auth), Verdict::Accepted);
+        // Only the accepted claim pays: 300×6×1000/12 = 150_000.
+        let weights = compute_weights(&folded.actions, &auth).expect("weights");
+        assert_eq!(weights[0].weight, 150_000);
+    }
+
+    #[test]
+    fn settlement_ids_are_deterministic_and_beneficiary_bound() {
+        let (a, b) = (pk('a'), pk('b'));
+        let accepted = vec!["t1".to_string(), "t2".to_string()];
+        let one = settlement_ids(1_000, 2_000, &a, &accepted);
+        let two = settlement_ids(1_000, 2_000, &a, &accepted);
+        assert_eq!(one, two, "same inputs → byte-identical mirrors");
+        assert!(one.0.starts_with("0x") && one.0.len() == 66);
+        assert!(one.1.starts_with("0x") && one.1.len() == 66);
+        assert_ne!(
+            one,
+            settlement_ids(1_000, 2_000, &b, &accepted),
+            "a schedule is bound to its beneficiary"
+        );
+        assert_ne!(
+            one,
+            settlement_ids(1_000, 2_000, &a, &["t1".to_string()]),
+            "a schedule is bound to its accepted action set"
+        );
     }
 }

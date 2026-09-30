@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:buzz/shared/brand.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
 
@@ -25,7 +26,7 @@ class LocalSensitiveActionAuthorizer implements SensitiveActionAuthorizer {
   Future<DeviceAuthResult> authorizeIdentityAction({
     required bool biometricOnly,
   }) => _authorize(
-    localizedReason: 'Confirm sending your Buzz identity to desktop',
+    localizedReason: 'Confirm sending your $appName identity to desktop',
     biometricOnly: biometricOnly,
   );
 

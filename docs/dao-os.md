@@ -77,6 +77,29 @@ for money.
 | Reviewer ≠ contributor for the autonomy ladder | Relay ladder tally (unauthorized reviews are stored but never counted) |
 | Role-scoped reads (`readBelow`, `assignBelow`) | **Not implemented.** Channel membership is the only read gate. |
 
+## Settlement job (royalties)
+
+`buzz royalty settle-weights` is the contribution→payout bridge. For one
+epoch of the connected relay's community it reads the kind:37013
+contribution records (one bounded query), resolves each action's verdict
+exactly the way the review machinery does — the newest review by an
+authorized reviewer other than the subject; the subject's own `reviewStatus`
+is never trusted — and computes per-beneficiary schedule weights:
+
+    weight(b) = Σ_accepted floor(amount × min(monthsActive, 12) × 1000 / 12)
+                − Σ_rejected|slashed floor(amount × min(monthsActive, 12) × 1000 / 12)
+
+clamped at 0 per beneficiary (integers scaled ×1000 to stay in `u32`).
+`monthsActive` defaults to 12 when absent; `amount` is required and claims
+without one are reported as unpayable, never silently dropped. Only
+`accepted` adds weight; `rejected`/`slashed` subtract;
+`pending`/`appealed`/unreviewed actions are excluded. The job emits one
+unsigned kind:47006 schedule mirror per beneficiary through the existing
+composer (advisory — the chain is authoritative) and prints the exact
+`buzz royalty publish-schedule` / `buzz royalty settle` follow-ups to record
+the mirrors and close the window on chain. An epoch with nothing payable
+reports `"status": "empty"` explicitly.
+
 ## Not now
 
 Role-scoped read gates, futarchy, per-jurisdiction compliance, and anything

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Buzz",
+  "productName": "Creaton",
   "version": "0.5.26",
   "identifier": "xyz.block.buzz.app",
   "build": {
@@ -16,7 +16,7 @@
   "app": {
     "windows": [
       {
-        "title": "",
+        "title": "Creaton",
         "width": 900,
         "height": 650,
         "maximized": true,

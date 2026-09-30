@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:buzz/shared/brand.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -75,7 +76,7 @@ class InviteJoinSheet extends ConsumerWidget {
             Text(
               isStarterSetupRecovery
                   ? 'Finish setting up'
-                  : 'Join this Buzz community?',
+                  : 'Join this $appName community?',
               style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: Grid.xxs),

@@ -1,4 +1,5 @@
 import type { ObserverEvent, PromptSection } from "./agentSessionTypes";
+import { APP_NAME } from "@/shared/constants/brand";
 import {
   findBuzzToolName,
   isGenericToolTitle,
@@ -88,7 +89,7 @@ export function parsePromptText(text: string): {
   return {
     sections,
     userText: eventContent,
-    userTitle: eventKind ? titleCase(eventKind) : "Buzz event",
+    userTitle: eventKind ? titleCase(eventKind) : `${APP_NAME} event`,
     userPubkey: eventAuthorPubkey,
     userEventId: eventId,
   };

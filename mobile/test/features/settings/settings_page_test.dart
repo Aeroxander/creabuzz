@@ -17,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     PackageInfo.setMockInitialValues(
-      appName: 'Buzz',
+      appName: 'Creaton',
       packageName: 'xyz.block.buzz',
       version: '0.16.0',
       buildNumber: '432',
@@ -34,7 +34,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       PackageInfo.setMockInitialValues(
-        appName: 'Buzz',
+        appName: 'Creaton',
         packageName: 'xyz.block.buzz',
         version: '0.16.0',
         buildNumber: buildNumber,
@@ -161,7 +161,7 @@ void main() {
 
     expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     expect(
-      find.text('Enabled in Buzz, but disabled in iOS Settings'),
+      find.text('Enabled in Creaton, but disabled in iOS Settings'),
       findsOneWidget,
     );
     await tester.tap(
@@ -207,7 +207,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Enabled in Buzz; iOS permission status unavailable'),
+      find.text('Enabled in Creaton; iOS permission status unavailable'),
       findsOneWidget,
     );
     expect(

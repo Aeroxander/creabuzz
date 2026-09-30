@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
@@ -757,7 +758,7 @@ function UnpairIdentityButton({
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Unpair this Buzz identity?</AlertDialogTitle>
+          <AlertDialogTitle>Unpair this {APP_NAME} identity?</AlertDialogTitle>
           <AlertDialogDescription>
             Your Builderlab account will no longer be connected to this Buzz
             key. You can reconnect any key later, but community actions stay

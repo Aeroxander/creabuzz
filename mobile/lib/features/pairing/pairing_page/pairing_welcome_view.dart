@@ -1,3 +1,4 @@
+import 'package:buzz/shared/brand.dart';
 part of '../pairing_page.dart';
 
 class _PairingWelcomeView extends StatelessWidget {
@@ -57,7 +58,7 @@ class _PairingWelcomeView extends StatelessWidget {
                 ),
                 const SizedBox(height: Grid.sm),
                 Text(
-                  'Welcome to Buzz',
+                  'Welcome to $appName',
                   textAlign: TextAlign.center,
                   style: context.textTheme.headlineSmall?.copyWith(
                     color: _onboardingInk,

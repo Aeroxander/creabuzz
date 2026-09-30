@@ -35,7 +35,7 @@ test("parsePromptText wraps header-less free text in a single Prompt section", (
   );
   assert.equal(result.sections[0].body, "just some free text");
   assert.equal(result.userText, "");
-  assert.equal(result.userTitle, "Buzz event");
+  assert.equal(result.userTitle, "Creaton event");
   assert.equal(result.userPubkey, null);
   assert.equal(result.userEventId, null);
 });
@@ -124,7 +124,7 @@ test("parsePromptText yields a null pubkey when From has no hex", () => {
 test("parsePromptText defaults the title to 'Buzz event' when no kind is present", () => {
   const text = ["[Buzz event]", "Content: x"].join("\n");
   const result = parsePromptText(text);
-  assert.equal(result.userTitle, "Buzz event");
+  assert.equal(result.userTitle, "Creaton event");
 });
 
 test("parsePromptText leading text before a header becomes a Prompt section", () => {

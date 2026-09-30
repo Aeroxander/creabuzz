@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 import type { QueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
 
@@ -341,7 +342,7 @@ export function MachineOnboardingFlow({
               transitionKey={`machine-identity-${transitionDirection}`}
             >
               <img
-                alt="Buzz"
+                alt={APP_NAME}
                 className="w-full max-w-[600px]"
                 src="/landing/buzz-wordmark.png"
               />

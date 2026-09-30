@@ -2550,6 +2550,56 @@ pub enum RoyaltyCmd {
         #[arg(long)]
         distributor: String,
     },
+    /// Settle an epoch's royalty weights from its kind:37013 contributions
+    ///
+    /// Collects the epoch's contribution records (bounded query on the
+    /// connected relay's community), resolves each action's verdict exactly
+    /// the way the review machinery does — the newest review by an
+    /// authorized reviewer other than the subject; self-reviews never count
+    /// — and emits one unsigned kind:47006 schedule mirror per beneficiary
+    /// through the existing composer. Formula (weights are integers scaled
+    /// x1000): weight(b) = sum over accepted actions of
+    /// floor(amount * min(monthsActive, 12) * 1000 / 12), minus the same sum
+    /// over rejected/slashed actions, clamped at 0. `monthsActive` defaults
+    /// to 12 when absent, `amount` is required (claims without one are
+    /// reported as unpayable, never silently dropped), and
+    /// pending/appealed/unreviewed actions never count. The chain is
+    /// authoritative; the printed mirrors are advisory and the printed
+    /// `buzz royalty` follow-ups publish them and close the window.
+    SettleWeights {
+        /// Epoch window start (unix seconds, inclusive)
+        #[arg(long)]
+        epoch_start: u64,
+        /// Epoch window end (unix seconds, exclusive)
+        #[arg(long)]
+        epoch_end: u64,
+        /// Latest review `created_at` that may dispose an action (unix
+        /// seconds; default: --epoch-end)
+        #[arg(long)]
+        review_until: Option<u64>,
+        /// Reviewer keys whose dispositions count (repeatable; owner/admin
+        /// and seated humans per NIP-ORG review authority)
+        #[arg(long = "authorized-reviewer", required = true)]
+        authorized_reviewer: Vec<String>,
+        /// Max kind:37013 events to read (bounded; default 500, cap 2000)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Chain identifier for the emitted mirrors, e.g. `eip155:8453`
+        #[arg(long)]
+        chain: String,
+        /// RoyaltyDistributor address (`0x…`)
+        #[arg(long)]
+        distributor: String,
+        /// Schedule term in seconds applied to every emitted schedule
+        #[arg(long, default_value_t = 31_536_000)]
+        term: u64,
+        /// Milestone badge tier for every emitted schedule (1, 2, or 3)
+        #[arg(long, default_value_t = 1)]
+        band: u8,
+        /// Earned token allocation for every emitted schedule (decimal)
+        #[arg(long, default_value_t = 0)]
+        allocation: u128,
+    },
     /// Print an unsigned kind:47006 royalty-schedule mirror (JSON)
     MirrorSchedule {
         /// Chain identifier, e.g. `eip155:8453`
@@ -3523,6 +3573,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             RoyaltyCmd::PublishSchedule { .. }
                 | RoyaltyCmd::PublishClose { .. }
                 | RoyaltyCmd::Watch { .. }
+                | RoyaltyCmd::SettleWeights { .. }
         ) {
             use RoyaltyCmd::*;
             return match royalty_cmd {
@@ -3569,8 +3620,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     *pool,
                     *carried,
                 ),
-                PublishSchedule { .. } | PublishClose { .. } | Watch { .. } => {
-                    unreachable!("publish runs after auth")
+                PublishSchedule { .. }
+                | PublishClose { .. }
+                | Watch { .. }
+                | SettleWeights { .. } => {
+                    unreachable!("settle-weights/publish run after auth")
                 }
             };
         }

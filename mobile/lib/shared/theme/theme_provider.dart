@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:buzz/shared/brand.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,7 +17,7 @@ const _schemeKey = 'buzz_color_scheme';
 /// Buzz ships as the default: the first-party pair, so a fresh install gets the
 /// branded top-section gradient without picking a theme first.
 const defaultSchemeName = buzzThemeName;
-const defaultSchemeDisplayName = 'Buzz';
+const defaultSchemeDisplayName = appName;
 
 /// Pre-loaded SharedPreferences instance, overridden in main().
 final savedPrefsProvider = Provider<SharedPreferences>(

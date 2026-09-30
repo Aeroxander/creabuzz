@@ -1,4 +1,5 @@
 import 'dart:math' show cos, pi;
+import 'package:buzz/shared/brand.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -37,7 +38,7 @@ class TappableFlappingBee extends HookConsumerWidget {
 
     return Semantics(
       button: true,
-      label: 'Buzz bee',
+      label: '$appName bee',
       hint: 'Tap to make its wings flutter',
       onTap: flutterWings,
       child: GestureDetector(

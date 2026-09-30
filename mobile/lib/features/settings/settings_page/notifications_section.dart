@@ -1,3 +1,4 @@
+import 'package:buzz/shared/brand.dart';
 part of '../settings_page.dart';
 
 class _NotificationsSection extends ConsumerWidget {
@@ -37,14 +38,14 @@ class _NotificationsSection extends ConsumerWidget {
             BuzzPushAuthorizationStatus.notDetermined =>
               'Waiting for iOS notification permission',
             BuzzPushAuthorizationStatus.denied =>
-              'Enabled in Buzz, but disabled in iOS Settings',
+              'Enabled in $appName, but disabled in iOS Settings',
             BuzzPushAuthorizationStatus.authorized ||
             BuzzPushAuthorizationStatus.provisional ||
             BuzzPushAuthorizationStatus.ephemeral =>
               'Receive message notifications from this community',
             null when authorization.isLoading =>
               'Checking iOS notification permission',
-            null => 'Enabled in Buzz; iOS permission status unavailable',
+            null => 'Enabled in $appName; iOS permission status unavailable',
           };
 
     return AppListCard(

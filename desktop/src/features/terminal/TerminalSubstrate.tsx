@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { ChevronRight, Maximize2, Minimize2, Plus, X } from "lucide-react";
 
 import { useTheme } from "@/shared/theme/ThemeProvider";
@@ -475,7 +476,7 @@ export function TerminalSubstrate({
 
   return (
     <section
-      aria-label="Buzz Term"
+      aria-label={`${APP_NAME} Term`}
       className="buzz-terminal-substrate"
       data-terminal-mode={mode}
       data-terminal-owner={owner}
@@ -505,7 +506,7 @@ export function TerminalSubstrate({
     >
       {mode === "docked" ? (
         <hr
-          aria-label="Resize Buzz Term"
+          aria-label={`Resize ${APP_NAME} Term`}
           aria-orientation="horizontal"
           aria-valuemax={Math.round(window.innerHeight * 0.7)}
           aria-valuemin={180}
@@ -646,7 +647,7 @@ export function TerminalSubstrate({
             </div>
           ))}
           <button
-            aria-label="New Buzz Term tab"
+            aria-label={`New ${APP_NAME} Term tab`}
             className="buzz-terminal-new-tab"
             onClick={() => runTabAction(onNewSession)}
             type="button"
@@ -657,7 +658,9 @@ export function TerminalSubstrate({
         <div className="buzz-terminal-readout">
           <button
             aria-label={
-              mode === "maximized" ? "Restore Buzz Term" : "Maximize Buzz Term"
+              mode === "maximized"
+                ? `Restore ${APP_NAME} Term`
+                : `Maximize ${APP_NAME} Term`
             }
             className="buzz-terminal-window-action"
             onClick={() =>
@@ -668,7 +671,7 @@ export function TerminalSubstrate({
             {mode === "maximized" ? <Minimize2 /> : <Maximize2 />}
           </button>
           <button
-            aria-label="Hide Buzz Term"
+            aria-label={`Hide ${APP_NAME} Term`}
             className="buzz-terminal-window-action"
             onClick={onHide}
             type="button"
@@ -806,7 +809,7 @@ export function TerminalSubstrate({
         />
       </div>
       <div aria-live="polite" className="sr-only">
-        {owner === "terminal" ? "Buzz Term mode" : "Buzz mode"}
+        {owner === "terminal" ? `${APP_NAME} Term mode` : `${APP_NAME} mode`}
       </div>
     </section>
   );

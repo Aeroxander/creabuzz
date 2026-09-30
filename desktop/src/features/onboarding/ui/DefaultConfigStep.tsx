@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 
 import {
   useAcpRuntimesQuery,
@@ -45,7 +46,7 @@ type DefaultConfigStepProps = {
 
 function formatHarnessLabel(runtime: AcpRuntimeCatalogEntry | undefined) {
   if (!runtime) return "Select a harness";
-  return runtime.id === "buzz-agent" ? "Buzz" : runtime.label;
+  return runtime.id === "buzz-agent" ? APP_NAME : runtime.label;
 }
 
 function AgentDefaultsSection({

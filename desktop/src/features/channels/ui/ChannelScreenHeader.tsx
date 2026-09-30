@@ -1,4 +1,5 @@
 import { LogIn, SquareTerminal } from "lucide-react";
+import { APP_NAME } from "@/shared/constants/brand";
 import type * as React from "react";
 
 import { ChatHeader } from "@/features/chat/ui/ChatHeader";
@@ -87,11 +88,13 @@ export function ChannelScreenHeader({
   const terminalButton = activeChannel ? (
     <Button
       aria-label={
-        terminalPanel.mode === "closed" ? "Open Buzz Term" : "Hide Buzz Term"
+        terminalPanel.mode === "closed"
+          ? `Open ${APP_NAME} Term`
+          : `Hide ${APP_NAME} Term`
       }
       onClick={toggleTerminalPanel}
       size="icon"
-      title="Buzz Term (⌘J)"
+      title={`${APP_NAME} Term (⌘J)`}
       type="button"
       variant={terminalPanel.mode === "closed" ? "outline" : "secondary"}
     >
