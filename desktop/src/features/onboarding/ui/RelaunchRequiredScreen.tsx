@@ -6,7 +6,7 @@ export function RelaunchRequiredScreen() {
     <RecoveryScreen
       testId="relaunch-required"
       title={`Restart ${APP_NAME} to finish recovery`}
-      body="Your identity was updated. Buzz needs to restart so syncing and agents run under it."
+      body="Your identity was updated. Creaton needs to restart so syncing and agents run under it."
     />
   );
 }

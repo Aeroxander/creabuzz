@@ -313,7 +313,7 @@ test("starter matching ignores user agents with a Welcome persona", () => {
   );
 });
 
-test("starter matching uses persona identity rather than display name", () => {
+test("starter matching uses personan identity rather than display name", () => {
   const honey = WELCOME_TEAM_STARTERS[1];
   const renamedHoney = makeAgent({
     name: "Honey the Helper",

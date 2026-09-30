@@ -23,13 +23,13 @@ struct BuzzNotificationHandoffTests {
     func finish(_ content: String) {
       handoff.finish(
         content,
-        restrictedFallback: "Open Buzz to view this message.",
+        restrictedFallback: "Open Creaton to view this message.",
         handoffIfAllowed: { deliver in
           BuzzAgeRestrictionSession.handoffIfAllowed(containerURL: directory, deliver: deliver)
         },
         cleanup: {
           // Neither the Intents callback nor its timer needs to fire for delivery.
-          #expect(delivered == ["Open Buzz to view this message."])
+          #expect(delivered == ["Open Creaton to view this message."])
           cleanupCount += 1
           deletion.deleteAll { _ in }
         }
@@ -37,12 +37,12 @@ struct BuzzNotificationHandoffTests {
     }
     // Resolution is still pending when the system calls expiration.
     finish("Reconnect to your relay now")
-    #expect(delivered == ["Open Buzz to view this message."])
+    #expect(delivered == ["Open Creaton to view this message."])
     #expect(deletionCompletion != nil)
     // Expiration during pending cleanup, followed by a late resolver callback.
     finish("Reconnect to your relay now")
     finish("Private message")
-    #expect(delivered == ["Open Buzz to view this message."])
+    #expect(delivered == ["Open Creaton to view this message."])
     #expect(cleanupCount == 1)
   }
 

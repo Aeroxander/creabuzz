@@ -33,7 +33,7 @@ const fizz = agent("Fizz", "builtin:fizz", "f".repeat(64));
 const honey = agent("Honey", "builtin:honey", "h".repeat(64));
 const pollen = agent("Pollen", "builtin:bumble", "b".repeat(64));
 
-test("resolveWelcomeAgentSet orders agents by stable persona identity", () => {
+test("resolveWelcomeAgentSet orders agents by stable personan identity", () => {
   assert.deepEqual(resolveWelcomeAgentSet([pollen, fizz, honey]), {
     lead: fizz,
     teammates: [honey, pollen],

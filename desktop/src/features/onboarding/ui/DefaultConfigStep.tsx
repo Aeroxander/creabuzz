@@ -403,7 +403,7 @@ export function DefaultConfigStep({
           className={`w-full text-foreground/80 ${cardLayout ? "mt-2 text-base leading-6" : "mx-auto mt-3 max-w-[440px] text-sm leading-5"}`}
         >
           {actions.useDifferentHarness
-            ? "Choose your provider and enter an API key to connect to the Buzz harness."
+            ? "Choose your provider and enter an API key to connect to the Creaton harness."
             : "Select the model and effort level your agents will use by default."}
         </p>
       </div>

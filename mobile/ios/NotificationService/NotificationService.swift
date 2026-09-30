@@ -151,7 +151,7 @@ final class NotificationService: UNNotificationServiceExtension {
       ?? UNMutableNotificationContent()
     fallback.title = "Buzz"
     fallback.subtitle = ""
-    fallback.body = "Open Buzz to view this message."
+    fallback.body = "Open Creaton to view this message."
     fallback.threadIdentifier = ""
     var userInfo = fallback.userInfo
     userInfo.removeValue(forKey: BuzzPushNavigationTarget.userInfoKey)

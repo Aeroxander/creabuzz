@@ -268,7 +268,7 @@ pub fn availability_from_events(events: Vec<nostr::Event>) -> MeshAvailability {
         reason: if available {
             None
         } else {
-            Some("no Creaton shared compute serving members are available".to_string())
+            Some("no Buzz shared compute serving members are available".to_string())
         },
         models,
         serve_targets,

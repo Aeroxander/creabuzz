@@ -647,7 +647,7 @@ function ThemeSettingsCard() {
     >
       <SettingsSectionHeader
         title="Appearance"
-        description="Choose how Buzz looks and feels."
+        description="Choose how Creaton looks and feels."
       />
 
       <SettingsOptionGroupList>
@@ -707,7 +707,7 @@ function ThemeSettingsCard() {
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Choose the colors used throughout Buzz.
+                Choose the colors used throughout Creaton.
               </p>
             </div>
             <button

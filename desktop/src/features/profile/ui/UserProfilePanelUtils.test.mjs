@@ -85,7 +85,7 @@ function runtime(overrides = {}) {
   };
 }
 
-test("personaManagedAgentUpdate syncs edited persona identity to linked agent", () => {
+test("personaManagedAgentUpdate syncs edited personan identity to linked agent", () => {
   assert.deepEqual(personaManagedAgentUpdate(agent(), persona()), {
     pubkey: "deadbeef".repeat(8),
     name: "Fizz Prime",

@@ -41,8 +41,8 @@ export class RootErrorBoundary extends Component<
         <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-background px-6 text-foreground">
           <p className="text-base font-semibold">{APP_NAME} failed to start</p>
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Reload Buzz to try again. If this keeps happening, check that Buzz
-            can access website data, then contact support.
+            Reload Creaton to try again. If this keeps happening, check that
+            Creaton can access website data, then contact support.
           </p>
           <button
             type="button"
