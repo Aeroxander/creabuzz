@@ -56,6 +56,7 @@ export function LinkDevicePage() {
     return state === "ready" ? "confirm" : "no-identity";
   });
   const [npub, setNpub] = React.useState<string | null>(null);
+  const [handoffUrl, setHandoffUrl] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [signInError, setSignInError] = React.useState<string | null>(null);
   const [confirmReset, setConfirmReset] = React.useState(false);
@@ -86,6 +87,13 @@ export function LinkDevicePage() {
         secretKeyHex: secretHex,
       });
       setNpub(handoff.npub);
+      // Keep the callback so the "linked" screen can offer the retry link:
+      // a one-shot programmatic redirect is silently dropped whenever the
+      // browser blocks a custom-scheme navigation or no handler is registered
+      // yet, and the user would otherwise be stranded with no way back
+      // (repo rule: never hide the only recovery affordance). The URL is only
+      // ever an `href` — it carries the encrypted payload and is never shown.
+      setHandoffUrl(handoff.url);
       setPhase("linked");
       window.location.assign(handoff.url);
     } catch {
@@ -263,6 +271,21 @@ export function LinkDevicePage() {
             The handoff was opened on this device. Finish the steps in the
             desktop app to sign in there with this account.
           </p>
+          {handoffUrl ? (
+            <>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Nothing opened? Use this to open the desktop app again — it
+                works only once, and only on this device.
+              </p>
+              <a
+                className="mt-2 inline-block rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+                data-testid="link-device-open-desktop"
+                href={handoffUrl}
+              >
+                Open the desktop app
+              </a>
+            </>
+          ) : null}
           <p
             className="mt-3 break-all rounded-md border border-black/10 px-3 py-2 font-mono text-2xs dark:border-white/10"
             data-testid="link-device-npub"
@@ -291,6 +314,9 @@ export function LinkDevicePage() {
             The link could not be prepared, so nothing was shared. Try again
             from the desktop app.
           </p>
+          <a className="mt-4 inline-block text-sm underline" href="/">
+            Go to Creaton
+          </a>
         </section>
       ) : null}
     </main>
