@@ -399,7 +399,8 @@ relay-web: bootstrap _ensure-migrations
     export PATH="{{justfile_directory()}}/bin:$PATH"
     [[ -d node_modules ]] || pnpm install
     pnpm -C web build
-    BUZZ_WEB_DIR=./web/dist cargo run -p buzz-relay
+    echo "Social feed: http://localhost:3000/feed"
+    BUZZ_SERVE_SOCIAL_WEB_GUI=true BUZZ_WEB_DIR=./web/dist cargo run -p buzz-relay
 
 # Build and run the private read-only admin dashboard
 admin: bootstrap _ensure-migrations

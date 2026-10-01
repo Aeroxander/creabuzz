@@ -298,6 +298,9 @@ pub struct Config {
     /// Whether the configured web bundle serves Git browser routes in addition
     /// to the public invite landing page. Defaults to false.
     pub serve_git_web_gui: bool,
+    /// Whether the configured web bundle serves the social feed routes
+    /// (`/feed`, `/p/...`, `/explore`, `/messages`, …). Defaults to false.
+    pub serve_social_web_gui: bool,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -944,6 +947,10 @@ impl Config {
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
 
+        let serve_social_web_gui = std::env::var("BUZZ_SERVE_SOCIAL_WEB_GUI")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
+
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
                 return Err(ConfigError::InvalidValue(format!(
@@ -1020,6 +1027,7 @@ impl Config {
             admin,
             web_dir,
             serve_git_web_gui,
+            serve_social_web_gui,
         })
     }
 }
@@ -1069,6 +1077,10 @@ mod tests {
         assert!(
             !config.serve_git_web_gui,
             "serve_git_web_gui should default to false"
+        );
+        assert!(
+            !config.serve_social_web_gui,
+            "serve_social_web_gui should default to false"
         );
         assert!(
             !config.require_media_get_auth,

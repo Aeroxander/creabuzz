@@ -163,6 +163,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
         let web_files = web_dir.map(ServeDir::new);
         let serve_git_web_gui = state.config.serve_git_web_gui;
+        let serve_social_web_gui = state.config.serve_social_web_gui;
         let fallback_state = state.clone();
         let spa_fallback = tower::service_fn(move |req: axum::extract::Request| {
             let admin_index = admin_index.clone();
@@ -189,7 +190,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                     if path.starts_with("/assets/") {
                         return files.oneshot(req).await.map(IntoResponse::into_response);
                     }
-                    if should_serve_spa(path, serve_git_web_gui) {
+                    if should_serve_spa(path, serve_git_web_gui, serve_social_web_gui) {
                         return Ok(read_spa_index(&index).await);
                     }
                 }
@@ -231,8 +232,24 @@ fn is_invite_landing_path(path: &str) -> bool {
         .is_some_and(|code| !code.is_empty() && !code.contains('/'))
 }
 
-fn should_serve_spa(path: &str, serve_git_web_gui: bool) -> bool {
-    is_invite_landing_path(path) || (serve_git_web_gui && is_git_web_gui_path(path))
+fn should_serve_spa(path: &str, serve_git_web_gui: bool, serve_social_web_gui: bool) -> bool {
+    is_invite_landing_path(path)
+        || (serve_git_web_gui && is_git_web_gui_path(path))
+        || (serve_social_web_gui && is_social_web_gui_path(path))
+}
+
+/// Client-side routes of the social feed in the web bundle.
+fn is_social_web_gui_path(path: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "/feed",
+        "/explore",
+        "/notifications",
+        "/messages",
+        "/bookmarks",
+        "/search",
+    ];
+    const PREFIXES: &[&str] = &["/feed/", "/messages/", "/p/", "/tag/"];
+    EXACT.contains(&path) || PREFIXES.iter().any(|prefix| path.starts_with(prefix))
 }
 
 fn is_git_web_gui_path(path: &str) -> bool {
@@ -494,13 +511,48 @@ mod tests {
 
     #[test]
     fn invite_is_always_served_but_git_gui_requires_opt_in() {
-        assert!(should_serve_spa("/invite/payload.mac", false));
-        assert!(should_serve_spa("/invite/payload.mac", true));
-        assert!(!should_serve_spa("/", false));
-        assert!(!should_serve_spa("/repos/example", false));
-        assert!(should_serve_spa("/", true));
-        assert!(should_serve_spa("/repos/example", true));
-        assert!(!should_serve_spa("/arbitrary", true));
+        assert!(should_serve_spa("/invite/payload.mac", false, false));
+        assert!(should_serve_spa("/invite/payload.mac", true, true));
+        assert!(!should_serve_spa("/", false, false));
+        assert!(!should_serve_spa("/repos/example", false, false));
+        assert!(should_serve_spa("/", true, false));
+        assert!(should_serve_spa("/repos/example", true, false));
+        assert!(!should_serve_spa("/arbitrary", true, true));
+    }
+
+    #[test]
+    fn social_routes_require_their_own_opt_in() {
+        for path in [
+            "/feed",
+            "/feed/abc123",
+            "/p/npub1xyz",
+            "/tag/buzz",
+            "/explore",
+            "/notifications",
+            "/messages",
+            "/messages/npub1xyz",
+            "/bookmarks",
+            "/search",
+        ] {
+            assert!(
+                should_serve_spa(path, false, true),
+                "{path} should be served"
+            );
+            assert!(
+                !should_serve_spa(path, false, false),
+                "{path} must be opt-in"
+            );
+            assert!(
+                !should_serve_spa(path, true, false),
+                "{path} is not a git route"
+            );
+        }
+        // Social opt-in does not expose the git browser, and unrelated paths stay 404.
+        assert!(!should_serve_spa("/", false, true));
+        assert!(!should_serve_spa("/repos/example", false, true));
+        assert!(!is_social_web_gui_path("/feedback"));
+        assert!(!is_social_web_gui_path("/profile"));
+        assert!(!is_social_web_gui_path("/api/feed"));
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -284,6 +284,7 @@ out of the box with `just setup` or `just relay`. Common overrides:
 | `BUZZ_ALLOW_NIP_OA_AUTH`        | `false`                     | Enable NIP-OA owner attestation for membership |
 | `BUZZ_WEB_DIR`                  | unset (source), `/srv/buzz/web` (container) | Directory containing the invite landing bundle; the production container enables it so `/invite/{code}` always works |
 | `BUZZ_SERVE_GIT_WEB_GUI`        | `false`                     | Set to `true` or `1` to expose the bundled Git repository browser at `/` and `/repos/...`; invite routes do not depend on this flag |
+| `BUZZ_SERVE_SOCIAL_WEB_GUI`     | `false`                     | Set to `true` or `1` to expose the bundled social feed at `/feed`, `/p/...`, `/tag/...`, `/explore`, `/notifications`, `/messages/...`, `/bookmarks` and `/search`. Requires `BUZZ_WEB_DIR`; does not expose the Git browser |
 
 CLI-side, only two matter for testing:
 
