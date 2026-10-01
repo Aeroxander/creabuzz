@@ -219,6 +219,31 @@ _ensure-services:
         echo "Services already healthy"
         exit 0
     fi
+    # The relay needs exactly two things: a database and Redis. Keycloak,
+    # MinIO, Prometheus and Adminer are auxiliary — and a registry outage
+    # (quay.io answering 401) must not block starting the relay when the
+    # configured endpoints are already up. This is a TCP reachability pre-check
+    # only: `_ensure-migrations` runs `buzz-admin migrate` immediately after,
+    # so an unusable database still fails loudly there.
+    [[ -f .env ]] && { set -a; source .env; set +a; }
+    reachable() {
+        local url="$1" default_port="$2" hostport host port
+        [[ -n "$url" ]] || return 1
+        hostport="${url#*://}"
+        hostport="${hostport##*@}"
+        hostport="${hostport%%/*}"
+        host="${hostport%%:*}"
+        port="${hostport##*:}"
+        [[ "$port" == "$host" ]] && port="$default_port"
+        [[ -n "$host" && -n "$port" ]] || return 1
+        (exec 3<>"/dev/tcp/$host/$port") 2>/dev/null || return 1
+        exec 3<&- 3>&-
+        return 0
+    }
+    if reachable "${DATABASE_URL:-}" 5432 && reachable "${REDIS_URL:-}" 6379; then
+        echo "Postgres and Redis are already reachable — skipping the compose stack"
+        exit 0
+    fi
     echo "Starting services..."
     docker compose up -d || true
     echo -n "Waiting for services"
@@ -678,7 +703,9 @@ relay-web: bootstrap _ensure-migrations
     set +o allexport
     [[ -d node_modules ]] || pnpm install
     pnpm -C web build
-    BUZZ_WEB_DIR=./web/dist cargo run -p buzz-relay
+    # BUZZ_WEB_SPA=full makes "/" serve the app; without it the root path
+    # content-negotiates to the relay info document for plain HTTP.
+    BUZZ_WEB_DIR=./web/dist BUZZ_WEB_SPA=full cargo run -p buzz-relay
 
 # Build and run the private admin dashboard
 admin: bootstrap _ensure-migrations
