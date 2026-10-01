@@ -23,7 +23,7 @@ describe("delegation selectors pinned to cast sig", () => {
 
 describe("delegation calldata", () => {
   it("encodes the delegatee address word by construction", () => {
-    const word = "0".repeat(60) + "dead";
+    const word = `${"0".repeat(60)}dead`;
     assert.equal(
       encodeDelegate("0x000000000000000000000000000000000000dEaD"),
       `0x5c19a95c${word}`,

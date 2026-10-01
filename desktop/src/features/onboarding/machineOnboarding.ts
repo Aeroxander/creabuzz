@@ -96,6 +96,75 @@ function identitySettled(status: QueryStatus, isFetching: boolean) {
   return !isFetching && (status === "success" || status === "error");
 }
 
+/**
+ * The cold-boot stage decision, as a pure function so it can be pinned by
+ * tests (the hook itself needs React).
+ *
+ * FIRST RUN: a settled identity query with no pubkey is a KNOWN-ABSENT
+ * identity, not an unknown one. It must reach `onboarding` — blocking on a
+ * missing pubkey stranded every fresh install on the loading gate forever,
+ * because `!currentPubkey` was checked before the onboarding branch and there
+ * is no identity yet for it to wait on.
+ */
+export function resolveMachineStage(p: {
+  identityStatus: string;
+  identityIsFetching: boolean;
+  currentPubkey: string | null;
+  identityLost: boolean;
+  identityLocked: boolean;
+  identityResetFailed: boolean;
+  relaunchRequired: boolean;
+  hasCompletedCurrentPubkey: boolean;
+  evaluatedPubkey: string | null;
+  continuingPubkey: string | null;
+}): MachineOnboardingStage {
+  const settled = identitySettled(
+    p.identityStatus as QueryStatus,
+    p.identityIsFetching,
+  );
+  const knownAbsent =
+    p.identityStatus === "success" && !p.identityLost && !p.currentPubkey;
+
+  if (p.identityResetFailed && p.identityStatus === "success") {
+    return "reset-failed";
+  }
+  if (p.identityLocked && p.identityStatus === "success") {
+    return "keyring-locked";
+  }
+  if (p.relaunchRequired) {
+    return "relaunch-required";
+  }
+  if (p.identityLost && p.identityStatus === "success") {
+    return "onboarding";
+  }
+  if (p.identityStatus === "error") {
+    return "ready";
+  }
+  if (
+    !settled ||
+    // A settled query that resolved no identity is first run, not "unknown" —
+    // it must fall through to onboarding, never hold the loading gate.
+    (!p.currentPubkey && !knownAbsent) ||
+    // Imported identities are published before the flow can advance to setup.
+    // Keep that explicitly requested identity switch in onboarding; only the
+    // startup identity needs the one-render evaluation gate.
+    (!p.hasCompletedCurrentPubkey &&
+      p.evaluatedPubkey !== p.currentPubkey &&
+      p.continuingPubkey !== p.currentPubkey)
+  ) {
+    return "blocking";
+  }
+  if (
+    p.identityLost ||
+    knownAbsent ||
+    p.continuingPubkey === p.currentPubkey ||
+    !p.hasCompletedCurrentPubkey
+  ) {
+    return "onboarding";
+  }
+  return "ready";
+}
+
 export function useMachineOnboardingState({
   activeCommunityPubkey,
   isSharedIdentity,
@@ -210,40 +279,18 @@ export function useMachineOnboardingState({
     (!forceMachineOnboarding() &&
       readMachineOnboardingCompletion(currentPubkey));
 
-  let stage: MachineOnboardingStage;
-  if (identityResetFailed && identityQuery.status === "success") {
-    stage = "reset-failed";
-  } else if (identityLocked && identityQuery.status === "success") {
-    stage = "keyring-locked";
-  } else if (relaunchRequired) {
-    stage = "relaunch-required";
-  } else if (identityLost && identityQuery.status === "success") {
-    stage = "onboarding";
-  } else if (identityQuery.status === "error") {
-    stage = "ready";
-  } else if (
-    !identitySettled(
-      identityQuery.status,
-      identityQuery.fetchStatus === "fetching",
-    ) ||
-    !currentPubkey ||
-    // Imported identities are published before the flow can advance to setup.
-    // Keep that explicitly requested identity switch in onboarding; only the
-    // startup identity needs the one-render evaluation gate above.
-    (!hasCompletedCurrentPubkey &&
-      evaluatedPubkey !== currentPubkey &&
-      continuingPubkeyRef.current !== currentPubkey)
-  ) {
-    stage = "blocking";
-  } else if (
-    identityLost ||
-    continuingPubkeyRef.current === currentPubkey ||
-    !hasCompletedCurrentPubkey
-  ) {
-    stage = "onboarding";
-  } else {
-    stage = "ready";
-  }
+  const stage = resolveMachineStage({
+    identityStatus: identityQuery.status,
+    identityIsFetching: identityQuery.fetchStatus === "fetching",
+    currentPubkey,
+    identityLost,
+    identityLocked,
+    identityResetFailed,
+    relaunchRequired,
+    hasCompletedCurrentPubkey,
+    evaluatedPubkey,
+    continuingPubkey: continuingPubkeyRef.current,
+  });
 
   return {
     complete,
