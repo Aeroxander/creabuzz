@@ -361,7 +361,9 @@ export function ProfileStep({
             >
               I already have a key
             </Button>
-            <WebIdentitySignInButton />
+            {/* A completed browser sign-in IS this step finishing — move
+                straight on instead of leaving the user on a confirmation. */}
+            <WebIdentitySignInButton onLinked={advanceWithoutSaving} />
           </>
         ) : null}
 

@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useWebIdentityHandoff } from "@/features/identity/useWebIdentityHandoff";
 import { WEB_IDENTITY_HANDOFF_COPY as COPY } from "@/features/identity/webIdentityHandoff";
 import { DEFAULT_WEB_ORIGIN } from "@/shared/constants/brand";
@@ -10,10 +11,31 @@ import { Button } from "@/shared/ui/button";
  * When no community is connected yet the flow signs in against the hosted web
  * app; a connected community's own web app always wins.
  */
-export function WebIdentitySignInButton() {
+export function WebIdentitySignInButton({
+  onLinked,
+}: {
+  /**
+   * Called once the browser handoff has committed and the desktop is signing
+   * as the new key. Onboarding passes the flow's own advance action so the
+   * user lands on the next step instead of sitting on a confirmation;
+   * surfaces with no next step (Settings) omit it and confirm in place.
+   */
+  onLinked?: () => void;
+}) {
   const { handoff, state } = useWebIdentityHandoff({
     fallbackOrigin: DEFAULT_WEB_ORIGIN,
   });
+
+  // Advance exactly once when the key lands. A ref guards React 18 StrictMode's
+  // development double-invoke, which would otherwise skip a whole step.
+  const advancedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (state.phase !== "linked" || !onLinked || advancedRef.current) {
+      return;
+    }
+    advancedRef.current = true;
+    onLinked();
+  }, [state.phase, onLinked]);
 
   return (
     <div className="w-full" data-testid="onboarding-web-sign-in">
