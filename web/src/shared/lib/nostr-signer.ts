@@ -20,6 +20,10 @@ export type SignedNostrEvent = UnsignedNostrEvent & {
 type Nip07Provider = {
   getPublicKey(): Promise<string>;
   signEvent(event: UnsignedNostrEvent): Promise<SignedNostrEvent>;
+  nip44?: {
+    encrypt(pubkey: string, plaintext: string): Promise<string>;
+    decrypt(pubkey: string, ciphertext: string): Promise<string>;
+  };
 };
 
 declare global {
@@ -103,4 +107,27 @@ export async function signNostrEvent(
     throw new Error("Failed to create the ephemeral browser identity.");
   }
   return signed;
+}
+
+export class Nip44UnavailableError extends Error {
+  constructor() {
+    super("Your signer doesn't support NIP-44 encryption.");
+    this.name = "Nip44UnavailableError";
+  }
+}
+
+/** Encrypt a private payload to yourself (NIP-44) with the active signer. */
+export async function nip44EncryptToSelf(plaintext: string): Promise<string> {
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (!provider?.nip44) throw new Nip44UnavailableError();
+  return provider.nip44.encrypt(await provider.getPublicKey(), plaintext);
+}
+
+/** Decrypt a payload that was encrypted to yourself (NIP-44) with the active signer. */
+export async function nip44DecryptFromSelf(
+  ciphertext: string,
+): Promise<string> {
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (!provider?.nip44) throw new Nip44UnavailableError();
+  return provider.nip44.decrypt(await provider.getPublicKey(), ciphertext);
 }

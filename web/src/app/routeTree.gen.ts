@@ -7,8 +7,11 @@
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as reposRouteImport } from "./routes/repos";
 import { Route as feedRouteImport } from "./routes/feed";
+import { Route as bookmarksRouteImport } from "./routes/bookmarks";
 import { Route as indexRouteImport } from "./routes/index";
+import { Route as tagDottagRouteImport } from "./routes/tag.$tag";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
+import { Route as pDotidRouteImport } from "./routes/p.$id";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as feedDotnoteIdRouteImport } from "./routes/feed.$noteId";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
@@ -23,14 +26,29 @@ const feedRoute = feedRouteImport.update({
   path: "/feed",
   getParentRoute: () => rootRouteImport,
 } as any);
+const bookmarksRoute = bookmarksRouteImport.update({
+  id: "/bookmarks",
+  path: "/bookmarks",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const indexRoute = indexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => rootRouteImport,
 } as any);
+const tagDottagRoute = tagDottagRouteImport.update({
+  id: "/tag/$tag",
+  path: "/tag/$tag",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
   id: "/repos/$repoId",
   path: "/repos/$repoId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const pDotidRoute = pDotidRouteImport.update({
+  id: "/p/$id",
+  path: "/p/$id",
   getParentRoute: () => rootRouteImport,
 } as any);
 const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
@@ -52,69 +70,90 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/bookmarks": typeof bookmarksRoute;
   "/feed": typeof feedRoute;
   "/repos": typeof reposRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/tag/$tag": typeof tagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/bookmarks": typeof bookmarksRoute;
   "/feed": typeof feedRoute;
   "/repos": typeof reposRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/tag/$tag": typeof tagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/bookmarks": typeof bookmarksRoute;
   "/feed": typeof feedRoute;
   "/repos": typeof reposRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/tag/$tag": typeof tagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/bookmarks"
     | "/feed"
     | "/repos"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/p/$id"
     | "/repos/$repoId"
+    | "/tag/$tag"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/bookmarks"
     | "/feed"
     | "/repos"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/p/$id"
     | "/repos/$repoId"
+    | "/tag/$tag"
     | "/repos/$repoId/blob/$";
   id:
     | "__root__"
     | "/"
+    | "/bookmarks"
     | "/feed"
     | "/repos"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/p/$id"
     | "/repos/$repoId"
+    | "/tag/$tag"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  bookmarksRoute: typeof bookmarksRoute;
   feedRoute: typeof feedRoute;
   reposRoute: typeof reposRoute;
   feedDotnoteIdRoute: typeof feedDotnoteIdRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
+  pDotidRoute: typeof pDotidRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
+  tagDottagRoute: typeof tagDottagRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 
@@ -134,6 +173,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof feedRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/bookmarks": {
+      id: "/bookmarks";
+      path: "/bookmarks";
+      fullPath: "/bookmarks";
+      preLoaderRoute: typeof bookmarksRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/": {
       id: "/";
       path: "/";
@@ -141,11 +187,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof indexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/tag/$tag": {
+      id: "/tag/$tag";
+      path: "/tag/$tag";
+      fullPath: "/tag/$tag";
+      preLoaderRoute: typeof tagDottagRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/repos/$repoId": {
       id: "/repos/$repoId";
       path: "/repos/$repoId";
       fullPath: "/repos/$repoId";
       preLoaderRoute: typeof reposDotrepoIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/p/$id": {
+      id: "/p/$id";
+      path: "/p/$id";
+      fullPath: "/p/$id";
+      preLoaderRoute: typeof pDotidRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite/$code": {
@@ -174,11 +234,14 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  bookmarksRoute: bookmarksRoute,
   feedRoute: feedRoute,
   reposRoute: reposRoute,
   feedDotnoteIdRoute: feedDotnoteIdRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
+  pDotidRoute: pDotidRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
+  tagDottagRoute: tagDottagRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };
 export const routeTree = rootRouteImport

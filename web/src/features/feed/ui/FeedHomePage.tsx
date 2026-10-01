@@ -1,77 +1,42 @@
 import { useState } from "react";
 
-import { cn } from "@/shared/lib/cn";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 import {
   isFeedPreview,
-  useFollows,
   useProfiles,
   useTimeline,
   useViewerPubkey,
 } from "../use-feed";
+import { useContacts } from "../use-social";
 import { Composer } from "./Composer";
 import { FeedShell } from "./FeedShell";
+import { Message } from "./Message";
+import { TabBar } from "./TabBar";
 import { PostList, TimelineSkeleton } from "./Timeline";
 
 type Tab = "for-you" | "following";
 
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
-  const items: { id: Tab; label: string }[] = [
-    { id: "for-you", label: "For you" },
-    { id: "following", label: "Following" },
-  ];
-  return (
-    <div role="tablist" className="flex">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="tab"
-          aria-selected={tab === item.id}
-          onClick={() => onChange(item.id)}
-          className="relative flex h-[53px] flex-1 items-center justify-center text-[15px] transition-colors hover:bg-foreground/5"
-        >
-          <span
-            className={cn(
-              "relative flex h-full items-center",
-              tab === item.id
-                ? "font-bold"
-                : "font-medium text-muted-foreground",
-            )}
-          >
-            {item.label}
-            {tab === item.id && (
-              <span className="absolute inset-x-0 bottom-0 h-1 rounded-full bg-primary" />
-            )}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Message({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="mx-auto max-w-sm px-8 py-16 text-center">
-      <h2 className="text-3xl font-extrabold">{title}</h2>
-      <p className="mt-2 text-[15px] text-muted-foreground">{body}</p>
-    </div>
-  );
-}
+const TABS: { id: Tab; label: string }[] = [
+  { id: "for-you", label: "For you" },
+  { id: "following", label: "Following" },
+];
 
 export function FeedHomePage() {
   const [tab, setTab] = useState<Tab>("for-you");
   const viewer = useViewerPubkey();
-  const follows = useFollows(viewer);
+  const follows = useContacts(viewer);
   const viewerProfile = useProfiles(viewer ? [viewer] : []).data?.get(
     viewer ?? "",
   );
 
-  const followList =
+  const authors =
     tab === "following"
       ? [...(follows.data ?? []), ...(viewer ? [viewer] : [])]
       : null;
-  const timeline = useTimeline(followList);
+  const timeline = useTimeline({
+    key: [tab, authors ? [...authors].sort() : "global"],
+    authors,
+  });
   const posts = timeline.data?.pages.flatMap((p) => p.posts) ?? [];
   const followingBlocked =
     tab === "following" && !viewer && !isFeedPreview() && !hasNip07Provider();
@@ -80,14 +45,14 @@ export function FeedHomePage() {
     <FeedShell>
       <div className="sticky top-0 z-10 border-b bg-background/85 backdrop-blur">
         <h1 className="sr-only">Home</h1>
-        <Tabs tab={tab} onChange={setTab} />
+        <TabBar tabs={TABS} value={tab} onChange={setTab} />
       </div>
       <Composer viewer={viewer} profile={viewerProfile} />
 
       {followingBlocked ? (
         <Message
-          title="Connect to see your following feed"
-          body="Sign in with a Nostr browser extension to see posts from people you follow."
+          title="Sign in to see your following feed"
+          body="Posts from people you follow will show up here."
         />
       ) : timeline.isLoading || (tab === "following" && follows.isLoading) ? (
         <TimelineSkeleton />

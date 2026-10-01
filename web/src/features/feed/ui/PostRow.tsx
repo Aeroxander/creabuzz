@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
-import { Heart, MessageCircle, Share } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Bookmark, Heart, MessageCircle, Share } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/cn";
@@ -13,6 +13,7 @@ import {
 } from "../feed-model";
 import { NoteContent } from "../content";
 import { useLikeNote } from "../use-feed";
+import { useToggleBookmark } from "../use-social";
 import { Avatar, displayNameOf } from "./Avatar";
 
 function compact(n: number): string {
@@ -32,7 +33,7 @@ function ActionButton({
 }: {
   label: string;
   count: number;
-  tone: "reply" | "like" | "share";
+  tone: "reply" | "like" | "share" | "bookmark";
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -42,6 +43,7 @@ function ActionButton({
     reply: "hover:text-sky-500 [&:hover>span:first-child]:bg-sky-500/10",
     like: "hover:text-rose-500 [&:hover>span:first-child]:bg-rose-500/10",
     share: "hover:text-sky-500 [&:hover>span:first-child]:bg-sky-500/10",
+    bookmark: "hover:text-sky-500 [&:hover>span:first-child]:bg-sky-500/10",
   }[tone];
   return (
     <button
@@ -54,6 +56,7 @@ function ActionButton({
         "group relative z-10 flex items-center gap-0.5 text-[13px] text-muted-foreground transition-colors disabled:cursor-default",
         hover,
         active && tone === "like" && "text-rose-500",
+        active && tone === "bookmark" && "text-sky-500",
       )}
     >
       <span className="-m-2 flex h-9 w-9 items-center justify-center rounded-full transition-colors [&_svg]:size-[18px]">
@@ -70,14 +73,18 @@ export function PostRow({
   profile,
   meta = EMPTY_META,
   viewer,
+  bookmarked = false,
 }: {
   post: Post;
   profile?: Profile;
   meta?: PostMeta;
   viewer: string | null;
+  bookmarked?: boolean;
 }) {
   const { event } = post;
+  const navigate = useNavigate();
   const like = useLikeNote();
+  const bookmark = useToggleBookmark(viewer);
   const liked = meta.likedByViewer || like.isSuccess;
   const handle = profile?.name
     ? `@${profile.name}`
@@ -93,12 +100,23 @@ export function PostRow({
 
   return (
     <article className="relative flex gap-3 border-b px-4 pt-3 pb-1 transition-colors hover:bg-foreground/[0.03]">
-      <Avatar pubkey={event.pubkey} profile={profile} />
+      <Link
+        to="/p/$id"
+        params={{ id: event.pubkey }}
+        aria-label={`${displayNameOf(event.pubkey, profile)}'s profile`}
+        className="relative z-10 h-fit shrink-0"
+      >
+        <Avatar pubkey={event.pubkey} profile={profile} />
+      </Link>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1 text-[15px] leading-5">
-          <span className="truncate font-bold">
+          <Link
+            to="/p/$id"
+            params={{ id: event.pubkey }}
+            className="relative z-10 truncate font-bold hover:underline"
+          >
             {displayNameOf(event.pubkey, profile)}
-          </span>
+          </Link>
           <span className="truncate text-muted-foreground">{handle}</span>
           <span className="text-muted-foreground">·</span>
           {/* Stretched link: the whole row opens the thread. */}
@@ -116,7 +134,14 @@ export function PostRow({
           <NoteContent content={event.content} />
         </div>
         <div className="mt-1 flex max-w-[425px] items-center justify-between">
-          <ActionButton label="Reply" count={meta.replies} tone="reply">
+          <ActionButton
+            label="Reply"
+            count={meta.replies}
+            tone="reply"
+            onClick={() =>
+              navigate({ to: "/feed/$noteId", params: { noteId: event.id } })
+            }
+          >
             <MessageCircle />
           </ActionButton>
           <ActionButton
@@ -133,6 +158,21 @@ export function PostRow({
             }
           >
             <Heart className={cn(liked && "fill-current")} />
+          </ActionButton>
+          <ActionButton
+            label={bookmarked ? "Remove bookmark" : "Bookmark"}
+            count={0}
+            tone="bookmark"
+            active={bookmarked}
+            disabled={!viewer}
+            onClick={() =>
+              bookmark.mutate(
+                { id: event.id, add: !bookmarked },
+                { onError: (e) => toast.error(e.message) },
+              )
+            }
+          >
+            <Bookmark className={cn(bookmarked && "fill-current")} />
           </ActionButton>
           <ActionButton
             label="Copy link"

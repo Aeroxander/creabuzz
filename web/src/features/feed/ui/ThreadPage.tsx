@@ -8,6 +8,8 @@ import { Avatar, displayNameOf } from "./Avatar";
 import { Composer } from "./Composer";
 import { FeedShell } from "./FeedShell";
 import { PostList, TimelineSkeleton } from "./Timeline";
+import { useBookmarks } from "../use-social";
+import { PostRow } from "./PostRow";
 
 export function ThreadPage() {
   const { noteId } = useParams({ from: "/feed/$noteId" });
@@ -15,6 +17,11 @@ export function ThreadPage() {
   const thread = useThread(noteId);
   const root = thread.data?.root ?? null;
   const replies = thread.data?.replies ?? [];
+  const ancestors = thread.data?.ancestors ?? [];
+  const ancestorProfiles = useProfiles(ancestors.map((a) => a.event.pubkey));
+  const bookmarks = useBookmarks(viewer).data;
+  // NIP-10: replies to a reply carry the thread root marker too.
+  const rootId = ancestors[0]?.event.id ?? null;
   const profiles = useProfiles([
     ...(viewer ? [viewer] : []),
     ...(root ? [root.event.pubkey] : []),
@@ -42,6 +49,15 @@ export function ThreadPage() {
         </div>
       ) : (
         <>
+          {ancestors.map((a) => (
+            <PostRow
+              key={a.event.id}
+              post={a}
+              profile={ancestorProfiles.data?.get(a.event.pubkey)}
+              viewer={viewer}
+              bookmarked={bookmarks?.includes(a.event.id) ?? false}
+            />
+          ))}
           <article className="border-b px-4 pt-3">
             <div className="flex items-center gap-3">
               <Avatar pubkey={root.event.pubkey} profile={rootProfile} />
@@ -84,7 +100,7 @@ export function ThreadPage() {
           <Composer
             viewer={viewer}
             profile={viewer ? profiles.data?.get(viewer) : undefined}
-            replyTo={{ id: root.event.id, author: root.event.pubkey }}
+            replyTo={{ id: root.event.id, author: root.event.pubkey, rootId }}
             placeholder="Post your reply"
           />
           <PostList posts={replies} viewer={viewer} />

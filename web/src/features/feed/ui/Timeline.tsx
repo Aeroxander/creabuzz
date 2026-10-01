@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 
 import type { Post } from "../feed-model";
 import { usePostMeta, useProfiles } from "../use-feed";
+import { useBookmarks, useMuted } from "../use-social";
 import { PostRow } from "./PostRow";
 
 function PostSkeleton() {
@@ -42,9 +43,14 @@ export function PostList({
   isFetchingMore?: boolean;
   onLoadMore?: () => void;
 }) {
-  const profiles = useProfiles(posts.map((p) => p.event.pubkey));
+  const muted = useMuted(viewer).data;
+  const bookmarks = useBookmarks(viewer).data;
+  const visible = muted?.length
+    ? posts.filter((p) => !muted.includes(p.event.pubkey))
+    : posts;
+  const profiles = useProfiles(visible.map((p) => p.event.pubkey));
   const meta = usePostMeta(
-    posts.map((p) => p.event.id),
+    visible.map((p) => p.event.id),
     viewer,
   );
   const sentinel = useRef<HTMLDivElement>(null);
@@ -62,10 +68,11 @@ export function PostList({
 
   return (
     <>
-      {posts.map((post) => (
+      {visible.map((post) => (
         <PostRow
           key={post.event.id}
           post={post}
+          bookmarked={bookmarks?.includes(post.event.id) ?? false}
           profile={profiles.data?.get(post.event.pubkey)}
           meta={meta.data?.get(post.event.id)}
           viewer={viewer}

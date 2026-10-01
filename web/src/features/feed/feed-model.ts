@@ -4,13 +4,18 @@ export const KIND_PROFILE = 0;
 export const KIND_NOTE = 1;
 export const KIND_CONTACTS = 3;
 export const KIND_REACTION = 7;
+export const KIND_MUTES = 10000;
+export const KIND_BOOKMARKS = 10003;
 
 export interface Profile {
   pubkey: string;
   name?: string;
   displayName?: string;
   picture?: string;
+  banner?: string;
   about?: string;
+  website?: string;
+  nip05?: string;
 }
 
 export interface PostMeta {
@@ -58,7 +63,10 @@ export function parseProfile(event: NostrEvent): Profile {
     name: str(parsed.name),
     displayName: str(parsed.display_name) ?? str(parsed.displayName),
     picture: str(parsed.picture),
+    banner: str(parsed.banner),
     about: str(parsed.about),
+    website: str(parsed.website),
+    nip05: str(parsed.nip05),
   };
 }
 
@@ -94,4 +102,30 @@ export function computeMeta(
     }
   }
   return out;
+}
+
+/** Values of every `name` tag (`p` pubkeys, `e` ids, …), de-duplicated in order. */
+export function tagValues(tags: string[][], name: string): string[] {
+  return [
+    ...new Set(tags.filter((t) => t[0] === name && t[1]).map((t) => t[1])),
+  ];
+}
+
+const HASHTAG = /(?:^|[\s(])#([\p{L}\p{N}_]+)/gu;
+const NOSTR_URI = /nostr:((?:npub|nprofile)1[0-9a-z]+)/g;
+
+/** NIP-24 `t` tags (lowercased) for every hashtag in `content`. */
+export function hashtagsOf(content: string): string[] {
+  return [
+    ...new Set([...content.matchAll(HASHTAG)].map((m) => m[1].toLowerCase())),
+  ];
+}
+
+/** Bech32 `npub`/`nprofile` mention bodies found as `nostr:` URIs in `content`. */
+export function mentionEntitiesOf(content: string): string[] {
+  return [...new Set([...content.matchAll(NOSTR_URI)].map((m) => m[1]))];
+}
+
+export function isImageUrl(url: string): boolean {
+  return /\.(png|jpe?g|gif|webp|avif)(\?[^\s]*)?$/i.test(url);
 }

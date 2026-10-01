@@ -3,7 +3,7 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { useState } from "react";
 import type { Profile } from "../feed-model";
 
-function pubkeyToHue(hex: string): number {
+export function pubkeyToHue(hex: string): number {
   let hash = 0;
   for (let i = 0; i < hex.length; i++) {
     hash = (hash * 31 + hex.charCodeAt(i)) | 0;

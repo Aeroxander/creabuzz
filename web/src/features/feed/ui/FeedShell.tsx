@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BookMarked, Home, PenLine } from "lucide-react";
+import { Bookmark, BookMarked, Home, PenLine, User } from "lucide-react";
 import type { ReactNode } from "react";
 
 import buzzAppIcon from "@/assets/app-icon@3x.png";
@@ -7,10 +7,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { ThemeToggle } from "@/shared/theme/ThemeToggle";
 import { ConnectButton } from "@/features/repos/ui/ConnectButton";
 
-const NAV = [
-  { to: "/feed", label: "Home", icon: Home },
-  { to: "/", label: "Repositories", icon: BookMarked },
-] as const;
+import { useViewerPubkey } from "../use-feed";
 
 function focusComposer() {
   const el = document.getElementById("composer");
@@ -26,8 +23,47 @@ function relayHost(): string {
   }
 }
 
+type NavItem = {
+  key: string;
+  label: string;
+  icon: typeof Home;
+  link:
+    | { to: "/feed" | "/bookmarks" | "/" }
+    | { to: "/p/$id"; params: { id: string } };
+};
+
+function useNavItems(): NavItem[] {
+  const viewer = useViewerPubkey();
+  return [
+    { key: "home", label: "Home", icon: Home, link: { to: "/feed" } },
+    {
+      key: "bookmarks",
+      label: "Bookmarks",
+      icon: Bookmark,
+      link: { to: "/bookmarks" },
+    },
+    ...(viewer
+      ? [
+          {
+            key: "profile",
+            label: "Profile",
+            icon: User,
+            link: { to: "/p/$id" as const, params: { id: viewer } },
+          },
+        ]
+      : []),
+    {
+      key: "repos",
+      label: "Repositories",
+      icon: BookMarked,
+      link: { to: "/" },
+    },
+  ];
+}
+
 /** Twitter-style three-column frame: nav rail, 600px timeline, info rail. */
 export function FeedShell({ children }: { children: ReactNode }) {
+  const nav = useNavItems();
   return (
     <div className="mx-auto flex w-full max-w-[1265px] flex-1 justify-center">
       <header className="sticky top-0 hidden h-dvh w-[68px] shrink-0 flex-col justify-between px-2 py-2 sm:flex xl:w-[275px] xl:px-3">
@@ -42,10 +78,10 @@ export function FeedShell({ children }: { children: ReactNode }) {
           >
             <img alt="" src={buzzAppIcon} className="h-8 w-8 rounded-[22%]" />
           </Link>
-          {NAV.map(({ to, label, icon: Icon }) => (
+          {nav.map(({ key, label, icon: Icon, link }) => (
             <Link
-              key={to}
-              to={to}
+              key={key}
+              {...link}
               activeOptions={{ exact: true, includeSearch: false }}
               className="group flex w-fit items-center gap-5 rounded-full p-3 text-xl hover:bg-foreground/10 xl:pr-6"
               activeProps={{ className: "font-bold" }}
@@ -92,10 +128,10 @@ export function FeedShell({ children }: { children: ReactNode }) {
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-20 flex h-14 items-center justify-around border-t bg-background/95 backdrop-blur sm:hidden"
       >
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {nav.map(({ key, label, icon: Icon, link }) => (
           <Link
-            key={to}
-            to={to}
+            key={key}
+            {...link}
             aria-label={label}
             activeOptions={{ exact: true, includeSearch: false }}
             className="flex h-full flex-1 items-center justify-center"
