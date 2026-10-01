@@ -53,7 +53,7 @@ setup: bootstrap
 # binds connections to a community by Host header; without this the web app
 # reports "no community is configured for this host"). Optional owner pubkey:
 # `just dev-community PUBKEY=<hex>`.
-dev-community:
+dev-community PUBKEY="":
     ./scripts/dev-community.sh {{PUBKEY}}
 
 # Install git hooks via lefthook (dispatches from the shared .git/hooks dir so all
