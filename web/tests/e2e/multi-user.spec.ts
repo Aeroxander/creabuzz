@@ -68,7 +68,7 @@ test("a mention from another user raises the notification bell", async ({
   const readerNsec = "22".repeat(32);
   const readerPubkey = getPublicKey(
     Uint8Array.from(
-      readerNsec.match(/.{2}/g)!.map((b) => Number.parseInt(b, 16)),
+      readerNsec.match(/.{2}/g)?.map((b) => Number.parseInt(b, 16)),
     ),
   );
 

@@ -77,7 +77,7 @@ export function RecentThread({ parentId }: { parentId: string }) {
       ) : (
         rows.map((row) => (
           <div
-            key={row.author + "-" + row.created}
+            key={`${row.author}-${row.created}`}
             className="flex items-start gap-2 rounded-md bg-black/[0.03] p-2 dark:bg-white/5"
           >
             <UserAvatar

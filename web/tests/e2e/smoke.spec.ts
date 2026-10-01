@@ -1760,8 +1760,8 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
     Uint8Array.from(
       "1"
         .repeat(64)
-        .match(/.{2}/g)!
-        .map((b) => Number.parseInt(b, 16)),
+        .match(/.{2}/g)
+        ?.map((b) => Number.parseInt(b, 16)),
     ),
   );
   const published: Array<{ kind: number; content: string }> = [];
@@ -1849,7 +1849,7 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
     .poll(() => published.filter((e) => e.kind === 0).length)
     .toBeGreaterThan(0);
   const profile = JSON.parse(
-    published.filter((e) => e.kind === 0).at(-1)!.content,
+    published.filter((e) => e.kind === 0).at(-1)?.content,
   ) as Record<string, unknown>;
   expect(profile.name).toBe("New Name");
   expect(profile.display_name).toBe("New Name");

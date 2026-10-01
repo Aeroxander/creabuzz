@@ -185,8 +185,7 @@ test("decodeAddressWord decodes clean words and rejects dirty prefixes", () => {
 });
 
 test("decodeAddressError parses SenderAddressResult and rejects other selectors", () => {
-  const payload =
-    "0x6ca7b806" + `000000000000000000000000${"22".repeat(20)}`.slice(0, 64);
+  const payload = `0x6ca7b806${`000000000000000000000000${"22".repeat(20)}`.slice(0, 64)}`;
   assert.equal(
     decodeAddressError(payload, "SenderAddressResult(address)"),
     `0x${"22".repeat(20)}`,

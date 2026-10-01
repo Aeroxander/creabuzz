@@ -289,7 +289,7 @@ export function joinUnlockPlan(
   plan: UnlockPlan | null,
   timeline: readonly MilestoneTimelineLike[],
 ): UnlockStatus {
-  if (!plan || plan.mode !== "milestones") {
+  if (plan?.mode !== "milestones") {
     return { rows: [], approvedPercent: 0, complete: false };
   }
   const byClaim = new Map(timeline.map((entry) => [entry.claimId, entry]));

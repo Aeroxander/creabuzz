@@ -45,10 +45,9 @@ export function WikiDraftComposer({
   }, [proposals]);
 
   const page = pages.find((p) => p.slug === selected) ?? null;
-  const coordinate =
-    page && page.authorPubkey
-      ? pageCoordinate(page.authorPubkey, page.slug)
-      : null;
+  const coordinate = page?.authorPubkey
+    ? pageCoordinate(page.authorPubkey, page.slug)
+    : null;
   const composed = useMemo(
     () => (page ? decisionDrafts(page.content) : null),
     [page],

@@ -589,7 +589,7 @@ export function ProfileMenu({
               safe; your identity can't be recovered without it.
             </p>
             <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
-              {revealKey ? nsec : nsec.slice(0, 12) + "…" + nsec.slice(-8)}
+              {revealKey ? nsec : `${nsec.slice(0, 12)}…${nsec.slice(-8)}`}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button

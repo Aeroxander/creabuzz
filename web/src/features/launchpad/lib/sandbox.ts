@@ -55,7 +55,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     unlocks: null,
     daoAtGraduation: null,
     legalWrapper: null,
-    paramsHash: "0x" + "ca".repeat(32),
+    paramsHash: `0x${"ca".repeat(32)}`,
     website: null,
     docs: ["https://example.com/docs"],
     channels: ["sandbox-discussion"],

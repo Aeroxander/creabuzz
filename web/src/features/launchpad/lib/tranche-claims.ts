@@ -151,7 +151,7 @@ export function trancheClaims(
   totalSupply: bigint,
   scheduleByClaim?: Record<string, TrancheScheduleRequest | null>,
 ): TrancheClaimPlan {
-  if (!plan || plan.mode !== "milestones") {
+  if (plan?.mode !== "milestones") {
     return {
       allocationPct: 0,
       claims: [],

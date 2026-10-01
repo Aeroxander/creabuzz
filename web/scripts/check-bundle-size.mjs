@@ -9,7 +9,7 @@
  *
  * Run after `pnpm build`.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BUDGET_BYTES = 1_000_000; // entry chunk, uncompressed

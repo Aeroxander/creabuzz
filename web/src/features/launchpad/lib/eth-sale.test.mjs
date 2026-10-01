@@ -88,7 +88,7 @@ test("ETH prices print with enough digits not to round to zero", () => {
   );
   assert.equal(formatMoney(400000000000000n, ETH), "0.0004 ETH");
   assert.equal(
-    formatMoney("300000000000", usdcCurrency("0x" + "1".repeat(40))),
+    formatMoney("300000000000", usdcCurrency(`0x${"1".repeat(40)}`)),
     "300,000 USDC",
   );
 });

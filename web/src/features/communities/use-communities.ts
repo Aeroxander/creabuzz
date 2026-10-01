@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { friendlyRelayError } from "@/shared/lib/relay-errors";
 
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
@@ -20,7 +21,11 @@ async function fetchCommunityDirectory(): Promise<CommunityDirectory> {
   const response = await fetch(`${relayHttpBaseUrl()}/communities`);
   if (!response.ok) {
     throw new Error(
-      `Community directory unavailable (relay responded ${response.status})`,
+      friendlyRelayError(
+        String(
+          `Community directory unavailable (relay responded ${response.status})`,
+        ),
+      ),
     );
   }
   return (await response.json()) as CommunityDirectory;

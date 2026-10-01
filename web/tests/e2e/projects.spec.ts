@@ -16,7 +16,7 @@ import { createMockRelay } from "./mock-relay";
 const FOUNDER_NSEC = "11".repeat(32);
 const FOUNDER = getPublicKey(
   Uint8Array.from(
-    FOUNDER_NSEC.match(/.{2}/g)!.map((b) => Number.parseInt(b, 16)),
+    FOUNDER_NSEC.match(/.{2}/g)?.map((b) => Number.parseInt(b, 16)),
   ),
 );
 const ALICE = "a".repeat(64);
@@ -184,7 +184,7 @@ test("approval records one ownership grant and the map says which is which", asy
   await relay.install(page);
   seedBoard(relay);
 
-  await page.goto("/projects/nebula?author=" + FOUNDER);
+  await page.goto(`/projects/nebula?author=${FOUNDER}`);
 
   // What is happening: provenance-labelled team map + pool math.
   const team = page.getByTestId("team-map");
@@ -240,7 +240,7 @@ test("a visitor can ask to join a role and the request lands", async ({
   await relay.install(page);
   seedBoard(relay);
 
-  await page.goto("/projects/nebula?author=" + FOUNDER);
+  await page.goto(`/projects/nebula?author=${FOUNDER}`);
   await page.getByRole("button", { name: "Request to join" }).click();
   await page.getByLabel("Why you").fill("Newsletter veteran.");
   await page.getByRole("button", { name: "Send request" }).click();
@@ -294,7 +294,7 @@ test("the summon preview maps the board to shares and refuses what it must", asy
   page,
 }) => {
   const relay = createMockRelay();
-  const founderAddress = "0x" + "11".repeat(20);
+  const founderAddress = `0x${"11".repeat(20)}`;
   // The viewer's own SIWE binding — the one binding source this build reads
   // (`identity/lib/siwe.ts` `readWalletBinding`); the relay has no read path
   // for anyone else's, so the other seats must come back unbound.
@@ -312,7 +312,7 @@ test("the summon preview maps the board to shares and refuses what it must", asy
   seedBoard(relay);
   relay.seed(launchEvent());
 
-  await page.goto("/projects/nebula?author=" + FOUNDER);
+  await page.goto(`/projects/nebula?author=${FOUNDER}`);
   await expect(page.getByTestId("dao-bridge")).toContainText(
     "A launch record already exists",
   );

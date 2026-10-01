@@ -10,7 +10,6 @@ import {
   describeSaleBlocks,
   planSaleBlocks,
   secondsPerBlockFrom,
-  END_SAFETY_MARGIN_BPS,
   CLAIM_DELAY_SECONDS,
 } from "./time-blocks.ts";
 import {
@@ -18,7 +17,6 @@ import {
   budgetForShare,
   budgetCapMessage,
   deriveSymbol,
-  initialMilestones,
   initialWizardState,
   nextStep,
   previousStep,

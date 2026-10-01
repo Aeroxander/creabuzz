@@ -433,7 +433,7 @@ test("sendSponsoredUserOp: receipt polling is bounded (Rule 4)", async () => {
   };
   const { fetchImpl } = mockFetch([
     { result: sponsorship },
-    { result: "0x" + "12".repeat(32) },
+    { result: `0x${"12".repeat(32)}` },
     { result: null },
     { result: null },
     { result: null },
@@ -451,7 +451,7 @@ test("sendSponsoredUserOp: receipt polling is bounded (Rule 4)", async () => {
       dummySignature: "0xdd",
       signUserOpHash: () => "0xaabbccdd",
       // Fixed hash port so the send mock can echo the exact op hash.
-      hashUserOp: () => "0x" + "12".repeat(32),
+      hashUserOp: () => `0x${"12".repeat(32)}`,
       receipt: { pollIntervalMs: 1, maxPolls: 2 },
     }),
     /after 2 polls/,
@@ -459,7 +459,7 @@ test("sendSponsoredUserOp: receipt polling is bounded (Rule 4)", async () => {
 });
 
 test("createBundlerTransport: userOpEncoder seam carries the wire shape (production path)", async () => {
-  const { fetchImpl, calls } = mockFetch([{ result: "0x" + "34".repeat(32) }]);
+  const { fetchImpl, calls } = mockFetch([{ result: `0x${"34".repeat(32)}` }]);
   const transport = createBundlerTransport({
     url: "https://rpc.zerodev.app/api/v3/test/chain/1",
     fetchImpl,

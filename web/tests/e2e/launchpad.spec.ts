@@ -69,7 +69,7 @@ function scoreRoot() {
     tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
     content: JSON.stringify({
       program: "trustgraphs.output.nostr-member.v1",
-      root: "0x" + "11".repeat(32),
+      root: `0x${"11".repeat(32)}`,
       epoch: "12",
       anchorBlock: 500,
       indexerUrl: "https://idx.example.com",
@@ -411,7 +411,7 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
   // navigation: register the wallet here, then reload so it is present when
   // the dialog reads `window.ethereum`.
   await page.addInitScript(() => {
-    const hash = "0x" + "ab".repeat(32);
+    const hash = `0x${"ab".repeat(32)}`;
     Object.defineProperty(window, "ethereum", {
       configurable: true,
       value: {
@@ -441,7 +441,7 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
   // The send button is enabled for a valid composed bid on a linked auction.
   await expect(page.getByTestId("bid-send")).toBeEnabled();
   await page.getByTestId("bid-send").click();
-  await expect(page.getByTestId("bid-tx")).toHaveValue("0x" + "ab".repeat(32));
+  await expect(page.getByTestId("bid-tx")).toHaveValue(`0x${"ab".repeat(32)}`);
 
   // Mirror publishes the 47002 with the wallet hash — a mirror with no tx
   // would claim a bid that never landed.
@@ -451,7 +451,7 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
     .toEqual(
       expect.objectContaining({
         kind: 47002,
-        content: expect.stringContaining("0x" + "ab".repeat(32)),
+        content: expect.stringContaining(`0x${"ab".repeat(32)}`),
       }),
     );
 });

@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { wizardToPublish } from "../helpers/wizard";
-import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
 

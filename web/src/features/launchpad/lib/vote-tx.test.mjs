@@ -19,8 +19,6 @@ import {
   encodeStateView,
   PROPOSAL_STATES,
   SELECTOR_CAST_VOTE,
-  SELECTOR_DELEGATE,
-  SELECTOR_DELEGATES,
   SELECTOR_EXECUTE_BY_VOTES,
   SELECTOR_OPEN_PROPOSAL,
   SELECTOR_PROPOSAL_ID,
@@ -98,7 +96,7 @@ describe("cast calldata goldens", () => {
   it("delegate(address) — selectors pinned to cast; padding by construction", () => {
     // The address word is 60 zeros + `dead` (64 hex) — arithmetic, not
     // paste-fragile counting. Selectors come from `cast sig`.
-    const word = "0".repeat(60) + "dead";
+    const word = `${"0".repeat(60)}dead`;
     assert.equal(
       encodeDelegate("0x000000000000000000000000000000000000dEaD"),
       `0x5c19a95c${word}`,

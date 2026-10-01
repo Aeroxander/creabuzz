@@ -49,6 +49,13 @@ bootstrap:
 setup: bootstrap
     ./scripts/dev-setup.sh
 
+# Provision a community for the loopback hosts a dev relay serves (the relay
+# binds connections to a community by Host header; without this the web app
+# reports "no community is configured for this host"). Optional owner pubkey:
+# `just dev-community PUBKEY=<hex>`.
+dev-community:
+    ./scripts/dev-community.sh {{PUBKEY}}
+
 # Install git hooks via lefthook (dispatches from the shared .git/hooks dir so all
 # linked worktrees inherit the same hooks without a worktree-relative .hooks path)
 hooks:

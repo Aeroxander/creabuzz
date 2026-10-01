@@ -358,7 +358,7 @@ test("onRemoteChange and onPeerUpdate fire on a new remote update", async () => 
 
 test("a remote-origin update is not re-broadcast (echo loop guard)", async () => {
   const doc = new Y.Doc();
-  const text = doc.getText("content");
+  const _text = doc.getText("content");
   const bus = new MockBus();
   const a = connect(doc, bus, { throttleMs: 5 }, "a");
 

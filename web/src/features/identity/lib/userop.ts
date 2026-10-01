@@ -225,7 +225,7 @@ export function isEip7702InitCode(initCode: string): boolean {
     return false;
   }
   const first20Bytes = (body + "0".repeat(40)).slice(0, 40);
-  return first20Bytes === "7702" + "0".repeat(36);
+  return first20Bytes === `7702${"0".repeat(36)}`;
 }
 
 /**

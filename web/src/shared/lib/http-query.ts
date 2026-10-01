@@ -8,6 +8,7 @@
  */
 
 import type { NostrFilter, NostrEvent } from "@/shared/lib/nostr-client";
+import { friendlyRelayError } from "@/shared/lib/relay-errors";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayAnswered } from "./relay-failure.ts";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
@@ -30,7 +31,7 @@ export async function queryEventsHttp(
     let detail = `relay responded ${response.status}`;
     try {
       const json = (await response.json()) as { error?: string };
-      if (json.error) detail = json.error;
+      if (json.error) detail = friendlyRelayError(json.error);
     } catch {
       // non-JSON error body — keep status detail
     }

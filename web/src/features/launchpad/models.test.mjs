@@ -115,7 +115,7 @@ test("a mirror whose coordinate is malformed is ignored", () => {
     pubkey: "c".repeat(64),
     created_at: 120,
     kind: 47002,
-    tags: [["a", "47002:" + ALICE + ":nebula"]],
+    tags: [["a", `47002:${ALICE}:nebula`]],
     content: JSON.stringify({ budget: "1" }),
     sig: "sig",
   };
@@ -209,7 +209,7 @@ test("a score root parses and malformed roots are refused", () => {
     tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
     content: JSON.stringify({
       program: "trustgraphs.output.nostr-member.v1",
-      root: "0x" + "11".repeat(32),
+      root: `0x${"11".repeat(32)}`,
       epoch: "12",
       anchorBlock: 500,
       indexerUrl: "https://idx.example.com",
@@ -218,7 +218,7 @@ test("a score root parses and malformed roots are refused", () => {
   };
   const parsed = parseScoreRoot(good);
   assert.equal(parsed.program, "trustgraphs.output.nostr-member.v1");
-  assert.equal(parsed.root, "0x" + "11".repeat(32));
+  assert.equal(parsed.root, `0x${"11".repeat(32)}`);
   assert.equal(parsed.epoch, "12");
   assert.equal(parsed.anchorBlock, 500);
   assert.equal(parsed.indexerUrl, "https://idx.example.com");
@@ -237,7 +237,7 @@ test("a score root parses and malformed roots are refused", () => {
     parseScoreRoot({
       ...good,
       id: "s3",
-      content: JSON.stringify({ root: "0x" + "11".repeat(32), epoch: "1" }),
+      content: JSON.stringify({ root: `0x${"11".repeat(32)}`, epoch: "1" }),
     }),
     null,
   );
@@ -245,7 +245,7 @@ test("a score root parses and malformed roots are refused", () => {
 
 test("a return-capital proposal parses with its kind", () => {
   const KEY = "a".repeat(64);
-  const launches = buildLaunches([record(KEY, "nebula", 100)]);
+  const _launches = buildLaunches([record(KEY, "nebula", 100)]);
   const coord = `37001:${KEY}:nebula`;
   const prop = {
     id: "prop-1",
