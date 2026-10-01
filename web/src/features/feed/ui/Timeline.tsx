@@ -48,7 +48,11 @@ export function PostList({
   const visible = muted?.length
     ? posts.filter((p) => !muted.includes(p.event.pubkey))
     : posts;
-  const profiles = useProfiles(visible.map((p) => p.event.pubkey));
+  const profiles = useProfiles(
+    visible.flatMap((p) =>
+      p.repostedBy ? [p.event.pubkey, p.repostedBy.pubkey] : [p.event.pubkey],
+    ),
+  );
   const meta = usePostMeta(
     visible.map((p) => p.event.id),
     viewer,
@@ -70,8 +74,13 @@ export function PostList({
     <>
       {visible.map((post) => (
         <PostRow
-          key={post.event.id}
+          key={`${post.event.id}:${post.repostedBy?.pubkey ?? ""}`}
           post={post}
+          reposterProfile={
+            post.repostedBy
+              ? profiles.data?.get(post.repostedBy.pubkey)
+              : undefined
+          }
           bookmarked={bookmarks?.includes(post.event.id) ?? false}
           profile={profiles.data?.get(post.event.pubkey)}
           meta={meta.data?.get(post.event.id)}

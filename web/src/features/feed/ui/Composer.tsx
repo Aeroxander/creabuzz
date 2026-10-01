@@ -2,11 +2,12 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/cn";
-import { toNpub } from "@/shared/lib/nip19";
+import { neventOf, toNpub } from "@/shared/lib/nip19";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 import { Button } from "@/shared/ui/button";
 import type { Profile } from "../feed-model";
 import {
+  type QuoteTarget,
   type ReplyTarget,
   isFeedPreview,
   usePublishNote,
@@ -37,12 +38,17 @@ export function Composer({
   viewer,
   profile,
   replyTo,
+  quote,
+  onSent,
   placeholder = "What's happening?",
   autoFocus = false,
 }: {
   viewer: string | null;
   profile?: Profile;
   replyTo?: ReplyTarget;
+  /** Quote-post: the note is referenced with a `q` tag and a `nostr:nevent` link. */
+  quote?: QuoteTarget;
+  onSent?: () => void;
   placeholder?: string;
   autoFocus?: boolean;
 }) {
@@ -86,11 +92,15 @@ export function Composer({
 
   function submit() {
     if (!trimmed || publish.isPending) return;
+    const content = quote
+      ? `${trimmed}\n\nnostr:${neventOf(quote.id, quote.author)}`
+      : trimmed;
     publish.mutate(
-      { content: trimmed, replyTo },
+      { content, replyTo, quote },
       {
         onSuccess: () => {
           setText("");
+          onSent?.();
           if (ref.current) ref.current.style.height = "auto";
           toast.success(replyTo ? "Your reply was sent" : "Your post was sent");
         },

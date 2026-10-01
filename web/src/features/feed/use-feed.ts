@@ -11,17 +11,22 @@ import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { parseEntity } from "@/shared/lib/nip19";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
+  KIND_DELETION,
   KIND_NOTE,
   KIND_PROFILE,
   KIND_REACTION,
+  KIND_REPOST,
   type Post,
   type Profile,
+  activityAt,
   computeMeta,
+  embeddedRepostTarget,
   hashtagsOf,
   mentionEntitiesOf,
   parentIdOf,
   parseProfile,
   sortNewestFirst,
+  lastTagValue,
   toPost,
 } from "./feed-model";
 import { MOCK_VIEWER, queryMockEvents } from "./mock-feed";
@@ -87,6 +92,52 @@ export async function fetchLatest(
 type TimelinePage = { posts: Post[]; next: number | null };
 
 /**
+ * Turn raw kind 1 / kind 6 events into rows. Reposts resolve to the original
+ * note (embedded copy if authentic, otherwise fetched by id) and keep who
+ * reposted it; an original that appears several times keeps its newest surfacing.
+ */
+async function resolvePosts(events: NostrEvent[]): Promise<Post[]> {
+  const sorted = sortNewestFirst(events);
+  const embedded = new Map<string, NostrEvent>();
+  const missing = new Set<string>();
+  for (const e of sorted) {
+    if (e.kind !== KIND_REPOST) continue;
+    const targetId = lastTagValue(e.tags, "e");
+    if (!targetId) continue;
+    const target = embeddedRepostTarget(e);
+    if (target) embedded.set(targetId, target);
+    else if (!embedded.has(targetId)) missing.add(targetId);
+  }
+  for (const id of embedded.keys()) missing.delete(id);
+  if (missing.size > 0) {
+    const fetched = await fetchEvents({
+      ids: [...missing],
+      kinds: [KIND_NOTE],
+      limit: missing.size,
+    });
+    for (const e of fetched) embedded.set(e.id, e);
+  }
+
+  const seen = new Set<string>();
+  const posts: Post[] = [];
+  for (const e of sorted) {
+    const original =
+      e.kind === KIND_REPOST
+        ? embedded.get(lastTagValue(e.tags, "e") ?? "")
+        : e;
+    if (!original || seen.has(original.id)) continue;
+    seen.add(original.id);
+    posts.push({
+      ...toPost(original),
+      ...(e.kind === KIND_REPOST
+        ? { repostedBy: { pubkey: e.pubkey, at: e.created_at } }
+        : {}),
+    });
+  }
+  return posts.sort((a, b) => activityAt(b) - activityAt(a));
+}
+
+/**
  * Reverse-chronological notes. `authors` narrows to a follow list; `filter`
  * adds relay-side constraints (e.g. a `#t` hashtag); `select` post-filters
  * each page (top-level only, replies only, media only, …).
@@ -96,12 +147,15 @@ export function useTimeline({
   authors,
   filter,
   select = (p) => p.parentId === null,
+  reposts = false,
   enabled = true,
 }: {
   key: unknown[];
   authors?: string[] | null;
   filter?: Record<string, string[]>;
   select?: (post: Post) => boolean;
+  /** Include NIP-18 reposts (kind 6) alongside notes. */
+  reposts?: boolean;
   enabled?: boolean;
 }) {
   return useInfiniteQuery<
@@ -120,7 +174,7 @@ export function useTimeline({
     refetchInterval: 30_000,
     queryFn: async ({ pageParam }) => {
       const events = await fetchEvents({
-        kinds: [KIND_NOTE],
+        kinds: reposts ? [KIND_NOTE, KIND_REPOST] : [KIND_NOTE],
         limit: PAGE_SIZE,
         ...(authors ? { authors } : {}),
         ...filter,
@@ -129,7 +183,7 @@ export function useTimeline({
       const sorted = sortNewestFirst(events);
       const oldest = sorted[sorted.length - 1]?.created_at;
       return {
-        posts: sorted.map(toPost).filter(select),
+        posts: (await resolvePosts(events)).filter(select),
         next: events.length >= PAGE_SIZE && oldest ? oldest - 1 : null,
       };
     },
@@ -170,11 +224,12 @@ export function usePostMeta(ids: string[], viewer: string | null) {
     enabled: key.length > 0,
     staleTime: 15_000,
     queryFn: async () => {
-      const [reactions, replies] = await Promise.all([
-        fetchEvents({ kinds: [KIND_REACTION], "#e": key, limit: 500 }),
-        fetchEvents({ kinds: [KIND_NOTE], "#e": key, limit: 500 }),
-      ]);
-      return computeMeta(key, [...reactions, ...replies], viewer);
+      const related = await fetchEvents({
+        kinds: [KIND_REACTION, KIND_NOTE, KIND_REPOST],
+        "#e": key,
+        limit: 1000,
+      });
+      return computeMeta(key, related, viewer);
     },
   });
 }
@@ -239,6 +294,7 @@ export function useThread(noteId: string) {
   });
 }
 
+export type QuoteTarget = { id: string; author: string };
 export type ReplyTarget = {
   id: string;
   author: string;
@@ -253,8 +309,16 @@ function mentionTags(content: string): string[][] {
 }
 
 /** Tags for a new note: NIP-10 reply markers, `p` mentions, `t` hashtags. */
-export function buildNoteTags(content: string, replyTo?: ReplyTarget) {
+export function buildNoteTags(
+  content: string,
+  replyTo?: ReplyTarget,
+  quote?: QuoteTarget,
+) {
   const tags: string[][] = [];
+  if (quote) {
+    tags.push(["q", quote.id, "", quote.author]);
+    tags.push(["p", quote.author]);
+  }
   if (replyTo) {
     if (replyTo.rootId && replyTo.rootId !== replyTo.id) {
       tags.push(["e", replyTo.rootId, "", "root"]);
@@ -276,15 +340,17 @@ export function usePublishNote() {
     mutationFn: async ({
       content,
       replyTo,
+      quote,
     }: {
       content: string;
       replyTo?: ReplyTarget;
+      quote?: QuoteTarget;
     }) => {
       if (isFeedPreview()) throw new Error("Posting is disabled in preview.");
       return publishEvent({
         kind: KIND_NOTE,
         content,
-        tags: buildNoteTags(content, replyTo),
+        tags: buildNoteTags(content, replyTo, quote),
       });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
@@ -307,5 +373,38 @@ export function useLikeNote() {
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["feed", "meta"] }),
+  });
+}
+
+/** NIP-18 repost (kind 6) with the original embedded, and undo via NIP-09 deletion. */
+export function useRepost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      args:
+        | { action: "repost"; note: NostrEvent }
+        | { action: "undo"; repostId: string },
+    ) => {
+      if (isFeedPreview()) throw new Error("Reposting is disabled in preview.");
+      if (args.action === "undo") {
+        return publishEvent({
+          kind: KIND_DELETION,
+          content: "",
+          tags: [
+            ["e", args.repostId],
+            ["k", String(KIND_REPOST)],
+          ],
+        });
+      }
+      return publishEvent({
+        kind: KIND_REPOST,
+        content: JSON.stringify(args.note),
+        tags: [
+          ["e", args.note.id],
+          ["p", args.note.pubkey],
+        ],
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
   });
 }

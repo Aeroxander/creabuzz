@@ -1,9 +1,12 @@
 import type { NostrEvent } from "@/shared/lib/nostr-client";
+import { verifyEvent } from "nostr-tools/pure";
 
 export const KIND_PROFILE = 0;
 export const KIND_NOTE = 1;
 export const KIND_CONTACTS = 3;
+export const KIND_REPOST = 6;
 export const KIND_REACTION = 7;
+export const KIND_DELETION = 5;
 export const KIND_MUTES = 10000;
 export const KIND_BOOKMARKS = 10003;
 
@@ -21,20 +24,47 @@ export interface Profile {
 export interface PostMeta {
   replies: number;
   likes: number;
+  reposts: number;
   likedByViewer: boolean;
+  /** Id of the viewer's own repost event (so it can be undone), if any. */
+  viewerRepostId: string | null;
 }
 
 export interface Post {
   event: NostrEvent;
   /** Event id this note replies to, if any (NIP-10 `reply` or last `e` marker). */
   parentId: string | null;
+  /** Set when this row is a NIP-18 repost: who reposted it and when. */
+  repostedBy?: { pubkey: string; at: number };
 }
 
 export const EMPTY_META: PostMeta = {
   replies: 0,
   likes: 0,
+  reposts: 0,
   likedByViewer: false,
+  viewerRepostId: null,
 };
+
+/** Time a post surfaced in a timeline: the repost time for reposts, else its own time. */
+export function activityAt(post: Post): number {
+  return post.repostedBy?.at ?? post.event.created_at;
+}
+
+/**
+ * The reposted note embedded in a kind 6 `content`, if present and authentic
+ * (valid signature and matches the `e` tag). Otherwise null — callers fetch it by id.
+ */
+export function embeddedRepostTarget(repost: NostrEvent): NostrEvent | null {
+  const targetId = lastTagValue(repost.tags, "e");
+  if (!repost.content || !targetId) return null;
+  try {
+    const parsed = JSON.parse(repost.content) as NostrEvent;
+    return parsed.id === targetId && verifyEvent(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 export function parentIdOf(event: NostrEvent): string | null {
   const eTags = event.tags.filter((t) => t[0] === "e" && t[1]);
@@ -96,6 +126,9 @@ export function computeMeta(
       if (e.kind === KIND_REACTION && (e.content === "+" || e.content === "")) {
         meta.likes += 1;
         if (viewer && e.pubkey === viewer) meta.likedByViewer = true;
+      } else if (e.kind === KIND_REPOST) {
+        meta.reposts += 1;
+        if (viewer && e.pubkey === viewer) meta.viewerRepostId = e.id;
       } else if (e.kind === KIND_NOTE && parentIdOf(e) === t[1]) {
         meta.replies += 1;
       }
@@ -128,4 +161,13 @@ export function mentionEntitiesOf(content: string): string[] {
 
 export function isImageUrl(url: string): boolean {
   return /\.(png|jpe?g|gif|webp|avif)(\?[^\s]*)?$/i.test(url);
+}
+
+/** Value of the last `name` tag (NIP-18 puts the reposted event last). */
+export function lastTagValue(
+  tags: string[][],
+  name: string,
+): string | undefined {
+  const values = tagValues(tags, name);
+  return values[values.length - 1];
 }

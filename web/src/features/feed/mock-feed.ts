@@ -1,5 +1,5 @@
 import type { NostrEvent, NostrFilter } from "@/shared/lib/nostr-client";
-import { toNpub } from "@/shared/lib/nip19";
+import { neventOf, toNpub } from "@/shared/lib/nip19";
 import { KIND_NOTE, KIND_PROFILE, hashtagsOf } from "./feed-model";
 
 const now = Math.floor(Date.now() / 1000);
@@ -120,6 +120,16 @@ export const allMockEvents: NostrEvent[] = [
   note("6", 2, 60 * 60 * 24 * 9, "Small teams, sharp tools, loud demos. #buzz"),
   note("7", 0, 60, "Congrats! Was this the connection pooling change?", "1"),
   note("8", 3, 45, "Nice. Any chance of a write-up?", "1"),
+  ev("r1", 3, 6, 120, "", [
+    ["e", id("3")],
+    ["p", people[0].pubkey],
+  ]),
+  note(
+    "9",
+    2,
+    60 * 60 * 2,
+    `Quoting this one: nostr:${neventOf(id("3"), people[0].pubkey)}`,
+  ),
   like("1", 0, "1", 1),
   like("2", 3, "1", 1),
   like("3", 1, "3", 0),

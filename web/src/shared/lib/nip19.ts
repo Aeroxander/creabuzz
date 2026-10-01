@@ -1,4 +1,4 @@
-import { decode, npubEncode } from "nostr-tools/nip19";
+import { decode, neventEncode, npubEncode } from "nostr-tools/nip19";
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 
@@ -31,4 +31,9 @@ export function parseEntity(input: string): Entity | null {
 
 export function toNpub(pubkey: string): string {
   return npubEncode(pubkey);
+}
+
+/** `nevent1…` bech32 for an event id (with author hint). */
+export function neventOf(id: string, author?: string): string {
+  return neventEncode({ id, author });
 }

@@ -2,9 +2,10 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { parseEntity } from "@/shared/lib/nip19";
+import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { isImageUrl } from "./feed-model";
-import { useProfiles } from "./use-feed";
-import { displayNameOf } from "./ui/Avatar";
+import { usePostsByIds, useProfiles } from "./use-feed";
+import { Avatar, displayNameOf } from "./ui/Avatar";
 
 const TOKEN =
   /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]|nostr:[0-9a-z]+|(?<=^|[\s(])#[\p{L}\p{N}_]+)/gu;
@@ -47,18 +48,7 @@ function renderToken(token: string, key: number): ReactNode {
     if (entity?.type === "pubkey") {
       return <Mention key={key} pubkey={entity.pubkey} />;
     }
-    if (entity?.type === "event") {
-      return (
-        <Link
-          key={key}
-          to="/feed/$noteId"
-          params={{ noteId: entity.id }}
-          className="relative z-10 text-primary hover:underline"
-        >
-          post
-        </Link>
-      );
-    }
+    if (entity?.type === "event") return null; // shown as an embedded card
     return token;
   }
   return (
@@ -74,9 +64,68 @@ function renderToken(token: string, key: number): ReactNode {
   );
 }
 
-/** Render note text: links, hashtags, `nostr:` mentions; image URLs become media. */
-export function NoteContent({ content }: { content: string }) {
+/** A quoted note (NIP-18 `q` / `nostr:nevent`) rendered as a compact bordered card. */
+function QuotedPost({ id }: { id: string }) {
+  const post = usePostsByIds([id]).data?.[0];
+  const author = post?.event.pubkey;
+  const profile = useProfiles(author ? [author] : []).data?.get(author ?? "");
+  if (!post || !author) {
+    return (
+      <div className="relative z-10 mt-3 rounded-2xl border p-3 text-sm text-muted-foreground">
+        This post isn’t available.
+      </div>
+    );
+  }
+  return (
+    <div className="relative z-10 mt-3 overflow-hidden rounded-2xl border p-3 transition-colors hover:bg-foreground/[0.04]">
+      <div className="flex items-center gap-2 text-[15px] leading-5">
+        <Avatar
+          pubkey={author}
+          profile={profile}
+          className="h-5 w-5 text-[10px]"
+        />
+        <Link
+          to="/feed/$noteId"
+          params={{ noteId: id }}
+          className="truncate font-bold after:absolute after:inset-0"
+        >
+          {displayNameOf(author, profile)}
+        </Link>
+        {profile?.name && (
+          <span className="truncate text-muted-foreground">
+            @{profile.name}
+          </span>
+        )}
+        <span className="text-muted-foreground">
+          · {shortRelativeTime(post.event.created_at)}
+        </span>
+      </div>
+      <div className="mt-1 line-clamp-6">
+        <NoteContent content={post.event.content} embed={false} />
+      </div>
+    </div>
+  );
+}
+
+/** Render note text: links, hashtags, `nostr:` mentions; image URLs become media, event refs become quote cards. */
+export function NoteContent({
+  content,
+  embed = true,
+}: {
+  content: string;
+  embed?: boolean;
+}) {
   const images = new Set(extractImages(content));
+  const quoted = embed
+    ? [
+        ...new Set(
+          (content.match(/nostr:[0-9a-z]+/g) ?? []).flatMap((t) => {
+            const entity = parseEntity(t);
+            return entity?.type === "event" ? [entity.id] : [];
+          }),
+        ),
+      ].slice(0, 2)
+    : [];
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of content.matchAll(TOKEN)) {
@@ -93,6 +142,9 @@ export function NoteContent({ content }: { content: string }) {
       <p className="whitespace-pre-wrap break-words text-[15px] leading-5">
         {parts}
       </p>
+      {quoted.map((id) => (
+        <QuotedPost key={id} id={id} />
+      ))}
       {images.size > 0 && (
         <div
           className={`mt-3 grid gap-0.5 overflow-hidden rounded-2xl border ${

@@ -152,6 +152,7 @@ function AuthorTab({
     key: ["author", pubkey, tab],
     authors: [pubkey],
     select: SELECT[tab],
+    reposts: tab === "posts",
   });
   const posts = timeline.data?.pages.flatMap((p) => p.posts) ?? [];
   if (timeline.isLoading) return <TimelineSkeleton />;

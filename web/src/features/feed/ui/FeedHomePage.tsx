@@ -36,6 +36,7 @@ export function FeedHomePage() {
   const timeline = useTimeline({
     key: [tab, authors ? [...authors].sort() : "global"],
     authors,
+    reposts: true,
   });
   const posts = timeline.data?.pages.flatMap((p) => p.posts) ?? [];
   const followingBlocked =
