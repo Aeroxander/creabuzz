@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  Briefcase,
   Compass,
   Home,
   LayoutGrid,
@@ -14,11 +15,16 @@ import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
 
 interface NavItem {
-  to: "/" | "/c" | "/discover" | "/launchpad" | "/projects";
+  to: "/" | "/c" | "/discover" | "/launchpad" | "/projects" | "/portfolio";
   label: string;
   icon: LucideIcon;
   /** Whether a pathname belongs to this section. */
   matches: (pathname: string) => boolean;
+  /**
+   * Rail only. The phone tab bar keeps to five tabs so its labels stay
+   * readable at 360px; phones reach these from a page instead.
+   */
+  wideOnly?: boolean;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -51,6 +57,14 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Projects",
     icon: LayoutGrid,
     matches: (p) => p.startsWith("/projects"),
+  },
+  {
+    to: "/portfolio",
+    label: "Portfolio",
+    icon: Briefcase,
+    matches: (p) => p.startsWith("/portfolio"),
+    // On phones: the link beside Home's title.
+    wideOnly: true,
   },
 ];
 
@@ -98,7 +112,7 @@ export function AppNav() {
       className="flex h-14 w-full shrink-0 items-stretch justify-around border-t border-black/10 bg-[#F8F8F8] px-1 dark:border-white/10 dark:bg-[#1B1B1B]"
       data-testid="app-nav"
     >
-      {NAV_ITEMS.map((item) => (
+      {NAV_ITEMS.filter((item) => !item.wideOnly).map((item) => (
         <NavLink active={item.matches(pathname)} item={item} key={item.to} />
       ))}
       <div className="flex items-center">

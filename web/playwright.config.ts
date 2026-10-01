@@ -37,6 +37,7 @@ export default defineConfig({
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",
         "**/task-planning.spec.ts",
+        "**/portfolio.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -54,7 +54,10 @@ function taskRow(
   });
 }
 
-async function openBoard(page: Page, relay: ReturnType<typeof createMockRelay>) {
+async function openBoard(
+  page: Page,
+  relay: ReturnType<typeof createMockRelay>,
+) {
   await relay.install(page);
   // Registered after `install`, so these answer first.
   await page.route("**/communities", async (route) => {
@@ -226,7 +229,11 @@ test("a task's plan survives a row that omits it, and the finisher claims it onc
     taskRow(
       WORKER,
       "task-docs",
-      { title: "Write the setup guide", description: "", status: "in_progress" },
+      {
+        title: "Write the setup guide",
+        description: "",
+        status: "in_progress",
+      },
       1_700_000_201,
       ME,
     ),
@@ -287,6 +294,8 @@ test("a task already credited (by the worker or the CLI) cannot be claimed twice
   await page.getByTestId("work-view-list").click();
   await page.getByText("Fix the invite link").first().click();
   await page.getByTestId("task-claim").click();
-  await expect(page.getByText("This task has already been claimed.")).toBeVisible();
+  await expect(
+    page.getByText("This task has already been claimed."),
+  ).toBeVisible();
   expect(relay.events.filter((e) => e.kind === 37013)).toHaveLength(1);
 });
