@@ -8,6 +8,7 @@ import { Route as rootRouteImport } from "./routes/root";
 import { Route as searchRouteImport } from "./routes/search";
 import { Route as reposRouteImport } from "./routes/repos";
 import { Route as notificationsRouteImport } from "./routes/notifications";
+import { Route as messagesRouteImport } from "./routes/messages";
 import { Route as feedRouteImport } from "./routes/feed";
 import { Route as exploreRouteImport } from "./routes/explore";
 import { Route as bookmarksRouteImport } from "./routes/bookmarks";
@@ -15,6 +16,7 @@ import { Route as indexRouteImport } from "./routes/index";
 import { Route as tagDottagRouteImport } from "./routes/tag.$tag";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
 import { Route as pDotidRouteImport } from "./routes/p.$id";
+import { Route as messagesDotpeerRouteImport } from "./routes/messages.$peer";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as feedDotnoteIdRouteImport } from "./routes/feed.$noteId";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
@@ -32,6 +34,11 @@ const reposRoute = reposRouteImport.update({
 const notificationsRoute = notificationsRouteImport.update({
   id: "/notifications",
   path: "/notifications",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const messagesRoute = messagesRouteImport.update({
+  id: "/messages",
+  path: "/messages",
   getParentRoute: () => rootRouteImport,
 } as any);
 const feedRoute = feedRouteImport.update({
@@ -69,6 +76,11 @@ const pDotidRoute = pDotidRouteImport.update({
   path: "/p/$id",
   getParentRoute: () => rootRouteImport,
 } as any);
+const messagesDotpeerRoute = messagesDotpeerRouteImport.update({
+  id: "/messages/$peer",
+  path: "/messages/$peer",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
   id: "/invite/$code",
   path: "/invite/$code",
@@ -91,11 +103,13 @@ export interface FileRoutesByFullPath {
   "/bookmarks": typeof bookmarksRoute;
   "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/messages": typeof messagesRoute;
   "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
   "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/messages/$peer": typeof messagesDotpeerRoute;
   "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/tag/$tag": typeof tagDottagRoute;
@@ -106,11 +120,13 @@ export interface FileRoutesByTo {
   "/bookmarks": typeof bookmarksRoute;
   "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/messages": typeof messagesRoute;
   "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
   "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/messages/$peer": typeof messagesDotpeerRoute;
   "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/tag/$tag": typeof tagDottagRoute;
@@ -122,11 +138,13 @@ export interface FileRoutesById {
   "/bookmarks": typeof bookmarksRoute;
   "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/messages": typeof messagesRoute;
   "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
   "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/messages/$peer": typeof messagesDotpeerRoute;
   "/p/$id": typeof pDotidRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/tag/$tag": typeof tagDottagRoute;
@@ -139,11 +157,13 @@ export interface FileRouteTypes {
     | "/bookmarks"
     | "/explore"
     | "/feed"
+    | "/messages"
     | "/notifications"
     | "/repos"
     | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/messages/$peer"
     | "/p/$id"
     | "/repos/$repoId"
     | "/tag/$tag"
@@ -154,11 +174,13 @@ export interface FileRouteTypes {
     | "/bookmarks"
     | "/explore"
     | "/feed"
+    | "/messages"
     | "/notifications"
     | "/repos"
     | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/messages/$peer"
     | "/p/$id"
     | "/repos/$repoId"
     | "/tag/$tag"
@@ -169,11 +191,13 @@ export interface FileRouteTypes {
     | "/bookmarks"
     | "/explore"
     | "/feed"
+    | "/messages"
     | "/notifications"
     | "/repos"
     | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
+    | "/messages/$peer"
     | "/p/$id"
     | "/repos/$repoId"
     | "/tag/$tag"
@@ -185,11 +209,13 @@ export interface RootRouteChildren {
   bookmarksRoute: typeof bookmarksRoute;
   exploreRoute: typeof exploreRoute;
   feedRoute: typeof feedRoute;
+  messagesRoute: typeof messagesRoute;
   notificationsRoute: typeof notificationsRoute;
   reposRoute: typeof reposRoute;
   searchRoute: typeof searchRoute;
   feedDotnoteIdRoute: typeof feedDotnoteIdRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
+  messagesDotpeerRoute: typeof messagesDotpeerRoute;
   pDotidRoute: typeof pDotidRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
   tagDottagRoute: typeof tagDottagRoute;
@@ -217,6 +243,13 @@ declare module "@tanstack/react-router" {
       path: "/notifications";
       fullPath: "/notifications";
       preLoaderRoute: typeof notificationsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/messages": {
+      id: "/messages";
+      path: "/messages";
+      fullPath: "/messages";
+      preLoaderRoute: typeof messagesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/feed": {
@@ -268,6 +301,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof pDotidRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/messages/$peer": {
+      id: "/messages/$peer";
+      path: "/messages/$peer";
+      fullPath: "/messages/$peer";
+      preLoaderRoute: typeof messagesDotpeerRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/invite/$code": {
       id: "/invite/$code";
       path: "/invite/$code";
@@ -297,11 +337,13 @@ const rootRouteChildren: RootRouteChildren = {
   bookmarksRoute: bookmarksRoute,
   exploreRoute: exploreRoute,
   feedRoute: feedRoute,
+  messagesRoute: messagesRoute,
   notificationsRoute: notificationsRoute,
   reposRoute: reposRoute,
   searchRoute: searchRoute,
   feedDotnoteIdRoute: feedDotnoteIdRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
+  messagesDotpeerRoute: messagesDotpeerRoute,
   pDotidRoute: pDotidRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
   tagDottagRoute: tagDottagRoute,

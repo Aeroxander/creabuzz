@@ -16,7 +16,18 @@ const PUBLISH_TIMEOUT_MS = 15_000;
 export async function publishEvent(
   template: Omit<UnsignedNostrEvent, "created_at">,
 ): Promise<SignedNostrEvent> {
-  const event = await signNostrEvent(template, { requireNip07: true });
+  return submitSignedEvent(
+    await signNostrEvent(template, { requireNip07: true }),
+  );
+}
+
+/**
+ * Submit an already-signed event. The NIP-98 header is signed by the real
+ * identity even when the event itself is not (gift wraps use throwaway keys).
+ */
+export async function submitSignedEvent(
+  event: SignedNostrEvent,
+): Promise<SignedNostrEvent> {
   const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}/events`;
   const body = JSON.stringify(event);
   const authorization = await makeNip98AuthHeader(url, "POST", {

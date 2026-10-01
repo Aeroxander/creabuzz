@@ -4,6 +4,7 @@ import {
   Bookmark,
   BookMarked,
   Home,
+  Mail,
   PenLine,
   Search,
   User,
@@ -37,7 +38,15 @@ type NavItem = {
   label: string;
   icon: typeof Home;
   link:
-    | { to: "/feed" | "/explore" | "/notifications" | "/bookmarks" | "/" }
+    | {
+        to:
+          | "/feed"
+          | "/explore"
+          | "/notifications"
+          | "/messages"
+          | "/bookmarks"
+          | "/";
+      }
     | { to: "/p/$id"; params: { id: string } };
   badge?: number;
   /** Shown in the mobile bottom bar, which only has room for a few. */
@@ -70,6 +79,13 @@ function useNavItems(): NavItem[] {
             icon: Bell,
             link: { to: "/notifications" as const },
             badge: unread,
+            mobile: true,
+          },
+          {
+            key: "messages",
+            label: "Messages",
+            icon: Mail,
+            link: { to: "/messages" as const },
             mobile: true,
           },
         ]

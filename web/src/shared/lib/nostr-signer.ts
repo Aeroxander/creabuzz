@@ -116,11 +116,30 @@ export class Nip44UnavailableError extends Error {
   }
 }
 
+function requireNip44(): NonNullable<Nip07Provider["nip44"]> {
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (!provider?.nip44) throw new Nip44UnavailableError();
+  return provider.nip44;
+}
+
+/** NIP-44 encrypt to `peer` with the active signer (the key never leaves it). */
+export function nip44Encrypt(peer: string, plaintext: string): Promise<string> {
+  return requireNip44().encrypt(peer, plaintext);
+}
+
+/** NIP-44 decrypt a payload from `peer` with the active signer. */
+export function nip44Decrypt(
+  peer: string,
+  ciphertext: string,
+): Promise<string> {
+  return requireNip44().decrypt(peer, ciphertext);
+}
+
 /** Encrypt a private payload to yourself (NIP-44) with the active signer. */
 export async function nip44EncryptToSelf(plaintext: string): Promise<string> {
   const provider = typeof window === "undefined" ? undefined : window.nostr;
-  if (!provider?.nip44) throw new Nip44UnavailableError();
-  return provider.nip44.encrypt(await provider.getPublicKey(), plaintext);
+  if (!provider) throw new Nip44UnavailableError();
+  return nip44Encrypt(await provider.getPublicKey(), plaintext);
 }
 
 /** Decrypt a payload that was encrypted to yourself (NIP-44) with the active signer. */
@@ -128,6 +147,29 @@ export async function nip44DecryptFromSelf(
   ciphertext: string,
 ): Promise<string> {
   const provider = typeof window === "undefined" ? undefined : window.nostr;
-  if (!provider?.nip44) throw new Nip44UnavailableError();
-  return provider.nip44.decrypt(await provider.getPublicKey(), ciphertext);
+  if (!provider) throw new Nip44UnavailableError();
+  return nip44Decrypt(await provider.getPublicKey(), ciphertext);
+}
+
+/** Everything gift-wrapped DMs need from a signer; a NIP-07 / passkey signer provides it. */
+export interface DirectMessageSigner {
+  pubkey: string;
+  signEvent(
+    template: Omit<UnsignedNostrEvent, "created_at"> & { created_at?: number },
+  ): Promise<SignedNostrEvent>;
+  nip44Encrypt(peer: string, plaintext: string): Promise<string>;
+  nip44Decrypt(peer: string, ciphertext: string): Promise<string>;
+}
+
+/** The active browser signer, or throws when there is no real identity or no NIP-44. */
+export async function getDirectMessageSigner(): Promise<DirectMessageSigner> {
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (!provider) throw new Nip07UnavailableError();
+  requireNip44();
+  return {
+    pubkey: await provider.getPublicKey(),
+    signEvent: (template) => signNostrEvent(template, { requireNip07: true }),
+    nip44Encrypt,
+    nip44Decrypt,
+  };
 }

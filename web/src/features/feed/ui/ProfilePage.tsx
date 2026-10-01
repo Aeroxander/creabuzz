@@ -1,5 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, Link as LinkIcon, VolumeX } from "lucide-react";
+import { ArrowLeft, Link as LinkIcon, Mail, VolumeX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -257,6 +257,21 @@ function ProfileView({
             ) : viewer ? (
               <>
                 <MuteButton viewer={viewer} target={pubkey} />
+                <Button
+                  asChild
+                  variant="outline"
+                  size="icon"
+                  className="rounded-full"
+                >
+                  <Link
+                    to="/messages/$peer"
+                    params={{ peer: pubkey }}
+                    aria-label="Message"
+                    title="Message"
+                  >
+                    <Mail />
+                  </Link>
+                </Button>
                 <FollowButton viewer={viewer} target={pubkey} />
               </>
             ) : null}
