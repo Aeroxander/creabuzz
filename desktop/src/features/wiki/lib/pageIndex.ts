@@ -50,6 +50,8 @@ export type HumanWikiPage = {
   /** Author of the winning snapshot; a tombstone must match it. */
   authorPubkey: string;
   eventId: string;
+  /** The `t: team:<id>` scope the snapshot carried, or null. */
+  scope: string | null;
 };
 
 export type AgentWikiPage = {
@@ -99,6 +101,21 @@ function tagValue(event: WikiPageEvent, name: string): string | undefined {
   return undefined;
 }
 
+/** The `t: team:<id>` scope a revision carried, or null. */
+function scopeOf(event: WikiPageEvent): string | null {
+  for (const tag of event.tags) {
+    if (tag[0] !== "t") continue;
+    const value = typeof tag[1] === "string" ? tag[1] : "";
+    if (value.startsWith("team:") && value.length > 5) return value.slice(5);
+  }
+  return null;
+}
+
+/** True when a delete marker is an admin's permanent purge. */
+export function isPurgeMarker(event: WikiPageEvent): boolean {
+  return event.tags.some((tag) => tag[0] === "purge" && tag[1] === "1");
+}
+
 /** Newest snapshot per slug candidate; null for a non-44001 event. */
 export function eventToHumanWikiPage(
   event: WikiPageEvent,
@@ -118,6 +135,7 @@ export function eventToHumanWikiPage(
     updatedAt: event.created_at,
     authorPubkey: event.pubkey,
     eventId: event.id,
+    scope: scopeOf(event),
   };
 }
 
@@ -164,6 +182,101 @@ function supersedes(
   );
 }
 
+type HumanTombstone = { pubkey: string; createdAt: number; purge: boolean };
+
+/** Newest effective delete marker per `author:slug` coordinate. */
+function humanTombstones(
+  events: ReadonlyArray<WikiPageEvent>,
+): Map<string, HumanTombstone> {
+  const tombstones = new Map<string, HumanTombstone>();
+  for (const event of events) {
+    if (event.kind !== KIND_DELETION) continue;
+    const purge = isPurgeMarker(event);
+    for (const tag of event.tags) {
+      if (tag[0] !== "a") continue;
+      const parsed = parseHumanPageCoordinate(tag[1] ?? "");
+      if (!parsed) continue;
+      const key = `${parsed.pubkey}:${parsed.slug}`;
+      const previous = tombstones.get(key);
+      if (!previous || event.created_at > previous.createdAt) {
+        tombstones.set(key, {
+          pubkey: event.pubkey,
+          createdAt: event.created_at,
+          purge,
+        });
+      }
+    }
+  }
+  return tombstones;
+}
+
+/**
+ * Whether the tombstone set hides `page`. A purge marker hides permanently;
+ * a restorable marker hides until a newer accepted revision (the restore
+ * path) republishes the page.
+ */
+function tombstoneHides(
+  page: HumanWikiPage,
+  tombstones: ReadonlyMap<string, HumanTombstone>,
+): boolean {
+  const tombstone = tombstones.get(`${page.authorPubkey}:${page.slug}`);
+  if (!tombstone) return false;
+  if (tombstone.purge) return true;
+  if (tombstone.pubkey !== page.authorPubkey) return false;
+  return tombstone.createdAt >= page.updatedAt;
+}
+
+/** One page's deletion record for the "Recently deleted" list. */
+export type TombstonedWikiPage = {
+  slug: string;
+  /** Content of the hidden revision — what a restore republishes. */
+  content: string;
+  authorPubkey: string;
+  deletedAt: number;
+  deletedBy: string;
+  scope: string | null;
+};
+
+/** Bound the Recently-deleted list. */
+export const TOMBSTONE_LIST_LIMIT = 50;
+
+/**
+ * Human pages currently hidden by a RESTORABLE tombstone — the "Recently
+ * deleted" list. Purged pages are gone from the server and never appear.
+ * Newest deletion first, bounded.
+ */
+export function buildTombstonedWikiPages(
+  events: ReadonlyArray<WikiPageEvent>,
+): TombstonedWikiPage[] {
+  const heads = new Map<string, HumanWikiPage>();
+  for (const event of events) {
+    const page = eventToHumanWikiPage(event);
+    if (!page) continue;
+    const current = heads.get(page.slug);
+    if (!current || supersedes(page, current)) heads.set(page.slug, page);
+  }
+  const tombstones = humanTombstones(events);
+  const out: TombstonedWikiPage[] = [];
+  for (const page of heads.values()) {
+    const tombstone = tombstones.get(`${page.authorPubkey}:${page.slug}`);
+    if (!tombstone) continue;
+    if (tombstone.purge) continue;
+    if (tombstone.pubkey !== page.authorPubkey) continue;
+    if (tombstone.createdAt < page.updatedAt) continue;
+    out.push({
+      slug: page.slug,
+      content: page.content,
+      authorPubkey: page.authorPubkey,
+      deletedAt: tombstone.createdAt,
+      deletedBy: tombstone.pubkey,
+      scope: page.scope,
+    });
+  }
+  return out
+    .sort((a, b) => b.deletedAt - a.deletedAt)
+    .slice(0, TOMBSTONE_LIST_LIMIT);
+}
+
 /**
  * Index raw events (both wiki kinds plus tombstones) into the current page
  * set: human pages sorted by slug first, agent pages sorted by `d`.
@@ -182,31 +295,10 @@ export function buildWikiPages(
     }
   }
 
-  const tombstones = new Map<string, { pubkey: string; createdAt: number }>();
-  for (const event of events) {
-    if (event.kind !== KIND_DELETION) continue;
-    for (const tag of event.tags) {
-      if (tag[0] !== "a") continue;
-      const parsed = parseHumanPageCoordinate(tag[1] ?? "");
-      if (!parsed) continue;
-      const key = `${parsed.pubkey}:${parsed.slug}`;
-      const previous = tombstones.get(key);
-      if (!previous || event.created_at > previous.createdAt) {
-        tombstones.set(key, {
-          pubkey: event.pubkey,
-          createdAt: event.created_at,
-        });
-      }
-    }
-  }
+  const tombstones = humanTombstones(events);
 
   const humans = [...humanHeads.values()]
-    .filter((page) => {
-      const tombstone = tombstones.get(`${page.authorPubkey}:${page.slug}`);
-      if (!tombstone) return true;
-      if (tombstone.pubkey !== page.authorPubkey) return true;
-      return tombstone.createdAt < page.updatedAt;
-    })
+    .filter((page) => !tombstoneHides(page, tombstones))
     .sort((a, b) => a.slug.localeCompare(b.slug));
 
   // ── kind:44002: read-side LWW per (pubkey, d), then per d ────────────────

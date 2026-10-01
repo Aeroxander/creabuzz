@@ -19,6 +19,50 @@ export const KIND_NIP43_MEMBERSHIP_LIST = 13534;
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
 
+/** A community member's relay role (kind:13534 member tags carry it). */
+export type MemberRole = "owner" | "admin" | "member";
+
+/**
+ * The viewer's role in the newest kind:13534 event, or null when the relay
+ * publishes no list (open relay) or the viewer is not on it. Roles ride the
+ * member tags: `["member", <pubkey>, <role>]` or `["p", <pubkey>, <relay>,
+ * <role>]` — the same shape the desktop reads.
+ */
+export function viewerRoleFromEvents(
+  events: readonly {
+    kind: number;
+    created_at: number;
+    tags: readonly (readonly string[])[];
+  }[],
+  viewerPubkey: string | null,
+): MemberRole | null {
+  if (!viewerPubkey) return null;
+  const want = viewerPubkey.trim().toLowerCase();
+  let newest: (typeof events)[number] | null = null;
+  for (const event of events) {
+    if (event.kind !== KIND_NIP43_MEMBERSHIP_LIST) continue;
+    if (!newest || event.created_at > newest.created_at) newest = event;
+  }
+  if (!newest) return null;
+  for (const tag of newest.tags) {
+    const [name, rawPubkey, maybeRoleOrRelay, maybePTagRole] = tag;
+    if (name !== "member" && name !== "p") continue;
+    const pubkey = (rawPubkey ?? "").trim().toLowerCase();
+    if (pubkey !== want || !HEX_PUBKEY.test(pubkey)) continue;
+    const rawRole = name === "member" ? maybeRoleOrRelay : maybePTagRole;
+    if (rawRole === "owner" || rawRole === "admin" || rawRole === "member") {
+      return rawRole;
+    }
+    return "member";
+  }
+  return null;
+}
+
+/** Whether a role may purge pages and re-scope them (community admins). */
+export function isAdminRole(role: MemberRole | null): boolean {
+  return role === "owner" || role === "admin";
+}
+
 /** Member pubkeys (lowercase hex) named by a kind:13534 event. */
 export function membersFromEvent(event: {
   tags: readonly (readonly string[])[];

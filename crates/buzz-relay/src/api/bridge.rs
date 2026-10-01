@@ -1759,6 +1759,18 @@ async fn query_events_authed(
         if let Some(channel) = extract_buzz_channel(raw) {
             query.custom_tag = Some(("buzz-channel".into(), channel.into()));
         }
+        // `include_deleted` wiki extension ("Recently deleted"): surface
+        // TOMBSTONED wiki page rows, whose content is preserved on tombstone
+        // by design. Strictly validated (wiki kinds only) exactly like the
+        // `thread_window` extension — a malformed opt-in is a deterministic
+        // client mistake and 400s before any DB work.
+        match buzz_core::wiki_deleted::parse(raw) {
+            Ok(true) => query.include_deleted_wiki = true,
+            Ok(false) => {}
+            Err(message) => {
+                return Err(api_error(StatusCode::BAD_REQUEST, &message));
+            }
+        }
         // Shared-gated visibility pushdown: must mirror WS REQ so that a page of
         // newer private events does not starve older shared ones off the page.
         if crate::handlers::req::filter_can_match_shared_gated_kinds(filter) {

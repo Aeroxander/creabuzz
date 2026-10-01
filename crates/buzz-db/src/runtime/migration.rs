@@ -1465,11 +1465,23 @@ mod postgres_tests {
         }
         assert!(desired_schema.contains("revoked_reason TEXT"));
 
-        // Wiki/fleet/team slugs are materialized into events.d_tag; the backfill
-        // must cover exactly the kinds the ingest-side extractor materializes.
+        // Wiki/fleet/team slugs are materialized into events.d_tag; the
+        // backfill must cover the kinds the ingest-side extractor
+        // materialized when 0058 shipped. The file is checksum-FROZEN: every
+        // database that ran the original 0058 validates its exact bytes, so
+        // kinds added LATER (wiki corrections, 44003) must never be added
+        // here — their rows get `d_tag` on insert and need no backfill. If a
+        // backfill is ever needed it ships as a NEW migration.
         assert_eq!(migrations[57].version, 58);
         let d_tag_backfill = migrations[57].sql.as_str();
         for kind in buzz_core::kind::D_TAG_ADDRESSED_KINDS {
+            if kind == buzz_core::kind::KIND_WIKI_CORRECTION {
+                assert!(
+                    !d_tag_backfill.contains(&kind.to_string()),
+                    "migration 0058 is checksum-frozen and must not be edited to backfill kind {kind}"
+                );
+                continue;
+            }
             assert!(
                 d_tag_backfill.contains(&kind.to_string()),
                 "migration 0058 must backfill kind {kind}"

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 
 import {
   buildWikiPages,
+  buildTombstonedWikiPages,
   extractLinks,
   humanPageCoordinate,
   parseHumanPageCoordinate,
@@ -301,4 +302,45 @@ describe("extractLinks", () => {
       "tag:roadmap",
     ]);
   });
+});
+
+it("buildTombstonedWikiPages lists restorable deletes and excludes purges", () => {
+  const ALICE = "a".repeat(64);
+  const human = (slug, at, content, extraTags = []) => ({
+    id: `e-${slug}-${at}`,
+    pubkey: ALICE,
+    created_at: at,
+    kind: 44001,
+    tags: [["d", slug], ...extraTags],
+    content,
+  });
+  const marker = (slug, at, extraTags = []) => ({
+    id: `d-${slug}-${at}`,
+    pubkey: ALICE,
+    created_at: at,
+    kind: 5,
+    tags: [["a", `44001:${ALICE}:${slug}`], ...extraTags],
+    content: "",
+  });
+  const deleted = buildTombstonedWikiPages([
+    human("home", 100, "home body", [["t", "team:design"]]),
+    marker("home", 150),
+    human("gone", 100, "gone body"),
+    marker("gone", 150, [["purge", "1"]]),
+  ]);
+  // The restorable tombstone is listed with content + sticky scope for the
+  // restore payload; the purged page is gone from the server — never listed.
+  assert.deepEqual(
+    deleted.map((entry) => [entry.slug, entry.scope, entry.deletedBy]),
+    [["home", "design", ALICE]],
+  );
+  // A newer revision (the restore path) un-lists the page again.
+  assert.deepEqual(
+    buildTombstonedWikiPages([
+      human("home", 100, "home body"),
+      marker("home", 150),
+      human("home", 200, "restored"),
+    ]),
+    [],
+  );
 });

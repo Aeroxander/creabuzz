@@ -818,6 +818,87 @@ async fn holds_authority<S: OrgGraphSource>(walk: &mut Walk<'_, S>, pubkey: &str
     Ok(false)
 }
 
+/// Which node seat list answers a seat question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeatKind {
+    /// The human `holders` list.
+    Holder,
+    /// The `agentSeats` list.
+    Agent,
+    /// Either list.
+    Any,
+}
+
+fn node_has_seat(node: &StoredOrgNode, pubkey: &str, seat: SeatKind) -> bool {
+    match seat {
+        SeatKind::Holder => node.node.holders.iter().any(|h| h == pubkey),
+        SeatKind::Agent => node.node.agent_seats.iter().any(|s| s == pubkey),
+        SeatKind::Any => {
+            node.node.holders.iter().any(|h| h == pubkey)
+                || node.node.agent_seats.iter().any(|s| s == pubkey)
+        }
+    }
+}
+
+/// Whether `pubkey` occupies `seat` in the CANONICAL record of node `d`.
+///
+/// Seat questions must be answered through [`Walk::canonical_node`]'s record,
+/// never through "any surviving node row": multiple authors publish versions
+/// of the same node `d`, and a stale copy that still lists a seat must not
+/// keep its holder privileged after an admin (or an emergency-stop republish)
+/// unseated them in the canonical version. A missing or unanchored node
+/// grants nothing.
+pub async fn holds_canonical_seat<S: OrgGraphSource>(
+    src: &S,
+    d: &str,
+    pubkey: &str,
+    seat: SeatKind,
+) -> Result<bool, OrgAuthorityError<S::Error>> {
+    let pubkey = pubkey.to_ascii_lowercase();
+    let mut walk = Walk::new(src);
+    Ok(match walk.canonical_node(d).await? {
+        NodeLookup::Found(node) => node_has_seat(&node, &pubkey, seat),
+        NodeLookup::Missing | NodeLookup::Unanchored => false,
+    })
+}
+
+/// Whether `pubkey` occupies `seat` in the canonical record of ANY of `ds`.
+///
+/// `ds` must be bounded by the caller (node ids where some version of the
+/// node lists `pubkey`); one memoizing walk answers all of them within the
+/// [`MAX_ORG_LOOKUPS`] budget.
+pub async fn holds_canonical_seat_in_any<S: OrgGraphSource>(
+    src: &S,
+    ds: &[String],
+    pubkey: &str,
+    seat: SeatKind,
+) -> Result<bool, OrgAuthorityError<S::Error>> {
+    let pubkey = pubkey.to_ascii_lowercase();
+    let mut walk = Walk::new(src);
+    for d in ds {
+        if let NodeLookup::Found(node) = walk.canonical_node(d).await? {
+            if node_has_seat(&node, &pubkey, seat) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Whether node `d` has a canonical anchored record — the "team node
+/// resolves" question for wiki team scoping. A page scoped to a node that
+/// does not resolve has no resolvable team and falls back to open editing.
+pub async fn canonical_node_is_resolvable<S: OrgGraphSource>(
+    src: &S,
+    d: &str,
+) -> Result<bool, OrgAuthorityError<S::Error>> {
+    let mut walk = Walk::new(src);
+    Ok(matches!(
+        walk.canonical_node(d).await?,
+        NodeLookup::Found(_)
+    ))
+}
+
 /// Decide whether `author` may publish kind:37010 node `d`.
 ///
 /// - The community owner/admin may publish any node.

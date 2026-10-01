@@ -13,17 +13,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeSlug } from "./lib/slug";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
+import { queryEventsHttp } from "@/shared/lib/http-query";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser, userPubkey } from "@/shared/lib/identity";
 
 import { withCache } from "./lib/cache";
 import {
+  buildDeleteMarker,
   buildPages,
+  buildTombstonedPages,
   KIND_DELETE,
   KIND_WIKI_PAGE,
   pageCoordinate,
+  type TombstonedPage,
 } from "./lib/page-index";
+import { restorePayload } from "./lib/wiki-history";
 
 export interface WikiPage {
   slug: string;
@@ -146,6 +151,38 @@ export async function fetchWikiPages(): Promise<WikiPage[]> {
   );
 }
 
+/**
+ * Pages currently hidden by a restorable tombstone — the "Recently deleted"
+ * list. The relay's `include_deleted: true` filter extension returns
+ * tombstoned pages so they can be listed and restored; it is served by the
+ * HTTP bridge (`POST /query`, the same contract as the thread-window
+ * extension), NOT by WS REQ — so this seam deliberately goes through
+ * `queryEventsHttp`. A relay without the extension answers with live pages
+ * only and `buildTombstonedPages` returns an empty list (harmless, not an
+ * error).
+ */
+export async function fetchTombstonedPages(): Promise<TombstonedPage[]> {
+  const events = await queryEventsHttp([
+    {
+      kinds: [KIND_WIKI_PAGE, KIND_DELETE],
+      limit: 200,
+      include_deleted: true,
+    } as Parameters<typeof queryEventsHttp>[0][number] & {
+      include_deleted?: boolean;
+    },
+  ]);
+  return buildTombstonedPages(
+    events.map((event: NostrEvent) => ({
+      id: event.id,
+      pubkey: event.pubkey,
+      created_at: event.created_at,
+      kind: event.kind,
+      tags: event.tags as string[][],
+      content: event.content,
+    })),
+  );
+}
+
 // ── hooks ───────────────────────────────────────────────────────────────────
 
 /** Wiki page list: instant from the local cache, refreshed from the relay. */
@@ -199,47 +236,100 @@ export function useWikiPages(enabled: boolean) {
     [queryClient],
   );
 
-  const savePage = useCallback(async (slug: string, content: string) => {
-    const signed = await signAsUser({
-      kind: KIND_WIKI_PAGE,
-      tags: [["d", slug]],
-      content,
-    });
-    const result = await publishEvent(relayWsUrl(), signed, {
-      signAuth: signAsUser,
-    });
-    if (!result.accepted) {
-      throw new Error(result.message ?? "relay rejected the wiki page");
-    }
-    await cachePage({
-      slug,
-      content,
-      updatedAt: Math.floor(Date.now() / 1000),
-      authorPubkey: signed.pubkey,
-    });
-  }, []);
+  /**
+   * Save a page revision. The page's team scope rides along as a sticky
+   * `t: team:<id>` tag: an edit must never silently re-scope who may edit the
+   * page next (the relay rejects scope changes from non-admins anyway).
+   * `scope` is the page's current scope, or the new/cleared scope when an
+   * admin re-scopes through the scope editor.
+   */
+  const savePage = useCallback(
+    async (slug: string, content: string, scope: string | null = null) => {
+      const tags: string[][] = [["d", slug]];
+      if (scope) tags.push(["t", `team:${scope}`]);
+      const signed = await signAsUser({
+        kind: KIND_WIKI_PAGE,
+        tags,
+        content,
+      });
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsUser,
+      });
+      if (!result.accepted) {
+        throw new Error(result.message ?? "relay rejected the wiki page");
+      }
+      await cachePage({
+        slug,
+        content,
+        updatedAt: Math.floor(Date.now() / 1000),
+        authorPubkey: signed.pubkey,
+      });
+    },
+    [],
+  );
 
   /**
    * Delete a page with a NIP-09 tombstone naming its addressable coordinate.
    *
-   * The relay keeps the tombstone rather than the page, so every client hides
-   * the page without needing addressable-event delete semantics. Only the
-   * author's tombstone counts (`lib/page-index.ts`).
+   * Two intents, mirroring the relay's delete contract (`lib/page-index.ts`):
+   * the default is a RESTORABLE tombstone (the page moves to "Recently
+   * deleted"), and `purge: true` adds the `["purge","1"]` tag for an admin's
+   * permanent delete — which the relay accepts from admins only.
    */
-  const deletePage = useCallback(async (page: WikiPage) => {
-    const author = page.authorPubkey ?? userPubkey();
+  const deletePage = useCallback(
+    async (
+      page: WikiPage,
+      opts: { purge?: boolean; viewerIsAdmin?: boolean } = {},
+    ) => {
+      const author = page.authorPubkey ?? userPubkey();
+      const marker = buildDeleteMarker({
+        coordinate: pageCoordinate(author, page.slug),
+        purge: opts.purge ?? false,
+        viewerIsAdmin: opts.viewerIsAdmin ?? false,
+        now: Math.floor(Date.now() / 1000),
+      });
+      const signed = await signAsUser(marker);
+      const result = await publishEvent(relayWsUrl(), signed, {
+        signAuth: signAsUser,
+      });
+      if (!result.accepted) {
+        throw new Error(result.message ?? "relay rejected the delete");
+      }
+      await dropCachedPage(page.slug);
+    },
+    [],
+  );
+
+  /**
+   * Restore a tombstoned page: republish its content as a NEW revision (the
+   * relay's restore path is an authorized editor's accepted revision) using
+   * the shared restore-payload builder, so history grows instead of being
+   * rewritten and the sticky scope is carried over.
+   */
+  const restoreTombstonedPage = useCallback(async (entry: TombstonedPage) => {
+    const payload = restorePayload(
+      {
+        id: "",
+        authorPubkey: entry.authorPubkey,
+        createdAt: entry.deletedAt,
+        excerpt: "",
+        content: entry.content,
+        scope: entry.scope,
+      },
+      { now: Math.floor(Date.now() / 1000), slug: entry.slug },
+    );
     const signed = await signAsUser({
-      kind: KIND_DELETE,
-      tags: [["a", pageCoordinate(author, page.slug)]],
-      content: "",
+      kind: payload.kind,
+      tags: payload.tags,
+      content: payload.content,
+      created_at: payload.created_at,
     });
     const result = await publishEvent(relayWsUrl(), signed, {
       signAuth: signAsUser,
     });
     if (!result.accepted) {
-      throw new Error(result.message ?? "relay rejected the delete");
+      throw new Error(result.message ?? "relay rejected the restore");
     }
-    await dropCachedPage(page.slug);
   }, []);
 
   /** Rename by republishing under the new slug, then tombstoning the old one. */
@@ -257,11 +347,23 @@ export function useWikiPages(enabled: boolean) {
     savePage,
     deletePage,
     renamePage,
+    restoreTombstonedPage,
     readFreshPages,
     /** Why the relay page list is missing or stale, when it is. */
     loadError: relayQuery.error,
     refetchPages: relayQuery.refetch,
   };
+}
+
+/** Recently-deleted pages: restorable tombstones, bounded, with retry state. */
+export function useTombstonedPages(enabled: boolean) {
+  return useQuery({
+    queryKey: ["wiki-tombstones"],
+    queryFn: fetchTombstonedPages,
+    enabled,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
 }
 
 /**

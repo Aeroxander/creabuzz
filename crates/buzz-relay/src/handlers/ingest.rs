@@ -2384,25 +2384,131 @@ async fn is_community_admin_or_owner(
     Ok(matches!(role.as_deref(), Some("owner" | "admin")))
 }
 
-/// Enforce sticky team scoping on an incoming kind:44001 wiki page revision.
+/// Where a wiki page's team scope stands after reading its whole history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WikiPageScope {
+    /// No revision ever carried a `t: team:` tag: any member edits/deletes.
+    Unscoped,
+    /// The history names exactly one team node, but that node has no
+    /// canonical record (missing or unanchored) — NO resolvable team. The
+    /// page falls back to open editing (any member), matching the app-side
+    /// fallback instead of dead-locking every edit behind seats nobody can
+    /// hold. The stale tag value is kept so a revision that repeats it is
+    /// accepted rather than misread as a fresh scoping act.
+    Unresolvable(String),
+    /// The page is scoped to this team node's canonical record: only that
+    /// team's canonical seats and community admins/owners act on it.
+    Scoped(String),
+    /// The history disagrees (conflicting scopes) and no admin/owner
+    /// revision has settled it: only admins/owners may publish — their
+    /// revision settles the scope (its tag, or its absence, becomes the page
+    /// scope).
+    Conflicting,
+}
+
+/// The effective scope (bare team node id) and whether the history is in
+/// unresolved conflict. Revisions must be OLDEST first.
+///
+/// The state machine holds the EFFECTIVE scope while walking history: a
+/// revision carrying the effective scope conforms; an owner/admin revision
+/// always expresses the page scope (set / re-scope / unscope / settle — its
+/// absence means the page is unscoped); an untagged non-admin revision is
+/// noise and never unsets a scope (the historical sticky rule); the first
+/// scope tag on an unscoped page establishes the scope (the scoping act of
+/// rule (c)); any later non-admin scope disagreement marks the history
+/// CONFLICTING until an admin revision settles it.
+pub(crate) fn effective_page_scope(
+    history: &[buzz_db::event::WikiScopeRevision],
+) -> (Option<String>, bool) {
+    let mut effective: Option<String> = None;
+    let mut conflict = false;
+    for rev in history {
+        let scope = rev
+            .scope
+            .as_deref()
+            .and_then(|value| value.strip_prefix(WIKI_TEAM_TAG_PREFIX))
+            .map(str::to_owned);
+        if scope == effective {
+            continue;
+        }
+        if rev.author_is_admin {
+            effective = scope;
+            conflict = false;
+            continue;
+        }
+        match scope {
+            None => {}
+            Some(node) if effective.is_none() && !conflict => effective = Some(node),
+            Some(_) => conflict = true,
+        }
+    }
+    (effective, conflict)
+}
+
+/// Resolve the scope of wiki page (`kind`, `d`) from its bounded revision
+/// history, then check that the team node resolves to a canonical org record.
+pub(crate) async fn resolve_wiki_page_scope(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    kind: i32,
+    d: &str,
+) -> Result<WikiPageScope, IngestError> {
+    let history = state
+        .db
+        .wiki_page_scope_history(tenant.community(), kind, d)
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error reading wiki page scope: {e}"))
+        })?;
+    let (effective, conflict) = effective_page_scope(&history);
+    if conflict {
+        return Ok(WikiPageScope::Conflicting);
+    }
+    let Some(node) = effective else {
+        return Ok(WikiPageScope::Unscoped);
+    };
+    let resolvable = state
+        .db
+        .org_graph(tenant.community())
+        .node_is_resolvable(&node)
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error resolving team node: {e}"))
+        })?;
+    Ok(if resolvable {
+        WikiPageScope::Scoped(node)
+    } else {
+        WikiPageScope::Unresolvable(node)
+    })
+}
+
+/// Enforce team scoping on an incoming kind:44001 wiki page revision.
 ///
 /// The page's scope is STICKY across its whole revision history (tombstoned
-/// revisions included — see `wiki_page_team_scopes`, so a delete + re-publish
-/// can never reset a team page to open membership):
+/// revisions included — see `wiki_page_scope_history`, so a delete +
+/// re-publish can never reset a team page to open membership), with these
+/// rules:
 ///
-/// (a) if ANY revision carries `t: team:<node>`, every further revision MUST
-///     carry the same tag — dropping or changing it is REJECTED — and its
-///     signer must hold a seat in that team (its node's `agentSeats`/`holders`
-///     per `org_graph`) or be a community admin/owner;
-/// (b) unscoped pages accept members as today;
-/// (c) scoping a previously unscoped page is allowed for team seats/admins
-///     only (it narrows the page's audience — a governance act).
+/// (a) a scoped page accepts edits only from that team's CANONICAL seats
+///     (`org_graph` — stale node copies grant nothing) or community
+///     admins/owners. An admin/owner revision MAY change the `t: team:<node>`
+///     tag or drop it entirely (re-scope/unscope), overriding stickiness;
+///     non-admins are rejected as before;
+/// (b) an unscoped page accepts members as today. A page with NO resolvable
+///     team in its history (the scope names a node with no canonical record)
+///     counts as unscoped: any member edits (the app-side open-editing
+///     fallback), and a revision may keep or drop the stale tag;
+/// (c) scoping a previously unscoped page is allowed for the target team's
+///     seats/admins only (it narrows the page's audience — a governance act);
+/// (d) a page whose history carries conflicting scopes is frozen for
+///     non-admins (rejected as today) until an admin/owner revision SETTLES
+///     it: the settling revision's tag — or its absence — becomes the page
+///     scope and clears the conflict.
 ///
-/// A page whose history carries conflicting scopes is refused outright (fail
-/// closed). Enforcement is at INGEST, the same seam as the R1 authority
-/// anchor. A tombstoned page restores when an authorized editor publishes a
-/// new revision: the insert is the restore (the new row is live; tombstoned
-/// rows keep their preserved content but stay hidden).
+/// Enforcement is at INGEST, the same seam as the R1 authority anchor. A
+/// tombstoned page restores when an authorized editor publishes a new
+/// revision: the insert is the restore (the new row is live; tombstoned rows
+/// keep their preserved content but stay hidden).
 pub(crate) async fn enforce_wiki_page_scope(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -2419,43 +2525,52 @@ pub(crate) async fn enforce_wiki_page_scope(
         return Ok(());
     };
 
-    let mut prior = state
-        .db
-        .wiki_page_team_scopes(tenant.community(), KIND_WIKI_PAGE as i32, d)
-        .await
-        .map_err(|e| {
-            IngestError::Internal(format!("error: db error reading wiki page scope: {e}"))
-        })?;
-    // The store returns raw tag values (`team:<node>`); normalize to the bare
-    // team node id so they compare equal to the incoming revision's scope.
-    let mut prior: Vec<String> = prior
-        .drain(..)
-        .filter_map(|value| value.strip_prefix(WIKI_TEAM_TAG_PREFIX).map(str::to_owned))
-        .collect();
-    if prior.len() > 1 {
-        return Err(IngestError::Rejected(
-            "restricted: wiki page carries conflicting `t: team:` scopes; refusing revision".into(),
-        ));
-    }
-    match (prior.pop(), scope) {
-        // (a) team-scoped page: keep the scope and hold a seat in it.
-        (Some(page_scope), Some(new_scope)) => {
-            if new_scope != page_scope {
-                return Err(IngestError::Rejected(
-                    "restricted: wiki page is team-scoped; a revision may not change its `t: team:<node-id>` team".into(),
-                ));
+    let author_hex = event.pubkey.to_hex();
+    let admin = is_community_admin_or_owner(state, tenant, &author_hex).await?;
+    match resolve_wiki_page_scope(state, tenant, KIND_WIKI_PAGE as i32, d).await? {
+        // (d) conflicting history: admins/owners settle it with this very
+        // revision; everyone else is rejected as before.
+        WikiPageScope::Conflicting => {
+            if admin {
+                Ok(())
+            } else {
+                Err(IngestError::Rejected(
+                    "restricted: wiki page carries conflicting `t: team:` scopes; refusing revision".into(),
+                ))
             }
-            require_wiki_team_authority(state, tenant, event, &page_scope, "editing a team-scoped wiki page").await
         }
-        (Some(_), None) => Err(IngestError::Rejected(
-            "restricted: wiki page is team-scoped; a revision may not drop its `t: team:<node-id>` tag".into(),
-        )),
-        // (c) scoping an unscoped page is a governance act.
-        (None, Some(new_scope)) => {
-            require_wiki_team_authority(state, tenant, event, &new_scope, "scoping a wiki page to a team").await
-        }
-        // (b) unscoped pages accept members as today.
-        (None, None) => Ok(()),
+        // (b) no resolvable team: open editing. Keeping the stale tag is
+        // fine (it grants nobody anything); naming a DIFFERENT team is a
+        // fresh scoping act governed by that team.
+        WikiPageScope::Unresolvable(stale) => match scope {
+            None => Ok(()),
+            Some(node) if node == stale => Ok(()),
+            Some(node) => {
+                require_wiki_team_authority(state, tenant, event, &node, "scoping a wiki page to a team").await
+            }
+        },
+        WikiPageScope::Scoped(page_scope) => match scope {
+            Some(node) if node == page_scope => {
+                require_wiki_team_authority(state, tenant, event, &page_scope, "editing a team-scoped wiki page").await
+            }
+            // (a) admins/owners may re-scope or unscope; anyone else may not
+            // change or drop the tag.
+            _ if admin => Ok(()),
+            None => Err(IngestError::Rejected(
+                "restricted: wiki page is team-scoped; a revision may not drop its `t: team:<node-id>` tag".into(),
+            )),
+            Some(_) => Err(IngestError::Rejected(
+                "restricted: wiki page is team-scoped; a revision may not change its `t: team:<node-id>` team".into(),
+            )),
+        },
+        // (b) unscoped pages accept members as today; (c) scoping is a
+        // governance act for the target team's seats/admins.
+        WikiPageScope::Unscoped => match scope {
+            None => Ok(()),
+            Some(node) => {
+                require_wiki_team_authority(state, tenant, event, &node, "scoping a wiki page to a team").await
+            }
+        },
     }
 }
 

@@ -48,6 +48,7 @@ pub mod tenant;
 pub mod thread_window;
 /// Schnorr signature and event ID verification.
 pub mod verification;
+pub mod wiki_deleted;
 
 pub use error::VerificationError;
 pub use event::StoredEvent;

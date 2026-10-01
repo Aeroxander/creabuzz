@@ -7,6 +7,7 @@ import {
   appliedCorrectionsFor,
   buildSuggestion,
   canEditKnowledge,
+  scopeState,
   classifyEvent,
   classifyEvents,
   extractProvenance,
@@ -56,7 +57,7 @@ test("a 44002 event classifies as an agent page with provenance", () => {
   );
   assert.equal(page.kind, "agent");
   assert.equal(page.slug, "default/standup");
-  assert.deepEqual(page.provenance, { agent: "glm-5.3-flash", sourceCount: 2 });
+  assert.deepEqual(page.provenance, { model: "glm-5.3-flash", sourceCount: 2 });
 });
 
 test("a non-wiki event is not a Knowledge page", () => {
@@ -93,7 +94,7 @@ test("provenance reads the model and sources tags", () => {
       ],
     }),
   );
-  assert.equal(p.agent, "glm-5.3-flash");
+  assert.equal(p.model, "glm-5.3-flash");
   // A duplicate source id counts once.
   assert.equal(p.sourceCount, 2);
 });
@@ -106,32 +107,33 @@ test("provenance falls back to front-matter model and drops malformed ids", () =
       tags: [["sources", `${SRC1},not-an-id,ZZ`]],
     }),
   );
-  assert.equal(p.agent, "gpt-x");
+  assert.equal(p.model, "gpt-x");
   assert.equal(p.sourceCount, 1);
 });
 
 test("provenance degrades to unknown rather than guessing", () => {
   const p = extractProvenance(ev({ kind: KIND_AGENT_WIKI_PAGE, tags: [] }));
-  assert.equal(p.agent, null);
+  assert.equal(p.model, null);
   assert.equal(p.sourceCount, 0);
 });
 
-test("provenanceLine renders the canonical phrase and degrades gracefully", () => {
+test("provenanceLine leads with the signer's name and the model second", () => {
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 5 }),
-    "Updated by agent glm-5.3-flash from 5 sources",
+    provenanceLine({ model: "glm-5.3", sourceCount: 5 }, "Alice"),
+    "Published by Alice · glm-5.3 · 5 sources",
   );
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 1 }),
-    "Updated by agent glm-5.3-flash from 1 source",
+    provenanceLine({ model: "glm-5.3", sourceCount: 1 }, "Alice"),
+    "Published by Alice · glm-5.3 · 1 source",
+  );
+  // The mandated two-segment form when there is nothing else to say.
+  assert.equal(
+    provenanceLine({ model: "glm-5.3", sourceCount: 0 }, "Alice"),
+    "Published by Alice · glm-5.3",
   );
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 0 }),
-    "Updated by agent glm-5.3-flash",
-  );
-  assert.equal(
-    provenanceLine({ agent: null, sourceCount: 2 }),
-    "Updated by agent an agent from 2 sources",
+    provenanceLine({ model: null, sourceCount: 2 }, "44b8e82b…0435"),
+    "Published by 44b8e82b…0435 · 2 sources",
   );
 });
 
@@ -260,17 +262,27 @@ test("an unscoped page falls back to open (member-list) editing", () => {
   );
 });
 
-test("an unresolvable scope falls back to editing — never locks anyone out", () => {
-  // No node / unknown team: the resolver returns null.
+test("a scoped page with an unresolvable team is read-only for ordinary members", () => {
+  // No node / unknown team: the resolver returns null. The relay would reject
+  // an ordinary member's edit, so the app shows propose — not a dead Edit.
   assert.equal(
     canEditKnowledge({ scope: "ghost" }, BOB, () => null),
+    "propose",
+  );
+  // …but a community admin can still act (re-scope/unscope is the way back).
+  assert.equal(
+    canEditKnowledge({ scope: "ghost" }, BOB, () => null, true),
     "edit",
   );
 });
 
-test("a team with no seat holders falls back to editing rather than locking out", () => {
+test("a scoped page with no seat holders is read-only for ordinary members", () => {
   assert.equal(
     canEditKnowledge({ scope: "empty" }, BOB, () => []),
+    "propose",
+  );
+  assert.equal(
+    canEditKnowledge({ scope: "empty" }, BOB, () => [], true),
     "edit",
   );
 });
@@ -356,15 +368,87 @@ test("a correction stays open when no agent page references it", () => {
 
 test("provenanceLine adds the corrections-applied phrase only above zero", () => {
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 5 }, 2),
-    "Updated by agent glm-5.3-flash from 5 sources · 2 corrections applied",
+    provenanceLine({ model: "glm-5.3", sourceCount: 5 }, "Alice", 2),
+    "Published by Alice · glm-5.3 · 5 sources · 2 corrections applied",
   );
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 0 }, 1),
-    "Updated by agent glm-5.3-flash · 1 correction applied",
+    provenanceLine({ model: "glm-5.3", sourceCount: 0 }, "Alice", 1),
+    "Published by Alice · glm-5.3 · 1 correction applied",
   );
   assert.equal(
-    provenanceLine({ agent: "glm-5.3-flash", sourceCount: 5 }, 0),
-    "Updated by agent glm-5.3-flash from 5 sources",
+    provenanceLine({ model: "glm-5.3", sourceCount: 5 }, "Alice", 0),
+    "Published by Alice · glm-5.3 · 5 sources",
+  );
+});
+
+// ── scope state (admin re-scope / settle) ─────────────────────────────────
+
+test("gate matrix: unscoped is editable, scoped-unresolvable is read-only, admin may re-scope", () => {
+  const resolver = (id) => (id === "design" ? [ALICE] : null);
+  // Unscoped page: any member edits.
+  assert.equal(canEditKnowledge({ scope: null }, BOB, resolver), "edit");
+  // Scoped + resolvable: seat holders edit, others propose, admins edit.
+  assert.equal(canEditKnowledge({ scope: "design" }, ALICE, resolver), "edit");
+  assert.equal(canEditKnowledge({ scope: "design" }, BOB, resolver), "propose");
+  assert.equal(
+    canEditKnowledge({ scope: "design" }, BOB, resolver, true),
+    "edit",
+  );
+  // Scoped + unresolvable/seatless: ordinary members propose (read-only +
+  // "Propose a change"), admins edit so they can re-scope or unscope.
+  assert.equal(canEditKnowledge({ scope: "ghost" }, BOB, resolver), "propose");
+  assert.equal(
+    canEditKnowledge({ scope: "ghost" }, BOB, resolver, true),
+    "edit",
+  );
+});
+
+test("scopeState reads the head scope and flags conflicting heads", () => {
+  const page = (tags, at, id) =>
+    ev({
+      kind: KIND_WIKI_PAGE,
+      tags: [["d", "home"], ...tags],
+      created_at: at,
+      id,
+    });
+  // Unscoped head.
+  assert.deepEqual(scopeState([page([], 10, "a")], "home"), {
+    status: "unscoped",
+    scope: null,
+  });
+  // Scoped head; older revisions with a different scope do NOT conflict —
+  // an admin re-scope is a legitimate history.
+  assert.deepEqual(
+    scopeState(
+      [page([["t", "team:old"]], 10, "a"), page([["t", "team:new"]], 20, "b")],
+      "home",
+    ),
+    { status: "scoped", scope: "new" },
+  );
+  // Two head revisions at the newest timestamp disagreeing about scope is a
+  // genuine conflict an admin must settle.
+  assert.deepEqual(
+    scopeState(
+      [page([["t", "team:a"]], 20, "a"), page([["t", "team:b"]], 20, "b")],
+      "home",
+    ),
+    { status: "conflicting", scope: null },
+  );
+  // One head event carrying two scope tags is itself a conflict.
+  assert.deepEqual(
+    scopeState(
+      [
+        page(
+          [
+            ["t", "team:a"],
+            ["t", "team:b"],
+          ],
+          20,
+          "a",
+        ),
+      ],
+      "home",
+    ),
+    { status: "conflicting", scope: null },
   );
 });

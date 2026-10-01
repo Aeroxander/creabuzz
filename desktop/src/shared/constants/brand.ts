@@ -12,4 +12,4 @@ export const APP_NAME = "Creaton";
  * community is connected yet (a connected community's own relay serves its
  * web app and always wins).
  */
-export const DEFAULT_WEB_ORIGIN = "https://app.creaton.app";
+export const DEFAULT_WEB_ORIGIN = "http://localhost:3000"; // LOCALHOST-ONLY for now: the relay serves the web bundle in dev (ws://localhost:3000). No production domain is claimed — point this at a real hosted origin before release.

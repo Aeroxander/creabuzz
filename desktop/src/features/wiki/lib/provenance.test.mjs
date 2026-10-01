@@ -5,7 +5,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { PROVENANCE_MAX_SOURCES, extractProvenance } from "./provenance.ts";
+import {
+  PROVENANCE_MAX_SOURCES,
+  extractProvenance,
+  publishedByLabel,
+} from "./provenance.ts";
 
 const EVENT_ID_A = "a".repeat(64);
 const EVENT_ID_B = "b".repeat(64);
@@ -78,4 +82,25 @@ describe("extractProvenance", () => {
     const provenance = extractProvenance([["model", "m".repeat(300)]]);
     assert.equal(provenance.model?.length, 128);
   });
+});
+
+it("publishedByLabel leads with the signer and the model second", () => {
+  assert.equal(
+    publishedByLabel("Alice", "glm-5.3", "44b8…0435"),
+    "Published by Alice · glm-5.3",
+  );
+  // Model secondary: dropped when the page carries none.
+  assert.equal(
+    publishedByLabel("Alice", null, "44b8…0435"),
+    "Published by Alice",
+  );
+  // Unknown signer falls back to the truncated pubkey, never "unknown".
+  assert.equal(
+    publishedByLabel(null, "glm-5.3", "44b8…0435"),
+    "Published by 44b8…0435 · glm-5.3",
+  );
+  assert.equal(
+    publishedByLabel("  ", null, "44b8…0435"),
+    "Published by 44b8…0435",
+  );
 });

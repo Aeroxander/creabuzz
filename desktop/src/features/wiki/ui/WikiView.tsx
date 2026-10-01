@@ -14,13 +14,16 @@ import { Spinner } from "@/shared/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
+import { canManageCommunityMembers } from "@/shared/api/relayMembers";
+import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 
 import type { WikiPage } from "../lib/pageIndex";
-import { buildPageSavePayload } from "../lib/pageEdit";
-import { useWikiPages } from "../useWikiPages";
+import { buildPageSavePayload, canEditWikiPage } from "../lib/pageEdit";
+import { useTeamSeats, useWikiPages } from "../useWikiPages";
 import { WikiGraph } from "./WikiGraph";
 import { WikiPageList } from "./WikiPageList";
 import { WikiPageReader } from "./WikiPageReader";
+import { RecentlyDeletedPanel } from "./RecentlyDeletedPanel";
 
 type WikiTab = "page" | "graph";
 
@@ -37,6 +40,22 @@ export function WikiView() {
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
+  // The relay's delete/edit rules, mirrored: community admins may purge and
+  // re-scope; scoped pages need a team seat (or admin) — never open editing
+  // where the relay would reject the edit.
+  const myMembership = useMyRelayMembershipLookupQuery();
+  const viewerIsAdmin = canManageCommunityMembers(myMembership.data);
+  const viewerPubkey =
+    myMembership.data?.membership?.pubkey?.trim().toLowerCase() ?? null;
+  const seatsQuery = useTeamSeats(true);
+  const resolveTeamSeats = seatsQuery.data ?? (() => null);
+
+  // "Recently deleted" list + the admin scope editor.
+  const [showTrash, setShowTrash] = React.useState(false);
+  const [scopeOpen, setScopeOpen] = React.useState(false);
+  const [scopePick, setScopePick] = React.useState<string>("");
+  const [scopeBusy, setScopeBusy] = React.useState(false);
+
   const pages = React.useMemo(() => pagesQuery.data ?? [], [pagesQuery.data]);
   const active: WikiPage | null =
     pages.find((page) => page.key === activeKey) ?? pages[0] ?? null;
@@ -52,7 +71,16 @@ export function WikiView() {
     setSaveError(null);
   }, [active?.key, active?.content]);
 
-  const editable = active !== null && active.kind === "human";
+  const activeScope = active?.kind === "human" ? active.scope : null;
+  const editable =
+    active !== null &&
+    active.kind === "human" &&
+    canEditWikiPage({
+      scope: active.scope ?? null,
+      resolveTeamSeats,
+      viewerPubkey,
+      viewerIsAdmin,
+    });
 
   const save = async () => {
     if (active?.kind !== "human") return;
@@ -63,6 +91,8 @@ export function WikiView() {
         slug: active.slug,
         content: draft,
         now: Math.floor(Date.now() / 1000),
+        // Sticky scope: an edit never silently re-scopes who may edit next.
+        scope: active.scope ?? null,
       });
       const event = await signRelayEvent({
         kind: payload.kind,
@@ -153,6 +183,100 @@ export function WikiView() {
               {active?.key ?? "wiki"}
             </span>
             <div className="flex items-center gap-2">
+              {viewerIsAdmin && active?.kind === "human" ? (
+                scopeOpen ? (
+                  <>
+                    <label className="sr-only" htmlFor="wiki-scope-select">
+                      Team this page is scoped to
+                    </label>
+                    <select
+                      className="rounded border bg-background px-2 py-1 text-2xs"
+                      data-testid="wiki-scope-select"
+                      id="wiki-scope-select"
+                      onChange={(e) => setScopePick(e.target.value)}
+                      value={scopePick}
+                    >
+                      <option value="">No team — any member can edit</option>
+                      {activeScope ? (
+                        <option value={activeScope}>
+                          {activeScope} (current)
+                        </option>
+                      ) : null}
+                    </select>
+                    <Button
+                      data-testid="wiki-scope-save"
+                      disabled={scopeBusy}
+                      onClick={() => {
+                        if (active?.kind !== "human") return;
+                        setScopeBusy(true);
+                        void (async () => {
+                          try {
+                            const payload = buildPageSavePayload({
+                              slug: active.slug,
+                              content: active.content,
+                              now: Math.floor(Date.now() / 1000),
+                              scope: scopePick === "" ? null : scopePick,
+                            });
+                            const event = await signRelayEvent({
+                              kind: payload.kind,
+                              content: payload.content,
+                              tags: payload.tags,
+                              createdAt: payload.created_at,
+                            });
+                            await relayClient.publishEvent(
+                              event,
+                              "Timed out while saving the page scope.",
+                              "Failed to save the page scope.",
+                            );
+                            setScopeOpen(false);
+                            await pagesQuery.refetch();
+                          } catch (error) {
+                            setSaveError(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            );
+                          } finally {
+                            setScopeBusy(false);
+                          }
+                        })();
+                      }}
+                      size="sm"
+                    >
+                      Save scope
+                    </Button>
+                    <Button
+                      data-testid="wiki-scope-cancel"
+                      onClick={() => setScopeOpen(false)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    data-testid="wiki-scope-open"
+                    onClick={() => {
+                      setScopePick(activeScope ?? "");
+                      setScopeOpen(true);
+                    }}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Change scope
+                  </Button>
+                )
+              ) : null}
+              <Button
+                aria-pressed={showTrash}
+                data-testid="wiki-recently-deleted-open"
+                onClick={() => setShowTrash((v) => !v)}
+                size="sm"
+                variant="outline"
+              >
+                Recently deleted
+              </Button>
               {/* Agent pages are read-only; only a team page offers editing. */}
               {editable && !editing ? (
                 <Button
@@ -200,7 +324,9 @@ export function WikiView() {
             </div>
           </div>
           <TabsContent className="flex min-h-0 flex-1 flex-col" value="page">
-            {active && editing && active.kind === "human" ? (
+            {showTrash ? (
+              <RecentlyDeletedPanel isAdmin={viewerIsAdmin} />
+            ) : active && editing && active.kind === "human" ? (
               <div className="flex min-h-0 flex-1 flex-col">
                 {saveError ? (
                   <p

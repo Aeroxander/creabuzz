@@ -21,7 +21,19 @@ import { toast } from "sonner";
 
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { extractLinks, useWikiPages, type WikiPage } from "../use-wiki-pages";
+import {
+  extractLinks,
+  useTombstonedPages,
+  useWikiPages,
+  type WikiPage,
+} from "../use-wiki-pages";
+import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
+import {
+  DELETE_LABEL,
+  PURGE_LABEL,
+  deleteDialogCopy,
+} from "../lib/delete-copy";
+import type { TombstonedPage } from "../lib/page-index";
 import { useKnowledge } from "../use-knowledge";
 import { provenanceLine, type KnowledgePage } from "../lib/knowledge";
 import { canDeletePage } from "../lib/page-index";
@@ -33,6 +45,12 @@ import { VersionHistory } from "./VersionHistory";
 import { SuggestCorrectionDialog } from "./SuggestCorrectionDialog";
 import { WikiEditor } from "./WikiEditor";
 import { WikiGraph } from "./WikiGraph";
+import { RecentlyDeleted } from "./RecentlyDeleted";
+import {
+  PurgeConfirmDialog,
+  RestoreConfirmDialog,
+} from "./DeleteConfirmDialogs";
+import { ScopeEditor } from "./ScopeEditor";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 type Tab = "edit" | "graph";
@@ -66,6 +84,7 @@ export function WikiView({
     isLoading,
     savePage,
     deletePage,
+    restoreTombstonedPage,
     renamePage,
     readFreshPages,
     loadError,
@@ -85,6 +104,23 @@ export function WikiView({
   /** Open naming dialog: `new` creates, otherwise it renames that page. */
   const [dialog, setDialog] = useState<null | "new" | { rename: string }>(null);
   const [pendingDelete, setPendingDelete] = useState<WikiPage | null>(null);
+  /** Permanent delete (admins, typed confirm) — a page or a tombstoned row. */
+  const [pendingPurge, setPendingPurge] = useState<{
+    slug: string;
+    authorPubkey?: string;
+  } | null>(null);
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  /** Tombstoned page awaiting the plain restore confirmation. */
+  const [pendingRestore, setPendingRestore] = useState<TombstonedPage | null>(
+    null,
+  );
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  /** "Recently deleted" list open instead of the page body. */
+  const [showTrash, setShowTrash] = useState(false);
+  /** Admin scope editor open (also the "Settle scope" path). */
+  const [scopeEditorOpen, setScopeEditorOpen] = useState(false);
+  const [scopeBusy, setScopeBusy] = useState(false);
+  const tombstones = useTombstonedPages(showTrash);
   /** Whether the version-history panel is showing for the active page. */
   const [showHistory, setShowHistory] = useState(false);
   /** Whether the "Suggest a correction" dialog is open. */
@@ -182,14 +218,29 @@ export function WikiView({
   }, [knowledge.team, knowledge.agent, activeSlug, content]);
 
   /**
-   * The team-scope edit gate (lib/knowledge.ts). Agent pages are always
-   * read-only, so they never grant edit. A scoped team page is editable only by
-   * its team's seat holders; everyone else may only propose a correction.
+   * The team-scope edit gate (lib/knowledge.ts) — mirrors the relay rule
+   * exactly: unscoped pages are open to members; scoped pages need a team
+   * seat (or admin); a scoped page whose team is unresolvable is read-only
+   * for ordinary members (read + "Propose a change"), never a dead Edit. A
+   * conflicting-scope history is read-only for everyone until an admin
+   * settles it.
    */
+  const scopeInfo = isAgentPage
+    ? { status: "scoped" as const, scope: activeAgent?.scope ?? null }
+    : knowledge.scopeStateFor(activeSlug ?? "");
   const editVerdict = isAgentPage
     ? "propose"
-    : knowledge.canEdit({ scope: activeTeamMeta?.scope ?? null });
-  const canEditThis = editVerdict === "edit";
+    : knowledge.canEdit({ scope: scopeInfo.scope });
+  const conflicting = !isAgentPage && scopeInfo.status === "conflicting";
+  const canEditThis = editVerdict === "edit" && !conflicting;
+
+  // Agent-page provenance leads with the SIGNER's profile name (fallback: a
+  // truncated pubkey), with the model as secondary provenance.
+  const signerPubkey = activeAgent?.authorPubkey ?? "";
+  const signerProfiles = useProfiles(signerPubkey ? [signerPubkey] : []);
+  const signerName = activeAgent
+    ? resolveUserName(signerProfiles.data?.[signerPubkey], signerPubkey)
+    : "";
 
   /**
    * Publish the live document, folding in anything saved since we last looked.
@@ -216,7 +267,7 @@ export function WikiView({
       text = merged.content;
       overlap = merged.result === "replaced";
     }
-    await savePage(activeSlug, text);
+    await savePage(activeSlug, text, scopeInfo.scope);
     if (overlap) {
       // The merge had to drop a collaborator's version of the same characters.
       // Silence here is how two people lose each other's paragraphs.
@@ -507,9 +558,13 @@ export function WikiView({
                 author, so the button is not shown to anyone else — a control
                 that always fails has no business being clickable. Agent pages
                 are read-only, so they never offer delete. */}
+            {/* A restorable delete (the default). The relay accepts it from
+                the newest revision's author and from admins; agent pages are
+                read-only and never offer delete. */}
             {active &&
             !isAgentPage &&
-            canDeletePage(active, existingUserPubkey()) ? (
+            (canDeletePage(active, existingUserPubkey()) ||
+              knowledge.viewerIsAdmin) ? (
               <button
                 type="button"
                 key="delete"
@@ -518,7 +573,54 @@ export function WikiView({
                 data-testid="wiki-delete"
                 title="Delete this page"
               >
-                <Trash2 className="h-3 w-3" /> Delete
+                <Trash2 className="h-3 w-3" /> {DELETE_LABEL}
+              </button>
+            ) : null}
+            {/* Permanent delete is the deliberate, admin-only secondary. */}
+            {active && !isAgentPage && knowledge.viewerIsAdmin ? (
+              <button
+                type="button"
+                key="purge"
+                onClick={() => setPendingPurge(active)}
+                className="inline-flex items-center gap-1 rounded border border-red-700/40 px-2 py-1 text-red-700 dark:border-red-400/40 dark:text-red-400"
+                data-testid="wiki-purge-open"
+                title="Delete this page permanently"
+              >
+                {PURGE_LABEL}
+              </button>
+            ) : null}
+            {!isAgentPage ? (
+              <button
+                type="button"
+                key="trash"
+                onClick={() => setShowTrash((v) => !v)}
+                aria-pressed={showTrash}
+                className={`inline-flex items-center gap-1 rounded border px-2 py-1 dark:border-white/15 ${
+                  showTrash
+                    ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
+                    : "border-black/15"
+                }`}
+                data-testid="wiki-recently-deleted-open"
+                title="Pages in Recently deleted"
+              >
+                Recently deleted
+              </button>
+            ) : null}
+            {activeSlug && !isAgentPage && knowledge.viewerIsAdmin ? (
+              <button
+                type="button"
+                key="scope"
+                onClick={() => setScopeEditorOpen((v) => !v)}
+                aria-pressed={scopeEditorOpen}
+                className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+                data-testid="wiki-scope-open"
+                title={
+                  conflicting
+                    ? "Settle this page's team scope"
+                    : "Change this page's team scope"
+                }
+              >
+                {conflicting ? "Settle scope" : "Change scope"}
               </button>
             ) : null}
             {activeSlug ? (
@@ -572,7 +674,52 @@ export function WikiView({
           </div>
         </div>
 
-        {tab === "graph" ? (
+        {scopeEditorOpen && activeSlug && !isAgentPage ? (
+          <ScopeEditor
+            busy={scopeBusy}
+            conflicting={conflicting}
+            onCancel={() => setScopeEditorOpen(false)}
+            onSave={(nextScope) => {
+              setScopeBusy(true);
+              void savePage(activeSlug, content, nextScope)
+                .then(() => {
+                  // One atomic revision carries content + the new/dropped
+                  // scope tag — that is also how a conflict is settled.
+                  setScopeEditorOpen(false);
+                  void queryClient.invalidateQueries({
+                    queryKey: ["knowledge-pages"],
+                  });
+                  toast.success("Page scope saved");
+                })
+                .catch((error: unknown) =>
+                  toast.error("Couldn't save the page scope", {
+                    description: errorMessage(error),
+                  }),
+                )
+                .finally(() => setScopeBusy(false));
+            }}
+            scope={scopeInfo.scope}
+            teams={knowledge.knownTeams}
+          />
+        ) : null}
+        {showTrash ? (
+          <RecentlyDeleted
+            busySlug={
+              restoreBusy
+                ? (pendingRestore?.slug ?? null)
+                : purgeBusy
+                  ? (pendingPurge?.slug ?? null)
+                  : null
+            }
+            entries={tombstones.data ?? []}
+            error={tombstones.error}
+            isAdmin={knowledge.viewerIsAdmin}
+            isLoading={tombstones.isLoading}
+            onPurge={(entry) => setPendingPurge(entry)}
+            onRestore={(entry) => setPendingRestore(entry)}
+            onRetry={() => void tombstones.refetch()}
+          />
+        ) : tab === "graph" ? (
           <WikiGraph pages={pages} />
         ) : showHistory && activeSlug ? (
           <VersionHistory
@@ -602,10 +749,11 @@ export function WikiView({
                   {activeAgent.provenance
                     ? provenanceLine(
                         activeAgent.provenance,
+                        signerName,
                         knowledge.appliedCorrectionsFor(activeAgent.slug)
                           .length,
                       )
-                    : "Updated by an agent"}
+                    : `Published by ${signerName}`}
                 </p>
                 <p className="text-2xs text-black/50 dark:text-white/50">
                   This page is kept up to date by an agent and can&apos;t be
@@ -631,8 +779,9 @@ export function WikiView({
                   data-testid="wiki-edit-locked"
                   role="status"
                 >
-                  Only this team&apos;s seat holders can edit this page. You can
-                  read it and propose a change.
+                  {conflicting
+                    ? "This page's history disagrees about its team scope. An admin needs to settle it before anyone can edit."
+                    : "Only this team's seat holders can edit this page. You can read it and propose a change."}
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">
@@ -735,11 +884,11 @@ export function WikiView({
       ) : null}
 
       <ConfirmDialog
-        confirmLabel="Delete page"
+        confirmLabel={
+          pendingDelete ? deleteDialogCopy(pendingDelete.slug).confirmLabel : ""
+        }
         description={
-          pendingDelete
-            ? `“${pendingDelete.slug}” is removed from the wiki for everyone. Copies already on the server may remain there until server-side deletion is available.`
-            : ""
+          pendingDelete ? deleteDialogCopy(pendingDelete.slug).description : ""
         }
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
@@ -759,8 +908,11 @@ export function WikiView({
                 toast.success(`Discarded ${page.slug}`);
                 return;
               }
-              await deletePage(published);
-              toast.success(`Deleted ${page.slug}`);
+              await deletePage(published, {
+                purge: false,
+                viewerIsAdmin: knowledge.viewerIsAdmin,
+              });
+              toast.success(`Moved ${page.slug} to Recently deleted`);
               void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
             } catch (error) {
               // "Discarded" and "Deleted" both say the page is gone; a failed
@@ -772,7 +924,92 @@ export function WikiView({
           })();
         }}
         open={pendingDelete !== null}
-        title="Delete this page?"
+        title={pendingDelete ? deleteDialogCopy(pendingDelete.slug).title : ""}
+      />
+
+      <PurgeConfirmDialog
+        busy={purgeBusy}
+        onCancel={() => setPendingPurge(null)}
+        onConfirm={() => {
+          const target = pendingPurge;
+          setPendingPurge(null);
+          if (!target) return;
+          setPurgeBusy(true);
+          void (async () => {
+            try {
+              // A tombstoned row is already on the relay; a toolbar target is
+              // resolved against a fresh read like the restorable delete.
+              let author = target.authorPubkey;
+              if (!author) {
+                const fresh = await readFreshPages();
+                const published = fresh.find((p) => p.slug === target.slug);
+                if (!published) {
+                  toast.success(`Discarded ${target.slug}`);
+                  return;
+                }
+                author = published.authorPubkey;
+              }
+              await deletePage(
+                {
+                  slug: target.slug,
+                  content: "",
+                  updatedAt: 0,
+                  authorPubkey: author,
+                },
+                { purge: true, viewerIsAdmin: true },
+              );
+              toast.success(`Deleted ${target.slug} permanently`);
+              void queryClient.invalidateQueries({
+                queryKey: ["wiki-pages"],
+              });
+              void queryClient.invalidateQueries({
+                queryKey: ["wiki-tombstones"],
+              });
+            } catch (error) {
+              toast.error("Couldn't delete the page permanently", {
+                description: errorMessage(error),
+              });
+            } finally {
+              setPurgeBusy(false);
+            }
+          })();
+        }}
+        open={pendingPurge !== null}
+        slug={pendingPurge?.slug ?? null}
+      />
+
+      <RestoreConfirmDialog
+        busy={restoreBusy}
+        onCancel={() => setPendingRestore(null)}
+        onConfirm={() => {
+          const entry = pendingRestore;
+          setPendingRestore(null);
+          if (!entry) return;
+          setRestoreBusy(true);
+          void (async () => {
+            try {
+              await restoreTombstonedPage(entry);
+              toast.success(`Restored ${entry.slug}`);
+              void queryClient.invalidateQueries({
+                queryKey: ["wiki-pages"],
+              });
+              void queryClient.invalidateQueries({
+                queryKey: ["wiki-tombstones"],
+              });
+              void queryClient.invalidateQueries({
+                queryKey: ["knowledge-pages"],
+              });
+            } catch (error) {
+              toast.error("Couldn't restore that page", {
+                description: errorMessage(error),
+              });
+            } finally {
+              setRestoreBusy(false);
+            }
+          })();
+        }}
+        open={pendingRestore !== null}
+        slug={pendingRestore?.slug ?? null}
       />
 
       {suggestOpen && activeSlug ? (

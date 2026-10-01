@@ -12,8 +12,9 @@
 //! decision must not be made from a lagging replica.
 
 use buzz_core::org_grant::{
-    parse_stored_grant, parse_stored_node, OrgGraphSource, StoredOrgGrant, StoredOrgNode,
-    MAX_ORG_CANDIDATES,
+    canonical_node_is_resolvable, holds_canonical_seat, holds_canonical_seat_in_any,
+    parse_stored_grant, parse_stored_node, OrgAuthorityError, OrgGraphSource, SeatKind,
+    StoredOrgGrant, StoredOrgNode, MAX_ORG_CANDIDATES,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -45,146 +46,113 @@ impl<'a> PgOrgGraph<'a> {
         Self { pool, community_id }
     }
 
-    /// Whether `pubkey` occupies an `agentSeats` slot in any surviving org
-    /// node of this community — i.e. is seated as an AGENT, not a human.
-    ///
-    /// Seated agents are excluded from human-only authority such as signing
-    /// counted reviews (NIP-ORG reviewer rule). Any surviving node row counts:
-    /// ingest gates kind:37010 publication through the R1 authority anchor, so
-    /// a node that names seats carries authority (a forged decoy node cannot
-    /// land in the first place). `agentSeats` membership is tested inside
-    /// nested `CASE`s so the JSON cast and array expansion only ever run on
-    /// JSON-object node rows (SQL does not promise `AND` short-circuiting).
-    pub async fn is_seated_agent(&self, pubkey: &str) -> Result<bool> {
+    /// Distinct node ids (`d` tags) whose org-node record set has SOME
+    /// surviving version listing `pubkey` in the JSON array `field`
+    /// (`"agentSeats"` or `"holders"`). This is only a bounded candidate
+    /// enumeration: whether the seat COUNTS is decided by the canonical
+    /// node's content (see [`holds_canonical_seat_in_any`]). The membership
+    /// test runs inside nested `CASE`s so the JSON cast and array expansion
+    /// only ever run on JSON-object node rows (SQL does not promise `AND`
+    /// short-circuiting). Bounded to 32 node ids — one seat question never
+    /// scans the whole org chart.
+    async fn node_ids_mentioning(&self, pubkey: &str, field: &'static str) -> Result<Vec<String>> {
         let mut conn =
             observability::acquire_writer(self.pool, observability::WriterOperation::Authorization)
                 .await?;
-        let row = sqlx::query(
+        let rows: Vec<(String,)> = sqlx::query_as(
             r#"
-            SELECT 1
+            SELECT DISTINCT d_tag
             FROM events
             WHERE community_id = $1
               AND kind = $2
               AND deleted_at IS NULL
               AND channel_id IS NULL
+              AND d_tag IS NOT NULL
               AND CASE
                     WHEN kind = $2 AND content IS JSON OBJECT THEN
                       CASE
-                        WHEN jsonb_typeof(content::jsonb -> 'agentSeats') = 'array' THEN
+                        WHEN jsonb_typeof(content::jsonb -> $3) = 'array' THEN
                           EXISTS (
                             SELECT 1
-                            FROM jsonb_array_elements_text(content::jsonb -> 'agentSeats') AS s(v)
-                            WHERE lower(s.v) = $3
+                            FROM jsonb_array_elements_text(content::jsonb -> $3) AS s(v)
+                            WHERE lower(s.v) = $4
                           )
                         ELSE false
                       END
                     ELSE false
                   END
-            LIMIT 1
+            LIMIT 32
             "#,
         )
         .bind(self.community_id)
         .bind(KIND_ORG_NODE)
-        .bind(pubkey)
-        .fetch_optional(&mut *conn)
+        .bind(field)
+        .bind(pubkey.to_ascii_lowercase())
+        .fetch_all(&mut *conn)
         .await?;
-        Ok(row.is_some())
+        Ok(rows.into_iter().map(|(d,)| d).collect())
+    }
+
+    /// Whether `pubkey` occupies an `agentSeats` slot in the CANONICAL org
+    /// node of any node id whose record set ever listed them — i.e. is seated
+    /// as an AGENT, not a human.
+    ///
+    /// Seated agents are excluded from human-only authority such as signing
+    /// counted reviews (NIP-ORG reviewer rule). The seat must be in the
+    /// anchored, admin-first canonical version of the node
+    /// (`buzz_core::org_grant::canonical_node`): a stale holder-authored copy
+    /// that still lists the agent must not keep them privileged after an
+    /// admin (or an emergency-stop republish) unseated them canonically.
+    pub async fn is_seated_agent(&self, pubkey: &str) -> Result<bool> {
+        let ds = self.node_ids_mentioning(pubkey, "agentSeats").await?;
+        holds_canonical_seat_in_any(self, &ds, pubkey, SeatKind::Agent)
+            .await
+            .map_err(map_org_err)
     }
 
     /// Whether `pubkey` occupies an `agentSeats` or `holders` slot of the
-    /// surviving org node whose `d` tag is `node_id` — i.e. holds a seat in
+    /// CANONICAL org node whose `d` tag is `node_id` — i.e. holds a seat in
     /// that specific team node (the wiki team-scope anchor, `t: team:<node>`).
     ///
-    /// Same trust rule as [`is_seated_agent`]: any surviving node row counts,
-    /// because ingest gates kind:37010 publication through the R1 authority
-    /// anchor. The two membership tests run inside nested `CASE`s so the JSON
-    /// cast and array expansion only ever run on JSON-object node rows.
+    /// Same trust rule as [`is_seated_agent`]: only the canonical version's
+    /// content counts; stale copies grant nothing.
     pub async fn holds_node_seat(&self, node_id: &str, pubkey: &str) -> Result<bool> {
-        let mut conn =
-            observability::acquire_writer(self.pool, observability::WriterOperation::Authorization)
-                .await?;
-        let row = sqlx::query(
-            r#"
-            SELECT 1
-            FROM events
-            WHERE community_id = $1
-              AND kind = $2
-              AND deleted_at IS NULL
-              AND channel_id IS NULL
-              AND d_tag = $3
-              AND CASE
-                    WHEN kind = $2 AND content IS JSON OBJECT THEN
-                      (CASE
-                         WHEN jsonb_typeof(content::jsonb -> 'agentSeats') = 'array' THEN
-                           EXISTS (
-                             SELECT 1
-                             FROM jsonb_array_elements_text(content::jsonb -> 'agentSeats') AS s(v)
-                             WHERE lower(s.v) = $4
-                           )
-                         ELSE false
-                       END)
-                      OR
-                      (CASE
-                         WHEN jsonb_typeof(content::jsonb -> 'holders') = 'array' THEN
-                           EXISTS (
-                             SELECT 1
-                             FROM jsonb_array_elements_text(content::jsonb -> 'holders') AS s(v)
-                             WHERE lower(s.v) = $4
-                           )
-                         ELSE false
-                       END)
-                    ELSE false
-                  END
-            LIMIT 1
-            "#,
-        )
-        .bind(self.community_id)
-        .bind(KIND_ORG_NODE)
-        .bind(node_id)
-        .bind(pubkey)
-        .fetch_optional(&mut *conn)
-        .await?;
-        Ok(row.is_some())
+        holds_canonical_seat(self, node_id, pubkey, SeatKind::Any)
+            .await
+            .map_err(map_org_err)
     }
 
-    /// Whether `pubkey` is listed in the `holders` array of any surviving org
-    /// node of this community — i.e. is a human seat holder anywhere in the
-    /// org chart. Used to admit authority holders publishing on an agent's
-    /// behalf (the distillation loop runs under the human runner's key).
+    /// Whether `pubkey` is listed in the `holders` array of the CANONICAL
+    /// version of any org node of this community — i.e. is a human seat
+    /// holder anywhere in the org chart. Used to admit authority holders
+    /// publishing on an agent's behalf (the distillation loop runs under the
+    /// human runner's key). Stale copies' `holders` lists do not count.
     pub async fn holds_any_seat(&self, pubkey: &str) -> Result<bool> {
-        let mut conn =
-            observability::acquire_writer(self.pool, observability::WriterOperation::Authorization)
-                .await?;
-        let row = sqlx::query(
-            r#"
-            SELECT 1
-            FROM events
-            WHERE community_id = $1
-              AND kind = $2
-              AND deleted_at IS NULL
-              AND channel_id IS NULL
-              AND CASE
-                    WHEN kind = $2 AND content IS JSON OBJECT THEN
-                      CASE
-                        WHEN jsonb_typeof(content::jsonb -> 'holders') = 'array' THEN
-                          EXISTS (
-                            SELECT 1
-                            FROM jsonb_array_elements_text(content::jsonb -> 'holders') AS s(v)
-                            WHERE lower(s.v) = $3
-                          )
-                        ELSE false
-                      END
-                    ELSE false
-                  END
-            LIMIT 1
-            "#,
-        )
-        .bind(self.community_id)
-        .bind(KIND_ORG_NODE)
-        .bind(pubkey)
-        .fetch_optional(&mut *conn)
-        .await?;
-        Ok(row.is_some())
+        let ds = self.node_ids_mentioning(pubkey, "holders").await?;
+        holds_canonical_seat_in_any(self, &ds, pubkey, SeatKind::Holder)
+            .await
+            .map_err(map_org_err)
+    }
+
+    /// Whether the org node `node_id` resolves to a canonical anchored
+    /// record — the "team node exists" question behind wiki team scoping.
+    /// A page scoped to a node that does not resolve has no resolvable team
+    /// and falls back to open editing (any member may edit).
+    pub async fn node_is_resolvable(&self, node_id: &str) -> Result<bool> {
+        canonical_node_is_resolvable(self, node_id)
+            .await
+            .map_err(map_org_err)
+    }
+}
+
+/// Seat questions return plain [`DbError`]s so existing call sites keep
+/// their error shape: a store failure propagates as-is, and a walk that
+/// exceeded the lookup budget propagates as an access error — never as an
+/// implicit "no seat".
+fn map_org_err(e: OrgAuthorityError<DbError>) -> DbError {
+    match e {
+        OrgAuthorityError::Source(db) => db,
+        OrgAuthorityError::Denied(d) => DbError::AccessDenied(d.to_string()),
     }
 }
 

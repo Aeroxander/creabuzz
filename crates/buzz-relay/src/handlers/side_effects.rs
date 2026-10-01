@@ -371,6 +371,34 @@ pub async fn validate_standard_deletion_event(
     let actor_bytes = effective_message_author(event, &state.relay_keypair.public_key());
     let target_ids = extract_target_event_ids(event);
 
+    // Rule 3(a): purge is explicit intent, never a role. A delete marker
+    // carrying `["purge","1"]` requests the permanent content-strip purge;
+    // only a community admin/owner may send one (authors can never purge),
+    // and only the wiki page (a-tag) deletion path consumes it — anywhere
+    // else the tag is a deterministic client mistake. Any other `purge` tag
+    // shape is rejected as malformed.
+    if event.tags.iter().any(|t| t.kind().to_string() == "purge") {
+        if !delete_marker_requests_purge(event) {
+            anyhow::bail!("invalid: `purge` tag must be exactly [\"purge\",\"1\"]");
+        }
+        let actor_hex = hex::encode(&actor_bytes);
+        if !wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await? {
+            anyhow::bail!("restricted: only a community admin/owner may purge");
+        }
+        let wiki_a_target = !has_e_tag(event)
+            && event
+                .tags
+                .iter()
+                .find(|t| t.kind().to_string() == "a")
+                .and_then(|t| t.content())
+                .and_then(|a| a.splitn(3, ':').next())
+                .and_then(wiki_page_deletion_kind)
+                .is_some();
+        if !wiki_a_target {
+            anyhow::bail!("invalid: `purge` is only supported on wiki page deletions");
+        }
+    }
+
     if !has_e_tag(event) {
         // a-tag deletion: verify author owns the addressable event
         let a_tag = event
@@ -398,35 +426,75 @@ pub async fn validate_standard_deletion_event(
         if let (Some(wiki_kind), Some(d_tag)) =
             (wiki_page_deletion_kind(parts[0]), parts.get(2).copied())
         {
-            let authors = state
-                .db
-                .wiki_page_revision_authors(tenant.community(), wiki_kind as i32, d_tag)
-                .await?;
-            let any_live = authors.iter().any(|(_, live)| *live);
-            let mut authorized = false;
-            for (author, live) in &authors {
-                if any_live && !*live {
-                    continue;
+            let actor_hex = hex::encode(&actor_bytes);
+            let admin = wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await?;
+            // Rule 3(b): delete respects team scope. On a scoped page only
+            // that team's canonical seats/admins may delete (authors of
+            // pre-scope revisions lose the right); a conflicting-scope page
+            // is admins-only until an admin revision settles it; a page with
+            // no resolvable team keeps the author rule below (same fallback
+            // as editing).
+            match super::ingest::resolve_wiki_page_scope(state, tenant, wiki_kind as i32, d_tag)
+                .await
+                .map_err(|e| anyhow::anyhow!("error: resolving wiki page scope: {e:?}"))?
+            {
+                super::ingest::WikiPageScope::Scoped(node) => {
+                    if !admin {
+                        let seated = state
+                            .db
+                            .org_graph(tenant.community())
+                            .holds_node_seat(&node, &actor_hex)
+                            .await?;
+                        if !seated {
+                            return Err(anyhow::anyhow!(
+                                "restricted: deleting a team-scoped wiki page requires a seat in team {node} or community admin/owner"
+                            ));
+                        }
+                    }
+                    return Ok(());
                 }
-                if *author == actor_bytes
-                    || state
+                super::ingest::WikiPageScope::Conflicting => {
+                    if !admin {
+                        return Err(anyhow::anyhow!(
+                            "restricted: wiki page carries conflicting `t: team:` scopes; only a community admin/owner may delete"
+                        ));
+                    }
+                    return Ok(());
+                }
+                super::ingest::WikiPageScope::Unscoped
+                | super::ingest::WikiPageScope::Unresolvable(_) => {
+                    // The signer must be — or own (NIP-OA agent-owner
+                    // delegation) — the author of a SURVIVING revision. When
+                    // no revision survives, any prior page author may replay
+                    // the tombstone: the side effect then matches zero rows,
+                    // so deleting twice is an idempotent no-op rather than a
+                    // spurious failure.
+                    let authors = state
                         .db
-                        .is_agent_owner(tenant.community(), author, &actor_bytes)
-                        .await?
-                {
-                    authorized = true;
-                    break;
+                        .wiki_page_revision_authors(tenant.community(), wiki_kind as i32, d_tag)
+                        .await?;
+                    let any_live = authors.iter().any(|(_, live)| *live);
+                    let mut authorized = false;
+                    for (author, live) in &authors {
+                        if any_live && !*live {
+                            continue;
+                        }
+                        if *author == actor_bytes
+                            || state
+                                .db
+                                .is_agent_owner(tenant.community(), author, &actor_bytes)
+                                .await?
+                        {
+                            authorized = true;
+                            break;
+                        }
+                    }
+                    if !authorized && !admin {
+                        return Err(anyhow::anyhow!("must be event author"));
+                    }
+                    return Ok(());
                 }
             }
-            if !authorized {
-                // Rule 3(b): a community admin/owner may delete (and thereby
-                // purge) any page; anyone else must be an author of the page.
-                let actor_hex = hex::encode(&actor_bytes);
-                if !wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await? {
-                    return Err(anyhow::anyhow!("must be event author"));
-                }
-            }
-            return Ok(());
         }
         if target_pubkey_bytes != actor_bytes
             && !state
@@ -2433,8 +2501,21 @@ pub(crate) async fn persist_workflow_deletion(
     Ok((stored, dispatch))
 }
 
+/// Whether the delete marker explicitly requests the permanent purge with a
+/// `["purge","1"]` tag (rule 3(a)). Validation rejects a `purge` tag from a
+/// non-admin and any other `purge` tag shape, so by the time a side effect
+/// runs this predicate is the whole purge contract: without it every delete
+/// is a restorable tombstone.
+fn delete_marker_requests_purge(event: &Event) -> bool {
+    event
+        .tags
+        .iter()
+        .any(|t| t.kind().to_string() == "purge" && t.content() == Some("1"))
+}
+
 /// Whether the actor is a community owner/admin (`relay_members.role`) — the
-/// wiki delete tier that purges content (rule 3(b)).
+/// authority tier that bypasses team-seat checks, may re-scope/unscope wiki
+/// pages, and is the only tier a purge marker is accepted from (rule 3(a)).
 async fn wiki_actor_is_admin_or_owner(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -2451,9 +2532,10 @@ async fn wiki_actor_is_admin_or_owner(
 /// Handle NIP-09 deletion via `a` tag (addressable/parameterized-replaceable events).
 /// Parses "kind:pubkey:d-tag" and deletes the corresponding DB record.
 /// Wiki pages (44001/44002) are addressed the same way but the PAGE is the
-/// unit of deletion, with split semantics (rule 3): an author's delete is a
-/// restorable tombstone (content preserved), a community admin/owner's delete
-/// marker purges content + FTS (see `tombstone_wiki_page_by_slug` /
+/// unit of deletion, with split semantics (rule 3): every delete marker is a
+/// restorable tombstone (content preserved — see
+/// `tombstone_wiki_page_by_slug`) UNLESS it carries `["purge","1"]`, which
+/// only a community admin/owner may send and which purges content + FTS (see
 /// `soft_delete_wiki_page_by_slug`).
 pub(crate) async fn handle_a_tag_deletion(
     tenant: &TenantContext,
@@ -2489,17 +2571,23 @@ pub(crate) async fn handle_a_tag_deletion(
             ));
         }
         // Wiki pages (44001/44002): `d` is the page slug and the PAGE is the
-        // unit of deletion — with split semantics (rule 3): a page author's
-        // delete is a RESTORABLE TOMBSTONE (rows hidden from queries, content
-        // NOT stripped — an authorized editor's new revision un-tombstones the
-        // page), and only a community admin/owner's delete marker PURGES:
-        // content stripped + FTS gone (`events.search_tsv` is GENERATED
-        // STORED and recomputes on UPDATE). Wiki corrections (44003) are
-        // excluded — they are per-author coordinates (see below).
+        // unit of deletion — with split semantics (rule 3): any delete marker
+        // is a RESTORABLE TOMBSTONE (rows hidden from queries, content NOT
+        // stripped — an authorized editor's new revision un-tombstones the
+        // page), and only a marker carrying `["purge","1"]` from a community
+        // admin/owner PURGES: content stripped + FTS gone (`events.search_tsv`
+        // is GENERATED STORED and recomputes on UPDATE). Wiki corrections
+        // (44003) are excluded — they are per-author coordinates (see below).
         buzz_core::kind::KIND_WIKI_PAGE | buzz_core::kind::KIND_AGENT_WIKI_PAGE => {
             let actor_bytes = effective_message_author(event, &state.relay_keypair.public_key());
             let actor_hex = hex::encode(&actor_bytes);
-            let purge = wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await?;
+            // Rule 3(a): purge is explicit intent (`["purge","1"]` on the
+            // delete marker), never a role. Validation already guaranteed an
+            // admin/owner signer for a purge marker; without the tag even an
+            // admin/owner delete is a RESTORABLE tombstone, exactly like an
+            // author's.
+            let purge = delete_marker_requests_purge(event)
+                && wiki_actor_is_admin_or_owner(state, tenant, &actor_hex).await?;
             let deleted = if purge {
                 state
                     .db

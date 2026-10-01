@@ -36,7 +36,10 @@ import {
   type Suggestion,
   buildSuggestion,
   type TeamSeatResolver,
+  scopeState,
+  type ScopeStatus,
 } from "./lib/knowledge";
+import { isAdminRole, viewerRoleFromEvents } from "./lib/live-members";
 import {
   buildHistory,
   restorePayload,
@@ -47,6 +50,8 @@ import {
 export const KIND_DELETE = 5;
 /** NIP-ORG org-node kind, for resolving a page's team scope to its seats. */
 export const KIND_ORG_NODE = 37010;
+/** NIP-43 relay membership list — carries each member's community role. */
+export const KIND_NIP43_MEMBERSHIP_LIST = 13534;
 
 /** Bounded read: the Knowledge fetch never pulls more than this many events. */
 export const KNOWLEDGE_FETCH_LIMIT = 200;
@@ -81,15 +86,20 @@ export async function fetchKnowledgeEvents(): Promise<KnowledgeEvent[]> {
  * when the org graph cannot resolve the scope (no node, unknown team) so the
  * edit gate falls back to open editing instead of locking anyone out.
  */
-function teamSeatResolver(
-  orgEvents: readonly {
-    kind: number;
-    tags: string[][];
-    content: string;
-  }[],
-): TeamSeatResolver {
-  // Union of `holders` + `agentSeats` across every team node sharing the id.
-  const seats = new Map<string, Set<string>>();
+type OrgNodeEvent = {
+  kind: number;
+  tags: string[][];
+  content: string;
+};
+
+interface ParsedTeamNode {
+  id: string;
+  name: string;
+  holders: string[];
+}
+
+function teamNodes(orgEvents: readonly OrgNodeEvent[]): ParsedTeamNode[] {
+  const out: ParsedTeamNode[] = [];
   for (const event of orgEvents) {
     if (event.kind !== KIND_ORG_NODE) continue;
     const id = event.tags.find((t) => t[0] === "d")?.[1];
@@ -108,13 +118,29 @@ function teamSeatResolver(
       ...(Array.isArray(body.holders) ? body.holders : []),
       ...(Array.isArray(body.agentSeats) ? body.agentSeats : []),
     ].filter((v): v is string => typeof v === "string" && v.length > 0);
-    const set = seats.get(id) ?? new Set<string>();
-    for (const h of holders) set.add(h.toLowerCase());
-    seats.set(id, set);
+    out.push({
+      id,
+      name: typeof body.name === "string" && body.name ? body.name : id,
+      holders: holders.map((h) => h.toLowerCase()),
+    });
+  }
+  return out;
+}
+
+function teamSeatResolver(
+  orgEvents: readonly OrgNodeEvent[],
+): TeamSeatResolver {
+  // Union of `holders` + `agentSeats` across every team node sharing the id.
+  const seats = new Map<string, Set<string>>();
+  for (const node of teamNodes(orgEvents)) {
+    const set = seats.get(node.id) ?? new Set<string>();
+    for (const h of node.holders) set.add(h);
+    seats.set(node.id, set);
   }
   return (teamId) => {
     const set = seats.get(teamId);
-    // No team node for this id → unresolvable → caller falls back to editing.
+    // No team node for this id → unresolvable → the gate keeps ordinary
+    // members read-only (only an admin can re-scope it).
     return set ? [...set] : null;
   };
 }
@@ -135,6 +161,15 @@ export interface KnowledgeState {
   appliedCorrectionsFor: (slug: string) => Suggestion[];
   /** Revision history for `slug`, newest first. */
   historyFor: (slug: string) => Revision[];
+  /** Whether the viewer is a community admin (owner/admin on the relay). */
+  viewerIsAdmin: boolean;
+  /** The page's scope state: unscoped, scoped, or conflicting (admin settles). */
+  scopeStateFor: (slug: string) => {
+    status: ScopeStatus;
+    scope: string | null;
+  };
+  /** Teams from the org chart, for the admin scope editor. */
+  knownTeams: { id: string; name: string }[];
   /** The team-scope edit gate (see `lib/knowledge.ts`). */
   canEdit: (page: { scope: string | null }) => "edit" | "propose";
   /** Resolves a team scope to its seat holders, for the live-edit gate. */
@@ -168,6 +203,22 @@ export function useKnowledge(enabled = true): KnowledgeState {
     refetchOnWindowFocus: false,
   });
 
+  // Community roles ride the relay's member list (kind:13534). Absence of the
+  // list means an open relay or no membership root — never admin.
+  const membersQuery = useQuery({
+    queryKey: ["knowledge-members"],
+    queryFn: async () => {
+      const events = await queryEvents(relayWsUrl(), {
+        kinds: [KIND_NIP43_MEMBERSHIP_LIST],
+        limit: 5,
+      });
+      return events.map(toKnowledgeEvent);
+    },
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
   const groups = useMemo(() => classifyEvents(events), [events]);
   const resolver = useMemo(
@@ -178,6 +229,11 @@ export function useKnowledge(enabled = true): KnowledgeState {
   // Re-read the viewer when the query settles so a fresh sign-in is reflected.
   const [viewerPubkey, setViewerPubkey] = useState<string | null>(() =>
     existingUserPubkey(),
+  );
+  const viewerIsAdmin = useMemo(
+    () =>
+      isAdminRole(viewerRoleFromEvents(membersQuery.data ?? [], viewerPubkey)),
+    [membersQuery.data, viewerPubkey],
   );
   // `dataUpdatedAt` is a change token, not a value read in the body: it only
   // decides when to re-check who we are signing as.
@@ -200,8 +256,20 @@ export function useKnowledge(enabled = true): KnowledgeState {
   );
   const canEdit = useCallback(
     (page: { scope: string | null }): EditVerdict =>
-      canEditKnowledge(page, viewerPubkey, resolver),
-    [viewerPubkey, resolver],
+      canEditKnowledge(page, viewerPubkey, resolver, viewerIsAdmin),
+    [viewerPubkey, resolver, viewerIsAdmin],
+  );
+  const scopeStateFor = useCallback(
+    (slug: string) => scopeState(events, slug),
+    [events],
+  );
+  const knownTeams = useMemo(
+    () =>
+      teamNodes(orgQuery.data ?? []).map((node) => ({
+        id: node.id,
+        name: node.name,
+      })),
+    [orgQuery.data],
   );
 
   const restoreRevision = useCallback(
@@ -261,6 +329,9 @@ export function useKnowledge(enabled = true): KnowledgeState {
     loadError: eventsQuery.error,
     refetch: () => void eventsQuery.refetch(),
     viewerPubkey,
+    viewerIsAdmin,
+    scopeStateFor,
+    knownTeams,
     suggestionsFor: suggestions,
     appliedCorrectionsFor: appliedCorrections,
     historyFor,

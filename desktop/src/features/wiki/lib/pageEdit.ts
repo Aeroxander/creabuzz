@@ -87,3 +87,57 @@ export function buildPageSavePayload(opts: {
     created_at: opts.now,
   };
 }
+
+/**
+ * The delete-marker payload: `kind:5` naming the page's coordinate. `purge:
+ * true` adds the `["purge","1"]` tag — the relay's PERMANENT delete, accepted
+ * from community admins only; every other delete is a restorable tombstone.
+ * A non-admin asking for a purge is refused loudly instead of silently
+ * publishing a restorable delete in its place (authors can never purge).
+ */
+export interface DeleteMarkerPayload {
+  kind: number;
+  tags: string[][];
+  content: string;
+  created_at: number;
+}
+
+export const KIND_DELETION = 5;
+
+export function buildDeleteMarkerPayload(opts: {
+  coordinate: string;
+  purge: boolean;
+  viewerIsAdmin: boolean;
+  now: number;
+}): DeleteMarkerPayload {
+  if (opts.purge && !opts.viewerIsAdmin) {
+    throw new Error("only a community admin can delete a page permanently");
+  }
+  const tags: string[][] = [["a", opts.coordinate]];
+  if (opts.purge) tags.push(["purge", "1"]);
+  return {
+    kind: KIND_DELETION,
+    tags,
+    content: "",
+    created_at: opts.now,
+  };
+}
+
+/**
+ * The team-scope edit gate, mirroring the relay rule exactly: unscoped pages
+ * are open to members; scoped pages need a team seat or admin; a scoped page
+ * whose team is unresolvable (or seatless) is read-only for ordinary members —
+ * no open-editing fallback the relay would reject. Admins can re-scope.
+ */
+export function canEditWikiPage(input: {
+  scope: string | null;
+  resolveTeamSeats: (teamId: string) => string[] | null;
+  viewerPubkey: string | null;
+  viewerIsAdmin: boolean;
+}): boolean {
+  if (!input.scope) return true;
+  const holders = input.resolveTeamSeats(input.scope);
+  if (holders == null || holders.length === 0) return input.viewerIsAdmin;
+  if (input.viewerPubkey && holders.includes(input.viewerPubkey)) return true;
+  return input.viewerIsAdmin;
+}

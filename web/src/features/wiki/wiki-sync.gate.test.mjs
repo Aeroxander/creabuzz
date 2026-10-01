@@ -66,7 +66,11 @@ test("own updates keep flowing even for a read-only viewer", () => {
   );
 });
 
-test("an unresolvable scope falls open — the gate never locks everyone out", () => {
+test("an unresolvable scope drops outsiders — mirroring the relay rule", () => {
+  // The relay rejects an ordinary member's edit to a scoped page whose team
+  // cannot be resolved (an admin re-scope is the way back), so the transport
+  // gate must not apply it either: no open-editing fallback where the relay
+  // would reject.
   assert.equal(
     liveUpdatePermitted({
       authorPubkey: VIEWER,
@@ -74,7 +78,7 @@ test("an unresolvable scope falls open — the gate never locks everyone out", (
       page: { scope: "team-gone" },
       resolveTeamSeats: () => null,
     }),
-    true,
+    false,
   );
 });
 

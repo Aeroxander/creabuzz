@@ -78,3 +78,18 @@ export function extractProvenance(
 
   return { model, costTokens, sources };
 }
+
+/**
+ * The provenance attribution: "Published by Alice · glm-5.3". The SIGNER's
+ * resolved profile name leads; the model is secondary provenance (dropped
+ * when absent). `fallbackName` is the truncated pubkey for signers without a
+ * profile — never "unknown".
+ */
+export function publishedByLabel(
+  signerName: string | null,
+  model: string | null,
+  fallbackName: string,
+): string {
+  const name = signerName?.trim() ? signerName.trim() : fallbackName;
+  return model ? `Published by ${name} · ${model}` : `Published by ${name}`;
+}

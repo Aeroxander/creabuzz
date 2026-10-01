@@ -90,13 +90,15 @@ export interface KnowledgeEvent {
 export type PageKind = "team" | "agent";
 
 /**
- * Provenance of an agent page: the agent that produced it and how many source
- * events it distilled. Both fields are extracted from the 44002 event's tags
- * (falling back to its front-matter content), never invented.
+ * Provenance of an agent page: which model produced the distillation and how
+ * many source events it distilled. The model fields are extracted from the
+ * 44002 event's tags (falling back to its front-matter content), never
+ * invented. WHO published it is the event's signer (`authorPubkey` on the
+ * page) — the model is secondary provenance, never the attribution.
  */
 export interface AgentProvenance {
-  /** The producing agent (the distilling model, e.g. "glm-5.3-flash"). */
-  agent: string | null;
+  /** The distilling model (e.g. "glm-5.3") — secondary to the signer. */
+  model: string | null;
   /** Number of distinct source event ids distilled into the page. */
   sourceCount: number;
 }
@@ -170,15 +172,15 @@ function frontMatterModel(content: string): string | null {
 }
 
 /**
- * Extract an agent page's provenance from its 44002 event. The agent name is
- * the `model` tag (falling back to the front-matter `model:` field); the source
+ * Extract an agent page's provenance from its 44002 event. The model is the
+ * `model` tag (falling back to the front-matter `model:` field); the source
  * count is the number of valid `sources` ids. A malformed value degrades to
  * "unknown" rather than a broken render.
  */
 export function extractProvenance(event: KnowledgeEvent): AgentProvenance {
-  const agent = tagValue(event, "model") ?? frontMatterModel(event.content);
+  const model = tagValue(event, "model") ?? frontMatterModel(event.content);
   return {
-    agent: agent && agent.length > 0 ? agent : null,
+    model: model && model.length > 0 ? model : null,
     sourceCount: sourceIds(tagValue(event, "sources")).length,
   };
 }
@@ -249,28 +251,30 @@ export function classifyEvents(events: readonly KnowledgeEvent[]): {
 
 /**
  * The agent-page provenance header line. The canonical form is
- * "Updated by agent X from N sources"; a missing agent or a zero source count
- * drops that segment rather than rendering "unknown" or "from 0 sources".
- * When the agent has applied member corrections, the line gains the product
- * phrase "· N corrections applied" (omitted at zero).
+ * "Published by Alice · glm-5.3": the SIGNER's resolved profile name leads,
+ * with the distilling model as secondary provenance. `signerName` is resolved
+ * by the caller (profile name, falling back to a truncated pubkey — never
+ * "unknown"). A missing model, zero source count, or zero corrections drops
+ * that segment rather than rendering filler.
  */
 export function provenanceLine(
   provenance: AgentProvenance,
+  signerName: string,
   correctionsApplied = 0,
 ): string {
-  const agent = provenance.agent ?? "an agent";
-  const base =
-    provenance.sourceCount > 0
-      ? `Updated by agent ${agent} from ${provenance.sourceCount} source${
-          provenance.sourceCount === 1 ? "" : "s"
-        }`
-      : `Updated by agent ${agent}`;
-  if (correctionsApplied > 0) {
-    return `${base} · ${correctionsApplied} correction${
-      correctionsApplied === 1 ? "" : "s"
-    } applied`;
+  const parts = [`Published by ${signerName}`];
+  if (provenance.model) parts.push(provenance.model);
+  if (provenance.sourceCount > 0) {
+    parts.push(
+      `${provenance.sourceCount} source${provenance.sourceCount === 1 ? "" : "s"}`,
+    );
   }
-  return base;
+  if (correctionsApplied > 0) {
+    parts.push(
+      `${correctionsApplied} correction${correctionsApplied === 1 ? "" : "s"} applied`,
+    );
+  }
+  return parts.join(" · ");
 }
 
 // ── correction suggestions ─────────────────────────────────────────────────
@@ -460,28 +464,94 @@ export type EditVerdict = "edit" | "propose";
 export type TeamSeatResolver = (teamId: string) => string[] | null;
 
 /**
- * The team-scope edit gate.
+ * The team-scope edit gate — mirrors the relay's rule EXACTLY. The relay
+ * accepts revisions for a page from:
  *
- * A page scoped to a team is editable only by that team's seat holders;
- * everyone else reads and may only suggest a correction. When the scope cannot
- * be resolved — or resolves to a team with no seat holders at all — the gate
- * falls back to today's open (member-list) editing rather than locking every
- * editor out: a guard that leaves no way to edit is the recovery-affordance
- * failure the repo rules forbid. An unscoped page is always open.
+ * - an **unscoped** page: any community member;
+ * - a **scoped** page: that team's canonical seat holders, or a community
+ *   admin;
+ * - a page whose scope cannot be resolved (unknown team) or resolves to a team
+ *   with no seats: community admins only.
+ *
+ * There is deliberately NO open-editing fallback for a scoped page the org
+ * graph cannot resolve: the relay would reject such an edit, so offering Edit
+ * would be a dead button. Ordinary members get "propose" (read + suggest a
+ * change) instead; an admin re-scoping or unscoping the page (see
+ * {@link scopeState}) is the way back.
  */
 export function canEditKnowledge(
   page: { scope: string | null },
   viewerPubkey: string | null,
   resolveTeamSeats: TeamSeatResolver,
+  viewerIsAdmin = false,
 ): EditVerdict {
   const scope = page.scope;
   if (!scope) return "edit";
   const holders = resolveTeamSeats(scope);
-  // Unresolvable, or a team with no seats: restricting here would lock every
-  // editor out with no way back, so fall back to open editing.
-  if (holders == null || holders.length === 0) return "edit";
+  if (holders == null || holders.length === 0) {
+    // Unresolvable or seatless team: only an admin can act (via re-scope).
+    return viewerIsAdmin ? "edit" : "propose";
+  }
   if (viewerPubkey != null && holders.includes(viewerPubkey)) return "edit";
-  return "propose";
+  return viewerIsAdmin ? "edit" : "propose";
+}
+
+/**
+ * The scope state of a page's history, from its raw 44001 events:
+ *
+ * - `unscoped` — the head carries no `t: team:<id>` tag (open editing);
+ * - `scoped` — the head carries exactly one scope tag;
+ * - `conflicting` — the head revisions disagree about the scope: two live
+ *   revisions share the newest timestamp but carry different scope tags (a
+ *   genuine write race the last-write-wins fold cannot settle), or one head
+ *   event carries multiple distinct scope tags.
+ *
+ * A conflicting page is read-only for everyone; a community admin settles it
+ * by publishing one revision carrying the intended scope (or none), which the
+ * scope editor does.
+ */
+export type ScopeStatus = "unscoped" | "scoped" | "conflicting";
+
+export function scopeState(
+  events: readonly KnowledgeEvent[],
+  slug: string,
+): { status: ScopeStatus; scope: string | null } {
+  let newestAt = -1;
+  const headScopes = new Set<string>(); // "" marks the unscoped value.
+  for (const event of events) {
+    if (event.kind !== KIND_WIKI_PAGE) continue;
+    if (isSuggestionEvent(event)) continue;
+    if (tagValue(event, "d") !== slug) continue;
+    const scopes = new Set<string>();
+    for (const tag of event.tags) {
+      if (tag[0] !== "t") continue;
+      const value = typeof tag[1] === "string" ? tag[1] : "";
+      if (
+        value.startsWith(SCOPE_TAG_PREFIX) &&
+        value.length > SCOPE_TAG_PREFIX.length
+      ) {
+        scopes.add(value.slice(SCOPE_TAG_PREFIX.length));
+      }
+    }
+    if (event.created_at > newestAt) {
+      newestAt = event.created_at;
+      headScopes.clear();
+    }
+    if (event.created_at !== newestAt) continue;
+    // One head event carrying two distinct scope tags is itself a conflict.
+    if (scopes.size > 1) return { status: "conflicting", scope: null };
+    headScopes.add([...scopes][0] ?? "");
+  }
+  if (headScopes.size > 1) return { status: "conflicting", scope: null };
+  const scope = [...headScopes][0];
+  if (scope === undefined || scope === "")
+    return { status: "unscoped", scope: null };
+  return { status: "scoped", scope };
+}
+
+/** The `t: team:<id>` tag for a scope value (dropped when the scope is null). */
+export function scopeTag(scope: string | null): string[] | null {
+  return scope ? ["t", `${SCOPE_TAG_PREFIX}${scope}`] : null;
 }
 
 /**
@@ -491,8 +561,8 @@ export function canEditKnowledge(
  * gate on ingest; this closes the transport back door where a non-editor's
  * update was applied over the wire anyway. Own updates always pass (a reader's
  * own announcement/sync traffic must keep flowing) and everyone else is
- * checked against {@link canEditKnowledge} — whose open-editing fallbacks are
- * preserved exactly: an unscoped or unresolvable page never drops anyone.
+ * checked against {@link canEditKnowledge} — mirroring the relay rule exactly,
+ * with admin passes left to the relay (a peer cannot verify remote adminship).
  */
 export function liveUpdatePermitted(opts: {
   authorPubkey: string;

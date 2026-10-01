@@ -36,6 +36,8 @@ import {
   selfMaintenanceToggleLabel,
   type SelfMaintenanceAction,
 } from "../lib/agentWikiSelfMaintenance";
+import { publishedByLabel } from "../../wiki/lib/provenance";
+import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { relativeTimeLabel } from "../lib/dashboard";
 import { fetchAgentWikiPage, useAgentWikiPagesQuery } from "../hooks";
 import {
@@ -49,11 +51,15 @@ type AgentWikiSectionProps = {
   nowSeconds: number;
 };
 
-function provenanceLabel(page: AgentWikiPage, nowSeconds: number): string {
-  // The model tag is the distillation loop's provenance; when a page carries
-  // none, fall back to the author's truncated pubkey — never "unknown".
-  const author = page.model ?? truncatePubkey(page.authorPubkey);
-  return `Updated ${relativeTimeLabel(page.updatedAt, nowSeconds)} by ${author}`;
+function provenanceLabel(
+  page: AgentWikiPage,
+  nowSeconds: number,
+  signerName: string | null,
+): string {
+  // The SIGNER's profile name is the attribution; the model tag is secondary
+  // provenance. A signer without a profile falls back to the truncated
+  // pubkey — never "unknown".
+  return `${publishedByLabel(signerName, page.model, truncatePubkey(page.authorPubkey))} · ${relativeTimeLabel(page.updatedAt, nowSeconds)}`;
 }
 
 // Distill feedback copy. The pending state is honest about the cost: the run
@@ -267,6 +273,18 @@ function SelfMaintenanceRow() {
   );
 }
 
+/** The sheet's provenance line, with its own signer-name lookup. */
+function ProvenanceSheetLine({ page }: { page: AgentWikiPage }) {
+  const profiles = useUsersBatchQuery([page.authorPubkey]);
+  const summary =
+    profiles.data?.profiles[page.authorPubkey.trim().toLowerCase()];
+  const signerName =
+    summary?.displayName?.trim() || summary?.name?.trim() || null;
+  return (
+    <>{provenanceLabel(page, Math.floor(Date.now() / 1000), signerName)}</>
+  );
+}
+
 /** Full-page markdown view for one wiki page head, re-fetched by d. */
 function AgentWikiPageSheet({
   d,
@@ -290,9 +308,7 @@ function AgentWikiPageSheet({
         <SheetHeader className="border-b px-5 py-4 text-left">
           <SheetTitle className="text-sm">{d ?? ""}</SheetTitle>
           <SheetDescription className="text-2xs text-muted-foreground">
-            {page
-              ? provenanceLabel(page, Math.floor(Date.now() / 1000))
-              : "Loading page…"}
+            {page ? <ProvenanceSheetLine page={page} /> : "Loading page…"}
           </SheetDescription>
         </SheetHeader>
         <div className="min-w-0 px-5 py-4">
@@ -325,6 +341,15 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
   const wikiQuery = useAgentWikiPagesQuery();
   const distill = useAgentWikiDistillMutation();
   const pages = wikiQuery.data ?? [];
+  // Signer names for the provenance lines (bounded to the visible set).
+  const authorProfiles = useUsersBatchQuery(
+    [...new Set(pages.map((page) => page.authorPubkey))],
+    { enabled: pages.length > 0 },
+  );
+  const nameFor = (pubkey: string): string | null => {
+    const summary = authorProfiles.data?.profiles[pubkey.trim().toLowerCase()];
+    return summary?.displayName?.trim() || summary?.name?.trim() || null;
+  };
   const standup = pages.find((page) => page.d === AGENT_WIKI_STANDUP_D);
   const others = pages.filter((page) => page.d !== AGENT_WIKI_STANDUP_D);
   const [selectedD, setSelectedD] = React.useState<string | null>(null);
@@ -431,7 +456,11 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
                 className="shrink-0 text-2xs text-muted-foreground"
                 data-testid="org-wiki-standup-provenance"
               >
-                {provenanceLabel(standup, nowSeconds)}
+                {provenanceLabel(
+                  standup,
+                  nowSeconds,
+                  nameFor(standup.authorPubkey),
+                )}
               </span>
             </div>
             <div
@@ -463,7 +492,11 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
                   {page.d}
                 </span>
                 <span className="shrink-0 text-2xs text-muted-foreground">
-                  {provenanceLabel(page, nowSeconds)}
+                  {provenanceLabel(
+                    page,
+                    nowSeconds,
+                    nameFor(page.authorPubkey),
+                  )}
                 </span>
               </button>
             ))}

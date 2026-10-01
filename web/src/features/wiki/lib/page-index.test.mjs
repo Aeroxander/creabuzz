@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDeleteMarker,
   buildPages,
+  buildTombstonedPages,
   canDeletePage,
   pageCoordinate,
   parsePageCoordinate,
 } from "./page-index.ts";
+import { restorePayload } from "./wiki-history.ts";
 
 const ALICE = "a".repeat(64);
 const MALLORY = "b".repeat(64);
@@ -120,14 +123,48 @@ test("a delete marker from any page author removes the whole page", () => {
   assert.deepEqual(pages, []);
 });
 
-test("a later revision by another member does not resurrect a deleted page", () => {
-  // A stale editor auto-saving after the delete must not bring the page back.
+test("a restorable delete is restored by any newer accepted revision", () => {
+  // The relay's restore path is an authorized editor's accepted revision (it
+  // checks the editor's authority); the fold mirrors that contract.
   const pages = buildPages([
     page("home", ALICE, 100),
     tombstone(pageCoordinate(ALICE, "home"), ALICE, 150),
-    page("home", MALLORY, 200, "resurrect attempt"),
+    page("home", MALLORY, 200, "restored"),
+  ]);
+  assert.deepEqual(
+    pages.map((p) => p.content),
+    ["restored"],
+  );
+});
+
+test("a purge marker is permanent — no revision ever brings the page back", () => {
+  const purge = {
+    id: "purge-1",
+    pubkey: ALICE,
+    created_at: 150,
+    kind: 5,
+    tags: [
+      ["a", pageCoordinate(ALICE, "home")],
+      ["purge", "1"],
+    ],
+    content: "",
+  };
+  const pages = buildPages([
+    page("home", ALICE, 100),
+    purge,
+    page("home", ALICE, 200, "after purge"),
+    page("home", MALLORY, 300, "also after purge"),
   ]);
   assert.deepEqual(pages, []);
+  // …and a purged page is gone, not merely deleted: never in Recently deleted.
+  assert.deepEqual(
+    buildTombstonedPages([
+      page("home", ALICE, 100),
+      purge,
+      page("home", ALICE, 200, "after purge"),
+    ]),
+    [],
+  );
 });
 
 test("a marker for one's own coordinate of an unauthored page is ignored", () => {
@@ -141,15 +178,15 @@ test("a marker for one's own coordinate of an unauthored page is ignored", () =>
   assert.equal(pages[0].slug, "home");
 });
 
-test("only the deleting author's newer revision recreates the page", () => {
+test("only a newer revision restores a deleted page", () => {
   const deleted = [tombstone(pageCoordinate(ALICE, "home"), ALICE, 150)];
-  // ALICE deleted it, so ALICE may rebuild it — but only with a newer revision.
   assert.deepEqual(
     buildPages([...deleted, page("home", ALICE, 200, "rebuilt")]).map(
       (p) => p.content,
     ),
     ["rebuilt"],
   );
+  // A revision predating the tombstone does not undo the delete.
   assert.deepEqual(
     buildPages([...deleted, page("home", ALICE, 100, "old")]),
     [],
@@ -183,4 +220,112 @@ test("coordinate parsing rejects anything that is not a wiki page", () => {
     pubkey: ALICE,
     slug: "a:b",
   });
+});
+
+// ── delete markers: purge vs restorable ───────────────────────────────────
+
+test("a restorable delete marker carries no purge tag", () => {
+  const marker = buildDeleteMarker({
+    coordinate: pageCoordinate(ALICE, "home"),
+    purge: false,
+    viewerIsAdmin: true,
+    now: 150,
+  });
+  assert.equal(marker.kind, 5);
+  assert.deepEqual(marker.tags, [["a", pageCoordinate(ALICE, "home")]]);
+});
+
+test("an admin's purge marker carries the purge tag", () => {
+  const marker = buildDeleteMarker({
+    coordinate: pageCoordinate(ALICE, "home"),
+    purge: true,
+    viewerIsAdmin: true,
+    now: 150,
+  });
+  assert.deepEqual(marker.tags, [
+    ["a", pageCoordinate(ALICE, "home")],
+    ["purge", "1"],
+  ]);
+});
+
+test("a non-admin can never purge — the builder refuses", () => {
+  // An author asking for a purge must not silently get a restorable delete.
+  assert.throws(
+    () =>
+      buildDeleteMarker({
+        coordinate: pageCoordinate(ALICE, "home"),
+        purge: true,
+        viewerIsAdmin: false,
+        now: 150,
+      }),
+    /admin/,
+  );
+});
+
+// ── Recently deleted: listing + restore flow ──────────────────────────────
+
+test("buildTombstonedPages lists restorable deletes, newest first, with the restore payload", () => {
+  const events = [
+    page("home", ALICE, 100, "home body"),
+    tombstone(pageCoordinate(ALICE, "home"), ALICE, 150),
+    {
+      ...page("guide", ALICE, 100, "guide body"),
+      tags: [
+        ["d", "guide"],
+        ["t", "team:design"],
+      ],
+    },
+    tombstone(pageCoordinate(ALICE, "guide"), ALICE, 120),
+  ];
+  const deleted = buildTombstonedPages(events);
+  assert.deepEqual(
+    deleted.map((entry) => [entry.slug, entry.deletedAt]),
+    [
+      ["home", 150],
+      ["guide", 120],
+    ],
+  );
+  // The entry carries what a restore republishes: content + sticky scope.
+  const guide = deleted.find((entry) => entry.slug === "guide");
+  assert.equal(guide.content, "guide body");
+  assert.equal(guide.scope, "design");
+  assert.equal(guide.deletedBy, ALICE);
+
+  // Restore flow: the entry becomes a NEW revision (fresh timestamp) under
+  // the same slug, scope carried over — the existing restore-payload builder.
+  const restored = restorePayload(
+    {
+      id: "ignored",
+      authorPubkey: guide.authorPubkey,
+      createdAt: 100,
+      excerpt: "guide body",
+      content: guide.content,
+      scope: guide.scope,
+    },
+    { now: 900, slug: guide.slug },
+  );
+  assert.deepEqual(restored, {
+    kind: 44001,
+    tags: [
+      ["d", "guide"],
+      ["t", "team:design"],
+    ],
+    content: "guide body",
+    created_at: 900,
+  });
+  // …and that revision restores the page in the live set.
+  const live = buildPages([
+    ...events,
+    {
+      ...page("guide", ALICE, 900, "guide body"),
+      tags: [
+        ["d", "guide"],
+        ["t", "team:design"],
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    live.map((p) => p.slug),
+    ["guide"],
+  );
 });

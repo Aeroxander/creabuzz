@@ -133,6 +133,14 @@ pub struct EventQuery {
     /// `filter_to_query_params`, which sets this to `true`, and only an
     /// authenticated community owner/admin flips it back off.
     pub exclude_admin_only_kinds: bool,
+    /// The `include_deleted` wiki extension ("Recently deleted"): also return
+    /// TOMBSTONED wiki page rows (kinds 44001/44002), whose content is
+    /// preserved on tombstone by design so a republished revision restores
+    /// the page. Fail-safe in SQL: even when set, only deleted rows of those
+    /// two kinds are ever surfaced (`deleted_at IS NULL OR kind IN (44001,
+    /// 44002)`), so a buggy caller cannot read tombstoned messages. Set only
+    /// from a validated `buzz_core::wiki_deleted::parse` opt-in.
+    pub include_deleted_wiki: bool,
 }
 
 impl EventQuery {
@@ -166,6 +174,7 @@ impl EventQuery {
             max_limit: None,
             shared_gated_reader: None,
             exclude_admin_only_kinds: false,
+            include_deleted_wiki: false,
         }
     }
 }
@@ -650,7 +659,8 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
         b.push_bind(q.community_id.as_uuid());
         b.push(" AND m.community_id = ");
         b.push_bind(q.community_id.as_uuid());
-        b.push(" AND e.deleted_at IS NULL AND m.pubkey_hex = ");
+        b.push(deleted_predicate("e.", q.include_deleted_wiki));
+        b.push(" AND m.pubkey_hex = ");
         b.push_bind(p_hex.to_ascii_lowercase());
         b
     } else {
@@ -664,7 +674,7 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
              FROM events WHERE community_id = ",
         );
         b.push_bind(q.community_id.as_uuid());
-        b.push(" AND deleted_at IS NULL");
+        b.push(deleted_predicate("", q.include_deleted_wiki));
         b
     };
 
@@ -974,6 +984,19 @@ pub async fn count_events(pool: &PgPool, q: &EventQuery) -> Result<i64> {
 /// [`count_events`] on a specific session — the replica-routing path runs
 /// the count on the exact reader connection whose heartbeat observation
 /// proved its predicate.
+/// The `deleted_at` predicate for one query build. Ordinary reads hide every
+/// deleted row; the `include_deleted` wiki extension additionally surfaces
+/// TOMBSTONED wiki page rows (44001/44002) whose content is preserved on
+/// tombstone by design. The kind list is hard-coded here (never caller-
+/// supplied), so no query can ever surface a deleted non-wiki row.
+fn deleted_predicate(col: &str, include_deleted_wiki: bool) -> String {
+    if include_deleted_wiki {
+        format!(" AND ({col}deleted_at IS NULL OR {col}kind IN (44001, 44002))")
+    } else {
+        format!(" AND {col}deleted_at IS NULL")
+    }
+}
+
 pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuery) -> Result<i64> {
     // Empty list means "match nothing" — return 0 immediately.
     if q.kinds.as_deref().is_some_and(|k| k.is_empty()) {
@@ -999,13 +1022,14 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
         b.push_bind(q.community_id.as_uuid());
         b.push(" AND m.community_id = ");
         b.push_bind(q.community_id.as_uuid());
-        b.push(" AND e.deleted_at IS NULL AND m.pubkey_hex = ");
+        b.push(deleted_predicate("e.", q.include_deleted_wiki));
+        b.push(" AND m.pubkey_hex = ");
         b.push_bind(p_hex.to_ascii_lowercase());
         b
     } else {
         let mut b = QueryBuilder::new("SELECT COUNT(*) as cnt FROM events WHERE community_id = ");
         b.push_bind(q.community_id.as_uuid());
-        b.push(" AND deleted_at IS NULL");
+        b.push(deleted_predicate("", q.include_deleted_wiki));
         b
     };
 
@@ -1406,6 +1430,73 @@ pub async fn wiki_page_revision_authors(
     .await?;
 
     Ok(rows)
+}
+
+/// One wiki-page revision in scope-resolution order: its `t: team:<node>`
+/// scope (raw `team:<node>` value, `None` when the revision carries no scope
+/// tag) and whether its author is currently a community owner/admin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WikiScopeRevision {
+    /// Revision `created_at` (unix seconds).
+    pub created_at: i64,
+    /// Whether the revision's signer is the community owner/admin NOW
+    /// (`relay_members.role`).
+    pub author_is_admin: bool,
+    /// The revision's `t: team:<node>` tag value, if any.
+    pub scope: Option<String>,
+}
+
+/// Bounded scope history of a `d`-tag-addressed wiki page: EVERY revision
+/// (tombstoned included — a delete + re-publish must never reset a team page
+/// to open membership), OLDEST first — `created_at ASC`, ties broken by
+/// `received_at` (arrival order, so two revisions written in the same second
+/// resolve in publication order) then `id` — each with its scope tag and the
+/// author's current admin role. The page key keeps the scan to one page and
+/// the 64-row cap bounds pathological edit histories.
+pub async fn wiki_page_scope_history(
+    pool: &PgPool,
+    community_id: CommunityId,
+    kind: i32,
+    d_tag: &str,
+) -> Result<Vec<WikiScopeRevision>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows: Vec<(i64, bool, Option<String>)> = sqlx::query_as(
+        "SELECT EXTRACT(EPOCH FROM e.created_at)::bigint, \
+                EXISTS (SELECT 1 FROM relay_members m \
+                         WHERE m.community_id = e.community_id \
+                           AND m.pubkey = encode(e.pubkey, 'hex') \
+                           AND m.role IN ('owner', 'admin')), \
+                (SELECT t.val ->> 1 \
+                   FROM jsonb_array_elements(e.tags) AS t(val) \
+                  WHERE jsonb_typeof(t.val) = 'array' \
+                    AND t.val ->> 0 = 't' \
+                    AND t.val ->> 1 LIKE 'team:%' \
+                  LIMIT 1) \
+         FROM events e \
+         WHERE e.community_id = $1 AND e.kind = $2 AND e.d_tag = $3 \
+         ORDER BY e.created_at ASC, e.received_at ASC, e.id ASC \
+         LIMIT 64",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(d_tag)
+    .fetch_all(&mut *connection)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(created_at, author_is_admin, scope)| WikiScopeRevision {
+                created_at,
+                author_is_admin,
+                scope,
+            },
+        )
+        .collect())
 }
 
 /// Atomically soft-delete an event and decrement thread reply counters.
@@ -2666,6 +2757,16 @@ impl Db {
         d_tag: &str,
     ) -> Result<Vec<String>> {
         crate::event::wiki_page_team_scopes(&self.pool, community_id, kind, d_tag).await
+    }
+
+    /// [`wiki_page_scope_history`] over this store.
+    pub async fn wiki_page_scope_history(
+        &self,
+        community_id: CommunityId,
+        kind: i32,
+        d_tag: &str,
+    ) -> Result<Vec<WikiScopeRevision>> {
+        crate::event::wiki_page_scope_history(&self.pool, community_id, kind, d_tag).await
     }
 
     /// Atomically soft-delete an event and decrement thread reply counters.

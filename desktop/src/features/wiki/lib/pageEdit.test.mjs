@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   KIND_WIKI_PAGE,
   applyTextEdit,
+  buildDeleteMarkerPayload,
   buildPageSavePayload,
+  canEditWikiPage,
   diffEdit,
 } from "./pageEdit.ts";
 
@@ -93,4 +95,61 @@ test("buildPageSavePayload preserves the team scope tag", () => {
   // No scope → no scope tag.
   const open = buildPageSavePayload({ slug: "home", content: "b", now: 1 });
   assert.deepEqual(open.tags, [["d", "home"]]);
+});
+
+test("delete markers: restorable by default, purge tag for admins only", () => {
+  const restorable = buildDeleteMarkerPayload({
+    coordinate: `44001:${"a".repeat(64)}:home`,
+    purge: false,
+    viewerIsAdmin: true,
+    now: 150,
+  });
+  assert.equal(restorable.kind, 5);
+  assert.deepEqual(restorable.tags, [["a", `44001:${"a".repeat(64)}:home`]]);
+
+  const purge = buildDeleteMarkerPayload({
+    coordinate: `44001:${"a".repeat(64)}:home`,
+    purge: true,
+    viewerIsAdmin: true,
+    now: 150,
+  });
+  assert.deepEqual(purge.tags, [
+    ["a", `44001:${"a".repeat(64)}:home`],
+    ["purge", "1"],
+  ]);
+
+  // An author can never purge — and must not silently get a restorable one.
+  assert.throws(
+    () =>
+      buildDeleteMarkerPayload({
+        coordinate: `44001:${"a".repeat(64)}:home`,
+        purge: true,
+        viewerIsAdmin: false,
+        now: 150,
+      }),
+    /admin/,
+  );
+});
+
+test("gate matrix: unscoped editable, scoped-unresolvable read-only, admin re-scopes", () => {
+  const ALICE = "a".repeat(64);
+  const BOB = "b".repeat(64);
+  const resolver = (id) => (id === "design" ? [ALICE] : null);
+  const gate = (scope, viewerPubkey, viewerIsAdmin) =>
+    canEditWikiPage({
+      scope,
+      resolveTeamSeats: resolver,
+      viewerPubkey,
+      viewerIsAdmin,
+    });
+
+  // Unscoped: any member edits.
+  assert.equal(gate(null, BOB, false), true);
+  // Scoped + resolvable: seat holder edits, ordinary member does not, admin does.
+  assert.equal(gate("design", ALICE, false), true);
+  assert.equal(gate("design", BOB, false), false);
+  assert.equal(gate("design", BOB, true), true);
+  // Scoped + unresolvable/seatless: read-only for ordinary members, admin only.
+  assert.equal(gate("ghost", BOB, false), false);
+  assert.equal(gate("ghost", BOB, true), true);
 });
