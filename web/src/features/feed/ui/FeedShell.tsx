@@ -1,13 +1,30 @@
 import { Link } from "@tanstack/react-router";
-import { Bookmark, BookMarked, Home, PenLine, User } from "lucide-react";
+import {
+  Bell,
+  Bookmark,
+  BookMarked,
+  Home,
+  PenLine,
+  Search,
+  User,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import buzzAppIcon from "@/assets/app-icon@3x.png";
-import { relayWsUrl } from "@/shared/lib/relay-url";
 import { ThemeToggle } from "@/shared/theme/ThemeToggle";
-import { ConnectButton } from "@/features/repos/ui/ConnectButton";
 
+import { useNotificationBadge } from "../use-discover";
 import { useViewerPubkey } from "../use-feed";
+import { RightRail } from "./RightRail";
+
+function UnreadBadge({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span className="absolute -top-1.5 -right-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 function focusComposer() {
   const el = document.getElementById("composer");
@@ -15,27 +32,48 @@ function focusComposer() {
   el?.focus({ preventScroll: true });
 }
 
-function relayHost(): string {
-  try {
-    return new URL(relayWsUrl()).host;
-  } catch {
-    return relayWsUrl();
-  }
-}
-
 type NavItem = {
   key: string;
   label: string;
   icon: typeof Home;
   link:
-    | { to: "/feed" | "/bookmarks" | "/" }
+    | { to: "/feed" | "/explore" | "/notifications" | "/bookmarks" | "/" }
     | { to: "/p/$id"; params: { id: string } };
+  badge?: number;
+  /** Shown in the mobile bottom bar, which only has room for a few. */
+  mobile?: boolean;
 };
 
 function useNavItems(): NavItem[] {
   const viewer = useViewerPubkey();
+  const { unread } = useNotificationBadge(viewer);
   return [
-    { key: "home", label: "Home", icon: Home, link: { to: "/feed" } },
+    {
+      key: "home",
+      label: "Home",
+      icon: Home,
+      link: { to: "/feed" },
+      mobile: true,
+    },
+    {
+      key: "explore",
+      label: "Explore",
+      icon: Search,
+      link: { to: "/explore" },
+      mobile: true,
+    },
+    ...(viewer
+      ? [
+          {
+            key: "notifications",
+            label: "Notifications",
+            icon: Bell,
+            link: { to: "/notifications" as const },
+            badge: unread,
+            mobile: true,
+          },
+        ]
+      : []),
     {
       key: "bookmarks",
       label: "Bookmarks",
@@ -49,6 +87,7 @@ function useNavItems(): NavItem[] {
             label: "Profile",
             icon: User,
             link: { to: "/p/$id" as const, params: { id: viewer } },
+            mobile: true,
           },
         ]
       : []),
@@ -78,7 +117,7 @@ export function FeedShell({ children }: { children: ReactNode }) {
           >
             <img alt="" src={buzzAppIcon} className="h-8 w-8 rounded-[22%]" />
           </Link>
-          {nav.map(({ key, label, icon: Icon, link }) => (
+          {nav.map(({ key, label, icon: Icon, link, badge }) => (
             <Link
               key={key}
               {...link}
@@ -87,7 +126,10 @@ export function FeedShell({ children }: { children: ReactNode }) {
               activeProps={{ className: "font-bold" }}
               inactiveProps={{ className: "font-normal" }}
             >
-              <Icon className="h-[26px] w-[26px]" />
+              <span className="relative">
+                <Icon className="h-[26px] w-[26px]" />
+                <UnreadBadge count={badge} />
+              </span>
               <span className="hidden xl:inline">{label}</span>
             </Link>
           ))}
@@ -110,37 +152,32 @@ export function FeedShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <aside className="sticky top-0 hidden h-dvh w-[350px] shrink-0 px-6 py-3 lg:block">
-        <section className="rounded-2xl bg-muted/40 p-4">
-          <h2 className="text-xl font-extrabold">This community</h2>
-          <p className="mt-1 break-all text-sm text-muted-foreground">
-            {relayHost()}
-          </p>
-          <p className="mt-3 text-[15px] leading-5">
-            Posts here are Nostr notes. Open the community in Buzz for chat,
-            channels and agents.
-          </p>
-          <ConnectButton className="mt-4 rounded-full" />
-        </section>
+      <aside className="sticky top-0 hidden h-dvh w-[350px] shrink-0 overflow-y-auto px-6 py-2 lg:block">
+        <RightRail />
       </aside>
 
       <nav
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-20 flex h-14 items-center justify-around border-t bg-background/95 backdrop-blur sm:hidden"
       >
-        {nav.map(({ key, label, icon: Icon, link }) => (
-          <Link
-            key={key}
-            {...link}
-            aria-label={label}
-            activeOptions={{ exact: true, includeSearch: false }}
-            className="flex h-full flex-1 items-center justify-center"
-            activeProps={{ className: "text-foreground" }}
-            inactiveProps={{ className: "text-muted-foreground" }}
-          >
-            <Icon className="h-6 w-6" />
-          </Link>
-        ))}
+        {nav
+          .filter((item) => item.mobile)
+          .map(({ key, label, icon: Icon, link, badge }) => (
+            <Link
+              key={key}
+              {...link}
+              aria-label={label}
+              activeOptions={{ exact: true, includeSearch: false }}
+              className="flex h-full flex-1 items-center justify-center"
+              activeProps={{ className: "text-foreground" }}
+              inactiveProps={{ className: "text-muted-foreground" }}
+            >
+              <span className="relative">
+                <Icon className="h-6 w-6" />
+                <UnreadBadge count={badge} />
+              </span>
+            </Link>
+          ))}
       </nav>
     </div>
   );

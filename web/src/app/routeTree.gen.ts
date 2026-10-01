@@ -5,8 +5,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/root";
+import { Route as searchRouteImport } from "./routes/search";
 import { Route as reposRouteImport } from "./routes/repos";
+import { Route as notificationsRouteImport } from "./routes/notifications";
 import { Route as feedRouteImport } from "./routes/feed";
+import { Route as exploreRouteImport } from "./routes/explore";
 import { Route as bookmarksRouteImport } from "./routes/bookmarks";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as tagDottagRouteImport } from "./routes/tag.$tag";
@@ -16,14 +19,29 @@ import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as feedDotnoteIdRouteImport } from "./routes/feed.$noteId";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
 
+const searchRoute = searchRouteImport.update({
+  id: "/search",
+  path: "/search",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const reposRoute = reposRouteImport.update({
   id: "/repos",
   path: "/repos",
   getParentRoute: () => rootRouteImport,
 } as any);
+const notificationsRoute = notificationsRouteImport.update({
+  id: "/notifications",
+  path: "/notifications",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const feedRoute = feedRouteImport.update({
   id: "/feed",
   path: "/feed",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const exploreRoute = exploreRouteImport.update({
+  id: "/explore",
+  path: "/explore",
   getParentRoute: () => rootRouteImport,
 } as any);
 const bookmarksRoute = bookmarksRouteImport.update({
@@ -71,8 +89,11 @@ const reposDotrepoIdDotblobDotsplatRoute =
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/bookmarks": typeof bookmarksRoute;
+  "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
+  "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/p/$id": typeof pDotidRoute;
@@ -83,8 +104,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/bookmarks": typeof bookmarksRoute;
+  "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
+  "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/p/$id": typeof pDotidRoute;
@@ -96,8 +120,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
   "/bookmarks": typeof bookmarksRoute;
+  "/explore": typeof exploreRoute;
   "/feed": typeof feedRoute;
+  "/notifications": typeof notificationsRoute;
   "/repos": typeof reposRoute;
+  "/search": typeof searchRoute;
   "/feed/$noteId": typeof feedDotnoteIdRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/p/$id": typeof pDotidRoute;
@@ -110,8 +137,11 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/bookmarks"
+    | "/explore"
     | "/feed"
+    | "/notifications"
     | "/repos"
+    | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
     | "/p/$id"
@@ -122,8 +152,11 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/bookmarks"
+    | "/explore"
     | "/feed"
+    | "/notifications"
     | "/repos"
+    | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
     | "/p/$id"
@@ -134,8 +167,11 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/bookmarks"
+    | "/explore"
     | "/feed"
+    | "/notifications"
     | "/repos"
+    | "/search"
     | "/feed/$noteId"
     | "/invite/$code"
     | "/p/$id"
@@ -147,8 +183,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   bookmarksRoute: typeof bookmarksRoute;
+  exploreRoute: typeof exploreRoute;
   feedRoute: typeof feedRoute;
+  notificationsRoute: typeof notificationsRoute;
   reposRoute: typeof reposRoute;
+  searchRoute: typeof searchRoute;
   feedDotnoteIdRoute: typeof feedDotnoteIdRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
   pDotidRoute: typeof pDotidRoute;
@@ -159,6 +198,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/search": {
+      id: "/search";
+      path: "/search";
+      fullPath: "/search";
+      preLoaderRoute: typeof searchRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/repos": {
       id: "/repos";
       path: "/repos";
@@ -166,11 +212,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof reposRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/notifications": {
+      id: "/notifications";
+      path: "/notifications";
+      fullPath: "/notifications";
+      preLoaderRoute: typeof notificationsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/feed": {
       id: "/feed";
       path: "/feed";
       fullPath: "/feed";
       preLoaderRoute: typeof feedRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/explore": {
+      id: "/explore";
+      path: "/explore";
+      fullPath: "/explore";
+      preLoaderRoute: typeof exploreRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/bookmarks": {
@@ -235,8 +295,11 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   bookmarksRoute: bookmarksRoute,
+  exploreRoute: exploreRoute,
   feedRoute: feedRoute,
+  notificationsRoute: notificationsRoute,
   reposRoute: reposRoute,
+  searchRoute: searchRoute,
   feedDotnoteIdRoute: feedDotnoteIdRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
   pDotidRoute: pDotidRoute,

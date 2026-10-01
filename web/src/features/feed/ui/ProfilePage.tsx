@@ -21,10 +21,10 @@ import {
   useFollowers,
   useLikedIds,
   useMuted,
-  useToggleFollow,
   useToggleMute,
 } from "../use-social";
 import { Avatar, displayNameOf, pubkeyToHue } from "./Avatar";
+import { FollowButton } from "./FollowButton";
 import { EditProfileDialog } from "./EditProfileDialog";
 import { FeedShell } from "./FeedShell";
 import { Message } from "./Message";
@@ -60,35 +60,6 @@ function Count({
       <b>{value === undefined ? "–" : `${value}${capped ? "+" : ""}`}</b>{" "}
       <span className="text-muted-foreground">{label}</span>
     </span>
-  );
-}
-
-function FollowButton({ viewer, target }: { viewer: string; target: string }) {
-  const following = useContacts(viewer).data?.includes(target) ?? false;
-  const toggle = useToggleFollow(viewer);
-  const [hover, setHover] = useState(false);
-  return (
-    <Button
-      variant={following ? "outline" : "default"}
-      className={cn(
-        "rounded-full px-4 font-bold",
-        following &&
-          hover &&
-          "border-destructive/50 bg-destructive/10 text-destructive",
-        !following && "bg-foreground text-background hover:bg-foreground/90",
-      )}
-      aria-pressed={following}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onClick={() =>
-        toggle.mutate(
-          { value: target, add: !following },
-          { onError: (e) => toast.error(e.message) },
-        )
-      }
-    >
-      {following ? (hover ? "Unfollow" : "Following") : "Follow"}
-    </Button>
   );
 }
 

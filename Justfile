@@ -276,7 +276,7 @@ desktop-e2e-pre-push: _ensure-migrations
     cd {{desktop_dir}} && pnpm build:e2e && pnpm exec playwright test --only-changed=origin/main
 
 # Run all checks suitable for CI / pre-push (no infra needed)
-ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build mobile-test
+ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build web-test mobile-test
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
@@ -631,6 +631,10 @@ web-typecheck:
 # Build web frontend assets
 web-build:
     cd {{web_dir}} && pnpm build
+
+# Run web unit tests (pure feed logic, no browser)
+web-test:
+    cd {{web_dir}} && pnpm test:unit
 
 # Run web browser smoke tests
 web-e2e-smoke:

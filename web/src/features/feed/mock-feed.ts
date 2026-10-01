@@ -51,9 +51,11 @@ const note = (
   ago: number,
   content: string,
   parent?: string,
+  mention?: number,
 ) =>
   ev(eventId, author, KIND_NOTE, ago, content, [
     ...(parent ? [["e", id(parent), "", "reply"]] : []),
+    ...(mention !== undefined ? [["p", people[mention].pubkey]] : []),
     ...hashtagsOf(content).map((t) => ["t", t]),
   ]);
 
@@ -120,6 +122,15 @@ export const allMockEvents: NostrEvent[] = [
   note("6", 2, 60 * 60 * 24 * 9, "Small teams, sharp tools, loud demos. #buzz"),
   note("7", 0, 60, "Congrats! Was this the connection pooling change?", "1"),
   note("8", 3, 45, "Nice. Any chance of a write-up?", "1"),
+  note("a0", 1, 30, "Totally agree, Ada. Specs first.", "3", 0),
+  note(
+    "a1",
+    3,
+    600,
+    `Hey nostr:${toNpub(hex("a"))} want to pair on this?`,
+    undefined,
+    0,
+  ),
   ev("r1", 3, 6, 120, "", [
     ["e", id("3")],
     ["p", people[0].pubkey],
@@ -140,6 +151,9 @@ export function matchesFilter(e: NostrEvent, f: NostrFilter): boolean {
   if (f.ids && !f.ids.includes(e.id)) return false;
   if (f.authors && !f.authors.includes(e.pubkey)) return false;
   if (f.kinds && !f.kinds.includes(e.kind)) return false;
+  if (f.search && !e.content.toLowerCase().includes(f.search.toLowerCase())) {
+    return false;
+  }
   if (f.since && e.created_at < f.since) return false;
   if (f.until && e.created_at > f.until) return false;
   for (const [key, values] of Object.entries(f)) {

@@ -18,6 +18,8 @@ export interface NostrFilter {
   since?: number;
   until?: number;
   limit?: number;
+  /** NIP-50 full-text query (the relay indexes only some kinds, e.g. profiles). */
+  search?: string;
   [tag: `#${string}`]: string[] | undefined;
 }
 
