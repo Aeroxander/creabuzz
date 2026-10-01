@@ -22,6 +22,9 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser } from "@/shared/lib/identity";
 import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
+import { useTaskPlanning } from "../use-task-planning";
+import { NextUpList } from "./NextUpList";
+import { TaskPlanningPanel } from "./TaskPlanningPanel";
 import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import { RecentThread, TaskHistory } from "./WorkBoardThread";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -152,10 +155,11 @@ export function WorkBoard({
     setAssignee: setTaskAssignee,
     updateTask,
   } = useWorkBoard(channels);
+  const planning = useTaskPlanning(items);
   const { agents } = useAgentRoster();
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
-  const [view, setView] = useState<"list" | "board">("board");
+  const [view, setView] = useState<"list" | "board" | "next">("board");
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialItemId ?? null,
   );
@@ -284,6 +288,10 @@ export function WorkBoard({
         priority: item.priority ?? "normal",
         due: item.due ?? null,
         labels: item.labels ?? [],
+        // Round-trip every planning field: a row published from this task
+        // writes them all, and a missing one would publish as a clear.
+        milestone: item.milestone,
+        reward: item.reward,
       }),
       sig: "",
     });
@@ -446,7 +454,7 @@ export function WorkBoard({
       </div>
 
       <div className="flex items-center gap-1.5">
-        {(["board", "list"] as const).map((v) => (
+        {(["board", "list", "next"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -458,7 +466,7 @@ export function WorkBoard({
             }`}
             data-testid={`work-view-${v}`}
           >
-            {v === "board" ? "Board" : "List"}
+            {v === "board" ? "Board" : v === "list" ? "List" : "Next up"}
           </button>
         ))}
       </div>
@@ -497,6 +505,15 @@ export function WorkBoard({
             void createTask({ title: taskTitle }).catch(
               reportActionFailure("Couldn't create the task"),
             );
+          }}
+        />
+      ) : view === "next" ? (
+        <NextUpList
+          items={items}
+          planning={planning}
+          onOpen={(item) => {
+            selectItem(item.key);
+            setView("list");
           }}
         />
       ) : (
@@ -565,6 +582,15 @@ export function WorkBoard({
                         reportActionFailure("Couldn't save the task"),
                       )
                     }
+                  />
+                ) : null}
+
+                {selected.type === "task" ? (
+                  <TaskPlanningPanel
+                    key={selected.key}
+                    item={selected}
+                    planning={planning}
+                    onUpdate={(patch) => updateTask(asTask(selected), patch)}
                   />
                 ) : null}
 

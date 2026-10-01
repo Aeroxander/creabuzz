@@ -15,5 +15,6 @@ export const routes = rootRoute("root.tsx", [
   route("/launchpad/$launchId", "launchpad.$launchId.tsx"),
   route("/projects", "projects.tsx"),
   route("/projects/$projectId", "projects.$projectId.tsx"),
+  route("/portfolio", "portfolio.tsx"),
   route("/repos/$repoId/blob/$", "repos.$repoId.blob.$.tsx"),
 ]);

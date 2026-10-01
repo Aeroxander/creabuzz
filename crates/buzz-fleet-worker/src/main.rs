@@ -261,6 +261,25 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
+/// Content of a status row the worker publishes for `task`: the task's own
+/// fields carried forward with only `status` (and the resolved `title`)
+/// changed. A row that wrote `{title, description: "", status}` erased the
+/// description, priority, due date, labels, milestone and reward of every task
+/// an agent picked up. The approval attribution belongs to the row that
+/// approved, so it is not carried.
+fn status_row_content(task: &Event, status: &str) -> String {
+    let mut body = serde_json::from_str::<Value>(&task.content)
+        .ok()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    if let Some(fields) = body.as_object_mut() {
+        fields.remove("approver");
+        fields.insert("title".to_string(), json!(task_title(task)));
+        fields.insert("status".to_string(), json!(status));
+    }
+    body.to_string()
+}
+
 async fn publish_task_row(
     ws: &mut buzz_ws_client::NostrWsConnection,
     keys: &Keys,
@@ -276,12 +295,7 @@ async fn publish_task_row(
     if let Some(e) = &e {
         tags.push(t("e", e));
     }
-    let content = json!({
-        "title": task_title(task),
-        "description": "",
-        "status": status,
-    })
-    .to_string();
+    let content = status_row_content(task, status);
     let event = match EventBuilder::new(nostr::Kind::Custom(KIND_AGENT_TASK as u16), content)
         .tags(tags)
         .sign_with_keys(keys)
@@ -1036,6 +1050,57 @@ mod tests {
     use super::*;
 
     const TASK_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn task_with(content: serde_json::Value) -> Event {
+        EventBuilder::new(
+            nostr::Kind::Custom(KIND_AGENT_TASK as u16),
+            content.to_string(),
+        )
+        .tags(vec![Tag::parse(["d", "task-1"]).expect("d tag")])
+        .sign_with_keys(&Keys::generate())
+        .expect("sign task")
+    }
+
+    /// Picking a task up must not erase its planning fields: the status row
+    /// carries every field forward and changes only the status.
+    #[test]
+    fn status_rows_keep_the_task_fields() {
+        let task = task_with(json!({
+            "title": "Write the pitch",
+            "description": "One page, plain words",
+            "status": "open",
+            "priority": "high",
+            "due": 1_800_000_000_000_u64,
+            "labels": ["launch"],
+            "milestone": "Testnet live",
+            "reward": 40,
+            "approver": "someone",
+        }));
+        let row: Value =
+            serde_json::from_str(&status_row_content(&task, "in_progress")).expect("json");
+        assert_eq!(row["status"], "in_progress");
+        assert_eq!(row["title"], "Write the pitch");
+        assert_eq!(row["description"], "One page, plain words");
+        assert_eq!(row["priority"], "high");
+        assert_eq!(row["labels"], json!(["launch"]));
+        assert_eq!(row["milestone"], "Testnet live");
+        assert_eq!(row["reward"], 40);
+        assert!(
+            row.get("approver").is_none(),
+            "approval stays on its own row"
+        );
+    }
+
+    /// A task whose content is not a JSON object still gets a valid row.
+    #[test]
+    fn status_rows_from_plain_text_tasks() {
+        let task = EventBuilder::new(nostr::Kind::Custom(KIND_AGENT_TASK as u16), "fix the build")
+            .sign_with_keys(&Keys::generate())
+            .expect("sign task");
+        let row: Value = serde_json::from_str(&status_row_content(&task, "done")).expect("json");
+        assert_eq!(row["status"], "done");
+        assert_eq!(row["title"], "fix the build");
+    }
 
     #[test]
     fn completions_url_normalizes_base_and_full_path() {

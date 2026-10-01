@@ -19,6 +19,7 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import { signAsUser } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK } from "@/shared/constants/kinds";
+import { readMilestone, readReward } from "./lib/task-planning";
 
 export type TaskStatus =
   | "open"
@@ -45,6 +46,10 @@ export interface FleetTask {
   priority: TaskPriority;
   due: number | null;
   labels: string[];
+  /** Milestone this task counts toward (free text), or null. */
+  milestone: string | null;
+  /** Points the task earns once its contribution is accepted, or null. */
+  reward: number | null;
   updatedAt: number;
 }
 
@@ -58,6 +63,8 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     priority?: string;
     due?: number | null;
     labels?: string[];
+    milestone?: unknown;
+    reward?: unknown;
   } = {};
   try {
     body = JSON.parse(event.content) as typeof body;
@@ -92,6 +99,8 @@ export function parseTask(event: NostrEvent): FleetTask | null {
       : "normal",
     due: typeof body.due === "number" && body.due > 0 ? body.due : null,
     labels: Array.isArray(body.labels) ? body.labels : [],
+    milestone: readMilestone(body.milestone),
+    reward: readReward(body.reward),
     updatedAt: event.created_at * 1000,
   };
 }

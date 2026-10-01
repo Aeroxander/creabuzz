@@ -1,4 +1,5 @@
-import { Home } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Briefcase, Home } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -102,12 +103,22 @@ export function FeedPage() {
     <div className="flex h-full w-full flex-1 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <section aria-labelledby="home-title" className="min-w-0">
-          <h1
-            className="flex items-center gap-2 text-xl font-semibold text-black dark:text-white"
-            id="home-title"
-          >
-            <Home aria-hidden className="h-5 w-5" /> Home
-          </h1>
+          <div className="flex items-center justify-between gap-2">
+            <h1
+              className="flex items-center gap-2 text-xl font-semibold text-black dark:text-white"
+              id="home-title"
+            >
+              <Home aria-hidden className="h-5 w-5" /> Home
+            </h1>
+            {/* Phones only: the rail's Portfolio tab has no room in the tab bar. */}
+            <Link
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 md:hidden dark:text-white/70 dark:hover:bg-white/10"
+              data-testid="home-portfolio-link"
+              to="/portfolio"
+            >
+              <Briefcase aria-hidden className="h-4 w-4" /> Portfolio
+            </Link>
+          </div>
           <div className="mt-3">
             <Composer />
           </div>

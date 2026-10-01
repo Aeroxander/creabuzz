@@ -615,11 +615,14 @@ class BrowserAgent {
     // findable in-context and the board keeps the parent e-tag.
     if (channelId) tags.push(["h", channelId]);
     if (parentEventId) tags.push(["e", parentEventId]);
-    // Carry the original task's channel so the update is findable in-context.
+    // A status row writes only what it changes: omitting the planning fields
+    // (description, priority, milestone, reward…) leaves them as they were —
+    // the board merges rows field by field (`lib/task-planning.ts`). Writing
+    // `description: ""` here used to erase the task's description.
     const signed = await signAsAgent({
       kind: KIND_AGENT_TASK,
       tags,
-      content: JSON.stringify({ title, description: "", status }),
+      content: JSON.stringify({ title, status }),
     });
     const result = await publishEvent(relayWsUrl(), signed, {
       signAuth: signAsAgent,
