@@ -23,7 +23,7 @@ const AGENT_STORAGE_KEY = "buzz.agent.nsec";
 
 function parseNsecHex(hex: string): Uint8Array {
   return new Uint8Array(
-    hex.match(/.{2}/g)?.map((pair) => Number.parseInt(pair, 16)),
+    hex.match(/.{2}/g)?.map((pair) => Number.parseInt(pair, 16)) ?? [],
   );
 }
 
