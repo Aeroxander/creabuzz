@@ -4413,6 +4413,28 @@ mod deletion_postgres_tests {
             .expect("sign deletion")
     }
 
+    /// The same delete marker plus the explicit `purge` tag. Purge is INTENT,
+    /// not role: an admin's marker without this tag is a restorable tombstone
+    /// that preserves content (rule 3(b)); only an admin/owner marker carrying
+    /// it strips content irreversibly.
+    fn purge_deletion(
+        keys: &Keys,
+        kind: u32,
+        author_hex: &str,
+        d_tag: &str,
+        created_at: u64,
+    ) -> Event {
+        let a_value = format!("{kind}:{author_hex}:{d_tag}");
+        EventBuilder::new(Kind::EventDeletion, "")
+            .tags(vec![
+                Tag::parse(["a", &a_value]).expect("a tag"),
+                Tag::parse(["purge", "1"]).expect("purge tag"),
+            ])
+            .custom_created_at(Timestamp::from(created_at))
+            .sign_with_keys(keys)
+            .expect("sign purge deletion")
+    }
+
     fn pubkey_hex(keys: &Keys) -> String {
         hex::encode(keys.public_key().to_bytes())
     }
@@ -4478,11 +4500,13 @@ mod deletion_postgres_tests {
                 .expect("insert wiki revision");
         }
 
-        // Rule 3(b): only a community admin/owner's delete marker PURGES
-        // content — seed alice as admin so the page-wide delete runs the
-        // strip path this test is the mutation oracle for (scope
-        // `soft_delete_wiki_page_by_slug`'s WHERE clause back to a
-        // single-author row and the assertions below fail).
+        // Rule 3(b): content is PURGED only by an admin/owner's delete marker
+        // that explicitly asks for it — seed alice as admin AND carry the
+        // `purge` tag. This test is the mutation oracle for the strip path
+        // (narrow `soft_delete_wiki_page_by_slug`'s WHERE clause to a
+        // single-author row, or drop the purge-tag gate, and it fails). An
+        // admin marker WITHOUT the tag is a restorable tombstone — that half
+        // of the contract is pinned in `wiki_enforcement_tests`.
         sqlx::query(
             "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'admin') \
              ON CONFLICT DO NOTHING",
@@ -4495,7 +4519,7 @@ mod deletion_postgres_tests {
 
         // Authorized by alice's revision coordinate — the signer is an author
         // of a surviving revision of the page.
-        let delete = a_tag_deletion(
+        let delete = purge_deletion(
             &alice,
             buzz_core::kind::KIND_WIKI_PAGE,
             &pubkey_hex(&alice),
@@ -4670,8 +4694,8 @@ mod deletion_postgres_tests {
             .await
             .expect("insert wiki revision");
 
-        // Admin delete = purge tier (rule 3(b)), so the replay below asserts
-        // the content stays stripped.
+        // Purge tier (rule 3(b)) = admin AND the explicit `purge` tag, so the
+        // replay below asserts the content stays stripped.
         sqlx::query(
             "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'admin') \
              ON CONFLICT DO NOTHING",
@@ -4683,7 +4707,7 @@ mod deletion_postgres_tests {
         .expect("seat purging admin");
 
         for created_at in [BASE + 10, BASE + 20] {
-            let delete = a_tag_deletion(
+            let delete = purge_deletion(
                 &alice,
                 buzz_core::kind::KIND_WIKI_PAGE,
                 &pubkey_hex(&alice),
