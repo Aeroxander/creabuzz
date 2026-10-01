@@ -14,31 +14,33 @@ use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
     KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
-    KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
-    KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD,
-    KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
-    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET,
-    KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
-    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
-    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
-    KIND_GIT_STATUS_OPEN, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
-    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
-    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
-    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
-    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
-    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BLOSSOM_SERVER_LIST, KIND_BOOKMARK_LIST,
+    KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST,
+    KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER,
+    KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST, KIND_EMOJI_LIST, KIND_EMOJI_SET,
+    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
+    KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
+    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
+    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
+    KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
+    KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT,
+    KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM, KIND_MANAGED_AGENT,
+    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN,
+    KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
+    KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT,
+    KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST,
+    KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
     KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
-    KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST,
-    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
-    KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_SCORE_ROOT, KIND_SKILL,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN,
-    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_CORRECTION,
-    KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
+    KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
+    KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_REPOST,
+    KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
+    KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
+    KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
+    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -505,6 +507,10 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
     match kind {
         KIND_PROFILE => Ok(Scope::UsersWrite),
         KIND_TEXT_NOTE | KIND_LONG_FORM | buzz_core::kind::KIND_ARTIFACT => Ok(Scope::MessagesWrite),
+        // Public social posts: NIP-18 reposts, NIP-22 comments, NIP-84 highlights,
+        // NIP-88 polls and poll responses. Ordinary member writes, global-only.
+        KIND_REPOST | KIND_GENERIC_REPOST | KIND_COMMENT | KIND_HIGHLIGHT | KIND_POLL
+        | KIND_POLL_RESPONSE => Ok(Scope::MessagesWrite),
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
         | KIND_PRIVATE_MANAGED_AGENT | KIND_TEAM_CATALOG | KIND_SKILL
@@ -534,6 +540,10 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // palette is the client-side union of every member's own set.
         | KIND_EMOJI_SET
         | KIND_EMOJI_LIST
+        // NIP-17 DM relay list (10050) and BUD-03 Blossom server list (10063):
+        // user-owned replaceable config, same shape as the NIP-65 relay list.
+        | KIND_DM_RELAY_LIST
+        | KIND_BLOSSOM_SERVER_LIST
         | KIND_AGENT_PROFILE => Ok(Scope::UsersWrite),
         KIND_DELETION
         | KIND_REACTION
@@ -713,6 +723,52 @@ pub(crate) async fn derive_reaction_channel(
     }
 }
 
+/// Structural checks for the public social kinds (NIP-18, NIP-22, NIP-88).
+///
+/// Returns the rejection reason (without the `invalid:` prefix) when the event is
+/// malformed. Kinds outside this set always pass. Only the minimum each NIP
+/// marks as required is enforced; clients own the rest of the semantics.
+fn validate_social_event(kind: u32, event: &Event) -> Result<(), &'static str> {
+    fn has_tag(event: &Event, name: &str, hex_value: bool) -> bool {
+        event.tags.iter().any(|t| {
+            t.kind().to_string() == name
+                && t.content().is_some_and(|v| {
+                    !hex_value || (v.len() == 64 && v.chars().all(|c| c.is_ascii_hexdigit()))
+                })
+        })
+    }
+    fn count_tags(event: &Event, name: &str) -> usize {
+        event
+            .tags
+            .iter()
+            .filter(|t| t.kind().to_string() == name && t.content().is_some())
+            .count()
+    }
+
+    match kind {
+        KIND_REPOST | KIND_GENERIC_REPOST if !has_tag(event, "e", true) => {
+            Err("repost must reference the reposted event via an e tag")
+        }
+        KIND_GENERIC_REPOST if !has_tag(event, "k", false) => {
+            Err("generic repost must name the reposted kind via a k tag")
+        }
+        KIND_COMMENT
+            if !(has_tag(event, "E", false)
+                || has_tag(event, "A", false)
+                || has_tag(event, "I", false)) =>
+        {
+            Err("comment must name its root via an E, A or I tag")
+        }
+        KIND_POLL if count_tags(event, "option") < 2 => {
+            Err("poll must have at least two option tags")
+        }
+        KIND_POLL_RESPONSE if !has_tag(event, "e", true) || count_tags(event, "response") == 0 => {
+            Err("poll response must reference the poll via an e tag and carry a response tag")
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Kinds that are always global (`channel_id = NULL`).
 ///
 /// If a client includes a stray `h` tag on these kinds, the ingest pipeline
@@ -731,6 +787,16 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_TEXT_NOTE
             | KIND_CONTACT_LIST
             | KIND_LONG_FORM
+            // Public social posts — never channel-scoped, same as kind:1.
+            | KIND_REPOST
+            | KIND_GENERIC_REPOST
+            | KIND_COMMENT
+            | KIND_HIGHLIGHT
+            | KIND_POLL
+            | KIND_POLL_RESPONSE
+            // NIP-17 DM relay list + BUD-03 Blossom server list: user-owned replaceable.
+            | KIND_DM_RELAY_LIST
+            | KIND_BLOSSOM_SERVER_LIST
             | KIND_USER_STATUS
             | KIND_READ_STATE
             // NIP-51 standard lists + sets and NIP-65 relay list — user-owned global state.
@@ -2472,9 +2538,7 @@ pub(crate) async fn resolve_wiki_page_scope(
         .org_graph(tenant.community())
         .node_is_resolvable(&node)
         .await
-        .map_err(|e| {
-            IngestError::Internal(format!("error: db error resolving team node: {e}"))
-        })?;
+        .map_err(|e| IngestError::Internal(format!("error: db error resolving team node: {e}")))?;
     Ok(if resolvable {
         WikiPageScope::Scoped(node)
     } else {
@@ -4829,6 +4893,11 @@ async fn ingest_event_inner(
         None
     };
 
+    // Structural checks for the public social kinds (reposts, comments, polls).
+    if let Err(reason) = validate_social_event(kind_u32, &event) {
+        return Err(IngestError::Rejected(format!("invalid: {reason}")));
+    }
+
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.
     if kind_u32 == KIND_PROFILE
@@ -5725,6 +5794,116 @@ mod postgres_tests {
         }
     }
 
+    const SOCIAL_KINDS: [u32; 6] = [
+        KIND_REPOST,
+        KIND_GENERIC_REPOST,
+        KIND_COMMENT,
+        KIND_HIGHLIGHT,
+        KIND_POLL,
+        KIND_POLL_RESPONSE,
+    ];
+
+    #[test]
+    fn social_kinds_are_global_only_member_writes() {
+        let dummy = make_dummy_event();
+        for kind in SOCIAL_KINDS {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h tag"
+            );
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} requires MessagesWrite"
+            );
+        }
+        for kind in [KIND_DM_RELAY_LIST, KIND_BLOSSOM_SERVER_LIST] {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::UsersWrite,
+                "kind {kind} requires UsersWrite"
+            );
+        }
+    }
+
+    fn event_with(kind: u32, tags: &[&[&str]]) -> Event {
+        use nostr::{EventBuilder, Keys, Kind, Tag};
+        let parsed: Vec<Tag> = tags
+            .iter()
+            .map(|parts| Tag::parse(parts.iter().copied()).unwrap())
+            .collect();
+        EventBuilder::new(Kind::Custom(kind as u16), "")
+            .tags(parsed)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    const ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+
+    #[test]
+    fn repost_requires_e_tag_and_generic_repost_requires_k() {
+        assert!(
+            validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[&["e", ID]])).is_ok()
+        );
+        assert!(validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[])).is_err());
+        assert!(
+            validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[&["e", "nothex"]]))
+                .is_err()
+        );
+        assert!(validate_social_event(
+            KIND_GENERIC_REPOST,
+            &event_with(KIND_GENERIC_REPOST, &[&["e", ID]])
+        )
+        .is_err());
+        assert!(validate_social_event(
+            KIND_GENERIC_REPOST,
+            &event_with(KIND_GENERIC_REPOST, &[&["e", ID], &["k", "30023"]])
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn comment_requires_a_root_tag() {
+        assert!(validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[])).is_err());
+        // Lowercase parent tags alone do not name a root.
+        assert!(
+            validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[&["e", ID]])).is_err()
+        );
+        for root in ["E", "A", "I"] {
+            assert!(
+                validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[&[root, ID]]))
+                    .is_ok(),
+                "{root} tag should name a comment root"
+            );
+        }
+    }
+
+    #[test]
+    fn poll_and_response_shapes() {
+        let ok_poll = event_with(
+            KIND_POLL,
+            &[&["option", "a", "Yes"], &["option", "b", "No"]],
+        );
+        assert!(validate_social_event(KIND_POLL, &ok_poll).is_ok());
+        let one_option = event_with(KIND_POLL, &[&["option", "a", "Yes"]]);
+        assert!(validate_social_event(KIND_POLL, &one_option).is_err());
+
+        let ok_vote = event_with(KIND_POLL_RESPONSE, &[&["e", ID], &["response", "a"]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &ok_vote).is_ok());
+        let no_choice = event_with(KIND_POLL_RESPONSE, &[&["e", ID]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &no_choice).is_err());
+        let no_poll = event_with(KIND_POLL_RESPONSE, &[&["response", "a"]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &no_poll).is_err());
+    }
+
+    #[test]
+    fn other_kinds_skip_social_validation() {
+        assert!(validate_social_event(KIND_TEXT_NOTE, &event_with(KIND_TEXT_NOTE, &[])).is_ok());
+        assert!(validate_social_event(KIND_HIGHLIGHT, &event_with(KIND_HIGHLIGHT, &[])).is_ok());
+    }
+
     #[test]
     fn private_managed_agent_kind_is_owner_scoped_global_user_data() {
         let event = make_dummy_event();
@@ -5775,6 +5954,15 @@ mod postgres_tests {
             KIND_FORUM_COMMENT,
             KIND_LONG_FORM,
             KIND_USER_STATUS,
+            // NIP-18/22/84/88 public social kinds
+            KIND_REPOST,
+            KIND_GENERIC_REPOST,
+            KIND_COMMENT,
+            KIND_HIGHLIGHT,
+            KIND_POLL,
+            KIND_POLL_RESPONSE,
+            KIND_DM_RELAY_LIST,
+            KIND_BLOSSOM_SERVER_LIST,
             // NIP-51 lists + sets, NIP-65 relay list
             KIND_MUTE_LIST,
             KIND_PIN_LIST,

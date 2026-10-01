@@ -56,10 +56,36 @@ pub const KIND_CHANNEL_METADATA: u32 = 41;
 pub const KIND_DELETION: u32 = 5;
 /// NIP-25: Content is emoji char or `+`/`-`.
 pub const KIND_REACTION: u32 = 7;
+/// NIP-18: Repost of a kind:1 note. `e` tag (+ `p` author tag) names the reposted
+/// event; `content` is empty or the stringified reposted event.
+///
+/// Stored globally (`channel_id = NULL`), like kind:1.
+pub const KIND_REPOST: u32 = 6;
+/// NIP-18: Generic repost of any non-kind:1 event. Like [`KIND_REPOST`] plus a `k` tag
+/// naming the reposted event's kind.
+pub const KIND_GENERIC_REPOST: u32 = 16;
 /// NIP-17: Outer envelope for private DMs — hides sender, content, timestamp.
 pub const KIND_GIFT_WRAP: u32 = 1059;
 /// NIP-94: File metadata attachment.
 pub const KIND_FILE_METADATA: u32 = 1063;
+/// NIP-88: Poll response. `e` tag names the poll; each `response` tag carries an option id.
+pub const KIND_POLL_RESPONSE: u32 = 1018;
+/// NIP-88: Poll. `content` is the question; `option` tags carry `[id, label]`.
+pub const KIND_POLL: u32 = 1068;
+/// NIP-22: Comment on a non-kind:1 root (article, file, URL, …). Uppercase `E`/`A`/`I`
+/// tags name the root, lowercase tags name the parent. Plain note replies stay kind:1
+/// with NIP-10 markers.
+pub const KIND_COMMENT: u32 = 1111;
+/// NIP-84: Highlight — a passage quoted from an event, article, or URL.
+pub const KIND_HIGHLIGHT: u32 = 9802;
+/// NIP-17: DM relay list (replaceable) — relays where a user wants to receive gift-wrapped DMs.
+///
+/// User-owned global state, keyed by `(pubkey, kind)`.
+pub const KIND_DM_RELAY_LIST: u32 = 10050;
+/// BUD-03: Blossom server list (replaceable) — media servers a user publishes to.
+///
+/// User-owned global state, keyed by `(pubkey, kind)`.
+pub const KIND_BLOSSOM_SERVER_LIST: u32 = 10063;
 /// NIP-23: Long-form content (articles, blog posts, RFCs).
 /// Parameterized replaceable (NIP-33, 30000–39999 range) — keyed by `(pubkey, kind, d_tag)`.
 /// Stored globally (channel_id = NULL); author-owned, not channel-scoped.
@@ -1010,9 +1036,17 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_EMOJI_SET,
     KIND_CHANNEL_METADATA,
     KIND_DELETION,
+    KIND_REPOST,
+    KIND_GENERIC_REPOST,
     KIND_REACTION,
     KIND_GIFT_WRAP,
     KIND_FILE_METADATA,
+    KIND_POLL_RESPONSE,
+    KIND_POLL,
+    KIND_COMMENT,
+    KIND_HIGHLIGHT,
+    KIND_DM_RELAY_LIST,
+    KIND_BLOSSOM_SERVER_LIST,
     KIND_AGENT_PROFILE,
     KIND_AGENT_ENGRAM,
     KIND_EVENT_REMINDER,

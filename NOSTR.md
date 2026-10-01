@@ -67,6 +67,13 @@ PGPASSWORD=buzz_dev psql -h localhost -U buzz -d buzz -c \
 | **NIP-11 relay info** | ✅ | `GET /` with `Accept: application/nostr+json` |
 | **Blossom media** | ✅ | `PUT /media/upload` (BUD-02), `GET /media/{sha256}.{ext}` (BUD-01) |
 | **NIP-50 search** | ✅ | One-shot search REQs: `{"search":"query","kinds":[9],"#h":["<uuid>"]}` → relevance-sorted results → EOSE. Not registered as persistent subscriptions. |
+| **Reposts (kind:6, kind:16)** | ✅ | NIP-18. Global (no `h` tag). Must carry a 64-hex `e` tag; kind:16 also needs a `k` tag. `content` is empty or the stringified original. Undo with a NIP-09 deletion. Quote posts are ordinary kind:1 with a `q` tag. |
+| **Comments (kind:1111)** | ✅ | NIP-22 comments on non-note roots (articles, files, URLs). Global. Must name a root via an uppercase `E`, `A` or `I` tag. Plain note replies stay kind:1 + NIP-10. |
+| **Polls (kind:1068) + responses (kind:1018)** | ✅ | NIP-88. Global. A poll needs ≥2 `option` tags; a response needs an `e` tag naming the poll and ≥1 `response` tag. Tallying (and `endsAt`) is client-side. |
+| **Highlights (kind:9802)** | ✅ | NIP-84. Global; no relay-side validation. |
+| **Follow list (kind:3), mute/bookmark/pin lists, relay list (10002)** | ✅ | NIP-02 / NIP-51 / NIP-65. User-owned replaceable global state, readable by any authenticated member — put private entries (e.g. bookmarks) in NIP-44-encrypted `content`. Followers are a REQ/COUNT on kind:3 with `#p`. |
+| **DM relay list (kind:10050), Blossom server list (kind:10063)** | ✅ | NIP-17 / BUD-03 user-owned replaceable config. |
+| **COUNT** | ✅ | NIP-45, advertised in NIP-11. |
 | **NIP-10 threads** | ✅ | WS-submitted replies with `["e","<root>","","reply"]` tags create `thread_metadata` atomically. Visible in REST thread queries. Unknown parents rejected. |
 | **NIP-17 DMs (gift wrap)** | ✅ | kind:1059 accepted with ephemeral signing keys. Stored community-globally (`channel_id=None` inside the connected community). Delivered via `#p`-filtered subscriptions. Not indexed in search. |
 | **DM discovery** | ✅ | DM creation emits kind:39000 (with `hidden` tag) + kind:44100 membership notifications. NIP-29 clients discover DMs via standard group discovery flow. |
@@ -80,7 +87,7 @@ PGPASSWORD=buzz_dev psql -h localhost -U buzz -d buzz -c \
 |---------|:------:|-----|
 | **Create invite (kind:9009)** | ⚠️ | Accepted and stored, but side-effect handler is deferred (no-op with warning log) |
 | **Group roles (kind:39003)** | ❌ | Defined in kind registry but not emitted by the relay |
-| **DMs** | ⚠️ | NIP-17 gift wraps supported; NIP-04/NIP-44 not implemented. kind:10050 (DM relay list) deferred. |
+| **DMs** | ⚠️ | NIP-17 gift wraps supported (the relay never sees the inner kind:14); NIP-04 not implemented. kind:10050 DM relay list is accepted. |
 
 ### Pubkey Allowlist
 
