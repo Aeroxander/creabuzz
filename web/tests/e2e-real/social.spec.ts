@@ -752,7 +752,23 @@ test("a priority update from a launch you follow lands in notifications, and can
   test.slow();
   const fixture = fixtureOrSkip();
   await signInAsDev(page, fixture);
-  const nebula = `37001:${fixture.people.alice}:nebula-dao`;
+  // A launch of its own per run: priority updates are rationed per launch per
+  // week, so reusing one would stop being priority after a few runs.
+  const launchId = `nebula-${RUN}`;
+  const nebula = `37001:${fixture.people.alice}:${launchId}`;
+  await post("alice", {
+    kind: 37001,
+    tags: [
+      ["d", launchId],
+      ["name", `Nebula ${RUN}`],
+      ["t", "dao-launchpad"],
+      ["admission", "curated"],
+    ],
+    content: JSON.stringify({
+      pitch: "A fresh launch for this run.",
+      stage: "funding",
+    }),
+  });
 
   // Dev follows Nebula (a bookmark-list `a` tag, keeping what is already there).
   const lists = await readAs("dev", {
