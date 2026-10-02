@@ -105,7 +105,13 @@ test("Following shows the people you follow and nobody else", async ({
   await signInAsDev(page, fixture);
   await page.goto("/social");
   await page.getByTestId("social-tab-following").click();
-  // Dev follows Alice (and sees their own posts).
+  // Dev follows Alice (and sees their own posts). The seeded posts may be a few
+  // pages down once earlier runs have added more.
+  await scrollUntilVisible(
+    page,
+    "Shipping the first Creaton social feed today.",
+  );
+  await scrollUntilVisible(page, "Testing the Creaton feed from a real relay.");
   await expect(
     postCard(page, "Shipping the first Creaton social feed today."),
   ).toBeVisible({
