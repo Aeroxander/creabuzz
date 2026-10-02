@@ -57,7 +57,7 @@ function NewMessage({ me }: { me: string }) {
         Send a message to
       </label>
       <input
-        className="h-10 w-full rounded-full bg-black/5 px-4 text-sm text-black outline-none placeholder:text-black/50 focus:ring-1 focus:ring-sky-600 dark:bg-white/10 dark:text-white dark:placeholder:text-white/50"
+        className="h-10 w-full rounded-full bg-black/5 px-4 text-sm text-black outline-none placeholder:text-black/50 focus:ring-1 focus:ring-primary dark:bg-white/10 dark:text-white dark:placeholder:text-white/50"
         data-testid="social-dm-recipient"
         id="social-dm-recipient"
         onChange={(e) => setQuery(e.target.value)}

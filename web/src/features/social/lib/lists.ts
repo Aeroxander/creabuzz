@@ -15,9 +15,10 @@ import {
   KIND_BOOKMARK_LIST,
   KIND_MUTE_LIST,
 } from "../../../shared/constants/kinds.ts";
-import type {
-  EventTemplate,
-  SignedEventLike,
+import {
+  type EventTemplate,
+  replacementTimestamp,
+  type SignedEventLike,
 } from "../../feed/lib/feed-events.ts";
 import { tagValues } from "./engagement.ts";
 
@@ -36,7 +37,12 @@ export function withMuted(
     (t) => !(t[0] === "p" && t[1]?.toLowerCase() === target),
   );
   if (muted) tags.push(["p", target]);
-  return { kind: KIND_MUTE_LIST, tags, content: list?.content ?? "" };
+  return {
+    kind: KIND_MUTE_LIST,
+    tags,
+    content: list?.content ?? "",
+    created_at: replacementTimestamp(list),
+  };
 }
 
 /** Tags decrypted from a bookmark list's private `content`; empty when absent. */
@@ -68,7 +74,12 @@ export function withBookmark(
   privateTags: readonly string[][],
   id: string,
   saved: boolean,
-): { kind: number; tags: string[][]; privateTags: string[][] } {
+): {
+  kind: number;
+  tags: string[][];
+  privateTags: string[][];
+  created_at: number;
+} {
   const keep = (t: string[]) => !(t[0] === "e" && t[1] === id);
   const nextPrivate = privateTags.filter(keep);
   if (saved) nextPrivate.push(["e", id]);
@@ -76,5 +87,6 @@ export function withBookmark(
     kind: KIND_BOOKMARK_LIST,
     tags: (list?.tags ?? []).filter(keep),
     privateTags: nextPrivate,
+    created_at: replacementTimestamp(list),
   };
 }

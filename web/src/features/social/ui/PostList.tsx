@@ -9,6 +9,7 @@ import type { Row } from "../lib/timeline";
 import { engagementOf, useEngagementMap, usePeople } from "../use-people";
 import { useBookmarkIds, useMutedPeople } from "../use-social-actions";
 import { PostCard } from "./PostCard";
+import { TimelineSkeleton } from "./Status";
 
 /** Launch coordinate → launch name, so a post about a launch names it. */
 function useLaunchName(): (coord: string) => string | null {
@@ -46,7 +47,8 @@ export function PostList({
   onLoadMore?: () => void;
 }) {
   const me = existingUserPubkey();
-  const muted = useMutedPeople().data;
+  const mutedQuery = useMutedPeople();
+  const muted = mutedQuery.data;
   const bookmarks = useBookmarkIds().data;
   const launchName = useLaunchName();
 
@@ -88,6 +90,10 @@ export function PostList({
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasMore, onLoadMore]);
+
+  // Until the mute list is known a muted person's post would flash and then
+  // vanish, so signed-in readers see the loading state instead.
+  if (me && mutedQuery.isLoading) return <TimelineSkeleton />;
 
   return (
     <div data-testid="social-post-list">

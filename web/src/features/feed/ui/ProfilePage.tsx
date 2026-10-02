@@ -183,7 +183,8 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const name = resolveUserName(profile, pubkey);
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
-  const muted = useMutedPeople().data?.has(pubkey) ?? false;
+  const mutedQuery = useMutedPeople();
+  const muted = mutedQuery.data?.has(pubkey) ?? false;
   const toggleMute = useToggleMute();
   const isSelf = me === pubkey;
   const hue = bannerHue(pubkey);
@@ -248,7 +249,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
                   aria-pressed={muted}
                   className="rounded-full"
                   data-testid="profile-mute"
-                  disabled={toggleMute.isPending}
+                  disabled={toggleMute.isPending || !mutedQuery.isSuccess}
                   onClick={() =>
                     toggleMute.mutate(
                       { pubkey, muted: !muted },

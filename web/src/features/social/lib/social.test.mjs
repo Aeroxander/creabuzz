@@ -16,6 +16,9 @@ import {
 } from "nostr-tools/pure";
 import { createWrap } from "nostr-tools/nip59";
 
+import { replacementTimestamp } from "../../feed/lib/feed-events.ts";
+import { withPerson } from "../../feed/lib/lists.ts";
+
 import {
   isImageUrl,
   mentionedPubkeys,
@@ -704,5 +707,37 @@ describe("mute and bookmark lists", () => {
     ]);
     assert.throws(() => parsePrivateTags('{"a":1}'), /not a tag array/);
     assert.throws(() => parsePrivateTags("not json"));
+  });
+});
+
+describe("replaceable edits", () => {
+  it("always land one second after the version they replace", () => {
+    assert.equal(replacementTimestamp({ created_at: 100 }, 100), 101);
+    assert.equal(replacementTimestamp({ created_at: 100 }, 5000), 5000);
+    assert.equal(replacementTimestamp(null, 5000), 5000);
+  });
+
+  it("so a follow then an immediate unfollow cannot lose to a same-second tie", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const list = ev({ id: hex("1"), kind: 3, created_at: now, tags: [] });
+    const followed = withPerson(list, ALICE, true);
+    assert.ok(followed.created_at > list.created_at);
+    const next = ev({
+      id: hex("2"),
+      kind: 3,
+      created_at: followed.created_at,
+      tags: followed.tags,
+    });
+    assert.ok(withPerson(next, ALICE, false).created_at > next.created_at);
+  });
+
+  it("applies to mutes and bookmarks too", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const mutes = ev({ id: hex("1"), kind: 10000, created_at: now });
+    assert.ok(withMuted(mutes, BOB, true).created_at > mutes.created_at);
+    const saved = ev({ id: hex("2"), kind: 10003, created_at: now });
+    assert.ok(
+      withBookmark(saved, [], hex("3"), true).created_at > saved.created_at,
+    );
   });
 });

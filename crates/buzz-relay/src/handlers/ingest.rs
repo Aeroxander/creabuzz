@@ -769,6 +769,30 @@ fn validate_social_event(kind: u32, event: &Event) -> Result<(), &'static str> {
     }
 }
 
+/// How far an event's `created_at` may be from server time, in seconds.
+const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
+
+/// NIP-59 gift wraps carry a `created_at` randomized up to two days into the
+/// past so the timestamp does not reveal when a message was really sent. Every
+/// NIP-17 client does this, so a relay that applied the ordinary ±15 minute
+/// window to wraps would refuse nearly all private messages. One extra day of
+/// slack covers clock skew on top of the two days the spec asks for.
+const GIFT_WRAP_MAX_PAST_SECS: i64 = 3 * 24 * 60 * 60;
+
+/// Whether `event_ts` is acceptable for an event of `kind` at server time `now`.
+///
+/// Gift wraps may be backdated (see [`GIFT_WRAP_MAX_PAST_SECS`]) but never
+/// post-dated: the future bound is the same ±15 minutes as every other kind.
+pub(crate) fn timestamp_within_bounds(kind: u32, event_ts: i64, now: i64) -> bool {
+    let max_past = if kind == KIND_GIFT_WRAP {
+        GIFT_WRAP_MAX_PAST_SECS
+    } else {
+        MAX_TIMESTAMP_DRIFT_SECS
+    };
+    let delta = event_ts - now;
+    delta <= MAX_TIMESTAMP_DRIFT_SECS && -delta <= max_past
+}
+
 /// Kinds that are always global (`channel_id = NULL`).
 ///
 /// If a client includes a stray `h` tag on these kinds, the ingest pipeline
@@ -3885,10 +3909,9 @@ async fn ingest_event_inner(
         });
     }
 
-    const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
     let now = chrono::Utc::now().timestamp();
     let event_ts = event.created_at.as_secs() as i64;
-    if (event_ts - now).abs() > MAX_TIMESTAMP_DRIFT_SECS {
+    if !timestamp_within_bounds(kind_u32, event_ts, now) {
         return Err(IngestError::Rejected(
             "invalid: event timestamp too far from server time".into(),
         ));
@@ -5913,6 +5936,38 @@ mod postgres_tests {
         );
         assert!(is_global_only_kind(KIND_PRIVATE_MANAGED_AGENT));
         assert!(!requires_h_channel_scope(KIND_PRIVATE_MANAGED_AGENT));
+    }
+
+    #[test]
+    fn ordinary_events_must_be_within_fifteen_minutes() {
+        let now = 1_700_000_000;
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now, now));
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now - 900, now));
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now + 900, now));
+        assert!(!timestamp_within_bounds(KIND_TEXT_NOTE, now - 901, now));
+        assert!(!timestamp_within_bounds(KIND_TEXT_NOTE, now + 901, now));
+    }
+
+    #[test]
+    fn gift_wraps_may_be_backdated_but_not_postdated() {
+        let now = 1_700_000_000;
+        let two_days = 2 * 24 * 60 * 60;
+        // NIP-59: randomized up to two days in the past.
+        assert!(timestamp_within_bounds(KIND_GIFT_WRAP, now - two_days, now));
+        assert!(timestamp_within_bounds(
+            KIND_GIFT_WRAP,
+            now - two_days - 3600,
+            now
+        ));
+        // Still bounded, so a wrap cannot be stamped arbitrarily far back.
+        assert!(!timestamp_within_bounds(
+            KIND_GIFT_WRAP,
+            now - 4 * 24 * 60 * 60,
+            now
+        ));
+        // And never from the future beyond the usual window.
+        assert!(timestamp_within_bounds(KIND_GIFT_WRAP, now + 900, now));
+        assert!(!timestamp_within_bounds(KIND_GIFT_WRAP, now + 901, now));
     }
 
     #[test]

@@ -11,7 +11,11 @@ import {
   nip44EncryptAsUser,
 } from "@/shared/lib/identity";
 
-import type { EventTemplate, SignedEventLike } from "../feed/lib/feed-events";
+import {
+  type EventTemplate,
+  replacementTimestamp,
+  type SignedEventLike,
+} from "../feed/lib/feed-events";
 import { latestList } from "../feed/lib/lists";
 import { publishFeedEvent } from "../feed/use-feed";
 import {
@@ -160,7 +164,12 @@ export function useToggleBookmark() {
       const content = next.privateTags.length
         ? await nip44EncryptAsUser(me, JSON.stringify(next.privateTags))
         : "";
-      return publishFeedEvent({ kind: next.kind, tags: next.tags, content });
+      return publishFeedEvent({
+        kind: next.kind,
+        tags: next.tags,
+        content,
+        created_at: next.created_at,
+      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: socialKeys.lists });
@@ -202,6 +211,7 @@ export function useUpdateProfile() {
         kind: KIND_PROFILE,
         tags: latest?.tags ?? [],
         content: JSON.stringify(merged),
+        created_at: replacementTimestamp(latest),
       });
     },
     onSuccess: () => {

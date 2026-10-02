@@ -92,7 +92,7 @@ function UnreadBadge({ count }: { count?: number }) {
   if (!count) return null;
   return (
     <span
-      className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-3xs font-bold text-white"
+      className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs font-bold text-primary-foreground"
       data-testid="social-unread"
     >
       {count > 99 ? "99+" : count}
@@ -152,7 +152,7 @@ export function SocialShell({
           ))}
           <button
             aria-label="Write a post"
-            className="mt-3 flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-sky-600 text-sm font-semibold text-white hover:bg-sky-700 xl:w-full"
+            className="mt-3 flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 xl:w-full"
             data-testid="social-compose"
             onClick={compose}
             type="button"
@@ -162,7 +162,7 @@ export function SocialShell({
           </button>
         </nav>
 
-        <div className="min-w-0 flex-1 border-x border-black/10 dark:border-white/10">
+        <div className="min-h-full min-w-0 flex-1 border-x border-black/10 bg-white dark:border-white/10 dark:bg-black">
           <nav
             aria-label="Social"
             className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-black/10 bg-white/90 px-2 py-1 backdrop-blur md:hidden dark:border-white/10 dark:bg-black/80"
@@ -177,7 +177,7 @@ export function SocialShell({
               />
             ))}
           </nav>
-          <main className="min-h-full">{children}</main>
+          <div className="min-h-full">{children}</div>
         </div>
 
         {rail ? (

@@ -17,9 +17,23 @@ The desktop app remains the reference client; feature-parity work is tracked in
 | Community shell | `/c/$host` (`?channel=<uuid>` deep link) |
 | Repositories | `/repos`, `/repos/$repoId`, `/repos/$repoId/blob/$` |
 | Launchpad | `/launchpad`, `/launchpad/$launchId` |
+| Social (Twitter-style) | `/social` (Creaton feed + Following), `/social/explore`, `/social/search`, `/social/tag/$tag`, `/social/post/$id`, `/social/notifications`, `/social/messages[/$peer]`, `/social/bookmarks`, profiles at `/u/$pubkey` |
 
 Wiki, fleet, work board and org views are panels of the community shell (the
 sidebar toggles), not separate routes.
+
+### Social section
+
+`src/features/social` is a Twitter-style client built on standard Nostr events
+only (kinds 1, 6, 16, 7, 3, 10000, 10003, 10050, 1059 …), so posts, follows and
+reposts are readable by other Nostr clients, and DMs are NIP-17 (0xchat
+compatible) and separate from Buzz channel DMs. The "Creaton feed" is every post
+on this relay, not all of Nostr. Bookmarks and DMs need NIP-44 from the signer
+(passkey, stored nsec, or a NIP-07 extension that exposes `nip44`). Post search
+is client-side because the relay's full-text index does not cover kind 1.
+Real-relay coverage: `node tests/e2e-real/seed.mjs` then
+`node --experimental-strip-types tests/e2e-real/seed-social.mjs`, then
+`pnpm test:e2e:real`.
 
 ### Preview gating
 

@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { resolveUserName } from "@/features/profiles/use-profiles";
-import { relativeTime } from "@/shared/lib/relative-time";
+import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { displayText } from "../../feed/lib/feed-events";
@@ -22,6 +23,22 @@ function Mention({ pubkey }: { pubkey: string }) {
     >
       @{resolveUserName(people[pubkey], pubkey)}
     </Link>
+  );
+}
+
+/** One inline image; if it cannot load, it disappears instead of leaving an empty frame. */
+function PostImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      alt=""
+      className="max-h-96 w-full object-cover"
+      loading="lazy"
+      onError={() => setFailed(true)}
+      referrerPolicy="no-referrer"
+      src={src}
+    />
   );
 }
 
@@ -57,7 +74,7 @@ function QuoteCard({ id }: { id: string }) {
           {name}
         </Link>
         <span className="shrink-0 text-black/60 dark:text-white/60">
-          · {relativeTime(row.event.created_at)}
+          · {shortRelativeTime(row.event.created_at)}
         </span>
       </div>
       <div className="mt-1 line-clamp-6">
@@ -131,14 +148,7 @@ export function PostContent({
           className={`mt-3 grid gap-0.5 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}
         >
           {images.slice(0, MAX_IMAGES).map((src) => (
-            <img
-              alt=""
-              className="max-h-96 w-full object-cover"
-              key={src}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              src={src}
-            />
+            <PostImage key={src} src={src} />
           ))}
         </div>
       ) : null}

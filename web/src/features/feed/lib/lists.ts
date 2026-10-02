@@ -17,7 +17,11 @@ import {
   KIND_BOOKMARK_LIST,
   KIND_CONTACT_LIST,
 } from "../../../shared/constants/kinds.ts";
-import type { EventTemplate, SignedEventLike } from "./feed-events.ts";
+import {
+  type EventTemplate,
+  replacementTimestamp,
+  type SignedEventLike,
+} from "./feed-events.ts";
 
 /** The newest event of `kind` by `author`, or null. */
 export function latestList(
@@ -64,7 +68,12 @@ function toggled(
     (t) => !(t[0] === name && t[1] === value),
   );
   if (follow) tags.push([name, value]);
-  return { kind, tags, content: list?.content ?? "" };
+  return {
+    kind,
+    tags,
+    content: list?.content ?? "",
+    created_at: replacementTimestamp(list),
+  };
 }
 
 /** The updated contact list after following / unfollowing one person. */
@@ -100,6 +109,7 @@ export function withMigratedLaunches(
     kind: KIND_BOOKMARK_LIST,
     tags: [...(list?.tags ?? []), ...missing.map((c) => ["a", c])],
     content: list?.content ?? "",
+    created_at: replacementTimestamp(list),
   };
 }
 

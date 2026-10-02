@@ -34,7 +34,7 @@ export function TabStrip<T extends string>({
           >
             {tab.label}
             {value === tab.id ? (
-              <span className="absolute inset-x-0 bottom-0 h-1 rounded-full bg-sky-600" />
+              <span className="absolute inset-x-0 bottom-0 h-1 rounded-full bg-primary" />
             ) : null}
           </span>
         </button>

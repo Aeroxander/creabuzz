@@ -27,6 +27,23 @@ export interface EventTemplate {
   kind: number;
   tags: string[][];
   content: string;
+  /** Unix seconds; omitted means "now" when signed. */
+  created_at?: number;
+}
+
+/**
+ * The timestamp for an event that replaces `previous` (a follow list, mute
+ * list, bookmarks, profile). Replaceable events with the same `created_at`
+ * are settled by event id, so an edit made in the same second as the one it
+ * replaces can lose and be silently dropped — a quick follow then unfollow
+ * would leave the person followed. Always going one second past the version
+ * being replaced makes the newer edit win.
+ */
+export function replacementTimestamp(
+  previous: { created_at: number } | null | undefined,
+  now: number = Math.floor(Date.now() / 1000),
+): number {
+  return Math.max(now, (previous?.created_at ?? 0) + 1);
 }
 
 export interface SignedEventLike {

@@ -26,7 +26,7 @@ export function SearchBox({ initial = "" }: { initial?: string }) {
           className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50 dark:text-white/50"
         />
         <input
-          className="h-10 w-full rounded-full border border-transparent bg-black/5 pl-10 pr-4 text-sm text-black outline-none placeholder:text-black/50 focus:border-sky-600 focus:bg-white dark:bg-white/10 dark:text-white dark:placeholder:text-white/50 dark:focus:bg-black"
+          className="h-10 w-full rounded-full border border-transparent bg-black/5 pl-10 pr-4 text-sm text-black outline-none placeholder:text-black/50 focus:border-primary focus:bg-white dark:bg-white/10 dark:text-white dark:placeholder:text-white/50 dark:focus:bg-black"
           data-testid="social-search-input"
           id="social-search-input"
           onChange={(e) => setValue(e.target.value)}

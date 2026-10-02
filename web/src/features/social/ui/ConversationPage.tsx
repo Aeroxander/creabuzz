@@ -120,7 +120,7 @@ export function ConversationPage() {
                   className={cn(
                     "max-w-[80%] whitespace-pre-wrap break-words rounded-3xl px-4 py-2 text-sm",
                     mine
-                      ? "rounded-br-md bg-sky-600 text-white"
+                      ? "rounded-br-md bg-primary text-primary-foreground"
                       : "rounded-bl-md bg-black/10 text-black dark:bg-white/15 dark:text-white",
                   )}
                   data-testid="social-message"
@@ -148,7 +148,7 @@ export function ConversationPage() {
             Message
           </label>
           <textarea
-            className="max-h-32 min-h-10 flex-1 resize-none rounded-2xl bg-black/5 px-4 py-2 text-sm text-black outline-none placeholder:text-black/50 focus:ring-1 focus:ring-sky-600 dark:bg-white/10 dark:text-white dark:placeholder:text-white/50"
+            className="max-h-32 min-h-10 flex-1 resize-none rounded-2xl bg-black/5 px-4 py-2 text-sm text-black outline-none placeholder:text-black/50 focus:ring-1 focus:ring-primary dark:bg-white/10 dark:text-white dark:placeholder:text-white/50"
             data-testid="social-message-input"
             id="social-message-input"
             onChange={(e) => setText(e.target.value)}
