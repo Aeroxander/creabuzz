@@ -12,6 +12,7 @@ import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
 import { PageBar, SocialShell } from "./SocialShell";
 import { TabStrip } from "./TabStrip";
+import { useRankedRows } from "../use-ranking";
 import { useFollowing, useTimeline } from "../use-social-data";
 
 type Tab = "creaton" | "following";
@@ -40,7 +41,10 @@ export function SocialHomePage() {
     reposts: true,
     enabled: tab === "creaton" || following.isSuccess,
   });
-  const rows = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
+  const loaded = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
+  // Creaton: recency lifted by trust-weighted engagement. Following stays
+  // strictly chronological.
+  const rows = useRankedRows(loaded, tab === "creaton");
 
   return (
     <SocialShell>

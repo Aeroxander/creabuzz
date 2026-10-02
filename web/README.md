@@ -31,6 +31,13 @@ compatible) and separate from Buzz channel DMs. The "Creaton feed" is every post
 on this relay, not all of Nostr. Bookmarks and DMs need NIP-44 from the signer
 (passkey, stored nsec, or a NIP-07 extension that exposes `nip44`). Post search
 is client-side because the relay's full-text index does not cover kind 1.
+The Creaton tab is ordered by recency lifted by engagement, with likes weighted
+by social trust (a seeded PageRank over the follow graph, `social/lib/trust.ts`).
+The blend grows smoothly with community size: under ~25 accounts every like
+counts the same and the feed is nearly chronological; it leans fully on trust
+(capped at 80%) around 1,000. This is separate from the launchpad's reputation
+and TrustGraph. Following stays chronological.
+
 Real-relay coverage: `node tests/e2e-real/seed.mjs` then
 `node --experimental-strip-types tests/e2e-real/seed-social.mjs`, then
 `pnpm test:e2e:real`.
