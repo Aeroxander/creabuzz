@@ -98,7 +98,7 @@ function Welcome() {
       <ul className="mt-8 grid gap-4 sm:grid-cols-3">
         {IDEAS.map(({ icon: Icon, title, body }) => (
           <li className="flex gap-3" key={title}>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-primary-ink">
               <Icon aria-hidden className="h-4 w-4" />
             </span>
             <span>

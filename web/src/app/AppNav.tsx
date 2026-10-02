@@ -13,10 +13,10 @@ import {
 
 import { useState } from "react";
 
-import buzzAppIcon from "@/assets/app-icon@3x.png";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
+import { CreatonMark } from "@/shared/ui/CreatonMark";
 
 interface NavItem {
   to:
@@ -115,11 +115,7 @@ export function AppNav() {
           className="flex shrink-0 items-center gap-2 rounded-lg"
           to="/"
         >
-          <img
-            alt=""
-            className="h-9 w-9 overflow-hidden rounded-lg"
-            src={buzzAppIcon}
-          />
+          <CreatonMark className="h-9 w-9" />
           <span className="hidden text-lg font-extrabold tracking-tight lg:inline">
             {APP_NAME.toLowerCase()}
           </span>
@@ -225,7 +221,7 @@ function NavLink({
       aria-current={active ? "page" : undefined}
       className={`flex min-w-14 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 py-1.5 text-2xs font-semibold transition-colors ${
         active
-          ? "bg-primary/15 text-primary"
+          ? "bg-primary/15 text-primary-ink"
           : "text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground"
       }`}
       data-testid={`app-nav-${item.label.toLowerCase()}`}

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Star } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
-import { PageHeader } from "@/shared/ui/PageHeader";
+import { LaunchHero } from "./LaunchHero";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
@@ -37,12 +36,7 @@ import {
 } from "../chain";
 import { priceFormat, sampleBudget } from "../lib/sale-currency";
 import { useScoreRoots } from "../use-launches";
-import {
-  useAuctionProgress,
-  OwnershipOnlyNote,
-  ProgressBar,
-  StageBadge,
-} from "./widgets";
+import { useAuctionProgress, OwnershipOnlyNote, ProgressBar } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { floorPricePerToken } from "../lib/launch-params";
@@ -204,75 +198,33 @@ export function LaunchDetailPage({
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-8">
-      <Link
-        to="/launchpad"
-        className="flex items-center gap-1 text-sm text-black/60 hover:underline dark:text-white/60"
-      >
-        <ArrowLeft className="h-4 w-4" /> Launchpad
-      </Link>
-      <PageHeader
-        title={
-          <span className="flex flex-wrap items-center gap-2">
-            {launch.record.name} <StageBadge stage={stage} />
-            {launch.record.agent ? (
-              <span
-                className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300"
-                data-testid="launch-agent-badge-detail"
-                title={`Run by agent ${launch.record.agent.slice(0, 8)}…`}
-              >
-                Agent-run
-              </span>
-            ) : null}
-          </span>
-        }
-        description={launch.record.pitch || "No pitch yet."}
-        action={
-          <span className="flex flex-col items-end gap-2">
-            {/* §7 "Launch page copy": what a buyer acquires, said before the
-                bid button — ownership only, never a yield. */}
-            <OwnershipOnlyNote className="max-w-60 text-right" />
-            <span className="flex gap-2">
-              {sandbox ? null : (
-                <button
-                  aria-label={followed ? "Unfollow launch" : "Follow launch"}
-                  aria-pressed={followed}
-                  data-testid="launch-follow"
-                  disabled={!follows.ready || follows.pending}
-                  onClick={() => follows.toggle(coord)}
-                  className={cn(
-                    "rounded-lg border p-2",
-                    followed
-                      ? "border-amber-500/50 text-amber-500"
-                      : "border-black/15 dark:border-white/15",
-                  )}
-                  type="button"
-                >
-                  <Star
-                    className="h-4 w-4"
-                    fill={followed ? "currentColor" : "none"}
-                  />
-                </button>
-              )}
-              <Button onClick={() => setBidOpen(true)} size="sm">
-                Back this launch
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
+      <LaunchHero
+        actions={
+          <>
+            <Button onClick={() => setBidOpen(true)}>Back this launch</Button>
+            {isFounder ? (
+              <Button onClick={() => setUpdateOpen(true)} variant="outline">
+                Post update
               </Button>
-              {isFounder ? (
-                <Button
-                  onClick={() => setUpdateOpen(true)}
-                  size="sm"
-                  variant="outline"
-                >
-                  Post update
-                </Button>
-              ) : null}
-            </span>
-          </span>
+            ) : null}
+          </>
         }
+        followDisabled={!follows.ready || follows.pending}
+        followed={followed}
+        note={
+          /* §7 "Launch page copy": what a buyer acquires, said before the
+             bid button — ownership only, never a yield. */
+          <OwnershipOnlyNote className="max-w-60 text-right" />
+        }
+        onToggleFollow={() => follows.toggle(coord)}
+        record={launch.record}
+        showFollow={!sandbox}
+        stage={stage}
       />
 
       <div
-        className="flex flex-wrap gap-1 border-b border-black/10 pb-2 dark:border-white/10"
+        className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border"
         role="tablist"
         aria-label="Launch sections"
       >
@@ -285,10 +237,10 @@ export function LaunchDetailPage({
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm",
+                "-mb-px border-b-[3px] px-1 pb-2 text-base font-semibold transition-colors",
                 tab === t.id
-                  ? "bg-black text-white dark:bg-white dark:text-black"
-                  : "text-black/60 hover:bg-black/5 dark:text-white/60",
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-foreground/60 hover:text-foreground",
               )}
               type="button"
             >
@@ -769,7 +721,7 @@ function ScoreRootsCard() {
       </p>
       {latest.indexerUrl ? (
         <a
-          className="mt-1 inline-block text-xs text-primary underline"
+          className="mt-1 inline-block text-xs text-primary-ink underline"
           href={latest.indexerUrl}
           rel="noreferrer"
           target="_blank"

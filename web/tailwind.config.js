@@ -60,6 +60,7 @@ export default {
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          ink: "hsl(var(--primary-ink))",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {

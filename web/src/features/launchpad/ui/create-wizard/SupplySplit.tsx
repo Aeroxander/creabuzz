@@ -173,7 +173,7 @@ export function SupplySplit({
           aria-live="polite"
           className={`rounded-full px-3 py-1 text-sm font-bold tabular-nums ${
             balanced
-              ? "bg-primary/15 text-primary"
+              ? "bg-primary/15 text-primary-ink"
               : "bg-red-500/15 text-red-600 dark:text-red-300"
           }`}
         >

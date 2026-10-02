@@ -44,8 +44,10 @@
     --card-foreground: 266 43% 17%;
     --popover: 0 0% 100%;
     --popover-foreground: 266 43% 17%;
-    --primary: 153 59% 42%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 153 59% 47%;
+    --primary-foreground: 266 43% 17%;
+    /* Mint as text on a light page: the action colour itself is too pale. */
+    --primary-ink: 153 75% 24%;
     --secondary: 262 30% 92%;
     --secondary-foreground: 266 43% 17%;
     --muted: 262 30% 92%;
@@ -58,7 +60,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 262 20% 84%;
     --input: 262 20% 84%;
-    --ring: 153 59% 42%;
+    --ring: 153 59% 36%;
     --chart-1: 345 57.65% 74.12%;
     --chart-2: 185 37.25% 70.59%;
     --chart-3: 219 81.96% 78.43%;
@@ -67,8 +69,8 @@
     --sidebar: 260 30% 95%;
     --sidebar-background: 260 30% 95%;
     --sidebar-foreground: 266 43% 17%;
-    --sidebar-primary: 153 59% 42%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 153 59% 47%;
+    --sidebar-primary-foreground: 266 43% 17%;
     --sidebar-accent: 0 0% 100%;
     --sidebar-accent-foreground: 266 43% 17%;
     --sidebar-border: 262 20% 84%;
@@ -105,6 +107,7 @@
     --popover-foreground: 0 0% 100%;
     --primary: 153 59% 50%;
     --primary-foreground: 266 43% 17%;
+    --primary-ink: 153 59% 50%;
     --secondary: 266 31% 24%;
     --secondary-foreground: 0 0% 100%;
     --muted: 266 31% 24%;

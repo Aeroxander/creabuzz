@@ -318,7 +318,7 @@ test("the raise terms are money a buyer can read", async ({ page }) => {
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
 
   await expect(page.getByText("Graduation threshold")).toBeVisible();
-  await expect(page.getByText("300,000 USDC")).toBeVisible();
+  await expect(page.getByText("300,000 USDC").first()).toBeVisible();
   await expect(page.getByText("None set", { exact: false })).toHaveCount(0);
   await expect(page.getByText("$0.01 per token")).toBeVisible();
 
