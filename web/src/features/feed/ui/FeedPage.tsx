@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Briefcase, Home } from "lucide-react";
+import { Briefcase, Feather, Home } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -110,14 +110,23 @@ export function FeedPage() {
             >
               <Home aria-hidden className="h-5 w-5" /> Home
             </h1>
-            {/* Phones only: the rail's Portfolio tab has no room in the tab bar. */}
-            <Link
-              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 md:hidden dark:text-white/70 dark:hover:bg-white/10"
-              data-testid="home-portfolio-link"
-              to="/portfolio"
-            >
-              <Briefcase aria-hidden className="h-4 w-4" /> Portfolio
-            </Link>
+            {/* Phones only: the rail's Social and Portfolio tabs have no room in the tab bar. */}
+            <div className="flex items-center md:hidden">
+              <Link
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                data-testid="home-social-link"
+                to="/social"
+              >
+                <Feather aria-hidden className="h-4 w-4" /> Social
+              </Link>
+              <Link
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                data-testid="home-portfolio-link"
+                to="/portfolio"
+              >
+                <Briefcase aria-hidden className="h-4 w-4" /> Portfolio
+              </Link>
+            </div>
           </div>
           <div className="mt-3">
             <Composer />

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { relativeTime } from "./relative-time.ts";
+import { relativeTime, shortRelativeTime } from "./relative-time.ts";
 
 /**
  * `relativeTime` takes a Unix timestamp in **seconds**, which is what every
@@ -36,4 +36,20 @@ test("a millisecond value renders as just now, which is the trap", () => {
 test("a clock ahead of us still renders something sensible", () => {
   // Client clocks disagree; a message stamped in the future must not crash.
   assert.equal(relativeTime(secondsAgo(-90)), "just now");
+});
+
+test("the compact stamp reads like a timeline", () => {
+  assert.equal(shortRelativeTime(secondsAgo(1)), "now");
+  assert.equal(shortRelativeTime(secondsAgo(30)), "30s");
+  assert.equal(shortRelativeTime(secondsAgo(60 * 5)), "5m");
+  assert.equal(shortRelativeTime(secondsAgo(60 * 60 * 3)), "3h");
+  assert.equal(shortRelativeTime(secondsAgo(60 * 60 * 24 * 2)), "2d");
+  // A clock a little ahead of the author's never shows a negative age.
+  assert.equal(shortRelativeTime(secondsAgo(-30)), "now");
+  // Older than a week becomes a date; another year adds the year.
+  assert.match(
+    shortRelativeTime(secondsAgo(60 * 60 * 24 * 10)),
+    /^[A-Z][a-z]{2} \d{1,2}(, \d{4})?$/,
+  );
+  assert.match(shortRelativeTime(secondsAgo(60 * 60 * 24 * 800)), /, \d{4}$/);
 });

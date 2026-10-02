@@ -14,7 +14,10 @@ export interface ProfileMetadata {
   name?: string;
   display_name?: string;
   picture?: string;
+  /** Header image some clients publish (the social profile shows it). */
+  banner?: string;
   about?: string;
+  website?: string;
   nip05?: string;
 }
 

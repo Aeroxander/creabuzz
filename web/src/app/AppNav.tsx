@@ -4,6 +4,7 @@ import {
   Compass,
   Home,
   LayoutGrid,
+  Feather,
   type LucideIcon,
   MessagesSquare,
   Rocket,
@@ -15,7 +16,14 @@ import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
 
 interface NavItem {
-  to: "/" | "/c" | "/discover" | "/launchpad" | "/projects" | "/portfolio";
+  to:
+    | "/"
+    | "/social"
+    | "/c"
+    | "/discover"
+    | "/launchpad"
+    | "/projects"
+    | "/portfolio";
   label: string;
   icon: LucideIcon;
   /** Whether a pathname belongs to this section. */
@@ -32,7 +40,16 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: "/",
     label: "Home",
     icon: Home,
-    matches: (p) => p === "/" || p.startsWith("/u/"),
+    matches: (p) => p === "/",
+  },
+  {
+    to: "/social",
+    label: "Social",
+    icon: Feather,
+    // Profiles (`/u/…`) are part of the social section.
+    matches: (p) => p.startsWith("/social") || p.startsWith("/u/"),
+    // On phones: the link beside Home's title (the tab bar keeps five tabs).
+    wideOnly: true,
   },
   {
     to: "/c",
