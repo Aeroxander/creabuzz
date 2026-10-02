@@ -143,7 +143,8 @@ test("a launch's discussion is posted with its coordinate and shows on Home", as
   page,
 }) => {
   const relay = createMockRelay();
-  relay.seed(LAUNCH);
+  // The team posts to a launch's own feed; this viewer is on the team.
+  relay.seed({ ...LAUNCH, tags: [...LAUNCH.tags, ["team", ME, "member"]] });
   await relay.install(page);
   await signIn(page);
   await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
@@ -182,6 +183,46 @@ test("a launch's discussion is posted with its coordinate and shows on Home", as
   await expect(page.getByTestId("trending-launches")).toContainText(
     "Nebula DAO",
   );
+});
+
+test("on a launch's feed only the team posts; everyone can reply", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(LAUNCH);
+  const teamPost = event({
+    kind: 1,
+    pubkey: FOUNDER,
+    tags: [["a", COORD]],
+    content: "Milestone one shipped.",
+  });
+  relay.seed(teamPost);
+  // A supporter's own top-level post about the launch is not in the team feed…
+  relay.seed(
+    event({
+      kind: 1,
+      pubkey: ALICE,
+      tags: [["a", COORD]],
+      content: "Loving this project.",
+    }),
+  );
+  await relay.install(page);
+  await signIn(page);
+  await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
+  await page.getByRole("tab", { name: "Discussion" }).click();
+
+  const list = page.getByTestId("discussion-list");
+  await expect(list).toContainText("Milestone one shipped.");
+  await expect(list).not.toContainText("Loving this project.");
+  // …and a non-team viewer gets no top-level composer, only the pointer.
+  await expect(page.getByTestId("launch-composer")).toHaveCount(0);
+  await expect(page.getByTestId("launch-team-only")).toBeVisible();
+
+  // Replying to the team's post is open to everyone.
+  await list.getByTestId("note-reply").first().click();
+  await page.getByTestId("reply-composer-input").fill("Congrats!");
+  await page.getByTestId("reply-composer-submit").click();
+  await expect(page.getByTestId("thread-replies")).toContainText("Congrats!");
 });
 
 test("following a launch publishes a bookmark list and fills Following", async ({

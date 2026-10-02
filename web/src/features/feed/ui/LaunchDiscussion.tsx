@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 
 import type { LaunchRecord } from "@/features/launchpad/models";
 import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
@@ -61,11 +62,13 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
 }
 
 /**
- * The launch's public discussion: anyone can post about it (the post carries
- * the launch's coordinate, so it also appears in the Home feed), reply, and
- * vote on the launch itself. The founder's updates sit pinned at the top, and
- * when the founder has opted in, the launch's agent may leave a thread
- * summary — rendered as its own card, badged as the agent's words.
+ * The launch's official feed. The team (the founder and anyone listed on the
+ * record) posts here; everyone else replies and votes. A supporter's own post
+ * about the launch carries its coordinate and shows up in the Creaton feed
+ * with the launch's chip, so it is never lost — it just isn't pinned into the
+ * team's channel. The founder's updates sit pinned at the top, and when the
+ * founder has opted in, the launch's agent may leave a thread summary —
+ * rendered as its own card, badged as the agent's words.
  */
 export function LaunchDiscussion({
   record,
@@ -78,7 +81,23 @@ export function LaunchDiscussion({
   const notes = useLaunchNotes(coord);
   const { tallies } = useVoteTallies();
   const [mode, setMode] = useState<SortMode>("hot");
-  const isFounder = existingUserPubkey() === record.author;
+  const me = existingUserPubkey();
+  const isFounder = me === record.author;
+  const teamKeys = useMemo(
+    () => new Set([record.author, ...record.team.map((t) => t.pubkey)]),
+    [record.author, record.team],
+  );
+  const isTeam = me !== null && teamKeys.has(me);
+  // Top-level posts from the team, and every reply under them.
+  const teamNotes = useMemo(() => {
+    const all = notes.data ?? [];
+    const roots = new Set(
+      all.filter((n) => !n.rootId && teamKeys.has(n.author)).map((n) => n.id),
+    );
+    return all.filter((n) =>
+      n.rootId ? roots.has(n.rootId) : roots.has(n.id),
+    );
+  }, [notes.data, teamKeys]);
   const [optIn, setOptIn] = useState(() => readSummaryOptIn(coord));
   const { summaries } = useLaunchSummaries(coord);
   const summary = newestSummary(summaries);
@@ -166,11 +185,28 @@ export function LaunchDiscussion({
         </article>
       ) : null}
       <div className="mt-3">
-        <Composer
-          launch={launchRef(record)}
-          placeholder={`What do you think of ${record.name}?`}
-          testId="launch-composer"
-        />
+        {isTeam ? (
+          <Composer
+            launch={launchRef(record)}
+            placeholder={`Post to ${record.name}'s backers`}
+            testId="launch-composer"
+          />
+        ) : (
+          <p
+            className="glass rounded-xl border px-4 py-3 text-sm text-muted-foreground"
+            data-testid="launch-team-only"
+          >
+            The team posts here; you can reply to any post and vote. Want to
+            share your own take on {record.name}?{" "}
+            <Link
+              className="font-semibold text-primary-ink underline"
+              to="/social"
+            >
+              Post it in the Creaton feed
+            </Link>
+            .
+          </p>
+        )}
       </div>
       <div className="mt-3 flex gap-1" role="tablist" aria-label="Sort posts">
         {(["hot", "new", "top"] as const).map((m) => (
@@ -212,11 +248,11 @@ export function LaunchDiscussion({
                 className="rounded-xl border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60"
                 data-testid="discussion-empty"
               >
-                No one has posted about {record.name} yet.
+                The team hasn't posted about {record.name} yet.
               </p>
             }
             mode={mode}
-            notes={notes.data ?? []}
+            notes={teamNotes}
             testId="discussion-list"
           />
         )}
