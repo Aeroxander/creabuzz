@@ -74,11 +74,45 @@ class Kinds {
   /// NIP-25: Content is emoji char or `+`/`-`.
   static const int KIND_REACTION = 7;
 
+  /// NIP-18: Repost of a kind:1 note. `e` tag (+ `p` author tag) names the reposted
+  /// event; `content` is empty or the stringified reposted event.
+  ///
+  /// Stored globally (`channel_id = NULL`), like kind:1.
+  static const int KIND_REPOST = 6;
+
+  /// NIP-18: Generic repost of any non-kind:1 event. Like [`KIND_REPOST`] plus a `k` tag
+  /// naming the reposted event's kind.
+  static const int KIND_GENERIC_REPOST = 16;
+
   /// NIP-17: Outer envelope for private DMs — hides sender, content, timestamp.
   static const int KIND_GIFT_WRAP = 1059;
 
   /// NIP-94: File metadata attachment.
   static const int KIND_FILE_METADATA = 1063;
+
+  /// NIP-88: Poll response. `e` tag names the poll; each `response` tag carries an option id.
+  static const int KIND_POLL_RESPONSE = 1018;
+
+  /// NIP-88: Poll. `content` is the question; `option` tags carry `[id, label]`.
+  static const int KIND_POLL = 1068;
+
+  /// NIP-22: Comment on a non-kind:1 root (article, file, URL, …). Uppercase `E`/`A`/`I`
+  /// tags name the root, lowercase tags name the parent. Plain note replies stay kind:1
+  /// with NIP-10 markers.
+  static const int KIND_COMMENT = 1111;
+
+  /// NIP-84: Highlight — a passage quoted from an event, article, or URL.
+  static const int KIND_HIGHLIGHT = 9802;
+
+  /// NIP-17: DM relay list (replaceable) — relays where a user wants to receive gift-wrapped DMs.
+  ///
+  /// User-owned global state, keyed by `(pubkey, kind)`.
+  static const int KIND_DM_RELAY_LIST = 10050;
+
+  /// BUD-03: Blossom server list (replaceable) — media servers a user publishes to.
+  ///
+  /// User-owned global state, keyed by `(pubkey, kind)`.
+  static const int KIND_BLOSSOM_SERVER_LIST = 10063;
 
   /// NIP-23: Long-form content (articles, blog posts, RFCs).
   /// Parameterized replaceable (NIP-33, 30000–39999 range) — keyed by `(pubkey, kind, d_tag)`.
