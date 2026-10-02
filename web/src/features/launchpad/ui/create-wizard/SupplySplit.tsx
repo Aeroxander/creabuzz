@@ -65,7 +65,7 @@ export function SupplySplit({
   return (
     <section
       aria-labelledby="launch-allocation-title"
-      className="rounded-xl border border-border bg-foreground/[0.03] p-4"
+      className="rounded-xl border border-border/60 bg-foreground/[0.04] p-4"
       data-testid="launch-allocation"
     >
       <div className="flex items-start justify-between gap-3">

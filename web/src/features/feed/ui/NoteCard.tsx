@@ -37,7 +37,7 @@ export function NoteCard({
   return (
     <article
       aria-label={`Post by ${author}`}
-      className={`flex gap-2 ${compact ? "py-2" : "rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5"}`}
+      className={`flex gap-2 ${compact ? "py-2" : "glass rounded-xl border p-3"}`}
       data-testid="note-card"
     >
       <VoteButtonsColumn note={note} tally={tally} author={author} />

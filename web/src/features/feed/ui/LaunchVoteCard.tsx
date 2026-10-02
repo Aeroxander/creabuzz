@@ -55,7 +55,7 @@ export function LaunchVoteCard({
   return (
     <article
       aria-label={`Launch ${record.name}`}
-      className="flex gap-2 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5"
+      className="flex gap-2 glass rounded-xl border p-3"
       data-testid="launch-vote-card"
     >
       <div className="flex shrink-0 flex-col items-center [&>div]:flex-col">

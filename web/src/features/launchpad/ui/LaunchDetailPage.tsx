@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { LaunchHero } from "./LaunchHero";
+import { PriceChartCard } from "./PriceChartCard";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
@@ -252,6 +253,7 @@ export function LaunchDetailPage({
       {tab === "overview" ? (
         <>
           {/* The TrustGraph surface: gate state, published roots, the graph. */}
+          <PriceChartCard launch={launch} />
           <TrustGateCard launch={launch} />
           <OverviewTab launch={launch} />
         </>

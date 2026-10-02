@@ -60,7 +60,7 @@ function Welcome() {
   return (
     <section
       aria-labelledby="welcome-title"
-      className="relative overflow-hidden rounded-2xl border border-border bg-card px-6 py-8 sm:px-10 sm:py-10"
+      className="glass relative overflow-hidden rounded-2xl border px-6 py-8 sm:px-10 sm:py-10"
       data-testid="home-welcome"
     >
       <div
@@ -160,7 +160,7 @@ function GettingStarted({ me }: { me: string }) {
   return (
     <section
       aria-labelledby="getting-started-title"
-      className="rounded-2xl border border-border bg-card p-5"
+      className="glass rounded-2xl border p-5"
       data-testid="home-getting-started"
     >
       <div className="flex items-start justify-between gap-3">

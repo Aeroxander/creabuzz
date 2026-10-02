@@ -87,7 +87,7 @@ export function Composer({
   const remaining = MAX_POST_CHARS - [...text].length;
   return (
     <form
-      className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5"
+      className="glass rounded-xl border p-3"
       data-testid={testId}
       onSubmit={submit}
     >

@@ -119,6 +119,36 @@ for (const l of LAUNCHES) {
   console.log("launch", l.id);
 }
 
+// A run of bids on Nebula, spread over the last quarter hour (the relay refuses
+// timestamps further out), so the price chart has candles to draw.
+{
+  const now = Math.floor(Date.now() / 1000);
+  const nebula = `37001:${pubkeyOf("alice")}:nebula-dao`;
+  const bidders = ["bob", "carol", "dev", "bob", "carol"];
+  let price = 792281625140000n;
+  for (let i = 0; i < 28; i++) {
+    const wiggle = BigInt(((i * 37) % 11) - 4);
+    price = (price * (1000n + wiggle * 6n + 3n)) / 1000n;
+    await post(
+      bidders[i % bidders.length],
+      {
+        kind: 47002,
+        created_at: now - (28 - i) * 30,
+        tags: [
+          ["a", nebula],
+          ["m", "bucket-1"],
+        ],
+        content: JSON.stringify({
+          budget: String(50_000_000n + BigInt(i % 7) * 40_000_000n),
+          maxPrice: price.toString(),
+        }),
+      },
+      relay,
+    );
+  }
+  console.log("bids on nebula-dao");
+}
+
 const PITCHES = [
   [
     "alice",

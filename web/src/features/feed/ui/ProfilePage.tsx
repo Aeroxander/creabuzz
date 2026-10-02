@@ -341,7 +341,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         </div>
       </div>
 
-      <div className="sticky top-12 z-10 border-b border-black/10 bg-white/90 backdrop-blur max-md:top-[5.75rem] dark:border-white/10 dark:bg-black/80">
+      <div className="sticky top-12 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-[5.75rem]">
         <TabStrip label="Profile" onChange={setTab} tabs={TABS} value={tab} />
       </div>
 

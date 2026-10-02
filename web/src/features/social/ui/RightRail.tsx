@@ -41,7 +41,7 @@ export function SearchBox({ initial = "" }: { initial?: string }) {
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]">
+    <section className="glass overflow-hidden rounded-2xl border">
       <h2 className="px-4 pb-1 pt-3 text-lg font-bold text-black dark:text-white">
         {title}
       </h2>

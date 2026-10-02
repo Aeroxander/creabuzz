@@ -37,6 +37,7 @@ import type { SaleCurrency } from "../../lib/sale-currency";
 import { CurrencyChoice } from "./CurrencyChoice";
 import type { SupplyAllocation } from "../../lib/allocation";
 import { CoverImageField } from "./CoverImageField";
+import { LaunchCardPreview } from "./LaunchCardPreview";
 import { Field, Segmented, Select, Stepper } from "./fields";
 import { SupplySplit } from "./SupplySplit";
 
@@ -222,6 +223,12 @@ function TokenStep({ controller }: { controller: WizardController }) {
           value={token.category}
         />
       </div>
+      <LaunchCardPreview
+        category={token.category}
+        image={token.image}
+        name={token.name}
+        pitch={token.pitch}
+      />
       <div className="flex flex-col gap-3 sm:flex-row">
         <Field id="launch-symbol" label="Symbol">
           <input

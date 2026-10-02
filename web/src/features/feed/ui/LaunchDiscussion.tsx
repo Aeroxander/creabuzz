@@ -38,7 +38,7 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
     >
       {updates.map((update) => (
         <article
-          className="rounded-xl border border-black/15 bg-white p-3 dark:border-white/15 dark:bg-white/5"
+          className="glass rounded-xl border p-3"
           key={update.id}
           data-testid="pinned-update"
         >

@@ -15,8 +15,23 @@ import { launchArt } from "../lib/launch-art";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { StageBadge } from "./widgets";
 
+/** What a card reads from a launch, so a preview can fill it from a form. */
+export type LaunchCardRecord = Pick<
+  LaunchRecord,
+  | "id"
+  | "name"
+  | "pitch"
+  | "image"
+  | "category"
+  | "agent"
+  | "author"
+  | "currency"
+  | "chainId"
+  | "requiredRaised"
+>;
+
 export interface LaunchCardProps {
-  record: LaunchRecord;
+  record: LaunchCardRecord;
   stage: LaunchStage;
   /** Founder's display name and picture, when known. */
   founder?: { name: string; picture: string | null };
@@ -57,7 +72,7 @@ export function LaunchCard({
     : null;
   return (
     <article
-      className="group flex h-full flex-col rounded-xl border border-border bg-card p-2 shadow-[0_0_4px_rgba(0,0,0,0.15)] transition hover:border-primary/40"
+      className="glass group flex h-full flex-col rounded-xl border p-2 transition hover:border-primary/40"
       data-testid="launch-card"
     >
       <div className="relative">

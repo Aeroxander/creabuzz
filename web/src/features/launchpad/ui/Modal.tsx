@@ -39,7 +39,7 @@ export function Modal({
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: click only stops propagation */}
       <div
         aria-label={label}
-        className={`w-full min-w-0 rounded-2xl border border-border bg-card p-5 shadow-xl ${wide ? "max-w-2xl" : "max-w-lg"}`}
+        className={`w-full min-w-0 glass-strong rounded-2xl border p-5 shadow-2xl ${wide ? "max-w-2xl" : "max-w-lg"}`}
         onClick={(e) => e.stopPropagation()}
         ref={containerRef}
         role="dialog"

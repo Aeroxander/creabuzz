@@ -162,10 +162,10 @@ export function SocialShell({
           </button>
         </nav>
 
-        <div className="min-h-full min-w-0 flex-1 border-x border-black/10 bg-white dark:border-white/10 dark:bg-black">
+        <div className="min-h-full min-w-0 flex-1 glass border-x">
           <nav
             aria-label="Social"
-            className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-black/10 bg-white/90 px-2 py-1 backdrop-blur md:hidden dark:border-white/10 dark:bg-black/80"
+            className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"
             data-testid="social-nav-mobile"
           >
             {entries.map((entry) => (
@@ -242,7 +242,7 @@ export function PageBar({
   children?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-10 border-b border-black/10 bg-white/90 backdrop-blur max-md:top-11 dark:border-white/10 dark:bg-black/80">
+    <header className="sticky top-0 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-11">
       <div className="flex min-h-12 items-center gap-3 px-4">
         {back}
         <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-black dark:text-white">

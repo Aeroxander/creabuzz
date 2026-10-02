@@ -159,21 +159,75 @@
    content — no stacking-context games). Pale yellow -> pale blue (light),
    deep olive -> navy (dark). */
 body {
-  background-image: linear-gradient(
-    160deg,
-    var(--buzz-gradient-light-top),
-    var(--buzz-gradient-light-bottom)
-  );
+  background-image:
+    radial-gradient(
+      60rem 40rem at 85% -10%,
+      hsl(266 90% 70% / 0.14),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 36rem at -5% 35%,
+      hsl(153 70% 50% / 0.1),
+      transparent 60%
+    ),
+    linear-gradient(
+      160deg,
+      var(--buzz-gradient-light-top),
+      var(--buzz-gradient-light-bottom)
+    );
   background-size: 100vw 100vh;
   background-repeat: no-repeat;
   background-attachment: fixed;
 }
 .dark body {
-  background-image: linear-gradient(
-    160deg,
-    var(--buzz-gradient-dark-top),
-    var(--buzz-gradient-dark-bottom)
-  );
+  background-image:
+    radial-gradient(
+      60rem 40rem at 85% -10%,
+      hsl(266 90% 62% / 0.28),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 36rem at -5% 40%,
+      hsl(153 70% 45% / 0.13),
+      transparent 60%
+    ),
+    radial-gradient(
+      40rem 30rem at 60% 110%,
+      hsl(280 80% 55% / 0.16),
+      transparent 60%
+    ),
+    linear-gradient(
+      160deg,
+      var(--buzz-gradient-dark-top),
+      var(--buzz-gradient-dark-bottom)
+    );
+}
+
+/*
+ * Glass: a translucent card that lets the page's colour glow through, with a
+ * hairline highlight on the top edge. Use it on surfaces that float over the
+ * wash (cards, columns, dialogs); dense reading surfaces keep their plain card.
+ */
+.glass {
+  background-color: hsl(var(--card) / 0.55);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  border-color: hsl(0 0% 100% / 0.1);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.07),
+    0 10px 30px -16px rgb(0 0 0 / 0.55);
+}
+.glass-strong {
+  background-color: hsl(var(--card) / 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  border-color: hsl(0 0% 100% / 0.1);
+}
+:root:not(.dark) .glass,
+:root:not(.dark) .glass-strong {
+  background-color: hsl(0 0% 100% / 0.62);
+  border-color: hsl(262 20% 80% / 0.7);
+  box-shadow: 0 10px 30px -18px rgb(60 30 120 / 0.25);
 }
 
 /*

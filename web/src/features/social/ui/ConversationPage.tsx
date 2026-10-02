@@ -138,7 +138,7 @@ export function ConversationPage() {
       </div>
       {me ? (
         <form
-          className="sticky bottom-0 z-10 flex items-end gap-2 border-t border-black/10 bg-white/95 p-3 backdrop-blur dark:border-white/10 dark:bg-black/90"
+          className="sticky bottom-0 z-10 flex items-end gap-2 border-t border-border/60 bg-background/50 p-3 backdrop-blur-xl"
           onSubmit={(e) => {
             e.preventDefault();
             submit();

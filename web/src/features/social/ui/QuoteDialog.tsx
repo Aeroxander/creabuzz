@@ -26,7 +26,7 @@ export function QuoteDialog({
   return (
     <dialog
       aria-label="Quote post"
-      className="m-auto w-[min(36rem,calc(100vw-2rem))] rounded-2xl border border-black/10 bg-white p-0 text-black backdrop:bg-black/50 dark:border-white/15 dark:bg-neutral-900 dark:text-white"
+      className="m-auto w-[min(36rem,calc(100vw-2rem))] rounded-2xl glass-strong border p-0 text-foreground backdrop:bg-black/50 backdrop:backdrop-blur-sm"
       data-testid="social-quote-dialog"
       onClose={onClose}
       ref={ref}
