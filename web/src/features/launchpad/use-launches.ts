@@ -301,6 +301,10 @@ export interface CreateLaunchInput {
   longPitch?: string;
   ipList?: string[];
   updateCadence?: string;
+  /** Cover image URL (optional). */
+  image?: string;
+  /** A topic; published as a lowercase `t` tag, which Discover browses by. */
+  category?: string;
   stage: LaunchStage;
   chainId: string;
   currency: string;
@@ -346,6 +350,9 @@ export function useCreateLaunch() {
         ["t", "dao-launchpad"],
         ["admission", input.admission],
       ];
+      if (input.category?.trim()) {
+        tags.push(["t", input.category.trim().toLowerCase()]);
+      }
       if (input.chainId) tags.push(["chain", input.chainId]);
       if (input.auction) tags.push(["auction", input.auction]);
       if (input.token) tags.push(["token", input.token]);
@@ -363,6 +370,7 @@ export function useCreateLaunch() {
       if (input.ipList && input.ipList.length > 0)
         content.ipList = input.ipList;
       if (input.updateCadence) content.updateCadence = input.updateCadence;
+      if (input.image) content.image = input.image;
       if (input.currency) content.currency = input.currency;
       if (input.floorPrice) content.floorPrice = input.floorPrice;
       if (input.tickSpacing) content.tickSpacing = input.tickSpacing;

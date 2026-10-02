@@ -127,6 +127,14 @@ export function ProfileMenu({
   // username never hides the identity that actually signs.
   const secondaryName = resolveUserSecondaryName(profile, pubkey);
 
+  // Other surfaces (the Home welcome) ask for the sign-up dialog rather than
+  // owning a second copy of it.
+  useEffect(() => {
+    const open = () => setShowOnboarding(true);
+    window.addEventListener("creaton:sign-up", open);
+    return () => window.removeEventListener("creaton:sign-up", open);
+  }, []);
+
   // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
   // mock). Unlock mode is left to the PasskeyUnlockGate overlay instead.
   useEffect(() => {

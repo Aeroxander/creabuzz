@@ -47,10 +47,22 @@ export function useAuctionProgress(record: LaunchRecord | undefined) {
   });
 }
 
-export function ProgressBar({ record }: { record: LaunchRecord }) {
+export function ProgressBar({
+  record,
+  quietWhenUnknown = false,
+}: {
+  record: LaunchRecord;
+  /**
+   * Cards: say nothing when there is no chain reading, instead of a dash and
+   * "No chain data" repeated on every card. The launch page keeps the honest
+   * version.
+   */
+  quietWhenUnknown?: boolean;
+}) {
   const { data } = useAuctionProgress(record);
   const measurable = data !== undefined && data.source !== "unavailable";
   const pct = measurable ? progressPercent(data.raised, data.goal) : 0;
+  if (quietWhenUnknown && !measurable) return null;
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
@@ -84,11 +96,11 @@ export function ProgressBar({ record }: { record: LaunchRecord }) {
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={Math.round(pct)}
-        className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-foreground/10"
         role="progressbar"
       >
         <div
-          className="h-full rounded-full bg-black dark:bg-white"
+          className="h-full rounded-full bg-primary"
           style={{
             width: `${Math.min(100, Math.max(0, measurable ? pct : 0))}%`,
           }}

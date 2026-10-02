@@ -123,7 +123,7 @@ export function DiscoverPage() {
     projects.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8">
       <PageHeader
         action={
           <Button onClick={() => setPitchOpen(true)} size="sm">
@@ -140,17 +140,17 @@ export function DiscoverPage() {
 
       <div
         aria-label="Filter the directory"
-        className="flex flex-wrap items-center gap-2"
+        className="flex flex-wrap items-center gap-x-6 gap-y-2"
         role="tablist"
       >
         {FILTERS.map((entry) => (
           <button
             aria-selected={filter === entry.id}
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium tracking-wide",
+              "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors",
               filter === entry.id
-                ? "bg-black text-white dark:bg-white dark:text-black"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10",
+                ? "border-primary text-foreground"
+                : "border-transparent text-foreground/60 hover:text-foreground",
             )}
             key={entry.id}
             onClick={() => setFilter(entry.id)}
@@ -212,44 +212,6 @@ export function DiscoverPage() {
             />
           ) : (
             <>
-              {sections.daos ? (
-                <section className="flex flex-col gap-3">
-                  <SectionHeading
-                    count={daos.length}
-                    description="Money already on chain: the address each project was summoned at, and the seats it minted."
-                    title="DAOs"
-                  />
-                  {daos.length === 0 ? (
-                    <EmptyState
-                      message="No DAO summoned yet — one appears here the moment a project's launch graduates and its summon receipt lands."
-                      testId="discover-daos-empty"
-                    >
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          search={{ action: undefined, author: undefined }}
-                          to="/launchpad"
-                        >
-                          Open the launchpad
-                        </Link>
-                      </Button>
-                    </EmptyState>
-                  ) : (
-                    <ul
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2"
-                      data-testid="discover-dao-list"
-                    >
-                      {daos.map((card) => (
-                        <DiscoverDaoCard
-                          card={card}
-                          key={card.projectId}
-                          nameOf={nameOf}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              ) : null}
-
               {sections.launches ? (
                 <section className="flex flex-col gap-3">
                   <SectionHeading
@@ -274,7 +236,7 @@ export function DiscoverPage() {
                     </EmptyState>
                   ) : (
                     <ul
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2"
+                      className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
                       data-testid="discover-launch-list"
                     >
                       {launches.map((launch) => (
@@ -310,6 +272,43 @@ export function DiscoverPage() {
                         <DiscoverProjectCard
                           card={card}
                           key={card.key}
+                          nameOf={nameOf}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ) : null}
+              {sections.daos ? (
+                <section className="flex flex-col gap-3">
+                  <SectionHeading
+                    count={daos.length}
+                    description="Money already on chain: the address each project was summoned at, and the seats it minted."
+                    title="DAOs"
+                  />
+                  {daos.length === 0 ? (
+                    <EmptyState
+                      message="No DAO summoned yet — one appears here the moment a project's launch graduates and its summon receipt lands."
+                      testId="discover-daos-empty"
+                    >
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          search={{ action: undefined, author: undefined }}
+                          to="/launchpad"
+                        >
+                          Open the launchpad
+                        </Link>
+                      </Button>
+                    </EmptyState>
+                  ) : (
+                    <ul
+                      className="grid grid-cols-1 gap-4 md:grid-cols-2"
+                      data-testid="discover-dao-list"
+                    >
+                      {daos.map((card) => (
+                        <DiscoverDaoCard
+                          card={card}
+                          key={card.projectId}
                           nameOf={nameOf}
                         />
                       ))}

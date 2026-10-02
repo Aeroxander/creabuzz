@@ -16,12 +16,13 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Users } from "lucide-react";
 
 import type { DaoCard } from "@/features/discover/lib/directory";
-import {
-  canBackLaunch,
-  launchTargetText,
-} from "@/features/discover/lib/directory";
+import { canBackLaunch } from "@/features/discover/lib/directory";
+import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
+import { useLaunchFollows } from "@/features/feed/use-launch-follows";
+import { LaunchCard } from "@/features/launchpad/ui/LaunchCard";
+import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
-import { ProgressBar, StageBadge } from "@/features/launchpad/ui/widgets";
+import { ProgressBar } from "@/features/launchpad/ui/widgets";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -179,68 +180,62 @@ export function DiscoverDaoCard({
 }
 
 export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
+  const follows = useLaunchFollows();
+  const { data: profiles } = useProfiles([launch.record.author]);
+  const founder = profiles?.[launch.record.author];
   const stage = effectiveStage(launch);
-  const target = launchTargetText(launch);
+  const key = launchCoord(launch.record);
   return (
-    <li>
-      <Card
-        className="flex h-full flex-col gap-3 p-4"
-        data-testid="discover-launch"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <Link
-            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
-            data-testid="discover-launch-title"
-            search={{ action: undefined, author: launch.record.author }}
-            to="/launchpad/$launchId"
-            params={{ launchId: launch.record.id }}
-          >
-            {launch.record.name}
-          </Link>
-          <StageBadge stage={stage} />
-        </div>
-        <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-          {launch.record.pitch || "No pitch line yet."}
-        </p>
-        <ProgressBar record={launch.record} />
-        <p className="text-2xs text-black/50 dark:text-white/50">
-          {target ? `Target ${target} · ` : ""}
-          {launch.receipts.length > 0
-            ? `${launch.receipts.length} receipt${launch.receipts.length === 1 ? "" : "s"} on record`
-            : "no receipts yet"}
-        </p>
-        <div className="mt-auto flex items-center justify-between gap-2">
-          <span className="text-2xs text-black/50 dark:text-white/50">
-            Updated {relativeTime(launch.record.createdAt)}
-          </span>
-          {/* A raise that is over stays listed (hiding it would make the
-              directory lie by omission), but its CTA must not promise a bid
-              the auction will not take — Review-Proven Rule 6. */}
-          {canBackLaunch(stage) ? (
-            <Button asChild size="sm">
-              <Link
-                search={{ action: "bid", author: launch.record.author }}
-                to="/launchpad/$launchId"
-                params={{ launchId: launch.record.id }}
-              >
-                Back this launch
-                <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
-              </Link>
-            </Button>
-          ) : (
-            <Button asChild size="sm" variant="outline">
-              <Link
-                search={{ action: undefined, author: launch.record.author }}
-                to="/launchpad/$launchId"
-                params={{ launchId: launch.record.id }}
-              >
-                View launch
-                <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
-              </Link>
-            </Button>
-          )}
-        </div>
-      </Card>
+    <li data-testid="discover-launch">
+      <LaunchCard
+        bids={launch.bids.length}
+        followDisabled={!follows.ready || follows.pending}
+        followed={follows.followed.has(key)}
+        footer={
+          <div className="space-y-3">
+            <ProgressBar quietWhenUnknown record={launch.record} />
+            {/* A raise that is over stays listed (hiding it would make the
+                directory lie by omission), but its CTA must not promise a bid
+                the auction will not take — Review-Proven Rule 6. */}
+            {canBackLaunch(stage) ? (
+              <Button asChild className="w-full" size="sm">
+                <Link
+                  params={{ launchId: launch.record.id }}
+                  search={{ action: "bid", author: launch.record.author }}
+                  to="/launchpad/$launchId"
+                >
+                  Back this launch
+                  <ArrowRight aria-hidden className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild className="w-full" size="sm" variant="outline">
+                <Link
+                  params={{ launchId: launch.record.id }}
+                  search={{ action: undefined, author: launch.record.author }}
+                  to="/launchpad/$launchId"
+                >
+                  View launch
+                  <ArrowRight aria-hidden className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            )}
+          </div>
+        }
+        founder={
+          founder
+            ? {
+                name: resolveUserName(founder, launch.record.author),
+                picture: founder.picture ?? null,
+              }
+            : undefined
+        }
+        onToggleFollow={() => follows.toggle(key)}
+        record={launch.record}
+        stage={stage}
+        titleTestId="discover-launch-title"
+        updates={launch.updates.length}
+      />
     </li>
   );
 }

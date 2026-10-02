@@ -175,6 +175,9 @@ export interface FormState {
   longPitch: string;
   ipList: string;
   updateCadence: string;
+  /** Cover image URL and category (optional; absent in older callers). */
+  image?: string;
+  category?: string;
   chainId: string;
   currency: string;
   /** Q96 floor price, chain units (Advanced drawer). */
@@ -767,6 +770,8 @@ export function buildLegacyInput(form: FormState): CreateLaunchInput {
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
     updateCadence: form.updateCadence.trim() || undefined,
+    ...(form.image?.trim() ? { image: form.image.trim() } : {}),
+    ...(form.category?.trim() ? { category: form.category.trim() } : {}),
     stage: "draft" as LaunchStage,
     chainId: form.chainId.trim(),
     currency: form.currency.trim(),

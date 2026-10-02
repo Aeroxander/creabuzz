@@ -118,6 +118,8 @@ export function ManagePanel({
     longPitch: record.longPitch ?? "",
     ipList: record.ipList,
     updateCadence: record.updateCadence ?? "",
+    image: record.image ?? "",
+    category: record.category ?? "",
     budget: record.budget ?? "",
     allocation: record.allocation,
     startBlock: record.startBlock ?? undefined,

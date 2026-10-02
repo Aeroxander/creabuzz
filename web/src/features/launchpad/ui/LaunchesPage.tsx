@@ -18,12 +18,11 @@ import {
 import { useChainBlockHeight, useVoteTallies } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Plus, Rocket, Star } from "lucide-react";
+import { ArrowRight, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { LAUNCHPAD_EVENT_KINDS } from "@/shared/constants/kinds";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -36,7 +35,9 @@ import { effectiveStage } from "../models";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
-import { ProgressBar, StageBadge } from "./widgets";
+import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
+import { LaunchCard } from "./LaunchCard";
+import { ProgressBar } from "./widgets";
 import { cn } from "@/shared/lib/cn";
 
 type Filter = "all" | "mine" | "following" | "closing-soon" | "graduated";
@@ -83,6 +84,9 @@ export function LaunchesPage() {
           (launch) => launch.record.createdAt,
         );
 
+  const authors = [...new Set(visible.map((launch) => launch.record.author))];
+  const { data: profiles } = useProfiles(authors);
+
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
       await create.mutateAsync(input);
@@ -96,7 +100,7 @@ export function LaunchesPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
       <PageHeader
         title={
           <span className="flex items-center gap-2">
@@ -113,7 +117,7 @@ export function LaunchesPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-wrap items-center gap-x-6 gap-y-2"
           role="tablist"
           aria-label="Launch filter"
         >
@@ -125,10 +129,10 @@ export function LaunchesPage() {
               data-testid={`launch-filter-${f}`}
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide",
+                "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors",
                 filter === f
-                  ? "bg-black text-white dark:bg-white dark:text-black"
-                  : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10",
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-foreground/60 hover:text-foreground",
               )}
               type="button"
             >
@@ -213,78 +217,44 @@ export function LaunchesPage() {
             </span>
             <ArrowRight className="h-4 w-4 shrink-0" />
           </Link>
-          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {visible.map((launch) => {
               const key = launchCoord(launch.record);
-              const isFollowed = follows.followed.has(key);
+              const founder = profiles?.[launch.record.author];
               return (
                 <li key={key}>
-                  <Card className="flex h-full flex-col p-4">
-                    <div className="flex items-start gap-2">
-                      <Link
-                        to="/launchpad/$launchId"
-                        params={{ launchId: launch.record.id }}
-                        search={{
-                          action: undefined,
-                          author: launch.record.author,
-                        }}
-                        className="min-w-0 flex-1"
-                      >
-                        <span className="block truncate text-base font-semibold hover:underline">
-                          {launch.record.name}
-                        </span>
-                        {launch.record.agent ? (
-                          <span
-                            className="ml-1 inline-block rounded-full bg-violet-500/15 px-1.5 py-0.5 align-middle text-2xs font-medium text-violet-700 dark:text-violet-300"
-                            data-testid="launch-agent-badge"
-                            title={`Run by agent ${launch.record.agent.slice(0, 8)}…`}
-                          >
-                            Agent-run
-                          </span>
-                        ) : null}
-                        <span className="mt-0.5 line-clamp-2 block text-sm text-black/60 dark:text-white/60">
-                          {launch.record.pitch || "No pitch yet."}
-                        </span>
-                      </Link>
-                      <button
-                        aria-label={
-                          isFollowed ? "Unfollow launch" : "Follow launch"
-                        }
-                        aria-pressed={isFollowed}
-                        disabled={!follows.ready || follows.pending}
-                        onClick={() => follows.toggle(key)}
-                        className={cn(
-                          "rounded-lg p-1.5",
-                          isFollowed
-                            ? "text-amber-500"
-                            : "text-black/60 hover:bg-black/5 dark:text-white/60",
-                        )}
-                        type="button"
-                      >
-                        <Star
-                          className="h-4 w-4"
-                          fill={isFollowed ? "currentColor" : "none"}
+                  <LaunchCard
+                    bids={launch.bids.length}
+                    followDisabled={!follows.ready || follows.pending}
+                    followed={follows.followed.has(key)}
+                    footer={
+                      <div className="space-y-2">
+                        <ProgressBar quietWhenUnknown record={launch.record} />
+                        <VoteButtons
+                          label={launch.record.name}
+                          launch={launchRef(launch.record)}
+                          tally={tallies.get(key) ?? EMPTY_TALLY}
+                          target={launchVoteTarget(launch.record)}
+                          testId="launch-card-vote"
                         />
-                      </button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <VoteButtons
-                        label={launch.record.name}
-                        launch={launchRef(launch.record)}
-                        tally={tallies.get(key) ?? EMPTY_TALLY}
-                        target={launchVoteTarget(launch.record)}
-                        testId="launch-card-vote"
-                      />
-                      <StageBadge stage={effectiveStage(launch)} />
-                      <span className="text-xs text-black/60 dark:text-white/60">
-                        {launch.updates.length} updates · {launch.bids.length}{" "}
-                        bids
-                      </span>
-                    </div>
-                    <div className="mt-2">
-                      <ProgressBar record={launch.record} />
-                    </div>
-                  </Card>
+                      </div>
+                    }
+                    founder={
+                      founder
+                        ? {
+                            name: resolveUserName(
+                              founder,
+                              launch.record.author,
+                            ),
+                            picture: founder.picture ?? null,
+                          }
+                        : undefined
+                    }
+                    onToggleFollow={() => follows.toggle(key)}
+                    record={launch.record}
+                    stage={effectiveStage(launch)}
+                    updates={launch.updates.length}
+                  />
                 </li>
               );
             })}

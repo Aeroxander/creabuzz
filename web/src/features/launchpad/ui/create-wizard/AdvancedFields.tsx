@@ -32,8 +32,6 @@ export interface AdvancedFieldsState {
   setId(value: string): void;
   onName(value: string): void;
   name: string;
-  pitch: string;
-  setPitch(value: string): void;
   initial: Partial<CreateLaunchInput> | undefined;
   longPitch: string;
   setLongPitch(value: string): void;
@@ -100,8 +98,6 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     id,
     setId,
     name,
-    pitch,
-    setPitch,
     initial,
     longPitch,
     setLongPitch,
@@ -164,16 +160,6 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           onChange={(e) => setId(e.target.value)}
           placeholder={slugPlaceholder(name)}
           value={id}
-        />
-      </Field>
-      <Field id="launch-pitch" label="Pitch">
-        <textarea
-          id="launch-pitch"
-          className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
-          onChange={(e) => setPitch(e.target.value)}
-          placeholder="What problem gets solved, and why now?"
-          rows={3}
-          value={pitch}
         />
       </Field>
       <details

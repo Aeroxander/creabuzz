@@ -161,10 +161,11 @@ test.describe("desktop viewport", () => {
   }) => {
     await boot(page);
 
-    // The channel list sits right after the app's navigation rail.
+    // The channel list sits directly under the app's top bar, at the left edge.
     const nav = await box(page, "[data-testid='app-nav']");
     const sidebar = await box(page, "#channel-sidebar");
-    expect(sidebar.x).toBe(nav.x + nav.width);
+    expect(sidebar.x).toBe(0);
+    expect(sidebar.y).toBe(nav.y + nav.height);
     expect(sidebar.width).toBeGreaterThan(200);
 
     const pane = await box(page, "[data-testid='content-pane']");

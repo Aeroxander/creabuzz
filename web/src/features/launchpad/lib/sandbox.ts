@@ -57,6 +57,8 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     legalWrapper: null,
     paramsHash: `0x${"ca".repeat(32)}`,
     website: null,
+    image: null,
+    category: "Software",
     docs: ["https://example.com/docs"],
     channels: ["sandbox-discussion"],
     projects: [],

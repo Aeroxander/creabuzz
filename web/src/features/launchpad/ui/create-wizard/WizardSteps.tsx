@@ -25,6 +25,7 @@ import {
   SHORT_VESTING_MONTHS,
   UNLOCK_ENFORCEMENT_GAP,
 } from "../../lib/unlock-plans";
+import { LAUNCH_CATEGORIES } from "../../models";
 import {
   WIZARD_STEPS,
   type DurationKey,
@@ -35,6 +36,7 @@ import {
 import type { SaleCurrency } from "../../lib/sale-currency";
 import { CurrencyChoice } from "./CurrencyChoice";
 import type { SupplyAllocation } from "../../lib/allocation";
+import { CoverImageField } from "./CoverImageField";
 import { Field, Segmented, Select, Stepper } from "./fields";
 import { SupplySplit } from "./SupplySplit";
 
@@ -57,6 +59,13 @@ export interface WizardController {
     onTotalSupply(value: string): void;
     launchId: string;
     tokenName: string;
+    /** The one-line pitch, cover image URL and category shown on launch cards. */
+    pitch: string;
+    onPitch(value: string): void;
+    image: string;
+    onImage(value: string): void;
+    category: string;
+    onCategory(value: string): void;
   };
   /** Who holds the supply. One state with the dialog's allocation. */
   supply: {
@@ -184,6 +193,35 @@ function TokenStep({ controller }: { controller: WizardController }) {
           value={token.name}
         />
       </Field>
+      <Field
+        id="launch-pitch"
+        label="Pitch"
+        hint="One or two lines. This is what backers read on the card."
+      >
+        <textarea
+          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm focus:border-ring focus:outline-none"
+          id="launch-pitch"
+          maxLength={280}
+          onChange={(event) => token.onPitch(event.target.value)}
+          placeholder="What problem gets solved, and why now?"
+          rows={2}
+          value={token.pitch}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <CoverImageField onChange={token.onImage} value={token.image} />
+        <Select
+          hint="Where it shows up when people browse."
+          id="launch-category"
+          label="Category"
+          onChange={(event) => token.onCategory(event.target.value)}
+          options={[
+            { value: "", label: "Choose…" },
+            ...LAUNCH_CATEGORIES.map((c) => ({ value: c, label: c })),
+          ]}
+          value={token.category}
+        />
+      </div>
       <div className="flex flex-col gap-3 sm:flex-row">
         <Field id="launch-symbol" label="Symbol">
           <input

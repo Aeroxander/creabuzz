@@ -75,6 +75,13 @@ export interface LaunchRecord {
   claimBlock: number | null;
   paramsHash: string | null;
   website: string | null;
+  /** Cover image URL shown on cards and the launch page (optional). */
+  image: string | null;
+  /**
+   * The launch's topic: its first `t` tag other than the routing marker, so it
+   * is the same tag Discover's category browse queries. Null when untagged.
+   */
+  category: string | null;
   docs: string[];
   channels: string[];
   projects: string[];
@@ -288,6 +295,50 @@ function strs(value: unknown): string[] {
     : [];
 }
 
+/**
+ * The topics the create form offers. A short closed list on purpose: a filter
+ * with forty near-duplicates is no filter at all. A record tagged with a topic
+ * outside the list still shows it; only the picker is closed.
+ */
+export const LAUNCH_CATEGORIES = [
+  "Software",
+  "AI agents",
+  "Creative",
+  "Media",
+  "Games",
+  "Community",
+  "Hardware",
+  "Other",
+] as const;
+
+export type LaunchCategory = (typeof LAUNCH_CATEGORIES)[number];
+
+function categoryFromTags(event: NostrEvent): string | null {
+  for (const tag of event.tags) {
+    if (tag[0] !== "t" || typeof tag[1] !== "string") continue;
+    const topic = tag[1].trim();
+    if (topic === "" || topic.toLowerCase() === "dao-launchpad") continue;
+    const known = LAUNCH_CATEGORIES.find(
+      (name) => name.toLowerCase() === topic.toLowerCase(),
+    );
+    return known ?? topic.charAt(0).toUpperCase() + topic.slice(1);
+  }
+  return null;
+}
+
+/** Only web URLs: a record is untrusted input and this one lands in `<img src>`. */
+function httpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
   if (event.kind !== KIND_LAUNCH_RECORD) return null;
   const id = tagValue(event, "d");
@@ -315,6 +366,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     claimBlock: int(body.claimBlock),
     paramsHash: str(body.paramsHash),
     website: str(body.website),
+    image: httpUrl(body.image),
+    category: categoryFromTags(event),
     docs: strs(body.docs),
     channels: tagValues(event, "buzz-channel"),
     projects: tagValues(event, "a"),

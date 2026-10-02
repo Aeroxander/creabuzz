@@ -117,6 +117,8 @@ export function CreateLaunchDialog({
   const [updateCadence, setUpdateCadence] = useState(
     initial?.updateCadence ?? "",
   );
+  const [image, setImage] = useState(initial?.image ?? "");
+  const [category, setCategory] = useState(initial?.category ?? "");
   const [chainId, setChainId] = useState<string>(
     initial?.chainId ?? LAUNCH_DEFAULTS.chainId,
   );
@@ -281,6 +283,8 @@ export function CreateLaunchDialog({
     longPitch,
     ipList,
     updateCadence,
+    image,
+    category,
     chainId,
     currency,
     floorPrice,
@@ -701,6 +705,12 @@ export function CreateLaunchDialog({
       onTotalSupply,
       launchId,
       tokenName: tokenName.trim() === "" ? deriveTokenName(name) : tokenName,
+      pitch,
+      onPitch: setPitch,
+      image,
+      onImage: setImage,
+      category,
+      onCategory: setCategory,
     },
     supply: {
       allocation,
@@ -790,8 +800,6 @@ export function CreateLaunchDialog({
     setId,
     onName,
     name,
-    pitch,
-    setPitch,
     initial,
     longPitch,
     setLongPitch,

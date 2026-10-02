@@ -17,6 +17,7 @@ import {
   useVoteTallies,
 } from "../use-feed";
 import { Composer } from "./Composer";
+import { HomeHero } from "./HomeHero";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ThreadList } from "./ThreadList";
 
@@ -127,6 +128,9 @@ export function FeedPage() {
                 <Briefcase aria-hidden className="h-4 w-4" /> Portfolio
               </Link>
             </div>
+          </div>
+          <div className="mt-3">
+            <HomeHero />
           </div>
           <div className="mt-3">
             <Composer />
