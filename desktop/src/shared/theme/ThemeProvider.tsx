@@ -1,3 +1,4 @@
+import { CREATON_MINT, CREATON_ON_MINT, creatonVars } from "./creaton-palette";
 import {
   type ReactNode,
   createContext,
@@ -221,7 +222,9 @@ function applyAccentColor(value: string) {
 
   const hex = value;
   const accentHsl = hexToHsl(hex);
-  const fgHsl = hexToHsl(getContrastColor(hex));
+  // Mint always carries the deep violet, never the generic black or white.
+  const fgHsl =
+    hex === CREATON_MINT ? CREATON_ON_MINT : hexToHsl(getContrastColor(hex));
   root.style.setProperty("--buzz-selected-accent", accentHsl);
   root.style.setProperty("--buzz-video-review-accent", accentHsl);
   root.style.setProperty(
@@ -237,9 +240,9 @@ function applyAccentColor(value: string) {
 }
 
 /**
- * The Buzz themes ship with a fixed neutral accent (the GitHub black/white
- * foreground) rather than a user-selectable accent color. When a Buzz theme is
- * active we force `NEUTRAL_ACCENT` regardless of the stored preference, and the
+ * The Buzz themes ship with a fixed accent (Creaton mint) rather than a
+ * user-selectable accent color. When a Buzz theme is active we force it
+ * regardless of the stored preference, and the
  * appearance panel hides the accent picker. The user's chosen accent is left
  * untouched in storage so it returns when they switch back to another theme.
  */
@@ -255,7 +258,7 @@ function resolveEffectiveAccent(
   themeName: string,
   accentColor: string,
 ): string {
-  return isBuzzTheme(themeName) ? NEUTRAL_ACCENT : accentColor;
+  return isBuzzTheme(themeName) ? CREATON_MINT : accentColor;
 }
 
 /** Toggle the Buzz-specific gradient marker independently from glass. */
@@ -435,11 +438,17 @@ async function applyTheme(name: SyntaxThemeName): Promise<{
   if (requestToken !== themeApplyRequest) return null;
 
   const info = extractThemeInfo(name, themeData);
-  const { isDark, vars } = createThemeVars(info.bg, info.fg, info.comment, {
+  const derived = createThemeVars(info.bg, info.fg, info.comment, {
     added: info.added,
     deleted: info.deleted,
     modified: info.modified,
   });
+  const isDark = derived.isDark;
+  // The first-party Buzz themes wear the Creaton palette; every other theme
+  // keeps the colours derived from its own syntax palette.
+  const vars = isBuzzTheme(name)
+    ? { ...derived.vars, ...creatonVars(isDark) }
+    : derived.vars;
 
   const root = document.documentElement;
   for (const [key, value] of Object.entries(vars)) {

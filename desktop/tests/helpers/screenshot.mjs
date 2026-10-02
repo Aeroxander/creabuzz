@@ -101,9 +101,18 @@ const TEST_PUBKEYS = [
 // inside the rounded focus drawer. Headed rendering is correct, as is the real
 // app's WKWebView, so this is a capture-only artifact. Default stays headless so
 // CI is unaffected.
-const browser = await chromium.launch({ headless: !process.env.BUZZ_HEADED });
+const browser = await chromium.launch({
+  headless: !process.env.BUZZ_HEADED,
+  ...(process.env.CHROMIUM_PATH
+    ? { executablePath: process.env.CHROMIUM_PATH }
+    : {}),
+});
 const page = await browser.newPage({
   viewport: { width: vpWidth, height: vpHeight },
+  // `SCREENSHOT_SCHEME=dark` captures the dark theme (System mode follows it).
+  ...(process.env.SCREENSHOT_SCHEME
+    ? { colorScheme: process.env.SCREENSHOT_SCHEME }
+    : {}),
 });
 
 // Seed default community (mirrors seedDefaultCommunity in bridge.ts)

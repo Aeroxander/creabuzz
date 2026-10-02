@@ -79,8 +79,8 @@ export default {
       },
       fontFamily: {
         sans: [
-          '"Inter Variable"',
-          "Inter",
+          '"Figtree Variable"',
+          "Figtree",
           '"Avenir Next"',
           '"Segoe UI"',
           "sans-serif",

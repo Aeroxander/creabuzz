@@ -48,11 +48,11 @@
     --sidebar-border: 225 13.56% 76.86%;
     --sidebar-ring: 225 13.56% 76.86%;
     /* Exact Buzz palette tokens; components consume these semantically. */
-    --buzz-gradient-light-top: #e6e6b6;
-    --buzz-gradient-light-bottom: #c4d0da;
-    --buzz-gradient-dark-top: #4a4616;
-    --buzz-gradient-dark-bottom: #0a1423;
-    --buzz-content-dark: 0 0% 10.1960784314%;
+    --buzz-gradient-light-top: #f4f1fb;
+    --buzz-gradient-light-bottom: #e6f6ee;
+    --buzz-gradient-dark-top: #1a0f30;
+    --buzz-gradient-dark-bottom: #0d0618;
+    --buzz-content-dark: 266 66% 8%;
     /* Hosted-community onboarding intentionally keeps this light palette in
        both app themes; semantic tokens keep component code color-agnostic. */
     --buzz-hosted-community-surface-fg: 23 23 23;
@@ -203,7 +203,8 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
+    font-family:
+      "Figtree Variable", Figtree, "Avenir Next", Avenir, "Segoe UI", sans-serif;
   }
 
   /*
@@ -353,7 +354,13 @@
  */
 :root[data-buzz-sidebar].dark [data-buzz-content-surface] {
   --background: var(--buzz-content-dark);
-  background-color: hsl(var(--background));
+  /* Glass: the page's violet and mint glow shows through the content card. */
+  background-color: hsl(var(--background) / 0.62);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.07),
+    0 10px 30px -16px rgb(0 0 0 / 0.55);
 }
 
 :root[data-buzz-sidebar] .buzz-huddle-app-surface {
@@ -392,11 +399,27 @@
 }
 
 :root[data-buzz-sidebar] .buzz-theme-gradient-layer-dark {
-  background-image: linear-gradient(
-    to bottom,
-    var(--buzz-gradient-dark-top),
-    var(--buzz-gradient-dark-bottom)
-  );
+  background-image:
+    radial-gradient(
+      60rem 40rem at 85% -10%,
+      hsl(266 90% 62% / 0.28),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 36rem at -5% 40%,
+      hsl(153 70% 45% / 0.13),
+      transparent 60%
+    ),
+    radial-gradient(
+      40rem 30rem at 60% 110%,
+      hsl(280 80% 55% / 0.16),
+      transparent 60%
+    ),
+    linear-gradient(
+      to bottom,
+      var(--buzz-gradient-dark-top),
+      var(--buzz-gradient-dark-bottom)
+    );
   background-size: 100vw 100vh;
   background-repeat: no-repeat;
 }
