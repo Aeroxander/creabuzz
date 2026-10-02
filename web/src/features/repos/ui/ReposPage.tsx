@@ -56,7 +56,7 @@ function SearchEmptyState() {
 
 function CommunityEmptyState() {
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#F3F3F3] px-4 py-16 text-center dark:bg-[#171717]">
+    <div className="flex flex-1 items-center justify-center bg-background px-4 py-16 text-center">
       <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
         <div
           className="h-16 w-16 overflow-hidden bg-black"
@@ -104,7 +104,7 @@ function CommunityConnectionError({ message }: { message: string }) {
   };
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#F3F3F3] px-4 py-16 text-center dark:bg-[#171717]">
+    <div className="flex flex-1 items-center justify-center bg-background px-4 py-16 text-center">
       <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
         <div
           className="h-16 w-16 overflow-hidden bg-black"
@@ -229,7 +229,7 @@ export function ReposPage() {
 
   if (isLoading) {
     return (
-      <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
         <div className="min-w-0 flex-1">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-black dark:text-white">
             <BookMarked className="h-4 w-4" /> Repositories
@@ -254,7 +254,7 @@ export function ReposPage() {
   }
 
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
       {/* Main content */}
       <div className="min-w-0 flex-1">
         {/* Mobile-only connect button */}

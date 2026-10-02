@@ -376,7 +376,8 @@ test("the buyer sees what the rest of the supply implies", async ({ page }) => {
 test("an allocation that does not add up blocks the launch", async ({
   page,
 }) => {
-  // 105% allocated is a token someone cannot have.
+  // 110% allocated is a token someone cannot have. The split sits on the first
+  // step, so the step itself refuses to continue until it adds up.
   await page.getByRole("button", { name: "New launch" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -388,13 +389,16 @@ test("an allocation that does not add up blocks the launch", async ({
   await expect(page.getByTestId("launch-allocation-issue")).toContainText(
     "110%",
   );
-  await wizardToPublish(page);
-  await expect(
-    page.getByRole("button", { name: /Publish launch/ }),
-  ).toBeDisabled();
+  await expect(page.getByTestId("launch-allocation-total")).toContainText(
+    "110%",
+  );
+  await expect(page.getByTestId("wizard-continue")).toBeDisabled();
 
   await page.getByTestId("launch-allocation-standard").click();
   await expect(page.getByTestId("launch-allocation-issue")).toHaveCount(0);
+  await expect(page.getByTestId("launch-allocation-total")).toContainText(
+    "100%",
+  );
   await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),

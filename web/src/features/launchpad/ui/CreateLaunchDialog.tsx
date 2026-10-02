@@ -702,6 +702,18 @@ export function CreateLaunchDialog({
       launchId,
       tokenName: tokenName.trim() === "" ? deriveTokenName(name) : tokenName,
     },
+    supply: {
+      allocation,
+      issue: allocationMessage,
+      onReset: () => setAllocation({ ...STANDARD_ALLOCATION }),
+      onChange: (key, value) => {
+        setAllocation((previous) => ({ ...previous, [key]: value }));
+        // The tranche is derived from the total: a sale-share change
+        // re-derives it, because the tokenomics card turns the tranche back
+        // into the total with this same share.
+        if (key === "sale") setSupply(trancheFromTotal(totalSupplyText, value));
+      },
+    },
     sale: {
       currency: saleCurrency,
       currencyChoices: currencyOptions,
@@ -803,16 +815,6 @@ export function CreateLaunchDialog({
     currency,
     setCurrency,
     saleCurrency,
-    allocation,
-    resetAllocation: () => setAllocation({ ...STANDARD_ALLOCATION }),
-    setAllocationValue: (key, value) => {
-      setAllocation((previous) => ({ ...previous, [key]: value }));
-      // The tranche is derived from the total: a sale-share change re-derives
-      // it, because the tokenomics card turns the tranche back into the total
-      // with this same share.
-      if (key === "sale") setSupply(trancheFromTotal(totalSupplyText, value));
-    },
-    allocationMessage,
     vesting,
     setVesting,
     markVestingDirty: () => setVestingDirty(true),
@@ -852,7 +854,7 @@ export function CreateLaunchDialog({
   };
 
   return (
-    <Modal label={isEdit ? "Edit launch" : "New launch"} onClose={onClose}>
+    <Modal label={isEdit ? "Edit launch" : "New launch"} onClose={onClose} wide>
       <h2 className="text-lg font-semibold text-black dark:text-white">
         {isEdit ? "Edit launch" : "New launch"}
       </h2>
@@ -865,7 +867,7 @@ export function CreateLaunchDialog({
           {relaunchNote}
         </p>
       ) : null}
-      <div className="mt-3 flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
+      <div className="mt-3 flex max-h-[68vh] flex-col gap-3 overflow-y-auto pr-1">
         {isEdit ? (
           <>
             <WizardSteps controller={controller} variant="all" />

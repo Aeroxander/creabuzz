@@ -485,9 +485,11 @@ export function wizardStepIssues(
       issues.push("Total supply must be a whole number greater than zero.");
     } else if (!(form.allocation.sale > 0)) {
       issues.push(
-        "Set a sale share in Advanced so there is something to sell.",
+        "Give the sale a share of the tokens so there is something to sell.",
       );
     }
+    const split = allocationIssue(form.allocation);
+    if (split) issues.push(split);
     const id = effectiveLaunchId(form);
     if (!isLaunchSlug(id)) {
       issues.push(

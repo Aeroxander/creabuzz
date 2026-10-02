@@ -17,8 +17,8 @@ function RootLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const showNav = !hidesAppNav(pathname);
   return (
-    <div className="flex h-dvh flex-col md:flex-row">
-      {/* One nav element: first on wide screens (rail), last on phones (tab bar). */}
+    <div className="flex h-dvh flex-col">
+      {/* One nav element: first on wide screens (top bar), last on phones (tab bar). */}
       {showNav ? (
         <div className="order-last flex md:order-first">
           <AppNav />

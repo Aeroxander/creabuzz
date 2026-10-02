@@ -244,7 +244,7 @@ export function CommunityShell({
           />
         ) : null}
         <div
-          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-[#F8F8F8] shadow-xl transition-transform duration-200 ease-out dark:bg-[#1B1B1B] lg:static lg:z-auto lg:w-[264px] lg:translate-x-0 lg:bg-transparent lg:shadow-none lg:transition-none ${
+          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar shadow-xl transition-transform duration-200 ease-out lg:static lg:z-auto lg:w-[264px] lg:translate-x-0 lg:bg-transparent lg:shadow-none lg:transition-none ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
           id="channel-sidebar"

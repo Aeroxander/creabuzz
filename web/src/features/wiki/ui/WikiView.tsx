@@ -378,7 +378,7 @@ export function WikiView({
     <div className="flex h-full min-h-0 w-full flex-1 flex-col lg:flex-row">
       {/* Page list: a stacked strip on narrow screens, a column from `lg` up. */}
       <aside
-        className="flex max-h-40 w-full shrink-0 flex-col border-b border-black/10 bg-[#F8F8F8] lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r dark:border-white/10 dark:bg-[#1B1B1B]"
+        className="flex max-h-40 w-full shrink-0 flex-col border-b border-black/10 bg-sidebar lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r dark:border-white/10"
         data-testid="wiki-page-list"
       >
         <div className="flex items-center justify-between px-3 py-3">

@@ -18,11 +18,6 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { isEvmAddress, type VestingConfig } from "../../models";
 import type { CreateLaunchInput } from "../../use-launches";
-import {
-  ALLOCATION_LABELS,
-  minimumLiquidityPercent,
-  type SupplyAllocation,
-} from "../../lib/allocation";
 import type { SaleCurrency } from "../../lib/sale-currency";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";
@@ -63,12 +58,6 @@ export interface AdvancedFieldsState {
   setCurrency(value: string): void;
   /** What `currency` means: symbol and decimals. */
   saleCurrency: SaleCurrency;
-  allocation: SupplyAllocation;
-  /** One allocation input changed — the dialog re-derives the tranche too. */
-  setAllocationValue(key: keyof SupplyAllocation, value: number): void;
-  /** "Standard split" — the dialog resets to the standard allocation. */
-  resetAllocation(): void;
-  allocationMessage: string | null;
   vesting: VestingConfig | null;
   setVesting(
     updater: (previous: VestingConfig | null) => VestingConfig | null,
@@ -134,10 +123,6 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     admission,
     setAdmission,
     saleCurrency,
-    allocation,
-    setAllocationValue,
-    resetAllocation,
-    allocationMessage,
     vesting,
     setVesting,
     markVestingDirty,
@@ -378,81 +363,6 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           </span>
           . The choice between ETH and USDC is made on the sale step.
         </p>
-        <div
-          className="rounded-lg border border-black/10 p-3 dark:border-white/10"
-          data-testid="launch-allocation"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium">Supply allocation</p>
-            <Button
-              data-testid="launch-allocation-standard"
-              onClick={resetAllocation}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Standard split
-            </Button>
-          </div>
-          <p className="mt-0.5 text-xs text-black/60 dark:text-white/60">
-            The part that is not sold decides what the sold part is worth.
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {ALLOCATION_LABELS.map(({ key, label, hint }) => (
-              <label className="flex flex-col gap-0.5 text-xs" key={key}>
-                <span className="font-medium">{label} %</span>
-                <input
-                  className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-sm tabular-nums dark:border-white/15"
-                  data-testid={`launch-allocation-${key}`}
-                  inputMode="numeric"
-                  min={0}
-                  max={100}
-                  onChange={(event) => {
-                    const next =
-                      Number(event.target.value.replace(/\D/g, "")) || 0;
-                    setAllocationValue(key, next);
-                  }}
-                  type="number"
-                  value={allocation[key]}
-                />
-                <span className="text-black/60 dark:text-white/60">{hint}</span>
-              </label>
-            ))}
-          </div>
-          {allocationMessage ? (
-            <p
-              className="mt-2 text-xs text-red-600 dark:text-red-400"
-              data-testid="launch-allocation-issue"
-            >
-              {allocationMessage}
-            </p>
-          ) : null}
-          {(() => {
-            const minLiquidity = minimumLiquidityPercent({
-              salePercent: allocation.sale,
-              raiseShareBps: 2000,
-            });
-            if (minLiquidity === null) return null;
-            const thin = allocation.liquidity < minLiquidity;
-            return (
-              <p
-                className={`mt-1 text-xs ${
-                  thin
-                    ? "text-amber-700 dark:text-amber-300"
-                    : "text-black/50 dark:text-white/50"
-                }`}
-                data-testid="launch-lp-minimum"
-              >
-                {thin
-                  ? `This seeds the pool with under ${minLiquidity}% of supply — it covers less than 20% of the floor raise, so day-one liquidity will be thin.`
-                  : `A pool at ${allocation.liquidity}% of supply covers ${Math.round(
-                      (allocation.liquidity / allocation.sale) * 20,
-                    )}% of the floor raise at the floor price.`}
-              </p>
-            );
-          })()}
-        </div>
-
         <details
           className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
           data-testid="launch-advanced-vesting"

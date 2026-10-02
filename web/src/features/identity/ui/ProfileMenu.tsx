@@ -75,13 +75,16 @@ export function hasBackedUp(): boolean {
  * Where the menu is mounted. `sidebar` is the full-width chip; `rail` (the
  * global nav on wide screens) and `tabbar` (the phone bottom bar) show only the
  * avatar, keeping the name and username as the button's accessible text.
+ * `header` is the top bar on wide screens: the avatar, or a "Sign up" button
+ * until there is an identity.
  */
-export type ProfileMenuPlacement = "sidebar" | "rail" | "tabbar";
+export type ProfileMenuPlacement = "sidebar" | "rail" | "tabbar" | "header";
 
 const POPOVER_POSITION: Record<ProfileMenuPlacement, string> = {
   sidebar: "bottom-full left-0 mb-1",
   rail: "bottom-0 left-full ml-2",
   tabbar: "bottom-full right-0 mb-2",
+  header: "right-0 top-full mt-2",
 };
 
 export function ProfileMenu({
@@ -220,16 +223,24 @@ export function ProfileMenu({
           type="button"
           onClick={() => setShowOnboarding(true)}
           className={
-            compact
-              ? "grid h-10 w-10 place-items-center rounded-full border border-dashed border-black/30 text-black/70 hover:bg-black/5 dark:border-white/30 dark:text-white/70 dark:hover:bg-white/10"
-              : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
+            placement === "header"
+              ? "inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground shadow-[0_6px_16px_-6px_hsl(var(--primary)/0.6)] transition hover:brightness-110"
+              : compact
+                ? "grid h-10 w-10 place-items-center rounded-full border border-dashed border-black/30 text-black/70 hover:bg-black/5 dark:border-white/30 dark:text-white/70 dark:hover:bg-white/10"
+                : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
           }
           data-testid="create-identity-cta"
           title={compact ? "Create your identity" : undefined}
         >
-          <UserPlus aria-hidden className="h-4 w-4" />
-          <span className={compact ? "sr-only" : undefined}>
-            Create your identity
+          {placement === "header" ? null : (
+            <UserPlus aria-hidden className="h-4 w-4" />
+          )}
+          <span
+            className={
+              compact && placement !== "header" ? "sr-only" : undefined
+            }
+          >
+            {placement === "header" ? "Sign up" : "Create your identity"}
           </span>
         </button>
         {showOnboarding ? (

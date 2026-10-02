@@ -7,10 +7,13 @@ export function Modal({
   label,
   onClose,
   children,
+  wide = false,
 }: {
   label: string;
   onClose: () => void;
   children: ReactNode;
+  /** Forms with side-by-side fields; the default suits short confirmations. */
+  wide?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Tab stays inside the card; focus returns to the opener on close.
@@ -36,7 +39,7 @@ export function Modal({
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: click only stops propagation */}
       <div
         aria-label={label}
-        className="w-full min-w-0 max-w-lg rounded-2xl bg-white p-5 shadow-xl dark:bg-[#1e1e1e]"
+        className={`w-full min-w-0 rounded-2xl border border-border bg-card p-5 shadow-xl ${wide ? "max-w-2xl" : "max-w-lg"}`}
         onClick={(e) => e.stopPropagation()}
         ref={containerRef}
         role="dialog"

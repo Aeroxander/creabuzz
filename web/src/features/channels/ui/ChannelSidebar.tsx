@@ -136,7 +136,7 @@ export function ChannelSidebar({
 
 export function ChannelSidebarLoading() {
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-black/10 bg-[#F8F8F8] px-4 py-4 dark:border-white/10 dark:bg-[#1B1B1B]">
+    <aside className="flex w-60 shrink-0 flex-col border-r border-black/10 bg-sidebar px-4 py-4 dark:border-white/10">
       <LoaderCircle className="h-4 w-4 animate-spin text-black/60 dark:text-white/60" />
     </aside>
   );

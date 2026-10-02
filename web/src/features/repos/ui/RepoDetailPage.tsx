@@ -69,7 +69,7 @@ function CopyableUrl({ url }: { url: string }) {
 
 function DetailSkeleton() {
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
       <div className="min-w-0 flex-1">
         <div className="h-5 w-24 animate-pulse rounded bg-black/10 dark:bg-white/10" />
         <div className="mt-6 h-8 w-64 animate-pulse rounded bg-black/10 dark:bg-white/10" />
@@ -255,7 +255,7 @@ export function RepoDetailPage() {
 
   if (!repo) {
     return (
-      <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
         <div className="min-w-0 flex-1">
           <BackToRepositories />
           <div className="mt-12 text-center">
@@ -275,7 +275,7 @@ export function RepoDetailPage() {
   }
 
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
       {/* Main content */}
       <div className="min-w-0 flex-1">
         {/* Back link */}

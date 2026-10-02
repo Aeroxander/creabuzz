@@ -36,43 +36,43 @@
     --conversation-row-padding-block: 0.25rem;
     --conversation-paragraph-gap: 0.5rem;
     --conversation-list-item-gap: 0.375rem;
-    /* Catppuccin Latte (mauve accent) */
-    --radius: 0.625rem;
-    --background: 220 23.08% 94.9%;
-    --foreground: 234 16.02% 35.49%;
-    --card: 220 23.08% 94.9%;
-    --card-foreground: 234 16.02% 35.49%;
-    --popover: 220 23.08% 94.9%;
-    --popover-foreground: 234 16.02% 35.49%;
-    --primary: 266 85.05% 58.04%;
-    --primary-foreground: 220 23.08% 94.9%;
-    --secondary: 223 15.91% 82.75%;
-    --secondary-foreground: 234 16.02% 35.49%;
-    --muted: 223 15.91% 82.75%;
+    /* Creaton day: the same brand, lit. Mint action with dark violet text. */
+    --radius: 0.75rem;
+    --background: 260 30% 97%;
+    --foreground: 266 43% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 266 43% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 266 43% 17%;
+    --primary: 153 59% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 262 30% 92%;
+    --secondary-foreground: 266 43% 17%;
+    --muted: 262 30% 92%;
     /* Darkened from 41.37%: on `--muted` the pair measured 4.05:1, under the
        4.5:1 floor for the 11px badges it is used on. This is 4.7:1. */
-    --muted-foreground: 233 12.8% 38%;
-    --accent: 223 15.91% 82.75%;
-    --accent-foreground: 234 16.02% 35.49%;
+    --muted-foreground: 262 14% 36%;
+    --accent: 262 30% 92%;
+    --accent-foreground: 266 43% 17%;
     --destructive: 347 86.67% 44.12%;
-    --destructive-foreground: 220 23.08% 94.9%;
-    --border: 225 13.56% 76.86%;
-    --input: 225 13.56% 76.86%;
-    --ring: 151 74% 58%; /* Creaton mint (#43e296) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 262 20% 84%;
+    --input: 262 20% 84%;
+    --ring: 153 59% 42%;
     --chart-1: 345 57.65% 74.12%;
     --chart-2: 185 37.25% 70.59%;
     --chart-3: 219 81.96% 78.43%;
     --chart-4: 35 61.18% 76.86%;
     --chart-5: 113 32.94% 73.33%;
-    --sidebar: 218 25.1% 93.73%;
-    --sidebar-background: 218 25.1% 93.73%;
-    --sidebar-foreground: 234 16.02% 35.49%;
-    --sidebar-primary: 266 85.05% 58.04%;
-    --sidebar-primary-foreground: 220 23.08% 94.9%;
-    --sidebar-accent: 220 23.08% 94.9%;
-    --sidebar-accent-foreground: 234 16.02% 35.49%;
-    --sidebar-border: 225 13.56% 76.86%;
-    --sidebar-ring: 225 13.56% 76.86%;
+    --sidebar: 260 30% 95%;
+    --sidebar-background: 260 30% 95%;
+    --sidebar-foreground: 266 43% 17%;
+    --sidebar-primary: 153 59% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 100%;
+    --sidebar-accent-foreground: 266 43% 17%;
+    --sidebar-border: 262 20% 84%;
+    --sidebar-ring: 153 59% 42%;
     /* Creaton gradient wash (mint-on-midnight brand) + brand tokens. */
     --brand-mint: #43e296;
     --brand-mint-deep: #0e9f66;
@@ -82,50 +82,54 @@
     /* Desktop parity: the same cream -> periwinkle wash the reference client
        paints, so the two clients read as one product. The mint brand token
        stays for accents, focus rings and primary actions. */
-    --buzz-gradient-light-top: #e6e6b6;
-    --buzz-gradient-light-bottom: #c4d0da;
-    --buzz-gradient-dark-top: #4a4616;
-    --buzz-gradient-dark-bottom: #0a1423;
-    /* Dark content canvas: desktop's warm neutral, not the theme base. */
-    --buzz-content-dark: 0 0% 10.1960784314%;
+    --buzz-gradient-light-top: #f4f1fb;
+    --buzz-gradient-light-bottom: #e6f6ee;
+    --buzz-gradient-dark-top: #1a0f30;
+    --buzz-gradient-dark-bottom: #0d0618;
+    /* Creaton accents: the purple the brand uses for emphasis words. */
+    --brand-violet: #a77bff;
+    /* Dark content canvas: the violet-black page, so panes sit on the wash. */
+    --buzz-content-dark: 266 66% 8%;
   }
 
   .dark {
-    /* Catppuccin Macchiato (mauve accent) */
-    --radius: 0.625rem;
-    --background: 232 23.4% 18.43%;
-    --foreground: 227 68.25% 87.65%;
-    --card: 232 23.4% 18.43%;
-    --card-foreground: 227 68.25% 87.65%;
-    --popover: 232 23.4% 18.43%;
-    --popover-foreground: 227 68.25% 87.65%;
-    --primary: 267 82.69% 79.61%;
-    --primary-foreground: 232 23.4% 18.43%;
-    --secondary: 230 18.8% 26.08%;
-    --secondary-foreground: 227 68.25% 87.65%;
-    --muted: 230 18.8% 26.08%;
-    --muted-foreground: 228 39.22% 80%;
-    --accent: 230 18.8% 26.08%;
-    --accent-foreground: 227 68.25% 87.65%;
+    /* Creaton night: violet-black page, raised violet cards, mint action.
+       Values come from the Creaton brand file (#120821 page, #241a33 card,
+       #46385a hairline, #352a50 chip, #35cc82 action). */
+    --radius: 0.75rem;
+    --background: 266 66% 8%;
+    --foreground: 0 0% 100%;
+    --card: 266 31% 16%;
+    --card-foreground: 0 0% 100%;
+    --popover: 266 31% 14%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 153 59% 50%;
+    --primary-foreground: 266 43% 17%;
+    --secondary: 266 31% 24%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 266 31% 24%;
+    --muted-foreground: 255 20% 78%;
+    --accent: 266 31% 24%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 351 73.91% 72.94%;
-    --destructive-foreground: 232 23.4% 18.43%;
-    --border: 231 15.61% 33.92%;
-    --input: 231 15.61% 33.92%;
-    --ring: 227 68.25% 87.65%;
+    --destructive-foreground: 266 66% 8%;
+    --border: 266 24% 28%;
+    --input: 266 24% 28%;
+    --ring: 153 59% 50%;
     --chart-1: 333 20.78% 38.04%;
     --chart-2: 193 19.61% 38.04%;
     --chart-3: 224 26.67% 41.18%;
     --chart-4: 30 8.24% 42.35%;
     --chart-5: 139 10.98% 38.82%;
-    --sidebar: 234 22.75% 17.25%;
-    --sidebar-background: 234 22.75% 17.25%;
-    --sidebar-foreground: 227 68.25% 87.65%;
-    --sidebar-primary: 267 82.69% 79.61%;
-    --sidebar-primary-foreground: 232 23.4% 18.43%;
-    --sidebar-accent: 232 23.4% 18.43%;
-    --sidebar-accent-foreground: 227 68.25% 87.65%;
-    --sidebar-border: 231 15.61% 33.92%;
-    --sidebar-ring: 231 15.61% 33.92%;
+    --sidebar: 266 55% 10%;
+    --sidebar-background: 266 55% 10%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 153 59% 50%;
+    --sidebar-primary-foreground: 266 43% 17%;
+    --sidebar-accent: 266 31% 16%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 266 24% 28%;
+    --sidebar-ring: 153 59% 50%;
   }
 
   * {
@@ -143,7 +147,8 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
+    font-family:
+      "Figtree Variable", Figtree, "Avenir Next", Avenir, "Segoe UI", sans-serif;
   }
 }
 

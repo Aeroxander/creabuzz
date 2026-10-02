@@ -34,7 +34,9 @@ import {
 } from "../../lib/wizard";
 import type { SaleCurrency } from "../../lib/sale-currency";
 import { CurrencyChoice } from "./CurrencyChoice";
+import type { SupplyAllocation } from "../../lib/allocation";
 import { Field, Segmented, Select, Stepper } from "./fields";
+import { SupplySplit } from "./SupplySplit";
 
 /** Everything the steps can read or change, assembled by the dialog. */
 export interface WizardController {
@@ -55,6 +57,13 @@ export interface WizardController {
     onTotalSupply(value: string): void;
     launchId: string;
     tokenName: string;
+  };
+  /** Who holds the supply. One state with the dialog's allocation. */
+  supply: {
+    allocation: SupplyAllocation;
+    onChange(key: keyof SupplyAllocation, value: number): void;
+    onReset(): void;
+    issue: string | null;
   };
   sale: {
     /** What the sale raises in, and the choices offered on this chain. */
@@ -214,6 +223,13 @@ function TokenStep({ controller }: { controller: WizardController }) {
           </dd>
         </div>
       </dl>
+      <SupplySplit
+        allocation={controller.supply.allocation}
+        issue={controller.supply.issue}
+        onChange={controller.supply.onChange}
+        onReset={controller.supply.onReset}
+        totalSupply={token.totalSupply}
+      />
       <p className="text-xs text-black/60 dark:text-white/60">
         Everything else — emission, treasury, fees — has a sensible default.
         Change it in Advanced.

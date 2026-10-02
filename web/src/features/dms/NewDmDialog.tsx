@@ -79,7 +79,7 @@ export function NewDmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-dm-title"
-        className="relative w-full max-w-md rounded-2xl border border-black/10 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-[#1B1B1B]"
+        className="relative w-full max-w-md rounded-2xl border border-black/10 bg-white p-4 shadow-xl dark:border-white/10"
         data-testid="new-dm-dialog"
       >
         <div className="mb-3 flex items-center justify-between">
