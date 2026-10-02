@@ -61,6 +61,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     category: "Software",
     docs: ["https://example.com/docs"],
     channels: ["sandbox-discussion"],
+    chat: { team: null, supporters: null },
     projects: [],
     agent: null,
     team: [

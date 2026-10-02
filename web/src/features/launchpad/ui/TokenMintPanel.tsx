@@ -97,6 +97,7 @@ function DeployTokenFlow({
           treasury: deployer,
           admission: launch.record.admission,
           channels: launch.record.channels,
+          chat: launch.record.chat,
         }),
       dispatch,
       state,
@@ -272,6 +273,7 @@ export function TokenMintPanel({
         treasury: launch.record.treasury ?? "",
         admission: launch.record.admission,
         channels: launch.record.channels,
+        chat: launch.record.chat,
       });
     } catch {
       setVerifyState("error");

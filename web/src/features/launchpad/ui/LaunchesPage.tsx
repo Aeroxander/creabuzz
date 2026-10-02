@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { SANDBOX_ID } from "../lib/sandbox";
 import {
   launchCoord,
@@ -20,6 +20,7 @@ import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
+import { createLaunchRooms } from "../use-launch-chat";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -31,7 +32,7 @@ import {
   useLaunches,
   type CreateLaunchInput,
 } from "../use-launches";
-import { effectiveStage } from "../models";
+import { effectiveStage, type LaunchChat } from "../models";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
@@ -87,9 +88,27 @@ export function LaunchesPage() {
   const authors = [...new Set(visible.map((launch) => launch.record.author))];
   const { data: profiles } = useProfiles(authors);
 
+  const rooms = useRef<LaunchChat | null>(null);
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
-      await create.mutateAsync(input);
+      // Rooms first, so the record never names a room that does not exist. A
+      // room failure must not block the launch: it can be created later from
+      // the launch page.
+      // A retry after a failed publish reuses the rooms already made.
+      let chat = rooms.current ?? input.chat;
+      try {
+        if (!rooms.current) {
+          chat = (await createLaunchRooms({ launchName: input.name, team: [] }))
+            .chat;
+          rooms.current = chat;
+        }
+      } catch {
+        toast.error(
+          "The chat rooms could not be created. You can add them from the launch page.",
+        );
+      }
+      await create.mutateAsync({ ...input, chat });
+      rooms.current = null;
       toast.success("Launch published.");
       setCreateOpen(false);
     } catch {

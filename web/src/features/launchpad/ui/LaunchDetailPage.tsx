@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
+import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { PriceChartCard } from "./PriceChartCard";
 import { Button } from "@/shared/ui/button";
@@ -223,6 +224,10 @@ export function LaunchDetailPage({
         showFollow={!sandbox}
         stage={stage}
       />
+
+      {sandbox ? null : (
+        <LaunchChatCard isFounder={isFounder} launch={launch} />
+      )}
 
       <div
         className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border"
@@ -635,6 +640,12 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
       record.channels.length > 0
         ? `${record.channels.length} bound`
         : "none bound",
+    ],
+    [
+      "Chat rooms",
+      record.chat.team || record.chat.supporters
+        ? "team and supporters"
+        : "none yet",
     ],
     [
       "Team keys",

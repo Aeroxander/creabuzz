@@ -43,6 +43,7 @@ import {
   launchCoordinate,
   parseScoreRoot,
   type Launch,
+  type LaunchChat,
   type LaunchStage,
   type ScoreRoot,
 } from "./models";
@@ -321,6 +322,8 @@ export interface CreateLaunchInput {
   verifierSet?: string;
   admission: "curated" | "community";
   channels: string[];
+  /** The launch's chat rooms; their ids are published as bound channels too. */
+  chat?: LaunchChat;
   tokenPlan?: TokenPlan;
   allocation?: SupplyAllocation;
   vesting?: VestingConfig;
@@ -338,6 +341,16 @@ export interface CreateLaunchInput {
   daoAtGraduation?: boolean;
   /** Legal wrapper decision (OAv2 §4.8): "none" | "dao-llc" | "own-entity". */
   legalWrapper?: string;
+}
+
+/** Every channel the record binds: the picked ones plus the chat rooms, once each. */
+export function boundChannelIds(
+  input: Pick<CreateLaunchInput, "channels" | "chat">,
+): string[] {
+  const ids = [...input.channels];
+  if (input.chat?.team) ids.push(input.chat.team);
+  if (input.chat?.supporters) ids.push(input.chat.supporters);
+  return [...new Set(ids)];
 }
 
 export function useCreateLaunch() {
@@ -360,7 +373,7 @@ export function useCreateLaunch() {
       if (input.distributor) tags.push(["distributor", input.distributor]);
       if (input.claimStake) tags.push(["claim-stake", input.claimStake]);
       if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
-      for (const channel of input.channels)
+      for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
       const content: Record<string, unknown> = {
         pitch: input.pitch,
@@ -371,6 +384,9 @@ export function useCreateLaunch() {
         content.ipList = input.ipList;
       if (input.updateCadence) content.updateCadence = input.updateCadence;
       if (input.image) content.image = input.image;
+      if (input.chat && (input.chat.team || input.chat.supporters)) {
+        content.chat = input.chat;
+      }
       if (input.currency) content.currency = input.currency;
       if (input.floorPrice) content.floorPrice = input.floorPrice;
       if (input.tickSpacing) content.tickSpacing = input.tickSpacing;

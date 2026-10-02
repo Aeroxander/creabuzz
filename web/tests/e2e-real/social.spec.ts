@@ -859,3 +859,92 @@ test("you can delete your own post; other people's posts have no delete button",
   }
   throw new Error("the relay still serves the deleted post");
 });
+
+test("launch chat: the founder creates the rooms, a backer is admitted with one click", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  // A launch of the dev's own, published without rooms.
+  const launchId = `chat-${RUN}`;
+  await post("dev", {
+    kind: 37001,
+    tags: [
+      ["d", launchId],
+      ["name", `Chat launch ${RUN}`],
+      ["t", "dao-launchpad"],
+      ["admission", "curated"],
+    ],
+    content: JSON.stringify({
+      pitch: "A launch to talk about.",
+      stage: "funding",
+    }),
+  });
+
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
+  await page.getByTestId("launch-chat-create").click();
+  await expect(page.getByTestId("launch-chat")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("launch-chat-open")).toBeVisible();
+
+  // The record names both rooms, and the relay holds them as private channels.
+  const stored = await waitForEvents("dev", {
+    kinds: [37001],
+    authors: [fixture.people.dev],
+    "#d": [launchId],
+  });
+  const record = stored.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const chat = JSON.parse(record.content).chat as {
+    team: string;
+    supporters: string;
+  };
+  expect(chat.team).toMatch(/^[0-9a-f-]{36}$/);
+  expect(chat.supporters).toMatch(/^[0-9a-f-]{36}$/);
+  const bound = record.tags
+    .filter((t: string[]) => t[0] === "buzz-channel")
+    .map((t: string[]) => t[1]);
+  expect(bound.sort()).toEqual([chat.team, chat.supporters].sort());
+
+  // Alice is not in the room, so she cannot see it.
+  const before = await readAs("alice", {
+    kinds: [39000],
+    "#d": [chat.supporters],
+  });
+  expect(before).toHaveLength(0);
+
+  // She records a bid, and the founder sees her waiting.
+  await post("alice", {
+    kind: 47002,
+    tags: [
+      ["a", `37001:${fixture.people.dev}:${launchId}`],
+      ["m", "bucket-1"],
+    ],
+    content: JSON.stringify({ budget: "1000000" }),
+  });
+  await page.reload();
+  await expect(page.getByTestId("launch-chat-admit")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId("launch-chat-admit-button").click();
+  await expect(page.getByTestId("launch-chat-admit")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // The relay now lets her see the supporters room, but not the team room.
+  const after = await waitForEvents("alice", {
+    kinds: [39000],
+    "#d": [chat.supporters],
+  });
+  expect(after).toHaveLength(1);
+  const teamRoom = await readAs("alice", {
+    kinds: [39000],
+    "#d": [chat.team],
+  });
+  expect(teamRoom).toHaveLength(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});

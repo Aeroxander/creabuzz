@@ -25,6 +25,17 @@ lets a person walk that loop without a terminal or the desktop app.
 | Home | A feed with an empty "trending" rail | Welcome (visitors) or a verifiable getting-started checklist (new accounts) |
 | Discover | Mixed list cards | Launch cards in a grid, live launches first, empty DAO section last |
 
+## Launch chat
+
+Every launch can have two private Buzz rooms, created by the founder in the
+browser (when the launch is published, or later from the launch page): one for the
+team, one for supporters. The record names them in `content.chat`
+(`{team, supporters}`) and in `buzz-channel` tags. Private rooms reject
+self-join, so a backer who recorded a bid shows up on the founder's launch page
+with an *Admit* button (one membership write each). Everyone else sees the card
+and "Back this launch to join". Rooms are server-managed encryption: the
+operator can read them (TEE or Marmot hardening is a later decision).
+
 ## CLI-only or desktop-only today (web has no path)
 
 Checked by running `buzz --help` for every command group and searching the web

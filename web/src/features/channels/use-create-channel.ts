@@ -58,7 +58,7 @@ export type CreateChannelResult = {
   attachFailures: AttachFailure[];
 };
 
-async function publishTemplate(
+export async function publishTemplate(
   template: Parameters<typeof signAsUser>[0],
 ): Promise<void> {
   const signed = await signAsUser(template);

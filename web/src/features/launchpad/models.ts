@@ -84,6 +84,13 @@ export interface LaunchRecord {
   category: string | null;
   docs: string[];
   channels: string[];
+  /**
+   * Which of the bound channels are the launch's chat rooms: one private room
+   * for the team and one for supporters. Both ids are also in `channels` (the
+   * relay only validates the tag), so a client that ignores this still sees
+   * them as bound.
+   */
+  chat: LaunchChat;
   projects: string[];
   team: Array<{ pubkey: string; role: string }>;
   /**
@@ -289,6 +296,27 @@ function int(value: unknown): number | null {
     : null;
 }
 
+/** The two chat rooms a launch can have; an id is null until it is created. */
+export interface LaunchChat {
+  team: string | null;
+  supporters: string | null;
+}
+
+const CHANNEL_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseLaunchChat(value: unknown): LaunchChat {
+  const object =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const room = (candidate: unknown) =>
+    typeof candidate === "string" && CHANNEL_UUID.test(candidate)
+      ? candidate.toLowerCase()
+      : null;
+  return { team: room(object.team), supporters: room(object.supporters) };
+}
+
 function strs(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string")
@@ -370,6 +398,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     category: categoryFromTags(event),
     docs: strs(body.docs),
     channels: tagValues(event, "buzz-channel"),
+    chat: parseLaunchChat(body.chat),
     projects: tagValues(event, "a"),
     agent: tagValue(event, "agent"),
     team: event.tags
