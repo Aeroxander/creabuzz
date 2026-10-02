@@ -38,6 +38,15 @@ counts the same and the feed is nearly chronological; it leans fully on trust
 (capped at 80%) around 1,000. This is separate from the launchpad's reputation
 and TrustGraph. Following stays chronological.
 
+**Launch mode.** A team member can mark a post as a launch update (a switch in
+the composer, shown when they are on a launch's team). It is an ordinary kind 1
+note with the launch's `a` tag and a `["l","launch-update","creaton.launch"]`
+label, so other Nostr clients just show a post. The mark counts only when the
+author is on that launch's team. Updates get their own *Updates* tab, a banner
+in the feed, a pin on the launch page, a small ranking lift, and a priority
+notification for people who follow the launch. Priority is rationed to three
+updates per launch per week, and followers can turn it off per launch.
+
 Real-relay coverage: `node tests/e2e-real/seed.mjs` then
 `node --experimental-strip-types tests/e2e-real/seed-social.mjs`, then
 `pnpm test:e2e:real`.

@@ -22,6 +22,7 @@ import {
   topIds,
   trendingHashtags,
 } from "./lib/trending";
+import { usePriorityNotifications } from "./use-launch-updates";
 import { readEvents } from "./read";
 import { socialKeys, useFollowing } from "./use-social-data";
 
@@ -60,6 +61,7 @@ export function useNotificationBadge() {
   const me = existingUserPubkey();
   const queryClient = useQueryClient();
   const items = useNotifications().data;
+  const updates = usePriorityNotifications();
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
     queryKey: seenKey,
@@ -70,7 +72,9 @@ export function useNotificationBadge() {
   const mark = useMutation({
     mutationFn: async () => {
       if (!me) return;
-      const newest = items?.[0]?.at ?? Math.floor(Date.now() / 1000);
+      const newest =
+        Math.max(items?.[0]?.at ?? 0, updates[0]?.at ?? 0) ||
+        Math.floor(Date.now() / 1000);
       writeSeenAt(me, newest);
       queryClient.setQueryData(seenKey, newest);
     },
@@ -78,7 +82,10 @@ export function useNotificationBadge() {
   return {
     seenAt: seen ?? 0,
     unread:
-      seen === undefined ? 0 : (items ?? []).filter((n) => n.at > seen).length,
+      seen === undefined
+        ? 0
+        : (items ?? []).filter((n) => n.at > seen).length +
+          updates.filter((u) => u.at > seen).length,
     markSeen: mark.mutate,
   };
 }

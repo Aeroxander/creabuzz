@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Heart, MessageCircle, Quote, Repeat2, UserPlus } from "lucide-react";
+import {
+  Heart,
+  Megaphone,
+  MessageCircle,
+  Quote,
+  Repeat2,
+  UserPlus,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
@@ -14,7 +21,13 @@ import {
   type NotificationGroup,
   type NotificationKind,
 } from "../lib/notifications";
+import { launchCoordinate } from "../../feed/lib/feed-events";
+import { useLaunches } from "../../launchpad/use-launches";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
+import {
+  useMutedLaunchUpdates,
+  usePriorityNotifications,
+} from "../use-launch-updates";
 import { usePeople } from "../use-people";
 import { useNotesById } from "../use-social-data";
 import { PostList } from "./PostList";
@@ -127,10 +140,63 @@ function ReactionRow({
   );
 }
 
+/**
+ * Priority updates from launches you follow, above everything else. Each one
+ * can be turned off for that launch without unfollowing it.
+ */
+function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
+  const updates = usePriorityNotifications();
+  const rows = useNotesById(updates.slice(0, 20).map((u) => u.id)).data;
+  const launches = useLaunches().data;
+  const { toggle } = useMutedLaunchUpdates();
+  if (updates.length === 0 || !rows || rows.length === 0) return null;
+  const nameOf = (coord: string) =>
+    launches?.find(
+      (l) =>
+        launchCoordinate({ pubkey: l.record.author, id: l.record.id }) ===
+        coord,
+    )?.record.name ?? "this launch";
+  return (
+    <section
+      aria-label="Launch updates"
+      className="border-b border-primary/30 bg-primary/[0.04]"
+      data-testid="social-launch-updates"
+    >
+      <h2 className="flex items-center gap-2 px-4 pt-3 text-sm font-bold text-primary-ink">
+        <Megaphone aria-hidden className="h-4 w-4" /> Launch updates
+      </h2>
+      {updates.slice(0, 20).map((update) => {
+        const row = rows.find((r) => r.event.id === update.id);
+        if (!row) return null;
+        return (
+          <div
+            data-testid="social-launch-update-item"
+            data-unread={update.at > visitSeenAt ? "true" : undefined}
+            key={update.id}
+          >
+            <PostList rows={[row]} />
+            <div className="flex justify-end px-4 pb-2">
+              <button
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+                data-testid="social-launch-update-mute"
+                onClick={() => toggle(update.coord)}
+                type="button"
+              >
+                Turn off priority updates from {nameOf(update.coord)}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 /** Likes, reposts, quotes, replies, mentions and new followers. */
 export function NotificationsPage() {
   const me = existingUserPubkey();
   const notifications = useNotifications();
+  const hasLaunchUpdates = usePriorityNotifications().length > 0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");
 
@@ -175,13 +241,18 @@ export function NotificationsPage() {
           value={tab}
         />
       </PageBar>
+      {me && tab === "all" ? (
+        <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
+      ) : null}
       {!me ? (
         <EmptyState title="Sign in to see notifications">
           Likes, reposts, replies and new followers show up here.
         </EmptyState>
       ) : notifications.isLoading ? (
         <TimelineSkeleton />
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 &&
+        tab === "all" &&
+        hasLaunchUpdates ? null : groups.length === 0 ? (
         <EmptyState
           testId="social-notifications-empty"
           title={tab === "all" ? "Nothing yet" : "No mentions yet"}

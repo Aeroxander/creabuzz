@@ -141,10 +141,12 @@ export function SocialShell({
       className="flex h-full w-full flex-1 overflow-y-auto"
       data-testid="social-shell"
     >
-      <div className="mx-auto flex w-full max-w-6xl items-start">
+      {/* Three columns with equal outer tracks, so the timeline sits in the exact
+          middle of the screen whether or not the nav and the rail are shown. */}
+      <div className="mx-auto grid w-full max-w-[96rem] items-start md:grid-cols-[minmax(0,1fr)_minmax(0,38rem)_minmax(0,1fr)]">
         <nav
           aria-label="Social"
-          className="sticky top-0 hidden w-14 shrink-0 flex-col items-center gap-1 self-start px-1 py-3 md:flex xl:w-56 xl:items-stretch xl:px-3"
+          className="sticky top-0 hidden w-14 shrink-0 flex-col items-center gap-1 self-start justify-self-end px-1 py-3 md:flex xl:w-56 xl:items-stretch xl:px-3"
           data-testid="social-nav"
         >
           {entries.map((entry) => (
@@ -162,7 +164,7 @@ export function SocialShell({
           </button>
         </nav>
 
-        <div className="min-h-full min-w-0 flex-1 glass border-x">
+        <div className="glass min-h-full min-w-0 border-x">
           <nav
             aria-label="Social"
             className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"
@@ -183,7 +185,7 @@ export function SocialShell({
         {rail ? (
           <aside
             aria-label="Discover"
-            className="sticky top-0 hidden w-80 shrink-0 self-start px-4 py-3 xl:block"
+            className="sticky top-0 hidden w-80 max-w-full shrink-0 self-start justify-self-start px-4 py-3 xl:block"
             data-testid="social-rail"
           >
             <RightRail />

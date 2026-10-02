@@ -29,6 +29,7 @@ import {
   trustBlend,
 } from "./lib/trust";
 import { readEvents } from "./read";
+import { useLaunchUpdates } from "./use-launch-updates";
 import { socialKeys } from "./use-social-data";
 
 const GRAPH_LIMIT = 2_000;
@@ -36,6 +37,8 @@ const PROFILE_LIMIT = 2_000;
 const RELATED_CHUNK = 40;
 /** A viewer's own follows steer trust; the global graph keeps it honest. */
 const PERSONAL_SHARE = 0.5;
+/** A priority launch update ranks as if it were this much newer. */
+const PRIORITY_UPDATE_BONUS_SECONDS = 6 * 60 * 60;
 
 /** The follow graph and community size, shared by every ranked list. */
 export function useTrustModel() {
@@ -96,6 +99,7 @@ export function useTrustModel() {
  */
 export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
   const model = useTrustModel();
+  const { priority } = useLaunchUpdates();
   const ids = useMemo(
     () => [...new Set(rows.map((r) => r.event.id))].sort(),
     [rows],
@@ -153,22 +157,16 @@ export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
         );
       }
     }
-    return [...rows].sort(
-      (a, b) =>
-        rankScore(
-          {
-            engagement: engagement.get(b.event.id) ?? 0,
-            at: b.repostedBy?.at ?? b.event.created_at,
-          },
-          model.strength,
-        ) -
-        rankScore(
-          {
-            engagement: engagement.get(a.event.id) ?? 0,
-            at: a.repostedBy?.at ?? a.event.created_at,
-          },
-          model.strength,
-        ),
-    );
-  }, [enabled, model, ready, rows, events]);
+    const scoreOf = (row: Row) =>
+      rankScore(
+        {
+          engagement: engagement.get(row.event.id) ?? 0,
+          at:
+            (row.repostedBy?.at ?? row.event.created_at) +
+            (priority.has(row.event.id) ? PRIORITY_UPDATE_BONUS_SECONDS : 0),
+        },
+        model.strength,
+      );
+    return [...rows].sort((a, b) => scoreOf(b) - scoreOf(a));
+  }, [enabled, model, ready, rows, events, priority]);
 }

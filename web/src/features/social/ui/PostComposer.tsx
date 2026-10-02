@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { Megaphone } from "lucide-react";
 import { toast } from "sonner";
 
 import { OnboardingDialog } from "@/features/identity/ui/OnboardingDialog";
@@ -24,11 +25,13 @@ import {
 } from "../../feed/lib/feed-events";
 import { readMirrorSetting, writeMirrorSetting } from "../../feed/lib/mirror";
 import { mentionUri } from "../lib/entity";
+import { buildLaunchUpdate } from "../lib/launch-update";
 import {
   buildQuote,
   buildSocialPost,
   buildSocialReply,
 } from "../lib/post-events";
+import { useMyTeamLaunches } from "../use-launch-updates";
 import { usePeople } from "../use-people";
 import { useSocialPublish } from "../use-social-actions";
 import { useFollowing } from "../use-social-data";
@@ -79,6 +82,14 @@ export function PostComposer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const publish = useSocialPublish();
   const myProfile = usePeople(me ? [me] : [])[me ?? ""];
+  // Launch mode: a post that is an official update for one of your launches.
+  const teamLaunches = useMyTeamLaunches();
+  const [launchMode, setLaunchMode] = useState(false);
+  const [launchKey, setLaunchKey] = useState("");
+  const canLaunchMode = !quote && !replyTo && teamLaunches.length > 0;
+  const chosenLaunch =
+    teamLaunches.find((l) => `${l.author}:${l.id}` === launchKey) ??
+    teamLaunches[0];
 
   const mention = MENTION_QUERY.exec(text.slice(0, caret));
   const suggestions = useMentionSuggestions(mention ? mention[1] : null);
@@ -146,7 +157,12 @@ export function PostComposer({
               root: replyTo.root,
               parent: replyTo.parent,
             })
-          : buildSocialPost(text);
+          : launchMode && canLaunchMode && chosenLaunch
+            ? buildLaunchUpdate({
+                text,
+                launch: { pubkey: chosenLaunch.author, id: chosenLaunch.id },
+              })
+            : buildSocialPost(text);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not post.");
       return;
@@ -155,6 +171,7 @@ export function PostComposer({
     publish.mutate(template, {
       onSuccess: () => {
         setText("");
+        setLaunchMode(false);
         if (ref.current) ref.current.style.height = "auto";
         onPosted?.();
       },
@@ -250,15 +267,53 @@ export function PostComposer({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 py-2 dark:border-white/10">
-          <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
-            <input
-              checked={mirror}
-              data-testid={`${testId}-mirror`}
-              onChange={(e) => setMirror(e.target.checked)}
-              type="checkbox"
-            />
-            Also share on public Nostr
-          </label>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {canLaunchMode ? (
+              <span className="flex items-center gap-2 text-xs">
+                <label className="flex items-center gap-2 font-semibold text-primary-ink">
+                  <input
+                    checked={launchMode}
+                    data-testid={`${testId}-launch-mode`}
+                    onChange={(e) => setLaunchMode(e.target.checked)}
+                    type="checkbox"
+                  />
+                  <Megaphone aria-hidden className="h-3.5 w-3.5" />
+                  Launch update
+                </label>
+                {launchMode && teamLaunches.length > 1 ? (
+                  <select
+                    aria-label="Which launch"
+                    className="rounded-md border border-border bg-transparent px-1.5 py-0.5 text-xs"
+                    data-testid={`${testId}-launch-pick`}
+                    onChange={(e) => setLaunchKey(e.target.value)}
+                    value={`${chosenLaunch?.author}:${chosenLaunch?.id}`}
+                  >
+                    {teamLaunches.map((l) => (
+                      <option
+                        key={`${l.author}:${l.id}`}
+                        value={`${l.author}:${l.id}`}
+                      >
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : launchMode && chosenLaunch ? (
+                  <span className="text-muted-foreground">
+                    for {chosenLaunch.name}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+              <input
+                checked={mirror}
+                data-testid={`${testId}-mirror`}
+                onChange={(e) => setMirror(e.target.checked)}
+                type="checkbox"
+              />
+              Also share on public Nostr
+            </label>
+          </div>
           <span className="flex items-center gap-3">
             {remaining < 200 ? (
               <span

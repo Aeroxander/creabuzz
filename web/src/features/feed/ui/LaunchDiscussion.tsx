@@ -8,6 +8,7 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
+import { useLaunchUpdates } from "@/features/social/use-launch-updates";
 
 import { EMPTY_TALLY, type SortMode } from "../lib/ranking";
 import {
@@ -49,9 +50,11 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
             </span>
             {relativeTime(update.createdAt)}
           </p>
-          <h3 className="mt-1 text-sm font-semibold text-black dark:text-white">
-            {update.title}
-          </h3>
+          {update.title ? (
+            <h3 className="mt-1 text-sm font-semibold text-black dark:text-white">
+              {update.title}
+            </h3>
+          ) : null}
           <p className="mt-0.5 text-sm whitespace-pre-wrap text-black/80 dark:text-white/80">
             {update.body}
           </p>
@@ -88,16 +91,36 @@ export function LaunchDiscussion({
     [record.author, record.team],
   );
   const isTeam = me !== null && teamKeys.has(me);
+  // Launch-mode posts from the team pin to the top like the older founder
+  // updates, and leave the thread list below so they are not shown twice.
+  const allUpdates = useLaunchUpdates().updates;
+  const launchUpdates = useMemo(
+    () => allUpdates.filter((u) => u.coord === coord),
+    [allUpdates, coord],
+  );
+  const pinnedFromPosts: PinnedUpdatable[] = useMemo(
+    () =>
+      launchUpdates.map((u) => ({
+        id: u.id,
+        author: u.author,
+        createdAt: u.at,
+        title: "",
+        body: u.event.content.replace(/\n*nostr:naddr1\w+/g, "").trim(),
+      })),
+    [launchUpdates],
+  );
   // Top-level posts from the team, and every reply under them.
   const teamNotes = useMemo(() => {
     const all = notes.data ?? [];
     const roots = new Set(
       all.filter((n) => !n.rootId && teamKeys.has(n.author)).map((n) => n.id),
     );
-    return all.filter((n) =>
-      n.rootId ? roots.has(n.rootId) : roots.has(n.id),
+    const pinned = new Set(launchUpdates.map((u) => u.id));
+    return all.filter(
+      (n) =>
+        !pinned.has(n.id) && (n.rootId ? roots.has(n.rootId) : roots.has(n.id)),
     );
-  }, [notes.data, teamKeys]);
+  }, [notes.data, teamKeys, launchUpdates]);
   const [optIn, setOptIn] = useState(() => readSummaryOptIn(coord));
   const { summaries } = useLaunchSummaries(coord);
   const summary = newestSummary(summaries);
@@ -170,7 +193,9 @@ export function LaunchDiscussion({
           {note}
         </p>
       ) : null}
-      <PinnedUpdates updates={pinnedUpdates(updates)} />
+      <PinnedUpdates
+        updates={pinnedUpdates([...updates, ...pinnedFromPosts])}
+      />
       {summary ? (
         <article
           className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3"

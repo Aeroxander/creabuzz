@@ -12,13 +12,15 @@ import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
 import { PageBar, SocialShell } from "./SocialShell";
 import { TabStrip } from "./TabStrip";
+import { useLaunchUpdates } from "../use-launch-updates";
 import { useRankedRows } from "../use-ranking";
-import { useFollowing, useTimeline } from "../use-social-data";
+import { useFollowing, useNotesById, useTimeline } from "../use-social-data";
 
-type Tab = "creaton" | "following";
+type Tab = "creaton" | "updates" | "following";
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "creaton", label: APP_NAME },
+  { id: "updates", label: "Updates" },
   { id: "following", label: "Following" },
 ];
 
@@ -39,8 +41,13 @@ export function SocialHomePage() {
     key: [tab, authors ? [...authors].sort().join(",") : "all"],
     authors,
     reposts: true,
-    enabled: tab === "creaton" || following.isSuccess,
+    enabled: tab === "creaton" || (tab === "following" && following.isSuccess),
   });
+  // Updates: the teams' official launch updates, newest first.
+  const launchUpdates = useLaunchUpdates();
+  const updateRows = useNotesById(
+    launchUpdates.updates.slice(0, 50).map((u) => u.id),
+  );
   const loaded = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
   // Creaton: recency lifted by trust-weighted engagement. Following stays
   // strictly chronological.
@@ -52,7 +59,21 @@ export function SocialHomePage() {
         <TabStrip label="Timeline" onChange={setTab} tabs={TABS} value={tab} />
       </PageBar>
       <PostComposer />
-      {tab === "following" && !me ? (
+      {tab === "updates" ? (
+        launchUpdates.isLoading || updateRows.isLoading ? (
+          <TimelineSkeleton />
+        ) : (updateRows.data?.length ?? 0) === 0 ? (
+          <EmptyState
+            testId="social-updates-empty"
+            title="No launch updates yet"
+          >
+            When a launch's team posts an update, it appears here — and for
+            launches you follow, it also reaches your notifications.
+          </EmptyState>
+        ) : (
+          <PostList rows={updateRows.data ?? []} />
+        )
+      ) : tab === "following" && !me ? (
         <EmptyState title="Sign in to see who you follow">
           Create your identity to follow people and see their posts here.
         </EmptyState>

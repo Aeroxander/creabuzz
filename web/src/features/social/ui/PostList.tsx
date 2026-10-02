@@ -6,6 +6,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import type { Row } from "../lib/timeline";
+import { useLaunchUpdates } from "../use-launch-updates";
 import { engagementOf, useEngagementMap, usePeople } from "../use-people";
 import { useBookmarkIds, useMutedPeople } from "../use-social-actions";
 import { PostCard } from "./PostCard";
@@ -51,6 +52,7 @@ export function PostList({
   const muted = mutedQuery.data;
   const bookmarks = useBookmarkIds().data;
   const launchName = useLaunchName();
+  const officialUpdates = useLaunchUpdates().ids;
 
   const visible = useMemo(
     () =>
@@ -104,6 +106,7 @@ export function PostList({
           engagement={engagementOf(engagement, row.event.id)}
           key={`${row.event.id}:${row.repostedBy?.pubkey ?? ""}`}
           launchName={launchName}
+          launchUpdate={officialUpdates.has(row.event.id)}
           reposter={row.repostedBy ? people[row.repostedBy.pubkey] : undefined}
           row={row}
         />

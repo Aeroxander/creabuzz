@@ -59,6 +59,17 @@ async function signInAsDev(page: Page, fixture: Fixture) {
 const postCard = (page: Page, text: string) =>
   page.getByTestId("social-post").filter({ hasText: text }).first();
 
+/** The feed pages as you scroll; an old seeded post may be several pages down. */
+async function scrollUntilVisible(page: Page, text: string) {
+  for (let i = 0; i < 25; i += 1) {
+    if (await postCard(page, text).isVisible()) return;
+    await page.getByTestId("social-shell").evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await page.waitForTimeout(400);
+  }
+}
+
 test("the Creaton feed shows every post on the relay, including reposts", async ({
   page,
 }) => {
@@ -73,6 +84,7 @@ test("the Creaton feed shows every post on the relay, including reposts", async 
     "Maintainer life: 40 open issues",
     "Testing the Creaton feed from a real relay.",
   ]) {
+    await scrollUntilVisible(page, text);
     await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
   }
   // Carol's repost of Alice's launch post shows who reposted it.
@@ -680,4 +692,107 @@ test("direct messages are end-to-end encrypted and readable by another client", 
   await expect(
     page.getByTestId("social-message").filter({ hasText: reply }),
   ).toBeVisible({ timeout: 20_000 });
+});
+
+const LAUNCH_LABEL = ["l", "launch-update", "creaton.launch"];
+
+test("launch mode: the team's update is stored as a normal note, marked and shown in Updates; a stranger's mark does nothing", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  const quartz = `37001:${fixture.people.dev}:quartz-hardware`;
+  const nebula = `37001:${fixture.people.alice}:nebula-dao`;
+
+  // A stranger copies the label onto a post about Alice's launch…
+  const fake = unique("fake update");
+  await post("bob", {
+    kind: 1,
+    tags: [["a", nebula], LAUNCH_LABEL],
+    content: fake,
+  });
+
+  await page.goto("/social");
+  await expect(page.getByTestId("social-composer-launch-mode")).toBeVisible({
+    timeout: 20_000,
+  });
+  const text = unique("Quartz batch two ships");
+  await page.getByTestId("social-composer-input").fill(text);
+  await page.getByTestId("social-composer-launch-mode").check();
+  await page.getByTestId("social-composer-submit").click();
+
+  // What the relay stored is a plain kind 1 note naming the launch + the label.
+  let stored: { kind: number; tags: string[][]; content: string } | undefined;
+  for (let i = 0; i < 30 && !stored; i += 1) {
+    const mine = await readAs("dev", {
+      kinds: [1],
+      authors: [fixture.people.dev],
+      limit: 30,
+    });
+    stored = mine.find((e: { content: string }) => e.content.includes(text));
+    if (!stored) await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!stored) throw new Error("the relay never stored the launch update");
+  expect(stored.kind).toBe(1);
+  expect(stored.tags).toContainEqual(["a", quartz]);
+  expect(stored.tags).toContainEqual(LAUNCH_LABEL);
+
+  await page.getByRole("tab", { name: "Updates" }).click();
+  const card = postCard(page, text);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(card.getByTestId("social-launch-update")).toBeVisible();
+  // …and the stranger's marked post is not an update.
+  await expect(postCard(page, fake)).toHaveCount(0);
+});
+
+test("a priority update from a launch you follow lands in notifications, and can be turned off", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  const nebula = `37001:${fixture.people.alice}:nebula-dao`;
+
+  // Dev follows Nebula (a bookmark-list `a` tag, keeping what is already there).
+  const lists = await readAs("dev", {
+    kinds: [10003],
+    authors: [fixture.people.dev],
+    limit: 5,
+  });
+  const current = lists.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const tags: string[][] = current?.tags ?? [];
+  if (!tags.some((t) => t[0] === "a" && t[1] === nebula)) {
+    await post("dev", {
+      kind: 10003,
+      created_at: Math.max(
+        Math.floor(Date.now() / 1000),
+        (current?.created_at ?? 0) + 1,
+      ),
+      tags: [...tags, ["a", nebula]],
+      content: current?.content ?? "",
+    });
+  }
+
+  // Alice, the founder, posts an official update.
+  const text = unique("Nebula beta is open");
+  await post("alice", {
+    kind: 1,
+    tags: [["a", nebula], LAUNCH_LABEL],
+    content: text,
+  });
+
+  await page.goto("/social/notifications");
+  const section = page.getByTestId("social-launch-updates");
+  await expect(section).toContainText(text, { timeout: 30_000 });
+  await expect(
+    section.getByTestId("social-launch-update").first(),
+  ).toBeVisible();
+
+  // Turning the launch's priority updates off removes them without unfollowing.
+  await section.getByTestId("social-launch-update-mute").first().click();
+  await expect(page.getByTestId("social-launch-updates")).toHaveCount(0);
 });

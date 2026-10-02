@@ -3,6 +3,7 @@ import {
   Bookmark,
   Bot,
   Heart,
+  Megaphone,
   MessageCircle,
   Quote,
   Repeat2,
@@ -113,6 +114,7 @@ export function PostCard({
   engagement,
   bookmarked,
   launchName,
+  launchUpdate = false,
 }: {
   row: Row;
   author?: ProfileMetadata;
@@ -120,6 +122,8 @@ export function PostCard({
   engagement: Engagement;
   bookmarked: boolean;
   launchName: (coord: string) => string | null;
+  /** The team's official update for a launch (verified by the caller). */
+  launchUpdate?: boolean;
 }) {
   const note = row.event;
   const me = existingUserPubkey();
@@ -171,9 +175,21 @@ export function PostCard({
   return (
     <article
       aria-label={`Post by ${name}`}
-      className="relative border-b border-black/10 px-4 pb-1 pt-3 transition-colors hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.03]"
+      className={cn(
+        "relative border-b border-black/10 px-4 pb-1 pt-3 transition-colors hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.03]",
+        launchUpdate && "border-l-[3px] border-l-primary bg-primary/[0.06]",
+      )}
+      data-launch-update={launchUpdate ? "true" : undefined}
       data-testid="social-post"
     >
+      {launchUpdate ? (
+        <p
+          className="mb-1 flex items-center gap-1.5 pl-12 text-xs font-bold text-primary-ink"
+          data-testid="social-launch-update"
+        >
+          <Megaphone aria-hidden className="h-3.5 w-3.5" /> Launch update
+        </p>
+      ) : null}
       {row.repostedBy ? (
         <p
           className="mb-1 flex items-center gap-2 pl-12 text-xs font-semibold text-black/60 dark:text-white/60"
