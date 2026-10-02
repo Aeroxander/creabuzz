@@ -349,6 +349,7 @@ export function exportPasskeyNsec(): string | null {
 export function registerPasskeySigner(): void {
   void import("@/shared/lib/nostr-signer").then(
     ({
+      setUserNip44Override,
       setUserPubkeyOverride,
       setUserSignerOverride,
       setUserSigningBlockedReason,
@@ -372,6 +373,22 @@ export function registerPasskeySigner(): void {
         }
         const { finalizeEvent } = await import("nostr-tools/pure");
         return finalizeEvent({ ...template }, sk);
+      });
+      // Encrypted DMs and private lists: the conversation key is derived from
+      // the in-memory secret here, so the key still never leaves this module.
+      setUserNip44Override({
+        async encrypt(peer, plaintext) {
+          const sk = passkeySecretKey();
+          if (!sk) return null;
+          const nip44 = await import("nostr-tools/nip44");
+          return nip44.encrypt(plaintext, nip44.getConversationKey(sk, peer));
+        },
+        async decrypt(peer, ciphertext) {
+          const sk = passkeySecretKey();
+          if (!sk) return null;
+          const nip44 = await import("nostr-tools/nip44");
+          return nip44.decrypt(ciphertext, nip44.getConversationKey(sk, peer));
+        },
       });
     },
   );

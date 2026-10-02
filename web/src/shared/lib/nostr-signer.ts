@@ -20,6 +20,11 @@ export type SignedNostrEvent = UnsignedNostrEvent & {
 type Nip07Provider = {
   getPublicKey(): Promise<string>;
   signEvent(event: UnsignedNostrEvent): Promise<SignedNostrEvent>;
+  /** NIP-07's optional NIP-44 methods (encrypted DMs, private lists). */
+  nip44?: {
+    encrypt(pubkey: string, plaintext: string): Promise<string>;
+    decrypt(pubkey: string, ciphertext: string): Promise<string>;
+  };
 };
 
 declare global {
@@ -95,6 +100,27 @@ export function setUserSignerOverride(
 
 export function getUserSignerOverride(): typeof userSignerOverride {
   return userSignerOverride;
+}
+
+/**
+ * Optional NIP-44 override, registered next to the signer override. The
+ * passkey identity's secret never leaves its module, so encryption to a peer
+ * has to run through it too. Returns null to mean "not this signer — fall
+ * through" (for example the passkey is not unlocked this session).
+ */
+export interface UserNip44Override {
+  encrypt(peer: string, plaintext: string): Promise<string | null>;
+  decrypt(peer: string, ciphertext: string): Promise<string | null>;
+}
+
+let userNip44Override: UserNip44Override | null = null;
+
+export function setUserNip44Override(fn: UserNip44Override | null): void {
+  userNip44Override = fn;
+}
+
+export function getUserNip44Override(): UserNip44Override | null {
+  return userNip44Override;
 }
 
 /**

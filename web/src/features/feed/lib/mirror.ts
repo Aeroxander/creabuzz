@@ -3,8 +3,8 @@
  * so people on other clients (nostter, Damus, Primal) can see and answer
  * them.
  *
- * Only posts (kind 1), threaded replies (kind 1111) and votes (kind 7) are
- * ever copied, and never anything carrying an `h` tag (a private channel).
+ * Only posts (kind 1), threaded replies (kind 1111), reposts (kind 6) and
+ * votes (kind 7) are ever copied, and never anything carrying an `h` tag (a private channel).
  * Follow and bookmark lists are NOT copied: they are replaceable, and
  * publishing a Creaton-only list to a public relay would replace the longer
  * list someone keeps there. Ranking counts only the community relay's copy
@@ -28,6 +28,7 @@
 
 import {
   KIND_REACTION,
+  KIND_REPOST,
   KIND_TEXT_NOTE,
 } from "../../../shared/constants/kinds.ts";
 import type { SignedEventLike } from "./feed-events.ts";
@@ -55,6 +56,7 @@ const MIRRORABLE_KINDS = new Set<number>([
   KIND_TEXT_NOTE,
   KIND_NIP22_COMMENT,
   KIND_REACTION,
+  KIND_REPOST,
 ]);
 
 /** Whether this event may be copied to a public relay at all. */

@@ -13,6 +13,11 @@ import {
   encrypt as nip49Encrypt,
 } from "nostr-tools/nip49";
 import {
+  decrypt as nip44Decrypt,
+  encrypt as nip44Encrypt,
+  getConversationKey,
+} from "nostr-tools/nip44";
+import {
   finalizeEvent,
   generateSecretKey,
   getPublicKey,
@@ -20,6 +25,7 @@ import {
 
 import {
   hasNip07Provider,
+  getUserNip44Override,
   getUserPubkeyOverride,
   getUserSignerOverride,
   getUserSigningBlockedReason,
@@ -174,6 +180,47 @@ export async function signAsUser(
   const secretKey = nsecToBytes(nsec);
   const signed = finalizeEvent(unsigned, secretKey);
   return signed;
+}
+
+/**
+ * The secret key behind the durable identity, for the one operation a signer
+ * cannot do from outside: NIP-44 conversation keys. Only reached when neither
+ * a passkey override nor a NIP-07 extension handled the call.
+ */
+function storedSecretKey(): Uint8Array {
+  const blocked = getUserSigningBlockedReason();
+  if (blocked) throw new SigningBlockedError(blocked);
+  return nsecToBytes(getOrCreateIdentity());
+}
+
+/** NIP-44 encrypt `plaintext` to `peer` as the durable identity. */
+export async function nip44EncryptAsUser(
+  peer: string,
+  plaintext: string,
+): Promise<string> {
+  const override = getUserNip44Override();
+  if (override) {
+    const out = await override.encrypt(peer, plaintext);
+    if (out !== null) return out;
+  }
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (provider?.nip44) return provider.nip44.encrypt(peer, plaintext);
+  return nip44Encrypt(plaintext, getConversationKey(storedSecretKey(), peer));
+}
+
+/** NIP-44 decrypt a payload `peer` sent to the durable identity. */
+export async function nip44DecryptAsUser(
+  peer: string,
+  ciphertext: string,
+): Promise<string> {
+  const override = getUserNip44Override();
+  if (override) {
+    const out = await override.decrypt(peer, ciphertext);
+    if (out !== null) return out;
+  }
+  const provider = typeof window === "undefined" ? undefined : window.nostr;
+  if (provider?.nip44) return provider.nip44.decrypt(peer, ciphertext);
+  return nip44Decrypt(ciphertext, getConversationKey(storedSecretKey(), peer));
 }
 
 /**

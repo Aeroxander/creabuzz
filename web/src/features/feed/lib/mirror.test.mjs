@@ -25,6 +25,7 @@ test("posts, threaded replies and votes mirror — nothing else", () => {
   assert.equal(isMirrorable(ev(1)), true);
   assert.equal(isMirrorable(ev(KIND_NIP22_COMMENT)), true);
   assert.equal(isMirrorable(ev(7)), true);
+  assert.equal(isMirrorable(ev(6)), true, "NIP-18 reposts reach other clients");
   // Founder updates and lists stay on the community relay.
   assert.equal(isMirrorable(ev(47003)), false);
   assert.equal(isMirrorable(ev(3)), false);
