@@ -9,6 +9,7 @@ import {
   Repeat2,
   Rocket,
   Share,
+  Trash2,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ import { buildLike, buildRepost, buildUndo } from "../lib/post-events";
 import type { Row } from "../lib/timeline";
 import { useSocialPublish, useToggleBookmark } from "../use-social-actions";
 import { PostContent } from "./PostContent";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { QuoteDialog } from "./QuoteDialog";
 
 function compact(n: number): string {
@@ -37,7 +39,7 @@ function compact(n: number): string {
     : new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
 }
 
-type Tone = "reply" | "repost" | "like" | "bookmark" | "share";
+type Tone = "reply" | "repost" | "like" | "bookmark" | "share" | "delete";
 
 const HOVER: Record<Tone, string> = {
   reply: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
@@ -45,6 +47,7 @@ const HOVER: Record<Tone, string> = {
   like: "hover:text-rose-600 [&:hover>span:first-child]:bg-rose-500/10",
   bookmark: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   share: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
+  delete: "hover:text-red-600 [&:hover>span:first-child]:bg-red-500/10",
 };
 
 const ACTIVE: Record<Tone, string> = {
@@ -53,6 +56,7 @@ const ACTIVE: Record<Tone, string> = {
   like: "text-rose-600",
   bookmark: "text-sky-600",
   share: "",
+  delete: "",
 };
 
 function ActionButton({
@@ -132,6 +136,8 @@ export function PostCard({
   const bookmark = useToggleBookmark();
   const [menuOpen, setMenuOpen] = useState(false);
   const [quoting, setQuoting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const [liked, setLiked] = useState(false);
 
   const name = resolveUserName(author, note.pubkey);
@@ -171,6 +177,22 @@ export function PostCard({
       .then(() => toast.success("Link copied"))
       .catch(() => toast.error("Couldn't copy the link"));
   };
+
+  const isMine = me !== null && note.pubkey === me;
+  const remove = () => {
+    setConfirmDelete(false);
+    // Hidden at once; put back if the relay refuses.
+    setDeleted(true);
+    publish.mutate(buildUndo(note.id, note.kind), {
+      onSuccess: () => toast.success("Post deleted"),
+      onError: (error) => {
+        setDeleted(false);
+        fail(error);
+      },
+    });
+  };
+
+  if (deleted) return null;
 
   return (
     <article
@@ -380,9 +402,27 @@ export function PostCard({
             >
               <Share aria-hidden />
             </ActionButton>
+            {isMine ? (
+              <ActionButton
+                label="Delete post"
+                onClick={() => setConfirmDelete(true)}
+                testId="social-delete"
+                tone="delete"
+              >
+                <Trash2 aria-hidden />
+              </ActionButton>
+            ) : null}
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        confirmLabel="Delete"
+        description="This removes your post for everyone. Reposts and quotes that already copied it may still show it elsewhere."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={remove}
+        open={confirmDelete}
+        title="Delete this post?"
+      />
       <QuoteDialog
         note={note}
         onClose={() => setQuoting(false)}

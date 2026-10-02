@@ -738,7 +738,7 @@ test("launch mode: the team's update is stored as a normal note, marked and show
   expect(stored.tags).toContainEqual(["a", quartz]);
   expect(stored.tags).toContainEqual(LAUNCH_LABEL);
 
-  await page.getByRole("tab", { name: "Updates" }).click();
+  await page.getByRole("tab", { name: "Launch Updates" }).click();
   const card = postCard(page, text);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(card.getByTestId("social-launch-update")).toBeVisible();
@@ -795,4 +795,45 @@ test("a priority update from a launch you follow lands in notifications, and can
   // Turning the launch's priority updates off removes them without unfollowing.
   await section.getByTestId("social-launch-update-mute").first().click();
   await expect(page.getByTestId("social-launch-updates")).toHaveCount(0);
+});
+
+test("you can delete your own post; other people's posts have no delete button", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  const mine = unique("delete me");
+  const theirs = unique("not mine");
+  await post("carol", { kind: 1, tags: [], content: theirs });
+
+  await page.goto("/social");
+  await page.getByTestId("social-composer-input").fill(mine);
+  await page.getByTestId("social-composer-submit").click();
+  const card = postCard(page, mine);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(postCard(page, theirs)).toBeVisible({ timeout: 20_000 });
+  await expect(postCard(page, theirs).getByTestId("social-delete")).toHaveCount(
+    0,
+  );
+
+  const stored = await waitForEvents("dev", {
+    kinds: [1],
+    authors: [fixture.people.dev],
+    limit: 50,
+  });
+  const event = stored.find((e: { content: string }) => e.content === mine);
+  expect(event).toBeTruthy();
+
+  await card.getByTestId("social-delete").click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(postCard(page, mine)).toHaveCount(0);
+
+  // The relay honoured the NIP-09 request: the note is gone for everyone.
+  for (let i = 0; i < 20; i += 1) {
+    const left = await readAs("carol", { ids: [event.id], kinds: [1] });
+    if (left.length === 0) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("the relay still serves the deleted post");
 });

@@ -42,7 +42,7 @@ and TrustGraph. Following stays chronological.
 the composer, shown when they are on a launch's team). It is an ordinary kind 1
 note with the launch's `a` tag and a `["l","launch-update","creaton.launch"]`
 label, so other Nostr clients just show a post. The mark counts only when the
-author is on that launch's team. Updates get their own *Updates* tab, a banner
+author is on that launch's team. Updates get their own *Launch Updates* tab, a banner
 in the feed, a pin on the launch page, a small ranking lift, and a priority
 notification for people who follow the launch. Priority is rationed to three
 updates per launch per week, and followers can turn it off per launch.

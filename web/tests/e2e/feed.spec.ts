@@ -84,6 +84,36 @@ test("a post appears on Home and a reply opens its thread", async ({
   expect(reply?.tags).toContainEqual(["e", post?.id, "", "root"]);
 });
 
+test("a note's author can delete it from Home", async ({ page }) => {
+  const relay = createMockRelay();
+  relay.seed(event({ kind: 1, pubkey: ALICE, content: "Someone else's note" }));
+  await relay.install(page);
+  await signIn(page);
+  await page.goto("/");
+  await page.getByTestId("composer-input").fill("A note I will delete");
+  await page.getByTestId("composer-submit").click();
+  const mine = page
+    .getByTestId("note-card")
+    .filter({ hasText: "A note I will delete" });
+  await expect(mine).toBeVisible();
+  // Other people's notes carry no delete button.
+  await expect(
+    page
+      .getByTestId("note-card")
+      .filter({ hasText: "Someone else's note" })
+      .getByTestId("note-delete"),
+  ).toHaveCount(0);
+
+  await mine.getByTestId("note-delete").click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(mine).toHaveCount(0);
+  const note = relay.events.find((e) => e.content === "A note I will delete");
+  // The card hides at once; the NIP-09 request follows a moment later.
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 5)?.tags ?? [])
+    .toContainEqual(["e", note?.id]);
+});
+
 test("votes are trust-weighted: an org admin outweighs a swarm of new keys", async ({
   page,
 }) => {

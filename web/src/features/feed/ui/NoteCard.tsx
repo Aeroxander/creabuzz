@@ -1,7 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, MessageSquare, Rocket } from "lucide-react";
+import { Bot, MessageSquare, Rocket, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
+import { buildUndo } from "@/features/social/lib/post-events";
+import { useSocialPublish } from "@/features/social/use-social-actions";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { relativeTime } from "@/shared/lib/relative-time";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 import {
   displayText,
@@ -34,6 +40,25 @@ export function NoteCard({
   compact?: boolean;
 }) {
   const author = nameOf(note.author);
+  const publish = useSocialPublish();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const isMine = existingUserPubkey() === note.author;
+  const remove = () => {
+    setConfirmDelete(false);
+    // Hidden at once; put back if the relay refuses.
+    setDeleted(true);
+    publish.mutate(buildUndo(note.id, note.event.kind), {
+      onSuccess: () => toast.success("Post deleted"),
+      onError: (error) => {
+        setDeleted(false);
+        toast.error(
+          error instanceof Error ? error.message : "Could not delete the post.",
+        );
+      },
+    });
+  };
+  if (deleted) return null;
   return (
     <article
       aria-label={`Post by ${author}`}
@@ -87,20 +112,41 @@ export function NoteCard({
             })}
           </div>
         ) : null}
-        {onReply ? (
-          <button
-            className="mt-2 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
-            data-testid="note-reply"
-            onClick={onReply}
-            type="button"
-          >
-            <MessageSquare aria-hidden className="h-3.5 w-3.5" />
-            {replies > 0
-              ? `${replies} ${replies === 1 ? "reply" : "replies"}`
-              : "Reply"}
-          </button>
-        ) : null}
+        <div className="mt-2 flex items-center gap-1">
+          {onReply ? (
+            <button
+              className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
+              data-testid="note-reply"
+              onClick={onReply}
+              type="button"
+            >
+              <MessageSquare aria-hidden className="h-3.5 w-3.5" />
+              {replies > 0
+                ? `${replies} ${replies === 1 ? "reply" : "replies"}`
+                : "Reply"}
+            </button>
+          ) : null}
+          {isMine ? (
+            <button
+              aria-label="Delete post"
+              className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-red-500/10 hover:text-red-600 dark:text-white/60"
+              data-testid="note-delete"
+              onClick={() => setConfirmDelete(true)}
+              type="button"
+            >
+              <Trash2 aria-hidden className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
+      <ConfirmDialog
+        confirmLabel="Delete"
+        description="This removes your post for everyone. Replies already written under it stay with the thread."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={remove}
+        open={confirmDelete}
+        title="Delete this post?"
+      />
     </article>
   );
 }

@@ -20,7 +20,7 @@ type Tab = "creaton" | "updates" | "following";
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "creaton", label: APP_NAME },
-  { id: "updates", label: "Updates" },
+  { id: "updates", label: "Launch Updates" },
   { id: "following", label: "Following" },
 ];
 
