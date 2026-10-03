@@ -1,7 +1,6 @@
 import { UnauditedNotice } from "./UnauditedNotice";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/shared/ui/button";
 import { useChannels } from "@/features/channels/use-channels";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useProject } from "@/features/projects/use-projects";
@@ -74,7 +73,17 @@ import {
   milestonesFromTemplate,
 } from "../lib/unlock-plans";
 import { ideaTokenDefaults } from "../lib/idea";
+import {
+  ETH_DEFAULT_PRICE,
+  q96ToPlainPrice,
+  quickDefaultRows,
+  quickSaleDefaults,
+  USDC_DEFAULT_PRICE,
+} from "../lib/quick-sale";
 import { Modal } from "./Modal";
+import { ParamIssueList } from "./create-wizard/ParamIssueList";
+import { QuickSale } from "./create-wizard/QuickSale";
+import { WizardFooter } from "./create-wizard/WizardFooter";
 import {
   AdvancedFields,
   type AdvancedFieldsState,
@@ -138,14 +147,28 @@ export function CreateLaunchDialog({
   );
   const saleCurrency = saleCurrencyFor(currency, chainId, localUsdc);
   const currencyOptions = currencyChoices(chainId, localUsdc);
+  // An idea becoming a sale starts on the quick setup, with terms derived from
+  // one default raise target instead of the legacy constants.
+  const [ideaTerms] = useState(() =>
+    idea && !initial
+      ? quickSaleDefaults(saleCurrency, LAUNCH_DEFAULTS.supply)
+      : null,
+  );
+  const [quick, setQuick] = useState(ideaTerms !== null);
   const [floorPrice, setFloorPrice] = useState<string>(
-    initial?.floorPrice ?? LAUNCH_DEFAULTS.floorPrice,
+    initial?.floorPrice ??
+      ideaTerms?.money?.floorPrice ??
+      LAUNCH_DEFAULTS.floorPrice,
   );
   const [tickSpacing, setTickSpacing] = useState<string>(
-    initial?.tickSpacing ?? LAUNCH_DEFAULTS.tickSpacing,
+    initial?.tickSpacing ??
+      ideaTerms?.money?.tickSpacing ??
+      LAUNCH_DEFAULTS.tickSpacing,
   );
   const [requiredRaised, setRequiredRaised] = useState<string>(
-    initial?.requiredRaised ?? LAUNCH_DEFAULTS.requiredRaised,
+    initial?.requiredRaised ??
+      ideaTerms?.money?.requiredRaised ??
+      LAUNCH_DEFAULTS.requiredRaised,
   );
   const [budget, setBudget] = useState<string>(initial?.budget ?? "");
   const [auction, setAuction] = useState(initial?.auction ?? "");
@@ -237,7 +260,13 @@ export function CreateLaunchDialog({
               ? unitsToPlain(initial.requiredRaised, saleCurrency.decimals)
               : "",
           }
-        : {},
+        : ideaTerms
+          ? {
+              pricingMode: "raise",
+              raiseTarget: ideaTerms.raiseTarget,
+              milestones: ideaTerms.milestones,
+            }
+          : {},
     ),
   );
   const patch = (next: Partial<WizardState>) =>
@@ -798,6 +827,20 @@ export function CreateLaunchDialog({
     stepIssues,
   };
 
+  const quickDefaults = quickDefaultRows({
+    tokenName: tokenName || `${name.trim()} Token`,
+    symbol: symbol || suggestSymbol(name),
+    saleShare: allocation.sale,
+    totalSupply: totalSupplyText,
+    milestoneLabels: wizard.milestones.map((row) => row.label),
+    formDao: wizard.formDao,
+  });
+  const quickIssues = [
+    ...new Set(
+      WIZARD_STEPS.flatMap((meta) => wizardStepIssues(wizard, form, meta.key)),
+    ),
+  ];
+
   /** Everything the Advanced drawer / edit body edits, in one bag. */
   const legacy: AdvancedFieldsState = {
     id,
@@ -885,6 +928,18 @@ export function CreateLaunchDialog({
             <WizardSteps controller={controller} variant="all" />
             <AdvancedFields {...legacy} />
           </>
+        ) : quick ? (
+          <QuickSale
+            currencySymbol={saleCurrency.symbol}
+            defaults={quickDefaults}
+            durationKey={wizard.durationKey}
+            issues={quickIssues}
+            launchName={name}
+            onCustomize={() => setQuick(false)}
+            onDuration={(durationKey) => patch({ durationKey })}
+            onRaiseTarget={onRaiseTarget}
+            raiseTarget={wizard.raiseTarget}
+          />
         ) : (
           <>
             <WizardSteps controller={controller} />
@@ -911,87 +966,25 @@ export function CreateLaunchDialog({
           showHeadline
           testId="launch-sign-recovery"
         />
-        {paramIssues.length > 0 ? (
-          <ul
-            className="mt-2 space-y-0.5 text-xs"
-            data-testid="launch-param-issues"
-          >
-            {paramIssues.map((issue) => (
-              <li
-                className={
-                  issue.severity === "error"
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-amber-700 dark:text-amber-300"
-                }
-                key={`${issue.field}-${issue.message}`}
-              >
-                {issue.severity === "error" ? "✗ " : "! "}
-                {issue.field}: {issue.message}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <ParamIssueList issues={paramIssues} />
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <Button
-          data-testid="launch-recommended-terms"
-          onClick={applyRecommendedTerms}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Recommended terms
-        </Button>
-        <Button onClick={quickStart} size="sm" type="button" variant="ghost">
-          Quick start defaults
-        </Button>
-        {!isEdit && wizard.step !== "token" ? (
-          <Button onClick={back} size="sm" type="button" variant="ghost">
-            Back
-          </Button>
-        ) : null}
-        {!isEdit && wizard.step !== "dao" ? (
-          <Button
-            data-testid="wizard-continue"
-            disabled={stepIssues.length > 0}
-            onClick={advance}
-            type="button"
-          >
-            Continue
-          </Button>
-        ) : (
-          <Button
-            disabled={!publishEnabled || isCreating}
-            onClick={submit}
-            type="button"
-          >
-            {isCreating
-              ? "Publishing…"
-              : isEdit
-                ? "Save changes"
-                : "Publish launch"}
-          </Button>
-        )}
-      </div>
+      <WizardFooter
+        canQuick={ideaTerms !== null}
+        isCreating={isCreating}
+        isEdit={isEdit}
+        isFirstStep={wizard.step === "token"}
+        isLastStep={wizard.step === "dao"}
+        onBack={back}
+        onContinue={advance}
+        onDefaults={quickStart}
+        onQuick={() => setQuick(true)}
+        onRecommended={applyRecommendedTerms}
+        onSubmit={submit}
+        publishEnabled={publishEnabled}
+        quick={quick}
+        stepBlocked={stepIssues.length > 0}
+      />
     </Modal>
   );
 }
-
-/** A raw Q96 floor (or anything unreadable) → the plain price box's text. */
-function q96ToPlainPrice(value: string, currencyDecimals = 6): string {
-  try {
-    const trimmed = value.trim();
-    if (trimmed === "") return "";
-    return atomicToPrice(BigInt(trimmed), currencyDecimals);
-  } catch {
-    return "";
-  }
-}
-/**
- * Where an ETH sale starts. There is no dollar anchor for ETH (no oracle), so
- * this is only a starting point the founder edits: 0.000004 ETH a token.
- */
-const ETH_DEFAULT_PRICE = "0.000004";
-/** And a cent a token in USDC: what the wizard has always started from. */
-const USDC_DEFAULT_PRICE = "0.01";

@@ -39,6 +39,14 @@ A launch is a progression where each step earns the next one, and money comes la
 An idea is the same launch record with every economic field empty (`isIdea`);
 preparing the sale republishes the same record id with the terms set.
 
+### Preparing the sale: two choices
+
+From an idea, *Prepare the sale* opens a quick setup: how much to raise and how
+long it runs. Everything else is defaulted and listed (standard supply split,
+product-project milestone unlocks, DAO if the target is met, no monthly budget);
+*Customize the details* opens the full steps with the same values, and *Quick
+setup* comes back. The direct *Set up a sale* button keeps the full steps.
+
 ### The founder's path
 
 The founder always has a next step on the launch page: the idea checklist

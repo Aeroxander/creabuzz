@@ -1152,16 +1152,23 @@ test("preparing the sale keeps the idea's rooms and adds the gated backers room"
 
   // Under the supporter nudge the sale can still be prepared, deliberately.
   await page.getByTestId("idea-prepare-anyway").click();
-  const publish = page.getByRole("button", { name: /Publish launch/ });
-  for (let i = 0; i < 6 && !(await publish.isVisible()); i += 1) {
-    const next = page.getByTestId("wizard-continue");
-    if (await next.isDisabled()) {
-      await page.getByRole("button", { name: "Product project" }).click();
-    } else {
-      await next.click();
-    }
-  }
-  await publish.click();
+  // The sale starts as two choices; the rest is defaulted and listed.
+  await expect(page.getByTestId("quick-sale")).toBeVisible();
+  await expect(page.getByTestId("quick-defaults")).toContainText(
+    `Sale ${RUN} Token`,
+  );
+  await expect(page.getByTestId("quick-raise")).not.toHaveValue("");
+  // Customizing opens the full steps with the same values; Quick setup returns.
+  await page.getByTestId("quick-customize").click();
+  await expect(
+    page.locator('div[data-testid="wizard-step-token"]'),
+  ).toBeVisible();
+  await page.getByTestId("quick-back").click();
+  await expect(page.getByTestId("quick-sale")).toBeVisible();
+
+  await page.getByTestId("quick-raise").fill("50000");
+  await page.getByTestId("quick-duration-14d").click();
+  await page.getByRole("button", { name: /Publish launch/ }).click();
 
   // The idea is now a sale: same record id, terms set, nothing else lost.
   await expect(page.getByTestId("idea-progress")).toHaveCount(0, {
