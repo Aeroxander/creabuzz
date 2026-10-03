@@ -297,7 +297,7 @@ test("launchpad create dialog fits", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/launchpad");
   await page
-    .getByRole("button", { name: /New launch/ })
+    .getByRole("button", { name: /Set up a sale/ })
     .first()
     .click();
   await expectNoOverflow(page, "launchpad create");

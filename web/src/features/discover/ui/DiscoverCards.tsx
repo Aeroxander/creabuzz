@@ -20,6 +20,7 @@ import { canBackLaunch } from "@/features/discover/lib/directory";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { LaunchCard } from "@/features/launchpad/ui/LaunchCard";
+import { isIdea } from "@/features/launchpad/lib/idea";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import { ProgressBar } from "@/features/launchpad/ui/widgets";
@@ -188,6 +189,7 @@ export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
   return (
     <li data-testid="discover-launch">
       <LaunchCard
+        idea={isIdea(launch.record)}
         bids={launch.bids.length}
         followDisabled={!follows.ready || follows.pending}
         followed={follows.followed.has(key)}

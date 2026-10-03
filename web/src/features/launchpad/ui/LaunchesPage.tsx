@@ -20,7 +20,7 @@ import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
-import { createLaunchRooms } from "../use-launch-chat";
+import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -38,6 +38,9 @@ import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
 import { LaunchCard } from "./LaunchCard";
+import { StartIdeaDialog } from "./StartIdeaDialog";
+import { isIdea } from "../lib/idea";
+import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
 import { cn } from "@/shared/lib/cn";
 
@@ -55,6 +58,7 @@ export function LaunchesPage() {
   const create = useCreateLaunch();
   const [filter, setFilter] = useState<Filter>("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [ideaOpen, setIdeaOpen] = useState(false);
   const [sort, setSort] = useState<SortMode>("hot");
   const follows = useLaunchFollows();
   const { tallies } = useVoteTallies();
@@ -87,27 +91,29 @@ export function LaunchesPage() {
 
   const authors = [...new Set(visible.map((launch) => launch.record.author))];
   const { data: profiles } = useProfiles(authors);
+  const supporters = useSupporters(
+    visible.map((launch) => launchCoord(launch.record)),
+  );
 
   const rooms = useRef<LaunchChat | null>(null);
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
       // Rooms first, so the record never names a room that does not exist. A
-      // room failure must not block the launch: it can be created later from
-      // the launch page.
-      // A retry after a failed publish reuses the rooms already made.
-      let chat = rooms.current ?? input.chat;
-      try {
-        if (!rooms.current) {
-          chat = (await createLaunchRooms({ launchName: input.name, team: [] }))
-            .chat;
-          rooms.current = chat;
-        }
-      } catch {
+      // room failure must not block the launch: the rest can be created from
+      // the launch page. A retry after a failed publish reuses the rooms made.
+      const ensured = await ensureRooms({
+        launchName: input.name,
+        chat: rooms.current ?? input.chat ?? EMPTY_CHAT,
+        team: [],
+        sale: true,
+      });
+      rooms.current = ensured.chat;
+      if (ensured.incomplete) {
         toast.error(
-          "The chat rooms could not be created. You can add them from the launch page.",
+          "Some chat rooms could not be created. You can add them from the launch page.",
         );
       }
-      await create.mutateAsync({ ...input, chat });
+      await create.mutateAsync({ ...input, chat: ensured.chat });
       rooms.current = null;
       toast.success("Launch published.");
       setCreateOpen(false);
@@ -128,9 +134,22 @@ export function LaunchesPage() {
         }
         description="Discover raises to back — or launch your own DAO."
         action={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="mr-1 h-4 w-4" /> New launch
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              size="sm"
+              variant="outline"
+            >
+              Set up a sale
+            </Button>
+            <Button
+              data-testid="start-idea"
+              onClick={() => setIdeaOpen(true)}
+              size="sm"
+            >
+              <Plus className="mr-1 h-4 w-4" /> Start an idea
+            </Button>
+          </div>
         }
       />
 
@@ -210,10 +229,10 @@ export function LaunchesPage() {
           {filter === "all" ? (
             <Button
               className="mt-4"
-              onClick={() => setCreateOpen(true)}
+              onClick={() => setIdeaOpen(true)}
               size="sm"
             >
-              <Plus className="mr-1 h-4 w-4" /> New launch
+              <Plus className="mr-1 h-4 w-4" /> Start an idea
             </Button>
           ) : null}
         </div>
@@ -243,6 +262,8 @@ export function LaunchesPage() {
               return (
                 <li key={key}>
                   <LaunchCard
+                    idea={isIdea(launch.record)}
+                    supporters={supporters.data?.get(key) ?? null}
                     bids={launch.bids.length}
                     followDisabled={!follows.ready || follows.pending}
                     followed={follows.followed.has(key)}
@@ -281,6 +302,7 @@ export function LaunchesPage() {
         </>
       )}
 
+      {ideaOpen ? <StartIdeaDialog onClose={() => setIdeaOpen(false)} /> : null}
       {createOpen ? (
         <CreateLaunchDialog
           isCreating={create.isPending}

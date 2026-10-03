@@ -42,6 +42,10 @@ export interface LaunchCardProps {
   onToggleFollow(): void;
   /** Voting buttons and the like, rendered in the footer. */
   footer?: React.ReactNode;
+  /** No sale terms yet: the card says "Idea" and counts supporters, not bids. */
+  idea?: boolean;
+  /** People following the launch; null while unknown. */
+  supporters?: number | null;
   /** Lets a surface keep the test id its specs already use for the title. */
   titleTestId?: string;
 }
@@ -56,6 +60,8 @@ export function LaunchCard({
   followDisabled,
   onToggleFollow,
   footer,
+  idea = false,
+  supporters = null,
   titleTestId = "launch-card-title",
 }: LaunchCardProps) {
   const art = launchArt(record.id);
@@ -134,7 +140,16 @@ export function LaunchCard({
           >
             <span className="block truncate">{record.name}</span>
           </Link>
-          <StageBadge stage={stage} />
+          {idea ? (
+            <span
+              className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary-ink"
+              data-testid="launch-card-idea"
+            >
+              Idea
+            </span>
+          ) : (
+            <StageBadge stage={stage} />
+          )}
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {founder ? `by ${founder.name}` : null}
@@ -155,10 +170,15 @@ export function LaunchCard({
         <div className="mt-auto flex items-center justify-between gap-2 pt-4">
           <span
             className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-bold tabular-nums"
-            title={`${bids} bids · ${updates} updates`}
+            data-testid={idea ? "launch-card-supporters" : undefined}
+            title={
+              idea
+                ? `${supporters ?? 0} supporters · ${updates} updates`
+                : `${bids} bids · ${updates} updates`
+            }
           >
             <Users aria-hidden className="h-4 w-4" />
-            {bids}
+            {idea ? (supporters ?? 0) : bids}
           </span>
           {goal ? (
             <span

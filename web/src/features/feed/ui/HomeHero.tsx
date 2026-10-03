@@ -150,8 +150,8 @@ function GettingStarted({ me }: { me: string }) {
     },
     {
       done: started,
-      label: "Start a launch of your own",
-      hint: "A pitch, a split, a raise — about five minutes.",
+      label: "Start an idea of your own",
+      hint: "A name and a sentence. About a minute, nothing to commit to.",
       to: "/launchpad" as const,
     },
   ];

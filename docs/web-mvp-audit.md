@@ -25,16 +25,32 @@ lets a person walk that loop without a terminal or the desktop app.
 | Home | A feed with an empty "trending" rail | Welcome (visitors) or a verifiable getting-started checklist (new accounts) |
 | Discover | Mixed list cards | Launch cards in a grid, live launches first, empty DAO section last |
 
-## Launch chat
+## Starting a launch: idea first, sale later
 
-Every launch can have two private Buzz rooms, created by the founder in the
-browser (when the launch is published, or later from the launch page): one for the
-team, one for supporters. The record names them in `content.chat`
-(`{team, supporters}`) and in `buzz-channel` tags. Private rooms reject
-self-join, so a backer who recorded a bid shows up on the founder's launch page
-with an *Admit* button (one membership write each). Everyone else sees the card
-and "Back this launch to join". Rooms are server-managed encryption: the
-operator can read them (TEE or Marmot hardening is a later decision).
+A launch is a progression where each step earns the next one, and money comes last.
+
+| Step | What the founder does | Commitment |
+| --- | --- | --- |
+| Idea | *Start an idea*: name, one sentence, optional cover. About a minute. | None. Publishes a public page and creates the team and supporters rooms. |
+| Gather | Post updates; supporters click *I'd back this* (free: it follows the launch and joins the supporters room). | None. |
+| Prepare the sale | Token, split, price (the wizard), nudged at 10 supporters; can be skipped. | Terms, still editable. Creates the gated backers room. |
+| Sale | Mint, deploy, open. | Real money. |
+
+An idea is the same launch record with every economic field empty (`isIdea`);
+preparing the sale republishes the same record id with the terms set.
+
+### Rooms
+
+| Room | Who | How they get in |
+| --- | --- | --- |
+| Team | The people building it | Private; the founder adds them |
+| Supporters | Anyone excited about the project | **Open**: one click (kind 9021), no money |
+| Backers | People who recorded a bid | **Private and gated**: the founder admits each one with one click (kind 9000), created when the sale is prepared |
+
+The record names them in `content.chat` (`{team, supporters, backers}`, only rooms
+that exist) and in `buzz-channel` tags. Supporter counts read people's bookmark
+lists (no extra write to forge). Rooms are server-managed encryption: the operator
+can read them (TEE or Marmot hardening is a later decision).
 
 ## CLI-only or desktop-only today (web has no path)
 

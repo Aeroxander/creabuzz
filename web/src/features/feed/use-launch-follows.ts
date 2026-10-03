@@ -70,7 +70,8 @@ export function useLaunchFollows() {
     return set;
   }, [lists.data]);
 
-  const toggle = (coord: string) => {
+  /** `onDone` runs once the follow list change is accepted by the server. */
+  const toggle = (coord: string, onDone?: () => void) => {
     if (!me) {
       toast.error("Create your identity from the profile menu to follow.");
       return;
@@ -79,6 +80,7 @@ export function useLaunchFollows() {
     publish.mutate(
       withLaunch(lists.data.bookmarks, coord, !followed.has(coord)),
       {
+        onSuccess: onDone,
         onError: (error) =>
           toast.error(
             error instanceof Error

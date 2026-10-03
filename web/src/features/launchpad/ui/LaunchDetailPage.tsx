@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
+import { BackIdeaButton } from "./BackIdeaButton";
+import { IdeaProgressCard } from "./IdeaProgressCard";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { PriceChartCard } from "./PriceChartCard";
@@ -22,6 +24,8 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, type Launch } from "../models";
+import { isIdea } from "../lib/idea";
+import { useSupporters } from "../use-supporters";
 import type { LaunchAction } from "../lib/deep-link";
 import { TreasuryTab } from "./TreasuryTab";
 import { LaunchDiscussion } from "@/features/feed/ui/LaunchDiscussion";
@@ -106,6 +110,8 @@ export function LaunchDetailPage({
       }
     : realLaunch;
   const isFounder = useIsFounder(launch);
+  const supporterCoord = realLaunch ? launchCoord(realLaunch.record) : null;
+  const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
   const [tab, setTab] = useState<Tab>("overview");
@@ -182,6 +188,7 @@ export function LaunchDetailPage({
     }
   };
 
+  const idea = isIdea(launch.record);
   const coord = launchCoord(launch.record);
   const followed = follows.followed.has(coord);
 
@@ -204,7 +211,16 @@ export function LaunchDetailPage({
       <LaunchHero
         actions={
           <>
-            <Button onClick={() => setBidOpen(true)}>Back this launch</Button>
+            {idea ? (
+              <BackIdeaButton
+                disabled={!follows.ready || follows.pending}
+                followed={followed}
+                onToggle={(onDone) => follows.toggle(coord, onDone)}
+                supportersRoom={launch.record.chat.supporters}
+              />
+            ) : (
+              <Button onClick={() => setBidOpen(true)}>Back this launch</Button>
+            )}
             {isFounder ? (
               <Button onClick={() => setUpdateOpen(true)} variant="outline">
                 Post update
@@ -214,6 +230,12 @@ export function LaunchDetailPage({
         }
         followDisabled={!follows.ready || follows.pending}
         followed={followed}
+        idea={idea}
+        supporters={
+          supporterCoord
+            ? (supporterCounts.data?.get(supporterCoord) ?? null)
+            : null
+        }
         note={
           /* §7 "Launch page copy": what a buyer acquires, said before the
              bid button — ownership only, never a yield. */
@@ -221,9 +243,16 @@ export function LaunchDetailPage({
         }
         onToggleFollow={() => follows.toggle(coord)}
         record={launch.record}
-        showFollow={!sandbox}
+        showFollow={!sandbox && !idea}
         stage={stage}
       />
+
+      {!sandbox && isFounder && idea ? (
+        <IdeaProgressCard
+          launch={launch}
+          onPostUpdate={() => setUpdateOpen(true)}
+        />
+      ) : null}
 
       {sandbox ? null : (
         <LaunchChatCard isFounder={isFounder} launch={launch} />

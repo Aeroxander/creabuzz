@@ -90,6 +90,7 @@ export function CreateLaunchDialog({
   onCreate,
   onClose,
   initial,
+  idea,
   relaunchNote,
   publishError,
 }: {
@@ -97,6 +98,12 @@ export function CreateLaunchDialog({
   onCreate: (input: CreateLaunchInput) => Promise<void>;
   onClose: () => void;
   initial?: Partial<CreateLaunchInput>;
+  /**
+   * An idea being turned into a sale. Unlike `initial` this is still a create:
+   * the sale terms are chosen here, while the idea's identity (id, name, pitch,
+   * cover, category, rooms) is carried over and republished onto the same record.
+   */
+  idea?: Partial<CreateLaunchInput>;
   /** Shown as an info banner — e.g. "this republishes the same record". */
   relaunchNote?: string;
   /**
@@ -108,17 +115,17 @@ export function CreateLaunchDialog({
   publishError?: string | null;
 }) {
   const isEdit = Boolean(initial);
+  /** What the identity fields start from: the record being edited, or the idea. */
+  const seed = initial ?? idea;
 
-  const [id, setId] = useState(initial?.id ?? "");
-  const [name, setName] = useState(initial?.name ?? "");
-  const [pitch, setPitch] = useState(initial?.pitch ?? "");
-  const [longPitch, setLongPitch] = useState(initial?.longPitch ?? "");
-  const [ipList, setIpList] = useState(initial?.ipList?.join("\n") ?? "");
-  const [updateCadence, setUpdateCadence] = useState(
-    initial?.updateCadence ?? "",
-  );
-  const [image, setImage] = useState(initial?.image ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "");
+  const [id, setId] = useState(seed?.id ?? "");
+  const [name, setName] = useState(seed?.name ?? "");
+  const [pitch, setPitch] = useState(seed?.pitch ?? "");
+  const [longPitch, setLongPitch] = useState(seed?.longPitch ?? "");
+  const [ipList, setIpList] = useState(seed?.ipList?.join("\n") ?? "");
+  const [updateCadence, setUpdateCadence] = useState(seed?.updateCadence ?? "");
+  const [image, setImage] = useState(seed?.image ?? "");
+  const [category, setCategory] = useState(seed?.category ?? "");
   const [chainId, setChainId] = useState<string>(
     initial?.chainId ?? LAUNCH_DEFAULTS.chainId,
   );
@@ -172,7 +179,7 @@ export function CreateLaunchDialog({
   const [vestingDirty, setVestingDirty] = useState(false);
   const vestingIssues = validateVesting(vesting);
   const [boundChannels, setBoundChannels] = useState<string[]>(
-    initial?.channels ?? [],
+    seed?.channels ?? [],
   );
   const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
@@ -180,9 +187,15 @@ export function CreateLaunchDialog({
     initial?.token ? "import" : "mint",
   );
   const [tokenName, setTokenName] = useState(
-    () => initial?.tokenPlan?.name ?? "",
+    () =>
+      initial?.tokenPlan?.name ??
+      (idea?.name?.trim() ? `${idea.name.trim()} Token` : ""),
   );
-  const [symbol, setSymbol] = useState(() => initial?.tokenPlan?.symbol ?? "");
+  const [symbol, setSymbol] = useState(
+    () =>
+      initial?.tokenPlan?.symbol ??
+      (idea?.name?.trim() ? suggestSymbol(idea.name) : ""),
+  );
   const [supply, setSupply] = useState<string>(
     () => initial?.tokenPlan?.supply ?? LAUNCH_DEFAULTS.supply,
   );
@@ -622,13 +635,13 @@ export function CreateLaunchDialog({
       },
       nowSeconds(),
     );
-    void onCreate(
-      wizardToCreateInput(form, wizard, {
-        plan: planAtPublish,
-        rawBlocks,
-        stage: initial?.stage ?? "draft",
-      }),
-    );
+    const input = wizardToCreateInput(form, wizard, {
+      plan: planAtPublish,
+      rawBlocks,
+      stage: initial?.stage ?? "draft",
+    });
+    // The idea's rooms ride along, or the republish would erase them.
+    void onCreate(idea?.chat ? { ...input, chat: idea.chat } : input);
   };
 
   /**

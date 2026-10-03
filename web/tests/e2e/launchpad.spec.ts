@@ -222,7 +222,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   // The constructor's reverts happen after the founder has written the terms, so
   // the form has to catch them. The defaults this app shipped could not be
   // deployed at all: floor 1e6 is below the contract's minimum.
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   // Name and slug first: the form is invalid without them, which would make the
   // enabled/disabled assertion below prove nothing.
   await page.getByTestId("launch-advanced").locator("> summary").click();
@@ -251,7 +251,7 @@ test("the create form refuses parameters the auction contract would reject", asy
 });
 
 test("recommended terms fill in deployable numbers", async ({ page }) => {
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-three");
   await page
@@ -378,7 +378,7 @@ test("an allocation that does not add up blocks the launch", async ({
 }) => {
   // 110% allocated is a token someone cannot have. The split sits on the first
   // step, so the step itself refuses to continue until it adds up.
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Four");
@@ -478,7 +478,7 @@ test("the monthly budget is a visible commitment", async ({ page }) => {
 test("an oversized monthly budget warns but never blocks", async ({ page }) => {
   // MetaDAO's discipline: monthly budget above a sixth of the threshold is a
   // drain risk. It is a warning — the founder keeps their freedom.
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Five");
@@ -513,7 +513,7 @@ test("founder commitments appear on the readiness list", async ({ page }) => {
 });
 
 test("a founder can commit the longer story on create", async ({ page }) => {
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Six");
@@ -640,7 +640,7 @@ test("the exit path is a one-click proposal on the treasury", async ({
 });
 
 test("performance vesting is validated and published", async ({ page }) => {
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Seven");
@@ -680,7 +680,7 @@ test("performance vesting is validated and published", async ({ page }) => {
 test("the liquidity minimum is shown before a thin pool ships", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Eight");
@@ -705,7 +705,7 @@ test("an agent-run launch is badged and attested", async ({ page }) => {
   // "as agent" toggle is authored by the browser agent key, carries the
   // self-describing `agent` tag and a NIP-OA `auth` attestation, and is
   // badged "Agent-run" in the directory and detail.
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Nine");
@@ -958,7 +958,7 @@ const saleStep = (page: import("@playwright/test").Page) =>
 
 /** New launch -> token step filled -> on the sale step. */
 async function toSaleStep(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   const token = page.getByTestId("wizard-step-token");
   await token
     .getByRole("textbox", { name: "Name", exact: true })
@@ -1027,7 +1027,7 @@ test("the chosen currency is what gets published", async ({ page }) => {
   expect(BigInt(eth.floorPrice) > 10n ** 20n).toBe(true);
 
   published.length = 0;
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await toSaleStepFromOpenDialog(page);
   await continueToPublish(page);
   await page.getByRole("button", { name: /Publish launch/ }).click();

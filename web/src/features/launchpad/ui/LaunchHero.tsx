@@ -26,6 +26,8 @@ export function LaunchHero({
   showFollow,
   actions,
   note,
+  idea = false,
+  supporters = null,
 }: {
   record: LaunchRecord;
   stage: LaunchStage;
@@ -35,6 +37,10 @@ export function LaunchHero({
   showFollow: boolean;
   actions: ReactNode;
   note: ReactNode;
+  /** No sale terms yet: shown as an idea rather than a draft. */
+  idea?: boolean;
+  /** People following this launch; null while unknown. */
+  supporters?: number | null;
 }) {
   const { data: profiles } = useProfiles([record.author]);
   const founder = profiles?.[record.author];
@@ -102,7 +108,17 @@ export function LaunchHero({
       <div className="flex flex-wrap items-start justify-between gap-4 pt-6">
         <div className="min-w-0 flex-1 basis-80">
           <h1 className="flex flex-wrap items-center gap-2 text-3xl font-black tracking-tight">
-            {record.name} <StageBadge stage={stage} />
+            {record.name}{" "}
+            {idea ? (
+              <span
+                className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary-ink"
+                data-testid="launch-idea-badge"
+              >
+                Idea
+              </span>
+            ) : (
+              <StageBadge stage={stage} />
+            )}
             {record.category ? (
               <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-bold">
                 {record.category}
@@ -118,7 +134,21 @@ export function LaunchHero({
               </span>
             ) : null}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">by {founderName}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            by {founderName}
+            {supporters !== null && (idea || supporters > 0) ? (
+              <>
+                {" · "}
+                <span data-testid="launch-supporters">
+                  {supporters === 0
+                    ? "No supporters yet"
+                    : supporters === 1
+                      ? "1 supporter"
+                      : `${supporters} supporters`}
+                </span>
+              </>
+            ) : null}
+          </p>
           <p className="mt-3 max-w-2xl text-base">
             {record.pitch || "No pitch yet."}
           </p>

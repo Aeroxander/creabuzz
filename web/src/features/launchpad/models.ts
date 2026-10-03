@@ -296,10 +296,17 @@ function int(value: unknown): number | null {
     : null;
 }
 
-/** The two chat rooms a launch can have; an id is null until it is created. */
+/**
+ * The chat rooms a launch can have; an id is null until the room exists.
+ *
+ * - `team`: private, the people building it.
+ * - `supporters`: open to anyone who is excited about it, no money involved.
+ * - `backers`: private, only people who recorded a bid (the founder admits them).
+ */
 export interface LaunchChat {
   team: string | null;
   supporters: string | null;
+  backers: string | null;
 }
 
 const CHANNEL_UUID =
@@ -314,7 +321,11 @@ function parseLaunchChat(value: unknown): LaunchChat {
     typeof candidate === "string" && CHANNEL_UUID.test(candidate)
       ? candidate.toLowerCase()
       : null;
-  return { team: room(object.team), supporters: room(object.supporters) };
+  return {
+    team: room(object.team),
+    supporters: room(object.supporters),
+    backers: room(object.backers),
+  };
 }
 
 function strs(value: unknown): string[] {

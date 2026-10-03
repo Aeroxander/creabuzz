@@ -1,27 +1,52 @@
 /**
  * Who may be in a launch's chat rooms, as pure functions.
  *
- * Private rooms reject self-join, so a backer is admitted by a founder. The
- * founder's list of people to admit is "everyone with a recorded bid who is
- * not already in the supporters room" — advisory, like the bid mirrors it
- * comes from (a bid mirror is a claim, not proof of funds; the room is for
- * talking, not for custody).
+ * Three rooms, three promises:
+ * - **team** is private: only the people building it.
+ * - **supporters** is open: anyone excited about the project can join with one
+ *   click, no money involved.
+ * - **backers** is private and gated: it is for people who recorded a bid. A
+ *   private room rejects self-join, so the founder admits each backer. The bid
+ *   list is advisory (a mirror is a claim, not proof of funds), and the room is
+ *   for talking, not for custody.
  */
 
 import type { LaunchBid, LaunchChat } from "../models";
 
-/** What the viewer can do with a launch's chat, most capable first. */
-export type ChatAccess =
-  /** In at least one of the rooms already. */
-  | "member"
-  /** Recorded a bid but has not been admitted yet. */
-  | "pending"
-  /** Neither: back the launch first. */
-  | "none";
+export type RoomKey = "team" | "supporters" | "backers";
 
 /** True when the launch has at least one room to open. */
 export function hasChat(chat: LaunchChat): boolean {
-  return chat.team !== null || chat.supporters !== null;
+  return (
+    chat.team !== null || chat.supporters !== null || chat.backers !== null
+  );
+}
+
+/**
+ * The rooms a launch still needs. An idea needs the team and supporters rooms;
+ * the backers room only matters once there is a sale to back.
+ */
+export function missingRooms(
+  chat: LaunchChat,
+  options: { sale: boolean },
+): RoomKey[] {
+  const missing: RoomKey[] = [];
+  if (!chat.team) missing.push("team");
+  if (!chat.supporters) missing.push("supporters");
+  if (options.sale && !chat.backers) missing.push("backers");
+  return missing;
+}
+
+/** The chat with the given rooms filled in; rooms already there are kept. */
+export function withRooms(
+  chat: LaunchChat,
+  rooms: Partial<LaunchChat>,
+): LaunchChat {
+  return {
+    team: chat.team ?? rooms.team ?? null,
+    supporters: chat.supporters ?? rooms.supporters ?? null,
+    backers: chat.backers ?? rooms.backers ?? null,
+  };
 }
 
 /**
@@ -47,39 +72,68 @@ export function pendingBackers(
     .map(([pubkey]) => pubkey);
 }
 
-/**
- * The viewer's standing. `visibleRooms` are the room ids the viewer's relay
- * session can see at all: private rooms are hidden from non-members, so
- * seeing one is the proof of membership.
- */
-export function chatAccess(input: {
-  chat: LaunchChat;
-  visibleRooms: ReadonlySet<string>;
-  viewer: string | null;
-  bidders: readonly string[];
-}): ChatAccess {
-  const rooms = [input.chat.team, input.chat.supporters].filter(
-    (id): id is string => id !== null,
-  );
-  if (rooms.some((id) => input.visibleRooms.has(id))) return "member";
-  if (
-    input.viewer !== null &&
-    input.bidders.some(
-      (key) => key.toLowerCase() === input.viewer?.toLowerCase(),
-    )
-  ) {
-    return "pending";
-  }
-  return "none";
+/** What the viewer can do with one room. */
+export type RoomStanding =
+  /** In the room already: open it. */
+  | "member"
+  /** Open room, not in it yet: one click joins. */
+  | "join"
+  /** Gated room, bid recorded: waiting for the founder. */
+  | "pending"
+  /** Gated room, no bid: back the launch first. */
+  | "locked";
+
+export interface RoomRow {
+  room: RoomKey;
+  id: string;
+  standing: RoomStanding;
 }
 
-/** The room a viewer lands in: the team room for the team, else the supporters room. */
-export function roomToOpen(
-  chat: LaunchChat,
-  visibleRooms: ReadonlySet<string>,
-): string | null {
-  if (chat.supporters && visibleRooms.has(chat.supporters))
-    return chat.supporters;
-  if (chat.team && visibleRooms.has(chat.team)) return chat.team;
-  return null;
+/**
+ * The rooms the viewer should see and what they can do with each.
+ *
+ * Private rooms are hidden from non-members by the server, so *seeing* one
+ * (`visibleRooms`) is the proof of membership. The open supporters room is
+ * visible to everyone, so membership comes from its member list instead
+ * (`supportersMembers`, null while that list is unknown). The team room is
+ * only listed for the team.
+ */
+export function roomRows(input: {
+  chat: LaunchChat;
+  visibleRooms: ReadonlySet<string>;
+  supportersMembers: ReadonlySet<string> | null;
+  viewer: string | null;
+  bidders: readonly string[];
+}): RoomRow[] {
+  const rows: RoomRow[] = [];
+  const { chat } = input;
+  if (chat.supporters) {
+    const viewer = input.viewer?.toLowerCase() ?? null;
+    const inside =
+      viewer !== null && (input.supportersMembers?.has(viewer) ?? false);
+    rows.push({
+      room: "supporters",
+      id: chat.supporters,
+      standing: inside ? "member" : "join",
+    });
+  }
+  if (chat.backers) {
+    const viewer = input.viewer?.toLowerCase() ?? null;
+    const bid =
+      viewer !== null &&
+      input.bidders.some((key) => key.toLowerCase() === viewer);
+    rows.push({
+      room: "backers",
+      id: chat.backers,
+      standing: input.visibleRooms.has(chat.backers)
+        ? "member"
+        : bid
+          ? "pending"
+          : "locked",
+    });
+  }
+  if (chat.team && input.visibleRooms.has(chat.team)) {
+    rows.push({ room: "team", id: chat.team, standing: "member" });
+  }
+  return rows;
 }

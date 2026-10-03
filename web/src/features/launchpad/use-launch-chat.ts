@@ -1,9 +1,11 @@
 /**
- * A launch's chat rooms: create them, see who is in them, admit backers.
+ * A launch's chat rooms: create them, see who is in them, join, admit backers.
  *
- * Both rooms are private Buzz channels (NIP-29) owned by the founder. A private
- * room is hidden from everyone who is not in it and rejects self-join, so
- * "joining" is the founder admitting a backer with one kind 9000 write.
+ * - The team room is private, owned by the founder.
+ * - The supporters room is open: anyone joins with one kind 9021 write.
+ * - The backers room is private and gated. A private room rejects self-join, so
+ *   "joining" is the founder admitting a backer with one kind 9000 write.
+ *
  * Admission writes run one after another: membership is one replaceable event,
  * and concurrent writes to it lose members to last-write-wins.
  */
@@ -21,73 +23,129 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { chatAccess, pendingBackers } from "./lib/launch-chat";
+import {
+  missingRooms,
+  pendingBackers,
+  type RoomKey,
+  roomRows,
+  withRooms,
+} from "./lib/launch-chat";
 import { recordToInput } from "./lib/record-input";
 import { useCreateLaunch } from "./use-launches";
 import type { Launch, LaunchChat } from "./models";
 
 const KIND_CHANNEL_MEMBERS = 39002;
 
+const ROOM_SPECS: Record<
+  RoomKey,
+  { suffix: string; visibility: "open" | "private"; about: string }
+> = {
+  team: {
+    suffix: "team",
+    visibility: "private",
+    about: "The people building this launch.",
+  },
+  supporters: {
+    suffix: "supporters",
+    visibility: "open",
+    about: "Everyone excited about this project.",
+  },
+  backers: {
+    suffix: "backers",
+    visibility: "private",
+    about: "People who backed this launch with a bid.",
+  },
+};
+
 /** Rooms are named for the launch so they are findable in the channel list. */
-function roomName(launchName: string, room: "team" | "supporters"): string {
+function roomName(launchName: string, room: RoomKey): string {
   const base = launchName.trim().slice(0, 40) || "Launch";
-  return room === "team" ? `${base} · team` : `${base} · supporters`;
+  return `${base} · ${ROOM_SPECS[room].suffix}`;
 }
 
 export interface CreatedRooms {
-  chat: LaunchChat;
+  /** The rooms that now exist; a room that failed is absent. */
+  created: Partial<LaunchChat>;
+  /** Rooms that could not be created; the founder can retry them. */
+  failedRooms: RoomKey[];
   /** Team members the founder could not add yet; surfaced, never dropped. */
   failedTeam: string[];
 }
 
 /**
- * Create the team room and the supporters room and put the team in the first.
- * Rejects when a room cannot be created at all, so a launch is never recorded
- * as having a room that does not exist.
+ * Create the requested rooms and put the team in the private ones. A room that
+ * fails does not stop the others: the result says exactly what exists, so a
+ * launch is only ever recorded with rooms that are real, and the missing ones
+ * can be created again later.
  */
 export async function createLaunchRooms(input: {
   launchName: string;
   team: readonly string[];
+  rooms: readonly RoomKey[];
 }): Promise<CreatedRooms> {
-  const teamRoom = crypto.randomUUID();
-  const supportersRoom = crypto.randomUUID();
-  await publishTemplate(
-    buildCreateChannelEvent({
-      id: teamRoom,
-      name: roomName(input.launchName, "team"),
-      visibility: "private",
-      channelType: "stream",
-      about: "The people building this launch.",
-    }),
-  );
-  await publishTemplate(
-    buildCreateChannelEvent({
-      id: supportersRoom,
-      name: roomName(input.launchName, "supporters"),
-      visibility: "private",
-      channelType: "stream",
-      about: "Backers and the team, talking about this launch.",
-    }),
-  );
-  const failedTeam: string[] = [];
-  for (const pubkey of input.team) {
+  const created: Partial<LaunchChat> = {};
+  const failedRooms: RoomKey[] = [];
+  const failedTeam = new Set<string>();
+  for (const room of input.rooms) {
+    const spec = ROOM_SPECS[room];
+    const id = crypto.randomUUID();
     try {
       await publishTemplate(
-        buildAddMemberEvent({ channelId: teamRoom, pubkey, role: "member" }),
-      );
-      // The team reads the supporters room too, to answer questions.
-      await publishTemplate(
-        buildAddMemberEvent({
-          channelId: supportersRoom,
-          pubkey,
-          role: "member",
+        buildCreateChannelEvent({
+          id,
+          name: roomName(input.launchName, room),
+          visibility: spec.visibility,
+          channelType: "stream",
+          about: spec.about,
         }),
       );
     } catch {
-      failedTeam.push(pubkey);
+      failedRooms.push(room);
+      continue;
+    }
+    created[room] = id;
+    // Open rooms need no invitation; the team joins like anyone else.
+    if (spec.visibility === "open") continue;
+    for (const pubkey of input.team) {
+      try {
+        await publishTemplate(
+          buildAddMemberEvent({ channelId: id, pubkey, role: "member" }),
+        );
+      } catch {
+        failedTeam.add(pubkey);
+      }
     }
   }
-  return { chat: { team: teamRoom, supporters: supportersRoom }, failedTeam };
+  return { created, failedRooms, failedTeam: [...failedTeam] };
+}
+
+export const EMPTY_CHAT: LaunchChat = {
+  team: null,
+  supporters: null,
+  backers: null,
+};
+
+/**
+ * Make sure a launch has the rooms it needs before its record is published:
+ * creates only what is missing and returns the chat to record. `incomplete`
+ * means something could not be set up, so the caller can say so; it never
+ * blocks the launch, and the founder can create the rest from the launch page.
+ */
+export async function ensureRooms(input: {
+  launchName: string;
+  chat: LaunchChat;
+  team: readonly string[];
+  sale: boolean;
+}): Promise<{ chat: LaunchChat; incomplete: boolean }> {
+  const rooms = await createLaunchRooms({
+    launchName: input.launchName,
+    team: input.team,
+    rooms: missingRooms(input.chat, { sale: input.sale }),
+  });
+  return {
+    chat: withRooms(input.chat, rooms.created),
+    incomplete: rooms.failedRooms.length > 0 || rooms.failedTeam.length > 0,
+  };
 }
 
 function membersKey(channelId: string | null) {
@@ -126,33 +184,47 @@ function bidders(launch: Launch): string[] {
   return launch.bids.map((bid) => bid.author);
 }
 
-/** The viewer's standing in a launch's chat, and the rooms they can see. */
-export function useChatAccess(launch: Launch | undefined) {
+/** The rooms the viewer sees on a launch and what they can do with each. */
+export function useChatRows(launch: Launch | undefined) {
   const { channels, isLoading } = useChannels();
   const viewer = existingUserPubkey();
+  const supporters = useChannelMembers(launch?.record.chat.supporters ?? null);
   const visibleRooms = useMemo(
     () => new Set(channels.map((channel) => channel.id)),
     [channels],
   );
-  const access = useMemo(
+  const rows = useMemo(
     () =>
       launch
-        ? chatAccess({
+        ? roomRows({
             chat: launch.record.chat,
             visibleRooms,
+            supportersMembers: supporters.data ?? null,
             viewer,
             bidders: bidders(launch),
           })
-        : "none",
-    [launch, visibleRooms, viewer],
+        : [],
+    [launch, visibleRooms, supporters.data, viewer],
   );
-  return { access, visibleRooms, loading: isLoading };
+  return { rows, loading: isLoading || supporters.isLoading };
+}
+
+/** Join an open room (kind 9021). Only the supporters room is open. */
+export function useJoinRoom(room: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!room) throw new Error("This launch has no supporters room yet.");
+      await publishTemplate({ kind: 9021, content: "", tags: [["h", room]] });
+      await queryClient.invalidateQueries({ queryKey: membersKey(room) });
+    },
+  });
 }
 
 /** Backers waiting for the founder, and the one-click action that admits them. */
 export function useAdmitBackers(launch: Launch) {
   const queryClient = useQueryClient();
-  const room = launch.record.chat.supporters;
+  const room = launch.record.chat.backers;
   const members = useChannelMembers(room);
   const waiting = useMemo(
     () =>
@@ -167,7 +239,7 @@ export function useAdmitBackers(launch: Launch) {
   );
   const admit = useMutation({
     mutationFn: async (pubkeys: readonly string[]) => {
-      if (!room) throw new Error("This launch has no supporters room yet.");
+      if (!room) throw new Error("This launch has no backers room yet.");
       const admitted: string[] = [];
       try {
         for (const pubkey of pubkeys) {
@@ -187,11 +259,12 @@ export function useAdmitBackers(launch: Launch) {
 }
 
 /**
- * Give a launch published without rooms its two rooms: create them, then
- * republish the record naming them. Rooms first, so the record never points at
- * a room that does not exist.
+ * Create the rooms a launch is missing, then republish the record naming them.
+ * Rooms first, so the record never points at a room that does not exist.
+ * Rejects when nothing could be created, so the founder sees a failure rather
+ * than a silent no-op.
  */
-export function useCreateChatRooms(launch: Launch) {
+export function useCreateChatRooms(launch: Launch, options: { sale: boolean }) {
   const save = useCreateLaunch();
   const queryClient = useQueryClient();
   return useMutation({
@@ -199,9 +272,15 @@ export function useCreateChatRooms(launch: Launch) {
       const rooms = await createLaunchRooms({
         launchName: launch.record.name,
         team: launch.record.team.map((member) => member.pubkey),
+        rooms: missingRooms(launch.record.chat, options),
       });
+      if (Object.keys(rooms.created).length === 0) {
+        throw new Error("The chat rooms could not be created. Try again.");
+      }
       await save.mutateAsync(
-        recordToInput(launch.record, { chat: rooms.chat }),
+        recordToInput(launch.record, {
+          chat: withRooms(launch.record.chat, rooms.created),
+        }),
       );
       await queryClient.invalidateQueries({ queryKey: ["channels"] });
       return rooms;

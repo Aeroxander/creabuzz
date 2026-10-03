@@ -116,7 +116,7 @@ test("a locked passkey's launch publish shows the recovery inside the dialog", a
   await relay.install(page);
   await page.goto("/launchpad");
 
-  await page.getByRole("button", { name: "New launch" }).first().click();
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("locked-launch");
   await page

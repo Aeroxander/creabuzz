@@ -726,6 +726,12 @@ test("launch mode: the team's update is stored as a normal note, marked and show
   const text = unique("Quartz batch two ships");
   await page.getByTestId("social-composer-input").fill(text);
   await page.getByTestId("social-composer-launch-mode").check();
+  // The team has more than one launch by now (other tests start their own), so
+  // pick the one this test is about instead of trusting the default.
+  const pick = page.getByTestId("social-composer-launch-pick");
+  if (await pick.isVisible()) {
+    await pick.selectOption({ value: `${fixture.people.dev}:quartz-hardware` });
+  }
   await page.getByTestId("social-composer-submit").click();
 
   // What the relay stored is a plain kind 1 note naming the launch + the label.
@@ -860,13 +866,142 @@ test("you can delete your own post; other people's posts have no delete button",
   throw new Error("the relay still serves the deleted post");
 });
 
-test("launch chat: the founder creates the rooms, a backer is admitted with one click", async ({
+const BASE_URL = process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199";
+
+test("an idea starts in one step with an open supporters room, and a supporter joins in one click", async ({
+  page,
+  browser,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  const name = `Idea ${RUN}`;
+  await page.goto("/launchpad");
+  await page.getByTestId("start-idea").first().click();
+  await page.getByTestId("idea-name").fill(name);
+  await page.getByTestId("idea-pitch").fill("A thing worth talking about.");
+  await page.getByTestId("idea-create").click();
+
+  // Straight onto the page they just made, as an idea, with their checklist.
+  await expect(page.getByTestId("launch-idea-badge")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("idea-progress")).toBeVisible();
+  const launchId = new URL(page.url()).pathname.split("/").pop() as string;
+
+  // The record carries no money and no chain, and names the two rooms.
+  const stored = await waitForEvents("dev", {
+    kinds: [37001],
+    authors: [fixture.people.dev],
+    "#d": [launchId],
+  });
+  const record = stored.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const body = JSON.parse(record.content);
+  expect(body.requiredRaised).toBeUndefined();
+  expect(body.floorPrice).toBeUndefined();
+  expect(body.tokenPlan).toBeUndefined();
+  expect(record.tags.some((t: string[]) => t[0] === "chain")).toBe(false);
+  const chat = body.chat as {
+    team: string;
+    supporters: string;
+    backers?: string;
+  };
+  expect(chat.team).toMatch(/^[0-9a-f-]{36}$/);
+  expect(chat.supporters).toMatch(/^[0-9a-f-]{36}$/);
+  expect(chat.backers).toBeUndefined();
+
+  // The supporters room is open: anyone can see it. The team room is not.
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.supporters] }),
+  ).toHaveLength(1);
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.team] }),
+  ).toHaveLength(0);
+
+  // Until ten people show up, the sale is not the next step (but can be skipped).
+  await expect(page.getByTestId("idea-prepare-sale")).toBeDisabled();
+  await expect(page.getByTestId("idea-prepare-anyway")).toBeVisible();
+
+  // Alice, in her own browser, backs it with one click.
+  const aliceContext = await browser.newContext({
+    viewport: { width: 1360, height: 900 },
+  });
+  try {
+    await aliceContext.addInitScript(
+      ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+      [fixture.nsecs.alice],
+    );
+    const alice = await aliceContext.newPage();
+    await alice.goto(
+      `${BASE_URL}/launchpad/${launchId}?author=${fixture.people.dev}`,
+    );
+    await expect(alice.getByTestId("launch-idea-badge")).toBeVisible({
+      timeout: 30_000,
+    });
+    // She is not a backer, so there is no gated room to be locked out of yet.
+    await alice.getByTestId("launch-back-idea").click();
+    await expect(alice.getByTestId("launch-back-idea")).toContainText(
+      "You're in",
+      {
+        timeout: 30_000,
+      },
+    );
+
+    // She follows it (the supporter signal) and is now in the supporters room.
+    const lists = await waitForEvents("alice", {
+      kinds: [10003],
+      authors: [fixture.people.alice],
+    });
+    const newest = lists.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0];
+    expect(newest.tags).toContainEqual([
+      "a",
+      `37001:${fixture.people.dev}:${launchId}`,
+    ]);
+    for (let i = 0; i < 30; i += 1) {
+      const members = await readAs("dev", {
+        kinds: [39002],
+        "#d": [chat.supporters],
+      });
+      if (
+        members.some((event: { tags: string[][] }) =>
+          event.tags.some((t) => t[0] === "p" && t[1] === fixture.people.alice),
+        )
+      )
+        break;
+      if (i === 29) throw new Error("alice never joined the supporters room");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    await alice.reload();
+    await expect(alice.getByTestId("launch-chat-open-supporters")).toBeVisible({
+      timeout: 30_000,
+    });
+  } finally {
+    await aliceContext.close();
+  }
+
+  // The founder sees the count.
+  await page.reload();
+  await expect(page.getByTestId("launch-supporters")).toContainText(
+    "1 supporter",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("idea-supporters")).toContainText("1 of 10");
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("launch chat: the gated backers room admits a backer with one click", async ({
   page,
 }) => {
   test.slow();
   const fixture = fixtureOrSkip();
   const errors = await signInAsDev(page, fixture);
-  // A launch of the dev's own, published without rooms.
+  // A launch with sale terms (so it is more than an idea), published without rooms.
   const launchId = `chat-${RUN}`;
   await post("dev", {
     kind: 37001,
@@ -879,17 +1014,21 @@ test("launch chat: the founder creates the rooms, a backer is admitted with one 
     content: JSON.stringify({
       pitch: "A launch to talk about.",
       stage: "funding",
+      floorPrice: "792281625140000",
+      requiredRaised: "299999999998",
     }),
   });
 
   await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
   await page.getByTestId("launch-chat-create").click();
-  await expect(page.getByTestId("launch-chat")).toBeVisible({
+  await expect(page.getByTestId("launch-chat-row-backers")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByTestId("launch-chat-open")).toBeVisible();
+  await expect(page.getByTestId("launch-chat-open-backers")).toBeVisible();
+  await expect(page.getByTestId("launch-chat-open-team")).toBeVisible();
+  await expect(page.getByTestId("launch-chat-open-supporters")).toHaveCount(1);
 
-  // The record names both rooms, and the relay holds them as private channels.
+  // The record names all three rooms, and the relay holds them.
   const stored = await waitForEvents("dev", {
     kinds: [37001],
     authors: [fixture.people.dev],
@@ -902,20 +1041,21 @@ test("launch chat: the founder creates the rooms, a backer is admitted with one 
   const chat = JSON.parse(record.content).chat as {
     team: string;
     supporters: string;
+    backers: string;
   };
-  expect(chat.team).toMatch(/^[0-9a-f-]{36}$/);
-  expect(chat.supporters).toMatch(/^[0-9a-f-]{36}$/);
   const bound = record.tags
     .filter((t: string[]) => t[0] === "buzz-channel")
     .map((t: string[]) => t[1]);
-  expect(bound.sort()).toEqual([chat.team, chat.supporters].sort());
+  expect(bound.sort()).toEqual(
+    [chat.team, chat.supporters, chat.backers].sort(),
+  );
 
-  // Alice is not in the room, so she cannot see it.
-  const before = await readAs("alice", {
-    kinds: [39000],
-    "#d": [chat.supporters],
-  });
-  expect(before).toHaveLength(0);
+  // Alice is not in the gated room or the team room, so she cannot see them.
+  for (const room of [chat.backers, chat.team]) {
+    expect(
+      await readAs("alice", { kinds: [39000], "#d": [room] }),
+    ).toHaveLength(0);
+  }
 
   // She records a bid, and the founder sees her waiting.
   await post("alice", {
@@ -935,16 +1075,88 @@ test("launch chat: the founder creates the rooms, a backer is admitted with one 
     timeout: 30_000,
   });
 
-  // The relay now lets her see the supporters room, but not the team room.
+  // The relay now lets her see the backers room, but still not the team room.
   const after = await waitForEvents("alice", {
     kinds: [39000],
-    "#d": [chat.supporters],
+    "#d": [chat.backers],
   });
   expect(after).toHaveLength(1);
-  const teamRoom = await readAs("alice", {
-    kinds: [39000],
-    "#d": [chat.team],
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.team] }),
+  ).toHaveLength(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("preparing the sale keeps the idea's rooms and adds the gated backers room", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  await page.goto("/launchpad");
+  await page.getByTestId("start-idea").first().click();
+  await page.getByTestId("idea-name").fill(`Sale ${RUN}`);
+  await page.getByTestId("idea-pitch").fill("An idea that grows up to a sale.");
+  await page.getByTestId("idea-create").click();
+  await expect(page.getByTestId("idea-progress")).toBeVisible({
+    timeout: 30_000,
   });
-  expect(teamRoom).toHaveLength(0);
+  const launchId = new URL(page.url()).pathname.split("/").pop() as string;
+
+  const latest = async () => {
+    const events = await waitForEvents("dev", {
+      kinds: [37001],
+      authors: [fixture.people.dev],
+      "#d": [launchId],
+    });
+    return events.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0];
+  };
+  const before = JSON.parse((await latest()).content).chat as {
+    team: string;
+    supporters: string;
+  };
+
+  // Under the supporter nudge the sale can still be prepared, deliberately.
+  await page.getByTestId("idea-prepare-anyway").click();
+  const publish = page.getByRole("button", { name: /Publish launch/ });
+  for (let i = 0; i < 6 && !(await publish.isVisible()); i += 1) {
+    const next = page.getByTestId("wizard-continue");
+    if (await next.isDisabled()) {
+      await page.getByRole("button", { name: "Product project" }).click();
+    } else {
+      await next.click();
+    }
+  }
+  await publish.click();
+
+  // The idea is now a sale: same record id, terms set, nothing else lost.
+  await expect(page.getByTestId("idea-progress")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  let record = await latest();
+  for (let i = 0; i < 30 && !JSON.parse(record.content).floorPrice; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    record = await latest();
+  }
+  const body = JSON.parse(record.content);
+  expect(body.floorPrice).toBeTruthy();
+  expect(body.requiredRaised).toBeTruthy();
+  expect(body.chat.team).toBe(before.team);
+  expect(body.chat.supporters).toBe(before.supporters);
+  expect(body.chat.backers).toMatch(/^[0-9a-f-]{36}$/);
+  const bound = record.tags
+    .filter((t: string[]) => t[0] === "buzz-channel")
+    .map((t: string[]) => t[1]);
+  expect(bound.sort()).toEqual(
+    [body.chat.team, body.chat.supporters, body.chat.backers].sort(),
+  );
+
+  // The backers room is gated: a stranger cannot see it.
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [body.chat.backers] }),
+  ).toHaveLength(0);
   expect(errors, errors.join(" | ")).toEqual([]);
 });
