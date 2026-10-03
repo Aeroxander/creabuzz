@@ -1720,7 +1720,7 @@ test("a launch can be bound to a discussion channel", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/launchpad");
   await page
-    .getByRole("button", { name: /New launch/ })
+    .getByRole("button", { name: /Set up a sale/ })
     .first()
     .click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
