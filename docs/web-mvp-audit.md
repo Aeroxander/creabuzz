@@ -58,6 +58,22 @@ since the founder last looked, and backers waiting for the backers room. The
 Launchpad has an *Ideas* filter. The announcement step opens the feed composer
 pre-filled and tagged to the launch.
 
+### Two chain worlds, one journey
+
+The same journey spec runs in two worlds:
+
+- `scripts/web-auction-e2e.sh` (mock world): a prebuilt token is linked, the sale
+  raises in a mock USDC. Fast, and what the older auction spec uses.
+- `scripts/web-mint-e2e.sh` (apptoken world): boots the apptoken-dev local
+  environment on Anvil (chain 1776411), allowlists the real pool factories on the
+  router (dev chain only), and the browser **mints the token** with the one-click
+  *Deploy token*, deploys the auction and runs the ETH sale. The test then checks
+  the chain: real code at the token and the auction, and the sale supply held by
+  the auction.
+
+Both need a relay serving `web/dist` and the seeded fixture
+(`web/tests/e2e-real/README.md`).
+
 ### What the Anvil journey test found and fixed
 
 `web/tests/e2e-real/journey.spec.ts` drives idea → quick sale setup →

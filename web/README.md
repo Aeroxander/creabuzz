@@ -120,6 +120,10 @@ that forwards to that chain. It needs foundry (`FOUNDRY_BIN` if it is not on
 build than the machine has. The spec skips itself when its `E2E_*` variables are
 unset, so the default smoke run is unaffected.
 
+`scripts/web-mint-e2e.sh` runs the founder's whole journey (idea, sale, mint the
+token from the browser, deploy, bid, admit) on the apptoken local environment
+against a real relay; see `docs/web-mvp-audit.md` ("Two chain worlds").
+
 The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
 **built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or
 the suite tests a stale build.

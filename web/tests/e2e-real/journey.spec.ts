@@ -23,15 +23,21 @@ import { readAs, waitForEvents } from "./social-helpers.mjs";
  */
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
+// Mock world (scripts/web-auction-e2e.sh): a prebuilt token is linked and the
+// sale raises in a mock USDC. Apptoken world (scripts/web-mint-e2e.sh): the token
+// is minted from the browser on the apptoken local environment, and the sale
+// raises in ETH.
+const APPTOKEN = process.env.E2E_APPTOKEN === "1";
 const SALE_TOKEN = process.env.E2E_SALE_TOKEN ?? "";
 const CURRENCY = process.env.E2E_CURRENCY ?? "";
+const CHAIN_ID = process.env.E2E_CHAIN_ID ?? "31337";
 const TREASURY = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const BIDDER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const BASE_URL = process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199";
 
 test.skip(
-  !ANVIL_URL || !SALE_TOKEN || !CURRENCY,
-  "set E2E_ANVIL_URL, E2E_SALE_TOKEN and E2E_CURRENCY (scripts/web-auction-e2e.sh does)",
+  !ANVIL_URL || (!APPTOKEN && (!SALE_TOKEN || !CURRENCY)),
+  "set E2E_ANVIL_URL (and E2E_SALE_TOKEN, E2E_CURRENCY) — scripts/web-auction-e2e.sh or scripts/web-mint-e2e.sh do",
 );
 test.use({ viewport: { width: 1360, height: 900 } });
 
@@ -153,7 +159,7 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
   test.setTimeout(300_000);
   const fixture = fixtureOrSkip();
   const errors = await signIn(page, fixture.nsecs.dev, TREASURY);
-  await mint(SALE_TOKEN, TREASURY, 200_000_000n * 10n ** 18n);
+  if (!APPTOKEN) await mint(SALE_TOKEN, TREASURY, 200_000_000n * 10n ** 18n);
 
   // ── 1. An idea, in one step ───────────────────────────────────────────────
   const name = `Journey ${RUN}`;
@@ -196,9 +202,12 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
   // ── 2. Prepare the sale: two choices, on this chain, open to everyone ─────
   await page.getByTestId("idea-prepare-anyway").click();
   await expect(page.getByTestId("quick-sale")).toBeVisible();
-  // A local sale is in the dev USDC, and the dialog defaults to this chain.
+  // A local sale is in the dev USDC (or ETH), on this chain, open to everyone.
   await page.getByTestId("quick-customize").click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
+  if (CHAIN_ID !== "31337") {
+    await page.getByLabel("Chain id").fill(CHAIN_ID);
+  }
   await page.getByRole("button", { name: "community", exact: true }).click();
   await page.getByTestId("quick-back").click();
   await page.getByRole("button", { name: /Publish launch/ }).click();
@@ -208,9 +217,9 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
   let record = await latestWhere((r) =>
     Boolean(JSON.parse(r.content).floorPrice),
   );
-  expect(record.tags).toContainEqual(["chain", "31337"]);
-  expect(JSON.parse(record.content).currency?.toLowerCase()).toBe(
-    CURRENCY.toLowerCase(),
+  expect(record.tags).toContainEqual(["chain", CHAIN_ID]);
+  expect((JSON.parse(record.content).currency ?? "").toLowerCase()).toBe(
+    APPTOKEN ? "" : CURRENCY.toLowerCase(),
   );
 
   // ── 3. Commitments: asked here, because going live needs them ─────────────
@@ -234,20 +243,30 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
     backers: string;
   };
 
-  // ── 4. Link the token, deploy the auction (real transactions) ────────────
+  // ── 4. The token: minted from the browser, or a prebuilt one linked ──────
   await expect(page.getByTestId("sale-step-deploy")).toBeVisible({
     timeout: 30_000,
   });
   await page.getByTestId("sale-step-deploy").click();
-  await page.locator("#mint-address").fill(SALE_TOKEN);
-  await page.getByRole("button", { name: "Link", exact: true }).click();
+  if (APPTOKEN) {
+    await page.getByTestId("mint-deploy").click();
+    await expect(page.getByTestId("mint-step-link")).toContainText(
+      /Done|Confirmed|Linked/i,
+      { timeout: 120_000 },
+    );
+    await expect(page.getByTestId("mint-failure")).toHaveCount(0);
+  } else {
+    await page.locator("#mint-address").fill(SALE_TOKEN);
+    await page.getByRole("button", { name: "Link", exact: true }).click();
+  }
   await latestWhere((r) => r.tags.some((t) => t[0] === "token"));
 
   await expect(page.getByTestId("auction-deploy-panel")).toBeVisible({
     timeout: 30_000,
   });
-  // A quick setup never asked for a treasury: the connected wallet is one click.
-  await page.getByTestId("auction-use-wallet").click();
+  // A quick setup never asked for a treasury: the connected wallet is one click
+  // (minting in the browser already records the deployer as the treasury).
+  if (!APPTOKEN) await page.getByTestId("auction-use-wallet").click();
   const withTreasury = await latestWhere((r) =>
     r.tags.some((t) => t[0] === "treasury"),
   );
@@ -265,6 +284,26 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
   record = await latestWhere((r) => r.tags.some((t) => t[0] === "auction"));
   const auction = record.tags.find((t) => t[0] === "auction")?.[1] ?? "";
   expect(auction).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  // The chain agrees: real code at the auction and the token, and the sale
+  // supply moved into the auction (the token, minted or linked, is the one sold).
+  const token = record.tags.find((t) => t[0] === "token")?.[1] ?? "";
+  for (const address of [auction, token]) {
+    expect(
+      String(await rpc("eth_getCode", [address, "latest"])).length,
+    ).toBeGreaterThan(100);
+  }
+  const held = BigInt(
+    String(
+      await rpc("eth_call", [
+        {
+          to: token,
+          data: `0x70a08231${auction.slice(2).toLowerCase().padStart(64, "0")}`,
+        },
+        "latest",
+      ]),
+    ),
+  );
+  expect(held).toBeGreaterThanOrEqual(199_999_999n * 10n ** 18n);
   // Linking and deploying kept the story, the rooms and the terms.
   const deployed = JSON.parse(record.content);
   expect(deployed.longPitch).toBeTruthy();
@@ -284,7 +323,7 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
   // ── 6. A backer bids, from their own browser and wallet ──────────────────
   const startBlock = JSON.parse(record.content).startBlock as number;
   await mineTo(startBlock + 2);
-  await mint(CURRENCY, BIDDER, 1_000_000n * 10n ** 6n);
+  if (!APPTOKEN) await mint(CURRENCY, BIDDER, 1_000_000n * 10n ** 6n);
   const aliceContext = await browser.newContext({
     viewport: { width: 1360, height: 900 },
   });
@@ -296,7 +335,7 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
       timeout: 30_000,
     });
     await alice.getByRole("button", { name: "Back this launch" }).click();
-    await alice.getByTestId("bid-budget").fill("1000");
+    await alice.getByTestId("bid-budget").fill(APPTOKEN ? "5" : "1000");
     await expect(alice.getByTestId("bid-issues")).toHaveCount(0);
     await alice.getByTestId("bid-send").click();
 
