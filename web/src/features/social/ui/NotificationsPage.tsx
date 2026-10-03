@@ -1,3 +1,4 @@
+import { YourLaunchesSection } from "@/features/launchpad/ui/YourLaunchesSection";
 import { Link } from "@tanstack/react-router";
 import {
   Heart,
@@ -241,6 +242,7 @@ export function NotificationsPage() {
           value={tab}
         />
       </PageBar>
+      {me && tab === "all" ? <YourLaunchesSection /> : null}
       {me && tab === "all" ? (
         <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
       ) : null}

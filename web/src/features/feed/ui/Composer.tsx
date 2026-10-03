@@ -23,6 +23,7 @@ export function Composer({
   launch,
   replyTo,
   placeholder = "What are you building or backing?",
+  initialText = "",
   onPosted,
   testId = "composer",
 }: {
@@ -30,10 +31,12 @@ export function Composer({
   /** When set, the composer writes a reply in this thread. */
   replyTo?: { root: SignedEventLike; parent: SignedEventLike } | null;
   placeholder?: string;
+  /** Text the box starts with, for a post the app suggests. */
+  initialText?: string;
   onPosted?: () => void;
   testId?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [mirror, setMirror] = useState(readMirrorSetting);
   const [onboarding, setOnboarding] = useState(false);
   const publish = usePublishFeedEvent();

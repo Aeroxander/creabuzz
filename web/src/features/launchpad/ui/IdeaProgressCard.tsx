@@ -4,12 +4,12 @@
  * the heavy part, so it waits until people have shown up.
  */
 
-import { Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
-import { cn } from "@/shared/lib/cn";
+import { Composer } from "@/features/feed/ui/Composer";
+import { launchCoord, launchRef } from "@/features/feed/ui/LaunchVoteCard";
+import { useLaunchNotes } from "@/features/feed/use-feed";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -20,47 +20,19 @@ import { ensureRooms } from "../use-launch-chat";
 import { useCreateLaunch, type CreateLaunchInput } from "../use-launches";
 import { useSupporters } from "../use-supporters";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
+import { ProgressStep as Step } from "./ProgressStep";
 
-function Step({
-  done,
-  title,
-  children,
-}: {
-  done: boolean;
-  title: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <li className="flex items-start gap-3 py-2.5">
-      <span
-        aria-hidden
-        className={cn(
-          "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-primary-ink",
-          done ? "border-primary bg-primary/20" : "border-border",
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : null}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold">{title}</p>
-        {children}
-      </div>
-    </li>
-  );
-}
-
-export function IdeaProgressCard({
-  launch,
-  onPostUpdate,
-}: {
-  launch: Launch;
-  onPostUpdate(): void;
-}) {
+export function IdeaProgressCard({ launch }: { launch: Launch }) {
   const { record } = launch;
   const coord = launchCoord(record);
   const supporters = useSupporters([coord]);
   const count = supporters.data?.get(coord) ?? null;
   const progress = gateProgress(count ?? 0);
+  const notes = useLaunchNotes(coord);
+  const [writing, setWriting] = useState(false);
+  const announced =
+    launch.updates.length > 0 ||
+    (notes.data ?? []).some((note) => note.author === record.author);
   const save = useCreateLaunch();
   const [preparing, setPreparing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -100,19 +72,27 @@ export function IdeaProgressCard({
         are ready.
       </p>
       <ul className="mt-2 divide-y divide-border/60">
-        <Step
-          done={launch.updates.length > 0}
-          title="Tell people what you are doing"
-        >
-          <Button
-            className="mt-1.5"
-            data-testid="idea-post-update"
-            onClick={onPostUpdate}
-            size="sm"
-            variant="outline"
-          >
-            Post an update
-          </Button>
+        <Step done={announced} title="Announce it">
+          {writing ? (
+            <div className="mt-1.5">
+              <Composer
+                initialText={`I'm starting ${record.name}: ${record.pitch}\n\nSay you'd back it and join the chat.`}
+                launch={launchRef(record)}
+                onPosted={() => setWriting(false)}
+                testId="idea-share"
+              />
+            </div>
+          ) : (
+            <Button
+              className="mt-1.5"
+              data-testid="idea-announce"
+              onClick={() => setWriting(true)}
+              size="sm"
+              variant="outline"
+            >
+              Write the announcement
+            </Button>
+          )}
         </Step>
         <Step done={progress.open} title="Gather supporters">
           <div className="mt-1.5 flex items-center gap-3">

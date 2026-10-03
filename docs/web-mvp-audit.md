@@ -39,6 +39,17 @@ A launch is a progression where each step earns the next one, and money comes la
 An idea is the same launch record with every economic field empty (`isIdea`);
 preparing the sale republishes the same record id with the terms set.
 
+### The founder's path
+
+The founder always has a next step on the launch page: the idea checklist
+(announce it, gather supporters, prepare the sale), then once the sale is
+prepared a second checklist (deploy, open the sale, tell supporters) derived from
+the record (`lib/sale-steps.ts`). An idea's page hides the money tabs and says
+what happens next. *Notifications* has a "Your launches" section: new supporters
+since the founder last looked, and backers waiting for the backers room. The
+Launchpad has an *Ideas* filter. The announcement step opens the feed composer
+pre-filled and tagged to the launch.
+
 ### Rooms
 
 | Room | Who | How they get in |

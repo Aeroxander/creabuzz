@@ -44,10 +44,17 @@ import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
 import { cn } from "@/shared/lib/cn";
 
-type Filter = "all" | "mine" | "following" | "closing-soon" | "graduated";
+type Filter =
+  | "all"
+  | "ideas"
+  | "mine"
+  | "following"
+  | "closing-soon"
+  | "graduated";
 
 const FILTER_LABELS: Record<Filter, string> = {
   all: "All",
+  ideas: "Ideas",
   mine: "Mine",
   following: "Following",
   "closing-soon": "Closing soon",
@@ -74,6 +81,7 @@ export function LaunchesPage() {
       : filter === "graduated"
         ? graduatedLaunches(launches)
         : launches.filter((launch) => {
+            if (filter === "ideas") return isIdea(launch.record);
             if (filter === "mine") return launch.record.author === pubkey;
             if (filter === "following")
               return follows.followed.has(launchCoord(launch.record));
@@ -224,9 +232,11 @@ export function LaunchesPage() {
           <p className="text-sm text-black/60 dark:text-white/60">
             {filter === "all"
               ? "No launches yet. Founders: publish the first one."
-              : "Nothing here. Follow a launch to pin it to this list."}
+              : filter === "ideas"
+                ? "No ideas yet. Be the first to start one."
+                : "Nothing here. Follow a launch to pin it to this list."}
           </p>
-          {filter === "all" ? (
+          {filter === "all" || filter === "ideas" ? (
             <Button
               className="mt-4"
               onClick={() => setIdeaOpen(true)}

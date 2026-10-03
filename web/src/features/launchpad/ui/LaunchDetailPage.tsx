@@ -4,7 +4,10 @@ import { toast } from "sonner";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { BackIdeaButton } from "./BackIdeaButton";
+import { IdeaOverview } from "./IdeaOverview";
 import { IdeaProgressCard } from "./IdeaProgressCard";
+import { SaleProgressCard } from "./SaleProgressCard";
+import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { PriceChartCard } from "./PriceChartCard";
@@ -25,6 +28,7 @@ import {
 } from "../use-launches";
 import { effectiveStage, type Launch } from "../models";
 import { isIdea } from "../lib/idea";
+import { markSupportersSeen } from "../use-founder-activity";
 import { useSupporters } from "../use-supporters";
 import type { LaunchAction } from "../lib/deep-link";
 import { TreasuryTab } from "./TreasuryTab";
@@ -112,6 +116,15 @@ export function LaunchDetailPage({
   const isFounder = useIsFounder(launch);
   const supporterCoord = realLaunch ? launchCoord(realLaunch.record) : null;
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
+  // A founder who opens their launch has seen its supporters.
+  const seenCount = supporterCoord
+    ? (supporterCounts.data?.get(supporterCoord) ?? null)
+    : null;
+  useEffect(() => {
+    if (isFounder && supporterCoord && seenCount !== null) {
+      markSupportersSeen(supporterCoord, seenCount);
+    }
+  }, [isFounder, supporterCoord, seenCount]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
   const [tab, setTab] = useState<Tab>("overview");
@@ -205,6 +218,13 @@ export function LaunchDetailPage({
       : []),
     { id: "manage", label: "Manage", founderOnly: true },
   ];
+  // An idea has no money, proposals or treasury yet; showing those tabs empty
+  // makes the page look broken rather than early.
+  const visibleTabs = idea
+    ? tabs.filter((t) =>
+        ["overview", "discussion", "updates", "manage"].includes(t.id),
+      )
+    : tabs;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
@@ -248,8 +268,13 @@ export function LaunchDetailPage({
       />
 
       {!sandbox && isFounder && idea ? (
-        <IdeaProgressCard
+        <IdeaProgressCard launch={launch} />
+      ) : null}
+
+      {!sandbox && isFounder && !idea && isSetupStage(launch.record.stage) ? (
+        <SaleProgressCard
           launch={launch}
+          onOpenManage={() => setTab("manage")}
           onPostUpdate={() => setUpdateOpen(true)}
         />
       ) : null}
@@ -263,7 +288,7 @@ export function LaunchDetailPage({
         role="tablist"
         aria-label="Launch sections"
       >
-        {tabs
+        {visibleTabs
           .filter((t) => !t.founderOnly || isFounder)
           .map((t) => (
             <button
@@ -284,7 +309,10 @@ export function LaunchDetailPage({
           ))}
       </div>
 
-      {tab === "overview" ? (
+      {tab === "overview" && idea ? (
+        <IdeaOverview record={launch.record} />
+      ) : null}
+      {tab === "overview" && !idea ? (
         <>
           {/* The TrustGraph surface: gate state, published roots, the graph. */}
           <PriceChartCard launch={launch} />

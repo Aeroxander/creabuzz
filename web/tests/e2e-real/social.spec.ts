@@ -921,6 +921,30 @@ test("an idea starts in one step with an open supporters room, and a supporter j
     await readAs("alice", { kinds: [39000], "#d": [chat.team] }),
   ).toHaveLength(0);
 
+  // An idea's page is quiet: no empty money tabs, and a plain "what happens next".
+  await expect(page.getByTestId("idea-overview")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Proposals/ })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Treasury" })).toHaveCount(0);
+
+  // The announcement is written for them; posting it ticks the step off.
+  await page.getByTestId("idea-announce").click();
+  await expect(page.getByTestId("idea-share-input")).toHaveValue(
+    new RegExp(`starting ${name}`),
+  );
+  await page.getByTestId("idea-share-submit").click();
+  await expect(page.getByTestId("idea-announce")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // The Ideas filter finds it.
+  await page.goto("/launchpad");
+  await page.getByTestId("launch-filter-ideas").click();
+  await expect(
+    page.getByTestId("launch-card-title").filter({ hasText: name }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
+  await expect(page.getByTestId("idea-progress")).toBeVisible();
+
   // Until ten people show up, the sale is not the next step (but can be skipped).
   await expect(page.getByTestId("idea-prepare-sale")).toBeDisabled();
   await expect(page.getByTestId("idea-prepare-anyway")).toBeVisible();
@@ -985,8 +1009,15 @@ test("an idea starts in one step with an open supporters room, and a supporter j
     await aliceContext.close();
   }
 
-  // The founder sees the count.
-  await page.reload();
+  // The founder is told, without opening the launch: it is in notifications.
+  await page.goto("/social/notifications");
+  await expect(
+    page.getByTestId("your-launches-supporters").first(),
+  ).toContainText("new supporter", { timeout: 30_000 });
+  await expect(page.getByTestId("your-launches")).toContainText(name);
+
+  // Opening the launch shows the count, and counts as having seen them.
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
   await expect(page.getByTestId("launch-supporters")).toContainText(
     "1 supporter",
     { timeout: 30_000 },
@@ -1136,6 +1167,10 @@ test("preparing the sale keeps the idea's rooms and adds the gated backers room"
   await expect(page.getByTestId("idea-progress")).toHaveCount(0, {
     timeout: 30_000,
   });
+  // The guidance does not vanish: the next steps (deploy first) take its place.
+  await expect(page.getByTestId("sale-progress")).toBeVisible();
+  await page.getByTestId("sale-step-deploy").click();
+  await expect(page.getByTestId("launch-readiness")).toBeVisible();
   let record = await latest();
   for (let i = 0; i < 30 && !JSON.parse(record.content).floorPrice; i += 1) {
     await new Promise((r) => setTimeout(r, 500));
