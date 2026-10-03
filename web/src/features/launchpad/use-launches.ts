@@ -24,6 +24,7 @@ import {
   type KIND_LAUNCH_UPDATE,
 } from "@/shared/constants/kinds";
 import { hasChat } from "./lib/launch-chat";
+import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
 import {
   KIND_APPROVAL_DENY,
@@ -252,6 +253,8 @@ export async function publishMirror(
     kind: number;
     tags: string[][];
     content: Record<string, unknown> | string;
+    /** Overrides "now" (user-signed records only), to supersede a record. */
+    createdAt?: number;
   },
   auth?: {
     signEvent: (template: {
@@ -276,6 +279,9 @@ export async function publishMirror(
         kind: input.kind,
         tags: input.tags,
         content,
+        ...(input.createdAt === undefined
+          ? {}
+          : { created_at: input.createdAt }),
       });
   if (!signed) throw new Error("signing failed");
   const result = await publishEvent(relayWsUrl(), signed, {
@@ -419,7 +425,25 @@ export function useCreateLaunch() {
           },
         );
       }
-      return publishMirror({ kind: KIND_LAUNCH_RECORD, tags, content });
+      // A record replaces the one with the same id only if it is newer. Two
+      // saves in the same second (a link, then a click) would tie, and the
+      // relay may keep the older one, silently dropping the later save.
+      const me = existingUserPubkey();
+      const current = queryClient
+        .getQueryData<Launch[]>(launchesQueryKey)
+        ?.find(
+          (launch) =>
+            launch.record.id === input.id && launch.record.author === me,
+        );
+      return publishMirror({
+        kind: KIND_LAUNCH_RECORD,
+        tags,
+        content,
+        createdAt: supersedingTime(
+          Math.floor(Date.now() / 1000),
+          current?.record.createdAt,
+        ),
+      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: launchesQueryKey });

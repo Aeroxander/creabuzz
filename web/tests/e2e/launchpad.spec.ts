@@ -445,11 +445,9 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
   // The send button is enabled for a valid composed bid on a linked auction.
   await expect(page.getByTestId("bid-send")).toBeEnabled();
   await page.getByTestId("bid-send").click();
-  await expect(page.getByTestId("bid-tx")).toHaveValue(`0x${"ab".repeat(32)}`);
 
-  // Mirror publishes the 47002 with the wallet hash — a mirror with no tx
-  // would claim a bid that never landed.
-  await page.getByTestId("bid-record").click();
+  // Sending the bid records it: no second click. The 47002 carries the wallet
+  // hash — a mirror with no tx would claim a bid that never landed.
   await expect
     .poll(() => published.find((e) => e.kind === 47002))
     .toEqual(

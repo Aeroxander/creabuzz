@@ -6,23 +6,37 @@
  * Alias-free on purpose: `sale-steps.test.mjs` drives it under `node --test`.
  */
 
-import type { LaunchRecord } from "../models.ts";
+import { hasFounderCommitments, type LaunchRecord } from "../models.ts";
 
-export type SaleStepKey = "prepared" | "deploy" | "open" | "announce";
+export type SaleStepKey =
+  | "prepared"
+  | "commitments"
+  | "deploy"
+  | "open"
+  | "announce";
 
 export interface SaleStep {
   key: SaleStepKey;
   label: string;
   hint: string;
   done: boolean;
-  /** Where the founder does it: the Manage tab, or the update dialog. */
-  action: "manage" | "update" | null;
+  /** Where the founder does it: here (commitments, go live), Manage, or the update dialog. */
+  action: "commitments" | "manage" | "live" | "update" | null;
 }
 
 const OPEN_STAGES: readonly string[] = ["live", "funding", "graduated"];
 
 export function saleSteps(
-  record: Pick<LaunchRecord, "stage" | "auction" | "token">,
+  record: Pick<
+    LaunchRecord,
+    | "stage"
+    | "auction"
+    | "token"
+    | "longPitch"
+    | "channels"
+    | "budget"
+    | "updateCadence"
+  >,
   updateCount: number,
 ): SaleStep[] {
   return [
@@ -34,6 +48,13 @@ export function saleSteps(
       action: null,
     },
     {
+      key: "commitments",
+      label: "Make your commitments",
+      hint: "A longer story, how often you will update backers, and a monthly budget. Backers weigh these.",
+      done: hasFounderCommitments(record as LaunchRecord),
+      action: "commitments",
+    },
+    {
       key: "deploy",
       label: "Deploy the token and the sale",
       hint: "One guided flow on the Manage tab.",
@@ -43,9 +64,9 @@ export function saleSteps(
     {
       key: "open",
       label: "Open the sale to backers",
-      hint: "Set the launch to Live on the Manage tab.",
+      hint: "Set the launch to Live so backers can bid.",
       done: OPEN_STAGES.includes(record.stage),
-      action: "manage",
+      action: "live",
     },
     {
       key: "announce",
@@ -57,9 +78,13 @@ export function saleSteps(
   ];
 }
 
-/** True while the sale is being set up: prepared, but not yet open to backers. */
+/**
+ * True while the founder is still being walked through the sale: from prepared
+ * until it has been live and announced. Later stages are the founder's own
+ * business, not onboarding.
+ */
 export function isSetupStage(stage: LaunchRecord["stage"]): boolean {
-  return stage === "draft" || stage === "review";
+  return stage === "draft" || stage === "review" || stage === "live";
 }
 
 /** The first step still to do, or null when everything is done. */

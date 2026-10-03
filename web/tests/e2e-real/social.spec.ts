@@ -1174,9 +1174,10 @@ test("preparing the sale keeps the idea's rooms and adds the gated backers room"
   await expect(page.getByTestId("idea-progress")).toHaveCount(0, {
     timeout: 30_000,
   });
-  // The guidance does not vanish: the next steps (deploy first) take its place.
+  // The guidance does not vanish: the next steps (commitments first) take its place.
   await expect(page.getByTestId("sale-progress")).toBeVisible();
-  await page.getByTestId("sale-step-deploy").click();
+  await expect(page.getByTestId("sale-step-commitments")).toBeVisible();
+  await page.getByRole("tab", { name: /Manage/ }).click();
   await expect(page.getByTestId("launch-readiness")).toBeVisible();
   let record = await latest();
   for (let i = 0; i < 30 && !JSON.parse(record.content).floorPrice; i += 1) {

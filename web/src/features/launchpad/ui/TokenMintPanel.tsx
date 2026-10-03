@@ -270,7 +270,10 @@ export function TokenMintPanel({
         requiredRaised: launch.record.requiredRaised ?? "",
         auction: launch.record.auction ?? "",
         token: address.trim(),
-        treasury: launch.record.treasury ?? "",
+        // The box above is the founder's choice; blank keeps what is recorded.
+        treasury: isEvmAddress(treasury)
+          ? treasury.trim()
+          : (launch.record.treasury ?? ""),
         admission: launch.record.admission,
         channels: launch.record.channels,
         chat: launch.record.chat,

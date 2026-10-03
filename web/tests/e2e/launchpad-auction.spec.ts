@@ -581,7 +581,7 @@ for (const journey of JOURNEYS) {
     // ── 2. A bidder bids through the real bid dialog ─────────────────────────
     await mineTo(startBlock + 2);
     const bidderPage = await context.newPage();
-    await mockRelay(bidderPage, linked);
+    const bidderRelay = await mockRelay(bidderPage, linked);
     await installWallet(bidderPage, BIDDER);
     await bidderPage.addInitScript(
       ([rpcUrl]) => window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl),
@@ -602,13 +602,20 @@ for (const journey of JOURNEYS) {
     await bidderPage.getByTestId("bid-budget").fill(journey.budget);
     await expect(bidderPage.getByTestId("bid-issues")).toHaveCount(0);
     await bidderPage.getByTestId("bid-send").click();
-    await expect(bidderPage.getByTestId("bid-tx")).toHaveValue(
-      /^0x[0-9a-f]{64}$/,
-      { timeout: 60_000 },
+    // Sending records the bid, so the dialog closes and the record carries the hash.
+    await expect
+      .poll(() => bidderRelay.published.find((e) => e.kind === 47002), {
+        timeout: 60_000,
+      })
+      .toBeTruthy();
+    const bidTx = String(
+      JSON.parse(
+        bidderRelay.published.find((e) => e.kind === 47002)?.content ?? "{}",
+      ).tx,
     );
+    expect(bidTx).toMatch(/^0x[0-9a-f]{64}$/);
 
     // The hash the dialog shows must be a bid that LANDED, not one that reverted.
-    const bidTx = await bidderPage.getByTestId("bid-tx").inputValue();
     const bidReceipt = (await rpc("eth_getTransactionReceipt", [bidTx])) as {
       status: string;
     } | null;

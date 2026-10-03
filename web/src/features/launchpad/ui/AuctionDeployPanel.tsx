@@ -17,7 +17,7 @@ import {
   retryPlan,
   type AuctionPlanInputs,
 } from "../lib/auctionFlow";
-import type { Launch } from "../models";
+import { isEvmAddress, type Launch } from "../models";
 import { useAuctionDeployFlow } from "../use-auction-flow";
 import { useConnectedWallet } from "../use-connected-wallet";
 import {
@@ -29,6 +29,7 @@ import {
   WalletStrip,
 } from "./auction-widgets";
 import { UnauditedNotice } from "./UnauditedNotice";
+import { TreasuryFromWallet } from "./TreasuryFromWallet";
 
 function chainNumber(value: string | null): number | null {
   if (value === null) return null;
@@ -51,9 +52,12 @@ function chainNumber(value: string | null): number | null {
 export function AuctionDeployPanel({
   launch,
   onLink,
+  onSetTreasury,
 }: {
   launch: Launch;
   onLink: (input: { auction: string }) => Promise<unknown>;
+  /** Records the treasury (the wallet that deploys and receives the raise). */
+  onSetTreasury: (address: string) => Promise<unknown>;
 }) {
   const { record } = launch;
   const wallet = useConnectedWallet();
@@ -154,6 +158,12 @@ export function AuctionDeployPanel({
       </p>
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="auction" wallet={wallet} />
+      {isEvmAddress(record.treasury ?? "") || !wallet.address ? null : (
+        <TreasuryFromWallet
+          address={wallet.address}
+          onSetTreasury={onSetTreasury}
+        />
+      )}
       <GateNote gate={gate} testId="auction-gate" />
 
       <ol

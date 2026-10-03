@@ -30,7 +30,8 @@
 #
 # Usage:  scripts/web-auction-e2e.sh [playwright args, e.g. -g "curated" --repeat-each=3]
 # Env:    ANVIL_PORT (default random high port), SKIP_BUILD=1 (reuse web/dist),
-#         E2E_SPEC (another spec to run against the same chain)
+#         E2E_SPEC (another spec to run against the same chain),
+#         E2E_CONFIG (another Playwright config, e.g. the real-relay one)
 
 set -euo pipefail
 
@@ -110,8 +111,18 @@ cd "$REPO_ROOT/web"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
   # A local chain has no fixed USDC: tell the app which token the dev USDC is.
-  VITE_LOCAL_USDC="$CURRENCY" node_modules/.bin/vite build >/dev/null 2>&1 || { echo "web build failed"; exit 2; }
+  # The dev chain is also the create dialog's default chain (production defaults
+  # to Sepolia).
+  VITE_LOCAL_USDC="$CURRENCY" VITE_LAUNCHPAD_CHAIN_ID=31337 node_modules/.bin/vite build >/dev/null 2>&1 || { echo "web build failed"; exit 2; }
 fi
 step "running the browser spec"
+# E2E_CONFIG: run against another Playwright config instead of the mocked-relay
+# `smoke` project, e.g. playwright.real-relay.config.ts for the journey spec
+# (a real relay serving web/dist must already be up; see tests/e2e-real/README.md).
+if [[ -n "${E2E_CONFIG:-}" ]]; then
+  PROJECT_ARGS=(--config="$E2E_CONFIG")
+else
+  PROJECT_ARGS=(--project=smoke)
+fi
 E2E_ANVIL_URL="$RPC" E2E_SALE_TOKEN="$SALE_TOKEN" E2E_CURRENCY="$CURRENCY" \
-  node_modules/.bin/playwright test "${E2E_SPEC:-tests/e2e/launchpad-auction.spec.ts}" --project=smoke --reporter=list "$@"
+  node_modules/.bin/playwright test "${E2E_SPEC:-tests/e2e/launchpad-auction.spec.ts}" "${PROJECT_ARGS[@]}" --reporter=list "$@"

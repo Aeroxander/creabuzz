@@ -58,6 +58,29 @@ since the founder last looked, and backers waiting for the backers room. The
 Launchpad has an *Ideas* filter. The announcement step opens the feed composer
 pre-filled and tagged to the launch.
 
+### What the Anvil journey test found and fixed
+
+`web/tests/e2e-real/journey.spec.ts` drives idea → quick sale setup →
+commitments → link token → deploy → go live → a backer bids → the founder admits
+them, on a real relay and a real chain
+(`E2E_SPEC=tests/e2e-real/journey.spec.ts E2E_CONFIG=playwright.local-chromium.config.ts scripts/web-auction-e2e.sh`).
+Writing it exposed seams the mocked specs hid:
+
+- A quick-setup sale could never go live: going live needs a long story, an update
+  cadence and a monthly budget, which the quick setup does not ask. The founder's
+  checklist now has a *Make your commitments* step with a small inline form, and a
+  *Go live* button.
+- The deploy panel was disabled by a missing treasury with no way forward. It now
+  offers the connected wallet as the treasury in one click, and the treasury box on
+  the token-link panel is no longer ignored.
+- Two saves of a launch in the same second could tie, and the relay may keep the
+  older one. Records are now stamped one second past the one they replace.
+- The create dialog defaulted to Sepolia even when the build targets another chain;
+  it now follows the configured default chain (`VITE_LAUNCHPAD_CHAIN_ID`, local
+  Anvil in dev builds).
+- Sending a bid and recording it were two clicks, and only a recorded bid opens the
+  backers room. Sending now records the bid; the manual button stays as a retry.
+
 ### Rooms
 
 | Room | Who | How they get in |

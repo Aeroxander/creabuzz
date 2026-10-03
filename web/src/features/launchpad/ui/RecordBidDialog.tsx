@@ -298,6 +298,9 @@ export function RecordBidDialog({
       if (!TX_HASH_RE.test(result.txHash))
         throw new Error("The sender returned an invalid hash.");
       setTx(result.txHash);
+      // Sending the bid is the act; recording it is not a second decision. The
+      // manual button stays for a record that fails or a bid made elsewhere.
+      publishBid(result.txHash);
     } catch (err) {
       if (err instanceof PaymasterDeniedError) {
         setError(`${err.serverMessage} ${err.dashboardAction}`);
@@ -314,6 +317,23 @@ export function RecordBidDialog({
     }
   };
 
+  /** Publish the bid's record for `hash`: what lets the founder see who backed. */
+  const publishBid = (hash: string) => {
+    if (isPublishing) return;
+    setError(null);
+    // `tx` holds this hash by the time a locked passkey is unlocked.
+    resumeRef.current = submit;
+    void onPublish({
+      bucket: bucket.trim() || "bucket-0",
+      // The mirror records atomic units and the snapped Q96 price, as before.
+      budget: budgetAtomic?.toString() ?? budget.trim(),
+      maxPrice: plan?.maxPriceQ96.toString() ?? maxPrice.trim(),
+      tx: hash,
+      asAgent,
+    });
+  };
+
+  /** The manual path: a bid made elsewhere, or a record that failed the first time. */
   const submit = () => {
     if (isPublishing) return;
     if (tx.trim() !== "" && !TX_HASH_RE.test(tx.trim())) {
@@ -326,16 +346,7 @@ export function RecordBidDialog({
       );
       return;
     }
-    setError(null);
-    resumeRef.current = submit;
-    void onPublish({
-      bucket: bucket.trim() || "bucket-0",
-      // The mirror records atomic units and the snapped Q96 price, as before.
-      budget: budgetAtomic?.toString() ?? budget.trim(),
-      maxPrice: plan?.maxPriceQ96.toString() ?? maxPrice.trim(),
-      tx: tx.trim(),
-      asAgent,
-    });
+    publishBid(tx.trim());
   };
 
   const canMirror = tx.trim() !== "" && !isPublishing;
@@ -349,8 +360,8 @@ export function RecordBidDialog({
       </h2>
       <UnauditedNotice chainId={record.chainId} />
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Your bid goes from your wallet straight to the auction. Once it is
-        confirmed, record it on this launch&apos;s page so others can see it.
+        Your bid goes from your wallet straight to the auction, and is recorded
+        on this launch&apos;s page so the founder and others can see it.
       </p>
       {!auction ? (
         <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">

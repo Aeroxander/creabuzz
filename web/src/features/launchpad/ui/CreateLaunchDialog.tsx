@@ -59,6 +59,7 @@ import {
   type WizardState,
 } from "../lib/wizard";
 import {
+  defaultChainPreset,
   documentedBlockTimeSeconds,
   localUsdcAddress,
   ethBlockNumber,
@@ -132,7 +133,7 @@ export function CreateLaunchDialog({
   const [image, setImage] = useState(seed?.image ?? "");
   const [category, setCategory] = useState(seed?.category ?? "");
   const [chainId, setChainId] = useState<string>(
-    initial?.chainId ?? LAUNCH_DEFAULTS.chainId,
+    initial?.chainId ?? String(defaultChainPreset().chainId),
   );
   // What the sale raises in decides every unit on the money steps: ETH has 18
   // decimals, USDC 6. Derived, never stored twice.
@@ -537,7 +538,7 @@ export function CreateLaunchDialog({
   };
 
   const quickStart = () => {
-    setChainId(LAUNCH_DEFAULTS.chainId);
+    setChainId(String(defaultChainPreset().chainId));
     setFloorPrice(LAUNCH_DEFAULTS.floorPrice);
     setTickSpacing(LAUNCH_DEFAULTS.tickSpacing);
     setRequiredRaised(LAUNCH_DEFAULTS.requiredRaised);

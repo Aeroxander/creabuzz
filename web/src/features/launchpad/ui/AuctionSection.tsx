@@ -18,10 +18,13 @@ import { GraduationPanel } from "./GraduationPanel";
 export function AuctionSection({
   launch,
   onLink,
+  onSetTreasury,
 }: {
   launch: Launch;
   /** Publishes the launch record with the deployed auction; must PROPAGATE errors. */
   onLink: (input: { auction: string }) => Promise<unknown>;
+  /** Publishes the launch record with its treasury; must PROPAGATE errors. */
+  onSetTreasury: (address: string) => Promise<unknown>;
 }) {
   const { record } = launch;
   const [deployedHere, setDeployedHere] = useState(false);
@@ -39,7 +42,11 @@ export function AuctionSection({
   return (
     <>
       {canDeploy && (!record.auction || deployedHere) ? (
-        <AuctionDeployPanel launch={launch} onLink={link} />
+        <AuctionDeployPanel
+          launch={launch}
+          onLink={link}
+          onSetTreasury={onSetTreasury}
+        />
       ) : null}
       {record.auction ? <GraduationPanel launch={launch} /> : null}
     </>

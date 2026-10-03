@@ -658,6 +658,7 @@ export function ManagePanel({
         // this must PROPAGATE the publish error (not `handleSave`, which toasts
         // and swallows it). `toInput` keeps every field the record holds.
         onLink={(input) => save.mutateAsync(toInput(input))}
+        onSetTreasury={(treasury) => save.mutateAsync(toInput({ treasury }))}
       />
 
       <Card className="border-red-500/30 p-4">
