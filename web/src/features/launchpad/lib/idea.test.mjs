@@ -5,6 +5,7 @@ import {
   gateProgress,
   ideaId,
   ideaIssue,
+  ideaTokenDefaults,
   ideaToInput,
   isIdea,
   SUPPORTER_GATE,
@@ -97,4 +98,11 @@ test("gateProgress counts toward the nudge and clamps", () => {
   assert.equal(gateProgress(SUPPORTER_GATE).open, true);
   assert.equal(gateProgress(500).percent, 100);
   assert.equal(gateProgress(-4).count, 0);
+});
+
+test("the sale wizard starts from the idea's name", () => {
+  const defaults = ideaTokenDefaults(" Nebula ");
+  assert.equal(defaults.tokenName, "Nebula Token");
+  assert.ok(defaults.symbol.length > 0);
+  assert.deepEqual(ideaTokenDefaults(undefined), { tokenName: "", symbol: "" });
 });

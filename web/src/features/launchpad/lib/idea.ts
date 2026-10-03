@@ -12,6 +12,7 @@
 import type { CreateLaunchInput } from "../use-launches.ts";
 import {
   LAUNCH_DEFAULTS,
+  suggestSymbol,
   type LaunchChat,
   type LaunchRecord,
 } from "../models.ts";
@@ -114,6 +115,17 @@ export function ideaToInput(idea: {
     channels: [],
     chat: idea.chat,
   };
+}
+
+/** The token name and symbol the sale wizard starts from for an idea's name. */
+export function ideaTokenDefaults(name: string | undefined): {
+  tokenName: string;
+  symbol: string;
+} {
+  const trimmed = name?.trim() ?? "";
+  return trimmed
+    ? { tokenName: `${trimmed} Token`, symbol: suggestSymbol(trimmed) }
+    : { tokenName: "", symbol: "" };
 }
 
 export interface GateProgress {

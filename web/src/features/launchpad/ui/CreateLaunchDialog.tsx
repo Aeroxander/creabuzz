@@ -73,6 +73,7 @@ import {
   MILESTONE_TEMPLATES,
   milestonesFromTemplate,
 } from "../lib/unlock-plans";
+import { ideaTokenDefaults } from "../lib/idea";
 import { Modal } from "./Modal";
 import {
   AdvancedFields,
@@ -98,11 +99,7 @@ export function CreateLaunchDialog({
   onCreate: (input: CreateLaunchInput) => Promise<void>;
   onClose: () => void;
   initial?: Partial<CreateLaunchInput>;
-  /**
-   * An idea being turned into a sale. Unlike `initial` this is still a create:
-   * the sale terms are chosen here, while the idea's identity (id, name, pitch,
-   * cover, category, rooms) is carried over and republished onto the same record.
-   */
+  /** An idea becoming a sale: still a create, with the idea's identity and rooms carried over. */
   idea?: Partial<CreateLaunchInput>;
   /** Shown as an info banner — e.g. "this republishes the same record". */
   relaunchNote?: string;
@@ -115,7 +112,6 @@ export function CreateLaunchDialog({
   publishError?: string | null;
 }) {
   const isEdit = Boolean(initial);
-  /** What the identity fields start from: the record being edited, or the idea. */
   const seed = initial ?? idea;
 
   const [id, setId] = useState(seed?.id ?? "");
@@ -187,14 +183,10 @@ export function CreateLaunchDialog({
     initial?.token ? "import" : "mint",
   );
   const [tokenName, setTokenName] = useState(
-    () =>
-      initial?.tokenPlan?.name ??
-      (idea?.name?.trim() ? `${idea.name.trim()} Token` : ""),
+    () => initial?.tokenPlan?.name ?? ideaTokenDefaults(idea?.name).tokenName,
   );
   const [symbol, setSymbol] = useState(
-    () =>
-      initial?.tokenPlan?.symbol ??
-      (idea?.name?.trim() ? suggestSymbol(idea.name) : ""),
+    () => initial?.tokenPlan?.symbol ?? ideaTokenDefaults(idea?.name).symbol,
   );
   const [supply, setSupply] = useState<string>(
     () => initial?.tokenPlan?.supply ?? LAUNCH_DEFAULTS.supply,
@@ -640,7 +632,6 @@ export function CreateLaunchDialog({
       rawBlocks,
       stage: initial?.stage ?? "draft",
     });
-    // The idea's rooms ride along, or the republish would erase them.
     void onCreate(idea?.chat ? { ...input, chat: idea.chat } : input);
   };
 
