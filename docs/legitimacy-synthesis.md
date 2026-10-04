@@ -271,6 +271,18 @@ treasury balance, committed budget, **months of runway at that budget**,
 the reserve escrowed for the price floor, and what can actually be exited
 today, each as its own line.
 
+### G14. Recovery must never restore revoked authority (check, then test)
+
+From ResonantOS ADR-038: the Guardian may restart and roll back, but "rollback
+must not undo a subsequent invariant tightening or restore revoked authority",
+restoring an approved baseline is distinct from accepting a new one, and "first
+party does not imply privileged". Two questions for us, neither verified yet:
+(1) if a relay is restored from a backup or replays older events, can a `37011`
+grant that was revoked afterwards come back (revocation is a newer replacement
+event, so last-write-wins protects us only while that newer event survives);
+(2) do first-party agents and personas hold any privilege a third-party one
+cannot? Answer both, then pin each with a test.
+
 ## 4. Putting it together with majeur and apptoken
 
 | Need | Use | Not |
