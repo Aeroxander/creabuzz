@@ -18,15 +18,16 @@ vision; [dao-os.md](dao-os.md), [agentic-governance-design.md](agentic-governanc
 | ResonantOS 2.0 planning docs (`ResonantOS/2.0.0-alpha`, `docs/planning/02-sdk-dao-governance-roadmap.md`) | Cloned and read | First-hand. This is the *developer-organization* governance design, not the economy |
 | `whitepaper.astro` (the page the user pointed to) | Read. It calls itself the **legacy philosophical** whitepaper and points to `resonantdao.com/whitepaper` for the DAO design | First-hand, philosophy only |
 | The earlier "Resonant Economy" page (`dao.astro`, in the website repo's **git history**, before 2026-05-05) | Recovered from history and read | First-hand, but an **earlier design**: it uses `$R10/$R12/$R15`, which the research repo says the current whitepaper does not carry as live policy |
-| ResonantDAO whitepaper, current (credentials, `$RES`, marketplace, governance, Solana target) | **Not read.** `resonantdao.com` is blocked and no repo holds it | The one source still missing for the current economy |
+| ResonantDAO whitepaper, **current** (credentials, `$RES`, 22-dimension contribution, governance, roadmap) | **Pasted in full by the user (2026-10-04)**; section 1d | First-hand. It is a working draft and lists its own open questions |
 | Conviction Markets paper (Outlier Ventures, Mar 2026) | Our own notes only ([dao-launchpad-plan §10](dao-launchpad-plan.md), [next-gen §4](next-gen-launchpad-plan.md)); the PDF is not in the repo | Second-hand. Confirmed by the user to be the same Outlier Ventures paper we already read |
 | Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md) | The transcripts live on the user's Mac, not here |
 | `apptoken-skills`, `majeur` | Cloned / vendored (`contracts/lib/majeur`) | First-hand |
 
-Anything below that depends on the ResonantDAO whitepaper or the conviction
-paper is only as good as those summaries. **Paste the ResonantDAO whitepaper
-text, or allow `resonantdao.com`, and I will re-check sections 2 and 3 against
-the source.**
+The conviction paper is only as good as our earlier notes. The ResonantDAO
+whitepaper is now read first-hand (section 1d), and it **corrects two things I
+wrote earlier**: the "earlier page" in section 1e is superseded, and my first
+version of G3 broke the whitepaper's own rule that contribution pays on outcome,
+never on activity.
 
 ## 1. What we already took
 
@@ -78,7 +79,30 @@ git; the web pages themselves are blocked).
 | `ResonantOS-Team-Coordination-Hub` | No | A Reddit-and-spreadsheet process: post types for task, decision, blocker, weekly update |
 | `rcode` | No | A coding-harness fork. We have our own agent harness, and its README describes its origin in terms I would not build on |
 
-## 1d. The earlier Resonant Economy page (recovered from git history)
+## 1d. The current ResonantDAO whitepaper
+
+A membership DAO, not a launchpad. Phase 1 (now, testnet or devnet, Solana
+mainnet targeted Q4 2026) is a contribution economy: non-transferable credentials,
+a transferable reward token `$RES`, a marketplace, a weekly call, an academy.
+Phase 2 (a financial layer, "after 2028, readiness first, timeline second") is
+explicitly gated and researched, with its own risk discipline.
+
+| Whitepaper position | Verdict for Creaton |
+| --- | --- |
+| **Contribution pays on outcome, never on activity.** Attendance, message volume and time spent are never rewarded as such | **Adopt as a hard rule.** It overturns my first G3, which counted messages and active days. See G3 |
+| **22-dimension profile, never one number.** Verified actions update 22 non-transferable balances. `$RCT` is a derived scalar, "an approximate indicator" that "never replaces the detailed profile"; governance weight comes from the profile, not the scalar | The *principle* (report a profile, not a total) is already ours (no person total). The 22 dimensions are their own taxonomy and their on-chain form is an open question in their own list; do not copy it |
+| **Contextual governance**: each question declares its salient dimensions, and weight follows verified balances in exactly those | Same instinct as our decision routing. Theirs weights by *who has relevant verified outcomes*; ours routes by *what kind of decision it is*. The weighting half is **untested and rests on per-identity scores**, so park it (G3, T4) |
+| **Committed capital is recognized at low weight and never counts toward voting**; general control can never be bought | **A real fork.** Our project token carries governance, so capital does vote (tempered by ragequit and Loot). See tension 4 |
+| **AI members must be sponsored by, and linked to, an active human member**; the human is accountable, and the DAO can restrict or ban the AI accounts. Agent-performed work earns measurement and `$RES`, but **only the human-attributed portion can ever count toward voting** | **Matches the decided mandate-bound rule** and sharpens it (G5): sponsor link, human-attributed portion, no capital-as-AI route to power |
+| Non-transferable credentials, one active credential per wallet, wallet signs the Manifesto text hash as **proof of agreement** | We have soulbound Badges but no explicit *agreement to the charter*. See G15 |
+| **Tiered verification**: automatic checks for deterministic events, independent human review for ambiguous, relational or high-impact work | We use one mechanism (a verifier quorum) for every claim. See G16 |
+| **Custodian-led bootstrap**, stated honestly ("not fully decentralized on day one") | Ours is the founder as treasury owner of `VerifierSet` until graduation. Honest in the same way, but the *transition rule* must be explicit (G1) |
+| Human trust is a **continuously maintained state**, not a one-time KYC (history, attestation, proof-of-life, anomaly review) | Our trust signals are TrustGraph roots and follows. Nothing here is "maintained" or decays; worth a later look |
+| `$RES`: 1,000,000,000 minted to the DAO treasury, **no external liquidity at launch**, internal reward and utility first | Same caution as our CCA design (nothing tradable before graduation, reserve escrowed). Not a gap |
+| Phase 2: `$R10` growth target, `$R12`/`$R15` locked yield, buyback and burn, "Universal Contribution Income" | Still **do not import** (section 1e). Notably the whitepaper itself says "algorithmic token systems have failed before" and defers this |
+| Its own **open questions**: reward emission limits, on-chain form of the 22 balances, validation rules, **anti-farming and anti-capture rules**, governance thresholds | The sybil problem is *unsolved in the source*. That is the reason our reward-bearing weights must be cost-bound (G3) |
+
+## 1e. The earlier Resonant Economy page (recovered from git history; superseded)
 
 Phase 1 is a contribution economy: `$RCT` as a non-exchangeable "karma" token,
 per-community `$P*CT` tokens, and a *Contribution Level* from four categories
@@ -128,8 +152,22 @@ Per [AGENTS.md](../AGENTS.md), intentional tension should be explicit.
    treats score-to-authority as the failure to avoid. Keep it, and pin the line
    with an invariant (G6): no score ever feeds Majeur voting power.
 3. **Agents and governance.** ResonantOS: agents may earn and spend, but get no
-   human-only governance rights. Ours: agents may be delegates (D3), with
-   "mandate vs advisory" still open (D10). Resolution below (G5).
+   human-only governance rights. Ours: agents may be delegates (D3), now
+   mandate-bound (D10 decided). Detail in G5.
+4. **Does capital vote?** The whitepaper and the conviction paper both say
+   contribution outranks capital, and the whitepaper says capital *never* counts
+   toward voting. Our project token carries governance (Majeur Shares), so
+   investors vote, balanced by ragequit and by Loot for passive capital. This is
+   the largest philosophical difference, and it follows from a real difference of
+   product: ResonantDAO is a membership DAO; Creaton launches projects funded by
+   the public. The question to settle per raise mode (D11): in **patron mode**,
+   should bidders receive Loot (economic rights, no vote) so that only
+   contributors earn Shares, as the whitepaper would have it? In **float mode**
+   the investor-owned model is defensible. Recommend patron = Loot-for-capital.
+5. **Profile versus scalar.** The whitepaper keeps a scalar `$RCT` while insisting
+   it never governs. That is the "person total" the contribution research blocks,
+   kept at arm's length by rule only. We should do the stricter thing: report
+   profiles, never a total, and have no scalar to misuse.
 
 ## 3. Real gaps, ranked
 
@@ -166,12 +204,17 @@ contribution), and our plan left that as an open, undelivered weight formula
 ("P6", next-gen §4). The idea stage now has the data to deliver it without a new
 event kind:
 
-- time: when someone joined the supporters room (a timestamped kind 9021);
-- contribution: messages they wrote there, distinct days active;
-- capital: a recorded bid, later.
+- time: how long someone has *stood* behind it, from when they joined the
+  supporters room (a timestamped kind 9021), capped. This is the duration of a
+  standing commitment, not presence;
+- capital: a recorded bid, later, which is the one signal that costs money;
+- **not** messages, not days active, not time spent. The whitepaper's own rule is
+  that contribution pays on outcome, never on activity, and activity is also the
+  cheapest thing to fake.
 
-Slice: `lib/conviction.ts`, a pure, deterministic, integer-exact weight with test
-vectors (like `org_diag`), no person total shown to users and no reward effect.
+Slice: `lib/conviction.ts`, a pure, deterministic, integer-exact weight over
+standing time and capital, with test vectors (like `org_diag`), no person total
+shown to users and no reward effect.
 It replaces the raw count in the gate and orders "waiting to join" backers. The
 rule from ResonantOS stays: it informs a *nudge and a sort order*, never
 authority or money.
@@ -205,7 +248,10 @@ grant, with the human principal's weight, and its card shows the grant chain;
 outside a grant it may advise but not vote. A human-required checkpoint can never
 be satisfied by an agent. ResonantOS's DAO roadmap arrives at the same rule
 ("governance decisions require explicit human cryptographic acts; content is not
-authority").
+authority"), and the whitepaper adds two refinements worth copying: an agent seat
+must name its **sponsoring human** (an accountable principal the community can act
+against), and any weight-like quantity counts only the **human-attributed portion**
+of a contributor's work, so capital deployed as agents cannot buy power.
 
 ### G6. Pin the "reputation never becomes governance" line (test, tiny)
 
@@ -271,6 +317,27 @@ treasury balance, committed budget, **months of runway at that budget**,
 the reserve escrowed for the price floor, and what can actually be exited
 today, each as its own line.
 
+### G15. Nobody agrees to the charter (product + small kind, small)
+
+The whitepaper has each member sign the canonical Manifesto text hash, recorded
+on-chain, so "proof of agreement" is a fact rather than a click-through. Our
+`governance.md` is served for outsiders, but no member ever signs it. Slice: a
+signed "I accept charter `<hash>`" event when joining a community or taking a
+seat, shown on the member card, and re-requested when the charter hash changes.
+It is a few lines, and it makes the charter binding in the way ERC-4824 only
+describes.
+
+### G16. One verification mechanism for every claim (contracts + CLI, medium)
+
+The whitepaper tiers verification: deterministic events (a merged PR, a passing
+CI run, a shipped release) are checked automatically; ambiguous, relational or
+high-impact work gets independent human review. We route every claim to a verifier
+quorum, which is slow for the easy cases and thin for the hard ones. Slice: a
+claim declares its tier. Tier 0 attaches a machine-checkable proof (a commit hash
+and a CI attestation) and settles on a challenge window with no quorum; tier 1
+keeps the quorum, with G1's recusal; tier 2 (relational or high impact) requires a
+larger quorum and a longer window (G13).
+
 ### G14. Recovery must never restore revoked authority (check, then test)
 
 From ResonantOS ADR-038: the Guardian may restart and roll back, but "rollback
@@ -303,8 +370,8 @@ share; G3's weight is the principled way to distribute it.
 1. **G1 + G2 + G13**: one contract change to the claim state machine (recusal, expiry, challenge window), tested with Forge, which now runs here.
 2. **G3**: the conviction weight, then swap it in for the supporter count.
 3. **G4 + G6**: small, and they pin the two loops the research warns about.
-4. **G5**: D10 is decided (mandate-bound), so this is unblocked.
-5. **G8, G9**: small additive spec and wiki work.
+4. **G5**: D10 is decided (mandate-bound), so this is unblocked. Add the sponsor link and the human-attributed portion.
+5. **G8, G9, G15**: small additive spec, wiki and charter-acceptance work. **G16** after G1/G2/G13 land.
 6. **G11** (verify), **G12** (UI): small.
 7. G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
 
@@ -315,7 +382,11 @@ Decided (2026-10-04, by the user):
 - The conviction paper is the Outlier Ventures PDF we already read.
 - **D10: agents are mandate-bound.**
 
+Settled by the sources:
+
+- G3's weight orders and nudges only, is built from standing time and capital (never activity), and must not drive the community allocation unless it is bound to a recorded bid.
+
 Still open:
 
-- G3's weight orders and nudges only. The failed-DAO findings answer the earlier open question: it must not drive the community allocation unless the weight is bound to a recorded bid.
-- Is the *current* ResonantDAO whitepaper reachable (paste, or allow `resonantdao.com`)? Until then, sections 2 and 3 rest on the research summary plus the earlier page in section 1d.
+- **Does capital vote** (tension 4)? Recommend: in patron mode, bidders get Loot and only contributors earn Shares; float mode stays investor-owned. This changes `OrgBinding` and the wizard, so it needs an explicit yes.
+- Should agent seats require a named sponsoring human at the contract level, or only in the record?
