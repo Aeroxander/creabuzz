@@ -20,7 +20,7 @@ vision; [dao-os.md](dao-os.md), [agentic-governance-design.md](agentic-governanc
 | The earlier "Resonant Economy" page (`dao.astro`, in the website repo's **git history**, before 2026-05-05) | Recovered from history and read | First-hand, but an **earlier design**: it uses `$R10/$R12/$R15`, which the research repo says the current whitepaper does not carry as live policy |
 | ResonantDAO whitepaper, **current** (credentials, `$RES`, 22-dimension contribution, governance, roadmap) | **Pasted in full by the user (2026-10-04)**; section 1d | First-hand. It is a working draft and lists its own open questions |
 | Conviction Markets paper (Outlier Ventures, Mar 2026) | Our own notes only ([dao-launchpad-plan §10](dao-launchpad-plan.md), [next-gen §4](next-gen-launchpad-plan.md)); the PDF is not in the repo | Second-hand. Confirmed by the user to be the same Outlier Ventures paper we already read |
-| Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md), plus **five transcripts the user uploaded on 2026-10-04** (summits 2, 3, 7, 8, 9; section 1f) | First-hand for those five. Auto-captions with heavy ASR noise; speaker attribution is provisional. Summits 4, 5, 6 are still on the user's Mac (three more are coming) |
+| Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md), plus **all eight transcripts the user uploaded on 2026-10-04** (summits 2 to 9; sections 1f and 1g) | First-hand. Auto-captions with heavy ASR noise; speaker attribution is provisional. Summits 4 and 5 were read in full; summit 6 was read through the Hao Zhu, Pasupalak and Wang talks, and its last third (the closing discussion) was only skimmed |
 | `apptoken-skills`, `majeur` | Cloned / vendored (`contracts/lib/majeur`) | First-hand |
 
 The conviction paper is only as good as our earlier notes. The ResonantDAO
@@ -156,6 +156,33 @@ Not carried over: compute pooling, the narrative and survey-paper asks, and the
 Foresight node discussion. They are real asks of the field, but nothing in a
 launchpad changes because of them.
 
+## 1g. The last three transcripts (summits 4, 5, 6)
+
+These three are the ones the survey leans on most, so the question was what the
+survey left out. Five things.
+
+| Talk | What it says | What we do with it |
+| --- | --- | --- |
+| #4 Dotta (09:24-10:49) | "Any time you give your agent a key it will do everything it can to circumvent it." Sandboxing loses everything that made the agent useful, so the working pattern is a **permissions-aware proxy**: the agent never holds the key, the proxy does, and the policy is per action ("read my email as much as you want, but sending needs my approval"). Different agents get different access | **G17, extended**: enforcement must sit outside the agent's reach, and a grant should be able to tier actions (free, needs a human, never). Today a grant is a scope; the tier is the missing field |
+| #4 Dotta (14:02-14:18, 17:27-17:50) | Exception handling is unspecified: "who do you escalate to?" is implicit in a human org chart and absent for agents. And you must define "good enough" up front, like a franchise's manuals of exactly how long to fry the fries | **G10 and G16, extended**: every agent seat names who it escalates to, and every claim declares its acceptance check before work starts, not after |
+| #5 Leibo (15:15-16:30, 17:30-18:45) | Personhood is a bundle of rights and responsibilities. The design problem is **sanctions**: skin in the game (an account the agent can only operate while funded), and a registration credential on the network whose removal is "the ultimate sanction". Cutting off is retrospective, so you need graduated sanctions | **G19 (new)**: graduated sanctions. We have one tool, revoke. We need a ladder |
+| #5 plenary (22:30-23:03, 31:20-31:32) | The hard case is "something went wrong and we can't find a human it's attached to". Someone has to be the person you can hold to account | **G5, extended**: an agent whose sponsor disappears is an orphan. Make its grants lapse when the sponsor's own authority does |
+| #6 Hao Zhu (21:41-23:25, 23:30-24:10) | Agents talk 10-20% of the time but communication has no effect on cooperation (the muted ablation is null). The failures are a **commitment problem** (it promised a bypass check and never wrote it) and an **expectation problem** (it acknowledged the other's plan, then built its own duplicate) | **G20 (new)**: a promise in chat is not a commitment. Turn "I'll do this" into a claim with an expiry (G2) that other seats can see, so nobody builds the duplicate |
+
+Already in the survey and unchanged: the three eval tiers (#4), the sandwich
+(#4, "declare intent, agents execute, someone verifies"), the null communication
+ablation and the 30-50% solo-versus-team gap (#6), Morpheus's persistent,
+non-stationary world (#6), and "P&L is a reward function" (#8). One thing from #6
+confirms a choice rather than adding one: Wang proposes a "large coordination
+model" trained only on anonymised event metadata (who did what to which artifact
+when). That is what our audit chain and `org_diag` already record, with no message
+content, and the transcript supports keeping it that way.
+
+Not carried over: Dotta's eight-layer ladder and the skill-sprawl advice (about
+building agents, not a launchpad), Pasupalak's business-buying thesis, and the
+solipsism argument as a general claim. Leibo's point that an agent may be "a
+person" only for a purpose is already our position (D10).
+
 ## 2. Tensions to decide, not bugs
 
 These are places where a source says "do not" and the product deliberately does.
@@ -274,6 +301,12 @@ must name its **sponsoring human** (an accountable principal the community can a
 against), and any weight-like quantity counts only the **human-attributed portion**
 of a contributor's work, so capital deployed as agents cannot buy power.
 
+Orphans (Leibo, plenary): the hard case in the discussion was "something went
+wrong and we can't find a human it's attached to". Our grants are transitive and
+revocable, so the fix is cheap: an agent's grant chain must end at a living human
+seat, and when that seat's own authority is revoked or expires, everything below
+it lapses with it. Show the sponsor on the agent card so there is always a name.
+
 ### G6. Pin the "reputation never becomes governance" line (test, tiny)
 
 A test that searches the contract sources for any read of a score, badge tier or
@@ -328,6 +361,11 @@ all (the audit's gap 5). When we build one, the shape is fixed: an operator may
 suspend a listing at once, but the suspension is a public receipt that opens a
 review which must be closed by someone else, or it lapses.
 
+Added by the Stanford re-read (Dotta): the same question applies to a failing
+agent. Each agent seat names an escalation target (a human or a seat) in its
+grant, and a task that fails with no target waits for its sponsor instead of
+retrying forever.
+
 ### G11. Is the payload on the card the payload that executes? (to verify)
 
 Their T8 cases (Tornado, Beanstalk BIP-18, Audius) are all *the executed payload
@@ -373,6 +411,11 @@ and a CI attestation) and settles on a challenge window with no quorum; tier 1
 keeps the quorum, with G1's recusal; tier 2 (relational or high impact) requires a
 larger quorum and a longer window (G13).
 
+Dotta's franchise-manual point adds one rule: a claim states its acceptance check
+when it is opened. A claim whose check is written after the work is a negotiation
+with the reviewer, so the check is part of the signed claim and cannot be edited
+once the first reviewer has seen it.
+
 ### G14. Recovery must never restore revoked authority (check, then test)
 
 From ResonantOS ADR-038: the Guardian may restart and roll back, but "rollback
@@ -398,6 +441,13 @@ principal's signature, never an agent's; (3) a grant that is renewed repeatedly
 without review gets a prompt after N renewals. It also supports G5's sponsor rule:
 the accountable human is the one who signs the widening.
 
+Dotta's version of the same defence: the agent must never hold the means to
+circumvent its limits. A grant that the agent itself enforces is a suggestion.
+What we already do right is that the relay and the contracts check the grant, not
+the agent. Keep it that way for every new action, and add the tier to the grant
+(free, needs a named human, never) so "send" and "spend" can need an approval
+while "read" does not.
+
 ### G18. Flag seats that always settle together (diag, small, new)
 
 Obadia expects cartelization and bribery among competing agents. `org_diag`
@@ -405,6 +455,27 @@ reports burstiness and hand-offs but not pairs. Add a pair signal: two seats who
 claims or votes land within a short window of each other more often than chance
 would suggest, shown to the founder as "these two move together", never as an
 accusation and never as an input to payouts or votes (G6 still holds).
+
+### G19. Sanctions come in steps (product + small kind, small, new)
+
+Leibo's point is that cutting an agent off is the last resort and that a system
+needs graduated sanctions to be fair and to deter. We have exactly one sanction,
+revoke the grant (plus the claim stake slash). Add a ladder of recorded steps, each
+a signed event that anyone can read: a public warning, a narrowed scope, a
+suspension with an end date, then revocation. Each step names who took it and why,
+and a suspension or revocation opens the same post-action review as G10. Nothing
+here touches Shares or voting power (G6 holds); it only changes what a seat may do.
+
+### G20. A promise in chat is not a commitment (product, small, new)
+
+The cooperation benchmark's two failures, broken promises and ignored
+expectations, are exactly what a chat room produces: "I'll take this" with no
+record, then someone else builds the same thing. Slice: a "take this" action on a
+task or proposal creates a claim (37013) with an expiry (G2), shown on the board
+beside the task, so a second seat sees it is taken. If the claim lapses unfinished
+it returns to the pool, unslashed, and the seat's record shows an expired claim,
+never a score. This is a small UI step on the claim state machine we are already
+changing for G1, G2 and G13.
 
 **Note on tension 4 (co-op mode).** The plenary's co-op idea is the patron mode
 taken one step further: the founders are the only Share holders, equal by default,
@@ -434,9 +505,9 @@ share; G3's weight is the principled way to distribute it.
 2. **G3**: the conviction weight, then swap it in for the supporter count.
 3. **G4 + G6**: small, and they pin the two loops the research warns about.
 4. **G5**: D10 is decided (mandate-bound), so this is unblocked. Add the sponsor link and the human-attributed portion.
-5. **G8, G9, G15, G17**: small additive spec, wiki, charter and test work (G8 gains the intent field, G9 the replay inputs, G15 the purpose line). **G16** after G1/G2/G13 land.
+5. **G8, G9, G15, G17**: small additive spec, wiki, charter and test work (G8 gains the intent field, G9 the replay inputs, G15 the purpose line, G17 the action tier). **G20** rides on the claim change in step 1. **G16** after G1/G2/G13 land.
 6. **G11** (verify), **G12** (UI): small.
-7. **G18** (pair signal in `org_diag`), then G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
+7. **G19** (sanction ladder), **G18** (pair signal in `org_diag`), then G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
 
 ## 6. Decisions
 
