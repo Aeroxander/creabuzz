@@ -20,7 +20,7 @@ vision; [dao-os.md](dao-os.md), [agentic-governance-design.md](agentic-governanc
 | The earlier "Resonant Economy" page (`dao.astro`, in the website repo's **git history**, before 2026-05-05) | Recovered from history and read | First-hand, but an **earlier design**: it uses `$R10/$R12/$R15`, which the research repo says the current whitepaper does not carry as live policy |
 | ResonantDAO whitepaper, **current** (credentials, `$RES`, 22-dimension contribution, governance, roadmap) | **Pasted in full by the user (2026-10-04)**; section 1d | First-hand. It is a working draft and lists its own open questions |
 | Conviction Markets paper (Outlier Ventures, Mar 2026) | Our own notes only ([dao-launchpad-plan §10](dao-launchpad-plan.md), [next-gen §4](next-gen-launchpad-plan.md)); the PDF is not in the repo | Second-hand. Confirmed by the user to be the same Outlier Ventures paper we already read |
-| Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md) | The transcripts live on the user's Mac, not here |
+| Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md), plus **five transcripts the user uploaded on 2026-10-04** (summits 2, 3, 7, 8, 9; section 1f) | First-hand for those five. Auto-captions with heavy ASR noise; speaker attribution is provisional. Summits 4, 5, 6 are still on the user's Mac (three more are coming) |
 | `apptoken-skills`, `majeur` | Cloned / vendored (`contracts/lib/majeur`) | First-hand |
 
 The conviction paper is only as good as our earlier notes. The ResonantDAO
@@ -134,6 +134,27 @@ review can happen. Their "escrow, then review" is the fix: a **challenge window*
 between approval and payout, in which the treasury (and, after graduation, the
 DAO) can `freeze`. The window's length is a launch parameter, with a floor.
 Slice it with G1 and G2, since all three change the claim state machine.
+
+## 1f. The Stanford AO transcripts, re-read first-hand
+
+Most of what these five talks say is already in the survey and OAv2 section 1.4
+(the time signal, P&L as a reward function, the social license, trust injection by
+name). A second pass found five things we had not carried into the product. Line
+references are to the transcript's own timestamps.
+
+| Talk | What it says | What we do with it |
+| --- | --- | --- |
+| #7 Pentland (20:48-22:16, 31:15-32:26) | MCP says *how* to call a tool but not *why* or under what limits. His "human context protocol" adds the **intent**, the **constraints**, and an **audit trail that comes back**, and the trail is what builds a reputation ("these are the good guys, those are flaky"). In Q&A he concedes a malicious agent will try to inject the safety layer, and answers only that the trail lets you spot it afterwards | **G8, extended**: a grant already carries constraints; add the intent, and make the receipt the audit trail that returns. Reputation from the trail must stay outcome-based and per-claim (G3), not a person score |
+| #2 Wennström (06:22-06:50) | Prompt injection is not the live risk; **trust injection** is. People build a relationship with an agent over weeks and then talk it into acting, and two people did this to a live agent | **G17 (new)**: a conversation can never widen a mandate. Only a signed grant from the principal can |
+| #2 Wennström (09:20-09:44) | A human followed a script "even though she didn't agree with what the script said", because it had acquired authority just by existing | Our checklists and the quick sale defaults are advice. Say so in the copy, and let a founder change any default without a warning. Decision records (G9) should note which values were defaults |
+| #2 Wennström (13:23-13:38) | You can **replay a decision** with a different model and see whether it would make the same mistake | **G9, extended**: a decision record keeps its inputs (the proposal `calls[]`, the discussion thread id, the grant chain) so a reviewer or a second agent can replay it |
+| #3 Rong (24:31-25:15, 23:40-24:00) | "Agents need names": a **model class** ("GPT-5") is a last name, stateless and fungible; a **named agent with a history** is a first name, and trust attaches to it. In practice there is one human operator per six to ten agents, and her network counts over 45,000 agents | Our agent identity is a keypair plus a grant, which is already a first name. Check that every agent card shows the persistent name and key, never the model. The 1:6-10 ratio is a useful default for supervision saturation (G5) |
+| #8 Obadia (18:57, 17:10-17:40) | He expects **cartelization and bribery** between competing agents, and keeps a "customs" gate that decides what enters and leaves the arena, run by the organisers for now | We already have the instrument (`org_diag`, time signal). The new point is that it should be able to *flag* a pair of seats that always settle together, not only report averages |
+| #9 plenary (18:07-18:55, 19:33-21:27) | Organisations used to need an explicit **charter saying why they should exist**; now anyone can start one. And a push for **co-op AOs**: a few people pool to *distribute* value rather than let one owner capture it | **G15, extended**: the charter states the purpose, not only the rules. **Tension 4 gets a third mode**: a "co-op" launch where the founders are also the first members with equal Shares and no outside float. See the note after G18 |
+
+Not carried over: compute pooling, the narrative and survey-paper asks, and the
+Foresight node discussion. They are real asks of the field, but nothing in a
+launchpad changes because of them.
 
 ## 2. Tensions to decide, not bugs
 
@@ -278,6 +299,13 @@ handed over, shown on the authority card) and a grantor-declared `maxDepth` (the
 walk is bounded by the system, not by the person delegating). Both are additive
 fields.
 
+Added by the Stanford re-read (Pentland): a grant should also carry the
+**intent** it serves in plain words, and each action taken under it should return a
+receipt that references that intent. A receipt is then the audit trail, and a
+reviewer reads "what was it for" next to "what happened". We already have the
+receipt (`47005`); the missing part is the intent field on the grant and the
+proposal. Keep it a string a human wrote; do not parse it.
+
 ### G9. Decisions are not first-class objects (UI / wiki, small)
 
 The ResonantOS hub makes a *decision record* a first-class object: context, the
@@ -287,6 +315,10 @@ newcomer needs a year later. A processed proposal should publish one decision
 page (a wiki page, kind 44001) generated from the proposal, the thread and the
 receipts, with an "alternatives considered" section the proposer fills in. It
 serves the litmus test directly: *which mechanism decided this, and why.*
+
+Replay (Wennström): store the inputs next to the outcome (the `calls[]`, the
+thread id, the grant chain, which values were defaults), so a second reviewer or a
+second agent can re-run the decision and see whether it would come out the same.
 
 ### G10. Emergency action has no mandatory post-action review (product, medium)
 
@@ -326,6 +358,9 @@ signed "I accept charter `<hash>`" event when joining a community or taking a
 seat, shown on the member card, and re-requested when the charter hash changes.
 It is a few lines, and it makes the charter binding in the way ERC-4824 only
 describes.
+The plenary adds that a charter used to have to say *why the organisation
+should exist*. Give the charter a required purpose line (one sentence, shown on
+the launch page) so the social licence has something to point at.
 
 ### G16. One verification mechanism for every claim (contracts + CLI, medium)
 
@@ -350,6 +385,34 @@ event, so last-write-wins protects us only while that newer event survives);
 (2) do first-party agents and personas hold any privilege a third-party one
 cannot? Answer both, then pin each with a test.
 
+### G17. A conversation can never widen a mandate (product, small, new)
+
+Wennström's trust injection is the realistic attack on a mandate-bound agent: no
+exploit, only weeks of rapport and then a request. The defence is structural, and
+we mostly have it: an agent acts only inside its `37011` grant, and a grant is
+widened only by a new signed event from the principal. Make it explicit and test
+it: (1) an agent's tool layer must refuse a call outside its grant no matter what a
+message in a channel says; (2) the UI for widening a grant says plainly that it is
+a new authority, shows the old and new scope side by side, and requires the
+principal's signature, never an agent's; (3) a grant that is renewed repeatedly
+without review gets a prompt after N renewals. It also supports G5's sponsor rule:
+the accountable human is the one who signs the widening.
+
+### G18. Flag seats that always settle together (diag, small, new)
+
+Obadia expects cartelization and bribery among competing agents. `org_diag`
+reports burstiness and hand-offs but not pairs. Add a pair signal: two seats whose
+claims or votes land within a short window of each other more often than chance
+would suggest, shown to the founder as "these two move together", never as an
+accusation and never as an input to payouts or votes (G6 still holds).
+
+**Note on tension 4 (co-op mode).** The plenary's co-op idea is the patron mode
+taken one step further: the founders are the only Share holders, equal by default,
+and nothing is sold to the public. It needs no new contract, only a wizard
+preset (equal founder Shares, no auction) and copy that says what it is. It is
+cheap to offer next to "sell to supporters", and it is the honest answer for five
+people who want to make something together without raising.
+
 ## 4. Putting it together with majeur and apptoken
 
 | Need | Use | Not |
@@ -371,9 +434,9 @@ share; G3's weight is the principled way to distribute it.
 2. **G3**: the conviction weight, then swap it in for the supporter count.
 3. **G4 + G6**: small, and they pin the two loops the research warns about.
 4. **G5**: D10 is decided (mandate-bound), so this is unblocked. Add the sponsor link and the human-attributed portion.
-5. **G8, G9, G15**: small additive spec, wiki and charter-acceptance work. **G16** after G1/G2/G13 land.
+5. **G8, G9, G15, G17**: small additive spec, wiki, charter and test work (G8 gains the intent field, G9 the replay inputs, G15 the purpose line). **G16** after G1/G2/G13 land.
 6. **G11** (verify), **G12** (UI): small.
-7. G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
+7. **G18** (pair signal in `org_diag`), then G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
 
 ## 6. Decisions
 
@@ -390,3 +453,4 @@ Still open:
 
 - **Does capital vote** (tension 4)? Recommend: in patron mode, bidders get Loot and only contributors earn Shares; float mode stays investor-owned. This changes `OrgBinding` and the wizard, so it needs an explicit yes.
 - Should agent seats require a named sponsoring human at the contract level, or only in the record?
+- Offer a **co-op launch preset** (equal founder Shares, no public sale) alongside the sale? Recommend yes; it is a wizard preset and copy only.
