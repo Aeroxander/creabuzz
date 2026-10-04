@@ -16,7 +16,9 @@ vision; [dao-os.md](dao-os.md), [agentic-governance-design.md](agentic-governanc
 | ResonantOS economy research (`ResonantOS/resonantos-economy-research`) | Cloned; the `official-whitepaper` subtower is only a scaffold that **summarises** the DAO whitepaper | Second-hand for the DAO whitepaper |
 | resonantos.com (`#core` and the rest) | `resonantos.com` is blocked by the sandbox, but the site is a static page in `ResonantOS/resonantos-website`; I read its HTML source from GitHub | First-hand for the *technology* pitch. No browser or computer-use tool exists in this session, so I could not look at the rendered page |
 | ResonantOS 2.0 planning docs (`ResonantOS/2.0.0-alpha`, `docs/planning/02-sdk-dao-governance-roadmap.md`) | Cloned and read | First-hand. This is the *developer-organization* governance design, not the economy |
-| ResonantDAO whitepaper (credentials, `$RES`, marketplace, governance, Solana target) | **Not read.** `resonantdao.com` is blocked and the repos only hold the *legacy philosophical* whitepaper | The one source still missing for the economy |
+| `whitepaper.astro` (the page the user pointed to) | Read. It calls itself the **legacy philosophical** whitepaper and points to `resonantdao.com/whitepaper` for the DAO design | First-hand, philosophy only |
+| The earlier "Resonant Economy" page (`dao.astro`, in the website repo's **git history**, before 2026-05-05) | Recovered from history and read | First-hand, but an **earlier design**: it uses `$R10/$R12/$R15`, which the research repo says the current whitepaper does not carry as live policy |
+| ResonantDAO whitepaper, current (credentials, `$RES`, marketplace, governance, Solana target) | **Not read.** `resonantdao.com` is blocked and no repo holds it | The one source still missing for the current economy |
 | Conviction Markets paper (Outlier Ventures, Mar 2026) | Our own notes only ([dao-launchpad-plan §10](dao-launchpad-plan.md), [next-gen §4](next-gen-launchpad-plan.md)); the PDF is not in the repo | Second-hand. Confirmed by the user to be the same Outlier Ventures paper we already read |
 | Stanford AO talks | Our line-cited survey ([aos/ao-survey.md](aos/ao-survey.md)) and [OAv2 §1.4](../OAv2.md) | The transcripts live on the user's Mac, not here |
 | `apptoken-skills`, `majeur` | Cloned / vendored (`contracts/lib/majeur`) | First-hand |
@@ -75,6 +77,39 @@ git; the web pages themselves are blocked).
 | `resonantos-website`, `augmentatism.com` | Context only | The technology pitch (section 1b) and the philosophy |
 | `ResonantOS-Team-Coordination-Hub` | No | A Reddit-and-spreadsheet process: post types for task, decision, blocker, weekly update |
 | `rcode` | No | A coding-harness fork. We have our own agent harness, and its README describes its origin in terms I would not build on |
+
+## 1d. The earlier Resonant Economy page (recovered from git history)
+
+Phase 1 is a contribution economy: `$RCT` as a non-exchangeable "karma" token,
+per-community `$P*CT` tokens, and a *Contribution Level* from four categories
+weighted 1.5x connection and support, 1.2x exploration, 1.0x creation, 0.8x
+financial. Phase 2 is a financial layer: `$R10`, an algorithmically managed token
+targeting +10% APY, plus `$R12`/`$R15` locked-yield tokens, a daily leaderboard
+paying the top 80%, a 20% lottery tithe funding a "Universal Contribution
+Income", and a treasury that buys Bitcoin and buys back `$R10`. Governance is
+"contribution over capital": voting power from the contribution score, not from
+tokens. Our verdicts:
+
+| Their idea | Verdict for Creaton |
+| --- | --- |
+| Culture first, finance second; recognition before money | **Adopted** (the idea-first flow; credit before money). |
+| **Honest AI framework**: humans capped per day at the full rate, agents uncapped at a lower rate, exceeding the cap reclassifies you, so declaring your agents pays | Not needed as an incentive: agents are attested seats with their own grants and mandates, so declaration is structural. The *rate card* idea (agents earn at a different, lower rate than humans for the same claim) is worth noting for the royalty schedule, not building now |
+| **Escrow**: significant rewards held (e.g. 30 days) for community review before payout | **A real gap in our contracts.** See G13 |
+| Leaderboard decay (10% a year) | We already bound entitlement by term (D6), which is stronger than decay |
+| Daily leaderboard, bottom 20% earn nothing, a Universal Contribution Income | **Do not import.** Person totals and universal rankings are exactly what the contribution-mechanism research blocks, and per-identity payouts are the sybil target (T4) |
+| `$R10` algorithmic +10% APY, algorithmic minting, treasury buybacks | **Do not import.** This is the reflexive native-token shape the Terra postmortem (T2/T3) warns about. Our treasury holds the raise in ETH or USDC, not in its own token |
+| Governance by contribution score | **Contested.** The research repo itself flags score-to-authority as a failure to avoid. Ours: capital-weighted votes with ragequit, contribution entry by Tribute, and tiers that only set sell-rate bands (G6 pins the line) |
+
+### G13. Approval can be withdrawn before anyone can challenge it (contracts, small)
+
+`ClaimStake.payout` is callable by the contributor as soon as a claim is
+`Approved`, in the same block as `settle` if they like. `freeze`, the only
+challenge, is treasury-only and meaningless after a payout (a paid claim cannot
+be frozen). So a quorum approved by a captured verifier set pays out before any
+review can happen. Their "escrow, then review" is the fix: a **challenge window**
+between approval and payout, in which the treasury (and, after graduation, the
+DAO) can `freeze`. The window's length is a launch parameter, with a floor.
+Slice it with G1 and G2, since all three change the claim state machine.
 
 ## 2. Tensions to decide, not bugs
 
@@ -253,7 +288,7 @@ share; G3's weight is the principled way to distribute it.
 
 ## 5. Order I would build
 
-1. **G1 + G2**: one contract change, tested with Forge, which now runs here.
+1. **G1 + G2 + G13**: one contract change to the claim state machine (recusal, expiry, challenge window), tested with Forge, which now runs here.
 2. **G3**: the conviction weight, then swap it in for the supporter count.
 3. **G4 + G6**: small, and they pin the two loops the research warns about.
 4. **G5**: D10 is decided (mandate-bound), so this is unblocked.
@@ -271,4 +306,4 @@ Decided (2026-10-04, by the user):
 Still open:
 
 - G3's weight orders and nudges only. The failed-DAO findings answer the earlier open question: it must not drive the community allocation unless the weight is bound to a recorded bid.
-- Is the ResonantDAO whitepaper reachable (paste, or allow `resonantdao.com`)? Until then, sections 2 and 3 rest on the ResonantOS research summary.
+- Is the *current* ResonantDAO whitepaper reachable (paste, or allow `resonantdao.com`)? Until then, sections 2 and 3 rest on the research summary plus the earlier page in section 1d.
