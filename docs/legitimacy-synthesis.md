@@ -61,6 +61,21 @@ match our decision routing and soulbound tiers. Their decision table, in which
 certification and constitutional change never share one token vote, is the same
 move as [decision routing](agentic-governance-design.md).
 
+## 1c. The other ResonantOS repositories, triaged
+
+All eight public repos under `github.com/ResonantOS` were checked (cloned over
+git; the web pages themselves are blocked).
+
+| Repo | Useful? | What for |
+| --- | --- | --- |
+| `resonantos-economy-research` | **Yes, most** | `failed-dao-crypto` findings (T1-T9): per-identity scoring is farmable (T4), anti-sybil defenses get bribed or over-exclude (T5), vote != execute (T8), reflexive native-token treasuries (T2/T3). `monetary-circulation`: report runway and exit capacity separately (G12). `contribution-mechanism`: the "what to block" list used throughout this doc |
+| `2.0.0-alpha` | **Yes, in part** | The SDK + DAO governance roadmap (decision table, threat table, separation of powers). ADR-023/024 (addon registry and store commerce) are worth reading before we build project templates or a marketplace; ADR-028 is a Paperclip organizational runtime, which we already bridge |
+| `resonant-hub` | A little | Tribes and bounties design, the decision-record schema (G9), and a red-team report of its own admin console (wallet-ownership proof, JWT revocation) that mostly describes problems NIP-42 signed events already avoid |
+| `akashic-records` | Maybe | A git-authored library of Source and Claim cards with exact evidence links, independent review records, and "retrieval is not truth or approval". Relevant to making `37013` evidence legible (today an `evidenceHash`) and to the agent wiki. A candidate to study, not to adopt |
+| `resonantos-website`, `augmentatism.com` | Context only | The technology pitch (section 1b) and the philosophy |
+| `ResonantOS-Team-Coordination-Hub` | No | A Reddit-and-spreadsheet process: post types for task, decision, blocker, weekly update |
+| `rcode` | No | A coding-harness fork. We have our own agent harness, and its README describes its origin in terms I would not build on |
+
 ## 2. Tensions to decide, not bugs
 
 These are places where a source says "do not" and the product deliberately does.
@@ -126,6 +141,16 @@ It replaces the raw count in the gate and orders "waiting to join" backers. The
 rule from ResonantOS stays: it informs a *nudge and a sort order*, never
 authority or money.
 
+The ResonantOS failed-DAO findings (T4, T5, below) make this a hard rule rather
+than a preference: **any reward keyed to a per-identity weight is farmable by
+manufacturing identities** (their cited cases: one actor across 1,000+ wallets;
+phone farms; mutual-validation rings), non-transferable or not. So this weight
+must never drive the `community` allocation as it stands. If a distribution is
+ever wanted, its weight must be bound to something that costs real money per
+identity (a recorded bid), and an anti-sybil *bounty* is out (a report-a-sybil
+bounty creates a bribery market, and sybil filters excluded 98.5% of users in one
+cited case).
+
 ### G4. Visibility feeds access feeds status feeds visibility (web, small)
 
 The longitudinal attack in the ResonantOS tower is exactly our trust-ranked feed:
@@ -190,6 +215,27 @@ all (the audit's gap 5). When we build one, the shape is fixed: an operator may
 suspend a listing at once, but the suspension is a public receipt that opens a
 review which must be closed by someone else, or it lapses.
 
+### G11. Is the payload on the card the payload that executes? (to verify)
+
+Their T8 cases (Tornado, Beanstalk BIP-18, Audius) are all *the executed payload
+differs from the reviewed payload*. A Majeur proposal id is a hash of the payload,
+so the chain side is bound by construction. What I did **not** find in the web
+client is the check that the `calls[]` shown on a `47004` proposal card, which
+comes from a relay record, hashes to the on-chain `proposalId`. If it does not,
+a record could display one action while the id commits to another. To confirm,
+then add a test that fails when the displayed calls do not hash to the id.
+
+### G12. Report treasury facts separately, not as one health number (UI, small)
+
+The monetary-circulation research insists that solvency, spendable capacity,
+due-time liquidity and runway are *separate* reports, that runway is the
+interval over which spendable capacity covers obligations (a positive balance
+does not establish adequate duration), and that no top-level "health" verdict
+exists. Our launch page has the committed monthly budget but no runway. Show:
+treasury balance, committed budget, **months of runway at that budget**,
+the reserve escrowed for the price floor, and what can actually be exited
+today, each as its own line.
+
 ## 4. Putting it together with majeur and apptoken
 
 | Need | Use | Not |
@@ -212,7 +258,8 @@ share; G3's weight is the principled way to distribute it.
 3. **G4 + G6**: small, and they pin the two loops the research warns about.
 4. **G5**: D10 is decided (mandate-bound), so this is unblocked.
 5. **G8, G9**: small additive spec and wiki work.
-6. G7, G10 and the community-allocation distributor: after real usage.
+6. **G11** (verify), **G12** (UI): small.
+7. G7, G10 and the community-allocation distributor: after real usage, and only with a cost-bound weight (see G3).
 
 ## 6. Decisions
 
@@ -223,5 +270,5 @@ Decided (2026-10-04, by the user):
 
 Still open:
 
-- May G3's weight only order and nudge (recommended), or also drive the community allocation?
+- G3's weight orders and nudges only. The failed-DAO findings answer the earlier open question: it must not drive the community allocation unless the weight is bound to a recorded bid.
 - Is the ResonantDAO whitepaper reachable (paste, or allow `resonantdao.com`)? Until then, sections 2 and 3 rest on the ResonantOS research summary.
