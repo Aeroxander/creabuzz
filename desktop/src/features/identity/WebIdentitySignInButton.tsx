@@ -96,10 +96,31 @@ export function WebIdentitySignInButton({
           >
             {COPY.linked(state.npub)}
           </p>
+          {onLinked ? (
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-testid="onboarding-web-sign-in-continuing"
+              role="status"
+            >
+              Continuing…
+            </p>
+          ) : null}
           <Button
             className="mt-1"
             data-testid="onboarding-web-sign-in-close"
-            onClick={() => handoff.cancel()}
+            onClick={() => {
+              // When a next step exists the link IS the step finishing —
+              // Done must also advance (effect covers the automatic path;
+              // this covers a click that races it). Only surfaces with no
+              // next step reset to idle here.
+              if (onLinked) {
+                if (advancedRef.current) return;
+                advancedRef.current = true;
+                onLinked();
+                return;
+              }
+              handoff.cancel();
+            }}
             size="sm"
             type="button"
             variant="ghost"

@@ -15,11 +15,13 @@ import { formatMoney } from "../lib/amounts";
 import { launchArt } from "../lib/launch-art";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import type { LaunchRecord, LaunchStage } from "../models";
-import { StageBadge, useAuctionProgress } from "./widgets";
+import type { ResolvedFunding } from "../lib/funding";
+import { FundingBadge, StageBadge, useAuctionProgress } from "./widgets";
 
 export function LaunchHero({
   record,
   stage,
+  funding = null,
   followed,
   followDisabled,
   onToggleFollow,
@@ -31,6 +33,8 @@ export function LaunchHero({
 }: {
   record: LaunchRecord;
   stage: LaunchStage;
+  /** The funding status to show; null when the surface cannot resolve one. */
+  funding?: ResolvedFunding | null;
   followed: boolean;
   followDisabled: boolean;
   onToggleFollow(): void;
@@ -134,8 +138,9 @@ export function LaunchHero({
               </span>
             ) : null}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            by {founderName}
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>by {founderName}</span>
+            {funding ? <FundingBadge funding={funding} /> : null}
             {supporters !== null && (idea || supporters > 0) ? (
               <>
                 {" · "}

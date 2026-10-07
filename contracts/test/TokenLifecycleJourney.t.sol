@@ -99,11 +99,13 @@ contract TokenLifecycleJourneyTest is Test {
         vm.prank(verifierA);
         verifiers.attest(M1, true);
         stake.settle(M1);
+        // G13: wait out the challenge window before any payout.
+        vm.warp(block.timestamp + stake.challengeWindow() + 1);
         vm.prank(alice);
         stake.payout(M1);
 
         assertEq(pt.balanceOf(alice), TRANCHE_1, "tranche released on the verdict");
-        (, , , ClaimStake.Status status, ) = stake.claims(M1);
+        (, , , ClaimStake.Status status, ,,,) = stake.claims(M1);
         assertEq(uint256(status), uint256(ClaimStake.Status.Paid), "claim closed");
         (address schedWho,,,,,, bool suspended) = dist.schedules(M1);
         assertEq(schedWho, alice, "schedule minted to the claimant");
@@ -153,7 +155,7 @@ contract TokenLifecycleJourneyTest is Test {
         verifiers.attest(M2, false); // objection quorum
         stake.settle(M2);
 
-        (, , , ClaimStake.Status status, ) = stake.claims(M2);
+        (, , , ClaimStake.Status status, ,,,) = stake.claims(M2);
         assertEq(uint256(status), uint256(ClaimStake.Status.Rejected), "rejected");
         assertEq(pt.balanceOf(alice), 0, "no tranche released");
         assertEq(dist.allocOf(alice), 0, "no schedule minted (I8)");
@@ -173,6 +175,8 @@ contract TokenLifecycleJourneyTest is Test {
         vm.prank(verifierA);
         verifiers.attest(M1, true);
         stake.settle(M1);
+        // G13: wait out the challenge window before any payout.
+        vm.warp(block.timestamp + stake.challengeWindow() + 1);
         vm.prank(alice);
         stake.payout(M1);
 

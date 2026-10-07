@@ -10,6 +10,9 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
+import { ProposalFundingPanel } from "./ProposalFundingPanel";
+import { useProposalVault } from "../use-proposal-vault";
+import { useConnectedWallet } from "../use-connected-wallet";
 import { PriceChartCard } from "./PriceChartCard";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -27,7 +30,9 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, type Launch } from "../models";
+import { effectiveFunding } from "../lib/funding";
 import { isIdea } from "../lib/idea";
+import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
 import { useSupporters } from "../use-supporters";
 import type { LaunchAction } from "../lib/deep-link";
@@ -116,6 +121,14 @@ export function LaunchDetailPage({
   const isFounder = useIsFounder(launch);
   const supporterCoord = realLaunch ? launchCoord(realLaunch.record) : null;
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
+  // The chain head is what tells a declared stance apart from a live sale.
+  const blockHeight = useChainBlockHeight();
+  // The backer-directed vault, read live once the launch has one deployed.
+  const wallet = useConnectedWallet();
+  const vault = useProposalVault(
+    launch?.record.proposalVault ?? null,
+    wallet.address ?? null,
+  );
   // A founder who opens their launch has seen its supporters.
   const seenCount = supporterCoord
     ? (supporterCounts.data?.get(supporterCoord) ?? null)
@@ -250,6 +263,7 @@ export function LaunchDetailPage({
         }
         followDisabled={!follows.ready || follows.pending}
         followed={followed}
+        funding={effectiveFunding(launch, blockHeight)}
         idea={idea}
         supporters={
           supporterCoord
@@ -314,6 +328,24 @@ export function LaunchDetailPage({
       ) : null}
       {tab === "overview" && !idea ? (
         <>
+          {/* The backer-directed vault: shown to a project that chose proposal
+              funding. The controls only appear once the vault is deployed and
+              reachable — a control that cannot act is a dead end. */}
+          {launch.record.funding?.path === "proposals" ||
+          launch.record.proposalVault ? (
+            <ProposalFundingPanel
+              actions={vault.actions}
+              atRisk={vault.data?.atRisk ?? "0"}
+              currentBlock={blockHeight === null ? null : Number(blockHeight)}
+              floorPerToken={vault.data?.floorPerToken ?? "0"}
+              own={vault.data?.own ?? {}}
+              pricePerToken={vault.data?.pricePerToken ?? "0"}
+              proposals={vault.data?.proposals ?? []}
+              taxBps={vault.data?.taxBps ?? 0}
+              vault={launch.record.proposalVault}
+              vouchers={vault.data?.vouchers ?? "0"}
+            />
+          ) : null}
           {/* The TrustGraph surface: gate state, published roots, the graph. */}
           <PriceChartCard launch={launch} />
           <TrustGateCard launch={launch} />

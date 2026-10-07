@@ -8,6 +8,11 @@ import {
   type AuctionProgress,
 } from "../chain";
 import { formatMoney } from "../lib/amounts";
+import {
+  fundingSummary,
+  type FundingStance,
+  type ResolvedFunding,
+} from "../lib/funding";
 import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { effectiveStage } from "../models";
@@ -23,6 +28,43 @@ const STAGE_LABELS: Record<LaunchStage, string> = {
 
 export function StageBadge({ stage }: { stage: LaunchStage }) {
   return <Badge variant="secondary">{STAGE_LABELS[stage]}</Badge>;
+}
+
+/**
+ * The funding status on a card — the project's own word about raising,
+ * corrected by the chain (`lib/funding.ts`). Reads as one plain sentence so
+ * "Not raising · looking for contributors" carries both halves of the
+ * declaration, not just the stance.
+ */
+const FUNDING_TONES: Record<FundingStance, string> = {
+  "not-raising":
+    "bg-black/10 text-black/70 dark:bg-white/10 dark:text-white/70",
+  planning: "bg-blue-500/15 text-blue-800 dark:text-blue-300",
+  raising: "bg-emerald-500/20 text-emerald-800 dark:text-emerald-300",
+  closing: "bg-amber-500/20 text-amber-800 dark:text-amber-300",
+  closed: "bg-black/10 text-black/70 dark:bg-white/10 dark:text-white/70",
+  rolling: "bg-violet-500/15 text-violet-800 dark:text-violet-300",
+};
+
+export function FundingBadge({
+  funding,
+  className,
+}: {
+  funding: ResolvedFunding;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded-full px-1.5 py-0.5 text-2xs font-semibold",
+        FUNDING_TONES[funding.stance],
+        className,
+      )}
+      data-testid="launch-funding-badge"
+    >
+      {fundingSummary(funding)}
+    </span>
+  );
 }
 
 export function useAuctionProgress(record: LaunchRecord | undefined) {

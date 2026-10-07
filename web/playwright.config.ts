@@ -22,6 +22,10 @@ export default defineConfig({
         "**/smoke.spec.ts",
         "**/launchpad.spec.ts",
         "**/launchpad-auction.spec.ts",
+        "**/funding-status.spec.ts",
+        // Overlay stacking: the header's blur must not trap popups behind page
+        // content. One assertion, but it is the whole bug.
+        "**/stack-check.spec.ts",
         "**/feed.spec.ts",
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",

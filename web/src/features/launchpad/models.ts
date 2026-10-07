@@ -5,6 +5,7 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 // under `node --test`, which does not resolve extensionless specifiers.
 import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
 import { parseWikiTag } from "./lib/draft-proposal.ts";
+import { parseFunding, type FundingStatus } from "./lib/funding.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
   KIND_LAUNCH_BID,
@@ -63,6 +64,13 @@ export interface LaunchRecord {
   /** Committed update cadence for investors ("monthly" etc.). */
   updateCadence: string | null;
   stage: LaunchStage;
+  /**
+   * The project's own word about raising, separate from `stage`: a stance a
+   * founder declares (`content.funding`, plan §2) with who they want to hear
+   * from. Null when the record never said — `lib/funding.ts` then resolves the
+   * display stance from chain truth alone.
+   */
+  funding: FundingStatus | null;
   currency: string | null;
   floorPrice: string | null;
   /** Price granularity, in Q96. Published as a tag; must round-trip. */
@@ -118,6 +126,11 @@ export interface LaunchRecord {
   claimStake: string | null;
   /** The launch's VerifierSet (the attest target for verdicts). */
   verifierSet: string | null;
+  /**
+   * The backer-directed funding vault (plan §4): backers pledge here and
+   * choose which proposals their money funds. Absent until it is deployed.
+   */
+  proposalVault: string | null;
   admission: "curated" | "community";
   /** How the supply is split. Absent on older records: the standard split. */
   allocation: SupplyAllocation;
@@ -395,6 +408,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     ipList: strs(body.ipList),
     updateCadence: str(body.updateCadence),
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
+    funding: parseFunding(body.funding),
     currency: str(body.currency),
     floorPrice: str(body.floorPrice),
     tickSpacing: str(body.tickSpacing),
@@ -423,6 +437,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     distributor: tagValue(event, "distributor"),
     claimStake: tagValue(event, "claim-stake"),
     verifierSet: tagValue(event, "verifier-set"),
+    proposalVault: tagValue(event, "proposal-vault"),
     admission:
       tagValue(event, "admission") === "community" ? "community" : "curated",
     allocation: parseAllocation(contentObject(event).allocation),

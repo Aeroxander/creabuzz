@@ -26,6 +26,7 @@
  */
 
 import type { CreateLaunchInput } from "../use-launches.ts";
+import type { FundingStatus } from "./funding.ts";
 import {
   isEvmAddress,
   isLaunchSlug,
@@ -216,6 +217,11 @@ export interface FormState {
   claimBlock: number | null;
   unlocks: UnlockPlan | null;
   daoAtGraduation: boolean | null;
+  /**
+   * The project's word about raising (`funding.ts`), carried through a save
+   * untouched like the fields above. Null on a fresh launch.
+   */
+  funding: FundingStatus | null;
 }
 
 /** Four equal milestones by default — 25/25/25/25 of the milestone slice. */
@@ -804,6 +810,7 @@ export function buildLegacyInput(form: FormState): CreateLaunchInput {
         }
       : {}),
     ...(form.unlocks ? { unlocks: form.unlocks } : {}),
+    ...(form.funding ? { funding: form.funding } : {}),
     ...(form.daoAtGraduation !== null
       ? { daoAtGraduation: form.daoAtGraduation }
       : {}),

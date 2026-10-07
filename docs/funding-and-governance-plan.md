@@ -3,9 +3,14 @@
 `draft` `plan` `web` `desktop` `cli` `contracts`
 
 Branch: `claude/org-graph-social-token` (cut from `claude/org-graph-social` at
-`615949a4`). Nothing in this plan is built yet. It records decisions made with
-the product owner, what is still unverified, and the order to build in, so any
-later session can continue without the chat history.
+`615949a4`). It records decisions made with the product owner, what is still
+unverified, and the order to build in, so any later session can continue
+without the chat history.
+
+**Status:** step 1 is built — funding status (`content.funding`), the
+chain-correction rule, the 30-day nudge, the discovery chips and badges, and
+the simulation skeleton (`just simulate`). Everything else is not built yet.
+See §2.1 for the three judgement calls made while building it.
 
 Related: [legitimacy-synthesis.md](legitimacy-synthesis.md) (gaps G1 to G20 used
 below), [token-lifecycle-design.md](token-lifecycle-design.md),
@@ -60,6 +65,27 @@ Rules:
 Store as `content.funding = { stance, seeking[], opensAt?, note? }` on the launch
 record (kind 37001). Copy follows the user-facing copy rules in `CLAUDE.md`
 (plain words, no protocol terms).
+
+### 2.1 Judgement calls made while building this
+
+Three things the plan left open, decided here so the owner can flip them:
+
+1. **A project that never declared reads "Not raising"** on its card and in the
+   chips, rather than showing no badge at all. It keeps every card labelled and
+   the chip counts adding up to the list. The alternative — an "unstated"
+   badge — invents a seventh stance. A founder who is quietly planning is one
+   click from saying so, and the nudge below is aimed at exactly that.
+2. **"Raising now" leads on the default ranking only.** Choosing New or Top
+   gives exactly that ordering; the raise-first grouping does not silently
+   override it.
+3. **A settled raise never closes a rolling round.** Chain truth corrects a
+   declaration only where the two contradict (the table in `lib/funding.ts`):
+   a live sale overrides "Not raising", a finished one moves a raise on to
+   "Closing the raise" then "Raise closed", and an open-ended round keeps
+   rolling.
+
+Also settled: the stale nudge keys off the record's own timestamp, so saving
+the record for any reason restarts the 30 days.
 
 ## 3. The four funding paths (wizard step "How do you want to fund this?")
 
@@ -177,28 +203,41 @@ shown as a protection badge on cards:
    minting rights needed).
 3. **Full DAO:** Majeur-bound, with ragequit and voting power that grows.
 
-## 6. Voting power that grows with time held (design B)
+## 6. Voting power (design B)
 
-- Clock: block number (matches Majeur snapshots). Window `T` in blocks, per chain.
-  Default 12 months, linear, maximum 1 vote per Loot.
-- A holder's votes at block `b` = `min(average Loot balance over the last T blocks,
-  Loot balance at b)`, plus Shares earned by work. This is exactly additive across
-  wallets (splitting or merging gains nothing), a flash buyer gets nothing, and
-  selling cuts votes at once.
-- Needs a balance-history checkpoint (balance and running balance-time total) per
-  Loot move. Quorum is measured against fully matured supply.
-- Earned votes are **not delegable** in version 1. A sponsor's agent votes through
-  the sponsor's smart account under a limited session key.
-- Shares: transfers locked.
-- Implementation: a copy of `Moloch.sol` with the patch confined to marked regions
-  of `Shares` and `Loot`, plus a CI check that the copy differs from upstream only
-  there.
+**Superseded on the weight rule** by
+[token-voting-design.md](token-voting-design.md), which replaces "grows with
+time held" with "weight follows capital you directed and work you delivered".
+Holding is costless once you have bought, so a rule that multiplies weight by
+time-passed rewards parking capital. Instead:
+
+- **Work** — `Shares` earned by verified work, on Majeur's existing
+  delegatable checkpointed machinery. Unchanged.
+- **Held** — `Loot` at the snapshot, 1:1, flat. Waiting earns nothing.
+- **Backing** — `Loot` committed to a proposal through the voucher vault
+  (§4) earns up to 2× its escrowed amount, per proposal, only while that
+  capital is at risk.
+
+Kept from this section: `Shares` transfers locked; the copy of `Moloch.sol`
+with the patch confined to marked regions plus a CI check against upstream;
+and the invariant below.
+
 - Invariant (G6): no score, activity count or reputation can feed voting power.
+  Backing is capital that can be lost, not a score, so G6 holds.
+
+Exit discipline (token-voting-design.md §6) is part of this change: no
+`ragequit` and no release of escrowed tokens while your weight is counted in a
+proposal that has not resolved.
 
 ## 7. Finance controls and agents with human owners
 
 Reason: today one treasury address can fund claims, pick verifiers and freeze
 claims, and `ClaimStake.payout` is open right after approval.
+
+**Status:** the claim state machine below is built and tested — G1 recusal,
+G2 expiry, G13 challenge window, G16 the locked check, G20 the visible expiry
+(`contracts/src/ClaimStake.sol`, `VerifierSet.sol`, `test/FinanceControls.t.sol`).
+Still open here: the founder budget cap and the AgentRegistry.
 
 Contracts, in one change to the claim state machine:
 
@@ -310,7 +349,9 @@ Still to decide:
 - Conviction paper is the Outlier Ventures PDF already read.
 - D10: agents are mandate-bound, and every agent has a human sponsor who is paid
   and answerable.
-- Earned votes grow with time held and cannot be sold; no staking step in B.
+- Voting weight follows capital you directed and work you delivered — backing a
+  proposal compounds, holding does not, and weight cannot be bought. See
+  token-voting-design.md §3.
 - Pool-only default transfer mode; emissions go to the treasury only; fees are
   customizable within deploy-time maximums.
 - All four funding paths are in version 1 (shipped in slices).

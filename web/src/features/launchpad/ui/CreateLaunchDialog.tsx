@@ -132,6 +132,9 @@ export function CreateLaunchDialog({
   const [updateCadence, setUpdateCadence] = useState(seed?.updateCadence ?? "");
   const [image, setImage] = useState(seed?.image ?? "");
   const [category, setCategory] = useState(seed?.category ?? "");
+  // The project's word about raising (`lib/funding.ts`), carried through a
+  // save untouched by `buildLegacyInput`.
+  const [funding, setFunding] = useState(seed?.funding ?? null);
   const [chainId, setChainId] = useState<string>(
     initial?.chainId ?? String(defaultChainPreset().chainId),
   );
@@ -354,6 +357,7 @@ export function CreateLaunchDialog({
         : (initialBlocks?.claimBlock ?? null),
     unlocks: initial?.unlocks ?? null,
     daoAtGraduation: initial?.daoAtGraduation ?? null,
+    funding,
   };
 
   const launchId = effectiveLaunchId(form);
@@ -855,6 +859,8 @@ export function CreateLaunchDialog({
     setIpList,
     updateCadence,
     setUpdateCadence,
+    funding,
+    setFunding,
     tokenMode,
     setTokenMode,
     tokenName,

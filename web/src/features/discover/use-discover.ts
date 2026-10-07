@@ -15,6 +15,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
+import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -39,12 +40,17 @@ export async function fetchDiscoverEvents(): Promise<NostrEvent[]> {
 
 /** The directory snapshot: `{ daos, launches, projects, counts }`. */
 export function useDiscover() {
+  // Read once at fetch time and kept out of the query key: the directory stays
+  // one snapshot (60s stale) and the head is only what orders "Raising now"
+  // first and settles the badge wording.
+  const chainHead = useChainBlockHeight();
   return useQuery<DirectorySnapshot>({
     queryKey: discoverQueryKey,
     queryFn: async () =>
       deriveDirectory({
         events: await fetchDiscoverEvents(),
         me: existingUserPubkey(),
+        chainHead,
       }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,

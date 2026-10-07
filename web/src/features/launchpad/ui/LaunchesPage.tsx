@@ -32,7 +32,20 @@ import {
   useLaunches,
   type CreateLaunchInput,
 } from "../use-launches";
-import { effectiveStage, type LaunchChat } from "../models";
+import { effectiveStage, type LaunchChat, type Launch } from "../models";
+import {
+  FUNDING_SEEKING,
+  FUNDING_SEEKING_LABELS,
+  FUNDING_STANCES,
+  FUNDING_STANCE_LABELS,
+  effectiveFunding,
+  fundingCounts,
+  matchesFunding,
+  raisingFirst,
+  type FundingSeeking,
+  type FundingStance,
+  type ResolvedFunding,
+} from "../lib/funding";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
@@ -60,6 +73,45 @@ const FILTER_LABELS: Record<Filter, string> = {
   "closing-soon": "Closing soon",
   graduated: "Graduated",
 };
+/**
+ * One funding chip: the label, the count it would show, and whether it is the
+ * row's current choice. A `<button>` with its own text and `aria-pressed`, so
+ * there is exactly one screen-reader stop and one name for it.
+ */
+function FundingChip({
+  label,
+  count,
+  active,
+  onClick,
+  testId,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+        active
+          ? "border-primary bg-primary/10 text-primary-ink"
+          : "border-black/10 text-black/60 hover:border-black/25 hover:text-black dark:border-white/15 dark:text-white/60 dark:hover:text-white",
+      )}
+      data-testid={testId}
+      onClick={onClick}
+      type="button"
+    >
+      {label}{" "}
+      <span className="tabular-nums opacity-60" data-testid={`${testId}-count`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
 export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
@@ -67,12 +119,19 @@ export function LaunchesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [ideaOpen, setIdeaOpen] = useState(false);
   const [sort, setSort] = useState<SortMode>("hot");
+  /** The funding chips; null is the chip row's own "everything" chip. */
+  const [stanceFilter, setStanceFilter] = useState<FundingStance | null>(null);
+  const [seekingFilter, setSeekingFilter] = useState<FundingSeeking | null>(
+    null,
+  );
   const follows = useLaunchFollows();
   const { tallies } = useVoteTallies();
   const pubkey = existingUserPubkey();
 
   const launches = data ?? [];
   const blockHeight = useChainBlockHeight();
+  const fundingOf = (launch: Launch): ResolvedFunding =>
+    effectiveFunding(launch, blockHeight);
   // "Closing soon" is chain-truth and sorts by soonest end; the other filters
   // keep the person's usual ranking.
   const filtered =
@@ -87,15 +146,26 @@ export function LaunchesPage() {
               return follows.followed.has(launchCoord(launch.record));
             return true;
           });
-  const visible =
+  // The chips count the whole tab, so choosing one never empties the row.
+  const counts = fundingCounts(filtered.map(fundingOf));
+  const facing = filtered.filter((launch) =>
+    matchesFunding(fundingOf(launch), {
+      stance: stanceFilter ?? undefined,
+      seeking: seekingFilter ?? undefined,
+    }),
+  );
+  const ranked =
     filter === "closing-soon"
-      ? filtered
+      ? facing
       : sortByMode(
-          filtered,
+          facing,
           sort,
           (launch) => tallies.get(launchCoord(launch.record))?.score ?? 0,
           (launch) => launch.record.createdAt,
         );
+  // "Raising now" leads by default: on the usual ranking, live raises come
+  // first and that same ranking still orders each group inside it.
+  const visible = sort === "hot" ? raisingFirst(ranked, fundingOf) : ranked;
 
   const authors = [...new Set(visible.map((launch) => launch.record.author))];
   const { data: profiles } = useProfiles(authors);
@@ -205,6 +275,61 @@ export function LaunchesPage() {
         </span>
       </div>
 
+      <div className="flex flex-col gap-2">
+        <fieldset className="min-w-0 border-0 p-0">
+          <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+            Funding
+          </legend>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <FundingChip
+              active={stanceFilter === null}
+              count={filtered.length}
+              label="Any"
+              onClick={() => setStanceFilter(null)}
+              testId="funding-chip-any"
+            />
+            {FUNDING_STANCES.map((stance) => (
+              <FundingChip
+                active={stanceFilter === stance}
+                count={counts.stance[stance]}
+                key={stance}
+                label={FUNDING_STANCE_LABELS[stance]}
+                onClick={() =>
+                  setStanceFilter(stanceFilter === stance ? null : stance)
+                }
+                testId={`funding-chip-${stance}`}
+              />
+            ))}
+          </div>
+        </fieldset>
+        <fieldset className="min-w-0 border-0 p-0">
+          <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+            Looking for
+          </legend>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <FundingChip
+              active={seekingFilter === null}
+              count={filtered.length}
+              label="Anyone"
+              onClick={() => setSeekingFilter(null)}
+              testId="seeking-chip-any"
+            />
+            {FUNDING_SEEKING.map((wanted) => (
+              <FundingChip
+                active={seekingFilter === wanted}
+                count={counts.seeking[wanted]}
+                key={wanted}
+                label={FUNDING_SEEKING_LABELS[wanted]}
+                onClick={() =>
+                  setSeekingFilter(seekingFilter === wanted ? null : wanted)
+                }
+                testId={`seeking-chip-${wanted}`}
+              />
+            ))}
+          </div>
+        </fieldset>
+      </div>
+
       {isLoading ? (
         <p className="py-8 text-center text-sm text-black/60 dark:text-white/60">
           Loading launches…
@@ -230,13 +355,17 @@ export function LaunchesPage() {
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-black/15 px-5 py-12 text-center dark:border-white/15">
           <p className="text-sm text-black/60 dark:text-white/60">
-            {filter === "all"
-              ? "No launches yet. Founders: publish the first one."
-              : filter === "ideas"
-                ? "No ideas yet. Be the first to start one."
-                : "Nothing here. Follow a launch to pin it to this list."}
+            {stanceFilter !== null || seekingFilter !== null
+              ? "Nothing matches that combination. Try a wider chip."
+              : filter === "all"
+                ? "No launches yet. Founders: publish the first one."
+                : filter === "ideas"
+                  ? "No ideas yet. Be the first to start one."
+                  : "Nothing here. Follow a launch to pin it to this list."}
           </p>
-          {filter === "all" || filter === "ideas" ? (
+          {stanceFilter === null &&
+          seekingFilter === null &&
+          (filter === "all" || filter === "ideas") ? (
             <Button
               className="mt-4"
               onClick={() => setIdeaOpen(true)}
@@ -273,6 +402,7 @@ export function LaunchesPage() {
                 <li key={key}>
                   <LaunchCard
                     idea={isIdea(launch.record)}
+                    funding={fundingOf(launch)}
                     supporters={supporters.data?.get(key) ?? null}
                     bids={launch.bids.length}
                     followDisabled={!follows.ready || follows.pending}

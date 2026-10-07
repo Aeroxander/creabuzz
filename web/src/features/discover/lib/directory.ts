@@ -36,6 +36,7 @@ import {
   KIND_ORG_PITCH,
 } from "../../../shared/constants/kinds.ts";
 import { formatMoney } from "../../launchpad/lib/amounts.ts";
+import { effectiveFunding, raisingFirst } from "../../launchpad/lib/funding.ts";
 import {
   explorerAddressUrl,
   explorerTxUrl,
@@ -136,7 +137,7 @@ export interface DaoCard {
 export interface DirectorySnapshot {
   /** Newest activity first. */
   daos: DaoCard[];
-  /** Non-draft launches, newest record first. */
+  /** Non-draft launches, "Raising now" first and newest record within that. */
   launches: Launch[];
   /** The project board's own cards (`deriveBoard`). */
   projects: ProjectSummary[];
@@ -211,6 +212,13 @@ function tombstonedCoordinate(event: NostrEvent): string | null {
 export function deriveDirectory(input: {
   events: readonly NostrEvent[];
   me?: string | null;
+  /**
+   * The chain head when the caller could read it. It is what separates a
+   * declared "Planning a raise" from a sale that is genuinely open, so the
+   * directory can lead with "Raising now". Absent reads as an unreadable
+   * chain: nothing is guessed to be settling.
+   */
+  chainHead?: number | bigint | null;
 }): DirectorySnapshot {
   const events = [...input.events];
   const counts: DirectoryCounts = {
@@ -280,9 +288,12 @@ export function deriveDirectory(input: {
 
   const allLaunches = buildLaunches(events, tombstones);
   // A draft is a founder's unfinished record — it is not a live launch, and
-  // listing one here would answer "what is happening" with a maybe.
-  const launches = allLaunches.filter(
-    (launch) => effectiveStage(launch) !== "draft",
+  // listing one here would answer "what is happening" with a maybe. "Raising
+  // now" then leads the section (plan §2), with the newest-record order
+  // `buildLaunches` produced still holding inside each group.
+  const launches = raisingFirst(
+    allLaunches.filter((launch) => effectiveStage(launch) !== "draft"),
+    (launch) => effectiveFunding(launch, input.chainHead ?? null),
   );
   const launchName = new Map<string, string>();
   for (const launch of allLaunches) {

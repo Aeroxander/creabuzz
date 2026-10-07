@@ -7,7 +7,12 @@ import assert from "node:assert/strict";
 
 import { STANDARD_ALLOCATION } from "./allocation.ts";
 import { standardLaunchPreset } from "./launch-params.ts";
-import { canSaveEdit, editIssues, initialWizardState } from "./wizard.ts";
+import {
+  buildLegacyInput,
+  canSaveEdit,
+  editIssues,
+  initialWizardState,
+} from "./wizard.ts";
 
 const preset = standardLaunchPreset({
   startBlock: 0n,
@@ -47,6 +52,7 @@ function baseForm(overrides = {}) {
     claimBlock: null,
     unlocks: null,
     daoAtGraduation: null,
+    funding: null,
     ...overrides,
   };
 }
@@ -87,4 +93,18 @@ test("an allocation that does not add up blocks an edit", () => {
     allocation: { ...STANDARD_ALLOCATION, sale: 0 },
   });
   assert.equal(canSaveEdit(wizard, form), false);
+});
+
+test("a save carries the funding declaration through the edit form", () => {
+  // The edit path is recordToInput -> this form -> buildLegacyInput, and that
+  // last hop is where a field can still be dropped (Review-Proven Rule 5).
+  const funding = {
+    stance: "planning",
+    seeking: ["backers"],
+    opensAt: "2026-11-01",
+    note: "Aiming for late autumn.",
+  };
+  assert.deepEqual(buildLegacyInput(baseForm({ funding })).funding, funding);
+  // Nothing declared stays nothing: a save does not invent a stance.
+  assert.equal(buildLegacyInput(baseForm()).funding, undefined);
 });

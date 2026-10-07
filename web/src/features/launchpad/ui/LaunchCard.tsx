@@ -13,7 +13,8 @@ import { formatMoney } from "../lib/amounts";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import { launchArt } from "../lib/launch-art";
 import type { LaunchRecord, LaunchStage } from "../models";
-import { StageBadge } from "./widgets";
+import type { ResolvedFunding } from "../lib/funding";
+import { FundingBadge, StageBadge } from "./widgets";
 
 /** What a card reads from a launch, so a preview can fill it from a form. */
 export type LaunchCardRecord = Pick<
@@ -33,6 +34,12 @@ export type LaunchCardRecord = Pick<
 export interface LaunchCardProps {
   record: LaunchCardRecord;
   stage: LaunchStage;
+  /**
+   * The funding status the card shows. Null when the surface has no chain
+   * reading to resolve one — the card then shows nothing rather than a
+   * guessed stance (`lib/funding.ts`).
+   */
+  funding?: ResolvedFunding | null;
   /** Founder's display name and picture, when known. */
   founder?: { name: string; picture: string | null };
   bids: number;
@@ -53,6 +60,7 @@ export interface LaunchCardProps {
 export function LaunchCard({
   record,
   stage,
+  funding = null,
   founder,
   bids,
   updates,
@@ -151,11 +159,12 @@ export function LaunchCard({
             <StageBadge stage={stage} />
           )}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {founder ? `by ${founder.name}` : null}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+          {founder ? <span>by {founder.name}</span> : null}
+          {funding ? <FundingBadge funding={funding} /> : null}
           {record.agent ? (
             <span
-              className="ml-1.5 rounded-full bg-violet-500/15 px-1.5 py-0.5 text-2xs font-semibold text-violet-300"
+              className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-2xs font-semibold text-violet-300"
               data-testid="launch-agent-badge"
               title={`Run by agent ${record.agent.slice(0, 8)}…`}
             >

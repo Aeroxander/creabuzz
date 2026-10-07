@@ -16,6 +16,7 @@ import {
   markPasskeyUnlocked,
 } from "../lib/passkey-identity";
 import { passkeyModeCopy } from "../lib/mode-copy";
+import { Overlay } from "@/shared/ui/portal";
 
 export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   const [unlocking, setUnlocking] = useState(false);
@@ -49,7 +50,7 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   if (!needed) return <>{children}</>;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50">
+    <Overlay className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50">
       <div className="w-full max-w-sm rounded-3xl bg-background p-6 text-center shadow-2xl">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
           <Fingerprint className="h-6 w-6 text-black/60 dark:text-white/60" />
@@ -80,6 +81,6 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
           </button>
         ) : null}
       </div>
-    </div>
+    </Overlay>
   );
 }

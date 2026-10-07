@@ -10,6 +10,7 @@ import { getOrCreateIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
+import { Overlay } from "@/shared/ui/portal";
 
 export function OnboardingDialog({
   onDone,
@@ -39,7 +40,7 @@ export function OnboardingDialog({
   };
 
   return (
-    <div
+    <Overlay
       className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
       data-testid="onboarding-dialog"
     >
@@ -144,6 +145,6 @@ export function OnboardingDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

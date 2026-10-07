@@ -26,6 +26,10 @@ contract VerifierSet {
         uint256 objections;
     }
 
+    /// @notice Where the claimant of a claim is looked up, so a reviewer who
+    /// is also the claimant can be turned away (plan G1: reviewer recusal).
+    address public claimStake;
+
     mapping(address => Verifier) public verifiers;
     mapping(bytes32 claimId => Claim) public claims;
     mapping(bytes32 claimId => mapping(address => bool)) public attested;
@@ -38,6 +42,9 @@ contract VerifierSet {
     event Slashed(address indexed verifier, uint256 amount);
 
     error OnlyOwner(address caller);
+    /// @notice A reviewer cannot pass judgment on their own work.
+    error ClaimantCannotAttest(bytes32 claimId, address claimant);
+    error NotClaimStake(address caller);
     error NotAVerifier(address verifier);
     error AlreadyAttested(bytes32 claimId, address verifier);
     error AlreadyVerifier(address verifier);
@@ -81,7 +88,23 @@ contract VerifierSet {
     /// `ClaimStake` ignores any attestation made before the claim was submitted
     /// (it snapshots the counters at submit), so an id cannot be pre-approved
     /// and then squatted with different content.
+    /// @notice Point at the `ClaimStake` holding the claims, so recusal can
+    /// be checked against who actually filed them. Once only.
+    function setClaimStake(address claimStake_) external {
+        if (msg.sender != owner) revert OnlyOwner(msg.sender);
+        if (claimStake != address(0) || claimStake_ == address(0)) revert OnlyOwner(msg.sender);
+        claimStake = claimStake_;
+    }
+
     function attest(bytes32 claimId, bool approve) external {
+        // G1: a claimant cannot attest to their own claim. The claimant is
+        // read from ClaimStake, so this holds whoever is holding the pen.
+        address claimant = claimStake == address(0)
+            ? address(0)
+            : IClaimClaimant(claimStake).claimantOf(claimId);
+        if (claimant != address(0) && msg.sender == claimant) {
+            revert ClaimantCannotAttest(claimId, claimant);
+        }
         if (!verifiers[msg.sender].active) revert NotAVerifier(msg.sender);
         if (attested[claimId][msg.sender]) revert AlreadyAttested(claimId, msg.sender);
         attested[claimId][msg.sender] = true;
@@ -123,4 +146,9 @@ contract VerifierSet {
         if (msg.sender != owner) revert OnlyOwner(msg.sender);
         verifiers[verifier].stake += amount;
     }
+}
+
+/// @notice The one lookup `VerifierSet` needs from `ClaimStake`: who filed it.
+interface IClaimClaimant {
+    function claimantOf(bytes32 claimId) external view returns (address);
 }

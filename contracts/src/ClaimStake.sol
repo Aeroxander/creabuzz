@@ -42,7 +42,8 @@ contract ClaimStake {
         Rejected,  // objection quorum reached; stake slashed to the treasury
         Frozen,    // governance froze the claim (suspicion of fraud)
         Paid,      // approved + paid out
-        Recovered  // frozen claim unwound: stake back to contributor, reserve to treasury
+        Recovered, // frozen claim unwound: stake back to contributor, reserve to treasury
+        Expired    // the claim ran out of time unapproved: returned, unslashed (G2)
     }
 
     struct MilestoneClaim {
@@ -51,9 +52,36 @@ contract ClaimStake {
         uint256 stake;       // contributor's collateral, escrowed
         Status status;
         bytes32 evidenceHash; // Nostr→chain binding (Blossom + canonical claim)
+        // ── plan §7 ──────────────────────────────────────────────────────
+        /// @notice The acceptance check this claim will be judged against
+        /// (G16). Stated at open, and locked the moment a reviewer looks.
+        bytes32 checkHash;
+        /// @notice When the claim lapses (G2, G20). Public, so other seats can
+        /// see what is being worked and until when — "take this task" is this
+        /// record.
+        uint64 expiresAt;
+        /// @notice When approval released it (G13): the challenge window runs
+        /// from here before any payout.
+        uint64 releasedAt;
     }
 
     mapping(bytes32 claimId => MilestoneClaim) public claims;
+
+    /// @notice Seconds an unapproved claim survives before it lapses (G2).
+    uint64 public claimWindow = 30 days;
+    /// @notice Seconds after release before a payout may be taken (G13). The
+    /// window in which a challenge can still freeze it.
+    uint64 public challengeWindow = 3 days;
+
+    event CheckSet(bytes32 indexed claimId, bytes32 checkHash);
+    event ClaimExpired(bytes32 indexed claimId, uint256 stakeReturned, uint256 reserveReturned);
+    event WindowsSet(uint64 claimWindow, uint64 challengeWindow);
+
+    error NotClaimant(address caller);
+    error CheckLocked(bytes32 claimId);
+    error NotExpired(bytes32 claimId);
+    error InChallengeWindow(bytes32 claimId, uint64 untilWhen);
+    error BadWindow_();
 
     /// @notice Currency the treasury has reserved for this claim's payout.
     /// `payout` can only ever pay `amount` out of this balance.
@@ -176,7 +204,10 @@ contract ClaimStake {
             amount: amount,
             stake: stake,
             status: Status.Open,
-            evidenceHash: evidenceHash
+            evidenceHash: evidenceHash,
+            checkHash: bytes32(0),
+            expiresAt: uint64(block.timestamp + claimWindow),
+            releasedAt: 0
         });
         approvalsAtSubmit[claimId] = verifiers.approvalCount(claimId);
         objectionsAtSubmit[claimId] = verifiers.objectionCount(claimId);
@@ -209,6 +240,63 @@ contract ClaimStake {
     error NotTreasury();
     error EmptyClaim();
 
+    /// @notice G16: state the acceptance check this claim will be judged
+    /// against. The claimant may set it until a reviewer has looked at the
+    /// claim — after the first attestation it is locked, because a check that
+    /// moves under a reviewer is not a check.
+    function setCheck(bytes32 claimId, bytes32 checkHash) external {
+        MilestoneClaim storage claim = claims[claimId];
+        if (claim.contributor == address(0)) revert UnknownClaim(claimId);
+        if (msg.sender != claim.contributor) revert NotClaimant(msg.sender);
+        if (claim.status != Status.Open) revert CheckLocked(claimId);
+        if (verifiers.approvalCount(claimId) + verifiers.objectionCount(claimId) != 0) {
+            revert CheckLocked(claimId);
+        }
+        claim.checkHash = checkHash;
+        emit CheckSet(claimId, checkHash);
+    }
+
+    /// @notice G2: a claim nobody settled in time lapses. The contributor
+    /// takes their stake back unslashed and the treasury takes back what it
+    /// reserved — an unanswered claim is a missed deadline, not a wrong verdict.
+    /// Anyone may call it, so a claim can never strand its own money.
+    function expire(bytes32 claimId) external {
+        MilestoneClaim storage claim = claims[claimId];
+        if (claim.contributor == address(0)) revert UnknownClaim(claimId);
+        if (claim.status != Status.Open) revert AlreadySettled(claimId);
+        if (block.timestamp <= claim.expiresAt) revert NotExpired(claimId);
+        claim.status = Status.Expired;
+        uint256 stakeBack = claim.stake;
+        uint256 reserveBack = funded[claimId];
+        claim.stake = 0;
+        funded[claimId] = 0;
+        emit ClaimExpired(claimId, stakeBack, reserveBack);
+        uint256 toContributor = stakeBack;
+        uint256 toTreasury = reserveBack;
+        if (toContributor > 0 && !currency.transfer(claim.contributor, toContributor)) {
+            revert MintFailed(address(currency), claim.contributor, toContributor);
+        }
+        if (toTreasury > 0 && !currency.transfer(treasury, toTreasury)) {
+            revert MintFailed(address(currency), treasury, toTreasury);
+        }
+    }
+
+    /// @notice The two deadlines. Governance-only, and neither may be zero:
+    /// a zero challenge window would make G13 a sentence rather than a rule.
+    function setWindows(uint64 claimWindow_, uint64 challengeWindow_) external {
+        if (msg.sender != treasury) revert NotTreasury();
+        if (claimWindow_ == 0 || challengeWindow_ == 0) revert BadWindow_();
+        claimWindow = claimWindow_;
+        challengeWindow = challengeWindow_;
+        emit WindowsSet(claimWindow_, challengeWindow_);
+    }
+
+    /// @notice Who filed this claim — the one fact `VerifierSet` needs to
+    /// turn a claimant away from attesting to their own work (plan G1).
+    function claimantOf(bytes32 claimId) external view returns (address) {
+        return claims[claimId].contributor;
+    }
+
     /// @notice Anyone may settle once quorum conditions hold: approval quorum
     /// releases the payout to the contributor (stake returned with it);
     /// objection quorum slashes the stake into the treasury and returns the
@@ -221,6 +309,8 @@ contract ClaimStake {
         uint256 quorum = verifiers.quorum();
         if (quorum != 0 && verifiers.approvalCount(claimId) - approvalsAtSubmit[claimId] >= quorum) {
             claim.status = Status.Approved;
+            // G13: the challenge window runs from here, not from the payout.
+            claim.releasedAt = uint64(block.timestamp);
             emit ClaimReleased(claimId, claim.contributor, claim.amount);
             // Mint the attested royalty schedule — exactly as claimed and
             // approved. Fail closed if the ledger is not wired.
@@ -255,6 +345,11 @@ contract ClaimStake {
         MilestoneClaim storage claim = claims[claimId];
         if (claim.status != Status.Approved) revert NotOpen(claimId);
         if (msg.sender != claim.contributor) revert NotContributor();
+        // G13: nothing is paid while a challenge could still land. `freeze`
+        // works throughout this window, so the pause has teeth rather than
+        // being a timer nobody can act on.
+        uint64 payableAt = claim.releasedAt + challengeWindow;
+        if (block.timestamp < payableAt) revert InChallengeWindow(claimId, payableAt);
         uint256 reserved = funded[claimId];
         if (reserved < claim.amount) revert Underfunded(claimId, reserved, claim.amount);
         claim.status = Status.Paid;

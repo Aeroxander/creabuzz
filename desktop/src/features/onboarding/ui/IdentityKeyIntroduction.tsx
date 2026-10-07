@@ -19,12 +19,20 @@ export function IdentityKeyIntroduction({
   error,
   onCreate,
   onOpenHelp,
+  onWebLinked,
 }: {
   direction: OnboardingTransitionDirection;
   disabled: boolean;
   error?: string | null;
   onCreate: () => void;
   onOpenHelp: () => void;
+  /**
+   * Called once the browser handoff has committed. The machine flow passes
+   * its load-fresh-identity advance so the user lands on the next step
+   * instead of sitting on a confirmation (same contract as ProfileStep's
+   * advanceWithoutSaving).
+   */
+  onWebLinked?: () => void;
 }) {
   return (
     <OnboardingSlideTransition
@@ -103,7 +111,7 @@ export function IdentityKeyIntroduction({
         >
           {disabled ? "Creating key…" : "Create my private key"}
         </Button>
-        <WebIdentitySignInButton />
+        <WebIdentitySignInButton onLinked={onWebLinked} />
       </OnboardingFooter>
     </OnboardingSlideTransition>
   );

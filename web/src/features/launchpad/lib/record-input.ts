@@ -49,6 +49,7 @@ export function recordToInput(
     ...(record.daoAtGraduation !== null
       ? { daoAtGraduation: record.daoAtGraduation }
       : {}),
+    ...(record.funding ? { funding: record.funding } : {}),
     ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
     ...(record.vesting ? { vesting: record.vesting } : {}),
     ...overrides,

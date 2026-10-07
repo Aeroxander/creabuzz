@@ -417,6 +417,7 @@ export function MachineOnboardingFlow({
           disabled={isPending}
           error={error}
           onCreate={() => void loadFreshIdentity()}
+          onWebLinked={() => void loadFreshIdentity()}
           onOpenHelp={() => {
             setError(null);
             setIdentityKeyHelpReturnPage("identity-key-intro");

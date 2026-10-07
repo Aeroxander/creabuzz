@@ -15,10 +15,17 @@ export interface CommunityDirectoryEntry {
 
 export interface CommunityDirectory {
   communities: CommunityDirectoryEntry[];
+  /** False when the server does not publish a public directory (HTTP 404). */
+  available: boolean;
 }
 
 async function fetchCommunityDirectory(): Promise<CommunityDirectory> {
   const response = await fetch(`${relayHttpBaseUrl()}/communities`);
+  // Directory publication is opt-in. A 404 says nothing about whether the
+  // connected community exists or whether its channel reads work.
+  if (response.status === 404) {
+    return { communities: [], available: false };
+  }
   if (!response.ok) {
     throw new Error(
       friendlyRelayError(
@@ -28,13 +35,14 @@ async function fetchCommunityDirectory(): Promise<CommunityDirectory> {
       ),
     );
   }
-  return (await response.json()) as CommunityDirectory;
+  const directory = (await response.json()) as CommunityDirectory;
+  return { ...directory, available: true };
 }
 
 /**
  * Public, unauthenticated community directory for the discovery landing page.
- * Fails fast: on any error the caller falls back to the repository browser so
- * older relays without the endpoint still work.
+ * An unpublished directory is distinct from a failed read. The connected
+ * community remains reachable in either case.
  */
 export function useCommunities() {
   return useQuery({

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { installAnvilWallet } from "../helpers/anvil-wallet";
 
 /**
  * Deploy the auction from the browser, against a REAL local chain.
@@ -167,69 +168,6 @@ async function mockRelay(page: Page, initial: StoredEvent) {
   return { published, current: () => current };
 }
 
-/** `window.ethereum` forwarding to Anvil, signing as its unlocked account `account`. */
-async function installWallet(
-  page: Page,
-  account: string,
-  options: { rejectFirstSend?: boolean } = {},
-) {
-  await page.addInitScript(
-    ({ url, account, rejectFirstSend }) => {
-      let sends = 0;
-      Object.defineProperty(window, "ethereum", {
-        configurable: true,
-        value: {
-          request: async ({
-            method,
-            params,
-          }: {
-            method: string;
-            params?: unknown[];
-          }) => {
-            if (method === "eth_requestAccounts" || method === "eth_accounts") {
-              return [account];
-            }
-            // The first send is declined (as if the user pressed Reject); every
-            // later one goes through, so the flow can be retried to the end.
-            if (
-              method === "eth_sendTransaction" &&
-              rejectFirstSend &&
-              sends++ === 0
-            ) {
-              throw {
-                code: 4001,
-                message: "User denied transaction signature",
-              };
-            }
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                jsonrpc: "2.0",
-                id: 1,
-                method,
-                params: params ?? [],
-              }),
-            });
-            const body = await res.json();
-            if (body.error) {
-              throw { code: body.error.code, message: body.error.message };
-            }
-            return body.result;
-          },
-          on() {},
-          removeListener() {},
-        },
-      });
-    },
-    {
-      url: ANVIL_URL,
-      account,
-      rejectFirstSend: options.rejectFirstSend ?? false,
-    },
-  );
-}
-
 async function openManage(page: Page) {
   await page.addInitScript(
     ([nsec, rpcUrl]) => {
@@ -277,7 +215,7 @@ test("a community-track founder deploys, funds and binds the auction end to end"
     page,
     launchRecord({ admission: "community", treasury: TREASURY, startBlock }),
   );
-  await installWallet(page, TREASURY);
+  await installAnvilWallet(page, TREASURY, { rpcUrl: ANVIL_URL });
   await openManage(page);
 
   const panel = page.getByTestId("auction-deploy-panel");
@@ -350,7 +288,7 @@ test("a wallet that is not the treasury is stopped before anything is sent", asy
     page,
     launchRecord({ admission: "community", treasury: TREASURY, startBlock }),
   );
-  await installWallet(page, OTHER_ACCOUNT);
+  await installAnvilWallet(page, OTHER_ACCOUNT, { rpcUrl: ANVIL_URL });
   const before = String(await rpc("eth_blockNumber"));
   await openManage(page);
 
@@ -376,7 +314,7 @@ test("the curated track also deploys and locks the bid gate to the auction", asy
     page,
     launchRecord({ admission: "curated", treasury: TREASURY, startBlock }),
   );
-  await installWallet(page, TREASURY);
+  await installAnvilWallet(page, TREASURY, { rpcUrl: ANVIL_URL });
   await openManage(page);
 
   await expect(page.getByTestId("auction-deploy-panel")).toBeVisible({
@@ -416,7 +354,10 @@ test("declining a transaction is recoverable: nothing was sent, and retry finish
     page,
     launchRecord({ admission: "community", treasury: TREASURY, startBlock }),
   );
-  await installWallet(page, TREASURY, { rejectFirstSend: true });
+  await installAnvilWallet(page, TREASURY, {
+    rpcUrl: ANVIL_URL,
+    rejectFirstSend: true,
+  });
   await openManage(page);
   const head = String(await rpc("eth_blockNumber"));
 
@@ -558,7 +499,7 @@ for (const journey of JOURNEYS) {
         currency: erc20,
       }),
     );
-    await installWallet(page, TREASURY);
+    await installAnvilWallet(page, TREASURY, { rpcUrl: ANVIL_URL });
     await openManage(page);
     await page.getByTestId("auction-deploy").click();
     await expect(page.getByTestId("auction-status")).toContainText(
@@ -582,7 +523,7 @@ for (const journey of JOURNEYS) {
     await mineTo(startBlock + 2);
     const bidderPage = await context.newPage();
     const bidderRelay = await mockRelay(bidderPage, linked);
-    await installWallet(bidderPage, BIDDER);
+    await installAnvilWallet(bidderPage, BIDDER, { rpcUrl: ANVIL_URL });
     await bidderPage.addInitScript(
       ([rpcUrl]) => window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl),
       [ANVIL_URL],

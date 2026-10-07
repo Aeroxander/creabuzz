@@ -24,6 +24,7 @@ import {
   type KIND_LAUNCH_UPDATE,
 } from "@/shared/constants/kinds";
 import { hasChat } from "./lib/launch-chat";
+import { fundingContent, type FundingStatus } from "./lib/funding";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
 import {
@@ -314,6 +315,12 @@ export interface CreateLaunchInput {
   /** A topic; published as a lowercase `t` tag, which Discover browses by. */
   category?: string;
   stage: LaunchStage;
+  /**
+   * The project's funding stance and who it wants to hear from
+   * (`lib/funding.ts`, plan §2). Optional: a record written before this
+   * existed simply declares nothing.
+   */
+  funding?: FundingStatus;
   chainId: string;
   currency: string;
   floorPrice: string;
@@ -327,6 +334,8 @@ export interface CreateLaunchInput {
   distributor?: string;
   claimStake?: string;
   verifierSet?: string;
+  /** The backer-directed funding vault (plan §4), once deployed. */
+  proposalVault?: string;
   admission: "curated" | "community";
   channels: string[];
   /** The launch's chat rooms; their ids are published as bound channels too. */
@@ -381,12 +390,15 @@ export function useCreateLaunch() {
       if (input.distributor) tags.push(["distributor", input.distributor]);
       if (input.claimStake) tags.push(["claim-stake", input.claimStake]);
       if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
+      if (input.proposalVault)
+        tags.push(["proposal-vault", input.proposalVault]);
       for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
       const content: Record<string, unknown> = {
         pitch: input.pitch,
         stage: input.stage,
       };
+      if (input.funding) content.funding = fundingContent(input.funding);
       if (input.longPitch) content.longPitch = input.longPitch;
       if (input.ipList && input.ipList.length > 0)
         content.ipList = input.ipList;

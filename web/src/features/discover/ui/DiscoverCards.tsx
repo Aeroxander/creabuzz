@@ -18,8 +18,10 @@ import { ArrowRight, Users } from "lucide-react";
 import type { DaoCard } from "@/features/discover/lib/directory";
 import { canBackLaunch } from "@/features/discover/lib/directory";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
+import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { LaunchCard } from "@/features/launchpad/ui/LaunchCard";
+import { effectiveFunding } from "@/features/launchpad/lib/funding";
 import { isIdea } from "@/features/launchpad/lib/idea";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
@@ -185,11 +187,13 @@ export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
   const { data: profiles } = useProfiles([launch.record.author]);
   const founder = profiles?.[launch.record.author];
   const stage = effectiveStage(launch);
+  const blockHeight = useChainBlockHeight();
   const key = launchCoord(launch.record);
   return (
     <li data-testid="discover-launch">
       <LaunchCard
         idea={isIdea(launch.record)}
+        funding={effectiveFunding(launch, blockHeight)}
         bids={launch.bids.length}
         followDisabled={!follows.ready || follows.pending}
         followed={follows.followed.has(key)}

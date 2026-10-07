@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import {
   normalizeRelayWsUrl,
+  relayWsUrl,
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
 import {
@@ -12,8 +13,13 @@ import {
   type CommunityDirectoryEntry,
 } from "../use-communities";
 import { Button } from "@/shared/ui/button";
+import { QueryError } from "@/shared/ui/query-error";
 
-function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
+type CardEntry = Omit<CommunityDirectoryEntry, "member_count"> & {
+  member_count: number | null;
+};
+
+function CommunityCard({ entry }: { entry: CardEntry }) {
   const hostName = entry.name || entry.host;
   return (
     <Link
@@ -46,8 +52,14 @@ function CommunityCard({ entry }: { entry: CommunityDirectoryEntry }) {
         {entry.description}
       </p>
       <p className="mt-auto flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
-        <Users className="h-3.5 w-3.5" />
-        {entry.member_count} member{entry.member_count === 1 ? "" : "s"}
+        {entry.member_count !== null ? (
+          <>
+            <Users aria-hidden className="h-3.5 w-3.5" />
+            {entry.member_count} member{entry.member_count === 1 ? "" : "s"}
+          </>
+        ) : (
+          "Open community"
+        )}
         {entry.archived ? (
           <span
             className="ml-auto rounded-full bg-black/10 px-2 py-0.5 text-2xs font-medium uppercase dark:bg-white/15"
@@ -117,7 +129,12 @@ function AddCommunityForm() {
 }
 
 export function CommunityDirectoryPage() {
-  const { data, isLoading } = useCommunities();
+  const { data, isLoading, isError, error, refetch } = useCommunities();
+  const host = new URL(relayWsUrl()).host;
+  const connected = data?.communities.find((entry) => entry.host === host);
+  const otherCommunities = data?.communities.filter(
+    (entry) => entry.host !== host,
+  );
 
   return (
     <div className="flex h-full w-full flex-1 flex-col gap-6 overflow-y-auto px-4 py-8">
@@ -133,28 +150,55 @@ export function CommunityDirectoryPage() {
         </Link>
       </header>
 
-      {isLoading ? (
+      <section aria-labelledby="connected-community-heading">
+        <h2
+          id="connected-community-heading"
+          className="mb-3 text-sm font-semibold"
+        >
+          Connected community
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <CommunityCard
+            entry={
+              connected ?? {
+                host,
+                name: host,
+                description:
+                  "Open channels, messages, and shared work on your connected server.",
+                member_count: null,
+                archived: false,
+              }
+            }
+          />
+        </div>
+      </section>
+
+      {isError ? (
+        <QueryError
+          title="Couldn't load the community directory"
+          description="You can still open your connected community. Try again to browse other communities."
+          error={error}
+          onRetry={() => void refetch()}
+          testId="community-directory-error"
+        />
+      ) : isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {["a", "b", "c", "d", "e", "f"].map((key) => (
             <CardSkeleton key={key} />
           ))}
         </div>
-      ) : data && data.communities.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-            <Compass className="h-7 w-7 text-black/60 dark:text-white/60" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold text-black dark:text-white">
-            No communities on this relay yet
-          </h2>
-          <p className="mt-1 max-w-sm text-sm text-black/60 dark:text-white/60">
-            Communities hosted by this relay will show up here, browsable
-            without an account.
-          </p>
-        </div>
+      ) : data?.available === false ? (
+        <p className="text-sm text-black/60 dark:text-white/60">
+          This server doesn't publish a public community directory. Open your
+          connected community above to reach its chats.
+        </p>
+      ) : otherCommunities?.length === 0 ? (
+        <p className="text-sm text-black/60 dark:text-white/60">
+          No other communities are listed on this server.
+        </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data?.communities.map((entry) => (
+          {otherCommunities?.map((entry) => (
             <CommunityCard key={entry.host} entry={entry} />
           ))}
         </div>

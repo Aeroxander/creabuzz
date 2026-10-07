@@ -19,8 +19,10 @@ import { Input } from "@/shared/ui/input";
 import { isEvmAddress, type VestingConfig } from "../../models";
 import type { CreateLaunchInput } from "../../use-launches";
 import type { SaleCurrency } from "../../lib/sale-currency";
+import type { FundingStatus } from "../../lib/funding";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";
+import { FundingStatusEditor } from "../FundingStatusEditor";
 import { Field } from "./fields";
 
 /** The relay caps `buzz-channel` tags on a launch record. */
@@ -39,6 +41,9 @@ export interface AdvancedFieldsState {
   setIpList(value: string): void;
   updateCadence: string;
   setUpdateCadence(value: string): void;
+  /** The funding declaration; null is "nothing declared yet". */
+  funding: FundingStatus | null;
+  setFunding(next: FundingStatus | null): void;
   tokenMode: "mint" | "import";
   setTokenMode(value: "mint" | "import"): void;
   tokenName: string;
@@ -105,6 +110,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     setIpList,
     updateCadence,
     setUpdateCadence,
+    funding,
+    setFunding,
     tokenMode,
     setTokenMode,
     tokenName,
@@ -162,6 +169,9 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           value={id}
         />
       </Field>
+      <div className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15">
+        <FundingStatusEditor onChange={setFunding} value={funding} />
+      </div>
       <details
         className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
         data-testid="launch-advanced-founder"

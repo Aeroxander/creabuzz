@@ -5,6 +5,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { hasFounderCommitments } from "../models";
+import { planningIsStale } from "../lib/funding";
 import { toAtomic } from "../lib/amounts";
 import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
 import {
@@ -87,6 +88,15 @@ export function ManagePanel({
 
   const toInput = (overrides: Partial<CreateLaunchInput> = {}) =>
     recordToInput(record, overrides);
+
+  // A "Planning a raise" left standing past 30 days is probably out of date,
+  // and a card that lies about intent is the defect this whole surface exists
+  // to prevent (plan §2).
+  const planningStale = planningIsStale(
+    record.funding,
+    record.createdAt,
+    Math.floor(Date.now() / 1000),
+  );
 
   /**
    * Relaunch a failed launch: republish the SAME record id (`d`) with a fresh
@@ -324,6 +334,21 @@ export function ManagePanel({
 
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-4">
+      {planningStale ? (
+        <Card className="border-amber-500/40 p-4" data-testid="funding-nudge">
+          <h2 className="text-base font-semibold">
+            Your plans may have changed
+          </h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            This project has said it is planning a raise for over a month.
+            Update the funding status so people reading the card see the plan as
+            it is now.
+          </p>
+          <Button className="mt-3" onClick={() => setEditOpen(true)} size="sm">
+            Update funding status
+          </Button>
+        </Card>
+      ) : null}
       <Card className="p-4" data-testid="launch-readiness">
         <h2 className="text-base font-semibold">Launch readiness</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">

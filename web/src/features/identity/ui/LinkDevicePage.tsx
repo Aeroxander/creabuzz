@@ -25,13 +25,12 @@ import {
 } from "../lib/link-device-flow";
 import {
   hasPasskeyIdentity,
-  isPasskeyUnlocked,
+  passkeyStoredPubkey,
   signInPasskeyIdentity,
 } from "../lib/passkey-identity";
 
 type Phase =
   | "invalid"
-  | "sign-in"
   | "no-identity"
   | "unreadable"
   | "confirm"
@@ -46,11 +45,14 @@ export function LinkDevicePage() {
   );
   const [phase, setPhase] = React.useState<Phase>(() => {
     if (!request.ok) return "invalid";
-    if (hasPasskeyIdentity() && !isPasskeyUnlocked()) return "sign-in";
-    // An unlocked passkey is a ready identity; otherwise this page must NOT
-    // create one. Only proceed when a stored identity already exists — a
-    // read-only visitor is never handed a brand-new, un-backed-up key here.
+    // A registered passkey goes straight to the desktop-framed confirm —
+    // there is no separate "log in to the web app" step. A locked passkey
+    // unlocks inside the confirm action below, so the single button is the
+    // only passkey popup and nothing is shared without that explicit click.
     if (hasPasskeyIdentity()) return "confirm";
+    // Otherwise this page must NOT create one. Only proceed when a stored
+    // identity already exists — a read-only visitor is never handed a
+    // brand-new, un-backed-up key here.
     const state = identityStorageState();
     if (state === "unreadable") return "unreadable";
     return state === "ready" ? "confirm" : "no-identity";
@@ -66,12 +68,16 @@ export function LinkDevicePage() {
     [phase],
   );
   const pubkey = React.useMemo(() => {
-    if (!secretHex) return null;
-    try {
-      return getPublicKey(nsecToBytes(secretHex));
-    } catch {
-      return null;
+    if (secretHex) {
+      try {
+        return getPublicKey(nsecToBytes(secretHex));
+      } catch {
+        return null;
+      }
     }
+    // Locked passkey: show who would be linked before any popup, from the
+    // stored public material — the confirm click is the unlock ceremony.
+    return passkeyStoredPubkey();
   }, [secretHex]);
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const name = resolveUserName(
@@ -79,26 +85,52 @@ export function LinkDevicePage() {
     pubkey ?? "",
   );
 
-  const confirm = () => {
-    if (!request.ok || !secretHex) return;
+  const lockedPasskey = !secretHex && hasPasskeyIdentity();
+
+  const confirm = async () => {
+    if (!request.ok || busy) return;
+    setBusy(true);
+    setSignInError(null);
     try {
-      const handoff = buildLinkDeviceRedirect({
-        request: request.value,
-        secretKeyHex: secretHex,
-      });
-      setNpub(handoff.npub);
-      // Keep the callback so the "linked" screen can offer the retry link:
-      // a one-shot programmatic redirect is silently dropped whenever the
-      // browser blocks a custom-scheme navigation or no handler is registered
-      // yet, and the user would otherwise be stranded with no way back
-      // (repo rule: never hide the only recovery affordance). The URL is only
-      // ever an `href` — it carries the encrypted payload and is never shown.
-      setHandoffUrl(handoff.url);
-      setPhase("linked");
-      window.location.assign(handoff.url);
-    } catch {
-      // Generic on purpose: nothing about the key or payload is echoed back.
-      setPhase("error");
+      // Locked passkey unlocks here: the single "login to desktop" popup.
+      // The click itself is the explicit consent — nothing was shared before.
+      let hex = secretHex;
+      if (!hex && hasPasskeyIdentity()) {
+        try {
+          await signInPasskeyIdentity();
+        } catch {
+          setSignInError(
+            "Sign-in did not complete. Try again, or open the link from the desktop app once more.",
+          );
+          return;
+        }
+        hex = linkDeviceAccountSecretHex();
+      }
+      if (!hex) {
+        setPhase("error");
+        return;
+      }
+      try {
+        const handoff = buildLinkDeviceRedirect({
+          request: request.value,
+          secretKeyHex: hex,
+        });
+        setNpub(handoff.npub);
+        // Keep the callback so the "linked" screen can offer the retry link:
+        // a one-shot programmatic redirect is silently dropped whenever the
+        // browser blocks a custom-scheme navigation or no handler is registered
+        // yet, and the user would otherwise be stranded with no way back
+        // (repo rule: never hide the only recovery affordance). The URL is only
+        // ever an `href` — it carries the encrypted payload and is never shown.
+        setHandoffUrl(handoff.url);
+        setPhase("linked");
+        window.location.assign(handoff.url);
+      } catch {
+        // Generic on purpose: nothing about the key or payload is echoed back.
+        setPhase("error");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -114,41 +146,6 @@ export function LinkDevicePage() {
           <a className="mt-4 inline-block text-sm underline" href="/">
             Go to Creaton
           </a>
-        </section>
-      ) : null}
-
-      {phase === "sign-in" ? (
-        <section data-testid="link-device-sign-in">
-          <h1 className="text-base font-semibold">Sign in to continue</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            A passkey protects this account. Sign in to choose which account to
-            link to the desktop app.
-          </p>
-          <button
-            type="button"
-            data-testid="link-device-passkey"
-            disabled={busy}
-            className="mt-4 rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
-            onClick={() => {
-              setBusy(true);
-              setSignInError(null);
-              signInPasskeyIdentity()
-                .then(() => setPhase("confirm"))
-                .catch(() =>
-                  setSignInError(
-                    "Sign-in did not complete. Try again, or open the link from the desktop app once more.",
-                  ),
-                )
-                .finally(() => setBusy(false));
-            }}
-          >
-            Sign in with passkey
-          </button>
-          {signInError ? (
-            <p role="alert" className="mt-2 text-sm text-red-600">
-              {signInError}
-            </p>
-          ) : null}
         </section>
       ) : null}
 
@@ -226,11 +223,12 @@ export function LinkDevicePage() {
       {phase === "confirm" && pubkey ? (
         <section data-testid="link-device-confirm-panel">
           <h1 className="text-base font-semibold">
-            Link this desktop to @{name}?
+            Log in to desktop as @{name}?
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            The desktop app will be able to sign as this account. Only confirm
-            on a desktop you trust.
+            {lockedPasskey
+              ? "One passkey check logs this desktop in — nothing is shared until you confirm here."
+              : "The desktop app will be able to sign as this account. Only confirm on a desktop you trust."}
           </p>
           <div
             className="mt-3 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
@@ -245,20 +243,31 @@ export function LinkDevicePage() {
             <button
               type="button"
               data-testid="link-device-confirm"
-              className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
-              onClick={confirm}
+              disabled={busy}
+              className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              onClick={() => void confirm()}
             >
-              Link this desktop
+              {busy
+                ? "Waiting for passkey…"
+                : lockedPasskey
+                  ? "Continue with passkey"
+                  : "Log in desktop"}
             </button>
             <button
               type="button"
               data-testid="link-device-cancel"
-              className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium dark:border-white/20"
+              disabled={busy}
+              className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium disabled:opacity-50 dark:border-white/20"
               onClick={() => setPhase("cancelled")}
             >
               Cancel
             </button>
           </div>
+          {signInError ? (
+            <p role="alert" className="mt-2 text-sm text-red-600">
+              {signInError}
+            </p>
+          ) : null}
         </section>
       ) : null}
 

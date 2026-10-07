@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
+import { createMockRelay } from "./mock-relay";
 import {
   BUZZ_ANDROID_PLAY_STORE_URL,
   BUZZ_IOS_APP_STORE_URL,
@@ -69,7 +70,9 @@ test("home page shows the community directory from the relay", async ({
   ).toBeVisible();
 });
 
-test("empty directory shows the discovery empty state", async ({ page }) => {
+test("empty directory keeps the connected community reachable", async ({
+  page,
+}) => {
   await page.route("**/communities", async (route) => {
     await route.fulfill({
       status: 200,
@@ -79,22 +82,119 @@ test("empty directory shows the discovery empty state", async ({ page }) => {
   });
   await page.goto("/c");
   await expect(
-    page.getByText("No communities on this relay yet"),
+    page.getByText("No other communities are listed on this server."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
   ).toBeVisible();
 });
 
-test("home page falls back when the directory endpoint is missing", async ({
+test("an unpublished directory keeps the connected community reachable", async ({
   page,
 }) => {
-  // Older relays without GET /communities: the landing degrades to the repo
-  // browser, which surfaces its own connection error state.
+  // Public enumeration is off by default. That must not hide the workspace.
   await page.route("**/communities", async (route) => {
     await route.fulfill({ status: 404, body: "not found" });
   });
   await page.goto("/c");
   await expect(
-    page.getByRole("heading", { name: "Couldn't reach the relay" }),
+    page.getByText(
+      "This server doesn't publish a public community directory.",
+      { exact: false },
+    ),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
+  ).toBeVisible();
+});
+
+for (const status of [200, 404]) {
+  test(`Communities opens launch chats directly with directory status ${status}`, async ({
+    page,
+  }) => {
+    const relay = createMockRelay();
+    const supportersId = "11111111-1111-1111-1111-111111111111";
+    const teamId = "22222222-2222-2222-2222-222222222222";
+    for (const [id, name, visibility] of [
+      [supportersId, "Demo · supporters", "open"],
+      [teamId, "Demo · team", "private"],
+    ]) {
+      relay.seed({
+        id: `metadata-${id}`,
+        pubkey: "b".repeat(64),
+        kind: 39000,
+        created_at: 100,
+        tags: [
+          ["d", id],
+          ["name", name],
+          ...(visibility === "private" ? [["private"]] : []),
+        ],
+        content: "",
+        sig: "sig",
+      });
+    }
+    relay.seed({
+      id: "supporter-message",
+      pubkey: "b".repeat(64),
+      kind: 9,
+      created_at: 101,
+      tags: [["h", supportersId]],
+      content: "Welcome to the supporters chat",
+      sig: "sig",
+    });
+    await relay.install(page);
+    await page.route("**/communities", (route) =>
+      route.fulfill({
+        status,
+        contentType: "application/json",
+        body:
+          status === 200 ? JSON.stringify({ communities: [] }) : "not found",
+      }),
+    );
+    await page.goto("/c");
+    await page
+      .getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ })
+      .click();
+    await expect(page).toHaveURL(/\/c\/127\.0\.0\.1%3A4173/);
+    await page.getByTestId("channel-Demo · supporters").click();
+    await expect(
+      page.getByText("Welcome to the supporters chat"),
+    ).toBeVisible();
+    await expect(page.getByTestId("channel-Demo · team")).toBeVisible();
+    // Returning through the main navigation must keep the direct entry.
+    await page.getByTestId("app-nav-communities").click();
+    await expect(
+      page.getByRole("heading", { name: "Communities", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ })
+      .click();
+    await page.getByTestId("channel-Demo · team").click();
+    await expect(page).toHaveURL(new RegExp(`channel=${teamId}`));
+  });
+}
+
+test("directory failures show a retry alongside the working community entry", async ({
+  page,
+}) => {
+  let status = 503;
+  await page.route("**/communities", (route) =>
+    route.fulfill({
+      status,
+      contentType: "application/json",
+      body: status === 200 ? JSON.stringify(directoryFixture) : "unavailable",
+    }),
+  );
+  await page.goto("/c");
+  const error = page.getByTestId("community-directory-error");
+  await expect(error).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
+  ).toBeVisible();
+  status = 200;
+  await error.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("alpha.example.com")).toBeVisible();
+  await expect(error).toBeHidden();
 });
 
 test("community page shows metadata and join stores the relay URL", async ({

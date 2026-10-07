@@ -2,7 +2,7 @@
  * The "you" chip + profile menu: identity, edit profile, backup, sign out.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   AlertTriangle,
   Check,
@@ -50,6 +50,7 @@ import {
   registerPasskeySigner,
 } from "../lib/passkey-identity";
 import { Fingerprint, Wallet } from "lucide-react";
+import { Overlay, Portal, useAnchoredStyle } from "@/shared/ui/portal";
 
 const BACKED_UP_KEY = "buzz.identity.backedUp";
 
@@ -80,11 +81,15 @@ export function hasBackedUp(): boolean {
  */
 export type ProfileMenuPlacement = "sidebar" | "rail" | "tabbar" | "header";
 
-const POPOVER_POSITION: Record<ProfileMenuPlacement, string> = {
-  sidebar: "bottom-full left-0 mb-1",
-  rail: "bottom-0 left-full ml-2",
-  tabbar: "bottom-full right-0 mb-2",
-  header: "right-0 top-full mt-2",
+/** Where the popover sits against its trigger, now that it is measured. */
+const ANCHOR: Record<
+  ProfileMenuPlacement,
+  "above-left" | "right" | "above-right" | "below-right"
+> = {
+  sidebar: "above-left",
+  rail: "right",
+  tabbar: "above-right",
+  header: "below-right",
 };
 
 export function ProfileMenu({
@@ -93,7 +98,11 @@ export function ProfileMenu({
   placement?: ProfileMenuPlacement;
 } = {}) {
   const compact = placement !== "sidebar";
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  // Portalled and measured against the trigger: the header's blur would
+  // otherwise trap this popover in its own stacking context.
+  const popoverStyle = useAnchoredStyle(triggerRef, open, ANCHOR[placement]);
   // Read once at mount; sign out / import reload the page, so no setter
   // is needed — "create identity" itself reloads on completion.
   const [created, setCreated] = useState(
@@ -273,6 +282,7 @@ export function ProfileMenu({
   return (
     <div data-testid="profile-menu" className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -314,263 +324,269 @@ export function ProfileMenu({
       </button>
 
       {open ? (
-        <div
-          className={`absolute z-50 max-h-[80dvh] w-72 overflow-y-auto rounded-xl border border-black/10 bg-background p-3 shadow-xl dark:border-white/10 ${POPOVER_POSITION[placement]}`}
-        >
-          {!hasBackedUp() ? (
-            <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
-              <AlertTriangle className="h-3 w-3 shrink-0" />
-              Back up your key — it only exists in this browser.
-            </p>
-          ) : null}
-
-          <div className="flex items-center gap-2">
-            <UserAvatar
-              avatarUrl={profile?.picture ?? null}
-              displayName={displayName}
-              size="md"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-black dark:text-white">
-                {displayName}
+        <Portal>
+          <div
+            className="fixed z-50 max-h-[80dvh] w-72 overflow-y-auto rounded-xl border border-black/10 bg-background p-3 shadow-xl dark:border-white/10"
+            data-testid="profile-popover"
+            style={popoverStyle}
+          >
+            {!hasBackedUp() ? (
+              <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                Back up your key — it only exists in this browser.
               </p>
-              <p
-                className="truncate font-mono text-2xs text-black/60 dark:text-white/60"
-                data-testid="profile-menu-username"
-                title={pubkey}
-              >
-                {secondaryName}
-              </p>
-            </div>
-          </div>
+            ) : null}
 
-          {editName !== null ? (
-            <div className="mt-2 space-y-2">
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Display name"
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-                data-testid="profile-name-input"
+            <div className="flex items-center gap-2">
+              <UserAvatar
+                avatarUrl={profile?.picture ?? null}
+                displayName={displayName}
+                size="md"
               />
-              <textarea
-                value={editAbout}
-                onChange={(e) => setEditAbout(e.target.value)}
-                placeholder="About you"
-                rows={2}
-                className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-                data-testid="profile-about-input"
-              />
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditName(null)}
-                  className="rounded-md px-2 py-1 text-xs text-muted-foreground"
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-black dark:text-white">
+                  {displayName}
+                </p>
+                <p
+                  className="truncate font-mono text-2xs text-black/60 dark:text-white/60"
+                  data-testid="profile-menu-username"
+                  title={pubkey}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={saving || editName.trim().length === 0}
-                  onClick={() => void saveProfile()}
-                  className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
-                  data-testid="profile-save"
-                >
-                  Save
-                </button>
+                  {secondaryName}
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="mt-3 space-y-0.5">
-              <MenuItem
-                icon={<Pencil className="h-3.5 w-3.5" />}
-                label="Edit profile"
-                onClick={() => {
-                  setEditName(profile?.display_name ?? profile?.name ?? "");
-                  setEditAbout(profile?.about ?? "");
-                }}
-              />
-              <MenuItem
-                icon={<KeyRound className="h-3.5 w-3.5" />}
-                label={
-                  hasBackedUp() ? "Back up key" : "Back up key (recommended)"
-                }
-                onClick={() => setShowBackup(true)}
-              />
-              <div className="px-2 py-1.5">
-                <p className="text-xs text-black/60 dark:text-white/60">
-                  Appearance
-                </p>
-                <div
-                  className="mt-1 flex items-center gap-1"
-                  data-testid="theme-control"
-                >
-                  {(["system", "light", "dark"] as const).map((option) => (
-                    <button
-                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
-                        theme === option
-                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
-                          : "border-black/15 dark:border-white/15"
-                      }`}
-                      data-testid={`theme-${option}`}
-                      key={option}
-                      onClick={() => setTheme(option)}
-                      type="button"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-                  Text size
-                </p>
-                <div
-                  className="mt-1 flex items-center gap-1"
-                  data-testid="font-size-control"
-                >
-                  {(["smaller", "default", "larger"] as const).map((option) => (
-                    <button
-                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
-                        fontSize === option
-                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
-                          : "border-black/15 dark:border-white/15"
-                      }`}
-                      data-testid={`font-size-${option}`}
-                      key={option}
-                      onClick={() => setFontSize(option as FontSize)}
-                      type="button"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-                  Conversation density
-                </p>
-                <div
-                  className="mt-1 flex items-center gap-1"
-                  data-testid="density-control"
-                >
-                  {(["comfortable", "compact"] as const).map((option) => (
-                    <button
-                      className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
-                        density === option
-                          ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
-                          : "border-black/15 dark:border-white/15"
-                      }`}
-                      data-testid={`density-${option}`}
-                      key={option}
-                      onClick={() => setDensity(option)}
-                      type="button"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {passkeySetUp ? (
-                <div
-                  className="mt-1 flex items-start gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
-                  data-testid="passkey-mode-note"
-                >
-                  <Fingerprint className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>
-                    {passkeyModeCopy(passkeyModeNow)}
-                    {passkeyActive ? "" : " — locked for this session."}
-                  </span>
-                </div>
-              ) : null}
-              {passkeyActive ? (
-                <>
-                  <MenuItem
-                    icon={<KeyRound className="h-3.5 w-3.5" />}
-                    label="Copy recovery key"
-                    onClick={() => {
-                      if (passkeyNsec)
-                        copyNsec(passkeyNsec, "Recovery key copied");
-                    }}
-                  />
-                  <p
-                    className="mb-1 px-2 text-2xs leading-4 text-black/55 dark:text-white/55"
-                    data-testid="recovery-export-note"
+
+            {editName !== null ? (
+              <div className="mt-2 space-y-2">
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Display name"
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  data-testid="profile-name-input"
+                />
+                <textarea
+                  value={editAbout}
+                  onChange={(e) => setEditAbout(e.target.value)}
+                  placeholder="About you"
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  data-testid="profile-about-input"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditName(null)}
+                    className="rounded-md px-2 py-1 text-xs text-muted-foreground"
                   >
-                    Copy recovery key to set up another device (the desktop
-                    app's Settings → Identity). This nsec is the full account —
-                    anyone holding it can sign as you, so store it somewhere
-                    safe. Passkey-native sharing (same Touch ID on web and
-                    desktop) arrives with app signing activation; until then
-                    this key handoff is the interim path, and the passkey itself
-                    never leaves your device.
-                  </p>
-                  <MenuItem
-                    icon={<LogOut className="h-3.5 w-3.5" />}
-                    label="Remove passkey sign-in"
-                    onClick={() => {
-                      removePasskeyIdentity();
-                      window.location.reload();
-                    }}
-                  />
-                </>
-              ) : (
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving || editName.trim().length === 0}
+                    onClick={() => void saveProfile()}
+                    className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+                    data-testid="profile-save"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-0.5">
                 <MenuItem
-                  icon={<Fingerprint className="h-3.5 w-3.5" />}
-                  label={
-                    passkeySetUp
-                      ? "Sign in with passkey"
-                      : "Set up passkey sign-in"
-                  }
+                  icon={<Pencil className="h-3.5 w-3.5" />}
+                  label="Edit profile"
                   onClick={() => {
-                    void runPasskey(
-                      passkeySetUp
-                        ? () => signInPasskeyIdentity()
-                        : () => setupPasskey(displayName),
-                    );
+                    setEditName(profile?.display_name ?? profile?.name ?? "");
+                    setEditAbout(profile?.about ?? "");
                   }}
                 />
-              )}
-            </div>
-          )}
-          {menuError ? (
-            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
-              {menuError}
-            </p>
-          ) : null}
-          {passkeyError ? (
-            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              {passkeyError}
-            </p>
-          ) : null}
-          {passkeyBusy ? (
-            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              Waiting for your passkey…
-            </p>
-          ) : null}
-
-          {walletBinding ? (
-            <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
-              <div
-                className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
-                data-testid="wallet-binding"
-              >
-                <Wallet className="h-3 w-3" />
-                <span className="truncate">
-                  Wallet {walletBinding.address.slice(0, 6)}…
-                  {walletBinding.address.slice(-4)} bound
-                </span>
+                <MenuItem
+                  icon={<KeyRound className="h-3.5 w-3.5" />}
+                  label={
+                    hasBackedUp() ? "Back up key" : "Back up key (recommended)"
+                  }
+                  onClick={() => setShowBackup(true)}
+                />
+                <div className="px-2 py-1.5">
+                  <p className="text-xs text-black/60 dark:text-white/60">
+                    Appearance
+                  </p>
+                  <div
+                    className="mt-1 flex items-center gap-1"
+                    data-testid="theme-control"
+                  >
+                    {(["system", "light", "dark"] as const).map((option) => (
+                      <button
+                        className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                          theme === option
+                            ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                            : "border-black/15 dark:border-white/15"
+                        }`}
+                        data-testid={`theme-${option}`}
+                        key={option}
+                        onClick={() => setTheme(option)}
+                        type="button"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+                    Text size
+                  </p>
+                  <div
+                    className="mt-1 flex items-center gap-1"
+                    data-testid="font-size-control"
+                  >
+                    {(["smaller", "default", "larger"] as const).map(
+                      (option) => (
+                        <button
+                          className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                            fontSize === option
+                              ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                              : "border-black/15 dark:border-white/15"
+                          }`}
+                          data-testid={`font-size-${option}`}
+                          key={option}
+                          onClick={() => setFontSize(option as FontSize)}
+                          type="button"
+                        >
+                          {option}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+                    Conversation density
+                  </p>
+                  <div
+                    className="mt-1 flex items-center gap-1"
+                    data-testid="density-control"
+                  >
+                    {(["comfortable", "compact"] as const).map((option) => (
+                      <button
+                        className={`rounded-md border px-2 py-1 text-xs font-medium capitalize ${
+                          density === option
+                            ? "border-black/30 bg-black/10 dark:border-white/30 dark:bg-white/15"
+                            : "border-black/15 dark:border-white/15"
+                        }`}
+                        data-testid={`density-${option}`}
+                        key={option}
+                        onClick={() => setDensity(option)}
+                        type="button"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {passkeySetUp ? (
+                  <div
+                    className="mt-1 flex items-start gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
+                    data-testid="passkey-mode-note"
+                  >
+                    <Fingerprint className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>
+                      {passkeyModeCopy(passkeyModeNow)}
+                      {passkeyActive ? "" : " — locked for this session."}
+                    </span>
+                  </div>
+                ) : null}
+                {passkeyActive ? (
+                  <>
+                    <MenuItem
+                      icon={<KeyRound className="h-3.5 w-3.5" />}
+                      label="Copy recovery key"
+                      onClick={() => {
+                        if (passkeyNsec)
+                          copyNsec(passkeyNsec, "Recovery key copied");
+                      }}
+                    />
+                    <p
+                      className="mb-1 px-2 text-2xs leading-4 text-black/55 dark:text-white/55"
+                      data-testid="recovery-export-note"
+                    >
+                      Copy recovery key to set up another device (the desktop
+                      app's Settings → Identity). This nsec is the full account
+                      — anyone holding it can sign as you, so store it somewhere
+                      safe. Passkey-native sharing (same Touch ID on web and
+                      desktop) arrives with app signing activation; until then
+                      this key handoff is the interim path, and the passkey
+                      itself never leaves your device.
+                    </p>
+                    <MenuItem
+                      icon={<LogOut className="h-3.5 w-3.5" />}
+                      label="Remove passkey sign-in"
+                      onClick={() => {
+                        removePasskeyIdentity();
+                        window.location.reload();
+                      }}
+                    />
+                  </>
+                ) : (
+                  <MenuItem
+                    icon={<Fingerprint className="h-3.5 w-3.5" />}
+                    label={
+                      passkeySetUp
+                        ? "Sign in with passkey"
+                        : "Set up passkey sign-in"
+                    }
+                    onClick={() => {
+                      void runPasskey(
+                        passkeySetUp
+                          ? () => signInPasskeyIdentity()
+                          : () => setupPasskey(displayName),
+                      );
+                    }}
+                  />
+                )}
               </div>
-              <MenuItem
-                icon={<Wallet className="h-3.5 w-3.5" />}
-                label={walletBusy ? "Unbinding…" : "Unbind wallet"}
-                onClick={() => setConfirmUnbind(true)}
-              />
-            </div>
-          ) : null}
-          {walletError ? (
-            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              {walletError}
-            </p>
-          ) : null}
-        </div>
+            )}
+            {menuError ? (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {menuError}
+              </p>
+            ) : null}
+            {passkeyError ? (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {passkeyError}
+              </p>
+            ) : null}
+            {passkeyBusy ? (
+              <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+                Waiting for your passkey…
+              </p>
+            ) : null}
+
+            {walletBinding ? (
+              <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
+                <div
+                  className="flex items-center gap-1.5 rounded-md bg-black/[0.03] px-2 py-1.5 text-2xs text-black/60 dark:bg-white/5 dark:text-white/60"
+                  data-testid="wallet-binding"
+                >
+                  <Wallet className="h-3 w-3" />
+                  <span className="truncate">
+                    Wallet {walletBinding.address.slice(0, 6)}…
+                    {walletBinding.address.slice(-4)} bound
+                  </span>
+                </div>
+                <MenuItem
+                  icon={<Wallet className="h-3.5 w-3.5" />}
+                  label={walletBusy ? "Unbinding…" : "Unbind wallet"}
+                  onClick={() => setConfirmUnbind(true)}
+                />
+              </div>
+            ) : null}
+            {walletError ? (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {walletError}
+              </p>
+            ) : null}
+          </div>
+        </Portal>
       ) : null}
 
       <ConfirmDialog
@@ -595,7 +611,7 @@ export function ProfileMenu({
       />
 
       {showBackup ? (
-        <div
+        <Overlay
           className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 dark:bg-black/50"
           data-testid="backup-dialog"
         >
@@ -656,11 +672,11 @@ export function ProfileMenu({
             </div>
             <WebIdentityHandoffCard />
           </div>
-        </div>
+        </Overlay>
       ) : null}
 
       {confirmSignOut ? (
-        <div
+        <Overlay
           className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 dark:bg-black/50"
           data-testid="signout-dialog"
         >
@@ -694,7 +710,7 @@ export function ProfileMenu({
               </button>
             </div>
           </div>
-        </div>
+        </Overlay>
       ) : null}
     </div>
   );

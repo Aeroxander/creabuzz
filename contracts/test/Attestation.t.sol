@@ -185,6 +185,8 @@ contract AttestationTest is Test {
         vm.prank(verifierB);
         verifiers.attest(CLAIM, true);
         stake.settle(CLAIM);
+        // G13: wait out the challenge window before any payout.
+        vm.warp(block.timestamp + stake.challengeWindow() + 1);
         vm.prank(contributor);
         stake.payout(CLAIM);
         assertEq(usd.balanceOf(contributor), 1_500e6, "payout + stake returned (1000 minted - 50 stake + 550 payout)");
@@ -207,7 +209,7 @@ contract AttestationTest is Test {
         assertEq(usd.balanceOf(treasury), treasuryBefore + 550e6, "stake slashed + reserve recovered");
         assertEq(usd.balanceOf(address(stake)), 0, "nothing stranded in the escrow");
         assertEq(usd.balanceOf(contributor), 950e6, "the contributor lost the stake");
-        (, , uint256 stakeLeft, , ) = stake.claims(CLAIM);
+        (, , uint256 stakeLeft, , ,,,) = stake.claims(CLAIM);
         assertEq(stakeLeft, 0, "the slashed stake is zeroed");
         assertEq(stake.funded(CLAIM), 0);
         // The contributor cannot pull anything from a rejected claim.
@@ -286,6 +288,8 @@ contract AttestationTest is Test {
 
         _attestBoth(CLAIM, true);
         stake.settle(CLAIM);
+        // G13: wait out the challenge window before any payout.
+        vm.warp(block.timestamp + stake.challengeWindow() + 1);
         vm.prank(contributor);
         vm.expectRevert(abi.encodeWithSelector(ClaimStake.Underfunded.selector, CLAIM, 0, 1_000e6));
         stake.payout(CLAIM);
@@ -307,6 +311,8 @@ contract AttestationTest is Test {
         _attestBoth(CLAIM2, true);
         stake.settle(CLAIM);
         stake.settle(CLAIM2);
+        // G13: wait out the challenge window before any payout.
+        vm.warp(block.timestamp + stake.challengeWindow() + 1);
 
         // B is approved but unfunded: it cannot borrow A's reservation.
         vm.prank(other);
@@ -455,7 +461,7 @@ contract AttestationTest is Test {
     }
 
     function _status(bytes32 id) internal view returns (ClaimStake.Status) {
-        (, , , ClaimStake.Status status, ) = stake.claims(id);
+        (, , , ClaimStake.Status status, ,,,) = stake.claims(id);
         return status;
     }
 }
