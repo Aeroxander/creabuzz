@@ -453,7 +453,7 @@ export function directoryNotice(counts: DirectoryCounts): string | null {
   const parts: string[] = [];
   if (counts.malformed > 0) {
     parts.push(
-      `${counts.malformed} record${counts.malformed === 1 ? "" : "s"} could not be read — counted, not listed`,
+      `${counts.malformed} record${counts.malformed === 1 ? "" : "s"} could not be read: counted, not listed`,
     );
   }
   if (counts.unlinked > 0) {
@@ -463,7 +463,7 @@ export function directoryNotice(counts: DirectoryCounts): string | null {
   }
   if (counts.orphanReceipts > 0) {
     parts.push(
-      `${counts.orphanReceipts} summon receipt${counts.orphanReceipts === 1 ? "" : "s"} with no launch record on this relay`,
+      `${counts.orphanReceipts} summon receipt${counts.orphanReceipts === 1 ? "" : "s"} with no launch record on this server`,
     );
   }
   if (parts.length === 0) return null;

@@ -130,7 +130,7 @@ export function DiscoverPage() {
             <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
           </Button>
         }
-        description="Everything on this relay, in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role. What is happening, whether it needs you, and the one click to join."
+        description="Everything on this server, in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role. What is happening, whether it needs you, and the one click to join."
         title={
           <span className="flex items-center gap-2">
             <Search aria-hidden className="h-5 w-5" /> Discover
@@ -164,7 +164,7 @@ export function DiscoverPage() {
         ))}
         <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           {isLoading
-            ? "Reading the relay…"
+            ? "Reading the server…"
             : `${daos.length} DAOs · ${launches.length} launches · ${projects.length} projects`}
         </span>
       </div>
@@ -177,7 +177,7 @@ export function DiscoverPage() {
         </p>
       ) : error ? (
         <QueryError
-          description="The relay did not answer the directory query — an empty grid here would claim there is nothing on this relay, so nothing is rendered instead."
+          description="The server didn't answer the directory request. We're not showing an empty list, because that would wrongly suggest there's nothing here."
           error={error}
           kinds={DISCOVER_EVENT_KINDS}
           message={errorMessage(error)}
@@ -191,7 +191,7 @@ export function DiscoverPage() {
           )}
           relayUrl={relayWsUrl()}
           testId="discover-load-error"
-          title="Couldn't read this relay"
+          title="Couldn't read this server"
         />
       ) : snapshot ? (
         <>
@@ -206,7 +206,7 @@ export function DiscoverPage() {
 
           {nothingHere ? (
             <EmptyState
-              message="No projects on this relay yet — start one. A pitch, the roles you need, and it appears here for everyone reading this page."
+              message="No projects on this server yet. Start one. Add a pitch and the roles you need, and it appears here for everyone reading this page."
               onPitch={() => setPitchOpen(true)}
               testId="discover-empty"
             />
@@ -216,12 +216,12 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={launches.length}
-                    description="Raises open for backing — stage, target, and progress straight from the record and the chain."
+                    description="Raises open for backing: stage, target, and progress straight from the record and the chain."
                     title="Live launches"
                   />
                   {launches.length === 0 ? (
                     <EmptyState
-                      message="No live launches right now. Founders: publish one and this section fills with a stage, a target, and a way in."
+                      message="No live launches right now. Publish one and it shows up here with its stage, target, and a way to back it."
                       testId="discover-launches-empty"
                     >
                       <Button asChild size="sm">
@@ -254,12 +254,12 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={projects.length}
-                    description="Pitches with the roles they need open — every chip is a seat you can ask for."
+                    description="Pitches with the roles they need open. Every chip is a seat you can ask for."
                     title="Open projects"
                   />
                   {projects.length === 0 ? (
                     <EmptyState
-                      message="No projects on this relay yet — start one. Pitch the idea, the role you take, and the roles you need."
+                      message="No projects on this server yet. Start one. Pitch the idea, the role you take, and the roles you need."
                       onPitch={() => setPitchOpen(true)}
                       testId="discover-projects-empty"
                     />
@@ -288,7 +288,7 @@ export function DiscoverPage() {
                   />
                   {daos.length === 0 ? (
                     <EmptyState
-                      message="No DAO summoned yet — one appears here the moment a project's launch graduates and its summon receipt lands."
+                      message="No DAO summoned yet. One appears here the moment a project's launch graduates and its summon receipt lands."
                       testId="discover-daos-empty"
                     >
                       <Button asChild size="sm" variant="outline">

@@ -71,7 +71,7 @@ export class EthCallRevertError extends Error {
 export class BundlerNotConfiguredError extends Error {
   constructor() {
     super(
-      "bundler: no URL configured — set VITE_BUNDLER_URL or pass { url } " +
+      "bundler: no URL configured. Set VITE_BUNDLER_URL or pass { url } " +
         "(paymaster transport is a later wave)",
     );
     this.name = "BundlerNotConfiguredError";
@@ -219,7 +219,7 @@ export async function getSenderAddress(params: {
     const returned = await params.call({ to: params.entryPoint, data });
     throw new Error(
       `aa: getSenderAddress returned data (${returned}) instead of reverting ` +
-        "with SenderAddressResult — wrong entryPoint?",
+        "with SenderAddressResult. Wrong entryPoint?",
     );
   } catch (error) {
     if (error instanceof EthCallRevertError) {

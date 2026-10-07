@@ -326,8 +326,8 @@ export function ProposalCard({
               {proposal.source
                 ? `${proposal.source.page}#${proposal.source.anchor}`
                 : "source omitted"}
-            </span>{" "}
-            — awaiting a human counter-sign; nothing broadcasts onchain without
+            </span>
+            . Awaiting a human counter-sign; nothing broadcasts onchain without
             it.
           </p>
           {proposal.evidence ? (
@@ -467,8 +467,8 @@ export function ProposalCard({
                 </Button>
               ) : (
                 <span className="text-xs text-black/60 dark:text-white/60">
-                  In timelock — execution runs through the executor flow (`buzz
-                  launchpad process`).
+                  In timelock. Execution runs through the executor flow once the
+                  timelock ends.
                 </span>
               )
             ) : null}

@@ -122,7 +122,7 @@ export function queryEvents(
         case "unanswered":
           // Unreachable without a `failure`; stated so a future edit that
           // makes it reachable fails loudly instead of resolving `[]`.
-          reject(new Error("Relay query ended without an answer."));
+          reject(new Error("Server query ended without an answer."));
           return;
         default:
           // Both refusal shapes reject with wording `relayMessageOf` can read,
@@ -140,7 +140,7 @@ export function queryEvents(
       if (authRefusalText !== null) return relayAnswered(authRefusalText);
       return authChallengeSeen && !authAccepted
         ? relayAnswered(
-            "auth-required: the relay closed the connection before it accepted this browser's authentication.",
+            "auth-required: the server closed the connection before it accepted this browser's authentication.",
           )
         : null;
     };
@@ -152,7 +152,7 @@ export function queryEvents(
         settleFailure(
           authRefusalText !== null
             ? relayAnswered(authRefusalText)
-            : new Error(`Relay query timed out after ${timeoutMs}ms`),
+            : new Error(`Server query timed out after ${timeoutMs}ms`),
         );
       }
     }, timeoutMs);
@@ -226,7 +226,7 @@ export function queryEvents(
             settleFailure(
               error instanceof Error
                 ? error
-                : new Error("Failed to sign relay authentication."),
+                : new Error("Failed to sign server authentication."),
             );
           }
         }
@@ -247,7 +247,7 @@ export function queryEvents(
             relayAnswered(
               typeof data[3] === "string"
                 ? data[3]
-                : "Relay authentication failed.",
+                : "Server authentication failed.",
             ),
           );
         }
@@ -268,7 +268,7 @@ export function queryEvents(
           const reason =
             typeof data[2] === "string"
               ? data[2]
-              : "subscription closed by relay";
+              : "subscription closed by the server";
           if (isAuthRequiredMessage(reason)) authRefusalText = reason;
           if (isAuthRefusal(reason) && !authRetryUsed) {
             // Sent before the handshake finished: re-issue it once we can.
@@ -310,7 +310,7 @@ export function queryEvents(
         settleFailure(
           authOutcome() ??
             new Error(
-              "Relay closed the connection before finishing the query.",
+              "Server closed the connection before finishing the query.",
             ),
         );
       }

@@ -326,7 +326,7 @@ export function WorkBoard({
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
         <PageHeader title="Work" />
         <QueryError
-          description="The relay did not answer the task and issue query, so this board has nothing to show."
+          description="The server did not answer the task and issue query, so this board has nothing to show."
           message={errorMessage(loadError)}
           onRetry={reload}
           testId="work-load-error"
@@ -664,7 +664,7 @@ export function WorkBoard({
                       No linked thread
                       {selected.type === "issue"
                         ? " (issues live in Projects)"
-                        : " — assign from chat with @agent:"}
+                        : " (assign from chat with @agent)"}
                       .
                     </p>
                   )}

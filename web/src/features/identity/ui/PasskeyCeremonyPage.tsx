@@ -39,7 +39,7 @@ function RootsTable({ identity }: { identity: PasskeyIdentity }) {
     <dl className="mt-3 space-y-2 text-left">
       <div>
         <dt className="text-xs text-black/60 dark:text-white/60">
-          Nostr identity (npub, hex) — lives in page memory only
+          Nostr identity (npub, hex): lives in page memory only
         </dt>
         <dd
           className="font-mono text-2xs break-all text-black/80 dark:text-white/80"
@@ -50,7 +50,7 @@ function RootsTable({ identity }: { identity: PasskeyIdentity }) {
       </div>
       <div>
         <dt className="text-xs text-black/60 dark:text-white/60">
-          Smart-wallet owner (secp256r1, uncompressed) — the future Kernel owner
+          Smart-wallet owner (secp256r1, uncompressed): the future Kernel owner
           (wave 4b)
         </dt>
         <dd
@@ -63,7 +63,7 @@ function RootsTable({ identity }: { identity: PasskeyIdentity }) {
       {identity.evmOwner.addressPreview ? (
         <div>
           <dt className="text-xs text-black/60 dark:text-white/60">
-            Owner key address (preview — the Kernel account address is assigned
+            Owner key address (preview: the Kernel account address is assigned
             on deployment)
           </dt>
           <dd
@@ -138,8 +138,8 @@ export function PasskeyCeremonyPage() {
             data-testid="passkey-env-warning"
           >
             Passkeys need the WebAuthn API in a secure context. Open this page
-            over https, or http://localhost in development — this browser
-            reports neither, so no ceremony can run here.
+            over https, or http://localhost in development. This browser reports
+            neither, so the passkey setup can't run here.
           </p>
         )}
 
@@ -192,7 +192,7 @@ export function PasskeyCeremonyPage() {
         {registered ? (
           <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/10">
             <p className="text-xs text-black/60 dark:text-white/60">
-              Registered on this browser — mode{" "}
+              Registered on this browser · mode{" "}
               <span className="font-medium" data-testid="passkey-mode">
                 {mode ?? "unknown"}
               </span>
@@ -202,7 +202,7 @@ export function PasskeyCeremonyPage() {
               . Secret key:{" "}
               {active
                 ? "in page memory now"
-                : "not in memory — touch to re-derive"}
+                : "not in memory (touch to re-derive)"}
               .
             </p>
 
@@ -226,7 +226,7 @@ export function PasskeyCeremonyPage() {
                     aria-hidden="true"
                   />
                   <span>
-                    Back up your key (nsec) now — it is the one-time, portable
+                    Back up your secret key now. It is the one-time, portable
                     recovery for this identity. Losing the passkey without this
                     backup loses the identity for good.
                   </span>
@@ -265,7 +265,7 @@ export function PasskeyCeremonyPage() {
           </div>
         ) : (
           <p className="mt-4 text-center text-xs text-black/60 dark:text-white/60">
-            After registering, back up your key (nsec) once — it is the only
+            After registering, back up your secret key once. It is the only
             portable recovery for this identity.
           </p>
         )}

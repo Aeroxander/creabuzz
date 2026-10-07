@@ -38,8 +38,8 @@ describe("milestoneChoices", () => {
       receipt("claim", "m3", EVIDENCE_A, TX_1, 5),
     ]);
     assert.deepEqual(choices.claimOptions, [
-      { value: "m1", label: "m1 — Testnet live" },
-      { value: "m2", label: "m2 — Mainnet" },
+      { value: "m1", label: "m1: Testnet live" },
+      { value: "m2", label: "m2: Mainnet" },
       { value: "m3", label: "m3 (recorded)" },
     ]);
   });

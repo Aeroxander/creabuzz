@@ -104,7 +104,7 @@ export function OnboardingDialog({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Your key is generated in this browser and stays here. Messages, tasks
-          and agent delegations are signed by it — back it up once you're in.
+          and agent delegations are signed by it. Back it up once you're in.
         </p>
         <div className="mt-4 space-y-3">
           <input

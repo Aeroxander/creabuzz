@@ -101,7 +101,7 @@ function TxRef({
   if (!txOk) {
     return (
       <span className="break-all text-amber-700 dark:text-amber-300">
-        tx {truncatePubkey(tx)} — malformed, not linkable
+        tx {truncatePubkey(tx)} (malformed, not linkable)
       </span>
     );
   }
@@ -110,7 +110,7 @@ function TxRef({
     return (
       <span
         className="break-all text-black/60 dark:text-white/60"
-        title="This chain has no known explorer — the raw hash is the source."
+        title="This chain has no known explorer, so only the raw hash is shown."
       >
         tx {truncatePubkey(tx)} (no explorer on this chain)
       </span>
@@ -175,11 +175,11 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
     <Card className="p-4" data-testid="launch-track-record">
       <h2 className="text-base font-semibold">Track record</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        What the feed has actually recorded: milestone verdicts and claims (kind
-        47005, verdict word <code>approve</code>|<code>reject</code>),
-        settlement receipts with their tx, and the community's contribution
-        reviews. These are outcomes, not a rating — each figure can be traced to
-        what it was counted from, and a check that cannot be made says so.
+        What the feed has actually recorded: milestone verdicts and claims (the
+        verdict word is <code>approve</code> or <code>reject</code>), settlement
+        receipts with their tx, and the community's contribution reviews. These
+        are outcomes, not a rating. Each figure can be traced to what it was
+        counted from, and a check that cannot be made says so.
       </p>
 
       {state === "empty" ? (
@@ -188,7 +188,7 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
             Strengthen your proof line: record a milestone claim or a verdict
             from the launch's Manage tab and it appears here with its settlement
-            tx. The chain remains the ledger — this card only repeats what the
+            tx. The chain remains the ledger. This card only repeats what the
             feed says.
           </p>
         </div>
@@ -250,7 +250,7 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-                    No claim mirror for this milestone — a verdict arrived
+                    No claim mirror for this milestone. A verdict arrived
                     without one.
                   </p>
                 )}
@@ -303,7 +303,7 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
             className="mt-2 text-xs text-amber-700 dark:text-amber-300"
             data-testid="track-record-contributions-unavailable"
           >
-            The relay did not return contribution records — this section is
+            The server did not return contribution records, so this section is
             unavailable, not empty.
           </p>
         ) : communityState === "empty" || !communityRows ? (

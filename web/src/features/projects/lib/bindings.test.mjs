@@ -228,7 +228,7 @@ test("a record resolves the seat the composer otherwise refuses", () => {
   assert.equal(withoutRecords.callData, null, "no bytes for a blocked map");
   assert.ok(
     withoutRecords.blockers.some((line) =>
-      line.includes("no bound EVM address"),
+      line.includes("no bound wallet address"),
     ),
     JSON.stringify(withoutRecords.blockers),
   );

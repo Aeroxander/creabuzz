@@ -160,7 +160,7 @@ class RelayWikiTransport implements WikiSyncTransport {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        onError(new Error(result.message ?? "relay rejected the live update"));
+        onError(new Error(result.message ?? "Server rejected the live update"));
       }
     })().catch(onError);
   }

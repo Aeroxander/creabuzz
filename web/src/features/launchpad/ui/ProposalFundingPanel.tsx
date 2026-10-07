@@ -92,7 +92,7 @@ export function ProposalFundingPanel({
         <h2 className="text-base font-semibold">Where your money goes</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This project has chosen to let its backers decide what gets funded.
-          The vault is not deployed yet — nothing can be pledged until it is.
+          The vault is not deployed yet, so nothing can be pledged until it is.
         </p>
       </Card>
     );

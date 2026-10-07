@@ -149,7 +149,7 @@ export function validateLaunchParams(
     if (input.budget * 6n > input.requiredCurrencyRaised) {
       warn(
         "budget",
-        "Monthly budget — above a sixth of the graduation threshold; at the cap the auction refills the treasury every six months.",
+        "Monthly budget: above a sixth of the graduation threshold. At the cap the auction refills the treasury every six months.",
       );
     }
   }

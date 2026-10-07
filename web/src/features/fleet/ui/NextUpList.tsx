@@ -49,7 +49,8 @@ export function NextUpList({
         </h3>
         <p className="text-xs text-black/60 dark:text-white/60">
           Tasks nobody has started yet, most-backed first. Back the ones you
-          think matter most — people with a track record count more.
+          think matter most. Backing from people with a track record counts
+          more.
         </p>
         {planning.error ? (
           <p

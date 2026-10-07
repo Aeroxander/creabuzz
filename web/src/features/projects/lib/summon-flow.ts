@@ -155,7 +155,7 @@ export function summonFlowReducer(
         steps: { ...state.steps, [action.step]: "failed" as const },
         receipts,
         failedStep: action.step,
-        errorMessage: `${SUMMON_STEP_LABELS[action.step]} failed — ${action.message}`,
+        errorMessage: `${SUMMON_STEP_LABELS[action.step]} failed: ${action.message}`,
         reconcile,
       };
     }
@@ -204,11 +204,11 @@ function errorMessage(err: unknown): string {
 export function summonOutcomeMessage(receipt: SummonReceipt): string | null {
   if (receipt.status === "success") return null;
   if (receipt.status === "reverted") {
-    return `the transaction reverted onchain (tx ${receipt.txHash})`;
+    return `the transaction failed onchain (tx ${receipt.txHash})`;
   }
-  return `the transaction outcome is unknown after polling (tx ${receipt.txHash}${
-    receipt.reason ? ` — ${receipt.reason}` : ""
-  }) — check the chain before retrying; nothing was recorded`;
+  return `the outcome of transaction ${receipt.txHash} is still unknown${
+    receipt.reason ? ` (${receipt.reason})` : ""
+  }. Check whether it landed before retrying; nothing was recorded`;
 }
 
 /**
@@ -273,7 +273,7 @@ export async function runSummonFlow(
         dispatch({
           type: "step-failed",
           step: "mirror",
-          message: `${errorMessage(err)} — the summon itself landed (tx ${record.txHash}); retry records it without re-sending`,
+          message: `${errorMessage(err)}. The summon itself landed (tx ${record.txHash}); retrying records it without sending again.`,
         });
         return;
       }

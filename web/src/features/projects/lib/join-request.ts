@@ -185,13 +185,13 @@ export function buildJoinRequestTemplate(input: JoinRequestInput): {
   const note = input.note.trim();
   if (!note || note.length > 500) {
     throw new JoinRequestValidationError(
-      "Add a short note (1-500 characters) saying why you.",
+      "Add a short note (1-500 characters) saying why you want to join.",
     );
   }
   const key = joinRequestKey(projectId, role, input.requester);
   if (key.length > 64) {
     throw new JoinRequestValidationError(
-      "This request's coordinate is too long — shorten the project id.",
+      "This request's id is too long. Shorten the project id.",
     );
   }
 

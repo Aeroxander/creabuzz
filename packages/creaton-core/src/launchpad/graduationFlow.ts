@@ -806,7 +806,7 @@ export async function runGraduationFlow(
         dispatch({
           type: "step-failed",
           step: "execute",
-          message: `${reason} — the transaction may or may not have been broadcast; retry first re-checks the onchain graduation record`,
+          message: `${reason}. The transaction may or may not have been broadcast; retry first re-checks the onchain graduation record`,
         });
         return;
       }

@@ -226,7 +226,7 @@ async function publishTemplate(template: EventTemplate): Promise<NostrEvent> {
     signAuth: signAsUser,
   });
   if (!result.accepted) {
-    throw new Error(result.message ?? "The relay rejected this event.");
+    throw new Error(result.message ?? "The server rejected this event.");
   }
   return signed;
 }

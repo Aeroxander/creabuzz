@@ -76,7 +76,7 @@ function Welcome() {
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
         Creaton is where teams raise money, share ownership and get work done in
-        the open — with people and AI agents at the same table.
+        the open, with people and AI agents at the same table.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button asChild size="lg">

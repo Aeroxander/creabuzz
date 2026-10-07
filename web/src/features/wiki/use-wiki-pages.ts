@@ -256,7 +256,7 @@ export function useWikiPages(enabled: boolean) {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the wiki page");
+        throw new Error(result.message ?? "Server rejected the wiki page");
       }
       await cachePage({
         slug,
@@ -293,7 +293,7 @@ export function useWikiPages(enabled: boolean) {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the delete");
+        throw new Error(result.message ?? "Server rejected the delete");
       }
       await dropCachedPage(page.slug);
     },
@@ -328,7 +328,7 @@ export function useWikiPages(enabled: boolean) {
       signAuth: signAsUser,
     });
     if (!result.accepted) {
-      throw new Error(result.message ?? "relay rejected the restore");
+      throw new Error(result.message ?? "Server rejected the restore");
     }
   }, []);
 

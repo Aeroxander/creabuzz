@@ -71,7 +71,7 @@ export function PriceChartCard({ launch }: { launch: Launch }) {
         <div>
           <h2 className="text-base font-bold">Price</h2>
           <p className="text-xs text-muted-foreground">
-            Highest price each recorded bid would pay — not market trades.
+            Highest price each recorded bid would pay, not market trades.
           </p>
         </div>
         <fieldset className="flex gap-1 rounded-lg bg-secondary/60 p-1">
@@ -102,7 +102,7 @@ export function PriceChartCard({ launch }: { launch: Launch }) {
         >
           No bids with a price yet. The chart fills in as bids are recorded
           {floor !== null
-            ? ` — the floor is ${formatPrice(floor)} ${symbol}`
+            ? ` (the floor is ${formatPrice(floor)} ${symbol})`
             : ""}
           .
         </div>

@@ -265,7 +265,7 @@ export function RepoDetailPage() {
             </h1>
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
               This repository may have been removed or doesn't exist on this
-              relay.
+              server.
             </p>
           </div>
         </div>

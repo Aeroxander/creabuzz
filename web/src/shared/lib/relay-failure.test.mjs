@@ -43,7 +43,7 @@ test("an answered refusal keeps the relay's wording verbatim", () => {
 test("a timeout with no answer stays unanswered", () => {
   const outcome = finalizeRelayQuery({
     events: [],
-    failure: new Error("Relay query timed out after 10000ms"),
+    failure: new Error("Server query timed out after 10000ms"),
   });
   assert.deepEqual(outcome, { state: "unanswered" });
 });
@@ -67,7 +67,7 @@ test("an answered error never renders as an empty result (regression)", () => {
   for (const failure of [
     relayAnswered("restricted: unknown event kind"),
     relayAnswered("missing Nostr auth"),
-    new Error("Relay query timed out after 10000ms"),
+    new Error("Server query timed out after 10000ms"),
   ]) {
     const outcome = finalizeRelayQuery({
       events: [],
@@ -113,7 +113,7 @@ test("auth-required outranks a transport failure and an answered refusal", () =>
   const notice = finalizeRelayQuery({
     events: [],
     notices: ["auth-required: authenticate before subscribing"],
-    failure: new Error("Relay query timed out after 10000ms"),
+    failure: new Error("Server query timed out after 10000ms"),
   });
   assert.equal(notice.state, "auth-required");
 });
@@ -160,7 +160,7 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
   );
   assert.equal(
     guided,
-    "This relay is running an older build that doesn't know these records (kind 37015, 37016) — restart it from the current build, or point the app at a newer relay.",
+    "This server is running an older build that doesn't know these records (kind 37015, 37016). Restart it from the current build, or point the app at a newer server.",
   );
   // Without caller-supplied kinds it falls back to whatever the relay named.
   assert.match(

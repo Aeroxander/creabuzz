@@ -56,7 +56,7 @@ export function DmView() {
       },
       onError: (failure) => {
         setOpenError(
-          `Couldn't start the conversation — ${errorMessage(failure)}. Try again.`,
+          `Couldn't start the conversation: ${errorMessage(failure)}. Try again.`,
         );
       },
     });

@@ -16,7 +16,7 @@ export type QueryRecovery = (onUnlocked: () => void) => ReactNode;
  * the same affordance, because both are fixed by the same tap.
  */
 export const AUTH_REQUIRED_DESCRIPTION =
-  "This relay requires sign-in to load — sign in with your passkey below and this page will retry automatically.";
+  "This server requires sign-in to load. Sign in with your passkey below and this page will retry automatically.";
 
 /**
  * A failed query must read as a failure, not as an empty result.
@@ -129,7 +129,7 @@ export function QueryError({
           className="max-w-md text-xs text-black/60 dark:text-white/60"
           data-testid={`${testId}-hint`}
         >
-          The relay may be offline or unreachable from this browser.
+          The server may be offline or unreachable from this browser.
         </p>
       ) : null}
       {recovery && error !== undefined ? (

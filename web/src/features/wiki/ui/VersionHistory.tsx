@@ -70,7 +70,7 @@ function RestoreConfirm({
         </h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This publishes the version from {relativeTime(revision.createdAt)} as
-          the page&apos;s newest version. Nothing is deleted — the current
+          the page&apos;s newest version. Nothing is deleted. The current
           version stays in the history.
         </p>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

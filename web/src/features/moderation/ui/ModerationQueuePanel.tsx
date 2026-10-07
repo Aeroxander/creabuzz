@@ -118,7 +118,7 @@ function Row({
             <div className="flex flex-wrap items-center gap-1.5">
               {buttons.map((action) => (
                 <button
-                  aria-label={`${ACTION_LABEL[action]} — ${reportTypeLabel(report.reportType)} report`}
+                  aria-label={`${ACTION_LABEL[action]}: ${reportTypeLabel(report.reportType)} report`}
                   className="inline-flex items-center gap-1 rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:text-white/70"
                   data-testid={`moderation-${action}`}
                   key={action}
@@ -249,8 +249,7 @@ export function ModerationQueuePanel() {
             key={key}
             role="alert"
           >
-            {message} The report stays open — use the buttons above to try
-            again.
+            {message} The report stays open. Use the buttons above to try again.
           </p>
         ))}
       </div>

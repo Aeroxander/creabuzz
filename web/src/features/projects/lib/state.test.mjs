@@ -348,7 +348,7 @@ describe("the % pool bound", () => {
     assert.equal(state.overPool, true);
     const check = canApprove(state, request);
     assert.equal(check.ok, false);
-    assert.match(check.reason, /fix the pitch/);
+    assert.match(check.reason, /Fix the pitch/);
   });
 
   it("never opens the founder's own role to an approval", () => {

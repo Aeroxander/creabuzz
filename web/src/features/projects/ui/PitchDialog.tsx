@@ -364,7 +364,7 @@ export function PitchDialog({
               <option value="">Choose an org node…</option>
               {existingNodes.length === 0 ? (
                 <option disabled value="__none">
-                  No org node of yours yet — use “New project” first.
+                  No org node of yours yet. Use “New project” first.
                 </option>
               ) : (
                 existingNodes.map((node) => (
@@ -420,7 +420,7 @@ export function PitchDialog({
         {mode === "new" ? (
           <Field
             error={fieldError?.field === "nodeId" ? fieldError.message : null}
-            hint="Stable id — it keys the project's org node, requests, and grants."
+            hint="Stable id. It keys the project's org node, requests, and grants."
             id="pitch-id"
             label="Project id"
           >
@@ -455,7 +455,7 @@ export function PitchDialog({
           }
           id="pitch-description"
           label="Description"
-          hint={`${description.length}/${MAX_DESCRIPTION_LEN} — plain text for now`}
+          hint={`${description.length}/${MAX_DESCRIPTION_LEN} (plain text for now)`}
         >
           <textarea
             className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
@@ -532,8 +532,8 @@ export function PitchDialog({
             <p className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <span>
-                Your project's org node is on the relay, but the pitch didn't
-                send — it isn't on the board yet.{" "}
+                Your project's org node is on the server, but the pitch didn't
+                send, so it isn't on the board yet.{" "}
                 <span className="text-black/60 dark:text-white/60">
                   {partial.message}
                 </span>

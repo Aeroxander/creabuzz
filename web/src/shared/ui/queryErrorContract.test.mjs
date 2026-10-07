@@ -45,7 +45,7 @@ test("the error state offers a retry", () => {
 test("an unanswered failure says the relay may be unreachable", () => {
   assert.match(
     source,
-    /The relay may be offline or unreachable from this browser\./,
+    /The server may be offline or unreachable from this browser\./,
   );
   assert.match(
     source,
@@ -57,7 +57,7 @@ test("an unanswered failure says the relay may be unreachable", () => {
 test("auth-required has its own copy and is derived from the raw error", () => {
   assert.match(
     source,
-    /AUTH_REQUIRED_DESCRIPTION\s*=\s*\n?\s*"This relay requires sign-in to load — sign in with your passkey below and this page will retry automatically\."/,
+    /AUTH_REQUIRED_DESCRIPTION\s*=\s*\n?\s*"This server requires sign-in to load\. Sign in with your passkey below and this page will retry automatically\."/,
   );
   assert.match(source, /relayFailureOutcome\(error\)/);
   assert.match(source, /data-outcome=\{outcome \?\? "unanswered"\}/);

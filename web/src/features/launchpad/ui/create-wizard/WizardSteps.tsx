@@ -276,7 +276,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
         totalSupply={token.totalSupply}
       />
       <p className="text-xs text-black/60 dark:text-white/60">
-        Everything else — emission, treasury, fees — has a sensible default.
+        Everything else (emission, treasury, fees) has a sensible default.
         Change it in Advanced.
       </p>
     </div>
@@ -569,7 +569,7 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
         >
           {total === 100
             ? "Adds up to 100% of your milestone allocation."
-            : `Tranches add up to ${total}% — they must add up to 100%.`}
+            : `Tranches add up to ${total}%. They must add up to 100%.`}
         </span>
       </div>
       <p className="text-xs text-black/60 dark:text-white/60">
@@ -616,12 +616,12 @@ function DaoStep({ controller }: { controller: WizardController }) {
           </label>
         </div>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          The summon itself happens from the Project Board after graduation —
-          this records the choice on the launch.
+          The summon itself happens from the Project Board after graduation.
+          This records the choice on the launch.
         </p>
       </fieldset>
       <Select
-        hint="Recorded on the launch and named in the DAO metadata at summon. Starting with nothing is a choice, not a gap — decide before token launch."
+        hint="Recorded on the launch and named in the DAO metadata at summon. Starting with nothing is a choice, not a gap. Decide before token launch."
         id="dao-legal-wrapper"
         label="Legal wrapper"
         onChange={(event) => patch({ legalWrapper: event.target.value })}

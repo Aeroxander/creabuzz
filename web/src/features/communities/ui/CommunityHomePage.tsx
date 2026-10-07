@@ -202,7 +202,7 @@ export function CommunityHomePage() {
           </div>
 
           <p className="mt-4 text-xs text-black/60 dark:text-white/60">
-            Joining doesn't require an account here — Creaton creates a local
+            Joining doesn't require an account here. Creaton creates a local
             identity only when you post or join privately.
           </p>
         </div>

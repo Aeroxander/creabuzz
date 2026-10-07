@@ -162,7 +162,7 @@ export function TaskHistory({ taskId }: { taskId: string }) {
       <ol className="mt-1 space-y-0.5 text-2xs text-black/55 dark:text-white/55">
         {rows.map((r) => (
           <li key={`${r.at}-${r.who.slice(0, 8)}`}>
-            {new Date(r.at * 1000).toLocaleString()} —{" "}
+            {new Date(r.at * 1000).toLocaleString()} ·{" "}
             <span className="font-medium capitalize">{r.status}</span> ·{" "}
             {userName(r.who)}
           </li>

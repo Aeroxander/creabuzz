@@ -150,7 +150,7 @@ export function DelegationCard({
         });
       } catch {
         setError(
-          `Delegation landed (tx ${result.txHash.slice(0, 10)}…) but its receipt mirror failed — record it from the manage panel.`,
+          `Delegation landed (tx ${result.txHash.slice(0, 10)}…) but its receipt mirror failed. Record it from the manage panel.`,
         );
       }
     } catch (err) {
@@ -164,9 +164,10 @@ export function DelegationCard({
     <Card className="p-4" data-testid="delegation-card">
       <h2 className="text-base font-semibold">Vote delegation</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        Your votes are cast by your delegate until you re-delegate — revocable
-        at any time, including back to yourself. Agent seats may hold
-        delegations (their authority is grant-scoped and named in receipts).
+        Your votes are cast by your delegate until you re-delegate. Delegation
+        is revocable at any time, including back to yourself. Agent seats may
+        hold delegations (their authority is grant-scoped and named in
+        receipts).
       </p>
       {current.data ? (
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">

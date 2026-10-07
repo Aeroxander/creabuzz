@@ -52,13 +52,13 @@ export function NewDmDialog({
         : raw.toLowerCase();
     } catch {
       setLocalError(
-        "That doesn't look like an npub — check the address and try again.",
+        "That doesn't look like an npub. Check the address and try again.",
       );
       return;
     }
     if (!/^[0-9a-f]{64}$/.test(pubkey)) {
       setLocalError(
-        "That doesn't look like a public key — paste a 64-character key or an npub.",
+        "That doesn't look like a public key. Paste a 64-character key or an npub.",
       );
       return;
     }

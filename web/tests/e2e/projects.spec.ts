@@ -202,7 +202,7 @@ test("approval records one ownership grant and the map says which is which", asy
 
   // The stance is on the page where stakes are read and taken.
   await expect(page.getByTestId("stake-disclaimer")).toContainText(
-    "Recorded and revocable until the project's DAO adopts the map — not a legal contract",
+    "Recorded and revocable until the project's DAO adopts the map. Not a legal contract",
   );
 
   // The launchpad bridge states the cap story.
@@ -281,7 +281,7 @@ test("an over-pool pitch is refused before anything reaches the relay", async ({
   await page.getByRole("button", { name: "Publish pitch" }).click();
 
   await expect(page.getByTestId("pitch-roles-error")).toContainText(
-    "102% — a project can declare at most 100%",
+    "102%. A project can declare at most 100%",
   );
   expect(
     relay.events.filter(
@@ -324,10 +324,10 @@ test("the summon preview maps the board to shares and refuses what it must", asy
   // The cap line names both sides of the 1/6 rule: a year at the cap
   // (1 USDC/mo × 6) against the graduation threshold — within at exactly 6×.
   await expect(page.getByTestId("summon-cap-line")).toHaveText(
-    /Budget cap: 6 USDC of 6 USDC — within/,
+    /Budget cap: 6 USDC of 6 USDC \(within\)/,
   );
   await expect(
-    page.getByText("Large spends default-pass up to 3 USDC"),
+    page.getByText("Large spends pass by default up to 3 USDC"),
   ).toBeVisible();
 
   // The founder's seat resolves to a bound address, at pct × 10^18 shares.
@@ -347,7 +347,7 @@ test("the summon preview maps the board to shares and refuses what it must", asy
   await expect(unbound).toContainText("Ask them to bind an address");
 
   const blockers = page.getByTestId("summon-blockers");
-  await expect(blockers).toContainText("no bound EVM address");
+  await expect(blockers).toContainText("no bound wallet address");
   await expect(blockers).toContainText("No Summoner contract address");
 
   // The §9 stance stays where the map is read and taken.

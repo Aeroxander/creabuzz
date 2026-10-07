@@ -77,8 +77,8 @@ export function allocationIssue(allocation: SupplyAllocation): string | null {
   const total = totalAllocation(allocation);
   if (total === 100) return null;
   return total > 100
-    ? `The allocation adds up to ${total}% — the parts cannot exceed the supply.`
-    : `The allocation adds up to ${total}% — ${100 - total}% of the supply is unassigned.`;
+    ? `The allocation adds up to ${total}%. The parts cannot exceed the supply.`
+    : `The allocation adds up to ${total}%. ${100 - total}% of the supply is unassigned.`;
 }
 
 /** Parse a stored allocation, falling back to the standard split. */

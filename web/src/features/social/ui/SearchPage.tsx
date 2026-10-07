@@ -32,7 +32,7 @@ function PostResults({ q }: { q: string }) {
   return (
     <>
       <p className="border-b border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
-        Showing matches from the latest posts on this relay.
+        Showing matches from the latest posts on this server.
       </p>
       <PostList rows={results.data} />
     </>
@@ -96,7 +96,7 @@ export function SearchPage() {
       </PageBar>
       {term.trim() === "" ? (
         <EmptyState title="Search">
-          Find posts and people on this relay.
+          Find posts and people on this server.
         </EmptyState>
       ) : (
         <>

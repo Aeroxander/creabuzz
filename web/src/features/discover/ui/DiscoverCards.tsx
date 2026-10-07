@@ -70,7 +70,7 @@ function AddressLine({
         {url
           ? "link opens the block explorer"
           : chainId === null
-            ? "chain unknown — no explorer link"
+            ? "chain unknown: no explorer link"
             : `no explorer known for chain ${chainId}`}
       </span>
     </div>
@@ -120,14 +120,16 @@ export function DiscoverDaoCard({
           />
         ) : (
           <p className="text-xs text-black/60 dark:text-white/60">
-            No onchain address recorded on this relay yet.
+            No onchain address recorded on this server yet.
           </p>
         )}
 
         <div className="flex flex-wrap items-center gap-1.5 text-2xs">
           <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-black/60 dark:bg-white/10 dark:text-white/60">
             <Users className="h-3 w-3" aria-hidden />
-            {card.teamSize ?? "—"} {card.teamSize === 1 ? "seat" : "seats"}
+            {card.teamSize === null
+              ? "Team not listed"
+              : `${card.teamSize} ${card.teamSize === 1 ? "seat" : "seats"}`}
             {card.teamSource === "equity-map" ? " · equity map" : ""}
             {card.teamSource === "summon-receipt" ? " · minted at summon" : ""}
           </span>
@@ -282,7 +284,7 @@ export function DiscoverProjectCard({
           </span>
         </div>
         <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-          {card.summary || "No pitch yet — open it and read the roles."}
+          {card.summary || "No pitch yet. Open it and read the roles."}
         </p>
         <div className="flex flex-wrap gap-1.5">
           {card.openRoles.map((role) => (

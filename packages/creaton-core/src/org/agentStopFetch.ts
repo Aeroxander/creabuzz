@@ -80,7 +80,7 @@ export async function fetchOwnRecords(
   }
   if (!exhausted) {
     throw new Error(
-      "Could not read every record — run the stop again to verify the rest.",
+      "Could not read every record. Run the stop again to verify the rest.",
     );
   }
   return [...seen.values()].filter((r) => dTag === undefined || r.d === dTag);

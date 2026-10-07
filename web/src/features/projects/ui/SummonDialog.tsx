@@ -163,12 +163,12 @@ export function SummonDialog({
   const preconditions: string[] = [];
   if (!launch) {
     preconditions.push(
-      `No launch record for “${project.manifest.nodeId}” — the DAO's creation receipt is recorded on it. Create the launch first.`,
+      `No launch record for “${project.manifest.nodeId}”. The DAO's creation receipt is recorded on it. Create the launch first.`,
     );
   }
   if (!summonerOk) {
     preconditions.push(
-      "No Summoner contract address — paste the one the deployment printed (forge script DeployOrgDao logs “Summoner: 0x…”).",
+      "No Summoner contract address yet. Paste the address the deployment printed (look for “Summoner: 0x…” in its output).",
     );
   }
   const blockers = [...preconditions, ...composition.blockers];
@@ -236,9 +236,9 @@ export function SummonDialog({
         Form the DAO
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        One transaction mints these shares inside a new majeur Moloch: the seats
+        One transaction mints these shares inside a new DAO contract: the seats
         below get voting power, a proportional treasury exit (
-        <code className="font-mono">ragequit</code>), and a record on chain —
+        <code className="font-mono">ragequit</code>), and a record on chain
         instead of a revocable Nostr grant.
       </p>
       <p className="mt-2 text-xs text-black/50 dark:text-white/50">
@@ -252,15 +252,16 @@ export function SummonDialog({
       <p className="mt-3 text-sm font-medium" data-testid="summon-cap-line">
         {composition.cap.state === "unchecked" ? (
           <>
-            Budget cap: unknown —{" "}
+            Budget cap: unknown (
             {launch
               ? "the launch record carries no budget or threshold"
               : "no launch record to check against"}
+            )
           </>
         ) : (
           <>
             Budget cap: {composition.cap.sixMonthText} of{" "}
-            {composition.cap.thresholdText} —{" "}
+            {composition.cap.thresholdText} (
             <span
               className={
                 composition.cap.state === "within"
@@ -270,13 +271,14 @@ export function SummonDialog({
             >
               {composition.cap.state === "within" ? "within" : "over"}
             </span>
+            )
           </>
         )}
       </p>
       {composition.cap.defaultPassText ? (
         <p className="text-xs text-black/50 dark:text-white/50">
-          Large spends default-pass up to {composition.cap.defaultPassText} — 3×
-          the monthly budget.
+          Large spends pass by default up to {composition.cap.defaultPassText}{" "}
+          (3× the monthly budget).
         </p>
       ) : null}
 
@@ -285,7 +287,7 @@ export function SummonDialog({
         data-testid="summon-allocation"
       >
         <caption className="caption-top text-left text-xs text-black/50 dark:text-white/50">
-          Allocation — {composition.totalPct}% of the pool, minted as{" "}
+          Allocation: {composition.totalPct}% of the pool, minted as{" "}
           {composition.totalShares.toString()} shares (1% ={" "}
           {SHARES_PER_PERCENT.toString()})
         </caption>
@@ -325,7 +327,7 @@ export function SummonDialog({
                     {truncatePubkey(seat.address)}
                   </span>
                 ) : (
-                  <span className="text-red-700 dark:text-red-400">—</span>
+                  <span>—</span>
                 )}
               </td>
               <td className="py-1 text-right tabular-nums">{seat.pct}%</td>
@@ -346,23 +348,23 @@ export function SummonDialog({
           <ul className="mt-1 flex flex-col gap-1 text-sm text-black/70 dark:text-white/70">
             {unbound.map((seat) => (
               <li key={`${seat.pubkey}:${seat.roleSlug}`}>
-                {nameOf(seat.pubkey)} — {seat.roleLabel} ({seat.pct}%)
+                {nameOf(seat.pubkey)} · {seat.roleLabel} ({seat.pct}%)
               </li>
             ))}
           </ul>
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
             Ask them to bind an address: they sign in with the wallet that holds
-            their seat (SIWE) and the relay records the binding. This seat has
-            no binding record yet — they can bind one from Settings/sign-in, and
-            this list updates on its own. Until then their seat is refused — a
-            share is never minted to an address nobody proved.
+            their seat (SIWE), and the server records the binding. They can bind
+            one from Settings/sign-in, and this list updates on its own. Until
+            then the seat stays blocked; a share is never minted to an address
+            nobody proved.
           </p>
           {teamPubkeys.length > 0 && records.isPending ? (
             <p
               className="mt-1 text-xs text-black/50 dark:text-white/50"
               data-testid="summon-records-loading"
             >
-              Checking this relay for binding records…
+              Checking the server for binding records…
             </p>
           ) : null}
         </div>
@@ -373,9 +375,9 @@ export function SummonDialog({
           className="mt-3 text-xs text-amber-800 dark:text-amber-300"
           data-testid="summon-records-error"
         >
-          Binding records could not be read from this relay — seats may show as
-          unbound even where a record exists. Ask each seat-holder to bind from
-          Settings/sign-in, or retry when the relay is reachable.
+          Binding records could not be read from the server, so seats may show
+          as unbound even where a record exists. Ask each seat-holder to bind
+          from Settings/sign-in, or retry when the server is reachable.
         </p>
       ) : null}
 
@@ -417,7 +419,7 @@ export function SummonDialog({
           data-testid="summon-summoner"
           id="summon-summoner"
           onChange={(event) => setSummoner(event.target.value)}
-          placeholder="0x… — the Summoner factory the deployment printed"
+          placeholder="0x… (the factory address from the deployment)"
           value={summoner}
         />
       </div>
@@ -451,7 +453,7 @@ export function SummonDialog({
         >
           The DAO is summoned
           {state.receipts.send?.dao
-            ? ` — ${truncatePubkey(state.receipts.send.dao)}`
+            ? ` (${truncatePubkey(state.receipts.send.dao)})`
             : ""}
           {state.receipts.send ? (
             <>

@@ -324,7 +324,7 @@ describe("deriveDirectory — counted, never dropped", () => {
     );
     assert.ok(counts.malformed >= 3, JSON.stringify(counts));
     const notice = directoryNotice(counts);
-    assert.match(notice, /could not be read — counted, not listed/);
+    assert.match(notice, /could not be read: counted, not listed/);
   });
 
   it("counts a deployment that names no project, without listing it", () => {
@@ -342,7 +342,7 @@ describe("deriveDirectory — counted, never dropped", () => {
     assert.equal(counts.orphanReceipts, 1);
     assert.match(
       directoryNotice(counts),
-      /with no launch record on this relay/,
+      /with no launch record on this server/,
     );
   });
 

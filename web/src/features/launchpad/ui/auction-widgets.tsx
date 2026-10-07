@@ -57,7 +57,7 @@ export function AddressRow({
       await navigator.clipboard.writeText(value);
       toast.success(`${label} copied.`);
     } catch {
-      toast.error("Copy failed — select the text manually.");
+      toast.error("Copy failed. Select the text and copy it manually.");
     }
   };
   return (

@@ -215,7 +215,7 @@ function ViewerBody({
     case "binary":
       return (
         <div className="rounded-lg border border-black/10 bg-white/50 p-6 text-sm text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
-          Binary file — {formatBytes(view.sizeBytes)}. Use the Download button
+          Binary file: {formatBytes(view.sizeBytes)}. Use the Download button
           above to save it.
         </div>
       );

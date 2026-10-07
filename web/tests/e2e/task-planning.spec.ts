@@ -258,7 +258,7 @@ test("a task's plan survives a row that omits it, and the finisher claims it onc
 
   const claim = planning.getByTestId("task-claim");
   await claim.click();
-  await expect(claim).toHaveText("Claimed — waiting for review");
+  await expect(claim).toHaveText("Claimed, waiting for review");
   const record = relay.events.find((e) => e.kind === 37013);
   expect(record?.pubkey).toBe(ME);
   expect(record?.tags).toContainEqual(["d", done.id]);

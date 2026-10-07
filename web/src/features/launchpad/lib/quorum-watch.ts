@@ -78,10 +78,10 @@ export function quorumWatch(input: {
 
   const detail = expired
     ? votesNeeded === 0n
-      ? "TTL passed — in the executable window"
-      : `TTL passed ${votesNeeded} vote(s) short — defeated unless extended`
+      ? "TTL passed: in the executable window"
+      : `TTL passed ${votesNeeded} vote(s) short. Defeated unless extended`
     : votesNeeded === 0n
-      ? "Visible gates met — leads FOR>AGAINST and clears the minYes floor"
+      ? "Visible gates met: leads FOR>AGAINST and clears the minYes floor"
       : `${votesNeeded} more FOR vote(s) needed · ${formatLeft(secondsLeft)} left`;
 
   return { status, votesNeeded, secondsLeft, detail };

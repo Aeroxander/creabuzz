@@ -114,7 +114,8 @@ export function validateBid(
       issues.push({
         field: "maxPrice",
         severity: "error",
-        message: `This max price is above the supply's ceiling (${ceiling}); the contract would revert InvalidBidPriceTooHigh.`,
+        message:
+          "This max price is above the ceiling the token supply allows, so the bid won't go through. Lower the max price.",
       });
     }
   }
@@ -125,7 +126,8 @@ export function validateBid(
     issues.push({
       field: "maxPrice",
       severity: "error",
-      message: `Max price must sit on the auction's tick grid (a multiple of ${context.tickSpacingQ96}); the contract would revert TickPriceNotAtBoundary.`,
+      message:
+        "Max price must sit on the auction's tick grid (the price step this auction uses), or the bid won't go through.",
     });
   }
   if (plan.maxPriceQ96 <= context.clearingPriceQ96) {

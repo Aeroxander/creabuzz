@@ -220,7 +220,7 @@ export function relayFailureGuidance(
     const named =
       kinds && kinds.length > 0 ? formatKinds(kinds) : kindsNamedIn(message);
     const scope = named ? ` (kind ${named})` : "";
-    return `This relay is running an older build that doesn't know these records${scope} — restart it from the current build, or point the app at a newer relay.`;
+    return `This server is running an older build that doesn't know these records${scope}. Restart it from the current build, or point the app at a newer server.`;
   }
-  return "The relay answered and refused this request — its own message is shown above, word for word. Nothing is listed because an empty page would claim there is nothing here.";
+  return "The server answered but refused this request. Its own message is shown above. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
 }

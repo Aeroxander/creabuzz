@@ -109,7 +109,7 @@ export function useSenderPicker(): SenderPickerState {
   } else if (passkeyNote) {
     passkeyStatusText = passkeyNote;
   } else if (passkeyAccount) {
-    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)} — tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
+    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)}: tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
   }
 
   return {
@@ -154,7 +154,7 @@ export function SenderPickerControls({
           Injected wallet (current)
           {!state.wallet ? (
             <span className="block text-xs text-black/60 dark:text-white/60">
-              No injected wallet in this browser — pick the passkey account
+              No injected wallet in this browser. Pick the passkey account
               instead.
             </span>
           ) : null}
@@ -169,7 +169,7 @@ export function SenderPickerControls({
           type="radio"
         />
         <span>
-          Passkey account — gas sponsored (Sepolia)
+          Passkey account (gas sponsored on Sepolia)
           {state.kind === "passkey" ? (
             <span
               className="block text-xs text-black/60 dark:text-white/60"

@@ -200,7 +200,7 @@ export function RagequitPanel({
           Exit (ragequit)
         </h3>
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-          No DAO is bound to this launch yet — there is nothing to exit. The
+          No DAO is bound to this launch yet, so there is nothing to exit. The
           exit becomes available when the launch graduates into a DAO (its{" "}
           <code>summon</code> receipt or the community org root names the DAO
           contract).
@@ -278,7 +278,7 @@ function PositionBody({
         className="mt-2 text-sm text-red-700 dark:text-red-300"
         data-testid="ragequit-error"
       >
-        Could not read the claimable position — {error}
+        Could not read the claimable position: {error}
       </p>
     );
   }
@@ -292,8 +292,8 @@ function PositionBody({
   if (position.zeroSupply) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        This DAO has no shares or loot outstanding — a claim cannot be derived
-        and the exit would revert.
+        This DAO has no shares or loot outstanding, so there is nothing to claim
+        and the exit would fail.
       </p>
     );
   }
@@ -303,15 +303,15 @@ function PositionBody({
         className="mt-2 text-sm text-amber-800 dark:text-amber-200"
         data-testid="ragequit-locked"
       >
-        The DAO is not accepting exits right now (<code>ragequittable()</code>{" "}
-        is false) — nothing needs you; an exit would revert onchain.
+        The DAO is not accepting exits right now, so there is nothing you need
+        to do. An exit would fail onchain.
       </p>
     );
   }
   if (position.sharesBalance === 0n) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        This account holds no shares — there is nothing to exit. (Loot is
+        This account holds no shares, so there is nothing to exit. (Loot is
         displayed separately and is not burned by this action.)
       </p>
     );
@@ -450,9 +450,9 @@ function RagequitDialog({
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         Burns {formatAmount(sharesToBurn)} shares of {truncatePubkey(dao)} and
         claims the proportional treasury share to{" "}
-        {holder ? truncatePubkey(holder) : "this account"} — one transaction,
-        then a receipt on this launch recording it. The chain is the ledger; the
-        receipt is the readable record.
+        {holder ? truncatePubkey(holder) : "this account"} in one transaction,
+        then leaves a receipt on this launch recording it. The chain is the
+        ledger; the receipt is the readable record.
       </p>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
         Tokens claimed:{" "}
@@ -498,8 +498,8 @@ function RagequitDialog({
           {state.receipts.exit ? (
             <>
               {" "}
-              — tx{" "}
-              <code className="break-all">{state.receipts.exit.txHash}</code>
+              (tx{" "}
+              <code className="break-all">{state.receipts.exit.txHash}</code>)
             </>
           ) : null}
           , and the receipt is recorded.

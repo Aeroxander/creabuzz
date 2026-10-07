@@ -224,7 +224,7 @@ export function ManagePanel({
         throw new Error("The sender returned an invalid hash.");
       }
       setTxHash(result.txHash); // prefill for the receipt
-      setMilestoneStatus("Onchain step sent — the hash above is filled in.");
+      setMilestoneStatus("Onchain step sent. The hash above is filled in.");
     } catch (err) {
       setMilestoneError(
         senderErrorMessage(err, "The onchain submit was not sent."),
@@ -381,14 +381,14 @@ export function ManagePanel({
       <Card className="p-4" data-testid="launch-graduation">
         <h2 className="text-base font-semibold">Graduation</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          At graduation the executor contract — set as the auction's funds and
-          tokens recipient at deploy — sweeps the raise, pays the treasury
-          share, locks the liquidity reserve, and returns unsold tokens.
+          At graduation the executor contract (set as the auction's funds and
+          tokens recipient at deploy) sweeps the raise, pays the treasury share,
+          locks the liquidity reserve, and returns unsold tokens.
         </p>
         <p className="mt-2 text-xs text-black/60 dark:text-white/60">
           The reserve releases only to the recorded pool by treasury action; if
           the pool never lands, the treasury can withdraw the stuck reserve. The
-          chain is the ledger — this panel states the mechanism; the contract
+          chain is the ledger. This panel states the mechanism; the contract
           moves the money.
         </p>
       </Card>
@@ -400,16 +400,16 @@ export function ManagePanel({
         <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
           Milestone attestation
           <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
-            post-graduation — staked claims settled onchain
+            post-graduation: staked claims settled onchain
           </span>
         </summary>
         <div className="mt-3" data-testid="launch-milestones">
           <h2 className="text-base font-semibold">Milestone attestation</h2>
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
             A milestone claim is staked and settled onchain by the verifier set;
-            this panel mirrors the claim and your verdict onto the feed (47005,
-            advisory). Every mirror names the tx that settled it — the relay
-            refuses a receipt without one. The chain is the ledger.
+            this panel mirrors the claim and your verdict onto the feed
+            (advisory). Every mirror names the tx that settled it. A receipt
+            without one won't go through. The chain is the ledger.
           </p>
           <div className="mt-3 flex flex-col gap-2">
             <HashPicker
@@ -741,7 +741,7 @@ export function ManagePanel({
           }
           relaunchNote={
             relaunchSeed
-              ? "This republishes the same launch record — the community and history stay. Link a new auction when it deploys."
+              ? "This republishes the same launch record. The community and history stay. Link a new auction when it deploys."
               : undefined
           }
           isCreating={save.isPending}

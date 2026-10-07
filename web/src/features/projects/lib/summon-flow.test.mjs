@@ -233,7 +233,7 @@ test("a mined revert fails the send step as data — nothing is recorded", async
   assert.equal(state.phase, "failed");
   assert.equal(state.failedStep, "send");
   assert.match(state.errorMessage, /Create the DAO onchain .* failed/);
-  assert.match(state.errorMessage, /reverted onchain \(tx 0x11/);
+  assert.match(state.errorMessage, /failed onchain \(tx 0x11/);
   assert.equal(published, 0, "a reverted summon is never recorded as done");
   assert.equal(state.reconcile, false, "a revert is safe to retry");
 
@@ -273,9 +273,9 @@ test("an unknown outcome is terminal: retry never re-sends", async () => {
   await runSummonFlow(plan, deps, reducer);
   assert.equal(state.phase, "failed");
   assert.equal(state.failedStep, "send");
-  assert.match(state.errorMessage, /outcome is unknown after polling/);
+  assert.match(state.errorMessage, /is still unknown/);
   assert.match(state.errorMessage, /rpc down/);
-  assert.match(state.errorMessage, /check the chain before retrying/);
+  assert.match(state.errorMessage, /Check whether it landed before retrying/);
   assert.equal(state.reconcile, true);
   assert.equal(
     state.receipts.send.txHash,
@@ -289,7 +289,7 @@ test("an unknown outcome is terminal: retry never re-sends", async () => {
   assert.equal(send.calls.length, 1, "the unconfirmed summon is NOT re-sent");
   assert.equal(state.phase, "failed", "the flow stays in its terminal state");
   assert.equal(state.failedStep, "send");
-  assert.match(state.errorMessage, /unknown after polling/);
+  assert.match(state.errorMessage, /is still unknown/);
 });
 
 test("a mirror failure keeps the summon and retries without re-sending", async () => {
@@ -319,7 +319,7 @@ test("a mirror failure keeps the summon and retries without re-sending", async (
   assert.match(state.errorMessage, /relay 500/);
   assert.match(
     state.errorMessage,
-    /retry records it without re-sending/,
+    /retrying records it without sending again/,
     "the failure text names the recovery path",
   );
   assert.equal(state.receipts.send.dao, DAO, "the summon receipt survives");

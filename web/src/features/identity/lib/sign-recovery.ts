@@ -60,7 +60,7 @@ export function deriveSignRecovery(
       headline: state.blockedReason ?? DEFAULT_BLOCKED,
       cta: "Sign in with passkey",
       helper:
-        "Unlock the passkey this browser is signed in with — your action continues where you left off.",
+        "Unlock the passkey this browser is signed in with. Your action continues where you left off.",
     };
   }
   if (state.blockedReason) {
@@ -69,7 +69,7 @@ export function deriveSignRecovery(
       headline: state.blockedReason,
       cta: "Create a passkey",
       helper:
-        "This browser has no passkey to unlock — create one so signing has a key it can open.",
+        "This browser has no passkey to unlock. Create one so signing has a key it can open.",
     };
   }
   return null;

@@ -93,7 +93,7 @@ function TxLink({ chainId, tx }: { chainId: number; tx: string }) {
   ) : (
     <span
       className="break-all text-black/60 dark:text-white/60"
-      title="This chain has no known explorer — the raw hash is the source."
+      title="This chain has no known explorer, so only the raw hash is shown."
     >
       {truncatePubkey(tx)} (no explorer on this chain)
     </span>
@@ -113,7 +113,7 @@ function AddrLink({ chainId, address }: { chainId: number; address: string }) {
     </a>
   ) : (
     <span className="break-all text-black/60 dark:text-white/60">
-      {truncatePubkey(address)} (chain read — no explorer on this chain)
+      {truncatePubkey(address)} (onchain read, no explorer on this chain)
     </span>
   );
 }
@@ -160,8 +160,8 @@ function SplitSection({
         <dt>Executed</dt>
         <dd className="text-right">
           {state.record.executed
-            ? "yes — the split has happened"
-            : "not yet — the split is pending"}
+            ? "yes, the split has happened"
+            : "not yet, the split is pending"}
         </dd>
         <dt>Executor (source)</dt>
         <dd className="text-right">
@@ -198,7 +198,7 @@ function ReceiptSection({
         </h4>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           No sweep / lock / summon / ragequit receipts are recorded for this
-          launch yet — the deploy publishes them at graduation.
+          launch yet. The deploy publishes them at graduation.
         </p>
       </section>
     );
@@ -216,12 +216,12 @@ function ReceiptSection({
           >
             <span>
               {row.table === "sweep"
-                ? `sweep — raised ${payloadText(row.payload, "currencyRaised")}, treasury share ${payloadText(row.payload, "treasuryShare")}, unsold ${payloadText(row.payload, "unsoldTokens")}`
+                ? `sweep: raised ${payloadText(row.payload, "currencyRaised")}, treasury share ${payloadText(row.payload, "treasuryShare")}, unsold ${payloadText(row.payload, "unsoldTokens")}`
                 : row.table === "lock"
-                  ? `lock — reserve escrow ${payloadText(row.payload, "reserveEscrow")} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
+                  ? `lock: reserve escrow ${payloadText(row.payload, "reserveEscrow")} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
                   : row.table === "summon"
-                    ? "summon — the DAO was summoned for this launch"
-                    : "ragequit — an owner burned shares and claimed treasury"}
+                    ? "summon: the DAO was summoned for this launch"
+                    : "ragequit: an owner burned shares and claimed treasury"}
             </span>
             <TxLink chainId={chainId} tx={row.tx} />
           </li>
@@ -325,7 +325,7 @@ function BudgetRow({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
-          budget {budget.id} — ceiling{" "}
+          budget {budget.id}: ceiling{" "}
           {budget.allocation ? amount(budget.allocation) : "—"} / {window}
           {budget.rollover ? " (rolls over)" : ""}
         </span>
@@ -336,7 +336,7 @@ function BudgetRow({
       {budget.onchain ? (
         allowanceQuery.error ? (
           <p className="mt-1 text-red-700 dark:text-red-300">
-            Could not read the allowance —{" "}
+            Could not read the allowance:{" "}
             {allowanceQuery.error instanceof Error
               ? allowanceQuery.error.message
               : "the request failed"}
@@ -365,7 +365,7 @@ function BudgetRow({
         )
       ) : (
         <p className="mt-1 text-black/60 dark:text-white/60">
-          No onchain allowance is bound to this budget — record-only ceiling.
+          No onchain allowance is bound to this budget (record-only ceiling).
         </p>
       )}
       {related.length > 0 ? (
@@ -464,7 +464,7 @@ export function TreasuryFlowsPanel({
             />
           ) : positionsQuery.error ? (
             <p className="text-sm text-red-700 dark:text-red-300">
-              Could not read the live positions —{" "}
+              Could not read the live positions:{" "}
               {positionsQuery.error instanceof Error
                 ? positionsQuery.error.message
                 : "the request failed"}
@@ -482,7 +482,7 @@ export function TreasuryFlowsPanel({
         </h4>
         {orgMoney.error ? (
           <p className="mt-1 text-sm text-red-700 dark:text-red-300">
-            Could not read the budget plane from the relay —{" "}
+            Could not read the budgets and spend ledger from the server:{" "}
             {orgMoney.error instanceof Error
               ? orgMoney.error.message
               : "the request failed"}

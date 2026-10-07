@@ -145,7 +145,7 @@ test("the wait is bounded: a silent relay times out as unanswered", async () => 
   );
   assert.ok(Date.now() - started < 2000, "the wait must be bounded");
   assert.equal(
-    relayFailureOutcome(new Error("Relay query timed out after 40ms")),
+    relayFailureOutcome(new Error("Server query timed out after 40ms")),
     "unanswered",
   );
 });

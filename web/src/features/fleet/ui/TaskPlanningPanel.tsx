@@ -193,7 +193,7 @@ export function TaskPlanningPanel({
             data-testid="task-claim"
           >
             {claimed
-              ? "Claimed — waiting for review"
+              ? "Claimed, waiting for review"
               : claiming
                 ? "Claiming…"
                 : "Claim as contribution"}

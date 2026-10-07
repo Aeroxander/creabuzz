@@ -295,7 +295,7 @@ export interface BidActions {
 }
 
 const WALK_CONSISTENT =
-  "Checkpoint data is inconsistent with this bid — refresh, and report this if it persists.";
+  "Checkpoint data is inconsistent with this bid. Refresh, and report this if it persists.";
 
 /**
  * Derive the exit plan. Port of exitHooks.ts:408-510; branch citations live in
@@ -324,7 +324,7 @@ export function deriveExitPlan(input: BidDerivationInput): ExitPlan {
     return {
       kind: "unavailable",
       reason:
-        "Exit opens when the auction ends — early exit needs a graduated auction.",
+        "Exit opens when the auction ends. Early exit needs a graduated auction.",
     };
   }
 
@@ -422,7 +422,7 @@ export function deriveClaimPlan(
   if (bid.tokensFilled === 0n) {
     return {
       kind: "unavailable",
-      reason: "Nothing left to claim — this bid is settled.",
+      reason: "Nothing left to claim. This bid is settled.",
     };
   }
   if (!auction.graduated) {
@@ -496,7 +496,7 @@ export function buildExitCallForPlan(
   throw new Error(
     plan.kind === "unavailable"
       ? plan.reason
-      : "checkpointThenExit is a two-step plan — use buildExitExecution",
+      : "checkpointThenExit is a two-step plan: use buildExitExecution",
   );
 }
 
@@ -564,7 +564,7 @@ export function buildExitExecution(params: ExitExecutionParams): ExitExecution {
             const fresh = await resolvePlan();
             if (fresh.kind === "checkpointThenExit") {
               throw new Error(
-                "the decisive checkpoint is still missing onchain — refresh and try again",
+                "the decisive checkpoint is still missing onchain. Refresh and try again",
               );
             }
             return buildExitCallForPlan(auction, bidId, fresh);

@@ -78,7 +78,7 @@ test("hitting the page valve throws instead of returning a partial set", async (
       pageSize: 2,
       maxPages: 2,
     }),
-    /run the stop again/,
+    /run the stop again/i,
   );
 });
 

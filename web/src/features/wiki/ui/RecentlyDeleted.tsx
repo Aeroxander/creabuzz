@@ -46,7 +46,7 @@ export function RecentlyDeleted({
       <h2 className="text-sm font-semibold">{RECENTLY_DELETED_LABEL}</h2>
       {error ? (
         <QueryError
-          description="The relay did not answer the deleted-pages query, so the list is unknown."
+          description="The server did not answer the deleted-pages query, so the list is unknown."
           message={errorMessage(error)}
           onRetry={onRetry}
           testId="wiki-recently-deleted-error"

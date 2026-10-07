@@ -31,7 +31,7 @@ export const AUCTION_DEPLOY_STEPS = [
     id: "executor",
     label: "Graduation executor",
     detail:
-      "Deploys GraduationExecutor — the auction's funds/tokens recipient.",
+      "Deploys GraduationExecutor, the auction's funds and tokens recipient.",
   },
   {
     id: "auction",
@@ -60,7 +60,7 @@ export const AUCTION_DEPLOY_STEPS = [
     id: "bind",
     label: "Bind the executor",
     detail:
-      "Binds the graduation executor to this one auction — it refuses every other address.",
+      "Binds the graduation executor to this one auction. It refuses every other address.",
   },
 ] as const;
 

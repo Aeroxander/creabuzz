@@ -174,11 +174,18 @@ export function LaunchesPage() {
   );
 
   const rooms = useRef<LaunchChat | null>(null);
+  /** The name the rooms were made for; a renamed retry must make new rooms. */
+  const roomsName = useRef<string | null>(null);
   const handleCreate = async (input: CreateLaunchInput) => {
     try {
       // Rooms first, so the record never names a room that does not exist. A
       // room failure must not block the launch: the rest can be created from
-      // the launch page. A retry after a failed publish reuses the rooms made.
+      // the launch page. A retry after a failed publish reuses the rooms made,
+      // but only while the name is unchanged — rooms are named for the launch.
+      if (roomsName.current !== input.name) {
+        rooms.current = null;
+        roomsName.current = input.name;
+      }
       const ensured = await ensureRooms({
         launchName: input.name,
         chat: rooms.current ?? input.chat ?? EMPTY_CHAT,
@@ -193,6 +200,7 @@ export function LaunchesPage() {
       }
       await create.mutateAsync({ ...input, chat: ensured.chat });
       rooms.current = null;
+      roomsName.current = null;
       toast.success("Launch published.");
       setCreateOpen(false);
     } catch {
@@ -210,7 +218,7 @@ export function LaunchesPage() {
             <Rocket className="h-5 w-5" /> Launchpad
           </span>
         }
-        description="Discover raises to back — or launch your own DAO."
+        description="Find a raise to back, or start one of your own."
         action={
           <div className="flex items-center gap-2">
             <Button
@@ -330,13 +338,32 @@ export function LaunchesPage() {
         </fieldset>
       </div>
 
+      {!isLoading && !error ? (
+        <Link
+          className="mb-4 flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 transition-colors hover:bg-violet-500/10"
+          to="/launchpad/$launchId"
+          params={{ launchId: SANDBOX_ID }}
+          search={{ action: undefined, author: undefined }}
+          data-testid="sandbox-entry"
+        >
+          <span>
+            <span className="block text-sm font-semibold">Try the sandbox</span>
+            <span className="block text-xs text-black/60 dark:text-white/60">
+              Walk through a full raise, start to finish. No blockchain and no
+              real money.
+            </span>
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0" />
+        </Link>
+      ) : null}
+
       {isLoading ? (
         <p className="py-8 text-center text-sm text-black/60 dark:text-white/60">
           Loading launches…
         </p>
       ) : error ? (
         <QueryError
-          description="The relay did not answer the launch query, so nothing can be listed."
+          description="The server didn't respond, so the list can't load."
           error={error}
           kinds={LAUNCHPAD_EVENT_KINDS}
           message={errorMessage(error)}
@@ -356,16 +383,22 @@ export function LaunchesPage() {
         <div className="rounded-2xl border border-dashed border-black/15 px-5 py-12 text-center dark:border-white/15">
           <p className="text-sm text-black/60 dark:text-white/60">
             {stanceFilter !== null || seekingFilter !== null
-              ? "Nothing matches that combination. Try a wider chip."
+              ? "Nothing matches those filters. Try removing one."
               : filter === "all"
-                ? "No launches yet. Founders: publish the first one."
+                ? "No launches yet. Start an idea to get going."
                 : filter === "ideas"
                   ? "No ideas yet. Be the first to start one."
-                  : "Nothing here. Follow a launch to pin it to this list."}
+                  : filter === "mine"
+                    ? "You haven't launched anything yet."
+                    : filter === "closing-soon"
+                      ? "Nothing is closing soon."
+                      : filter === "graduated"
+                        ? "No launches have graduated yet."
+                        : "Nothing here yet. Follow a launch to see it in this list."}
           </p>
           {stanceFilter === null &&
           seekingFilter === null &&
-          (filter === "all" || filter === "ideas") ? (
+          (filter === "all" || filter === "ideas" || filter === "mine") ? (
             <Button
               className="mt-4"
               onClick={() => setIdeaOpen(true)}
@@ -376,70 +409,48 @@ export function LaunchesPage() {
           ) : null}
         </div>
       ) : (
-        <>
-          <Link
-            className="mb-4 flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 transition-colors hover:bg-violet-500/10"
-            to="/launchpad/$launchId"
-            params={{ launchId: SANDBOX_ID }}
-            search={{ action: undefined, author: undefined }}
-            data-testid="sandbox-entry"
-          >
-            <span>
-              <span className="block text-sm font-semibold">
-                Try the sandbox
-              </span>
-              <span className="block text-xs text-black/60 dark:text-white/60">
-                A full simulated raise, end to end — no chain, no real money.
-              </span>
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </Link>
-          <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {visible.map((launch) => {
-              const key = launchCoord(launch.record);
-              const founder = profiles?.[launch.record.author];
-              return (
-                <li key={key}>
-                  <LaunchCard
-                    idea={isIdea(launch.record)}
-                    funding={fundingOf(launch)}
-                    supporters={supporters.data?.get(key) ?? null}
-                    bids={launch.bids.length}
-                    followDisabled={!follows.ready || follows.pending}
-                    followed={follows.followed.has(key)}
-                    footer={
-                      <div className="space-y-2">
-                        <ProgressBar quietWhenUnknown record={launch.record} />
-                        <VoteButtons
-                          label={launch.record.name}
-                          launch={launchRef(launch.record)}
-                          tally={tallies.get(key) ?? EMPTY_TALLY}
-                          target={launchVoteTarget(launch.record)}
-                          testId="launch-card-vote"
-                        />
-                      </div>
-                    }
-                    founder={
-                      founder
-                        ? {
-                            name: resolveUserName(
-                              founder,
-                              launch.record.author,
-                            ),
-                            picture: founder.picture ?? null,
-                          }
-                        : undefined
-                    }
-                    onToggleFollow={() => follows.toggle(key)}
-                    record={launch.record}
-                    stage={effectiveStage(launch)}
-                    updates={launch.updates.length}
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        </>
+        <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {visible.map((launch) => {
+            const key = launchCoord(launch.record);
+            const founder = profiles?.[launch.record.author];
+            return (
+              <li key={key}>
+                <LaunchCard
+                  idea={isIdea(launch.record)}
+                  funding={fundingOf(launch)}
+                  supporters={supporters.data?.get(key) ?? null}
+                  bids={launch.bids.length}
+                  followDisabled={!follows.ready || follows.pending}
+                  followed={follows.followed.has(key)}
+                  footer={
+                    <div className="space-y-2">
+                      <ProgressBar quietWhenUnknown record={launch.record} />
+                      <VoteButtons
+                        label={launch.record.name}
+                        launch={launchRef(launch.record)}
+                        tally={tallies.get(key) ?? EMPTY_TALLY}
+                        target={launchVoteTarget(launch.record)}
+                        testId="launch-card-vote"
+                      />
+                    </div>
+                  }
+                  founder={
+                    founder
+                      ? {
+                          name: resolveUserName(founder, launch.record.author),
+                          picture: founder.picture ?? null,
+                        }
+                      : undefined
+                  }
+                  onToggleFollow={() => follows.toggle(key)}
+                  record={launch.record}
+                  stage={effectiveStage(launch)}
+                  updates={launch.updates.length}
+                />
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       {ideaOpen ? <StartIdeaDialog onClose={() => setIdeaOpen(false)} /> : null}
@@ -447,7 +458,12 @@ export function LaunchesPage() {
         <CreateLaunchDialog
           isCreating={create.isPending}
           onCreate={handleCreate}
-          onClose={() => setCreateOpen(false)}
+          onClose={() => {
+            // An abandoned attempt must not lend its rooms to a later launch.
+            rooms.current = null;
+            roomsName.current = null;
+            setCreateOpen(false);
+          }}
           publishError={create.isError ? errorMessage(create.error) : null}
         />
       ) : null}

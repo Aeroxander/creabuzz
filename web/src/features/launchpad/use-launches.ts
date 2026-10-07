@@ -289,7 +289,7 @@ export async function publishMirror(
     signAuth: signAsUser,
   });
   if (!result.accepted) {
-    throw new Error(result.message ?? "relay rejected the event");
+    throw new Error(result.message ?? "Server rejected the event");
   }
   return signed;
 }

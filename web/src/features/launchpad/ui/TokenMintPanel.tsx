@@ -177,10 +177,10 @@ function DeployTokenFlow({
           data-testid="mint-failure"
         >
           {state.failure.stage === "prepare"
-            ? `Preflight blocked (${state.failure.check}) — ${state.failure.reason}`
+            ? `Preflight check (${state.failure.check}) blocked this deploy: ${state.failure.reason}`
             : state.failure.stage === "link"
-              ? `Mirror failed — the deploy landed at ${state.tokenAddress ?? "the computed address"}; only the record write needs retrying. ${state.failure.reason}`
-              : `${MINT_STEPS[state.failure.stepIndex ?? 0].label} failed — ${state.failure.reason}`}
+              ? `The token deploy landed at ${state.tokenAddress ?? "the computed address"}, but the record write failed (${state.failure.reason}). Only the record write needs retrying.`
+              : `${MINT_STEPS[state.failure.stepIndex ?? 0].label} failed: ${state.failure.reason}`}
         </p>
       ) : null}
       {state.phase === "success" ? (
@@ -245,7 +245,7 @@ export function TokenMintPanel({
       await navigator.clipboard.writeText(command);
       toast.success("Command copied.");
     } catch {
-      toast.error("Copy failed — select the text manually.");
+      toast.error("Copy failed. Select the text and copy it manually.");
     }
   };
   const link = async () => {

@@ -61,7 +61,7 @@ const PHASE_LABELS: Record<Kernel033SendPhase, string> = {
   preparing: "Preparing account…",
   sponsoring: "Requesting sponsorship…",
   signing: "Touch ID to sign…",
-  submitting: "Submitted — waiting for inclusion…",
+  submitting: "Submitted, waiting for inclusion…",
   confirming: "Waiting for receipt…",
 };
 
@@ -92,7 +92,7 @@ export function UserOpDemoCard({ disabled }: { disabled: boolean }) {
     try {
       const credentialId = window.localStorage.getItem(CREDENTIAL_KEY);
       if (!credentialId) {
-        throw new Error("no stored passkey credential id — register first");
+        throw new Error("no stored passkey credential id. Register first");
       }
       const target = sender || ZERO_ADDRESS;
       const op: PackedUserOperation = {
@@ -147,12 +147,12 @@ export function UserOpDemoCard({ disabled }: { disabled: boolean }) {
     try {
       const credentialId = window.localStorage.getItem(CREDENTIAL_KEY);
       if (!credentialId) {
-        throw new Error("no stored passkey credential id — register first");
+        throw new Error("no stored passkey credential id. Register first");
       }
       const r1Hex = window.localStorage.getItem(R1_KEY);
       if (!r1Hex) {
         throw new Error(
-          "no stored passkey public key (buzz.passkey.r1) — register first",
+          "no stored passkey public key (buzz.passkey.r1). Register first",
         );
       }
       const { pubKeyX, pubKeyY } = parseR1PublicKey(r1Hex);
@@ -228,7 +228,7 @@ export function UserOpDemoCard({ disabled }: { disabled: boolean }) {
         />
       </label>
       <label className="mt-2 block text-xs text-black/60 dark:text-white/60">
-        Sender (optional — zero address is fine for hash-shape checks)
+        Sender (optional, zero address is fine for hash-shape checks)
         <input
           type="text"
           value={sender}
@@ -277,7 +277,7 @@ export function UserOpDemoCard({ disabled }: { disabled: boolean }) {
           passkey&rsquo;s own Kernel&nbsp;0.3.3 account on Sepolia (deployed on
           first use). The paymaster covers the gas, the locally computed v0.7 op
           hash is checked against the live EntryPoint before anything is signed,
-          and Touch ID produces the real WebAuthn signature — no fixture keys in
+          and Touch ID produces the real WebAuthn signature. No fixture keys in
           this path. This broadcasts a real UserOperation and spends project
           sponsorship.
         </p>

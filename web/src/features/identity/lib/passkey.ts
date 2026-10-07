@@ -73,7 +73,7 @@ export class PasskeyEnvironmentError extends PasskeyError {
 export class PrfUnavailableError extends PasskeyError {
   constructor(created?: CreatedPasskeyRef) {
     super(
-      "This platform did not provide a PRF output for the passkey. On macOS, Safari and Chrome support PRF through the platform authenticator — Firefox generally doesn't — and Windows Hello or Google Password Manager support it elsewhere. This browser can't run the PRF ceremony, so try Safari or Chrome.",
+      "This platform did not provide a PRF output for the passkey. On macOS, Safari and Chrome support PRF through the platform authenticator (Firefox generally doesn't), and Windows Hello or Google Password Manager support it elsewhere. This browser can't run the PRF ceremony, so try Safari or Chrome.",
       created,
     );
     this.name = "PrfUnavailableError";
@@ -378,7 +378,7 @@ export function parseAttestedCredentialData(
   const flags = authData[32];
   if ((flags & 0x40) === 0) {
     throw new PasskeyAttestationError(
-      "the registration response carries no attested credential data (AT flag unset) — the secp256r1 owner key cannot be extracted",
+      "the registration response carries no attested credential data (AT flag unset). The secp256r1 owner key cannot be extracted",
     );
   }
   let offset = 37;
@@ -432,12 +432,12 @@ export function coseP256Uncompressed(coseKey: Uint8Array): Uint8Array {
   const y = value.get(-3);
   if (kty !== 2) {
     throw new PasskeyAttestationError(
-      `this passkey's public key is not an EC2 (elliptic-curve) key (kty ${String(kty)}) — only ES256/secp256r1 credentials can own the smart wallet`,
+      `this passkey's public key is not an EC2 (elliptic-curve) key (kty ${String(kty)}). Only ES256/secp256r1 credentials can own the smart wallet`,
     );
   }
   if (alg !== -7) {
     throw new PasskeyAttestationError(
-      `this passkey's public key is not ES256 (alg ${String(alg)}) — only ES256/secp256r1 credentials can own the smart wallet`,
+      `this passkey's public key is not ES256 (alg ${String(alg)}). Only ES256/secp256r1 credentials can own the smart wallet`,
     );
   }
   if (crv !== 1) {
@@ -531,7 +531,7 @@ function requireWebAuthn(): void {
         ? window.location.origin
         : "an unknown origin";
     throw new PasskeyEnvironmentError(
-      `Passkeys need the WebAuthn API in a secure context (https, or http://localhost in development) — this page is ${origin}, where ${
+      `Passkeys need the WebAuthn API in a secure context (https, or http://localhost in development). This page is ${origin}, where ${
         insecure
           ? "the browser reports an insecure context"
           : "navigator.credentials is unavailable"
@@ -789,11 +789,11 @@ export function explainPasskeyError(error: unknown): string {
       : "";
   switch (name) {
     case "NotAllowedError":
-      return "The passkey prompt was dismissed or timed out — nothing was created. Try again and complete the touch.";
+      return "The passkey prompt was dismissed or timed out. Nothing was created. Try again and complete the touch.";
     case "InvalidStateError":
-      return "This authenticator already holds this credential — sign in instead of registering.";
+      return "This authenticator already holds this credential: sign in instead of registering.";
     case "SecurityError":
-      return "The browser refused this ceremony for the current origin. Passkeys are bound to their domain and need a secure context — https, or http://localhost in development.";
+      return "The browser refused this passkey request for the current origin. Passkeys are bound to their domain and need a secure context (https, or http://localhost in development).";
     case "NotSupportedError":
       return "This browser or authenticator does not support the requested passkey (a platform ES256 passkey).";
     case "ConstraintError":

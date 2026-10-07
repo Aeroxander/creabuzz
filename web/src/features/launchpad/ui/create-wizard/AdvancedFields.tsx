@@ -160,7 +160,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
       <Field
         id="launch-id"
         label="Launch id"
-        hint="Lowercase slug. Permanent — it addresses the launch on the relay. Left empty, it is derived from the name."
+        hint="Lowercase slug. Permanent: it addresses the launch on the server. Left empty, it is derived from the name."
       >
         <Input
           id="launch-id"
@@ -194,7 +194,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
               data-testid="launch-long-pitch"
               className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
               onChange={(e) => setLongPitch(e.target.value)}
-              placeholder="What is already built, who is on the team, what you will build next — and what would show the thesis is wrong."
+              placeholder="What is already built, who is on the team, what you will build next, and what would show the thesis is wrong."
               rows={4}
               value={longPitch}
             />
@@ -202,7 +202,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-ip-list"
             label="Committed assets"
-            hint="One link per line — repos, docs, social accounts, domains."
+            hint="One link per line: repos, docs, social accounts, domains."
           >
             <textarea
               id="launch-ip-list"
@@ -326,7 +326,11 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
             value={chainId}
           />
         </Field>
-        <Field id="launch-admission" label="Admission track">
+        <Field
+          id="launch-admission"
+          label="Bid access"
+          hint="Curated picks who can bid. Community is open to everyone."
+        >
           <div className="flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
             {(["curated", "community"] as const).map((track) => (
               <button
@@ -513,7 +517,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           </div>
           {rawBlocks === "incomplete" ? (
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              Set all three blocks, with claims at or after the end — or clear
+              Set all three blocks, with claims at or after the end, or clear
               them and let the wizard convert your dates.
             </p>
           ) : null}
@@ -560,7 +564,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-auction"
             label="Auction contract"
-            hint="Optional now — link it when the sale deploys."
+            hint="Optional now. Link it when the sale deploys."
           >
             <Input
               id="launch-auction"
@@ -639,8 +643,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         data-testid="launch-as-agent-explainer"
       >
         The launch record will be signed by this browser&apos;s agent key (an
-        attested AI-agent identity) instead of your personal key — useful when
-        an agent manages the launch&apos;s updates.
+        attested AI-agent identity) instead of your personal key. Use it when an
+        agent manages the launch&apos;s updates.
       </p>
     </>
   );

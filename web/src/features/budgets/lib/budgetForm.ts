@@ -51,7 +51,7 @@ export function budgetSubjectError(
 export type BudgetEnforcement = "relay" | "onchain" | "advisory";
 
 export const ENFORCEMENT_LABEL: Record<BudgetEnforcement, string> = {
-  relay: "Enforced by the relay",
+  relay: "Enforced by the server",
   onchain: "Enforced onchain",
   advisory: "Advisory",
 };

@@ -30,7 +30,7 @@ async function fetchCommunityDirectory(): Promise<CommunityDirectory> {
     throw new Error(
       friendlyRelayError(
         String(
-          `Community directory unavailable (relay responded ${response.status})`,
+          `Community directory unavailable (server responded ${response.status})`,
         ),
       ),
     );

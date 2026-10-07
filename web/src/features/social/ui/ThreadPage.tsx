@@ -42,7 +42,7 @@ export function ThreadPage() {
         <TimelineSkeleton />
       ) : !note || !root ? (
         <EmptyState title="This post isn't available">
-          It may have been deleted, or this relay hasn't received it.
+          It may have been deleted, or this server hasn't received it.
         </EmptyState>
       ) : (
         <>

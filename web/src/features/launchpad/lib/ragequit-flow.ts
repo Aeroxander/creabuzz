@@ -28,6 +28,7 @@ import type {
   SendCallsResult,
   SenderCall,
 } from "../../identity/lib/sponsoredSender.ts";
+import { flowOutcomeMessage } from "./exit-flow.ts";
 import type { RagequitTx } from "./ragequit-tx.ts";
 
 /** The receipt contract of one sent step (exit-flow.ts's FlowReceipt). */
@@ -137,7 +138,7 @@ export function ragequitFlowReducer(
         phase: "failed",
         steps: { ...state.steps, [action.step]: "failed" as const },
         failedStep: action.step,
-        errorMessage: `${RAGEQUIT_STEP_LABELS[action.step]} failed — ${action.message}`,
+        errorMessage: `${RAGEQUIT_STEP_LABELS[action.step]} failed: ${action.message}`,
       };
     }
   }
@@ -218,7 +219,7 @@ export async function runRagequitFlow(
         dispatch({
           type: "step-failed",
           step: "mirror",
-          message: `${errorMessage(err)} — the exit itself landed (tx ${record.txHash}); retry records it without re-sending`,
+          message: `${errorMessage(err)}. The exit itself landed (tx ${record.txHash}); retrying records it without sending again.`,
         });
         return;
       }
@@ -253,7 +254,7 @@ export async function runRagequitFlow(
       dispatch({
         type: "step-failed",
         step: "exit",
-        message: `the transaction reverted onchain (tx ${receipt.txHash})`,
+        message: flowOutcomeMessage(receipt),
       });
       return;
     }

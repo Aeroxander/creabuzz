@@ -273,7 +273,7 @@ export function WikiView({
       // Silence here is how two people lose each other's paragraphs.
       toast.warning("Overlapping edit", {
         description:
-          "Someone changed this text while you were typing. Both versions could not be kept — yours was saved.",
+          "Someone changed this text while you were typing. Both versions couldn't be kept. Yours was saved.",
       });
     }
   };
@@ -322,7 +322,7 @@ export function WikiView({
   };
 
   const exportWiki = () => {
-    const header = `# ${APP_NAME} Wiki Export\n\nExported ${new Date().toISOString()} — ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
+    const header = `# ${APP_NAME} Wiki Export\n\nExported ${new Date().toISOString()} · ${pages.length} page${pages.length === 1 ? "" : "s"}.\n`;
     const body = pages
       .map((page) => `\n---\n\n# Page: ${page.slug}\n\n${page.content}`)
       .join("\n");
@@ -401,7 +401,7 @@ export function WikiView({
             data-testid="wiki-cache-warning"
             role="status"
           >
-            Showing saved pages — the relay did not answer.
+            Showing saved pages. The server didn't answer.
           </p>
         ) : null}
         {isLoading &&
@@ -420,7 +420,7 @@ export function WikiView({
           knowledge.agent.length === 0 ? (
           <div className="p-2">
             <QueryError
-              description="The relay did not answer the wiki page query, so there is no known list of pages."
+              description="The server did not answer the wiki page query, so there is no known list of pages."
               message={errorMessage(loadError)}
               onRetry={() => void refetchPages()}
               testId="wiki-load-error"
@@ -664,7 +664,7 @@ export function WikiView({
                 data-testid="wiki-save"
                 title={
                   dirty
-                    ? "Publish this page to the relay"
+                    ? "Publish this page to the server"
                     : "No unpublished changes"
                 }
               >
@@ -871,7 +871,7 @@ export function WikiView({
                 // published. Claiming a rename here left the relay holding the
                 // old page while the tab showed the new one.
                 toast.error("Couldn't rename page", {
-                  description: `The relay did not answer, so nothing was renamed. ${errorMessage(error)}`,
+                  description: `The server did not answer, so nothing was renamed. ${errorMessage(error)}`,
                 });
               }
             })();
@@ -918,7 +918,7 @@ export function WikiView({
               // "Discarded" and "Deleted" both say the page is gone; a failed
               // read tells us nothing about that, so say nothing was changed.
               toast.error("Couldn't delete page", {
-                description: `The relay did not answer, so the page was not deleted. ${errorMessage(error)}`,
+                description: `The server did not answer, so the page was not deleted. ${errorMessage(error)}`,
               });
             }
           })();

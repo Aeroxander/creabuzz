@@ -63,7 +63,7 @@ export function PresenceStrip({
           <span
             key={pubkey}
             className="relative"
-            title={`${name} — ${presenceLabel(status)}`}
+            title={`${name}: ${presenceLabel(status)}`}
           >
             <UserAvatar avatarUrl={null} displayName={name} size="xs" />
             <span

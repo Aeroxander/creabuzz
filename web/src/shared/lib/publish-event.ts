@@ -45,7 +45,7 @@ export function publishEvent(
       if (!settled) {
         settled = true;
         ws.close();
-        reject(new Error("Relay publish timed out"));
+        reject(new Error("Server publish timed out"));
       }
     }, PUBLISH_TIMEOUT_MS);
 

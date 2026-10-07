@@ -651,6 +651,6 @@ export function treasuryGate(
   }
   return {
     ok: false,
-    detail: `The launch record's treasury (${recorded}) is not your wallet (${wallet}). In v1 the deploying wallet must be the treasury — steps 2-3 (transfer validator, trading ruleset) are token-owner operations. Update the launch's treasury to your wallet address (Edit terms), then deploy.`,
+    detail: `The launch record's treasury (${recorded}) is not your wallet (${wallet}). For now, the deploying wallet must be the treasury, because the transfer validator and the trading ruleset are token-owner operations. Update the launch's treasury to your wallet address (Edit terms), then deploy.`,
   };
 }

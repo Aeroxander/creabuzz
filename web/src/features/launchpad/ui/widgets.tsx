@@ -119,7 +119,7 @@ export function ProgressBar({
               data.source === "rpc"
                 ? "Live chain values."
                 : data.source === "preview"
-                  ? "Preview fixture — development builds only."
+                  ? "Preview data, shown in development builds only."
                   : `No chain data: ${data.reason ?? "unavailable"}.`
             }
           >
@@ -173,7 +173,7 @@ export function OwnershipOnlyNote({ className }: { className?: string }) {
       className={cn("text-2xs text-black/50 dark:text-white/50", className)}
       data-testid="ownership-only-note"
     >
-      Buyers acquire ownership only — governance and exit. No dividends or
+      Buyers acquire ownership only: governance and exit. No dividends or
       revenue share, ever, unless they contribute and earn one.
     </p>
   );

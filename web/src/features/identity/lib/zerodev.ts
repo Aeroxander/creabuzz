@@ -116,7 +116,7 @@ export const ZERODEV_RPC_HOST = "https://rpc.zerodev.app";
 export class ZerodevNotConfiguredError extends Error {
   constructor(missing: string) {
     super(
-      `zerodev: ${missing} is not configured — set VITE_ZERODEV_PROJECT_ID / ` +
+      `zerodev: ${missing} is not configured. Set VITE_ZERODEV_PROJECT_ID / ` +
         "VITE_ZERODEV_CHAIN_ID (build-time env; Vite embeds VITE_* in the " +
         "client bundle) or pass a ZerodevConfig",
     );
@@ -142,7 +142,7 @@ export class PaymasterDeniedError extends Error {
 
   constructor(serverMessage: string) {
     super(
-      `zerodev: paymaster denied sponsorship: ${serverMessage} — ` +
+      `zerodev: paymaster denied sponsorship: ${serverMessage}. ` +
         PAYMASTER_DENIED_DASHBOARD_ACTION,
     );
     this.name = "PaymasterDeniedError";

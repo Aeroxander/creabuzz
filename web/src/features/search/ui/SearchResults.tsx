@@ -65,7 +65,7 @@ export function SearchResults({
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <QueryError
-          description="The relay did not answer the search query."
+          description="The server did not answer the search query."
           message={error.message}
           onRetry={() => void refetch()}
           testId="search-error"

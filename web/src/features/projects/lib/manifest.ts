@@ -274,7 +274,7 @@ export function buildPitchTemplate(input: PitchInput): {
   if (pool > POOL_PCT) {
     throw new PitchValidationError(
       "roles",
-      `Declared stakes add up to ${pool}% — a project can declare at most ${POOL_PCT}%.`,
+      `Declared stakes add up to ${pool}%. A project can declare at most ${POOL_PCT}%.`,
     );
   }
 

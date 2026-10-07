@@ -42,6 +42,19 @@ export interface FlowReceipt {
   status: "success" | "reverted" | "unknown";
 }
 
+/**
+ * What a non-success receipt means, said honestly: a mined revert failed
+ * onchain, while an unknown outcome may never have been broadcast at all, so
+ * the reader is told to check before retrying. The same distinction the
+ * summon flow makes (its `summonOutcomeMessage`).
+ */
+export function flowOutcomeMessage(receipt: FlowReceipt): string {
+  if (receipt.status === "reverted") {
+    return `the transaction failed onchain (tx ${receipt.txHash})`;
+  }
+  return `the outcome of transaction ${receipt.txHash} is still unknown. Check whether it landed before retrying`;
+}
+
 /** Per-step status. `skipped` = not part of this plan. */
 export type ExitStepStatus =
   | "pending"
@@ -145,7 +158,7 @@ export function exitFlowReducer(
         phase: "failed",
         steps: { ...state.steps, [action.step]: "failed" as const },
         failedStep: action.step,
-        errorMessage: `${EXIT_STEP_LABELS[action.step]} failed — ${action.message}`,
+        errorMessage: `${EXIT_STEP_LABELS[action.step]} failed: ${action.message}`,
       };
     }
   }
@@ -223,7 +236,7 @@ export async function runExitFlow(
       dispatch({
         type: "step-failed",
         step: entry.step,
-        message: `the transaction reverted onchain (tx ${receipt.txHash})`,
+        message: flowOutcomeMessage(receipt),
       });
       return;
     }

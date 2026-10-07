@@ -67,8 +67,8 @@ export function SocialHomePage() {
             testId="social-updates-empty"
             title="No launch updates yet"
           >
-            When a launch's team posts an update, it appears here — and for
-            launches you follow, it also reaches your notifications.
+            When a launch's team posts an update, it appears here. For launches
+            you follow, it also reaches your notifications.
           </EmptyState>
         ) : (
           <PostList rows={updateRows.data ?? []} />

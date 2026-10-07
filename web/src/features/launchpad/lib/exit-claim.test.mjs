@@ -210,7 +210,7 @@ test("runExitFlow names the failed step on a thrown send error", async () => {
   );
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.equal(rec.state.errorMessage, "Exit bid failed — wallet locked");
+  assert.equal(rec.state.errorMessage, "Exit bid failed: wallet locked");
 });
 
 test("runExitFlow treats a mined revert as a failed step, never a success", async () => {
@@ -226,8 +226,24 @@ test("runExitFlow treats a mined revert as a failed step, never a success", asyn
   assert.equal(rec.state.steps.claim, "failed");
   assert.match(
     rec.state.errorMessage,
-    /Claim tokens failed — the transaction reverted onchain \(tx 0xdead\)/,
+    /Claim tokens failed: the transaction failed onchain \(tx 0xdead\)/,
   );
+});
+
+test("runExitFlow calls an unknown receipt outcome unknown, not an onchain failure", async () => {
+  const rec = recorder();
+  const { deps } = fakeDeps([{ txHash: "0xunknown", status: "unknown" }]);
+  dispatchReset(rec, ["claim"]);
+  await runExitFlow(
+    buildClaimExecution({ auction: AUCTION, owner: OWNER, bidIds: [7n] }),
+    deps,
+    rec.dispatch,
+  );
+  assert.equal(rec.state.phase, "failed");
+  assert.match(rec.state.errorMessage, /still unknown/);
+  assert.match(rec.state.errorMessage, /Check whether it landed before retrying/);
+  // The tx may never have been broadcast; never claim an onchain failure here.
+  assert.doesNotMatch(rec.state.errorMessage, /failed onchain/);
 });
 
 test("runExitFlow keeps completed steps and retry re-sends only the remainder", async () => {
@@ -240,7 +256,7 @@ test("runExitFlow keeps completed steps and retry re-sends only the remainder", 
   await runExitFlow(twoStepExecution(), deps, rec.dispatch);
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.match(rec.state.errorMessage, /^Exit bid failed — /);
+  assert.match(rec.state.errorMessage, /^Exit bid failed: /);
   assert.deepEqual(remainingExitSteps(rec.state), ["exit"]);
   assert.deepEqual([...completedExitSteps(rec.state)], ["checkpoint"]);
 
@@ -275,7 +291,7 @@ test("runExitFlow names the step when the fresh exit build rejects", async () =>
   await runExitFlow(execution, deps, rec.dispatch);
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.equal(rec.state.errorMessage, "Exit bid failed — not derivable");
+  assert.equal(rec.state.errorMessage, "Exit bid failed: not derivable");
   assert.equal(sends.length, 1, "nothing is sent for a step that cannot build");
 });
 

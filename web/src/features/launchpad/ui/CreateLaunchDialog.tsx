@@ -724,7 +724,7 @@ export function CreateLaunchDialog({
 
   const moneySummary =
     form.requiredRaised.trim() === "" || form.requiredRaised.trim() === "0"
-      ? "No graduation line yet — pick a price so there is one."
+      ? "No graduation line yet. Pick a price so there is one."
       : `Priced at ${formatQ96PerToken(form.floorPrice, {
           currencyDecimals: saleCurrency.decimals,
           ...(saleCurrency.kind === "eth" ? { unit: "ETH" } : {}),
@@ -822,11 +822,11 @@ export function CreateLaunchDialog({
       share: budgetShareValue,
       onShare: (value) => setBudget(budgetForShare(form.requiredRaised, value)),
       capNote: capLine
-        ? `${capLine} Publishing still works — the launch shows the warning. Summoning the DAO with a budget over the cap is refused.`
+        ? `${capLine} Publishing still works, and the launch shows the warning. Summoning the DAO with a budget over the cap won't go through.`
         : null,
       equity,
       equityNote: project
-        ? `${equity?.length ?? 0} seat${(equity?.length ?? 0) === 1 ? "" : "s"} from the Project Board — the summon mints exactly this map.`
+        ? `${equity?.length ?? 0} seat${(equity?.length ?? 0) === 1 ? "" : "s"} from the Project Board. The summon mints exactly this map.`
         : "No Project Board entry for this launch yet. Seats are minted from the board's map when you summon; the founder holds everything until then.",
     },
     stepIssues,

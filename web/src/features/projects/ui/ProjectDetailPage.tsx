@@ -171,7 +171,7 @@ function TeamMap({
         ))}
         {project.team.length === 0 ? (
           <li className="py-3 text-sm text-black/50 dark:text-white/50">
-            Nothing recorded yet — the founder's stake appears once the pitch
+            Nothing recorded yet. The founder's stake appears once the pitch
             declares it.
           </li>
         ) : null}
@@ -284,13 +284,13 @@ function LaunchpadBridge({
       <div>
         <h2 className="text-base font-semibold">Form the DAO</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          This map — recorded grants plus the founder's declared stake — is what
-          seeds your TGE allocation. The launchpad holds it inside the budget
-          envelope: a monthly budget of at most{" "}
+          This map (recorded grants plus the founder's declared stake) is what
+          seeds your token allocation at launch. The launchpad holds it inside
+          the budget envelope: a monthly budget of at most{" "}
           <span className="font-medium text-black dark:text-white">
             1/6 of the graduation threshold
           </span>{" "}
-          (the minimum raise), with large spends default-passing only up to{" "}
+          (the minimum raise), with large spends passing by default only up to{" "}
           <span className="font-medium text-black dark:text-white">
             3× that budget
           </span>
@@ -340,7 +340,7 @@ function LaunchpadBridge({
       <p className="text-2xs text-black/50 dark:text-white/50">
         {launch
           ? "A launch record already exists for this project id."
-          : `No launch record for “${projectId}” yet — start one there; the ids line up.`}
+          : `No launch record for “${projectId}” yet. Start one there; the ids line up.`}
       </p>
       {summonOpen ? (
         <SummonDialog
@@ -429,7 +429,7 @@ export function ProjectDetailPage({
           message:
             err instanceof Error
               ? err.message
-              : "The relay rejected this event.",
+              : "The server rejected this event.",
         });
       },
       onSuccess: () => setBusyKey(null),
@@ -449,7 +449,7 @@ export function ProjectDetailPage({
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-8">
         <QueryError
-          description="The relay did not answer the project query, so this page cannot show a team map."
+          description="The server did not answer the project query, so this page cannot show a team map."
           error={error}
           kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}
@@ -482,7 +482,7 @@ export function ProjectDetailPage({
           data-testid="project-empty"
         >
           <p className="text-sm text-black/60 dark:text-white/60">
-            No pitch on this relay for <code>{projectId}</code>
+            No pitch on this server for <code>{projectId}</code>
             {author ? "" : " under any author"}. If it was just published, the
             query may not have it yet.
           </p>
@@ -534,9 +534,9 @@ export function ProjectDetailPage({
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
-            This project's org node hasn't reached the relay yet. Approvals
-            publish ownership grants that point at that node — relays with
-            grant-chain enforcement will hold them until it lands.
+            This project's org node hasn't reached the server yet. Approvals
+            publish ownership grants that point at that node, and servers that
+            enforce the grant chain will hold them until it lands.
           </span>
         </div>
       ) : null}
@@ -635,7 +635,7 @@ export function ProjectDetailPage({
             </span>
           </div>
           <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-            Approving publishes one ownership grant — the % becomes a recorded,
+            Approving publishes one ownership grant. The % becomes a recorded,
             revocable stake. Declining records the decision on the request's
             thread. Nothing here is a contract.
           </p>

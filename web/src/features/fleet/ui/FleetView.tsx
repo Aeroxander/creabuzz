@@ -246,7 +246,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
         <PageHeader title="Agents" />
         <QueryError
-          description="The relay did not answer the agent roster query, so no agents can be listed."
+          description="The server did not answer the agent roster query, so no agents can be listed."
           message={errorMessage(loadError)}
           testId="fleet-load-error"
           title="Couldn't load agents"
@@ -318,7 +318,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       >
         {state === "running"
           ? "This agent signs with a key stored in this browser's local storage. Reset it while the agent is stopped to retire the identity."
-          : "Running the tab agent creates a signing key for it in this browser. It is not shared with the relay."}
+          : "Running the tab agent creates a signing key for it in this browser. It is not shared with the server."}
       </p>
 
       {state !== "running" ? (
@@ -359,7 +359,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         </div>
         {taskLoadError && tasks.length === 0 ? (
           <QueryError
-            description="The relay did not answer the task query, so no tasks can be listed."
+            description="The server did not answer the task query, so no tasks can be listed."
             message={errorMessage(taskLoadError)}
             testId="fleet-tasks-load-error"
             title="Couldn't load tasks"

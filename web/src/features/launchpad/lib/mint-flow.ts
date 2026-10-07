@@ -153,7 +153,7 @@ export async function prepareDeploy(
   if (infrastructureFeeBps > MAX_INFRASTRUCTURE_FEE_BPS) {
     throw new MintPrepareError(
       "infrastructure-fee",
-      `the router's infrastructure fee (${infrastructureFeeBps} bps) is above the ${MAX_INFRASTRUCTURE_FEE_BPS} bps deploy cap — the deploy would revert`,
+      `the router's infrastructure fee (${infrastructureFeeBps} bps) is above the ${MAX_INFRASTRUCTURE_FEE_BPS} bps deploy cap, so the deploy would fail`,
     );
   }
 
@@ -511,8 +511,8 @@ export async function runDeploySteps(input: {
         outcome: receipt.status === "unknown" ? "unknown" : "reverted",
         reason:
           receipt.status === "unknown"
-            ? `the batched transaction ${receipt.txHash} has an unknown outcome — check the chain before retrying`
-            : `transaction ${receipt.txHash} reverted in block ${receipt.blockNumber ?? "unknown"}`,
+            ? `the batched transaction ${receipt.txHash} has an unknown outcome. Check whether it landed before retrying`
+            : `transaction ${receipt.txHash} failed in block ${receipt.blockNumber ?? "unknown"}`,
       });
       return { completed: false };
     }
@@ -545,8 +545,8 @@ export async function runDeploySteps(input: {
         outcome: receipt.status === "unknown" ? "unknown" : "reverted",
         reason:
           receipt.status === "unknown"
-            ? `transaction ${receipt.txHash} has an unknown outcome — check the chain before retrying`
-            : `transaction ${receipt.txHash} reverted in block ${receipt.blockNumber ?? "unknown"}`,
+            ? `transaction ${receipt.txHash} has an unknown outcome. Check whether it landed before retrying`
+            : `transaction ${receipt.txHash} failed in block ${receipt.blockNumber ?? "unknown"}`,
       });
       return { completed: false };
     }

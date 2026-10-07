@@ -98,7 +98,7 @@ async function runPostDeployStep(input: {
       step,
       null,
       null,
-      "the auction address is unknown — run the auction step first",
+      "the auction address is unknown. Run the auction step first",
     );
     return false;
   }
@@ -122,7 +122,7 @@ async function runPostDeployStep(input: {
             step,
             null,
             null,
-            "the bid gate address is unknown — run the bid gate step first",
+            "the bid gate address is unknown. Run the bid gate step first",
           );
           return false;
         }
@@ -182,7 +182,7 @@ async function runPostDeployStep(input: {
             step,
             null,
             null,
-            "the GraduationExecutor address is unknown — run the executor step first",
+            "the GraduationExecutor address is unknown. Run the executor step first",
           );
           return false;
         }
@@ -216,7 +216,7 @@ async function runPostDeployStep(input: {
       step,
       null,
       "unknown",
-      `${auctionErrorMessage(error)} — the transaction may or may not have been broadcast; retry reads the chain first`,
+      `${auctionErrorMessage(error)}. The transaction may or may not have been broadcast; retry reads the chain first`,
     );
     return false;
   }
@@ -280,9 +280,9 @@ export async function runAuctionDeploy(input: {
   const sameAddress = (a: string, b: string | null): boolean =>
     b !== null && a.toLowerCase() === b.toLowerCase();
   const mismatchReason = (kept: string, derived: string): string =>
-    `this launch already carries auction ${kept}, but this deploy would link ${derived} — no transaction was sent. ` +
+    `this launch already carries auction ${kept}, but this deploy would link ${derived}, so no transaction was sent. ` +
     `Reload and run the deploy again to confirm and resume ${kept} (an auction that exists onchain is never redeployed). ` +
-    `If ${kept} belongs to a dead earlier attempt, relaunch the record first — that clears the old link — and then deploy.`;
+    `If ${kept} belongs to a dead earlier attempt, relaunch the record first (that clears the old link), then deploy.`;
 
   let params: AuctionDeployParams;
   try {
@@ -419,7 +419,7 @@ export async function runAuctionDeploy(input: {
           step,
           null,
           "unknown",
-          `${auctionErrorMessage(error)} — the transaction may or may not have been broadcast; retry checks code at ${predicted} first`,
+          `${auctionErrorMessage(error)}. The transaction may or may not have been broadcast; retry checks code at ${predicted} first`,
         );
         return;
       }
@@ -468,7 +468,7 @@ export async function runAuctionDeploy(input: {
         step,
         null,
         null,
-        "the GraduationExecutor address is unknown — run the executor step first",
+        "the GraduationExecutor address is unknown. Run the executor step first",
       );
       return;
     }
@@ -567,7 +567,7 @@ export async function runAuctionDeploy(input: {
         step,
         null,
         "unknown",
-        `${auctionErrorMessage(error)} — the transaction may or may not have been broadcast; retry checks code at ${auctionAddress} first`,
+        `${auctionErrorMessage(error)}. The transaction may or may not have been broadcast; retry checks code at ${auctionAddress} first`,
       );
       return;
     }
@@ -588,7 +588,7 @@ export async function runAuctionDeploy(input: {
           step,
           receipt.txHash,
           null,
-          `the factory transaction ${receipt.txHash} confirmed but there is no code at ${auctionAddress} — retry re-checks before re-sending`,
+          `the factory transaction ${receipt.txHash} confirmed but there is no code at ${auctionAddress}. Retry re-checks before re-sending`,
         );
         return;
       }

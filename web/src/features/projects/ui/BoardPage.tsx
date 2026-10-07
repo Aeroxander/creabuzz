@@ -95,7 +95,7 @@ function ProjectCard({
           </div>
         </div>
         <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-          {card.summary || "No pitch yet — open it and read the roles."}
+          {card.summary || "No pitch yet. Open it and read the roles."}
         </p>
         <div className="flex flex-wrap gap-1.5">
           {card.openRoles.map((role) => (
@@ -136,7 +136,7 @@ export function BoardPage() {
             <Plus className="mr-1 h-4 w-4" /> Pitch a project
           </Button>
         }
-        description="Projects pitch themselves here. Pick a role, ask for a stake, and the founder's approval becomes a recorded ownership grant — revocable until the project's DAO adopts it, never a legal contract."
+        description="Projects pitch themselves here. Pick a role, ask for a stake, and the founder's approval becomes a recorded ownership grant (revocable until the project's DAO adopts it, never a legal contract)."
         title={
           <span className="flex items-center gap-2">
             <LayoutGrid className="h-5 w-5" /> Project board
@@ -150,7 +150,7 @@ export function BoardPage() {
         </p>
       ) : error ? (
         <QueryError
-          description="The relay did not answer the project query, so nothing can be listed."
+          description="The server did not answer the project query, so nothing can be listed."
           error={error}
           kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}
@@ -172,8 +172,8 @@ export function BoardPage() {
           data-testid="board-empty"
         >
           <p className="text-sm text-black/60 dark:text-white/60">
-            No projects on the board yet. Founders: pitch the first one — idea,
-            the role you take, and the roles you need.
+            No projects on the board yet. Founders, pitch the first one: the
+            idea, the role you take, and the roles you need.
           </p>
           <Button className="mt-4" onClick={() => setPitchOpen(true)} size="sm">
             <Plus className="mr-1 h-4 w-4" /> Pitch a project
@@ -205,8 +205,8 @@ export function BoardPage() {
             to="/launchpad"
           >
             <span>
-              Form the DAO later — the launchpad turns a recorded ownership map
-              into a TGE allocation.
+              Form the DAO later. The launchpad turns a recorded ownership map
+              into token allocations at launch.
             </span>
             <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
           </Link>

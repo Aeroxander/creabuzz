@@ -205,7 +205,7 @@ export function ensureSamePubkey(
 ): void {
   if (storedPubkey !== derivedPubkey) {
     throw new Error(
-      `This passkey re-derived a different Nostr identity than the one registered on this browser (registered ${storedPubkey}, derived ${derivedPubkey}). Signing would act as the wrong identity — register a new passkey instead.`,
+      `This passkey re-derived a different Nostr identity than the one registered on this browser (registered ${storedPubkey}, derived ${derivedPubkey}). Signing would act as the wrong identity. Register a new passkey instead.`,
     );
   }
 }

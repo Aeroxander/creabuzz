@@ -19,7 +19,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import { KIND_CONTRIBUTION_RECORD } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 
 import { decodeU256, ethCall, getRpcEndpoint } from "../chain";
@@ -295,7 +294,7 @@ export function RoyaltyStatementCard({
       <p className="mt-2 text-xs text-black/60 dark:text-white/60">
         {picker.kind === "passkey" && picker.passkeyNote
           ? picker.passkeyNote
-          : "No account found to read. Connect an injected wallet or switch to the passkey account above — the statement reads the royalty ledger for the selected account."}
+          : "No account found to read. Connect an injected wallet or switch to the passkey account above. The statement reads the royalty ledger for the selected account."}
       </p>
     );
   } else if (statement.isPending) {
@@ -355,7 +354,7 @@ export function RoyaltyStatementCard({
               )}
             </p>
             <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              Claimable forever — pull it whenever, no deadline, no clawback.
+              Claimable forever. Pull it whenever, no deadline, no clawback.
               Settlement pushes your credit to your address automatically at
               each close; anything sitting here is a push that didn&apos;t
               complete.
@@ -395,7 +394,7 @@ export function RoyaltyStatementCard({
                 className="mt-1 text-xs text-black/60 dark:text-white/60"
                 role="status"
               >
-                Claim transaction sent — {truncatePubkey(claimTx)}. The balance
+                Claim transaction sent ({truncatePubkey(claimTx)}). The balance
                 above refreshes once it lands.
               </p>
             ) : null}
@@ -433,7 +432,7 @@ export function RoyaltyStatementCard({
               Royalties scale with the allocation you hold: h is that held share
               (sampled each monthly close), and your tier is the highest badge
               across your schedules. Holding what you earned pays the full
-              stream — work is never paywalled.
+              stream. Work is never paywalled.
             </p>
           </div>
           <div className="rounded-xl border border-black/10 px-3 py-2 dark:border-white/10">
@@ -446,7 +445,7 @@ export function RoyaltyStatementCard({
             {data.rows.length === 0 ? (
               <p className="mt-1 text-sm text-black/60 dark:text-white/60">
                 No royalty schedules yet. A schedule is minted when your
-                contribution claim passes review — weight, term, and tier come
+                contribution claim passes review. Weight, term, and tier come
                 from that attested claim.
               </p>
             ) : (
@@ -481,15 +480,14 @@ export function RoyaltyStatementCard({
                         </span>
                         {row.schedule.suspended ? (
                           <span className="text-xs text-red-700 dark:text-red-300">
-                            Suspended — future accrual stopped. What you already
+                            Suspended: future accrual stopped. What you already
                             earned is never touched.
                           </span>
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-                        Provenance: contribution record{" "}
-                        {KIND_CONTRIBUTION_RECORD} for claim{" "}
-                        {truncatePubkey(row.id)} — attested{" "}
+                        Provenance: the contribution record for claim{" "}
+                        {truncatePubkey(row.id)}, attested{" "}
                         {bandLabel(row.attested.band)}, {row.attested.weight}×
                         weight, {Math.round(Number(row.attested.term) / 86400)}
                         -day term, minted verbatim into this schedule.
@@ -502,7 +500,7 @@ export function RoyaltyStatementCard({
           </div>
           <p className="text-xs text-black/60 dark:text-white/60">
             Selling your allocation stops future royalties. What you already
-            earned is never touched — it stays claimable forever.
+            earned is never touched. It stays claimable forever.
           </p>
         </div>
       ) : null}

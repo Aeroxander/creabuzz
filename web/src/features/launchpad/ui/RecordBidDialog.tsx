@@ -250,7 +250,7 @@ export function RecordBidDialog({
   } else if (passkeyNote) {
     passkeyStatusText = passkeyNote;
   } else if (passkeyAccount) {
-    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)} — tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
+    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)}: tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
   }
 
   const sendBid = async () => {
@@ -383,7 +383,7 @@ export function RecordBidDialog({
             Injected wallet (current)
             {!wallet ? (
               <span className="block text-xs text-black/60 dark:text-white/60">
-                No injected wallet in this browser — pick the passkey account
+                No injected wallet in this browser. Pick the passkey account
                 instead.
               </span>
             ) : null}
@@ -398,7 +398,7 @@ export function RecordBidDialog({
             type="radio"
           />
           <span>
-            Passkey account — gas sponsored (Sepolia)
+            Passkey account (gas sponsored on Sepolia)
             {senderKind === "passkey" ? (
               <span
                 className="block text-xs text-black/60 dark:text-white/60"
@@ -538,7 +538,7 @@ export function RecordBidDialog({
           data-testid="bid-as-agent-explainer"
         >
           The bid record will be signed by this browser&apos;s agent key (an
-          attested AI-agent identity) instead of your personal key — useful when
+          attested AI-agent identity) instead of your personal key. Use it when
           an agent manages the bid&apos;s follow-up.
         </p>
       </details>

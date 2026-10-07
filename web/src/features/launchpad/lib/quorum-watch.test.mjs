@@ -63,7 +63,7 @@ describe("quorumWatch — the visible gates", () => {
       now: T0 + 1n,
     });
     assert.equal(short.status, "expired");
-    assert.match(short.detail, /defeated unless extended/);
+    assert.match(short.detail, /Defeated unless extended/);
     const met = quorumWatch({
       tallies: { forVotes: 12n, againstVotes: 1n, abstainVotes: 0n },
       minYes: 10n,

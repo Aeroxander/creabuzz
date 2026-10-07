@@ -362,7 +362,7 @@ const MILESTONE_SOURCE = `kind ${KIND_LAUNCH_RECEIPT} · tag kind=verdict · ver
 const REJECT_SOURCE = `kind ${KIND_LAUNCH_RECEIPT} · tag kind=verdict · verdict=reject`;
 const CLAIM_SOURCE = `kind ${KIND_LAUNCH_RECEIPT} · tag kind=claim`;
 const TX_SOURCE = `kind ${KIND_LAUNCH_RECEIPT} · tag tx`;
-const UNREADABLE_SOURCE = `${KIND_LAUNCH_RECEIPT} payload — counted, not dropped`;
+const UNREADABLE_SOURCE = "receipt payload, counted, not dropped";
 
 /**
  * The exact rows the card renders, in order. `trust-signals.test.mjs` asserts
@@ -768,7 +768,7 @@ export function communityDerivation(
       key: "contributions-unknown",
       label: "Contributions with an unreadable status",
       value: record.counts.unknown,
-      source: `${KIND_CONTRIBUTION_RECORD} payload — counted, not dropped`,
+      source: "contribution record payload, counted, not dropped",
     },
     {
       key: "contributions-superseded",
@@ -798,7 +798,7 @@ export function communityDerivation(
       key: "community-unreadable",
       label: "Records read incompletely",
       value: record.unreadable.total,
-      source: "37013/46030/46031 payloads — counted, not dropped",
+      source: "contribution and approval payloads, counted, not dropped",
     },
   ];
 }

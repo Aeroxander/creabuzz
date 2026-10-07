@@ -31,7 +31,9 @@ export function StartIdeaDialog({ onClose }: { onClose: () => void }) {
   const [category, setCategory] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // A retry after a failed publish reuses the rooms already made.
+  // A retry after a failed publish reuses the rooms already made, but only
+  // for the same name: the id and the room names are derived from it, so a
+  // rename must make fresh ones instead of inheriting the old idea's.
   const rooms = useRef<LaunchChat>(EMPTY_CHAT);
   const id = useRef<string | null>(null);
 
@@ -106,7 +108,11 @@ export function StartIdeaDialog({ onClose }: { onClose: () => void }) {
             data-testid="idea-name"
             id="idea-name"
             maxLength={60}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              id.current = null;
+              rooms.current = EMPTY_CHAT;
+            }}
             placeholder="Nebula"
             value={name}
           />

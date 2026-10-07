@@ -170,7 +170,7 @@ export class Kernel033HashMismatchError extends Error {
   constructor(localHash: string, onChainHash: string) {
     super(
       `kernel033: hash mismatch: local ${localHash} != on-chain ` +
-        `EntryPoint.getUserOpHash ${onChainHash} — refusing to sign the wrong bytes`,
+        `EntryPoint.getUserOpHash ${onChainHash}, refusing to sign the wrong bytes`,
     );
     this.name = "Kernel033HashMismatchError";
     this.localHash = localHash;
@@ -597,7 +597,7 @@ export function kernel033ChainRpcUrl(chainId?: number): string {
     return "https://ethereum-sepolia-rpc.publicnode.com";
   }
   throw new Kernel033ConfigError(
-    "no chain RPC URL — set VITE_CHAIN_RPC_URL (the ZeroDev RPC is " +
+    "no chain RPC URL. Set VITE_CHAIN_RPC_URL (the ZeroDev RPC is " +
       "bundler+paymaster only); the built-in fallback covers Sepolia only",
   );
 }
@@ -748,7 +748,7 @@ export async function sendKernel033UserOp(
   const chainId = config.chainId ?? zerodevConfigFromEnv().chainId;
   if (chainId === undefined || !Number.isInteger(chainId) || chainId <= 0) {
     throw new Kernel033ConfigError(
-      "chain id is not configured — set VITE_ZERODEV_CHAIN_ID or pass config.chainId",
+      "chain id is not configured. Set VITE_ZERODEV_CHAIN_ID or pass config.chainId",
     );
   }
   const params: Kernel033AccountParams = {

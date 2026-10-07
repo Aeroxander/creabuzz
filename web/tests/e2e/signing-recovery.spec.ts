@@ -68,7 +68,7 @@ test("a locked passkey on the launchpad renders auth-required with the sign-in a
   await expect(panel).toHaveAttribute("data-outcome", "auth-required");
   await expect(
     page.getByTestId("launchpad-load-error-description"),
-  ).toContainText("This relay requires sign-in to load");
+  ).toContainText("This server requires sign-in to load");
   await expect(page.getByTestId("launchpad-load-error-message")).toContainText(
     LOCKED_MESSAGE,
   );

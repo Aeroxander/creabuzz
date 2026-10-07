@@ -206,8 +206,8 @@ function RaiseRow({ raise }: { raise: BackedRaise }) {
           {share !== null ? (
             <>
               {" "}
-              — <span className="tabular-nums">{formatShare(share)}</span> of
-              the raise
+              (<span className="tabular-nums">{formatShare(share)}</span> of the
+              raise)
             </>
           ) : null}
         </p>

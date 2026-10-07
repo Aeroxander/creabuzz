@@ -17,7 +17,7 @@ export function WebIdentityHandoffCard() {
       </p>
       <p className="mt-1.5 text-2xs leading-4 text-black/55 dark:text-white/55">
         On the desktop app, choose Sign in with browser and open the link it
-        shows. This browser confirms the account before anything is shared — no
+        shows. This browser confirms the account before anything is shared. No
         key ever gets pasted anywhere.
       </p>
       <button

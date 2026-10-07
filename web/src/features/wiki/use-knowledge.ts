@@ -288,7 +288,7 @@ export function useKnowledge(enabled = true): KnowledgeState {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the restore");
+        throw new Error(result.message ?? "Server rejected the restore");
       }
       await eventsQuery.refetch();
     },
@@ -315,7 +315,7 @@ export function useKnowledge(enabled = true): KnowledgeState {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the suggestion");
+        throw new Error(result.message ?? "Server rejected the suggestion");
       }
       await eventsQuery.refetch();
     },

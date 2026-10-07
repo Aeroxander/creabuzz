@@ -43,7 +43,7 @@ test("the note names the desktop handoff it exists for", () => {
 });
 
 test("the note is honest about the key being the full account", () => {
-  assert.match(note, /nsec is the full account/);
+  assert.match(note, /secret key is the full account/);
   assert.match(note, /anyone holding it can sign as you/);
   assert.match(note, /store it somewhere safe/);
 });

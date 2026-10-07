@@ -191,8 +191,8 @@ test("a mirror-only failure lands the money and retries ONLY the record", async 
   assert.equal(sent.length, 1, "the money was sent exactly once");
   assert.equal(state.steps.exit, "done");
   assert.equal(state.steps.mirror, "failed");
-  assert.match(state.errorMessage, /the exit itself landed/);
-  assert.match(state.errorMessage, /without re-sending/);
+  assert.match(state.errorMessage, /exit itself landed/);
+  assert.match(state.errorMessage, /without sending again/);
   assert.equal(
     state.receipts.exit?.txHash,
     `0x${"cd".repeat(32)}`,
@@ -242,7 +242,31 @@ test("a reverted exit is a named failed step — never a silent success", async 
   });
   assert.equal(state.phase, "failed");
   assert.equal(state.failedStep, "exit");
-  assert.match(state.errorMessage, /reverted onchain/);
+  assert.match(state.errorMessage, /failed onchain/);
+  assert.equal(state.steps.mirror, "pending", "nothing was recorded");
+});
+
+test("an unknown exit outcome is called unknown, not an onchain failure", async () => {
+  const deps = {
+    send: async () => ({ txHash: `0x${"ef".repeat(32)}`, status: "unknown" }),
+    publishReceipt: async () => {
+      throw new Error("an unknown exit must not be recorded");
+    },
+  };
+  const plan = buildRagequitPlan({ buildTx: burnTx });
+  const rec = collect();
+  let state = ragequitFlowReducer(initialRagequitFlowState(), {
+    type: "reset",
+    order: plan.order,
+  });
+  await runRagequitFlow(plan, deps, (a) => {
+    rec.actions.push(a);
+    state = ragequitFlowReducer(state, a);
+  });
+  assert.equal(state.phase, "failed");
+  assert.match(state.errorMessage, /still unknown/);
+  // The tx may never have been broadcast; never claim an onchain failure here.
+  assert.doesNotMatch(state.errorMessage, /failed onchain/);
   assert.equal(state.steps.mirror, "pending", "nothing was recorded");
 });
 

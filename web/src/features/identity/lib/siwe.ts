@@ -90,7 +90,7 @@ async function getChallenge(): Promise<SiweLoginChallenge> {
     domain?: string;
     chain_id?: number;
   };
-  if (!json.nonce) throw new Error("relay returned no nonce");
+  if (!json.nonce) throw new Error("server returned no nonce");
   return { nonce: json.nonce, domain: json.domain, chainId: json.chain_id };
 }
 

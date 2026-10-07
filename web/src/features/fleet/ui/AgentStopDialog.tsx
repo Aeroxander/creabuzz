@@ -174,8 +174,8 @@ export function AgentStopDialog({
             role="status"
           >
             <p className="font-medium">
-              Stopping didn't finish. Try again — the steps that already
-              finished won't run twice.
+              Stopping didn't finish. Try again. The steps that already finished
+              won't run twice.
             </p>
             <ul className="mt-1 list-disc pl-4">
               {failures.map((line) => (

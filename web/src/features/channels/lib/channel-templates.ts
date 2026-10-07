@@ -50,7 +50,7 @@ export const CHANNEL_TEMPLATES: readonly ChannelTemplate[] = [
   {
     id: "blank",
     name: "Blank channel",
-    summary: "Start from scratch — pick members yourself.",
+    summary: "Start from scratch. Pick members yourself.",
     channelType: "stream",
     visibility: "open",
     topic: "",

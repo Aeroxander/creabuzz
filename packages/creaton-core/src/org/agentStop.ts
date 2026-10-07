@@ -321,7 +321,7 @@ export async function executeAgentStop(
     throw new Error("An agent stop needs the agent's 64-hex public key.");
   }
   if (agent === me) {
-    throw new Error("refusing to stop your own key — pass the agent's pubkey");
+    throw new Error("refusing to stop your own key. Pass the agent's pubkey");
   }
   const scoped: AgentStopDeps = { ...deps, agent };
   const steps: AgentStopStepResult[] = [];

@@ -282,7 +282,7 @@ export function MyBidsPanel({
               </p>
             ) : snap.status === "error" ? (
               <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-                Could not read bids — {snap.error}
+                Could not read bids: {snap.error}
               </p>
             ) : snap.snapshot.bids.length === 0 ? (
               <p className="mt-2 text-sm text-black/60 dark:text-white/60">
@@ -501,7 +501,7 @@ function MoneyActionDialog({
         {action.mode === "exit"
           ? "Exits the auction contract bid: refunds the unfilled share and records the filled tokens for a later claim."
           : "Claims the filled tokens to the bid owner after the claim block."}{" "}
-        The chain is the ledger — there is nothing to mirror.
+        The chain is the ledger. There is nothing to mirror.
       </p>
       <SenderPickerControls state={picker} testIdPrefix="mybids-" />
       <ol className="mt-3 flex flex-col gap-1">
@@ -555,7 +555,7 @@ function MoneyActionDialog({
       {done ? (
         <div className="mt-2 flex justify-end">
           <Button data-testid="mybids-done" onClick={onSettled} size="sm">
-            Done — refresh bids
+            Done, refresh bids
           </Button>
         </div>
       ) : null}

@@ -134,7 +134,7 @@ export async function fetchGraduationState(
   ]);
   const executor = decodeAddressWord(
     executorRaw,
-    "the auction did not answer fundsRecipient() — it is not on the GraduationExecutor rails",
+    "the auction did not report a funds recipient, so it is not managed by a GraduationExecutor",
   );
   const currency = decodeAddressWord(
     currencyRaw,
@@ -154,7 +154,7 @@ export async function fetchGraduationState(
     currency,
     treasury: decodeAddressWord(
       treasuryRaw,
-      "the executor did not answer treasury() — is fundsRecipient really a GraduationExecutor?",
+      "the executor did not report a treasury address. Check that the auction's funds recipient is a GraduationExecutor",
     ),
     reserveBps: decodeU256(bpsRaw),
     record: decodeGraduationRecord(recordRaw),

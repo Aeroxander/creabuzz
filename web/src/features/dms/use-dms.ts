@@ -248,7 +248,7 @@ export function useOpenDm() {
       });
       if (!result.accepted) {
         throw new Error(
-          result.message ?? "the server rejected the request — try again",
+          result.message ?? "the server rejected the request, so try again",
         );
       }
       return parseDmOpenAck(result.message).channelId;
@@ -277,7 +277,7 @@ export function useHideDm() {
       });
       if (!result.accepted) {
         throw new Error(
-          result.message ?? "the server rejected the request — try again",
+          result.message ?? "the server rejected the request, so try again",
         );
       }
     },

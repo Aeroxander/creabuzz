@@ -47,7 +47,7 @@ test("the launch agent option sits in an Advanced disclosure", () => {
   // attestation + agent-managed updates (see lib/agent-launchpad.ts).
   assert.match(
     body,
-    /signed by this browser&apos;s agent key \(an\s*\n?\s*attested AI-agent identity\) instead of your personal key — useful when\s*\n?\s*an agent manages the launch&apos;s updates/,
+    /signed by this browser&apos;s agent key \(an\s*\n?\s*attested AI-agent identity\) instead of your personal key\. Use it when\s+an\s+agent manages the launch&apos;s updates/,
   );
   // The unintelligible wording must not survive anywhere.
   assert.doesNotMatch(source, /Create this launch as an agent/);
@@ -61,7 +61,7 @@ test("the bid agent option sits in an Advanced disclosure", () => {
   assert.match(source, /data-testid="bid-as-agent-explainer"/);
   assert.match(
     source,
-    /signed by this browser&apos;s agent key \(an\s*\n?\s*attested AI-agent identity\) instead of your personal key — useful when\s*\n?\s*an agent manages the bid&apos;s follow-up/,
+    /signed by this browser&apos;s agent key \(an\s*\n?\s*attested AI-agent identity\) instead of your personal key\. Use it when\s+an\s+agent manages the bid&apos;s follow-up/,
   );
   assert.doesNotMatch(source, /Record this bid as an agent/);
 });

@@ -103,7 +103,7 @@ export function ConversationPage() {
           <TimelineSkeleton />
         ) : messages.length === 0 ? (
           <p className="py-16 text-center text-sm text-black/60 dark:text-white/60">
-            No messages yet. Say hello — messages are end-to-end encrypted.
+            No messages yet. Say hello. Messages are end-to-end encrypted.
           </p>
         ) : (
           messages.map((m) => {

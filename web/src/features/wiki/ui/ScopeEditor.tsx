@@ -46,7 +46,7 @@ export function ScopeEditor({
           onChange={(e) => setPicked(e.target.value)}
           value={picked}
         >
-          <option value="">No team — any member can edit</option>
+          <option value="">No team: any member can edit</option>
           {teams.map((team) => (
             <option key={team.id} value={team.id}>
               {team.name}

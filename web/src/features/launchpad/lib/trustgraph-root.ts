@@ -79,7 +79,7 @@ export function composeRootBundle(args: {
 }): RootBundle {
   const { scores, program, epoch } = args;
   if (scores.length === 0) {
-    throw new Error("no scores yet — add at least one member and score");
+    throw new Error("no scores yet. Add at least one member and score");
   }
   const rows: {
     key: string;

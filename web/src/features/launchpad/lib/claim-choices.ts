@@ -90,7 +90,7 @@ export function milestoneChoices(
       const label = row.label?.trim();
       claimOptions.push({
         value: row.claim,
-        label: label ? `${row.claim} — ${label}` : row.claim,
+        label: label ? `${row.claim}: ${label}` : row.claim,
       });
     }
   }

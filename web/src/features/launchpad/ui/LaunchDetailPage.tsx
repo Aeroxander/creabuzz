@@ -192,10 +192,14 @@ export function LaunchDetailPage({
           tx: input.tx || undefined,
         },
       });
-      toast.success("Bid recorded. The chain remains the source of truth.");
+      toast.success("Bid recorded here. Your onchain bid is what counts.");
       setBidOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Recording failed.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't record the bid. Try again.",
+      );
     }
   };
 
@@ -210,7 +214,11 @@ export function LaunchDetailPage({
       toast.success("Update published.");
       setUpdateOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Publishing failed.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't publish the update. Try again.",
+      );
     }
   };
 
@@ -396,7 +404,9 @@ export function LaunchDetailPage({
               void navigate({ to: "/launchpad" });
             } catch (err) {
               toast.error(
-                err instanceof Error ? err.message : "Delete failed.",
+                err instanceof Error
+                  ? err.message
+                  : "Couldn't delete the launch. Try again.",
               );
             }
           }}
@@ -444,7 +454,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
       "Graduation threshold",
       goal
         ? `${formatMoney(goal, cur)}${percent !== null ? ` · ${percent}% reached` : ""}`
-        : "None set — the auction graduates at any raise",
+        : "None set. The raise can complete at any amount.",
     ],
     [
       "Still to raise",
@@ -489,8 +499,10 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
         : "Not set on this record",
     ],
     [
-      "Admission",
-      record.admission === "community" ? "Community track" : "Curated track",
+      "Bid access",
+      record.admission === "community"
+        ? "Open to the community"
+        : "Curated list of bidders",
     ],
     ["Chain", record.chainId ?? "Undeployed"],
   ];
@@ -511,7 +523,8 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
         </div>
         {progress.data?.source === "preview" ? (
           <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-            Preview fixture — development builds only, never live figures.
+            Preview data for development builds only. These are not live
+            figures.
           </p>
         ) : null}
         {progress.data?.source === "unavailable" ? (
@@ -521,8 +534,8 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           >
             <p>
               {progress.data.reason === "no auction contract linked"
-                ? "No auction contract is linked to this launch yet, so there is nothing to read from the chain."
-                : "The chain could not be read, so no live figures are shown."}
+                ? "This launch has no auction contract yet, so there are no live figures to show."
+                : "We couldn't read the blockchain, so live figures are hidden."}
             </p>
             {progress.data.reason === "no auction contract linked" ? null : (
               // The old copy told the reader to set a reachable RPC endpoint,
@@ -624,8 +637,8 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
               </p>
               <p className="mt-1 text-xs text-black/60 dark:text-white/60">
                 {perThousand !== null
-                  ? `${sample.label} buys about ${formatAtomic(perThousand, 0)} tokens at the floor price — less if the sale clears higher.`
-                  : "Link a floor price and a token plan to see what a budget buys."}{" "}
+                  ? `${sample.label} buys about ${formatAtomic(perThousand, 0)} tokens at the floor price. Expect less if the sale clears higher.`
+                  : "Set a floor price and a token plan to see what a budget buys."}{" "}
                 The sale clears at one uniform price; you pay that, not your
                 maximum.
               </p>
@@ -756,9 +769,9 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
     <Card className="p-4" data-testid="launch-commitments">
       <h2 className="text-base font-semibold">Proven commitments</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        The record is a signed promise; the chain is the ledger. Addresses are
-        checked for deployed code over your RPC endpoint — anything unreadable
-        says so rather than showing a check.
+        The record is a signed promise; the blockchain is the ledger. We check
+        each address for a live contract through your RPC endpoint. Anything we
+        can't read is labeled, never shown as verified.
       </p>
       <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
         {commitments.map(([label, state]) => (
@@ -815,10 +828,10 @@ function ScoreRootsCard() {
         </div>
       </dl>
       <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-        Scores are proven against this root; a claimed score on a profile is
-        only shown as proven when its Merkle proof verifies client-side.
+        Scores are published as a signed list. A score shown on a profile is
+        only marked proven after we check it against this list.
         {latest.anchorBlock !== null
-          ? ` Anchored at block ${latest.anchorBlock}.`
+          ? ` Recorded onchain in block ${latest.anchorBlock}.`
           : ""}
       </p>
       {latest.indexerUrl ? (
@@ -828,7 +841,7 @@ function ScoreRootsCard() {
           rel="noreferrer"
           target="_blank"
         >
-          Proofs and score file
+          View proofs and scores
         </a>
       ) : null}
     </Card>
@@ -888,8 +901,8 @@ function ProposalsTab({
       <div className="text-sm text-black/60 dark:text-white/60">
         <p>No proposals yet.</p>
         <p className="mt-1">
-          Signal proposals live as git issues; budget proposals go onchain after
-          graduation. Futarchy resolves budget and subDAO allocation only.
+          Once the raise completes, budget and treasury proposals are voted on
+          here. Earlier suggestions live in the project's repos.
         </p>
       </div>
     );

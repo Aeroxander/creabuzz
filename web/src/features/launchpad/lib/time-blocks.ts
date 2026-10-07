@@ -193,7 +193,7 @@ export function describeSaleBlocks(plan: SaleBlockPlan): string {
     plan.source === "measured"
       ? `a block every ${roundReadable(plan.secondsPerBlock)}s on this chain`
       : `this chain's default of a block every ${roundReadable(plan.secondsPerBlock)}s (the chain could not be read)`;
-  return `That's ≈ ${plan.windowBlocks.toLocaleString("en-US")} blocks for ${duration} at ${source} — the app rounds ${plan.marginBlocks.toLocaleString("en-US")} blocks longer than asked so a slow chain can't close the sale early.`;
+  return `That's ≈ ${plan.windowBlocks.toLocaleString("en-US")} blocks for ${duration} at ${source}. The app rounds ${plan.marginBlocks.toLocaleString("en-US")} blocks longer than asked so a slow chain can't close the sale early.`;
 }
 
 function roundReadable(value: number): number {

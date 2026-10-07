@@ -333,7 +333,7 @@ export function ProfileMenu({
             {!hasBackedUp() ? (
               <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
                 <AlertTriangle className="h-3 w-3 shrink-0" />
-                Back up your key — it only exists in this browser.
+                Back up your key. It only exists in this browser.
               </p>
             ) : null}
 
@@ -491,7 +491,7 @@ export function ProfileMenu({
                     <Fingerprint className="mt-0.5 h-3 w-3 shrink-0" />
                     <span>
                       {passkeyModeCopy(passkeyModeNow)}
-                      {passkeyActive ? "" : " — locked for this session."}
+                      {passkeyActive ? "" : ". Locked for this session."}
                     </span>
                   </div>
                 ) : null}
@@ -510,12 +510,12 @@ export function ProfileMenu({
                       data-testid="recovery-export-note"
                     >
                       Copy recovery key to set up another device (the desktop
-                      app's Settings → Identity). This nsec is the full account
-                      — anyone holding it can sign as you, so store it somewhere
-                      safe. Passkey-native sharing (same Touch ID on web and
-                      desktop) arrives with app signing activation; until then
-                      this key handoff is the interim path, and the passkey
-                      itself never leaves your device.
+                      app's Settings → Identity). This secret key is the full
+                      account: anyone holding it can sign as you, so store it
+                      somewhere safe. Passkey-native sharing (same Touch ID on
+                      web and desktop) arrives with app signing activation.
+                      Until then, this key handoff is the interim path. The
+                      passkey itself never leaves your device.
                     </p>
                     <MenuItem
                       icon={<LogOut className="h-3.5 w-3.5" />}
@@ -591,7 +591,7 @@ export function ProfileMenu({
 
       <ConfirmDialog
         confirmLabel="Unbind wallet"
-        description="The wallet stops being able to act for this identity, and its relay membership is removed. The binding is kept for audit and cannot be re-registered by this key."
+        description="The wallet stops being able to act for this identity, and its server membership is removed. The binding is kept for audit and cannot be re-registered by this key."
         onCancel={() => setConfirmUnbind(false)}
         onConfirm={() => {
           setConfirmUnbind(false);
@@ -620,7 +620,7 @@ export function ProfileMenu({
               Back up your key
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              This hex nsec signs everything you do here. Store it somewhere
+              This secret key signs everything you do here. Store it somewhere
               safe; your identity can't be recovered without it.
             </p>
             <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">

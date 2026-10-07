@@ -19,7 +19,7 @@ test("PRF mode says the key is re-derived at each signature", () => {
 test("unlock mode says the key lives in this tab only", () => {
   assert.equal(
     passkeyModeCopy("unlock"),
-    "Session unlock — your key stays in this tab's memory until you close it",
+    "Session unlock: your key stays in this tab's memory until you close it",
   );
 });
 

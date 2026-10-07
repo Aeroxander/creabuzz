@@ -168,7 +168,7 @@ export function canApprove(
   if (state.overPool) {
     return {
       ok: false,
-      reason: `Declared stakes already add up to more than ${POOL_PCT}% — fix the pitch before approving anything.`,
+      reason: `Declared stakes already add up to more than ${POOL_PCT}%. Fix the pitch before approving anything.`,
     };
   }
   const role = state.roles.find((r) => r.role.slug === request.role);
@@ -199,7 +199,7 @@ export function canApprove(
   if (request.pct > role.role.pct) {
     return {
       ok: false,
-      reason: `This role targets ${role.role.pct}% — a request can ask for at most ${role.role.pct}%.`,
+      reason: `This role targets ${role.role.pct}%. A request can ask for at most ${role.role.pct}%.`,
     };
   }
   const after = state.grantedPct + request.pct;

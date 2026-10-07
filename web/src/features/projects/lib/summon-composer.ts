@@ -221,7 +221,7 @@ function checkCap(
 
   if (!present) {
     warnings.push(
-      "No monthly budget is committed on the launch record, so the 1/6 envelope (budget × 6 ≤ graduation threshold) cannot be checked — the cap line reads “unknown”, not “within”.",
+      "No monthly budget is committed on the launch record, so the 1/6 envelope (budget × 6 ≤ graduation threshold) cannot be checked. The cap line reads “unknown” instead of “within”.",
     );
     return {
       budget,
@@ -299,7 +299,7 @@ function resolveSeat(
   if (!wholePct || member.pct < 1) {
     issues.push("invalid-pct");
     blockers.push(
-      `Seat “${label}” (${truncatePubkey(member.pubkey)}) holds ${member.pct}% — a mint needs a whole percentage of at least 1 (shares are ${SHARES_PER_PERCENT} per percent).`,
+      `Seat “${label}” (${truncatePubkey(member.pubkey)}) holds ${member.pct}%. A mint needs a whole percentage of at least 1 (1% is ${SHARES_PER_PERCENT} shares).`,
     );
   }
 
@@ -308,12 +308,12 @@ function resolveSeat(
   if (bound === null) {
     issues.push("unbound");
     blockers.push(
-      `Seat “${label}” (${member.pct}%, ${truncatePubkey(member.pubkey)}) has no bound EVM address — a seat with no bound address cannot be minted. Ask them to sign in with their wallet so the relay records the binding.`,
+      `Seat “${label}” (${member.pct}%, ${truncatePubkey(member.pubkey)}) has no bound wallet address, so its shares cannot be minted. Ask them to sign in with their wallet so the server records the binding.`,
     );
   } else if (!ADDRESS_RE.test(bound)) {
     issues.push("invalid-address");
     blockers.push(
-      `Seat “${label}” (${truncatePubkey(member.pubkey)}) binds to “${bound}”, which is not a 0x address — refused rather than guessed.`,
+      `Seat “${label}” (${truncatePubkey(member.pubkey)}) binds to “${bound}”, which is not a 0x address. Fix the binding before summoning; a bad address is never guessed.`,
     );
   } else {
     address = bound.toLowerCase();
@@ -352,7 +352,7 @@ export function composeSummon(
 
   if (map.length === 0) {
     blockers.push(
-      "The equity map has no seats — there is nothing to mint at summon.",
+      "The equity map has no seats, so there is nothing to mint at summon.",
     );
   }
 
@@ -361,11 +361,11 @@ export function composeSummon(
 
   if (totalPct > POOL_PCT) {
     blockers.push(
-      `Pool cap over: the map totals ${totalPct}% of the ${POOL_PCT}% pool — composition refused.`,
+      `The map totals ${totalPct}% of the ${POOL_PCT}% pool, which is over the cap. Bring the allocation down before summoning.`,
     );
   } else if (totalPct < POOL_PCT) {
     warnings.push(
-      `Only ${totalPct}% of the ${POOL_PCT}% pool is assigned to a seat — the remaining ${POOL_PCT - totalPct}% is not minted at summon and can only be minted later by a DAO vote.`,
+      `Only ${totalPct}% of the ${POOL_PCT}% pool is assigned to a seat. The remaining ${POOL_PCT - totalPct}% is not minted at summon and can only be minted later by a DAO vote.`,
     );
   }
 
@@ -378,7 +378,7 @@ export function composeSummon(
     const seen = byAddress.get(holder) ?? 0;
     if (seen === 1) {
       warnings.push(
-        `More than one seat binds to ${truncatePubkey(holder)} — shares are minted per seat, so that one address's balance is the sum of them.`,
+        `More than one seat binds to ${truncatePubkey(holder)}. Shares are minted per seat, so that one address's balance is the sum of them.`,
       );
     }
     byAddress.set(holder, seen + 1);
@@ -398,13 +398,13 @@ export function composeSummon(
     quorumBps > MAX_QUORUM_BPS
   ) {
     blockers.push(
-      `Quorum ${String(quorumBps)} is outside 0–${MAX_QUORUM_BPS} basis points — the summon would encode a quorum the contract cannot mean.`,
+      `Quorum must be between 0 and ${MAX_QUORUM_BPS} basis points (it is ${String(quorumBps)} now).`,
     );
   }
   const renderer = (org.renderer ?? `0x${"00".repeat(20)}`).toLowerCase();
   if (!ADDRESS_RE.test(renderer)) {
     blockers.push(
-      `Renderer “${org.renderer ?? ""}” is not a 0x address — refused rather than guessed.`,
+      `Renderer “${org.renderer ?? ""}” is not a 0x address. Fix it before summoning; a bad address is never guessed.`,
     );
   }
 

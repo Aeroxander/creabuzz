@@ -197,7 +197,7 @@ function MessageRow({
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the reaction");
+        throw new Error(result.message ?? "Server rejected the reaction");
       }
     } catch (error) {
       console.error("[react]", error);
@@ -479,7 +479,7 @@ export function ChannelTimeline({
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "relay rejected the deletion");
+        throw new Error(result.message ?? "Server rejected the deletion");
       }
     } catch (error) {
       console.error("[delete]", error);
@@ -525,7 +525,7 @@ export function ChannelTimeline({
         </h2>
         {channel.description && (
           <span className="truncate text-xs text-black/60 dark:text-white/60">
-            — {channel.description}
+            · {channel.description}
           </span>
         )}
         {messages.liveStatus && messages.liveStatus !== "open" ? (
@@ -533,7 +533,7 @@ export function ChannelTimeline({
             className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-800 dark:text-amber-300"
             data-testid="live-status-chip"
             role="status"
-            title="Live updates from the relay have stopped; the client keeps retrying."
+            title="Live updates from the server have stopped; the client keeps retrying."
           >
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
             {messages.liveStatus === "connecting"
@@ -623,7 +623,7 @@ export function ChannelTimeline({
                 data-testid="older-messages-error"
                 role="alert"
               >
-                Couldn't load older messages —{" "}
+                Couldn't load older messages.{" "}
                 {errorMessage(messages.olderError)}.{" "}
                 <button
                   type="button"
@@ -654,8 +654,8 @@ export function ChannelTimeline({
             data-testid="timeline-history-warning"
             role="status"
           >
-            Showing live messages only — the relay did not answer the history
-            query for this channel.
+            Showing live messages only. The server didn't answer the history
+            request for this channel.
           </p>
         ) : null}
         {messages.isLoading ? (
@@ -669,7 +669,7 @@ export function ChannelTimeline({
           </div>
         ) : roots.length === 0 && messages.error ? (
           <QueryError
-            description={`The relay did not answer the history query for #${channel.name}, so this channel is not known to be empty.`}
+            description={`The server did not answer the history query for #${channel.name}, so this channel is not known to be empty.`}
             error={messages.error}
             message={errorMessage(messages.error)}
             onRetry={messages.refetch}

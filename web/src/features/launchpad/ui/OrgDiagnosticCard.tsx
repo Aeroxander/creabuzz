@@ -64,7 +64,7 @@ export function OrgDiagnosticCard() {
           {diag.isLoading
             ? "reading the event graph…"
             : report
-              ? `${report.events} events · recomputable — \`buzz diag\` renders the same numbers`
+              ? `${report.events} events · every figure can be recomputed from the raw events`
               : "no window loaded"}
         </span>
       </div>
@@ -88,7 +88,7 @@ export function OrgDiagnosticCard() {
               </>
             ) : (
               <p className="text-black/60 dark:text-white/60">
-                insufficient data (&lt;20 events) — omitted, never zeroed
+                insufficient data (&lt;20 events), omitted, never zeroed
               </p>
             )}
           </section>
@@ -166,8 +166,8 @@ export function OrgDiagnosticCard() {
                     (p) =>
                       `${p.actor.slice(0, 8)}… moved ${(p.driftBp / 100).toFixed(0)}%`,
                   )
-                  .join(" · ") || "no flagged drift — distributions held"}
-                {" — movement only; “bad” is never inferred here"}
+                  .join(" · ") || "no flagged drift, distributions held"}
+                {" (movement only; “bad” is never inferred here)"}
               </p>
             )}
           </section>

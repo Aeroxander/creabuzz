@@ -28,7 +28,7 @@ export async function queryEventsHttp(
     body,
   });
   if (!response.ok) {
-    let detail = `relay responded ${response.status}`;
+    let detail = `server responded ${response.status}`;
     try {
       const json = (await response.json()) as { error?: string };
       if (json.error) detail = friendlyRelayError(json.error);

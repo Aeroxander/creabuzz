@@ -61,7 +61,7 @@ export function validateVesting(
       field: "vesting",
       severity: "warning",
       message:
-        "A tranche at 1x would unlock at the raise price — performance means above it.",
+        "A tranche at 1x would unlock at the raise price. Performance means above it.",
     });
   }
   if (vesting.twapWindow !== null && vesting.twapWindow <= 0) {

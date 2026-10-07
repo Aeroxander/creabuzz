@@ -42,7 +42,7 @@ async function publish(event: AgentStopEvent): Promise<void> {
   });
   const result = await publishEvent(relayWsUrl(), signed);
   if (!result.accepted) {
-    throw new Error(result.message ?? "The relay did not accept the change.");
+    throw new Error(result.message ?? "The server did not accept the change.");
   }
 }
 

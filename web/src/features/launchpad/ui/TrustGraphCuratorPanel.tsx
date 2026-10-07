@@ -102,7 +102,7 @@ export function TrustGraphCuratorPanel() {
       setBundle(built);
       setGateRoot(built.root);
       setComposeStatus(
-        `Score root composed for epoch ${built.epoch} — ${Object.keys(built.proofs).length} member${Object.keys(built.proofs).length === 1 ? "" : "s"}, every proof verified.`,
+        `Score root composed for epoch ${built.epoch}: ${Object.keys(built.proofs).length} member${Object.keys(built.proofs).length === 1 ? "" : "s"}, every proof verified.`,
       );
     } catch (err) {
       setComposeError(
@@ -132,7 +132,7 @@ export function TrustGraphCuratorPanel() {
       // duplicates, so the confirm stays armed with a way out.
       setPublishPhase("confirm");
       setPublishError(
-        `${err instanceof Error ? err.message : "The score root was not published."} You can publish again — the record is replaced, not duplicated.`,
+        `${err instanceof Error ? err.message : "The score root was not published."} You can publish again. The record is replaced, not duplicated.`,
       );
     }
   };
@@ -147,12 +147,12 @@ export function TrustGraphCuratorPanel() {
       const result = await resolveSender(sender).sendCalls([call]);
       setRotatePhase("sent");
       setRotateStatus(
-        `Gate rotated to ${gateRoot.trim().slice(0, 10)}… — transaction ${result.txHash}.`,
+        `Gate rotated to ${gateRoot.trim().slice(0, 10)}… (transaction ${result.txHash}).`,
       );
     } catch (err) {
       setRotatePhase("confirm");
       setRotateError(
-        `${senderErrorMessage(err, "The gate was not rotated.")} You can send the rotation again — check the gate address first.`,
+        `${senderErrorMessage(err, "The gate was not rotated.")} You can send the rotation again. Check the gate address first.`,
       );
     }
   };
@@ -199,7 +199,7 @@ export function TrustGraphCuratorPanel() {
           />
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
             One member and score per row, in the format shown. The scores stay
-            private — only the proof-backed root is published.
+            private. Only the proof-backed root is published.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -283,7 +283,7 @@ export function TrustGraphCuratorPanel() {
               root: {bundle.root}
             </p>
             <p className="text-black/60 dark:text-white/60">
-              {memberCount} member proof{memberCount === 1 ? "" : "s"} —
+              {memberCount} member proof{memberCount === 1 ? "" : "s"},
               published as the score-root record (event 37006), replaceable per
               epoch.
             </p>
@@ -363,8 +363,8 @@ export function TrustGraphCuratorPanel() {
         <h3 className="text-sm font-semibold">Gate rotation</h3>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
           Rotating points the onchain gate at a new score root and minimum
-          score. The gate owner&apos;s wallet sends this — you confirm before it
-          goes.
+          score. The gate owner&apos;s wallet sends this, and you confirm before
+          it goes.
         </p>
         <div className="mt-2 flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
@@ -379,7 +379,7 @@ export function TrustGraphCuratorPanel() {
                 data-testid="trustgraph-gate-root"
                 id="trustgraph-gate-root"
                 onChange={(e) => setGateRoot(e.target.value)}
-                placeholder="0x + 64 hex — filled in when you compose"
+                placeholder="0x + 64 hex (filled in when you compose)"
                 value={gateRoot}
               />
             </div>

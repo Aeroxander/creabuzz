@@ -71,7 +71,7 @@ describe("honest enforcement labels (advisory rule)", () => {
       "tasks.create",
     ]) {
       assert.equal(byKey.get(key)?.enforcement, "relay", key);
-      assert.equal(byKey.get(key)?.badge, "Enforced by the relay", key);
+      assert.equal(byKey.get(key)?.badge, "Enforced by the server", key);
     }
     for (const key of ["tasks.approve", "spend"]) {
       assert.equal(byKey.get(key)?.enforcement, "advisory", key);
@@ -103,7 +103,9 @@ describe("honest enforcement labels (advisory rule)", () => {
         field.enforcement === "advisory"
           ? ENFORCEMENT_LABEL.advisory
           : ENFORCEMENT_LABEL.relay,
-        field.enforcement === "advisory" ? "Advisory" : "Enforced by the relay",
+        field.enforcement === "advisory"
+          ? "Advisory"
+          : "Enforced by the server",
         field.key,
       );
     }

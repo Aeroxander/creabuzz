@@ -267,7 +267,7 @@ test("a bound map composes: holders, shares, within-cap callData", () => {
   assert.equal(result.cap.state, "within");
   assert.equal(result.cap.defaultPassCost, WITHIN.budget * 3n);
   assert.ok(
-    result.warnings.some((w) => w.includes("the remaining 48% is not minted")),
+    result.warnings.some((w) => w.includes("remaining 48% is not minted")),
     "the unassigned remainder is stated, not hidden",
   );
   assert.ok(result.callData.startsWith("0xfec53795"));
@@ -374,7 +374,7 @@ test("an unbound grantee blocks composition and is named loudly", () => {
   assert.equal(result.callData, null);
   const blocker = result.blockers.join(" | ");
   assert.match(blocker, /The writer/);
-  assert.match(blocker, /no bound EVM address/);
+  assert.match(blocker, /no bound wallet address/);
   assert.match(blocker, /cannot be minted/);
   // The bound seat still previews; the unbound one is not a holder.
   assert.deepEqual(result.initHolders, [B_A]);

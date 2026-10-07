@@ -84,7 +84,7 @@ export function ChannelSidebar({
               {channel.visibility === "private" && (
                 <span
                   className="ml-auto shrink-0 text-2xs text-black/60 uppercase dark:text-white/60"
-                  title="Private channel — join requires a member with admin rights to add you"
+                  title="Private channel. A member with admin rights has to add you."
                 >
                   private
                 </span>
@@ -100,7 +100,7 @@ export function ChannelSidebar({
                   data-testid="channels-more-error"
                   role="alert"
                 >
-                  Couldn't load more channels — {errorMessage(moreError)}.{" "}
+                  Couldn't load more channels. {errorMessage(moreError)}.{" "}
                   <button
                     type="button"
                     className="underline"

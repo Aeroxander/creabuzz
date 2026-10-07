@@ -173,8 +173,8 @@ export function LinkDevicePage() {
           <p className="mt-2 text-sm text-muted-foreground">
             This browser has a saved identity but it can&rsquo;t be opened, so
             nothing was shared with the desktop app. If you have a backup,
-            import it in the app. Otherwise you can reset to a new identity —
-            this discards the unreadable one for good.
+            import it in the app. Otherwise you can reset to a new identity.
+            This discards the unreadable one for good.
           </p>
           {confirmReset ? (
             <div className="mt-4 rounded-md border border-black/10 p-3 text-sm dark:border-white/10">
@@ -227,7 +227,7 @@ export function LinkDevicePage() {
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {lockedPasskey
-              ? "One passkey check logs this desktop in — nothing is shared until you confirm here."
+              ? "One passkey check logs this desktop in. Nothing is shared until you confirm here."
               : "The desktop app will be able to sign as this account. Only confirm on a desktop you trust."}
           </p>
           <div
@@ -274,7 +274,7 @@ export function LinkDevicePage() {
       {phase === "linked" ? (
         <section role="status" data-testid="link-device-linked">
           <h1 className="text-base font-semibold">
-            Link sent — finish in your desktop app
+            Link sent. Finish in your desktop app
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             The handoff was opened on this device. Finish the steps in the
@@ -283,8 +283,8 @@ export function LinkDevicePage() {
           {handoffUrl ? (
             <>
               <p className="mt-3 text-sm text-muted-foreground">
-                Nothing opened? Use this to open the desktop app again — it
-                works only once, and only on this device.
+                Nothing opened? Use this to open the desktop app again. It works
+                only once, and only on this device.
               </p>
               <a
                 className="mt-2 inline-block rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"

@@ -32,7 +32,7 @@ const SAVE_FALLBACK = "Edits reach others when a page is saved.";
 
 const UNAVAILABLE_DETAIL: Record<LiveUnavailableReason, string> = {
   "no-identity": `Live co-editing is unavailable: it needs a signed-in identity to prove you are a community member. ${SAVE_FALLBACK}`,
-  "no-member-list": `Live co-editing is unavailable: this relay publishes no member list, so collaborators cannot be verified. ${SAVE_FALLBACK}`,
+  "no-member-list": `Live co-editing is unavailable: this server publishes no member list, so collaborators cannot be verified. ${SAVE_FALLBACK}`,
   "member-list-error": `Live co-editing is unavailable: the community member list could not be loaded. Reopen the page to try again. ${SAVE_FALLBACK}`,
   "not-member": `Live co-editing is unavailable: it is limited to verified community members and this identity is not one. ${SAVE_FALLBACK}`,
   "room-failed": `Live co-editing is unavailable: the peer-to-peer room could not be opened. ${SAVE_FALLBACK}`,
