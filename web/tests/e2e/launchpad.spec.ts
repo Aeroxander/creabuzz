@@ -211,7 +211,7 @@ test("a production build shows no fabricated funding figures", async ({
     "No chain data",
   );
   await expect(page.getByTestId("launch-progress-unavailable")).toContainText(
-    "No auction contract is linked",
+    "has no auction contract yet",
   );
   await expect(page.getByText("Preview data")).toBeHidden();
 });
@@ -562,10 +562,10 @@ test("a published score root is shown as a community data plane", async ({
   );
   await expect(page.getByTestId("launch-score-roots")).toContainText("12");
   await expect(page.getByTestId("launch-score-roots")).toContainText(
-    "Anchored at block 500",
+    "Recorded onchain in block 500",
   );
   await expect(page.getByTestId("launch-score-roots")).toContainText(
-    "Scores are proven against this root",
+    "Scores are published as a signed list",
   );
 });
 
