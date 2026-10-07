@@ -241,7 +241,10 @@ test("runExitFlow calls an unknown receipt outcome unknown, not an onchain failu
   );
   assert.equal(rec.state.phase, "failed");
   assert.match(rec.state.errorMessage, /still unknown/);
-  assert.match(rec.state.errorMessage, /Check whether it landed before retrying/);
+  assert.match(
+    rec.state.errorMessage,
+    /Check whether it landed before retrying/,
+  );
   // The tx may never have been broadcast; never claim an onchain failure here.
   assert.doesNotMatch(rec.state.errorMessage, /failed onchain/);
 });

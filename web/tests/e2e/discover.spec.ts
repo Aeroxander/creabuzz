@@ -377,9 +377,7 @@ test("an empty relay says so and offers the pitch dialog", async ({ page }) => {
   await page.goto("/discover");
   const empty = page.getByTestId("discover-empty");
   await expect(empty).toBeVisible();
-  await expect(empty).toContainText(
-    "No projects on this server yet.",
-  );
+  await expect(empty).toContainText("No projects on this server yet.");
 
   await empty.getByRole("button", { name: "Pitch a project" }).click();
   await expect(page.getByLabel("Project name")).toBeVisible();
