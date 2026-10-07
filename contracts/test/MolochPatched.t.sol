@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Call, Moloch, Summoner} from "../src/majeur/MolochPatched.sol";
 import {VotingWeight, ISnapshotVotes, IBackingWeight} from "../src/VotingWeight.sol";
+import {IConvictionWeight} from "../src/ConvictionVoting.sol";
 
 /// @dev A backing source whose answers are set by the test.
 contract MockBacking is IBackingWeight {
@@ -60,7 +61,8 @@ contract MolochPatchedTest is Test {
         weight = new VotingWeight(
             ISnapshotVotes(address(dao.shares())),
             ISnapshotVotes(address(dao.loot())),
-            IBackingWeight(address(backing))
+            IBackingWeight(address(backing)),
+            IConvictionWeight(address(0))
         );
 
         // `onlyDAO` is `msg.sender == address(this)`, so only the DAO itself

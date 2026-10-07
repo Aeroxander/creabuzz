@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {VotingWeight, ISnapshotVotes, IBackingWeight} from "../src/VotingWeight.sol";
+import {ConvictionVoting, IConvictionWeight} from "../src/ConvictionVoting.sol";
 import {ProposalVault, IJoinPrice} from "../src/ProposalVault.sol";
 import {MockCurrency, MockToken, MockJoinPrice} from "./ProposalVault.t.sol";
 
@@ -55,7 +56,12 @@ contract VotingWeightTest is Test {
             500
         );
         token.setMinter(address(vault));
-        weight = new VotingWeight(shares, loot, IBackingWeight(address(vault)));
+        weight = new VotingWeight(
+            shares,
+            loot,
+            IBackingWeight(address(vault)),
+            IConvictionWeight(address(0))
+        );
 
         currency.mint(ALICE, 1_000_000);
         vm.prank(ALICE);
@@ -121,5 +127,47 @@ contract VotingWeightTest is Test {
         vault.pledge(amount);
         vault.back(proposalId, amount);
         vm.stopPrank();
+    }
+
+    /// @dev Binds the conviction term to the real `ConvictionVoting`, not a
+    /// stand-in (Review-Proven Rule 3): what `weightFor` adds must be what the
+    /// conviction contract's own accounting says, at the snapshot block.
+    function test_the_conviction_term_sums_into_weight_at_the_snapshot() public {
+        ConvictionVoting conviction =
+            new ConvictionVoting(address(this), 0.99e18, 0.02e18, 0.2e18, 0);
+        VotingWeight wired = new VotingWeight(
+            shares,
+            loot,
+            IBackingWeight(address(vault)),
+            IConvictionWeight(address(conviction))
+        );
+        shares.set(ALICE, 7);
+        loot.set(ALICE, 3);
+
+        // This test contract is the conviction module's governance.
+        conviction.grantSeat(ALICE);
+        conviction.refill(ALICE, 50);
+        conviction.openProposal(P1, 0);
+        vm.prank(ALICE);
+        conviction.stake(P1, 50);
+
+        vm.roll(51);
+        uint48 snap = 51;
+        uint256 expected = 7 + 3 + conviction.convictionWeightAt(P1, ALICE, snap);
+        assertEq(wired.weightFor(P1, ALICE, snap), expected);
+        assertGt(expected, 10, "the credits are actually working");
+
+        // A stake after the snapshot is real weight from now on, but it never
+        // reaches back: the snapshot answer is unchanged.
+        conviction.refill(ALICE, 50);
+        vm.prank(ALICE);
+        conviction.stake(P1, 50);
+        vm.roll(151);
+        assertEq(wired.weightFor(P1, ALICE, snap), expected);
+        assertGt(
+            wired.weightFor(P1, ALICE, 151),
+            expected,
+            "and it counts from the block it was made at"
+        );
     }
 }

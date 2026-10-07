@@ -189,3 +189,62 @@ Cost questions only — none of them change direction.
   non-delegable.
 
 Everything else in that plan stands, including G6 and the join-price rule.
+
+---
+
+## 10. Conviction: the entry voice, as a bounded allowance
+
+`draft` `decision` `contracts`
+
+Added after the owner asked whether proposal funding should run on conviction
+voting instead of capital-backed entry voice. **Decided:** conviction replaces
+*investing as voice* on allocation decisions; the vault's money leg is
+untouched, and discrete governance stays exactly as §3–§7 describe.
+
+The mechanism lives in `contracts/src/ConvictionVoting.sol` and sums into
+`VotingWeight` as a fourth optional term, beside backing:
+
+```
+votes(a, b) = work + held + backing + conviction(a, p, b)
+```
+
+A DAO that wants conviction out of its discrete votes wires
+`conviction = address(0)` and the tally reverts to §3 verbatim.
+
+**How it works.** Credits are issued per seat by governance — the same bounded
+seat map the summon mints — and are non-transferable. Staking credits on a
+proposal makes conviction grow toward `credits / (1 − α)` while they stay, and
+decay once they move. A proposal asking share `ρ` of the pool passes when its
+total conviction reaches a threshold that rises with `ρ`, never below an
+absolute floor.
+
+**Why this does not contradict §1.** The objection there was that *holding* is
+costless. This is not holding: an allowance can back **one proposal at a time**
+(`test_one_allowance_cannot_back_two_proposals_at_once`), so directing it has an
+opportunity cost, and withdrawing support lets the accumulated conviction fade.
+Growth is bought with persistence at the expense of every alternative, which is
+the same shape as backing's "compounding while at risk" — cost, then growth.
+
+**Properties, tested in `contracts/test/ConvictionVoting.t.sol`:**
+
+| Property | Why it holds |
+| --- | --- |
+| A sybil gains nothing by splitting | conviction is linear in credits; k identities holding C/k reach exactly one identity holding C |
+| Issuance is the only door | non-seats hold nothing and stake nothing; seats are granted one approval at a time (bounded by `MAX_SEATS`) |
+| One allowance, one preference | staked credits leave the unspent pool; the books are unspent + staked = issued |
+| Unspent credits carry no weight | mirrors §3's voucher rule: nothing accrues without a stake |
+| Small asks cannot pass on crumbs | an absolute conviction floor binds every threshold; thresholds scale off *total issuance*, so opening proposals never dilutes a real one |
+| Snapshots are honest | every stake is checkpointed; `convictionWeightAt` ignores credits staked after the queried block |
+
+**G6.** Nothing in the module reads a score, a badge tier or a reputation root.
+Issuance is membership, not measurement — the seat map is the sybil defence, and
+no trust-graph or oracle is needed while seats stay granted (v1). A
+score-modulated multiplier would only need the anchored root's Merkle proof
+verified in-contract; making the score *derivation* trustless is a later
+hardening question (an oracle such as WAVS), not a prerequisite.
+
+**Still open.** Parameter defaults (`α`, `minW`/`maxW`, floor) are a simulation
+question; per-epoch refills are plain governance calls for now; futarchy's
+budget/subDAO scope is parked until conviction has run on live proposals. Exit
+discipline: conviction is not capital and does not gate `ragequit` in v1 — if
+conviction alone ever draws on the treasury pool, revisit §6 for it.
