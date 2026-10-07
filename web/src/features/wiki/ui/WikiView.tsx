@@ -397,7 +397,7 @@ export function WikiView({
         </div>
         {loadError ? (
           <p
-            className="mx-2 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300"
+            className="mx-2 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-800 dark:text-amber-300"
             data-testid="wiki-cache-warning"
             role="status"
           >

@@ -41,7 +41,7 @@ function PageRow({
       )}
       <span className="min-w-0 truncate">{page.slug}</span>
       {page.kind === "agent" ? (
-        <span className="ml-auto shrink-0 text-2xs text-black/50 dark:text-white/50">
+        <span className="ml-auto shrink-0 text-2xs text-black/60 dark:text-white/60">
           agent
         </span>
       ) : null}
@@ -66,14 +66,14 @@ function Group({
 }) {
   return (
     <div className="mb-2" data-testid={testId}>
-      <p className="px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+      <p className="px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
         {label}{" "}
-        <span className="text-black/40 dark:text-white/40">
+        <span className="text-black/60 dark:text-white/60">
           ({pages.length})
         </span>
       </p>
       {pages.length === 0 ? (
-        <p className="px-2 py-1 text-2xs text-black/50 dark:text-white/50">
+        <p className="px-2 py-1 text-2xs text-black/60 dark:text-white/60">
           {empty}
         </p>
       ) : (
@@ -116,7 +116,7 @@ export function KnowledgeIndex({
       <div className="px-2 pb-2">
         <div className="relative">
           <Search
-            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/40 dark:text-white/40"
+            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/60 dark:text-white/60"
             aria-hidden="true"
           />
           <input

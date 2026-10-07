@@ -352,7 +352,7 @@ test("the summon preview maps the board to shares and refuses what it must", asy
 
   // The §9 stance stays where the map is read and taken.
   await expect(page.getByTestId("summon-disclaimer")).toContainText(
-    "not a legal contract",
+    "Not a legal contract",
   );
 
   // One action, and it is not armed while a seat cannot be minted.
