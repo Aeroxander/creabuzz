@@ -52,7 +52,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("waiting for the current member roster")) {
       return {
         message:
-          "Creaton is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+          "Creaton is waiting for the server's member roster. Try again shortly; if this persists, check the server's membership configuration.",
         tone: "warning",
       };
     }
@@ -83,7 +83,7 @@ export function formatModelDiscoveryErrorStatus(
 
     return {
       message:
-        "Creaton couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Creaton couldn't check shared compute through the server. Check your connection to the server and try again.",
       tone: "warning",
     };
   }

@@ -117,14 +117,14 @@ function lifecycleNote(state: ProposalState, hasOperation: boolean): string {
   switch (state) {
     case "Queued":
       return hasOperation
-        ? "Queued — run Execute after the timelock (per DAO config)."
-        : "Queued — the timelock (per DAO config) runs before execution. executeByVotes(op, to, value, data, nonce) needs the proposal's operation bytes; this record carries the proposal id only, so no execute action is composable here.";
+        ? "Queued. Run Execute after the timelock (per DAO config)."
+        : "Queued. The timelock (per DAO config) runs before execution. This record doesn't carry the details Execute needs, so the action isn't offered here.";
     case "Defeated":
-      return "Defeated — FOR did not beat AGAINST, or the minYes floor failed. Nothing executes.";
+      return "Defeated. FOR did not beat AGAINST, or the minYes floor failed. Nothing executes.";
     case "Expired":
-      return "Expired — the TTL window closed before the proposal passed. Nothing executes.";
+      return "Expired. The TTL window closed before the proposal passed. Nothing executes.";
     case "Executed":
-      return "Executed — the operation landed onchain; the execute receipt above carries the tx.";
+      return "Executed. The operation landed onchain; the execute receipt above carries the transaction.";
     default:
       return "";
   }
@@ -498,8 +498,8 @@ function ProposalCard({
               {proposal.source
                 ? `${proposal.source.page}#${proposal.source.anchor}`
                 : "source omitted"}
-            </span>{" "}
-            — awaiting a human counter-sign; nothing broadcasts onchain without
+            </span>
+            . Awaiting a human counter-sign. Nothing broadcasts onchain without
             it.
           </p>
           {proposal.evidence ? (
@@ -551,7 +551,7 @@ function ProposalCard({
       <section aria-label="Mechanism" className="mt-2">
         <p className="text-2xs">
           <span className="font-medium text-foreground">Mechanism:</span>{" "}
-          {route.mechanism} — {route.why}
+          {route.mechanism}. {route.why}
         </p>
         {route.note ? (
           <p className="mt-0.5 text-2xs text-muted-foreground">{route.note}</p>
@@ -644,7 +644,7 @@ function ProposalCard({
         ) : stateQuery.isError ? (
           <p className="text-2xs text-destructive" role="alert">
             Couldn&apos;t read the onchain state: {errorText(stateQuery.error)}.
-            Actions stay gated on the state read — check the RPC endpoint, then
+            Actions stay gated on the state read. Check the RPC endpoint, then
             try again.
           </p>
         ) : (
@@ -672,8 +672,8 @@ function ProposalCard({
                     : walletError
                       ? `Couldn't read wallet status: ${walletError}`
                       : wallet
-                        ? `Sender: ${truncatePubkey(wallet)} — the wallet this app signs with.`
-                        : "Create or import a wallet first — actions sign with the wallet this app holds. The Wallet card has both."}
+                        ? `Sender: ${truncatePubkey(wallet)} (the wallet this app signs with).`
+                        : "Create or import a wallet first. Actions sign with the wallet this app holds. The Wallet card has both."}
                 </p>
               </>
             ) : (
@@ -684,7 +684,7 @@ function ProposalCard({
             {action.data ? (
               action.data.receipt.status === "reverted" ? (
                 <p className="mt-1 text-2xs text-destructive" role="alert">
-                  {actionLabel} reverted onchain — nothing moved. Transaction{" "}
+                  {actionLabel} reverted onchain. Nothing moved. Transaction{" "}
                   {truncatePubkey(action.data.receipt.txHash)}; the state read
                   above is the authority.
                 </p>
@@ -693,10 +693,10 @@ function ProposalCard({
                   className="mt-1 text-2xs text-muted-foreground"
                   role="status"
                 >
-                  {actionLabel} confirmed — transaction{" "}
+                  {actionLabel} confirmed. Transaction{" "}
                   {truncatePubkey(action.data.receipt.txHash)}
                   {action.data.mirrorError
-                    ? ` · the receipt could not be recorded (${action.data.mirrorError}) — the transaction still happened; the record will catch up on refresh.`
+                    ? ` · the receipt could not be recorded (${action.data.mirrorError}). The transaction still happened; the record will catch up on refresh.`
                     : " · recorded on this launch."}
                 </p>
               )

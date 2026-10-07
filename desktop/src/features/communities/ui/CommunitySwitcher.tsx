@@ -49,9 +49,9 @@ const CONNECTION_STATE_LABEL: Record<ConnectionState, string> = {
   idle: "Not connected",
   connecting: "Connecting…",
   connected: "Connected",
-  reconnecting: "Reconnecting to relay…",
-  stalled: "Connection lost — relay is not responding",
-  disconnected: "Disconnected from relay",
+  reconnecting: "Reconnecting to the server…",
+  stalled: "Connection lost. The server is not responding.",
+  disconnected: "Disconnected from the server",
 };
 
 type CommunitySwitcherProps = {
@@ -254,7 +254,7 @@ export function CommunitySwitcher({
             aria-haspopup="menu"
             aria-label={
               degraded
-                ? `${activeCommunity?.name ?? "Community"} — ${connectionLabel}`
+                ? `${activeCommunity?.name ?? "Community"}: ${connectionLabel}`
                 : "Community actions"
             }
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-popover-foreground outline-hidden transition-colors hover:bg-muted/50 focus:bg-muted/50 focus:outline-none focus-visible:bg-muted/50 focus-visible:outline-none data-[state=open]:bg-muted/50 data-[state=open]:text-popover-foreground"
@@ -370,7 +370,7 @@ export function CommunitySwitcher({
           <button
             aria-label={
               degraded
-                ? `${activeCommunity?.name ?? "Community"} — ${connectionLabel}`
+                ? `${activeCommunity?.name ?? "Community"}: ${connectionLabel}`
                 : "Switch community"
             }
             className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-sidebar-foreground/50 outline-hidden transition-colors hover:text-sidebar-foreground focus:outline-none focus-visible:outline-none data-[state=open]:text-sidebar-foreground"
@@ -383,7 +383,7 @@ export function CommunitySwitcher({
           <SidebarMenuButton
             aria-label={
               degraded
-                ? `${activeCommunity?.name ?? "Community"} — ${connectionLabel}`
+                ? `${activeCommunity?.name ?? "Community"}: ${connectionLabel}`
                 : undefined
             }
             className="h-auto gap-2 rounded-xl px-2.5 py-2 data-[state=open]:bg-sidebar-accent"

@@ -157,7 +157,7 @@ export function StrategyFormDialog({
         <div className="flex items-center justify-between gap-2">
           <p className="text-2xs text-muted-foreground">
             {view === "json"
-              ? "Editing raw JSON — the form tracks it"
+              ? "Editing raw JSON. The form tracks it"
               : "Fill the fields, or switch to raw JSON"}
           </p>
           <Button
@@ -180,7 +180,7 @@ export function StrategyFormDialog({
             data-testid="org-strategy-json-error"
           >
             <p className="text-xs text-destructive" role="alert">
-              {jsonError} — fix the JSON or reset it to the last valid state.
+              {jsonError}. Fix the JSON or reset it to the last valid state.
             </p>
             <Button
               data-testid="org-strategy-json-reset"

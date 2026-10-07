@@ -36,7 +36,7 @@ async function attachProjectRepository({
   const liveHead = liveHeads[0];
   if (!liveHead) {
     throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
+      "Could not find this project on the server. Refresh and try again.",
     );
   }
 

@@ -34,7 +34,7 @@ export function GettingStartedSettingsCard({
             Show on Home
           </Button>
         }
-        description="Your getting-started checklist. It appears on Home until you hide it — show it again from here any time."
+        description="Your getting-started checklist. It appears on Home until you hide it. Show it again from here any time."
         title="Getting started"
       />
       <GettingStartedStepsList currentPubkey={currentPubkey} />

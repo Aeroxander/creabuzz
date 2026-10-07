@@ -69,7 +69,7 @@ export function MyBidsPanel({
         <h3 className="text-sm font-semibold">My bids</h3>
         <p className="mt-1 text-2xs text-muted-foreground">
           Read-only bid status for this launch. Exit, refund, and claim happen
-          on the web app — same account, sponsored.
+          on the web app (same account, sponsored).
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           {record.auction
@@ -97,7 +97,7 @@ export function MyBidsPanel({
         <p className="mt-1 text-2xs text-muted-foreground">
           Exit refunds the unfilled budget and records the filled share; claim
           transfers the filled tokens after the claim block. Both run in the web
-          app with your passkey — this cockpit only shows status.
+          app with your passkey. The desktop app only shows status.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           <ContinueOnWebButton

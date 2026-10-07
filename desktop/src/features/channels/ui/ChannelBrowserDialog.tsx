@@ -403,7 +403,7 @@ export function ChannelBrowserDialog({
   const emptyDescription =
     deferredQuery.length > 0
       ? canCreate
-        ? `No ${entityLabel} by that name yet — create it to get started.`
+        ? `No ${entityLabel} by that name yet. Create it to get started.`
         : "Try a different name or keyword."
       : activeTab === "archived"
         ? `Archived ${entityLabel}s you have joined will appear here.`

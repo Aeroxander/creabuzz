@@ -300,7 +300,7 @@ export function useGraduationFlow(input: GraduationFlowInput): GraduationFlow {
       dispatch({
         type: "check_failed",
         message:
-          "the GraduationExecutor address is unknown — run the readiness check first",
+          "the GraduationExecutor address is unknown. Run the readiness check first",
       });
       return;
     }

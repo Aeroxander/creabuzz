@@ -36,8 +36,8 @@ export function LaunchOverviewPanel({ launch }: { launch: Launch }) {
             <dt className="text-muted-foreground">Raised</dt>
             <dd className="tabular-nums">
               {raised
-                ? `${raised.raised.toString()} / ${raised.goal?.toString() ?? "—"}`
-                : "—"}
+                ? `${raised.raised.toString()} / ${raised.goal?.toString() ?? "-"}`
+                : "-"}
             </dd>
           </div>
           <div className="flex justify-between gap-2 py-1">
@@ -46,7 +46,7 @@ export function LaunchOverviewPanel({ launch }: { launch: Launch }) {
           </div>
           <div className="flex justify-between gap-2 py-1">
             <dt className="text-muted-foreground">Floor price</dt>
-            <dd className="tabular-nums">{record.floorPrice ?? "—"}</dd>
+            <dd className="tabular-nums">{record.floorPrice ?? "-"}</dd>
           </div>
           <div className="flex justify-between gap-2 py-1">
             <dt className="text-muted-foreground">Admission</dt>
@@ -63,8 +63,8 @@ export function LaunchOverviewPanel({ launch }: { launch: Launch }) {
         </dl>
         {raised && raised.source === "preview" ? (
           <p className="mt-2 text-2xs text-muted-foreground">
-            Preview fixture — link an auction contract and point the launchpad
-            at a chain RPC for live values.
+            Preview fixture. Link an auction contract and point the launchpad at
+            a chain RPC for live values.
           </p>
         ) : null}
       </section>
@@ -84,7 +84,7 @@ export function LaunchOverviewPanel({ launch }: { launch: Launch }) {
           ))}
           {!record.auction && !record.token && !record.treasury ? (
             <p className="py-2 text-sm text-muted-foreground">
-              No contracts deployed yet — this launch is still lining up its
+              No contracts deployed yet. This launch is still lining up its
               raise.
             </p>
           ) : null}

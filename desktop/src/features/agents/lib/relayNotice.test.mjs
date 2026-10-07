@@ -6,23 +6,23 @@ import { olderRelayGuidance, SKILL_RECORD_KIND } from "./relayNotice.ts";
 /**
  * The skills read/publish paths must not collapse an answered refusal into a
  * generic failure: the relay's own words stay on screen, and the guidance
- * names the kind and the relay-side fix.
+ * names the relay-side fix.
  */
 
-test("an unknown-kind refusal gets the older-build guidance with the kind", () => {
+test("an unknown-kind refusal gets the older-build guidance", () => {
   assert.equal(
     olderRelayGuidance(
       "relay returned 400 Bad Request: restricted: unknown event kind",
     ),
-    `This relay is running an older build that doesn't know these records (kind ${SKILL_RECORD_KIND}) — restart it from the current build, or point the app at a newer relay.`,
+    "This server is running an older version that doesn't know about these skills yet. Update the server, or point the app at a newer one.",
   );
   assert.equal(SKILL_RECORD_KIND, 30180);
 });
 
-test("a kind named by the relay wins over the default", () => {
-  assert.match(
-    olderRelayGuidance("restricted: unknown event kind 37015") ?? "",
-    /\(kind 37015\)/,
+test("a kind named by the relay still gets the same guidance", () => {
+  assert.equal(
+    olderRelayGuidance("restricted: unknown event kind 37015"),
+    "This server is running an older version that doesn't know about these skills yet. Update the server, or point the app at a newer one.",
   );
 });
 

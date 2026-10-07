@@ -4,7 +4,7 @@ export function LaunchUpdatesPanel({ launch }: { launch: Launch }) {
   if (launch.updates.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No updates yet. Founders post signed updates — they land here and can
+        No updates yet. Founders post signed updates. They land here and can
         cross-post into the community channels.
       </p>
     );

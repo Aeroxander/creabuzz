@@ -84,7 +84,7 @@ export function EnforcementCard({
       <h3 className="text-sm font-semibold">Enforcement</h3>
       <p className="mt-1 text-2xs text-muted-foreground">
         What this org says it enforces, checked against live contract config. A
-        claim the chain contradicts is shown as contradicted — the register is a
+        claim the chain contradicts is shown as contradicted. The register is a
         claim; this card is the check.
       </p>
       {doc.isLoading || state.isLoading ? (
@@ -93,7 +93,7 @@ export function EnforcementCard({
         </p>
       ) : checked.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">
-          No enforcement register published yet — nothing is claimed, so nothing
+          No enforcement register published yet. Nothing is claimed, so nothing
           is checked.
         </p>
       ) : (

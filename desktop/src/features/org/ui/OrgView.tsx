@@ -36,7 +36,7 @@ function ContributionRecordsTab() {
             Retry
           </Button>
         }
-        description="The relay did not answer the contribution query. Check the connection, then retry."
+        description="The server did not answer the contribution query. Check your connection, then retry."
         testId="contributions-error"
         title="Failed to load contribution records"
         variant="error"

@@ -91,7 +91,7 @@ export async function enumerateProjectEvents(
       // TODO: add a telemetry event here so pathological relay states are
       // diagnosable before they reach users.
       throw new Error(
-        "The relay cannot exhaustively enumerate projects because too many events share one timestamp.",
+        "The server cannot exhaustively enumerate projects because too many events share one timestamp.",
       );
     }
     if (oldest <= 0) return [...eventsById.values()];
@@ -200,7 +200,7 @@ export async function buildProjectsFromFetcher(
 
   if (!tombstoneResult.ok) {
     throw new Error(
-      `Could not fetch project deletion records: ${tombstoneResult.message} — refresh to retry.`,
+      `Could not fetch project deletion records: ${tombstoneResult.message}. Refresh to retry.`,
     );
   }
 

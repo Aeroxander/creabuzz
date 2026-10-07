@@ -59,7 +59,7 @@ export function verifyEnforced(
           return {
             clause,
             status: "unverifiable",
-            detail: `${clause.action}: proposalThreshold unreadable — claim stands unverified`,
+            detail: `${clause.action}: proposalThreshold unreadable. Claim stands unverified`,
           };
         }
         if (state.proposalThreshold > 0n) {
@@ -72,7 +72,7 @@ export function verifyEnforced(
         return {
           clause,
           status: "contradicted",
-          detail: `${clause.action}: claimed, but proposalThreshold = 0 — anyone may propose`,
+          detail: `${clause.action}: claimed, but proposalThreshold = 0. Anyone may propose`,
         };
       }
       case "ragequit": {
@@ -80,7 +80,7 @@ export function verifyEnforced(
           return {
             clause,
             status: "unverifiable",
-            detail: `${clause.action}: ragequittable unreadable — claim stands unverified`,
+            detail: `${clause.action}: ragequittable unreadable. Claim stands unverified`,
           };
         }
         if (state.ragequittable) {
@@ -93,7 +93,7 @@ export function verifyEnforced(
         return {
           clause,
           status: "contradicted",
-          detail: `${clause.action}: claimed, but ragequittable = false — the exit right does not exist`,
+          detail: `${clause.action}: claimed, but ragequittable = false. The exit right does not exist`,
         };
       }
       default: {
@@ -101,7 +101,7 @@ export function verifyEnforced(
           return {
             clause,
             status: "documented",
-            detail: `${clause.action}: gated by ${clause.checkpoint.approver ?? "human approval"} (documented policy — the approval cards)`,
+            detail: `${clause.action}: gated by ${clause.checkpoint.approver ?? "human approval"} (documented policy: the approval cards)`,
           };
         }
         return {

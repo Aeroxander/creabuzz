@@ -171,7 +171,7 @@ function MemoryShareConfirmation({
             This {itemLabel} includes <strong>plaintext {memoryLabel}</strong>.{" "}
             {isLinkShare
               ? "Anyone with the link can view it."
-              : `${recipientAudience}—and anyone with the file link—can view it.`}{" "}
+              : `${recipientAudience} (and anyone with the file link) can view it.`}{" "}
             Only share with people you trust.
           </AlertDialogDescription>
         </AlertDialogHeader>

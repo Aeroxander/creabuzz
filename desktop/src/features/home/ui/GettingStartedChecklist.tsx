@@ -190,7 +190,7 @@ export function GettingStartedChecklist({
             Getting started
           </h2>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            A few steps to get your bearings. Hide this anytime — it lives in
+            A few steps to get your bearings. Hide this anytime. It lives in
             Settings.
           </p>
         </div>

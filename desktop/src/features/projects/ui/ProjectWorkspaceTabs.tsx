@@ -383,7 +383,7 @@ export function WorkspaceTabs({
             createPullRequestAction.projects.length === 0,
           label: "Create review",
           onClick: () => setCreatePullRequestOpen(true),
-          title: "Create review — choose a repository and branches to compare",
+          title: "Create review: choose a repository and branches to compare",
         }}
         className={PROJECT_SECTION_HEADER_CLASS}
         icon={GitPullRequest}

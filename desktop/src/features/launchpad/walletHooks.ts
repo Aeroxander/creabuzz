@@ -141,5 +141,5 @@ export function formatWalletAddress(
   address: string | null | undefined,
 ): string {
   const trimmed = address?.trim() ?? "";
-  return trimmed === "" ? "—" : truncatePubkey(trimmed);
+  return trimmed === "" ? "-" : truncatePubkey(trimmed);
 }

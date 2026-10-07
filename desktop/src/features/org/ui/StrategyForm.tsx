@@ -210,7 +210,7 @@ function ParticipantToggles({
   return (
     <fieldset className="space-y-1.5 border-0 p-0">
       <legend className="text-xs font-medium">
-        Participants — in response order
+        Participants (in response order)
       </legend>
       <p className="text-2xs text-muted-foreground">
         Checked members respond once per round, speaking in the numbered order.
@@ -612,7 +612,7 @@ export function StrategyForm({
       <section className="space-y-2" data-testid="strategy-form-roles">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold">
-            Roster — 1 to {MAX_ROSTER_SLOTS} slots
+            Roster: 1 to {MAX_ROSTER_SLOTS} slots
           </h3>
           <Button
             data-testid="strategy-form-add-role"
@@ -649,7 +649,7 @@ export function StrategyForm({
       {/* Phases */}
       <section className="space-y-2" data-testid="strategy-form-steps">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-semibold">Phases — 1 to {MAX_PHASES}</h3>
+          <h3 className="text-xs font-semibold">Phases: 1 to {MAX_PHASES}</h3>
           <Button
             data-testid="strategy-form-add-step"
             disabled={disabled || state.steps.length >= MAX_PHASES}

@@ -428,7 +428,7 @@ export function ProjectRepositoryActionsPanel({
                 {showCreateReview && onCreatePullRequest ? (
                   <RepositoryActionButton
                     onClick={onCreatePullRequest}
-                    title="Create review — choose a repository and branches to compare"
+                    title="Create review: choose a repository and branches to compare"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Create review
@@ -450,7 +450,7 @@ export function ProjectRepositoryActionsPanel({
                       Latest
                     </dt>
                     <dd className="font-mono text-xs text-foreground">
-                      {latestCommit ? latestCommit.hash.slice(0, 7) : "—"}
+                      {latestCommit ? latestCommit.hash.slice(0, 7) : "-"}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
@@ -462,7 +462,7 @@ export function ProjectRepositoryActionsPanel({
                       className="font-medium text-foreground"
                       data-testid="project-repository-file-count"
                     >
-                      {snapshot ? files.length : "—"}
+                      {snapshot ? files.length : "-"}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
@@ -471,7 +471,7 @@ export function ProjectRepositoryActionsPanel({
                       Contributors
                     </dt>
                     <dd className="font-medium text-foreground">
-                      {snapshot ? contributors.length : "—"}
+                      {snapshot ? contributors.length : "-"}
                     </dd>
                   </div>
                 </dl>

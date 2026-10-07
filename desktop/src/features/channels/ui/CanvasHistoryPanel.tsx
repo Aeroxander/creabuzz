@@ -178,7 +178,7 @@ export function CanvasHistoryPanel({
         >
           {isRelayUnreachableError(historyQuery.error)
             ? RELAY_UNREACHABLE_SHORT
-            : "Couldn't refresh history — showing last known revisions."}
+            : "Couldn't refresh history. Showing the last known revisions."}
         </p>
       ) : null}
       {unverifiedRestoreNotice ? (
@@ -190,8 +190,8 @@ export function CanvasHistoryPanel({
           role="status"
           tabIndex={-1}
         >
-          Restored. We couldn't verify against the latest revision just now —
-          check the canvas if a concurrent edit appears.
+          Restored. We couldn't verify against the latest revision just now.
+          Check the canvas in case a concurrent edit appears.
         </p>
       ) : null}
       <ul className="space-y-2">

@@ -107,7 +107,7 @@ function statusLine(state: MintFlowState): string {
         current === 0
           ? " This step creates the token and its pool and is usually the slowest."
           : "";
-      return `Deploying token (step ${current + 1}/3 — ${MINT_STEPS[current].label})…${slowNote}`;
+      return `Deploying token (step ${current + 1}/3: ${MINT_STEPS[current].label})…${slowNote}`;
     }
     case "linking":
       return "All 3 transactions confirmed. Updating the launch record…";
@@ -134,20 +134,20 @@ function failureMessage(state: MintFlowState): string | null {
       "token-state": "Token verification",
     };
     const label = labels[failure.check ?? ""] ?? "Preflight";
-    return `Deploy stopped before any transaction — ${label} failed: ${failure.reason}`;
+    return `Deploy stopped before any transaction. ${label} failed: ${failure.reason}`;
   }
   const tokenNote = state.tokenAddress
     ? ` Token address: ${state.tokenAddress}.`
     : "";
   if (failure.stage === "link") {
-    return `All 3 transactions confirmed — the token is deployed at ${state.tokenAddress ?? "(address unavailable)"} — but updating the launch record failed: ${failure.reason} The onchain deploy is complete; use "Retry record update" below to link it.`;
+    return `All 3 transactions confirmed. The token is deployed at ${state.tokenAddress ?? "(address unavailable)"}, but updating the launch record failed: ${failure.reason} The onchain deploy is complete; use "Retry record update" below to link it.`;
   }
   const index = failure.stepIndex ?? 0;
   const step = MINT_STEPS[index];
   const outcome =
     failure.outcome === "reverted"
       ? "reverted onchain"
-      : "failed without a receipt — it may or may not have been broadcast";
+      : "failed without a receipt. It may or may not have been broadcast";
   const txNote = failure.txHash ? ` Transaction: ${failure.txHash}.` : "";
   const completed = state.steps
     .map((s, i) => (s.status === "done" ? MINT_STEPS[i].label : null))
@@ -229,7 +229,7 @@ function TokenDeployPanel({
   } else if (!wallet) {
     gateMessage = (
       <p className="mt-2 text-2xs text-muted-foreground">
-        Create a wallet first — the Wallet card creates one, and this deploy
+        Create a wallet first. The Wallet card creates one, and this deploy
         signs with it. No CLI needed.
       </p>
     );
@@ -314,7 +314,7 @@ function TokenDeployPanel({
               </Button>
             ) : (
               <p className="text-2xs text-muted-foreground">
-                Retry isn&apos;t available here — run the deploy again.
+                Retry isn&apos;t available here. Run the deploy again.
               </p>
             )
           ) : state.phase === "success" ? null : (
@@ -438,11 +438,11 @@ function auctionFailureMessage(state: AuctionDeployState): string | null {
   const failure: AuctionDeployFailure | null = state.failure;
   if (!failure) return null;
   if (failure.stage === "prepare") {
-    return `Deploy stopped before any transaction — ${failure.check ?? "preflight"} check failed: ${failure.reason}`;
+    return `Deploy stopped before any transaction. ${failure.check ?? "preflight"} check failed: ${failure.reason}`;
   }
   if (failure.stage === "link") {
     const auctionAddress = state.auctionAddress ?? "(address unavailable)";
-    return `All deploy transactions confirmed — the auction is at ${auctionAddress} — but updating the launch record failed: ${failure.reason} The onchain deploy is complete; use "Retry record update" below to link it.`;
+    return `All deploy transactions confirmed. The auction is at ${auctionAddress}, but updating the launch record failed: ${failure.reason} The onchain deploy is complete; use "Retry record update" below to link it.`;
   }
   const stepId = failure.step ?? "auction";
   const label =
@@ -453,7 +453,7 @@ function auctionFailureMessage(state: AuctionDeployState): string | null {
     failure.outcome === "reverted"
       ? "reverted onchain"
       : failure.outcome === "unknown"
-        ? "failed without a receipt — it may or may not have been broadcast"
+        ? "failed without a receipt. It may or may not have been broadcast"
         : "failed before broadcast";
   const txNote = failure.txHash ? ` Transaction: ${failure.txHash}.` : "";
   const completed = AUCTION_DEPLOY_STEPS.filter(
@@ -550,7 +550,7 @@ function AuctionDeployPanel({
   } else if (!wallet) {
     gateMessage = (
       <p className="mt-2 text-2xs text-muted-foreground">
-        Create a wallet first — the Wallet card creates one, and this deploy
+        Create a wallet first. The Wallet card creates one, and this deploy
         signs with it. No CLI needed.
       </p>
     );
@@ -662,7 +662,7 @@ function AuctionDeployPanel({
               </Button>
             ) : (
               <p className="text-2xs text-muted-foreground">
-                Retry isn&apos;t available here — run the deploy again.
+                Retry isn&apos;t available here. Run the deploy again.
               </p>
             )
           ) : state.phase === "success" ? null : (
@@ -771,7 +771,7 @@ function GraduationPanel({ launch }: { launch: Launch }) {
   const failureNote = failure
     ? state.phase === "mirrorFailed" ||
       (moneyLanded && state.failedStep !== "execute")
-      ? " The graduation itself is complete onchain — retry publishes the remaining receipt(s) only and never re-sends the money action."
+      ? " The graduation itself is complete onchain. Retry publishes the remaining receipt(s) only and never re-sends the money action."
       : ""
     : "";
 
@@ -800,7 +800,7 @@ function GraduationPanel({ launch }: { launch: Launch }) {
         </p>
       ) : !wallet ? (
         <p className="mt-2 text-2xs text-muted-foreground">
-          Create a wallet first — the Wallet card creates one, and this call
+          Create a wallet first. The Wallet card creates one, and this call
           signs with it.
         </p>
       ) : null}
@@ -1018,7 +1018,7 @@ export function LaunchManagePanel({
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-3">
       <p className="text-2xs text-muted-foreground">
-        Operator and founder actions — edit terms, link community channels,
+        Operator and founder actions: edit terms, link community channels,
         deploy the token and auction, and execute the graduation. Sends run from
         the operator wallet; bidder money actions (bid, exit, claim) happen on
         the web app.
@@ -1112,8 +1112,8 @@ export function LaunchManagePanel({
       <section className="rounded-2xl border border-destructive/30 px-4 py-3">
         <h3 className="text-sm font-semibold text-destructive">Danger zone</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Removes the launch from the directory. Onchain state is untouched —
-          deletion only hides the card.
+          Removes the launch from the directory. Onchain state is untouched.
+          Deletion only hides the card.
         </p>
         {confirmDelete ? (
           <div className="mt-2 flex gap-2">

@@ -26,7 +26,7 @@ export function ComposerTimeoutBanner() {
       <Clock aria-hidden className="h-4 w-4 shrink-0 text-amber-600" />
       <span className="min-w-0">
         {remaining
-          ? `You're timed out by community moderators — ${remaining} left.`
+          ? `You're timed out by community moderators (${remaining} left).`
           : "You're timed out by community moderators."}
       </span>
     </div>

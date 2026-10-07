@@ -502,7 +502,7 @@ function DiffPreview({
     <div className="overflow-x-auto bg-background/70 font-mono text-xs leading-5">
       {file.truncated ? (
         <div className="border-border/40 border-b bg-amber-500/10 px-4 py-2 text-amber-600 dark:text-amber-400">
-          Large diff truncated — showing the first {rows.length} lines. Use a
+          Large diff truncated. Showing the first {rows.length} lines. Use a
           local checkout to review the full change.
         </div>
       ) : null}

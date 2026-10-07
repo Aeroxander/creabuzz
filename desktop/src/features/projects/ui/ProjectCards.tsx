@@ -259,7 +259,7 @@ function RepositoryUnavailableIndicator({
       label: "Access failed",
     },
     missing: {
-      description: "No git repository was found on the relay.",
+      description: "No git repository was found on the server.",
       label: "Uninitialized",
     },
     access: {
@@ -269,7 +269,7 @@ function RepositoryUnavailableIndicator({
     },
     unbound: {
       description:
-        "The repository has no access channel binding, so the relay cannot authorize reads.",
+        "The repository has no access channel binding, so the server cannot authorize reads.",
       label: "No access channel",
     },
     network: {
@@ -320,7 +320,7 @@ export function EmptyState({
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">No projects yet</p>
         <p className="text-sm text-muted-foreground">
-          Projects published to this relay will appear here.
+          Projects published to this server will appear here.
         </p>
       </div>
       <Button onClick={onCreateProject} size="sm" type="button">

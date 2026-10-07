@@ -15,7 +15,7 @@ export const AUTO_RESTART_ON_BLURB =
   "Configuration changed since this agent started. Creaton can restart it automatically after ~3 minutes idle, or stop and respawn it to apply now.";
 
 export const AUTO_RESTART_OFF_BLURB =
-  "Configuration changed since this agent started. Automatic restart is off for this agent — stop and respawn it to apply the changes.";
+  "Configuration changed since this agent started. Automatic restart is off for this agent. Stop and respawn it to apply the changes.";
 
 // ── Label helpers ─────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ function humaniseFieldId(field: string): string {
 
 function formatJsonValue(v: unknown): string {
   if (v === null) return "null";
-  if (v === undefined) return "—";
+  if (v === undefined) return "-";
   if (typeof v === "string") return v;
   return JSON.stringify(v);
 }

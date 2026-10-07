@@ -91,7 +91,7 @@ function ObserverArchiveSection({
               className="text-sm font-normal text-muted-foreground/70"
               data-settings-subcopy
             >
-              {`Saves kind ${KIND_AGENT_OBSERVER_FRAME} observer frames addressed to your pubkey. These are ephemeral — not stored by the relay — so local archiving is the only way to retain them.`}
+              {`Saves your agents' observer frames, addressed to your pubkey. The server doesn't keep them, so local archiving is the only way to retain them.`}
             </p>
           </div>
           <Switch

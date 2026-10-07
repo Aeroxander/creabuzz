@@ -239,7 +239,7 @@ export function CustomEmojiSettingsCard() {
                     className="text-sm font-normal text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    You already have :{normalized}: — saving will replace its
+                    You already have :{normalized}:. Saving will replace its
                     image.
                   </p>
                 ) : null}

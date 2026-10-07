@@ -18,9 +18,7 @@ export const SKILL_RECORD_KIND = 30180;
  */
 export function olderRelayGuidance(
   message: string | null | undefined,
-  kind: number = SKILL_RECORD_KIND,
 ): string | null {
   if (!message || !/unknown event kind/i.test(message)) return null;
-  const named = message.match(/\bkind[:\s]+(\d{3,6})\b/i)?.[1] ?? String(kind);
-  return `This relay is running an older build that doesn't know these records (kind ${named}) — restart it from the current build, or point the app at a newer relay.`;
+  return "This server is running an older version that doesn't know about these skills yet. Update the server, or point the app at a newer one.";
 }

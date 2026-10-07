@@ -81,7 +81,7 @@ export const OrgNodeCanvasCard = React.memo(function OrgNodeCanvasCard({
   );
   const nodeStatus = bestSeatStatus(seatStatuses);
   const tooltip = ancestorLabel
-    ? `${node.name} — reports to ${ancestorLabel}`
+    ? `${node.name} (reports to ${ancestorLabel})`
     : node.name;
 
   return (

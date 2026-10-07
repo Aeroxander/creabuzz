@@ -520,11 +520,11 @@ export function usePersonaActions() {
       if (result.publicationStatus === "queued") {
         if (shared) {
           setPersonaNoticeMessage(
-            `Sharing ${persona.displayName} is queued. It will appear after the relay accepts the update.`,
+            `Sharing ${persona.displayName} is queued. It will appear after the server accepts the update.`,
           );
         } else {
           setPersonaNoticeMessage(
-            `Removing ${persona.displayName} is queued. It may remain discoverable until the relay accepts the update.`,
+            `Removing ${persona.displayName} is queued. It may remain discoverable until the server accepts the update.`,
           );
         }
         if (result.relayMessage) {

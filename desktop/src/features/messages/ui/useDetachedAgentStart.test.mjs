@@ -512,7 +512,7 @@ async function toastTitles() {
   return toast.getToasts().map((entry) => String(entry.title ?? ""));
 }
 
-const MAY_NOT_RESPOND = /your message was sent, but the agent may not respond/;
+const MAY_NOT_RESPOND = /Your message was sent, but the agent may not respond/;
 
 test("a wake is refused while the identity that would scope it is unresolved", async () => {
   // The window before `get_identity` lands. `expectedSignerPubkey` would be

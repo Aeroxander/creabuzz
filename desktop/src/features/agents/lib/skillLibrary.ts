@@ -247,8 +247,8 @@ export function bindConsequence(
 export function queuedSuffix(relayMessage: string | null | undefined): string {
   const detail = relayMessage?.trim();
   return detail
-    ? ` Saved locally; the relay hasn't accepted it yet (${detail}).`
-    : " Saved locally; the relay hasn't accepted it yet — it stays queued for retry.";
+    ? ` Saved locally; the server hasn't accepted it yet (${detail}).`
+    : " Saved locally. The server hasn't accepted it yet, so it stays queued for retry.";
 }
 
 export function bindingNotice(
@@ -265,7 +265,7 @@ export function bindingNotice(
     return consequence + queuedSuffix(result.relayMessage);
   }
   if (result.publicationStatus === "unchanged") {
-    return `No change — ${agentDisplayName} already had '${skillName}' bound exactly as requested.`;
+    return `No change. ${agentDisplayName} already had '${skillName}' bound exactly as requested.`;
   }
   return consequence;
 }
@@ -280,7 +280,7 @@ export function clearNotice(
     return consequence + queuedSuffix(result.relayMessage);
   }
   if (result.publicationStatus === "unchanged") {
-    return `No change — ${agentDisplayName} has no skills bound.`;
+    return `No change. ${agentDisplayName} has no skills bound.`;
   }
   return consequence;
 }

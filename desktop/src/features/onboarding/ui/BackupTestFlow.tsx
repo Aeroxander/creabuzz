@@ -423,8 +423,8 @@ export function BackupTestFlow({
                 Your backup works!
               </p>
               <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-                File and password verified. Keep them both somewhere safe —
-                that&apos;s all you need to restore your identity.
+                File and password verified. Keep them both somewhere safe.
+                That&apos;s all you need to restore your identity.
               </p>
               <div className="mx-auto mt-4 flex max-w-110 min-w-0 items-center gap-2 text-left">
                 <p

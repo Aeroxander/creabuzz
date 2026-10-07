@@ -122,12 +122,10 @@ export function ProposalRagequitDialog({
     <AlertDialog onOpenChange={(next) => (next ? undefined : close())} open>
       <AlertDialogContent data-testid="proposal-ragequit-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            Exit (ragequit) — the dissent door
-          </AlertDialogTitle>
+          <AlertDialogTitle>Exit (ragequit): the dissent door</AlertDialogTitle>
           <AlertDialogDescription>
             Disagreeing is legitimate. Burning your DAO shares pays out your
-            proportional share of the treasury and closes your position — the
+            proportional share of the treasury and closes your position. The
             exit is always available and is the market that disciplines every
             vote here.
           </AlertDialogDescription>
@@ -146,15 +144,15 @@ export function ProposalRagequitDialog({
             </p>
           ) : (
             <p data-testid="proposal-ragequit-unbound">
-              No DAO is bound to this proposal&apos;s launch yet — there is
+              No DAO is bound to this proposal&apos;s launch yet. There is
               nothing to exit. The door opens when the launch graduates into a
               DAO (its summon receipt names the DAO contract).
             </p>
           )}
           <p>
-            DEV mapping: the configured value-layer key (BUZZ_SPENDER_KEY) is
-            treated as the shareholder. Mapping Nostr holders to EVM share
-            balances through governance is a later upgrade.
+            The launch&apos;s configured spender key is treated as the
+            shareholder. Mapping individual holders to their share balances
+            comes in a later upgrade.
           </p>
           {ragequit.isError && (
             <p
@@ -170,7 +168,7 @@ export function ProposalRagequitDialog({
               className="text-foreground"
               data-testid="proposal-ragequit-result"
             >
-              Exit settled — burned {result.sharesBurned} shares, tx{" "}
+              Exit settled. Burned {result.sharesBurned} shares, transaction{" "}
               <span className="break-all font-mono">{result.txHash}</span>
               {result.sharesRemaining !== "" && (
                 <> · shares remaining: {result.sharesRemaining}</>
@@ -180,8 +178,9 @@ export function ProposalRagequitDialog({
           )}
           {mirrorError && (
             <p className="text-destructive" role="alert">
-              The exit settled, but the 47005 mirror failed: {mirrorError}. The
-              chain is the ledger — the receipt record will catch up on refetch.
+              The exit settled, but the receipt record could not be saved:{" "}
+              {mirrorError}. The chain is the ledger. The record will catch up
+              on refetch.
             </p>
           )}
         </div>

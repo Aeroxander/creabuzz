@@ -331,7 +331,7 @@ export function EncryptedBackupCreator({
 
           {!state.downloadPending && !state.savedPassword ? (
             <p className="text-xs leading-5 text-muted-foreground">
-              Keep the file private and save its password somewhere safe —
+              Keep the file private and save its password somewhere safe.
               Creaton cannot reset it. Once ready, the backup remains available
               to download for 5 minutes.
             </p>

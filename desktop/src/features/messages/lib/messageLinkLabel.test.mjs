@@ -25,7 +25,7 @@ test("ordinary message links include a provided root excerpt", () => {
       channelName: "general",
       threadExcerpt: "Release notes",
     }),
-    "Thread in #general — Release notes",
+    "Thread in #general: Release notes",
   );
 });
 

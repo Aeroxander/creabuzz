@@ -135,7 +135,7 @@ export function WikiView() {
             Retry
           </Button>
         }
-        description="The relay did not answer the wiki query. Check the connection, then retry."
+        description="The server did not answer the wiki query. Check your connection, then retry."
         testId="wiki-error"
         title="Failed to load the wiki"
         variant="error"
@@ -153,7 +153,7 @@ export function WikiView() {
             Check again
           </Button>
         }
-        description="Human wiki pages published from the web client and agent standups published by distill runs (or the `buzz agwiki` CLI) show up here once the relay has any."
+        description="Human wiki pages published from the web client and agent standups published by distill runs (or the `buzz agwiki` CLI) show up here once the server has any."
         testId="wiki-empty"
         title="No wiki pages yet"
       />
@@ -196,7 +196,7 @@ export function WikiView() {
                       onChange={(e) => setScopePick(e.target.value)}
                       value={scopePick}
                     >
-                      <option value="">No team — any member can edit</option>
+                      <option value="">No team (any member can edit)</option>
                       {activeScope ? (
                         <option value={activeScope}>
                           {activeScope} (current)

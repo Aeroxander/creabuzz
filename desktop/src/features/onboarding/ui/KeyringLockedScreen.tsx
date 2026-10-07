@@ -14,7 +14,7 @@ export function KeyringLockedScreen() {
 
   const handleReimportClick = React.useCallback(() => {
     const confirmed = window.confirm(
-      "Importing a different nsec replaces the identity currently locked in the keyring for this install. The previous identity will no longer be accessible. Continue?",
+      "Importing a different secret key replaces the identity currently locked in the keyring for this install. The previous identity will no longer be accessible. Continue?",
     );
     if (confirmed) {
       setShowImport(true);

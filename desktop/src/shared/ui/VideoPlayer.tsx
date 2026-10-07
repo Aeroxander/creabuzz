@@ -1099,7 +1099,7 @@ export function VideoPlayer({
                 <AlertCircle className="h-6 w-6 text-white" />
               </span>
               <span className="rounded-md bg-black/50 px-2 py-1 text-xs text-white backdrop-blur-sm">
-                Failed to load — tap to retry
+                Failed to load. Tap to retry.
               </span>
             </button>
           ) : null}

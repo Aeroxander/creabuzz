@@ -83,7 +83,7 @@ export function UpdateChecker() {
           <SettingsOptionRow>
             <div className="min-w-0">
               <p className="text-sm font-medium">
-                Update available — v{status.version}
+                Update available: v{status.version}
               </p>
               <p
                 className="text-sm font-normal text-muted-foreground/70"

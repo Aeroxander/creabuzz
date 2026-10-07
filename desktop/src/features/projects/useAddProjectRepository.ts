@@ -80,7 +80,7 @@ export async function addProjectRepository(
   const liveHead = liveHeads[0];
   if (!liveHead) {
     throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
+      "Could not find this project on the server. Refresh and try again.",
     );
   }
 
@@ -211,7 +211,7 @@ export async function addProjectRepository(
     } catch (error) {
       if (isUnsupportedProjectKindError(error)) {
         throw new Error(
-          `This relay does not support multi-repository projects (event kind ${KIND_PROJECT_ANNOUNCEMENT}).`,
+          "This server does not support multi-repository projects yet.",
         );
       }
       throw error;
@@ -287,7 +287,7 @@ export async function addProjectRepository(
           : "an event that could not be signed";
         throw new Error(
           `The project was updated but the repository could not be created (${eventLabel}): ${message} ` +
-            `The add-repository operation is idempotent — re-run Add repository with the same name to resume: the recovery query will find the stored event or retry the publish.`,
+            `The add-repository step can be retried safely. Run Add repository again with the same name to pick up where it left off.`,
         );
       }
     }

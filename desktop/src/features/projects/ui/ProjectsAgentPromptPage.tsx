@@ -802,8 +802,8 @@ export function ProjectsAgentPromptPage({
 
         {candidates.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground">
-            No agents available yet — create or start one from the Agents view
-            to ask about your repositories.
+            No agents available yet. Create or start one from the Agents view to
+            ask about your repositories.
           </p>
         ) : (
           <div className="space-y-1.5">

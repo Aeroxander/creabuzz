@@ -80,7 +80,7 @@ export function StartProjectSection() {
         Start a project
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Pick a template and this community becomes a working project — channels,
+        Pick a template and this community becomes a working project: channels,
         agents, workflows, and docs in one step.
       </p>
 

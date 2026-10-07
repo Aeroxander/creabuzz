@@ -56,7 +56,7 @@ test("idle timeout without inbound frames triggers onStall", async () => {
   for (let i = 0; i < 20 && stalls.length === 0; i++) await sleep(5);
   wd.stop();
   assert.equal(stalls.length, 1);
-  assert.match(stalls[0].message, /no inbound frames/i);
+  assert.match(stalls[0].message, /no data is arriving/i);
 });
 
 test("inbound frames reset the idle timer", async () => {

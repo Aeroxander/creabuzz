@@ -60,7 +60,7 @@ export async function fetchLaunchpadEventsExhaustively(
     for (const event of boundary) eventsById.set(event.id, event);
     if (boundary.length >= LAUNCHPAD_PAGE_SIZE) {
       throw new Error(
-        "The relay cannot exhaustively enumerate launchpad events: too many share one timestamp.",
+        "The server cannot exhaustively enumerate launchpad events: too many share one timestamp.",
       );
     }
     if (oldest <= 0) return [...eventsById.values()];

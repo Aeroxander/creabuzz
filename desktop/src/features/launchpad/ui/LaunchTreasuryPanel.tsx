@@ -80,7 +80,7 @@ export function LaunchTreasuryPanel({
           {intent.toString()}
         </p>
         <p className="mt-1 text-2xs text-muted-foreground">
-          Sum of mirrored budgets across {launch.bids.length} bids. Advisory —
+          Sum of mirrored budgets across {launch.bids.length} bids. Advisory:
           settlement happens onchain.
         </p>
       </section>
@@ -89,7 +89,7 @@ export function LaunchTreasuryPanel({
         {streams.length === 0 ? (
           <p className="mt-1 text-sm text-muted-foreground">
             No streams yet. SubDAOs receive revocable streams against milestones
-            — continuation, top-up, or cancel follows a budget vote.
+            (continuation, top-up, or cancel follows a budget vote).
           </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1 text-sm">

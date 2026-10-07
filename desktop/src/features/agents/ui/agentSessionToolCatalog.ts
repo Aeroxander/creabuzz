@@ -161,8 +161,8 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
     return {
       icon: Hash,
       label: isRead
-        ? "Reads channel context from the relay."
-        : "Changes channel state in the relay.",
+        ? "Reads channel context from the server."
+        : "Changes channel state on the server.",
       tone: isWrite ? "write" : "read",
     };
   }
@@ -182,7 +182,7 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
   if (name.includes("search") || name === "get_feed") {
     return {
       icon: Search,
-      label: "Searches relay-visible history.",
+      label: "Searches history on the server.",
       tone: "read",
     };
   }
@@ -193,7 +193,7 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
   ) {
     return {
       icon: Send,
-      label: "Publishes relay-visible activity.",
+      label: "Publishes activity to the server.",
       tone: "write",
     };
   }

@@ -190,7 +190,7 @@ export function HarnessesSettingsPanel() {
             </div>
           ) : (
             <div className="bg-amber-500/10 px-4 py-4 text-sm text-warning">
-              No agent runtimes ready yet — add one below.
+              No agent runtimes ready yet. Add one below.
             </div>
           )}
 

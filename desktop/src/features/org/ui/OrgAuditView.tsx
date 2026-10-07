@@ -76,7 +76,7 @@ const CHAIN_NOT_SERVED_NOTE =
   "The audit chain is only visible to community owners and admins, so it cannot be verified from this account. Every row below is still individually signed.";
 
 const CHAIN_OPERATOR_CAVEAT =
-  "This shows the relay's published entries are internally consistent; it does not protect against the relay operator, who signs and stores the chain.";
+  "This shows the server's published entries are internally consistent; it does not protect against the server operator, who signs and stores the chain.";
 
 function CopyableEventId({ eventId }: { eventId: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -135,7 +135,7 @@ function describeChainStatus(input: {
     return {
       state: "error",
       text: "Chain unavailable",
-      note: "The relay did not answer the chain query. Rows below are signed events; chain verification did not run.",
+      note: "The server did not answer the chain query. Rows below are signed events; chain verification did not run.",
     };
   }
   if (input.entryCount === 0 && input.malformed === 0) {
@@ -149,7 +149,7 @@ function describeChainStatus(input: {
     return {
       state: "malformed",
       text: `${input.malformed} chain entr${input.malformed === 1 ? "y" : "ies"} unreadable`,
-      note: `Verification ran over the entries that did parse; the ${input.malformed} unreadable envelope${input.malformed === 1 ? " was" : "s were"} excluded, so treat the result as partial. The count is the honest signal — nothing here is dropped silently.`,
+      note: `Verification ran over the entries that did parse; the ${input.malformed} unreadable envelope${input.malformed === 1 ? " was" : "s were"} excluded, so treat the result as partial. The count is the honest signal. Nothing here is dropped silently.`,
     };
   }
   const verification = input.verification;
@@ -178,7 +178,7 @@ function describeChainStatus(input: {
       : {
           state: "verified",
           text: `Chain verified ${range}`,
-          note: `Entries ${range} hash-link correctly; digests were recomputed in this app. Verification covers the ${coverage} above — the chain continues before it. ${CHAIN_OPERATOR_CAVEAT}`,
+          note: `Entries ${range} hash-link correctly; digests were recomputed in this app. Verification covers the ${coverage} above. The chain continues before it. ${CHAIN_OPERATOR_CAVEAT}`,
         };
   }
   return {
@@ -232,7 +232,7 @@ function ChainPosition({ badge }: { badge: ChainBadge }) {
       case "verified":
         return {
           visible: `#${badge.seq} ✓`,
-          text: `Chain entry ${badge.seq} (${auditActionLabel(badge.action)}) verified — hash recomputed in this app`,
+          text: `Chain entry ${badge.seq} (${auditActionLabel(badge.action)}) verified (hash recomputed in this app)`,
           className: "text-status-ok",
         };
       case "broken":
@@ -250,19 +250,19 @@ function ChainPosition({ badge }: { badge: ChainBadge }) {
       case "unverified":
         return {
           visible: `#${badge.seq} ?`,
-          text: `Chain entry ${badge.seq} is unverified — the chain breaks before it`,
+          text: `Chain entry ${badge.seq} is unverified. The chain breaks before it`,
           className: "text-status-waiting",
         };
       case "not-in-chain":
         return {
-          visible: "—",
+          visible: "-",
           text: "No hash-chain entry covers this event in the loaded chain",
           className: "text-muted-foreground",
         };
       default:
         return {
-          visible: "—",
-          text: "Hash chain not served by this relay — chain position unavailable",
+          visible: "-",
+          text: "Hash chain not served by this server. Chain position unavailable",
           className: "text-muted-foreground",
         };
     }
@@ -431,7 +431,7 @@ export function OrgAuditView({
             Retry
           </Button>
         }
-        description="The relay did not answer the audit query. Check the connection, then retry."
+        description="The server did not answer the audit query. Check your connection, then retry."
         testId="org-audit-error"
         title="Failed to load the audit log"
         variant="error"
@@ -484,7 +484,7 @@ export function OrgAuditView({
           data-testid="org-audit-chain-coverage"
         >
           Entries #{String(verification.fromSeq)}–#{String(verification.toSeq)}{" "}
-          loaded — verification covers the loaded prefix, not the whole chain.
+          loaded. Verification covers the loaded prefix, not the whole chain.
         </p>
       ) : null}
       {chainStatus.state === "broken" && verification ? (
@@ -514,7 +514,7 @@ export function OrgAuditView({
               Create a node or grant
             </Button>
           }
-          description="Make the first structural change — create a node or grant. Every change lands here as a signed event."
+          description="Make the first structural change: create a node or grant. Every change lands here as a signed event."
           icon={<Plus aria-hidden="true" className="h-5 w-5" />}
           testId="org-audit-empty"
           title="No structural changes recorded yet"
@@ -624,7 +624,7 @@ export function OrgAuditView({
         <div className="flex items-center justify-between gap-2">
           <p className="px-1 text-2xs text-muted-foreground">
             Showing the newest {events.length} of at least{" "}
-            {events.length + AUDIT_FETCH_LIMIT} — the chain is append-only, so
+            {events.length + AUDIT_FETCH_LIMIT}. The chain is append-only, so
             older history loads on demand.
           </p>
           <Button
@@ -642,7 +642,7 @@ export function OrgAuditView({
           className="px-1 text-2xs text-muted-foreground"
           data-testid="org-audit-truncated"
         >
-          Showing the newest {events.length} events. Older history exists — this
+          Showing the newest {events.length} events. Older history exists. This
           is a floor, not a total.
         </p>
       ) : null}
@@ -656,7 +656,7 @@ export function OrgAuditView({
           {auditQuery.isPending ? (
             <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
               <Spinner aria-hidden="true" className="h-4 w-4" />
-              Re-fetching from the relay…
+              Re-fetching from the server…
             </div>
           ) : verifySummary ? (
             <div className="space-y-3 py-2 text-sm">
@@ -674,7 +674,7 @@ export function OrgAuditView({
                     ? "Presence verified"
                     : "Presence degraded"}
                   : {verifySummary.presentCount} of {verifySummary.checkedCount}{" "}
-                  sampled entries re-fetched from the relay.
+                  sampled entries re-fetched from the server.
                 </p>
                 {verifySummary.missingIds.length > 0 && (
                   <p className="mt-1 text-xs">
@@ -702,9 +702,9 @@ export function OrgAuditView({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                This verifies presence and recency of the same signed events —
-                it is <strong>not</strong> a hash-chain proof. Hash-chain
-                verification runs in this app over the chain entries the relay
+                This verifies presence and recency of the same signed events. It
+                is <strong>not</strong> a hash-chain proof. Hash-chain
+                verification runs in this app over the chain entries the server
                 serves; the status chip above reports its result, including when
                 no chain is served.
               </p>
@@ -771,7 +771,7 @@ function AuditRowItem({
               className="inline-flex shrink-0 rounded border px-1 py-0.5 font-mono text-3xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="org-audit-object"
               onClick={() => onOpenObject(object)}
-              title={`${auditKindLabel(row.kind)} ${object.id} — open detail`}
+              title={`${auditKindLabel(row.kind)} ${object.id} (open detail)`}
               type="button"
             >
               {shortIdentity(object.id)}

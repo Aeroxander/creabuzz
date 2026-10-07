@@ -84,7 +84,7 @@ export function RpcEndpointControl({
       <legend className="sr-only">Chain RPC endpoint</legend>
       {active?.mainnet ? (
         <p className="px-2 py-1 text-3xs text-destructive" role="note">
-          Mainnet selected. The launchpad contracts are unaudited — use a test
+          Mainnet selected. The launchpad contracts are unaudited. Use a test
           network.
         </p>
       ) : null}

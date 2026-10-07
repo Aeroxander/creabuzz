@@ -198,7 +198,7 @@ export function ChannelCanvas({
         >
           {isRelayUnreachableError(canvasQuery.error)
             ? RELAY_UNREACHABLE_SHORT
-            : "Couldn't refresh canvas — showing last known content."}
+            : "Couldn't refresh canvas. Showing the last known content."}
         </p>
       ) : null}
       {unverifiedSaveNotice ? (
@@ -210,8 +210,8 @@ export function ChannelCanvas({
           ref={noticeRef}
           tabIndex={-1}
         >
-          Saved. We couldn't verify against the latest revision just now — check
-          History if a concurrent edit appears.
+          Saved. We couldn't verify against the latest revision just now. Check
+          History in case a concurrent edit appears.
         </p>
       ) : null}
       {canvasExists ? (

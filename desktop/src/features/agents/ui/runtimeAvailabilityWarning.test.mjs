@@ -85,5 +85,5 @@ test("adapter-outdated warning stays hint-free reinstall copy", () => {
   const warning = runtimeAvailabilityWarning(
     entry({ availability: "adapter_outdated" }),
   );
-  assert.equal(warning, "Amp ACP adapter is outdated — reinstall to continue.");
+  assert.equal(warning, "Amp ACP adapter is outdated. Reinstall to continue.");
 });

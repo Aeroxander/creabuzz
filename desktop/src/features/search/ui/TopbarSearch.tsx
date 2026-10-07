@@ -832,8 +832,8 @@ export function TopbarSearch({
           )}
         >
           <p>
-            No recent activity yet — search for people, channels, or words from
-            a message.
+            No recent activity yet. Search for people, channels, or words from a
+            message.
           </p>
         </div>
       </div>

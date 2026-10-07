@@ -353,7 +353,7 @@ export async function prepareDeploy(
   if (infrastructureFeeBps > MAX_INFRASTRUCTURE_FEE_BPS) {
     throw new MintPrepareError(
       "infrastructure-fee",
-      `the router's infrastructure fee (${infrastructureFeeBps} bps) is above the ${MAX_INFRASTRUCTURE_FEE_BPS} bps deploy cap — the deploy would revert`,
+      `the router's infrastructure fee (${infrastructureFeeBps} bps) is above the ${MAX_INFRASTRUCTURE_FEE_BPS} bps deploy cap. The deploy would fail.`,
     );
   }
 
@@ -421,7 +421,7 @@ export function treasuryGate(
   }
   return {
     ok: false,
-    detail: `The launch record's treasury (${recorded}) is not your wallet (${wallet}). In v1 the deploying wallet must be the treasury — steps 2-3 (transfer validator, trading ruleset) are token-owner operations. Update the launch's treasury to your wallet address (Edit terms), then deploy.`,
+    detail: `The launch record's treasury (${recorded}) is not your wallet (${wallet}). In v1 the deploying wallet must be the treasury. Steps 2-3 (transfer validator, trading ruleset) are token-owner operations. Update the launch's treasury to your wallet address (Edit terms), then deploy.`,
   };
 }
 

@@ -10,7 +10,7 @@ const NO_CHANNEL_BINDING_TOKEN = "no_channel_binding";
 const NO_CHANNEL_BINDING_LEGACY_PHRASE = "no channel binding";
 
 const NO_CHANNEL_BINDING_COPY =
-  "This repository is not linked to a project channel, so the relay cannot " +
+  "This repository is not linked to a project channel, so the server cannot " +
   "authorize access. The repository owner can link it with: " +
   "buzz repos bind --id <repo> --channel <channel-uuid>";
 

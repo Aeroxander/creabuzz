@@ -13,7 +13,7 @@ const MEMORY_LIST_PREVIEW_LIMIT = 3;
 type MemorySectionVariant = "cards" | "grouped";
 
 const MEMORY_TRUNCATED_TOOLTIP =
-  "This list may be incomplete — the relay returned the maximum number of memories.";
+  "This list may be incomplete. The server returned the maximum number of memories.";
 
 const MEMORY_DANGLING_REF_TOOLTIP =
   "This memory links to a slug that wasn't found in the loaded memory list.";
@@ -292,8 +292,8 @@ function MemoryGraphView({
           )}
           data-testid="agent-memory-no-core"
         >
-          No <code className="font-mono text-2xs">core</code> memory yet — agent
-          identity is unrooted.
+          No <code className="font-mono text-2xs">core</code> memory yet, so the
+          agent has no identity memory.
         </p>
       ) : null}
 

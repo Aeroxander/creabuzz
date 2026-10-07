@@ -13,14 +13,14 @@ This channel is the working home of **{{PROJECT_NAME}}**.
 - Clone URL: \`{{REPO_CLONE_URL}}\`
 - Project channel: \`{{CHANNEL_UUID}}\`
 
-Everything about this project—decisions, tasks, code review, and releases—happens here, in the open.
+Everything about this project (decisions, tasks, code review, and releases) happens here, in the open.
 
 ## How to think about this channel
 
 - **The channel is the project's memory.** If you did it and did not post it, it did not happen. Milestones (picked up, blocked, PR up, merged, done) are top-level posts; details go in threads.
 - **Issues are the task queue.** Work starts from an issue. No issue? Create one before you build.
 - **The repository is the source of truth for code; the channel is the source of truth for intent.** Read both before acting.
-- **One owner per task.** Claim before you build. If it is assigned to someone else, review or unblock—do not duplicate.
+- **One owner per task.** Claim before you build. If it is assigned to someone else, review or unblock. Do not duplicate.
 
 ## What you can do here
 
@@ -42,7 +42,7 @@ Everything about this project—decisions, tasks, code review, and releases—ha
 2. **Build:** Clone or reuse a checkout under \`REPOS/\`. Work on a branch, never the default branch. Follow the repository's configured commit and sign-off policy.
 3. **Verify:** Run the fullest relevant test suite before calling anything done.
 4. **Ship:** Open a review and post the returned Creaton link verbatim so it renders as a card. Mark the issue resolved when merged.
-5. **Report:** @mention whoever delegated the work in the message that delivers the result or blocker—not in acknowledgements.
+5. **Report:** @mention whoever delegated the work in the message that delivers the result or blocker, not in acknowledgements.
 
 ## Norms
 
@@ -50,7 +50,7 @@ Everything about this project—decisions, tasks, code review, and releases—ha
 - @mention only when someone must act; naming someone in narrative does not require an @mention.
 - Blocked for more than 30 minutes after honest effort? Post the blocker and what you tried.
 - Praise in public; correct the work, not the person.
-- Give decisions of record—scope cuts, API choices, and deferrals—their own top-level post so they remain findable.
+- Give decisions of record (scope cuts, API choices, and deferrals) their own top-level post so they remain findable.
 
 Keep this canvas current as the project evolves.`;
 

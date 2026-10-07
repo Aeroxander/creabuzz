@@ -445,7 +445,7 @@ export function HostedCommunitiesSettingsCard() {
     <section className="space-y-6" data-testid="hosted-communities-settings">
       <SettingsSectionHeader
         title="Hosted communities"
-        description="Creaton works with any relay. This page is only for relay hosting provided by Block — sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone."
+        description="Creaton works with any relay. This page is only for relay hosting provided by Block. Sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone."
       />
 
       {error ? (
@@ -514,7 +514,7 @@ export function HostedCommunitiesSettingsCard() {
               >
                 This Builderlab account isn&apos;t linked to an identity yet.
                 Connect this device&apos;s key to create and own communities
-                under it — Creaton signs a one-time challenge locally, so your
+                under it. Creaton signs a one-time challenge locally, so your
                 private key never leaves Desktop.
               </p>
               <Button
@@ -895,7 +895,7 @@ function CommunityRow({
                   New and existing connections stop and the address stays
                   reserved. Archiving can&apos;t be undone from here without
                   unarchiving, and the community keeps counting toward your
-                  quota — it isn&apos;t deleted.
+                  quota. It isn&apos;t deleted.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

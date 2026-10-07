@@ -57,11 +57,11 @@ const GROUPS: readonly {
 }[] = [
   {
     enforcement: "relay",
-    hint: "The relay counts these and turns an overrun into an approval request.",
+    hint: "The server counts these and turns an overrun into an approval request.",
   },
   {
     enforcement: "advisory",
-    hint: "Recorded and shown, but the relay cannot stop them.",
+    hint: "Recorded and shown, but the server cannot stop them.",
   },
 ];
 
@@ -196,8 +196,7 @@ export function OrgBudgetForm({
         <DialogHeader>
           <DialogTitle>Create Budget</DialogTitle>
           <DialogDescription>
-            Bound what one agent — or every agent by default — may do in a
-            window.
+            Bound what one agent (or every agent by default) may do in a window.
           </DialogDescription>
         </DialogHeader>
         <form

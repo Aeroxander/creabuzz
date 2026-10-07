@@ -159,7 +159,7 @@ export function CommunityEditForm({
       }
 
       if (!reachable) {
-        setProbeWarning("Can't reach this relay — check the URL");
+        setProbeWarning("Can't reach this relay. Check the URL.");
         return;
       }
 

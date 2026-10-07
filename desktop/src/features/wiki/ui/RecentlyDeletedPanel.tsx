@@ -125,7 +125,7 @@ export function RecentlyDeletedPanel({ isAdmin }: { isAdmin: boolean }) {
               Retry
             </Button>
           }
-          description="The relay did not answer the deleted-pages query, so the list is unknown. Check the connection, then retry."
+          description="The server did not answer the deleted-pages query, so the list is unknown. Check your connection, then retry."
           testId="wiki-recently-deleted-error"
           title="Couldn't load deleted pages"
           variant="error"

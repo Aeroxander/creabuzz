@@ -283,7 +283,7 @@ export function ProjectHomeWorkspaceSheet({
         disabled: projects.length === 0,
         label: "Create review",
         onClick: () => setCreatePullRequestOpen(true),
-        title: "Create review — choose a repository and branches to compare",
+        title: "Create review: choose a repository and branches to compare",
       });
       return;
     }

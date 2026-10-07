@@ -28,7 +28,7 @@ const COPY_RESET_MS = 1500;
 const PRIVATE_KEY_PARSE_MESSAGES: Record<PrivateKeyParseReason, string> = {
   empty: "Paste a private key.",
   length: "Expected 64 hex characters.",
-  charset: "Hex only — 0-9 and a-f.",
+  charset: "Hex only: 0-9 and a-f.",
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -176,7 +176,7 @@ export function WalletCard({ rpcUrl }: { rpcUrl: string }) {
       ) : (
         <p className="mt-1 text-2xs text-muted-foreground">
           {address
-            ? "Operator key for launch operations (deploy, graduation, mint) — bidder funds use passkey custody on the web app. Stored in your macOS Keychain. Export and rotation aren't available in v1."
+            ? "Operator key for launch operations (deploy, graduation, mint). Bidder funds use passkey custody on the web app. Stored in your macOS Keychain. Export and rotation aren't available in v1."
             : "Operator keys are stored in your macOS Keychain. Bidder funds use passkey custody on the web app."}
         </p>
       )}

@@ -186,7 +186,7 @@ export const BUDGET_LIMIT_FIELDS: readonly BudgetLimitField[] = [
     label: "Max LLM Spend (cents)",
     placeholder: "e.g. 500",
     enforcement: "relay",
-    note: "Needs the relay's LLM prices configured; without them the gateway refuses the agent rather than run it unmetered.",
+    note: "Needs the server's LLM prices configured. Without them the gateway won't run the agent unmetered.",
   },
   {
     key: "taskCreate",
@@ -205,7 +205,7 @@ export const BUDGET_LIMIT_FIELDS: readonly BudgetLimitField[] = [
     label: "Task Approve Limit",
     placeholder: "e.g. 5",
     enforcement: "advisory",
-    note: "The relay does not count task approvals.",
+    note: "The server does not count task approvals.",
   },
   {
     key: "spend",

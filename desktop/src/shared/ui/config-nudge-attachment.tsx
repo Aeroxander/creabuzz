@@ -75,7 +75,7 @@ export function shouldOpenDoctor(
 }
 
 export function missingBinaryRecoveryMessage(): string {
-  return "not found in PATH — install it or update PATH, then restart Creaton";
+  return "not found in PATH. Install it or update PATH, then restart Creaton";
 }
 
 /**
@@ -123,7 +123,7 @@ function cliLoginMessage(
     case "adapter_missing":
       return `${harness} ACP adapter isn't installed`;
     case "adapter_outdated":
-      return `${harness} ACP adapter is outdated — reinstall required`;
+      return `${harness} ACP adapter is outdated (reinstall to continue)`;
     case "available":
       // Tooling is present but authentication is needed — fall back to
       // the backend-supplied copy which has the exact login command.
@@ -424,8 +424,8 @@ function RequirementRow({
             {configFile} is invalid:{" "}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
               {requirement.diagnostic}
-            </code>{" "}
-            — fix the config and restart the agent
+            </code>
+            . Fix the config and restart the agent
           </span>
         </div>
       );

@@ -30,7 +30,7 @@ describe("milestoneChoices", () => {
       [],
     );
     assert.deepEqual(choices.claimOptions, [
-      { value: "m1", label: "m1 — Testnet live" },
+      { value: "m1", label: "m1: Testnet live" },
     ]);
   });
 

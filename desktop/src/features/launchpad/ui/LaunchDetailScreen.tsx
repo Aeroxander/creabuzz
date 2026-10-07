@@ -252,7 +252,7 @@ function DiscussionPanel({
     return (
       <p className="text-sm text-muted-foreground">
         No community channels linked yet. Founders link channels from the Manage
-        tab — announcements and discussion live in the community, not here.
+        tab. Announcements and discussion live in the community, not here.
       </p>
     );
   }

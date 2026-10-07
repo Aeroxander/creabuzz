@@ -54,15 +54,15 @@ export function routeDecision(kind: ProposalKind): DecisionRoute {
       return {
         kind,
         mechanism: "Deliberation",
-        why: "Sentiment and roadmap taste are distributed knowledge — discussion aggregates it; a ballot misprices it.",
+        why: "Sentiment and roadmap taste are distributed knowledge. Discussion aggregates it; a ballot misprices it.",
         ballot: false,
-        note: "Discuss in channel / linked issue — the outcome is a wiki standup summary, not a tally. No ballot: a vote would misprice distributed sentiment.",
+        note: "Discuss in channel / linked issue. The outcome is a wiki standup summary, not a tally. No ballot: a vote would misprice distributed sentiment.",
       };
     case "futarchy-budget":
       return {
         kind,
         mechanism: "Futarchy market",
-        why: "Budget and subDAO allocation is forecasting, not opinion — markets price outcomes better than ballots.",
+        why: "Budget and subDAO allocation is forecasting, not opinion. Markets price outcomes better than ballots.",
         ballot: false,
         note: "Read-only market note: markets land with the futarchy market peripheral (design scope: budget & subDAO allocation only).",
       };
@@ -70,7 +70,7 @@ export function routeDecision(kind: ProposalKind): DecisionRoute {
       return {
         kind: "plain",
         mechanism: "Majeur ballot",
-        why: "A bounded yes/no with stakes: N-1 snapshot, quorum + minYes, FOR>AGAINST, TTL + timelock — the exact majeur ruleset.",
+        why: "A bounded yes/no with stakes: N-1 snapshot, quorum + minYes, FOR>AGAINST, TTL + timelock. The exact majeur ruleset.",
         ballot: true,
         note: "",
       };
@@ -154,9 +154,9 @@ export function authorityLine(input: {
 }): string {
   const proposer = truncatePubkey(input.proposer);
   if (input.grant) {
-    return `Proposed by ${proposer} under delegation ${truncatePubkey(input.grant)} — a limited, revocable permission recorded with this proposal.`;
+    return `Proposed by ${proposer} under delegation ${truncatePubkey(input.grant)}. It is a limited, revocable permission recorded with this proposal.`;
   }
-  return `Proposed by ${proposer} under their own key — no delegation grant recorded on this record.`;
+  return `Proposed by ${proposer} under their own key. No delegation grant is recorded on this record.`;
 }
 
 // ---------------------------------------------------------------------------

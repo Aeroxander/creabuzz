@@ -55,14 +55,13 @@ export type WebIdentityHandoff = {
 export const WEB_IDENTITY_HANDOFF_COPY = {
   title: "Use my web account",
   intro:
-    "Sign in on the web and this device joins that account automatically — there is no key to copy.",
+    "Sign in on the web and this device joins that account automatically. There is no key to copy.",
   replacesWarning:
     "This replaces the account on this device. Back up the current key first if you haven't.",
   openButton: "Sign in with browser",
   onboardingHint: "Use your Creaton account from the web",
   starting: "Opening your browser…",
-  waiting:
-    "Finish signing in in your browser — this window links up automatically.",
+  waiting: "Finish signing in on the web. This window links up automatically.",
   cancelButton: "Cancel",
   tryAgainButton: "Try again",
   closeLabel: "Done",

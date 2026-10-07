@@ -82,7 +82,7 @@ export function OrgNodeForm({
       .filter((node) => node.dtag !== editNode?.dtag)
       .map((node) => ({
         id: node.dtag,
-        label: "— ".repeat(depths.get(node.dtag) ?? 0) + node.name,
+        label: "- ".repeat(depths.get(node.dtag) ?? 0) + node.name,
         kindBadge: node.kind,
       }));
   }, [nodes, editNode]);

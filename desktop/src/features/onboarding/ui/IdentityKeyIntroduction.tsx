@@ -84,7 +84,7 @@ export function IdentityKeyIntroduction({
               <CircleSlash2 aria-hidden className="size-5" />
             </span>
             <p className="text-base leading-6 text-foreground">
-              Never share it—anyone with this key can sign in as you
+              Never share it. Anyone with this key can sign in as you.
             </p>
           </div>
           <div className="flex min-h-14 items-center gap-4 text-left">

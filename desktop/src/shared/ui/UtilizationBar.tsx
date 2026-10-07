@@ -66,7 +66,7 @@ export function UtilizationBar({
           </span>
           {truncated ? (
             <span className="shrink-0 text-2xs font-medium text-status-waiting">
-              {`>${floor} in window — count is a floor`}
+              {`At least ${floor} in window`}
             </span>
           ) : (
             readout && (

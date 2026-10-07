@@ -66,8 +66,8 @@ export function OrgBudgetLadder({ budget }: OrgBudgetLadderProps) {
           data-testid="org-ladder-violation"
         >
           {resolution.zeroed
-            ? `Violated — autonomy zeroed (${link.onViolation}) until the window heals.`
-            : "Violated — limits dropped to base until the window heals."}
+            ? `Violated. Autonomy zeroed (${link.onViolation}) until the window heals.`
+            : "Violated. Limits dropped to base until the window heals."}
         </p>
       ) : (
         <p className="mt-1 text-2xs">

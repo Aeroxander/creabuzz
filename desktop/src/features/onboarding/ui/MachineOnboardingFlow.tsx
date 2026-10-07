@@ -347,7 +347,8 @@ export function MachineOnboardingFlow({
                 src="/landing/buzz-wordmark.png"
               />
               <p className="mt-2 max-w-[560px] text-center text-2xl font-normal leading-none text-foreground">
-                Your people, your agents, your projects —<br />
+                Your people, your agents, your projects,
+                <br />
                 all in one place.
               </p>
               {error ? (

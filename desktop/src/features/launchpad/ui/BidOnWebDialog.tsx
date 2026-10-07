@@ -55,15 +55,15 @@ export function BidOnWebDialog({
           <p className="text-2xs text-muted-foreground">
             {record.auction
               ? `Auction deployed at ${truncatePubkey(record.auction)} · ${mirroredLabel(launch.bids.length)}.`
-              : `Auction not deployed yet — bidding opens once the operator deploys it. ${mirroredLabel(launch.bids.length)}.`}
+              : `Auction not deployed yet. Bidding opens once the operator deploys it. ${mirroredLabel(launch.bids.length)}.`}
           </p>
           <p className="text-2xs text-muted-foreground">
-            Bidding happens on the web app — same account, sponsored. Funds move
+            Bidding happens on the web app (same account, sponsored). Funds move
             with your web passkey, not the desktop operator key.
           </p>
           {relayOrigin === null ? (
             <p className="text-2xs text-destructive" role="alert">
-              The relay address isn&apos;t resolved yet, so the web link
+              The server address isn&apos;t resolved yet, so the web link
               can&apos;t be built. Reconnect the community, then try again.
             </p>
           ) : null}

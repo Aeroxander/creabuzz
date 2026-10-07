@@ -65,10 +65,10 @@ function provenanceLabel(
 // Distill feedback copy. The pending state is honest about the cost: the run
 // makes one LLM call, so it is labeled as such instead of a bare spinner.
 const DISTILL_PENDING_COPY =
-  "Distilling the standup — running one LLM call. This can take a couple of minutes.";
+  "Distilling the standup. It runs one LLM call and can take a couple of minutes.";
 const DISTILL_SUCCESS_COPY = "Standup updated.";
 const DISTILL_NOTHING_NEW_COPY =
-  "Nothing new to distill — no done tasks or contribution records since the last run.";
+  "Nothing new to distill. No done tasks or contribution records since the last run.";
 const DISTILL_TIMEOUT_COPY = `Distill timed out after ${AGENT_WIKI_DISTILL_TIMEOUT_SECONDS} seconds and was stopped.`;
 
 /** The "Distill now" affordance: explicit name, disabled + busy while running. */
@@ -389,7 +389,7 @@ export function AgentWikiSection({ nowSeconds }: AgentWikiSectionProps) {
               Retry
             </Button>
           }
-          description="The relay did not answer the wiki query. Check the connection, then retry."
+          description="The server did not answer the wiki query. Check your connection, then retry."
           testId="org-wiki-error"
           title="Failed to load the agent wiki"
           variant="error"

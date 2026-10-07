@@ -133,7 +133,7 @@ function notifyStorageFull(): void {
     .then(({ toast }) => {
       toast.error("Local storage is full", {
         description:
-          "Creaton could not save some local data — read positions may not persist across restarts.",
+          "Creaton couldn't save some local data. Read positions may not persist across restarts. Free up space on this device, then try again.",
       });
     })
     .catch(() => {});

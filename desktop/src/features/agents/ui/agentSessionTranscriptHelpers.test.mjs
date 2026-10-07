@@ -202,12 +202,12 @@ test("parsePromptText preserves batched steer and interrupt counts in section ti
     {
       tag: "new-message-arrived-while-you-were-working",
       count: "2",
-      title: "New messages — arrived while you were working — 2 events",
+      title: "New messages arrived while you were working: 2 events",
     },
     {
       tag: "new-request-supersedes-previous",
       count: "3",
-      title: "New request — supersedes previous — 3 events",
+      title: "New request (supersedes previous): 3 events",
     },
   ];
 

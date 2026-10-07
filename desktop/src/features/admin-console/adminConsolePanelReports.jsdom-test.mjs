@@ -206,7 +206,7 @@ const REPORT_DTO_ROWS = [
   },
   {
     name: "nullable-degradation",
-    desc: "report detail renders em-dash for absent nullable fields, no message block",
+    desc: "report detail renders a dash placeholder for absent nullable fields, no message block",
     pubkey: "7".repeat(64),
     item: {
       id: "00000000-0000-0000-0000-000000000077",
@@ -229,11 +229,11 @@ const REPORT_DTO_ROWS = [
       actionId: null,
       message: null,
     }),
-    // Mutation: remove `value != null` guard in DetailRow → em-dash breaks for undefined → red.
+    // Mutation: remove `value != null` guard in DetailRow → placeholder breaks for undefined → red.
     check: (text) => {
       assert.ok(
-        text.includes("—"),
-        `em-dash must appear for null nullable fields; text: ${text.slice(0, 600)}`,
+        text.includes("Channel-"),
+        `dash placeholder must appear for null nullable fields; text: ${text.slice(0, 600)}`,
       );
       assert.ok(
         !text.includes("Reported message"),

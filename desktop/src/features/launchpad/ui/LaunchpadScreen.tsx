@@ -87,7 +87,7 @@ export function LaunchpadScreen() {
             </h2>
             <p className="text-sm text-muted-foreground">
               Read-only raise directory plus founder and operator tools. Bidding
-              happens on the web app — same account, sponsored.
+              happens on the web app (same account, sponsored).
             </p>
           </div>
           <Button
@@ -142,7 +142,7 @@ export function LaunchpadScreen() {
           <div className="mt-6 rounded-2xl border border-destructive/30 px-5 py-8 text-center text-sm">
             <p className="font-medium">Couldn&apos;t load launches.</p>
             <p className="mt-1 text-muted-foreground">
-              Check the relay connection, then try again.
+              Check the server connection, then try again.
             </p>
             <Button
               className="mt-3"

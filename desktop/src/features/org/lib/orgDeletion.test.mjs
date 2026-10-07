@@ -79,7 +79,7 @@ describe("deleteAddressableEvents", () => {
     const deps = makeDeps({ heads: [] });
     await assert.rejects(
       () => deleteAddressableEvents(TARGET, deps),
-      /Could not find this org node on the relay/,
+      /Could not find this org node on the server/,
     );
     assert.equal(deps.published.length, 0);
   });

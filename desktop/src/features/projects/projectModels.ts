@@ -178,7 +178,7 @@ export function validateProjectEventEnvelope(
     const count = tags.filter((tag) => tag[0] === tagName).length;
     if (count > 1) {
       throw new Error(
-        `Project record: duplicate '${tagName}' tag — at most one is permitted.`,
+        `Project record: duplicate '${tagName}' tag. At most one is permitted.`,
       );
     }
   }
@@ -220,7 +220,7 @@ export function validateProjectEventEnvelope(
     const parsed = parseRepositoryAddress(address);
     if (!parsed) {
       throw new Error(
-        `Project record: invalid repository address '${address}' — expected '30617:<lowercase-hex64>:<dtag>'.`,
+        `Project record: invalid repository address '${address}'. Expected the form '30617:<lowercase-hex64>:<id>'.`,
       );
     }
     if (seenAddresses.has(address)) {

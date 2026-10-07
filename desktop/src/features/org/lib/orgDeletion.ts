@@ -57,7 +57,7 @@ export async function deleteAddressableEvents(
   const heads = await fetchEvents(filter);
   if (heads.length === 0) {
     throw new Error(
-      `Could not find this ${target.label} on the relay. Refresh and try again.`,
+      `Could not find this ${target.label} on the server. Refresh and try again.`,
     );
   }
 

@@ -91,7 +91,7 @@ export async function deleteProject(
   const [liveHead] = await fetchEvents(filter);
   if (!liveHead) {
     throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
+      "Could not find this project on the server. Refresh and try again.",
     );
   }
 

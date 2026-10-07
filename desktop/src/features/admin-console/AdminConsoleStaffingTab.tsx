@@ -767,7 +767,7 @@ export function StaffingTab({
                     size="icon-xs"
                     title={
                       isConfigBacked
-                        ? "Config-backed — cannot be removed via API"
+                        ? "Config-backed. Cannot be removed through the API."
                         : "Remove operator"
                     }
                     type="button"

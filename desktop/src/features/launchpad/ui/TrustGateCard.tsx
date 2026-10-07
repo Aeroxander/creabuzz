@@ -192,7 +192,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
               </p>
             ) : (
               <p className="text-muted-foreground">
-                unreadable — the RPC did not answer (not the same as empty)
+                unreadable: the RPC did not answer (not the same as empty)
               </p>
             )}
             {hooks.length > 1 ? (
@@ -236,7 +236,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                 {gateMatches === true
                   ? " · the gate on-chain matches this root"
                   : gateMatches === false
-                    ? " · CONTRADICTED — the chain holds a different root"
+                    ? " · CONTRADICTED: the chain holds a different root"
                     : ""}
               </p>
             ) : (
@@ -256,7 +256,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
               </p>
             ) : !selected.indexerUrl ? (
               <p className="text-muted-foreground">
-                this record carries no proofs pointer — only the root ships, the
+                this record carries no proofs pointer. Only the root ships; the
                 workspace data stays private
               </p>
             ) : bundle.isLoading ? (
@@ -265,7 +265,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
               </p>
             ) : entries.length === 0 ? (
               <p className="text-muted-foreground">
-                unreadable bundle — the indexer did not answer or the entries
+                unreadable bundle: the indexer did not answer or the entries
                 were malformed (dropped, never guessed)
               </p>
             ) : (
@@ -275,7 +275,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                   {entries.filter((e) => e.verified).length} proofs verified
                   against the root
                   {rebuiltMatches === false
-                    ? " · CONTRADICTED — the rebuilt root differs from the published one"
+                    ? " · CONTRADICTED: the rebuilt root differs from the published one"
                     : rebuiltMatches === true
                       ? " · rebuilt root matches the published root"
                       : ""}

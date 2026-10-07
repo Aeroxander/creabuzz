@@ -641,7 +641,7 @@ function BudgetStep({
         <div className="space-y-1.5">
           <OrgEntityPicker
             disabled={disabled || pending}
-            emptyMessage="No agent is seated yet. A budget covers an agent's key, not an empty seat — skip this step and add one once an agent has joined."
+            emptyMessage="No agent is seated yet. A budget covers an agent's key, not an empty seat. Skip this step and add one once an agent has joined."
             mode="single"
             onChange={setSubject}
             options={options}
@@ -748,7 +748,7 @@ function BudgetStep({
               className="text-2xs text-muted-foreground"
               id="org-wizard-budget-spend-mode"
             >
-              {ENFORCEMENT_LABEL.advisory} — only an on-chain allowance can stop
+              {ENFORCEMENT_LABEL.advisory}. Only an on-chain allowance can stop
               spending.
             </p>
           </div>
@@ -1071,7 +1071,7 @@ export function OrgWizard({
         <DialogHeader>
           <DialogTitle>Create your org</DialogTitle>
           <DialogDescription>
-            Five quick steps publish real org events on this community’s relay.
+            Five quick steps publish real org events on this community’s server.
             Skipped steps stay listed as skipped in the review.
           </DialogDescription>
         </DialogHeader>

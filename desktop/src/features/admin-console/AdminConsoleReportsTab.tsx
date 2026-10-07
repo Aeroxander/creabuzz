@@ -177,7 +177,7 @@ function actionVariant(
  */
 function friendlyEnforcementError(message: string): string {
   if (message.includes("kick target was already absent")) {
-    return "No channel membership to remove — use Timeout or Ban for open channels.";
+    return "No channel membership to remove. Use Timeout or Ban for open channels.";
   }
   return message;
 }
@@ -237,7 +237,7 @@ function EnforcementStateBlock({
       await cancelAdminReport(origin, reportId, {
         actionId: activeAction.id,
       });
-      toast.success("Enforcement cancelled — report reopened");
+      toast.success("Enforcement cancelled. Report reopened.");
       onActionComplete();
     } catch (e) {
       // A 409 means the action is no longer cancellable (already cancelled,
@@ -600,7 +600,7 @@ function ReopenReportForm({
         <p className="text-xs text-muted-foreground">
           Moves this report back to the open queue for re-triage.{" "}
           {wasEnforced
-            ? "The enforcement action already taken is not reversed — reopening does not un-ban, un-timeout, or restore a deleted message."
+            ? "The enforcement action already taken is not reversed. Reopening does not un-ban, un-timeout, or restore a deleted message."
             : "Reopening does not reverse any enforcement action."}
         </p>
       </div>

@@ -80,7 +80,7 @@ test("addProjectChannel does not create a channel when the live project head is 
 
   await assert.rejects(
     addProjectChannel(input(), harness.deps),
-    /Could not find this project on the relay/,
+    /Could not find this project on the server/,
   );
   assert.equal(harness.createCalls(), 0);
 });

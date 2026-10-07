@@ -302,7 +302,7 @@ export function RoyaltyStatementCard({
   } else if (!wallet) {
     gateMessage = (
       <p className="mt-2 text-2xs text-muted-foreground">
-        Create or import a wallet first — the statement reads the royalty ledger
+        Create or import a wallet first. The statement reads the royalty ledger
         for the address this app signs with. The Wallet card has both.
       </p>
     );
@@ -351,9 +351,9 @@ export function RoyaltyStatementCard({
               )}
             </p>
             <p className="mt-1 text-2xs text-muted-foreground">
-              Claimable forever — pull it whenever, no deadline, no clawback.
+              Claimable forever. Pull it whenever: no deadline, no clawback.
               Settlement pushes your credit to your address automatically at
-              each close; anything sitting here is a push that didn&apos;t
+              each close. Anything sitting here is a push that didn&apos;t
               complete.
             </p>
             <div className="mt-2 flex items-center gap-2">
@@ -383,8 +383,8 @@ export function RoyaltyStatementCard({
             {claim.data ? (
               claim.data.status === "reverted" ? (
                 <p className="mt-1 text-2xs text-destructive" role="alert">
-                  The claim reverted onchain — nothing moved, and your balance
-                  is still claimable. Transaction{" "}
+                  The claim reverted onchain. Nothing moved, and your balance is
+                  still claimable. Transaction{" "}
                   {truncatePubkey(claim.data.txHash)}.
                 </p>
               ) : (
@@ -423,10 +423,10 @@ export function RoyaltyStatementCard({
               )}
             </p>
             <p className="mt-1 text-2xs text-muted-foreground">
-              Royalties scale with the allocation you hold: h is that held share
-              (sampled each monthly close), and your tier is the highest badge
-              across your schedules. Holding what you earned pays the full
-              stream — work is never paywalled.
+              Royalties scale with the allocation you hold, sampled at each
+              monthly close. Your tier is the highest badge across your
+              schedules. Holding what you earned pays the full stream. Work is
+              never paywalled.
             </p>
           </section>
           <section className="rounded-xl border border-border/60 px-3 py-2">
@@ -434,7 +434,7 @@ export function RoyaltyStatementCard({
             {data.rows.length === 0 ? (
               <p className="mt-1 text-sm text-muted-foreground">
                 No royalty schedules yet. A schedule is minted when your
-                contribution claim passes review — weight, term, and tier come
+                contribution claim passes review. Weight, term, and tier come
                 from that attested claim.
               </p>
             ) : (
@@ -469,14 +469,14 @@ export function RoyaltyStatementCard({
                         </span>
                         {row.schedule.suspended ? (
                           <span className="text-2xs text-destructive">
-                            Suspended — future accrual stopped. What you already
+                            Suspended. Future accrual stopped. What you already
                             earned is never touched.
                           </span>
                         ) : null}
                       </div>
                       <p className="mt-1 text-2xs text-muted-foreground">
-                        Provenance: contribution record 37013 for claim{" "}
-                        {truncatePubkey(row.id)} — attested{" "}
+                        Provenance: contribution record for claim{" "}
+                        {truncatePubkey(row.id)}, attested{" "}
                         {bandLabel(row.attested.band)}, {row.attested.weight}×
                         weight, {Math.round(Number(row.attested.term) / 86400)}
                         -day term, minted verbatim into this schedule.
@@ -489,7 +489,7 @@ export function RoyaltyStatementCard({
           </section>
           <p className="text-2xs text-muted-foreground">
             Selling your allocation stops future royalties. What you already
-            earned is never touched — it stays claimable forever.
+            earned is never touched. It stays claimable forever.
           </p>
         </div>
       ) : null}

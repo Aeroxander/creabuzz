@@ -135,7 +135,7 @@ export function OrgChart({ query, focus, onOpenBudgets }: OrgChartProps) {
             Retry
           </Button>
         }
-        description="The relay did not answer the org query. Check the connection, then retry."
+        description="The server did not answer the org query. Check your connection, then retry."
         testId="org-chart-error"
         title="Failed to load org chart"
         variant="error"

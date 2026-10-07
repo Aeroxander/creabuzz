@@ -20,5 +20,5 @@ export function getMessageLinkLabel({
   if (variant === "sent-from-thread") {
     return normalizedExcerpt ?? baseLabel;
   }
-  return normalizedExcerpt ? `${baseLabel} — ${normalizedExcerpt}` : baseLabel;
+  return normalizedExcerpt ? `${baseLabel}: ${normalizedExcerpt}` : baseLabel;
 }

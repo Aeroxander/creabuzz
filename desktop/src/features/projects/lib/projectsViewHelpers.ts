@@ -34,7 +34,7 @@ export type ProjectsSort = "updated" | "created" | "name";
 export const REPOSITORY_ENTRY_PAGE_SIZE = 200;
 
 export function formatLastChangedAt(timestamp: number | null) {
-  if (!timestamp) return "—";
+  if (!timestamp) return "-";
   return new Date(timestamp * 1_000).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
@@ -44,7 +44,7 @@ export function formatLastChangedAt(timestamp: number | null) {
 }
 
 export function formatFileSize(size: number | null) {
-  if (size === null) return "—";
+  if (size === null) return "-";
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;

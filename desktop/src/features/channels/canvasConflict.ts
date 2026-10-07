@@ -37,10 +37,10 @@ const CANVAS_CONFLICT_MARKERS = [
 ] as const;
 
 export const CANVAS_CONFLICT_MESSAGE =
-  "This canvas changed since you loaded it — reload to see the latest, then reapply your edit.";
+  "This canvas changed since you loaded it. Reload to see the latest, then reapply your edit.";
 
 export const CANVAS_SUPERSEDED_MESSAGE =
-  "A concurrent edit is now current. Your save was preserved in History — reload, then restore it if needed.";
+  "A concurrent edit is now current. Your save was preserved in History. Reload, then restore it if needed.";
 
 /**
  * Literal `expected-revision` value asserting "I expect no canvas exists yet".

@@ -296,7 +296,7 @@ export function projectDetailAgentContextBlock(
       const detail = overviewContextField(item.detail);
       const reference = overviewContextField(item.reference);
       lines.push(
-        `  - [${overviewContextField(item.kind)}] ${title}${detail ? ` — ${detail}` : ""}${reference ? ` (${reference})` : ""}`,
+        `  - [${overviewContextField(item.kind)}] ${title}${detail ? `: ${detail}` : ""}${reference ? ` (${reference})` : ""}`,
       );
     }
     if (items.length < total) {

@@ -214,7 +214,7 @@ export const SELF_MAINTENANCE_ERROR_STATUS =
 export const SELF_MAINTENANCE_NEEDS_CHANNEL_STATUS =
   "Nightly standup: needs a channel";
 export const SELF_MAINTENANCE_NO_CHANNEL_COPY =
-  "Workflows are channel-scoped — join or create a channel first to schedule the nightly distill.";
+  "Workflows are channel-scoped. Join or create a channel first to schedule the nightly distill.";
 
 /**
  * The toggle button's visible label — its one accessible name (no aria-label

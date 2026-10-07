@@ -263,7 +263,7 @@ export function SkillsSection() {
                         </p>
                         {agent.readError ? (
                           <p className="text-2xs text-destructive">
-                            Bindings unknown — {agent.readError}
+                            Bindings unknown: {agent.readError}
                           </p>
                         ) : (
                           <p className="text-2xs text-muted-foreground">

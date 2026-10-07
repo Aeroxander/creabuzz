@@ -273,7 +273,7 @@ function AgentDeleteConfirmDialog({
           <li>Removes the local management record and saved agent key</li>
           <li>Removes the agent from every channel it belongs to</li>
           <li>
-            Archives the agent&apos;s identity on the relay so it no longer
+            Archives the agent&apos;s identity on the server so it no longer
             appears in member lists or mention suggestions
           </li>
           <li>

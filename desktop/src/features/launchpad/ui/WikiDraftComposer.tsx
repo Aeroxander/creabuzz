@@ -75,7 +75,7 @@ export function WikiDraftComposer({ launch }: { launch: Launch }) {
         });
       }
       setNote(
-        `${fresh.length} draft(s) landed — counter-sign them in the list below.`,
+        `${fresh.length} draft(s) landed. Counter-sign them in the list below.`,
       );
       setSelected("");
     } catch (error) {
@@ -89,7 +89,7 @@ export function WikiDraftComposer({ launch }: { launch: Launch }) {
     <Card className="p-3" data-testid="wiki-draft-composer">
       <h3 className="text-sm font-semibold">Draft proposals from the wiki</h3>
       <p className="text-2xs text-muted-foreground">
-        Decision blocks in a wiki page become agent-drafts — verbatim evidence
+        Decision blocks in a wiki page become agent-drafts. Verbatim evidence
         only, nothing invented. Land them here, then counter-sign.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -139,7 +139,7 @@ export function WikiDraftComposer({ launch }: { launch: Launch }) {
               className="text-muted-foreground/60"
               key={`skip-${skip.anchor}`}
             >
-              #{skip.anchor} skipped — {skip.reason}
+              #{skip.anchor} skipped: {skip.reason}
             </li>
           ))}
           {composed.drafts.length === 0 && composed.skipped.length === 0 ? (

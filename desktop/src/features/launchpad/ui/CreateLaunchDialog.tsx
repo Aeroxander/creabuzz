@@ -214,7 +214,7 @@ export function CreateLaunchDialog({
           <Field
             id="launch-id"
             label="Launch id"
-            hint="Lowercase slug. Permanent — it addresses the launch on the relay."
+            hint="Lowercase slug. Permanent. It addresses the launch on the server."
           >
             <Input
               id="launch-id"
@@ -333,8 +333,8 @@ export function CreateLaunchDialog({
                 ) : null}
                 {verifyState === "missing" ? (
                   <p className="mt-1 text-2xs text-amber-600">
-                    No contract at this address on the configured RPC — check
-                    the address or the chain.
+                    No contract at this address on the configured RPC. Check the
+                    address or the chain.
                   </p>
                 ) : null}
                 {verifyState === "error" ? (
@@ -431,7 +431,7 @@ export function CreateLaunchDialog({
           <Field
             id="launch-auction"
             label="Auction contract"
-            hint="Optional now — link it when the sale deploys."
+            hint="Optional now. Link it when the sale deploys."
           >
             <Input
               id="launch-auction"

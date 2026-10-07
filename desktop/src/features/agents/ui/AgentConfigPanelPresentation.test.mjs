@@ -20,8 +20,8 @@ test("shared configuration rows show only the effective value", () => {
   }
 });
 
-test("unknown normalized values use an em dash", () => {
-  assert.match(source, /const rawDisplayValue = field\.value \?\? "—";/);
+test("unknown normalized values use a dash placeholder", () => {
+  assert.match(source, /const rawDisplayValue = field\.value \?\? "-";/);
 });
 
 test("profile model rows keep their bare leading icons", () => {

@@ -174,7 +174,7 @@ export async function deleteManagedAgentWithRules({
               ? "This agent’s availability is unknown. "
               : "") +
               "Shutdown requested, but the agent may still be running. " +
-              "Deleting now removes the local record — the remote deployment " +
+              "Deleting now removes the local record. The remote deployment " +
               "will be orphaned if shutdown hasn't completed. Continue?",
           );
           if (!confirmed) {

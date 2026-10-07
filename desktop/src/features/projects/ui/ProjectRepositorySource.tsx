@@ -68,7 +68,7 @@ export function RepositoryBranchDropdown({
   const RefIcon = selectedTag ? Tag : GitBranch;
   if (!branch) {
     return (
-      <span className="truncate text-sm font-semibold text-foreground">—</span>
+      <span className="truncate text-sm font-semibold text-foreground">-</span>
     );
   }
   return (

@@ -432,14 +432,15 @@ test("feedback-severed-community: a purged-source feedback row renders in list a
   });
   await settle(30);
 
-  // Detail renders; the community fields show the em-dash placeholder.
+  // Detail renders; the community fields show the dash placeholder.
   const fields = container.querySelector(
     "[data-testid='feedback-detail-fields']",
   );
   assert.ok(fields, "feedback detail must render for a severed row");
   assert.ok(
-    (fields.textContent ?? "").includes("—"),
-    `absent community fields must render as em-dash; got: ${fields.textContent}`,
+    (fields.textContent ?? "").includes("Community-") &&
+      (fields.textContent ?? "").includes("Host-"),
+    `absent community fields must render as dash placeholders; got: ${fields.textContent}`,
   );
 
   await unmount();

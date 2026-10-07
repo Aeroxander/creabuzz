@@ -112,8 +112,8 @@ export function DelegationCard({
     <section className="rounded-2xl border border-border/70 bg-card/60 px-4 py-3">
       <h3 className="text-sm font-semibold">Vote delegation</h3>
       <p className="mt-1 text-2xs text-muted-foreground">
-        Your votes are cast by your delegate until you re-delegate — revocable
-        at any time, including back to yourself. Agent seats may hold
+        Your votes are cast by your delegate until you re-delegate. This is
+        revocable at any time, including back to yourself. Agent seats may hold
         delegations (their authority is grant-scoped and named in receipts).
       </p>
       {!dao ? (
@@ -164,8 +164,8 @@ export function DelegationCard({
             </p>
           ) : null}
           <p className="mt-1 text-2xs text-muted-foreground">
-            Mirrors a 47005 `delegate` receipt — the assignment is public
-            record; the votes remain yours to reclaim.
+            This mirrors the onchain delegation receipt. The assignment is
+            public record; the votes remain yours to reclaim.
           </p>
         </div>
       )}

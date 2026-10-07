@@ -141,7 +141,7 @@ function RepositoryCommitCell({
   commit: ProjectRepoFile["latestCommit"];
   profiles?: UserProfileLookup;
 }) {
-  if (!commit) return <span className="text-muted-foreground">—</span>;
+  if (!commit) return <span className="text-muted-foreground">-</span>;
 
   return (
     <p className="truncate text-xs text-foreground">
@@ -949,7 +949,7 @@ export function RepositoryFilesPanel({
                         {relativeTime(latestCommit.timestamp)}
                       </time>
                     ) : (
-                      "—"
+                      "-"
                     )}
                   </td>
                 </tr>

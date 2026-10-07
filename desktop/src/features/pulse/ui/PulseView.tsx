@@ -258,7 +258,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
     search: "Search Pulse notes by author or text.",
     everyone: "No public notes yet.",
     people: "No notes yet. Follow people to see their updates here.",
-    liked: "No likes yet — tap the heart on a note to save it here.",
+    liked: "No likes yet. Tap the heart on a note to save it here.",
     agents:
       agentPubkeys.length === 0
         ? "No agents registered yet."

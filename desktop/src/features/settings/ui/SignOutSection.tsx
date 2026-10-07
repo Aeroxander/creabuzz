@@ -131,7 +131,7 @@ export function SignOutSection() {
             >
               Removes your identity key and all local app data from this device.
               Before signing out, create and test a password-protected key
-              backup above — this cannot be undone.
+              backup above. This cannot be undone.
             </p>
           </div>
           <Button

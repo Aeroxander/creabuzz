@@ -201,7 +201,7 @@ test("reports a second denser than the relay clamp instead of silently dropping"
 
   await assert.rejects(
     fetchAssignmentOperationEvents([ISSUE_ID], fetchEvents),
-    /full relay page/,
+    /full page/,
   );
 });
 

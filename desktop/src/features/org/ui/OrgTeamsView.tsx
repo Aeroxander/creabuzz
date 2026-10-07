@@ -54,7 +54,7 @@ import {
 
 /** Runs can take minutes — labeled honestly, never a bare spinner. */
 const RUN_PROGRESS_LABEL =
-  "Conducting the strategy's phases — this runs several LLM turns and can take a few minutes";
+  "Conducting the strategy's phases. This runs several LLM turns and can take a few minutes";
 
 type TranscriptTurn = {
   phase: number;
@@ -172,7 +172,7 @@ function RunStrategyDialog({
         <DialogHeader>
           <DialogTitle className="text-sm">Run strategy</DialogTitle>
           <DialogDescription className="text-xs">
-            Publishes the run head only after every turn persisted — a failure
+            Publishes the run head only after every turn persisted. A failure
             publishes nothing.
           </DialogDescription>
         </DialogHeader>
@@ -181,7 +181,7 @@ function RunStrategyDialog({
             <legend className="text-xs font-medium">Strategy</legend>
             <OrgEntityPicker
               disabled={runMutation.isPending}
-              emptyMessage="No strategies — seed the bank first."
+              emptyMessage="No strategies. Seed the bank first."
               mode="single"
               onChange={setStrategyId}
               options={strategyOptions}
@@ -232,7 +232,7 @@ function RunStrategyDialog({
               <Spinner aria-hidden="true" className="h-4 w-4" />
               <p className="text-xs text-muted-foreground">
                 {phaseCount > 0
-                  ? `Conducting ${phaseCount} phase${phaseCount === 1 ? "" : "s"} — ${RUN_PROGRESS_LABEL.toLowerCase()}`
+                  ? `Conducting ${phaseCount} phase${phaseCount === 1 ? "" : "s"}. This runs several LLM turns and can take a few minutes`
                   : RUN_PROGRESS_LABEL}
               </p>
             </div>
@@ -674,7 +674,7 @@ function RunDetailSheet({
                   >
                     <Spinner aria-hidden="true" className="h-4 w-4" />
                     <p className="text-xs text-muted-foreground">
-                      Reflecting — one classifier call on the transcript and
+                      Reflecting. One classifier call on the transcript and
                       certificate (up to ~2 minutes)
                     </p>
                   </div>
@@ -826,7 +826,7 @@ export function OrgTeamsView() {
               Retry
             </Button>
           }
-          description="The relay did not answer the team queries. Check the connection, then retry."
+          description="The server did not answer the team queries. Check your connection, then retry."
           testId="org-teams-error"
           title="Failed to load teams"
           variant="error"
@@ -958,8 +958,8 @@ export function OrgTeamsView() {
           <EmptyState
             description={
               strategies.length === 0
-                ? "No runs yet — seed the strategy bank first."
-                : "No runs yet — pick a strategy above to run it."
+                ? "No runs yet. Seed the strategy bank first."
+                : "No runs yet. Pick a strategy above to run it."
             }
             icon={<Play aria-hidden="true" className="h-5 w-5" />}
             testId="org-runs-empty"

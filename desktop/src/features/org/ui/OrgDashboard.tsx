@@ -211,7 +211,7 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
             Retry
           </Button>
         }
-        description="The relay did not answer one of the dashboard queries. Check the connection, then retry."
+        description="The server did not answer one of the dashboard queries. Check your connection, then retry."
         testId="org-dashboard-error"
         title="Failed to load the org dashboard"
         variant="error"
@@ -312,7 +312,7 @@ export function OrgDashboard({ query, onOpenTab }: OrgDashboardProps) {
       {/* 2. Live agents row — liveness before numbers. */}
       <div>
         <h3 className="mb-2 text-sm font-semibold">
-          Live agents — {liveSeatCount} of {agents.length} live
+          Live agents: {liveSeatCount} of {agents.length}
         </h3>
         {agents.length === 0 ? (
           <EmptyState

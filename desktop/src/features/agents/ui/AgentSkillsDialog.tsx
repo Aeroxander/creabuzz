@@ -85,7 +85,7 @@ export function AgentSkillsDialog({
           {agent.readError ? (
             <p className="text-sm text-destructive" role="alert">
               This agent&apos;s bindings can&apos;t be read right now, so they
-              are unknown — not empty: {agent.readError}
+              are unknown, not empty: {agent.readError}
             </p>
           ) : (
             <div className="space-y-4">
@@ -96,7 +96,7 @@ export function AgentSkillsDialog({
               ) : null}
               {error ? (
                 <p className="text-sm text-destructive" role="alert">
-                  {error} — {agent.displayName} keeps the bindings listed here.
+                  {error}. {agent.displayName} keeps the bindings listed here.
                 </p>
               ) : null}
               {warning.message ? (

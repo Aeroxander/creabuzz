@@ -699,8 +699,8 @@ export function EncryptedBackupCreator({
             Backup saved to {savedPath}
           </p>
           <p className="text-xs leading-5 text-muted-foreground">
-            Your password isn't kept — download another copy anytime, or start
-            over to choose a new password.
+            Your password isn&apos;t kept. Download another copy anytime, or
+            start over to choose a new password.
           </p>
         </div>
       ) : null}
@@ -786,7 +786,7 @@ export function EncryptedBackupCreator({
             <AlertDialogTitle>Create a new backup password?</AlertDialogTitle>
             <AlertDialogDescription>
               Starting over lets you pick a new password and download a fresh
-              backup file. Backups you saved earlier will still work — just use
+              backup file. Backups you saved earlier will still work. Just use
               the password you created them with.
             </AlertDialogDescription>
           </AlertDialogHeader>

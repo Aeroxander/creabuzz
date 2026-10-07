@@ -271,7 +271,7 @@ export function IssueAssigneesRow({
               )}
             </TooltipTrigger>
             <TooltipContent>
-              {canUnassign ? `Unassign ${label}` : `${label} — assigned`}
+              {canUnassign ? `Unassign ${label}` : `${label} (assigned)`}
             </TooltipContent>
           </Tooltip>
         );

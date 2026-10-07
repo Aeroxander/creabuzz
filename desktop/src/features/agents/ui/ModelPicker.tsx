@@ -180,7 +180,7 @@ export function ModelPicker({
         const outcome = await sendLiveSwitch(modelId);
         if (outcome === "ambiguous") {
           toast.error(
-            "Couldn't switch all sessions — a channel has multiple agent sessions. Stop and restart the agent with the new model.",
+            "Couldn't switch all sessions. A channel has multiple agent sessions. Stop and restart the agent with the new model.",
           );
           return;
         }
@@ -190,7 +190,7 @@ export function ModelPicker({
         }
         if (outcome === "failed") {
           toast.error(
-            "Couldn't switch models — the agent kept its current model.",
+            "Couldn't switch models. The agent kept its current model.",
           );
           return;
         }
@@ -199,7 +199,7 @@ export function ModelPicker({
           // no active turn remained by the time the harness received it. Nothing
           // was applied and nothing rides a later session — tell the truth.
           toast.error(
-            "Couldn't switch models — the agent wasn't running a turn to switch.",
+            "Couldn't switch models. The agent wasn't running a turn to switch.",
           );
           return;
         }
@@ -208,7 +208,7 @@ export function ModelPicker({
           // session (the agent is mid-turn) and didn't confirm before the
           // fallback timeout. Tell the truth instead of claiming success.
           toast.info(
-            "Model switch pending — applies when the current turn finishes.",
+            "Model switch pending. It applies when the current turn finishes.",
           );
           onModelChanged?.();
           return;

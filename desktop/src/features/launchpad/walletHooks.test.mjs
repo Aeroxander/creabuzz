@@ -65,11 +65,11 @@ test("private_key_input_rejects_with_stable_reasons", () => {
 });
 
 test("wallet_address_display_uses_canonical_truncation_or_placeholder", () => {
-  // Absent address → em dash placeholder.
-  assert.equal(formatWalletAddress(null), "—");
-  assert.equal(formatWalletAddress(undefined), "—");
-  assert.equal(formatWalletAddress(""), "—");
-  assert.equal(formatWalletAddress("   "), "—");
+  // Absent address → dash placeholder.
+  assert.equal(formatWalletAddress(null), "-");
+  assert.equal(formatWalletAddress(undefined), "-");
+  assert.equal(formatWalletAddress(""), "-");
+  assert.equal(formatWalletAddress("   "), "-");
   // Canonical truncatePubkey passthrough at the 12-char boundary.
   assert.equal(formatWalletAddress("0xabc"), "0xabc");
   assert.equal(formatWalletAddress("0x1234567890"), "0x1234567890");

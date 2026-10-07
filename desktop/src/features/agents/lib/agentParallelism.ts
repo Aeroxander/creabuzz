@@ -35,5 +35,5 @@ export function parallelismCapHint(
   requested: number,
 ): string | null {
   if (requested <= cap) return null;
-  return `${harnessLabel} runs at most ${cap} parallel conversation${cap === 1 ? "" : "s"} — this agent will run ${cap}.`;
+  return `${harnessLabel} runs at most ${cap} parallel conversation${cap === 1 ? "" : "s"}. This agent will run ${cap}.`;
 }

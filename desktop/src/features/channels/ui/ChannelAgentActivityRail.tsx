@@ -182,7 +182,7 @@ function AgentTaskDraftAction({ item }: { item: FeedItem }) {
       ) : null}
       {preview?.mode === "published" ? (
         <p className="text-2xs text-muted-foreground">
-          Published record {preview.eventId?.slice(0, 12)}… — opening
+          Published record {preview.eventId?.slice(0, 12)}…. Opening
           Contributions.
         </p>
       ) : null}
@@ -191,7 +191,7 @@ function AgentTaskDraftAction({ item }: { item: FeedItem }) {
           <SheetHeader>
             <SheetTitle>Contribution draft</SheetTitle>
             <SheetDescription>
-              Classifier proposal for the completed task — nothing is published
+              Classifier proposal for the completed task. Nothing is published
               until you confirm.
             </SheetDescription>
           </SheetHeader>
@@ -210,7 +210,7 @@ function AgentTaskDraftAction({ item }: { item: FeedItem }) {
                   className="mt-0.5 text-sm"
                   data-testid="draft-contribution-action"
                 >
-                  {typeof draft?.action === "string" ? draft.action : "—"}
+                  {typeof draft?.action === "string" ? draft.action : "-"}
                 </p>
               </div>
               {draft &&

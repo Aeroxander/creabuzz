@@ -271,7 +271,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Server error — try again",
+            message: "Server error. Try again",
           });
           return;
         }
@@ -518,7 +518,7 @@ export function OnboardingFlow({
               {membershipError.kind === "unreachable" ? (
                 <>
                   <p className="font-medium text-destructive">
-                    Can't reach this relay
+                    Can't reach this server
                   </p>
                   <p className="mt-1 text-muted-foreground">
                     Check your connection or change your community.
@@ -538,7 +538,7 @@ export function OnboardingFlow({
                     {membershipError.message ?? "Something went wrong"}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    The relay returned an error. Try again.
+                    The server returned an error. Try again.
                   </p>
                 </>
               )}
@@ -577,9 +577,9 @@ export function OnboardingFlow({
                     </h1>
                     <p className="mt-5 text-sm leading-6 text-muted-foreground">
                       Your identity is no longer in the system keyring.
-                      Re-import your nsec to restore it — Creaton will restart
-                      to finish recovery. Or go back to start a new identity
-                      with a fresh key.
+                      Re-import your secret key to restore it. Creaton will
+                      restart to finish recovery. Or go back to start a new
+                      identity with a fresh key.
                     </p>
                   </>
                 ) : (
@@ -588,9 +588,9 @@ export function OnboardingFlow({
                       Use your existing key
                     </h1>
                     <p className="mt-5 text-sm leading-6 text-muted-foreground">
-                      Import your Nostr private key to use that identity with
-                      Creaton. If this key already has a profile on the relay,
-                      your name and avatar are restored automatically.
+                      Import your secret key to use that identity with Creaton.
+                      If this key already has a profile on the server, your name
+                      and avatar are restored automatically.
                     </p>
                   </>
                 )}

@@ -661,8 +661,8 @@ export const ChannelPane = React.memo(function ChannelPane({
               unfollowThreadById={unfollowThreadById}
               emptyDescription={
                 activeChannel?.channelType === "forum"
-                  ? "Forum channels are on the way — open a channel or DM to read messages for now."
-                  : `This is #${activeChannel?.name ?? "channel"}'s canvas — @mention an agent or drop a file to get moving.`
+                  ? "Forum channels are on the way. Open a channel or DM to read messages for now."
+                  : `This is #${activeChannel?.name ?? "channel"}'s canvas. @mention an agent or drop a file to get moving.`
               }
               emptyTitle={
                 activeChannel
@@ -798,7 +798,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                                   directMessageIntro
                                   ? `Message ${directMessageIntro.displayName}`
                                   : knownAgentPubkeys.size > 0
-                                    ? `Message #${activeChannel.name} — @ to mention an agent`
+                                    ? `Message #${activeChannel.name} (@ to mention an agent)`
                                     : `Message #${activeChannel.name}`
                                 : "Select a channel"
                     }

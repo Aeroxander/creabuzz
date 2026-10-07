@@ -372,7 +372,7 @@ export function HuddleIndicator({
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {`Huddle active — ${participantCount} participant${participantCount !== 1 ? "s" : ""}`}
+        {`Huddle active: ${participantCount} participant${participantCount !== 1 ? "s" : ""}`}
       </TooltipContent>
     </Tooltip>
   );

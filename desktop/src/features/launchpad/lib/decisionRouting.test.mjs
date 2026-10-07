@@ -221,7 +221,7 @@ test("authorityLine falls back honestly without a grant, renders provenance with
   const fallback = authorityLine({ proposer: FOUNDER, grant: null });
   assert.match(fallback, /Proposed by a{8}…a{4}/);
   assert.match(fallback, /under their own key/);
-  assert.match(fallback, /no delegation grant recorded/);
+  assert.match(fallback, /No delegation grant is recorded/);
 
   const granted = authorityLine({
     proposer: FOUNDER,

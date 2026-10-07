@@ -135,7 +135,7 @@ function NormalizedRow({
   variant?: RowVariant;
 }) {
   const Icon = NORMALIZED_ICONS[fieldKey];
-  const rawDisplayValue = field.value ?? "—";
+  const rawDisplayValue = field.value ?? "-";
   const displayValue =
     fieldKey === "provider"
       ? providerDisplayLabel(rawDisplayValue)
@@ -221,7 +221,7 @@ function AdvancedRow({
           title={field.value ?? undefined}
         >
           {field.value ?? (
-            <span className="font-sans text-muted-foreground">—</span>
+            <span className="font-sans text-muted-foreground">-</span>
           )}
         </div>
       </div>
@@ -240,7 +240,7 @@ function AdvancedRow({
           className="mt-0.5 block truncate text-sm text-muted-foreground"
           title={field.value ?? undefined}
         >
-          {field.value ?? "—"}
+          {field.value ?? "-"}
         </span>
       </span>
       {isCopyable ? (
@@ -301,7 +301,7 @@ function ClaudeConfigDirNotice() {
     <div className="mt-3 border-t border-border/50 px-4 pt-2">
       <p className="text-xs text-muted-foreground/80">
         ⚠ Custom <code className="font-mono text-xs">CLAUDE_CONFIG_DIR</code>{" "}
-        active — config is read from that directory. Claude Code keys its login
+        active. Config is read from that directory. Claude Code keys its login
         to the config-dir path, so a custom dir creates a new Keychain
         namespace. The agent will need to re-authenticate unless you also set{" "}
         <code className="font-mono text-xs">

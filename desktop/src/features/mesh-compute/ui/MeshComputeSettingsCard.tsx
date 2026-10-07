@@ -672,7 +672,7 @@ function StatusLine({
     if (health.status === "degraded") {
       return (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          Active{modelLabel ? ` — ${modelLabel}` : ""}. {health.reason}
+          Active{modelLabel ? ` (${modelLabel})` : ""}. {health.reason}
         </p>
       );
     }

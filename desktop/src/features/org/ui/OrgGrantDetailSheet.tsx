@@ -233,7 +233,7 @@ export function OrgGrantDetailSheet({
         setRevokeError(
           error instanceof Error
             ? error.message
-            : "Failed to revoke grant. The relay did not accept the revocation.",
+            : "Failed to revoke grant. The server did not accept the revocation.",
         );
       }
     })();
@@ -275,7 +275,7 @@ export function OrgGrantDetailSheet({
             <p className="rounded-md bg-muted/50 px-2 py-1.5 font-mono text-xs">
               {viaNode ? `${viaNode.name} (` : "("}
               {grant.via || "none"}
-              {viaNode ? ")" : " — node not found)"}
+              {viaNode ? ")" : ": node not found)"}
             </p>
           </div>
 
@@ -330,7 +330,7 @@ export function OrgGrantDetailSheet({
           <div className="space-y-2 border-t pt-3">
             {(revoked || expiredNow) && !revoked && (
               <p className="text-xs text-muted-foreground">
-                This grant is past its expiry — it can no longer be used. It
+                This grant is past its expiry. It can no longer be used. It
                 stays listed in the revoked &amp; expired history.
               </p>
             )}

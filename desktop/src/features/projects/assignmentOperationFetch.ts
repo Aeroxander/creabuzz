@@ -128,7 +128,7 @@ async function fetchIssueCommentsExhaustively(
       continue;
     }
     throw new Error(
-      "Could not load assignment history: more than a full relay page of " +
+      "Could not load assignment history: more than a full page of " +
         "issue comments share one timestamp.",
     );
   }

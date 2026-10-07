@@ -261,7 +261,7 @@ const LINK_PREVIEW_SAMPLE_BASE: Omit<ResolvedLinkPreview, "imageDataUrl"> = {
   kind: "generic-link",
   href: "https://example.com/product-updates",
   provider: "example.com",
-  title: "Product updates — a fresh look at conversations",
+  title: "Product updates: a fresh look at conversations",
   typeLabel: "link",
   description:
     "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.",

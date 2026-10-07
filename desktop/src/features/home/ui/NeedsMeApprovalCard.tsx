@@ -148,7 +148,7 @@ export function NeedsMeApprovalCard({
       </h3>
       <p className="mt-1 text-2xs leading-3 text-muted-foreground">
         Requested {relativeTime(approval.createdAt)}
-        {isAging ? " — waiting over a day" : ""}
+        {isAging ? " (waiting over a day)" : ""}
       </p>
 
       {payloadRows.length > 0 ? (

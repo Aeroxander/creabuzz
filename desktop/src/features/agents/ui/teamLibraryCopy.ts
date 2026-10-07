@@ -1,7 +1,7 @@
 export const teamCatalogCopy = {
   chooseFromCatalog: "Choose from catalog",
   dialogTitle: "Team Catalog",
-  dialogDescription: "Browse teams shared to this relay.",
+  dialogDescription: "Browse teams shared to this server.",
   emptyCatalogTitle: "No teams are being shared",
   emptyCatalogDescription: "Shared teams will appear here.",
   addAction: "Add team",
@@ -42,8 +42,8 @@ export function teamShareNotice(
 ): string {
   if (publicationStatus === "queued") {
     return shared
-      ? `Sharing ${teamName} is queued. It will appear after the relay accepts the update.`
-      : `Removing ${teamName} is queued. It may remain discoverable until the relay accepts the update.`;
+      ? `Sharing ${teamName} is queued. It will appear after the server accepts the update.`
+      : `Removing ${teamName} is queued. It may remain discoverable until the server accepts the update.`;
   }
   return shared
     ? `Published ${teamName} to the community catalog.`

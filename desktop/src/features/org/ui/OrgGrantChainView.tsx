@@ -71,7 +71,7 @@ export function OrgGrantChainView({
       <h3 className="mb-2 text-sm font-semibold">Delegations</h3>
       {roots.length === 0 && curtain.length > 0 && (
         <p className="mb-2 text-xs text-muted-foreground">
-          No grants in force — the history below is the full record.
+          No grants in force. The history below is the full record.
         </p>
       )}
       {roots.length > 0 && (

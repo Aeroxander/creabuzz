@@ -43,7 +43,7 @@ export async function resurfaceHiddenDmMessage({
   });
   if (!isCurrent()) return false;
   if (opened.id !== channelId) {
-    throw new Error("Relay reopened a different DM conversation.");
+    throw new Error("The server reopened a different DM conversation.");
   }
   return true;
 }

@@ -57,7 +57,7 @@ export function AuctionProgressBar({ record }: { record: LaunchRecord }) {
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-semibold tabular-nums">
-          {data ? formatRaised(data.raised, data.goal) : "—"}
+          {data ? formatRaised(data.raised, data.goal) : "-"}
         </span>
         {data ? (
           <span
@@ -65,7 +65,7 @@ export function AuctionProgressBar({ record }: { record: LaunchRecord }) {
             title={
               data.source === "rpc"
                 ? "Live chain values."
-                : "Preview fixture — point the launchpad at a chain RPC for live auction values."
+                : "Preview fixture. Point the launchpad at a chain RPC for live auction values."
             }
           >
             {data.source === "rpc" ? "Live" : "Preview data"}

@@ -341,7 +341,7 @@ function describeResolutionError(message: string): string {
   if (/community owner/i.test(message)) {
     return "Only the community owner can resolve this approval.";
   }
-  return message || "Relay rejected the approval.";
+  return message || "The server rejected the approval.";
 }
 
 /**

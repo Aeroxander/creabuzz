@@ -236,9 +236,9 @@ export function timeSignal(events: DiagEvent[]): TimeSignal | null {
   const handoffRateBp = rateBp(handoffs, events.length);
   const reading =
     bursty && handoffRateBp >= 1000
-      ? "coordination-consistent timing: bursty stream with cross-actor handoffs — a pattern in the timestamps, not proof of coordination"
+      ? "coordination-consistent timing: bursty stream with cross-actor handoffs. A pattern in the timestamps, not proof of coordination"
       : bursty
-        ? "bursty timing without cross-actor handoffs — synchronized load or deadlines also produce this"
+        ? "bursty timing without cross-actor handoffs. Synchronized load or deadlines also produce this"
         : "no timing coordination pattern detectable in this window";
   return {
     events: events.length,
@@ -278,9 +278,9 @@ export function tomasello(events: DiagEvent[]): Tomasello | null {
   });
   const reading =
     instN === 0
-      ? "talk without decisions: no standing rules or executed decisions in this window — a busy channel is not the same as a team that decides"
+      ? "talk without decisions: no standing rules or executed decisions in this window. A busy channel is not the same as a team that decides"
       : instN * 2 < communicateN
-        ? "institutions exist but communication dominates — measure what binds future action, not what is said"
+        ? "institutions exist but communication dominates. Measure what binds future action, not what is said"
         : "institutionalization present: proposals/votes/executions and approval gates bind future action";
   return {
     communicate: layer(communicateN),
@@ -325,19 +325,19 @@ export function wefModes(events: DiagEvent[]): WefMode[] {
       mode: "orchestration-drift",
       signalEvents: approvals,
       status: status(rateBp(approvals, total)),
-      note: "approval requests and gate hits (46010) — drift toward asking permission",
+      note: "approval requests and gate hits: drift toward asking permission",
     },
     {
       mode: "semantic-misalignment",
       signalEvents: tombstones,
       status: status(rateBp(tombstones, total)),
-      note: "tombstones and disposed drafts — action retracted after the fact",
+      note: "tombstones and disposed drafts: action retracted after the fact",
     },
     {
       mode: "security-trust-gaps",
       signalEvents: revokes,
       status: status(rateBp(revokes, total)),
-      note: "revocations and sanctions — trust withdrawn",
+      note: "revocations and sanctions: trust withdrawn",
     },
     {
       mode: "cascading-effects",
@@ -389,7 +389,7 @@ export function thrash(events: DiagEvent[]): Thrash | null {
   const settledRateBp = rateBp(settled, coordinates);
   const reading =
     reworkRateBp >= 5000
-      ? "churning: most revisions rework the same item — effort without progress"
+      ? "churning: most revisions rework the same item. Effort without progress"
       : settledRateBp >= 7000
         ? "settled: most items were written once and left alone"
         : "mixed: raw counts above are the honest read";

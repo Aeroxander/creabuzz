@@ -183,7 +183,7 @@ export function ErrorMessage({ message }: { message: string }) {
 // ── Timestamp formatter ───────────────────────────────────────────────────
 
 export function formatTimestamp(raw: string | null | undefined): string {
-  if (!raw) return "—";
+  if (!raw) return "-";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
   const absolute = date.toLocaleString(undefined, {
@@ -213,7 +213,7 @@ export function DetailRow({
     <div className="flex gap-2 text-xs">
       <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
       <span className={mono ? "font-mono break-all" : "break-words"}>
-        {value ?? "—"}
+        {value ?? "-"}
       </span>
     </div>
   );

@@ -24,7 +24,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   missing: {
     description:
-      "The project announcement exists, but its git repository was not found on the relay.",
+      "The project announcement exists, but its git repository was not found on the server.",
     title: "Repository not initialized",
   },
   access: {
@@ -34,7 +34,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   unbound: {
     description:
-      "This repository has no access channel binding, so the relay cannot authorize anyone to read it. The repository owner can bind a channel from the Access menu.",
+      "This repository has no access channel binding, so the server cannot authorize anyone to read it. The repository owner can bind a channel from the Access menu.",
     title: "No access channel bound",
   },
   network: {

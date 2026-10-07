@@ -518,7 +518,7 @@ export function AnimatedAvatarCapture({
         !animationUpload.type.startsWith("image/") ||
         !posterUpload.type.startsWith("image/")
       ) {
-        setErrorMessage("The relay rejected the recording. Try again.");
+        setErrorMessage("The server rejected the recording. Try again.");
         return false;
       }
       onApply(
@@ -690,7 +690,7 @@ export function AnimatedAvatarCapture({
               animation on hover — exactly how the avatar behaves in the app.
               Dragging repositions the active framing target. */}
       <div
-        aria-label="Avatar preview — drag or use arrow keys to position"
+        aria-label="Avatar preview. Drag or use arrow keys to position"
         className={cn(
           // Transparent like the real avatar container — only a faint
           // ring marks the circular crop boundary. pointer-events-auto

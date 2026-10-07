@@ -75,7 +75,7 @@ function detachedStartFailureDetail(error: unknown): string {
  */
 function warnAgentMayNotRespond(agentName: string, detail: string): void {
   toast.error(
-    `Could not start ${agentName} — your message was sent, but the agent may not respond. ${detail}`,
+    `Could not start ${agentName}. Your message was sent, but the agent may not respond. ${detail}`,
   );
 }
 
@@ -151,7 +151,7 @@ export function useDetachedAgentStart(): (
         // communities.
         warnAgentMayNotRespond(
           agent.name,
-          "Creaton is still connecting to this community — mention the agent again in a moment.",
+          "Creaton is still connecting to this community. Mention the agent again in a moment.",
         );
         return false;
       }

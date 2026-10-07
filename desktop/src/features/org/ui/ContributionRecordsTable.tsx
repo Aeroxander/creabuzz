@@ -46,7 +46,7 @@ const REVIEW_BADGE_CLASS: Record<ReviewStatus, string> = {
 function humanVsAiLabel(record: ContributionRecord): string {
   const { human, ai } = record.humanVsAi;
   const total = human + ai;
-  if (total <= 0) return "—";
+  if (total <= 0) return "-";
   const humanPct = Math.round((human / total) * 100);
   const aiPct = 100 - humanPct;
   return `${humanPct}/${aiPct}`;
@@ -101,8 +101,8 @@ function ReviewActions({ record }: { record: ContributionRecord }) {
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">Review</legend>
       <p className="text-2xs text-muted-foreground">
-        Reviewer authority is not verified yet — anyone can publish a review
-        until the relay checks a review grant.
+        Reviewer authority is not verified yet. Anyone can publish a review
+        until the server checks a review grant.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -258,7 +258,7 @@ function RecordDetailSheet({
                       className="text-2xs text-muted-foreground"
                       key={`${entry.at}-${entry.status}`}
                     >
-                      {new Date(entry.at * 1000).toLocaleString()} —{" "}
+                      {new Date(entry.at * 1000).toLocaleString()}:{" "}
                       {entry.status}
                     </li>
                   ))}
@@ -466,7 +466,7 @@ export function ContributionRecordsTable({
                         .map(([name, value]) => (
                           <DimensionChip key={name} name={name} value={value} />
                         ))}
-                      {Object.keys(record.dimensions).length === 0 ? "—" : null}
+                      {Object.keys(record.dimensions).length === 0 ? "-" : null}
                     </span>
                   </td>
                   <td className="px-2 py-1.5 font-mono text-xs">

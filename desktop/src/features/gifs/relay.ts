@@ -101,7 +101,7 @@ export async function relayKlipyEndpoints(
     signal,
   });
   if (!response.ok)
-    throw new Error(`Could not read relay capabilities (${response.status})`);
+    throw new Error(`Could not read server capabilities (${response.status})`);
   const info = (await response.json()) as RelayGifSearchInfo;
   return relayKlipyCapability(info);
 }

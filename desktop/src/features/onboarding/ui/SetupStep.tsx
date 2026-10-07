@@ -334,7 +334,7 @@ function runtimeDetailText(runtime: AcpRuntimeCatalogEntry): string {
     return "CLI detected; ACP adapter missing.";
   }
   if (runtime.availability === "adapter_outdated") {
-    return "ACP adapter detected but outdated — reinstall required.";
+    return "ACP adapter detected but outdated. Reinstall required.";
   }
   if (
     runtime.availability === "cli_missing" ||
