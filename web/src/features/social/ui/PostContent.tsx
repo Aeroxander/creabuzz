@@ -7,7 +7,10 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { displayText } from "../../feed/lib/feed-events";
 import { tokenize } from "../lib/content";
-import { cashtagLabel } from "../lib/cashtag";
+import { q96ToPrice } from "../../launchpad/lib/candles";
+import { saleCurrencyFor } from "../../launchpad/lib/sale-currency";
+import { formatPrice } from "../../launchpad/ui/CandlestickChart";
+import { cashtagLabel, cashtagPrice } from "../lib/cashtag";
 import { useCashtagOwners } from "../use-cashtags";
 import { usePeople } from "../use-people";
 import { useNotesById } from "../use-social-data";
@@ -28,24 +31,77 @@ function Mention({ pubkey }: { pubkey: string }) {
   );
 }
 
+/** A trend line over a few prices. Decorative: the price is written beside it. */
+function Spark({ points }: { points: number[] }) {
+  if (points.length < 2) return null;
+  const width = 36;
+  const height = 12;
+  const min = Math.min(...points);
+  const span = Math.max(...points) - min || 1;
+  const path = points
+    .map(
+      (p, i) =>
+        `${((i / (points.length - 1)) * width).toFixed(1)},${(height - ((p - min) / span) * height).toFixed(1)}`,
+    )
+    .join(" ");
+  return (
+    <svg
+      aria-hidden
+      className="inline-block align-middle"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+    >
+      <polyline
+        fill="none"
+        points={path}
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
 /**
- * `$TICKER`: a link to the launch that owns the ticker, or plain text when nobody has claimed it. No price is shown
- * here until the indexer can say where it came from: a number with no source would be invented.
+ * `$TICKER`: a link to the launch that owns the ticker, or plain text when nobody has claimed it. The price beside
+ * it is only ever what is recorded: the highest price recent bids would pay, or the sale's starting price when
+ * nobody has bid. It is not a market trade, and the label says so; a pool price waits for an indexer that can say
+ * where a number came from.
  */
 function Cashtag({ symbol }: { symbol: string }) {
   const launch = useCashtagOwners().get(symbol);
   if (!launch) return <>${symbol}</>;
+  const currency = saleCurrencyFor(
+    launch.record.currency,
+    launch.record.chainId,
+  );
+  const unit = currency.kind === "custom" ? "USDC" : currency.symbol;
+  const price = cashtagPrice(
+    { bids: launch.bids, floorPrice: launch.record.floorPrice },
+    (q96) => q96ToPrice(q96, currency.decimals),
+  );
+  const shown = price ? { price, unit, text: formatPrice(price.latest) } : null;
+  const label = cashtagLabel(symbol, launch, shown);
   return (
     <Link
-      aria-label={cashtagLabel(symbol, launch)}
+      aria-label={label}
       className="relative z-10 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-emerald-800 hover:underline dark:text-emerald-300"
       data-testid="social-cashtag"
       params={{ launchId: launch.record.id }}
       search={{ action: undefined, author: launch.record.author }}
-      title={cashtagLabel(symbol, launch)}
+      title={label}
       to="/launchpad/$launchId"
     >
       ${symbol}
+      {shown ? (
+        <>
+          {" "}
+          <Spark points={shown.price.points} />{" "}
+          <span className="text-xs" data-testid="social-cashtag-price">
+            {shown.text} {shown.unit}
+          </span>
+        </>
+      ) : null}
     </Link>
   );
 }

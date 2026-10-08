@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { cashtagLabel, stageWords, tickerOwners } from "./cashtag.ts";
+import {
+  SPARK_POINTS,
+  cashtagLabel,
+  cashtagPrice,
+  stageWords,
+  tickerOwners,
+} from "./cashtag.ts";
 import { cashtagSymbols, tokenize } from "./content.ts";
 
 const launch = (id, symbol, createdAt, over = {}) => ({
@@ -87,5 +93,71 @@ describe("which launch owns a ticker", () => {
     );
     assert.equal(stageWords("graduated"), "launched");
     assert.equal(stageWords("mystery"), "mystery");
+  });
+});
+
+describe("the price a chip shows", () => {
+  // `toPrice` stands in for the Q96 conversion: the stored string is already the price.
+  const toPrice = (q) => (q === null ? null : Number(q) || null);
+
+  it("is the latest recorded bid, newest last, and says so", () => {
+    const price = cashtagPrice(
+      {
+        bids: [
+          { createdAt: 30, maxPrice: "0.03" },
+          { createdAt: 10, maxPrice: "0.01" },
+          { createdAt: 20, maxPrice: "0.02" },
+        ],
+        floorPrice: "0.005",
+      },
+      toPrice,
+    );
+    assert.deepEqual(price, {
+      source: "bids",
+      latest: 0.03,
+      points: [0.01, 0.02, 0.03],
+    });
+    const label = cashtagLabel("NEB", launch("a", "NEB", 1), {
+      price,
+      unit: "USDC",
+      text: "0.03",
+    });
+    assert.match(
+      label,
+      /Highest recent bid price 0\.03 USDC per token, not a market trade/,
+    );
+  });
+
+  it("falls back to the sale's starting price when nobody has bid, never to an invented number", () => {
+    assert.deepEqual(cashtagPrice({ bids: [], floorPrice: "0.005" }, toPrice), {
+      source: "floor",
+      latest: 0.005,
+      points: [0.005],
+    });
+    assert.equal(cashtagPrice({ bids: [], floorPrice: null }, toPrice), null);
+    // A bid whose price cannot be read is skipped, not drawn as zero.
+    assert.deepEqual(
+      cashtagPrice(
+        {
+          bids: [
+            { createdAt: 1, maxPrice: "nope" },
+            { createdAt: 2, maxPrice: "0.02" },
+          ],
+          floorPrice: null,
+        },
+        toPrice,
+      )?.points,
+      [0.02],
+    );
+  });
+
+  it("keeps only the newest few bids", () => {
+    const bids = Array.from({ length: SPARK_POINTS + 5 }, (_, i) => ({
+      createdAt: i,
+      maxPrice: String(i + 1),
+    }));
+    const price = cashtagPrice({ bids, floorPrice: null }, toPrice);
+    assert.equal(price.points.length, SPARK_POINTS);
+    assert.equal(price.latest, SPARK_POINTS + 5);
   });
 });
