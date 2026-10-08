@@ -27,9 +27,8 @@ export interface GovernanceRoute {
 }
 
 /**
- * The routing map (D1): each proposal kind gets its native mechanism. The
- * map is the spine — a generic ballot over everything is exactly the
- * "democracy theater" the design rejects.
+ * Every executable proposal uses the same Shares allocation ballot. Signals remain
+ * discussion records without execution authority.
  */
 export function governanceRoute(kind: ProposalKind): GovernanceRoute {
   switch (kind) {
@@ -41,18 +40,12 @@ export function governanceRoute(kind: ProposalKind): GovernanceRoute {
           "Sentiment aggregates through discussion, not a vote. Discuss in the channel or the linked issue.",
       };
     case "futarchy-budget":
-      return {
-        mechanism: "Futarchy · budget",
-        ballot: true,
-        rationale:
-          "Budget and subDAO allocation resolve through decision markets (read-only until markets land).",
-      };
     case "plain":
       return {
-        mechanism: "Token vote",
+        mechanism: "Shares conviction",
         ballot: true,
         rationale:
-          "General matters settle by recorded vote: N-1 snapshot, quorum, FOR must beat AGAINST.",
+          "Shares support priorities with a 12-hour conviction half-life. Support remains movable until execution. Loot does not vote.",
       };
   }
 }
@@ -93,7 +86,7 @@ export function quorumSummary(params: QuorumParams = {}): string {
     params.timelockDelay != null
       ? `timelock ${params.timelockDelay}`
       : "timelock per DAO config";
-  return `N-1 snapshot · ${quorum} · FOR must beat AGAINST · ${minYes} · ${ttl} · ${lock}`;
+  return `N-1 ownership snapshot · 48-hour voting window · ${quorum} · FOR must beat AGAINST · ${minYes} · ${ttl} · ${lock}`;
 }
 
 /** D8: the record-only fallback — no onchain binding, no invented actions. */

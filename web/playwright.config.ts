@@ -21,6 +21,7 @@ export default defineConfig({
       testMatch: [
         "**/smoke.spec.ts",
         "**/launchpad.spec.ts",
+        "**/voting-allocation.spec.ts",
         "**/launchpad-auction.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page

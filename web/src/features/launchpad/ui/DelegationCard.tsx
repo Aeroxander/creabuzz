@@ -164,10 +164,9 @@ export function DelegationCard({
     <Card className="p-4" data-testid="delegation-card">
       <h2 className="text-base font-semibold">Vote delegation</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        Your votes are cast by your delegate until you re-delegate. Delegation
-        is revocable at any time, including back to yourself. Agent seats may
-        hold delegations (their authority is grant-scoped and named in
-        receipts).
+        You and your delegate manage the same Shares allocations. Delegation
+        gives no extra voting power. Revoke it through Shares.delegate; your
+        allocations stay in place. Loot has economic rights and does not vote.
       </p>
       {current.data ? (
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">

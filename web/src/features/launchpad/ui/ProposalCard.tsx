@@ -3,7 +3,10 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { TX_HASH_RE } from "../lib/milestone-receipt";
+import {
+  sendGovernanceCall,
+  confirmGovernanceTransaction,
+} from "../lib/governance-send";
 import {
   composeAcceptedRecord,
   composeRejectTombstone,
@@ -14,22 +17,27 @@ import {
   authorityLine,
   fetchProposalStates,
   governanceRoute,
-  quorumSummary,
   RECEIPTS_COPY,
   RECORD_ONLY_COPY,
 } from "../lib/governance-view";
 import {
   computeProposalId,
   encodeCastVote,
+  encodeCastVoteFor,
   encodeExecuteByVotes,
   encodeOpenProposal,
+  encodeOpenProposalWithAction,
   encodeQueue,
-  encodeTalliesView,
-  VOTE_ABSTAIN,
-  VOTE_AGAINST,
-  VOTE_FOR,
 } from "../lib/vote-tx";
-import { decodeTallies, quorumWatch } from "../lib/quorum-watch";
+import {
+  decodeVotingRules,
+  encodeVotingSupport,
+  decodeVotingSupport,
+  encodeVotingRules,
+  votingRulesSummary,
+  votingRuleWatch,
+} from "../lib/voting-allocation";
+import { VotingAllocationControls } from "./VotingAllocationControls";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { fetchDaoGovConfig } from "../lib/dao-gov-config";
 import {
@@ -93,6 +101,24 @@ export function ProposalCard({
 
   const route = governanceRoute(proposal.kind);
   const bound = proposal.proposalId !== null && dao !== null;
+  const accountQuery = useQuery({
+    queryKey: [
+      "voting-account",
+      picker.kind,
+      picker.passkeyAccount,
+      picker.wallet,
+    ],
+    queryFn: async (): Promise<string | null> => {
+      if (picker.kind === "passkey") return picker.passkeyAccount;
+      const accounts = await picker.wallet?.request({ method: "eth_accounts" });
+      return Array.isArray(accounts) && typeof accounts[0] === "string"
+        ? accounts[0]
+        : null;
+    },
+    enabled: bound && route.ballot,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 5_000,
+  });
   // Narrowed const so the execute action needs no non-null assertion.
   const executeIntent = proposal.intent;
 
@@ -105,6 +131,8 @@ export function ProposalCard({
         ids: [proposal.proposalId as string],
       }),
     enabled: bound,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 15_000,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
@@ -124,29 +152,43 @@ export function ProposalCard({
       const raw = await ethCall(
         getRpcEndpoint(),
         dao as string,
-        encodeTalliesView(proposal.proposalId as string),
+        encodeVotingSupport(proposal.proposalId as string),
       );
-      return decodeTallies(raw);
+      return decodeVotingSupport(raw);
     },
     enabled: bound && route.ballot,
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 5_000,
+    retry: 1,
     refetchOnWindowFocus: false,
   });
+  const rules = useQuery({
+    queryKey: [
+      "proposal-voting-rules",
+      getRpcEndpoint(),
+      dao,
+      proposal.proposalId,
+    ],
+    queryFn: async () =>
+      decodeVotingRules(
+        await ethCall(
+          getRpcEndpoint(),
+          dao as string,
+          encodeVotingRules(proposal.proposalId as string),
+        ),
+      ),
+    enabled: bound && route.ballot,
+    staleTime: 30_000,
+    retry: 1,
+  });
   const watch =
-    tallies.data && govConfig.data
-      ? quorumWatch({
-          tallies: tallies.data,
-          minYes:
-            govConfig.data.minYes != null
-              ? BigInt(govConfig.data.minYes)
-              : null,
-          ttlEndsAt:
-            govConfig.data.proposalTtlSeconds != null
-              ? BigInt(proposal.createdAt) + govConfig.data.proposalTtlSeconds
-              : null,
-          createdAt: BigInt(proposal.createdAt),
-          now: BigInt(Math.floor(Date.now() / 1000)),
-        })
+    tallies.data && rules.data
+      ? votingRuleWatch(
+          rules.data,
+          tallies.data,
+          BigInt(Math.floor(Date.now() / 1000)),
+        )
       : null;
   const stateLabel = proposal.proposalId
     ? (liveState.data?.[proposal.proposalId] ?? "…")
@@ -168,18 +210,14 @@ export function ProposalCard({
     setError(null);
     setPending(true);
     try {
-      const sender = resolveSender(picker);
-      const result = await sender.sendCalls([
-        {
-          to: dao as string,
-          data: encodeOpenProposal(derivedId),
-          value: "0x0",
-        },
-      ]);
-      if (!TX_HASH_RE.test(result.txHash)) {
-        throw new Error("The sender returned an invalid hash.");
-      }
-      setLastTx(result.txHash);
+      const hash = await sendGovernanceCall(
+        picker,
+        getRpcEndpoint(),
+        dao as string,
+        encodeOpenProposalWithAction(draftIntent),
+      );
+      setLastTx(hash);
+      await confirmGovernanceTransaction(getRpcEndpoint(), hash);
       // D5: the accepted record supersedes the draft, then the draft is
       // tombstoned — the hash chain keeps the audit.
       const accepted = composeAcceptedRecord(
@@ -229,15 +267,19 @@ export function ProposalCard({
     setError(null);
     setPending(true);
     try {
-      const sender = resolveSender(picker);
-      const result = await sender.sendCalls([
-        { to: dao as string, data, value: "0x0" },
+      const hash = await sendGovernanceCall(
+        picker,
+        getRpcEndpoint(),
+        dao as string,
+        data,
+      );
+      setLastTx(hash);
+      await confirmGovernanceTransaction(getRpcEndpoint(), hash);
+      await Promise.all([
+        liveState.refetch(),
+        rules.refetch(),
+        tallies.refetch(),
       ]);
-      if (!TX_HASH_RE.test(result.txHash)) {
-        throw new Error("The sender returned an invalid hash.");
-      }
-      setLastTx(result.txHash);
-      void liveState.refetch();
     } catch (err) {
       setError(senderErrorMessage(err, "The governance action was not sent."));
     } finally {
@@ -290,7 +332,7 @@ export function ProposalCard({
       {/* D6: the rules, before anyone votes — live numbers when readable. */}
       {route.ballot ? (
         <p className="mt-2 rounded-md bg-black/5 px-2 py-1 text-xs text-black/70 dark:bg-white/5 dark:text-white/70">
-          {quorumSummary(govConfig.data ?? {})}
+          {votingRulesSummary(rules.data)}
         </p>
       ) : null}
 
@@ -382,7 +424,11 @@ export function ProposalCard({
                 data-testid="proposal-open"
                 disabled={pending}
                 onClick={() =>
-                  void send(encodeOpenProposal(proposal.proposalId as string))
+                  void send(
+                    executeIntent
+                      ? encodeOpenProposalWithAction(executeIntent)
+                      : encodeOpenProposal(proposal.proposalId as string),
+                  )
                 }
                 size="sm"
                 type="button"
@@ -390,58 +436,47 @@ export function ProposalCard({
                 Open for voting
               </Button>
             ) : null}
-            {stateLabel === "Active" ? (
-              <>
-                <Button
-                  data-testid="proposal-vote-for"
-                  disabled={pending}
-                  onClick={() =>
-                    void send(
-                      encodeCastVote(proposal.proposalId as string, VOTE_FOR),
-                    )
-                  }
-                  size="sm"
-                  type="button"
-                >
-                  For
-                </Button>
-                <Button
-                  data-testid="proposal-vote-against"
-                  disabled={pending}
-                  onClick={() =>
-                    void send(
-                      encodeCastVote(
-                        proposal.proposalId as string,
-                        VOTE_AGAINST,
+            {["Active", "Succeeded", "Queued"].includes(stateLabel ?? "") ||
+            (stateLabel === "Unopened" && !executeIntent) ? (
+              <VotingAllocationControls
+                account={accountQuery.data ?? null}
+                dao={dao as string}
+                proposalId={proposal.proposalId as string}
+                rpcUrl={getRpcEndpoint()}
+                pending={pending}
+                read={(data) => ethCall(getRpcEndpoint(), dao as string, data)}
+                onConnect={async () => {
+                  try {
+                    await resolveSender(picker).getAddress();
+                    await accountQuery.refetch();
+                  } catch (err) {
+                    setError(
+                      senderErrorMessage(
+                        err,
+                        "The voting account could not be connected.",
                       ),
-                    )
+                    );
                   }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Against
-                </Button>
-                <Button
-                  data-testid="proposal-vote-abstain"
-                  disabled={pending}
-                  onClick={() =>
-                    void send(
-                      encodeCastVote(
-                        proposal.proposalId as string,
-                        VOTE_ABSTAIN,
-                      ),
-                    )
-                  }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Abstain
-                </Button>
-              </>
+                }}
+                onVote={(support, amount, sourceOwner) =>
+                  send(
+                    sourceOwner
+                      ? encodeCastVoteFor(
+                          sourceOwner,
+                          proposal.proposalId as string,
+                          support,
+                          amount,
+                        )
+                      : encodeCastVote(
+                          proposal.proposalId as string,
+                          support,
+                          amount,
+                        ),
+                  )
+                }
+              />
             ) : null}
-            {stateLabel === "Succeeded" ? (
+            {stateLabel === "Succeeded" && !executeIntent ? (
               <Button
                 data-testid="proposal-queue"
                 disabled={pending}
@@ -454,7 +489,7 @@ export function ProposalCard({
                 Queue (start timelock)
               </Button>
             ) : null}
-            {stateLabel === "Queued" ? (
+            {stateLabel === "Succeeded" && executeIntent ? (
               executeIntent ? (
                 <Button
                   data-testid="proposal-execute"
@@ -463,7 +498,7 @@ export function ProposalCard({
                   size="sm"
                   type="button"
                 >
-                  Execute (end timelock)
+                  Execute / start timelock
                 </Button>
               ) : (
                 <span className="text-xs text-black/60 dark:text-white/60">
@@ -474,6 +509,13 @@ export function ProposalCard({
             ) : null}
           </div>
         </div>
+      ) : null}
+
+      {stateLabel === "Queued" ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Waiting for this proposal's captured timelock. Execute becomes
+          available when it ends.
+        </p>
       ) : null}
 
       {proposal.issue ? (

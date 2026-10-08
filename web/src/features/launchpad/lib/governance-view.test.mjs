@@ -26,13 +26,13 @@ describe("the routing map (D1)", () => {
   it("plain matters route to the token vote with the ruleset rationale", () => {
     const route = governanceRoute("plain");
     assert.equal(route.ballot, true);
-    assert.match(route.mechanism, /Token vote/);
-    assert.match(route.rationale, /N-1 snapshot/);
+    assert.match(route.mechanism, /Shares conviction/);
+    assert.match(route.rationale, /12-hour conviction half-life/);
   });
 
-  it("budget matters route to futarchy and only futarchy", () => {
+  it("budget matters use the same Shares ballot", () => {
     const route = governanceRoute("futarchy-budget");
-    assert.equal(route.mechanism, "Futarchy · budget");
+    assert.equal(route.mechanism, "Shares conviction");
     assert.equal(route.ballot, true);
   });
 });
@@ -45,7 +45,7 @@ describe("quorum math in plain language (D6)", () => {
       proposalTtl: "7d",
       timelockDelay: "2d",
     });
-    assert.match(line, /N-1 snapshot/);
+    assert.match(line, /N-1 ownership snapshot/);
     assert.match(line, /quorum 5% of snapshot supply/);
     assert.match(line, /FOR must beat AGAINST/);
     assert.match(line, /minYes 1/);

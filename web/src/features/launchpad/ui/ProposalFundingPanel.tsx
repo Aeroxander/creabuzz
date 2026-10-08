@@ -26,8 +26,8 @@ import {
 } from "../lib/proposal-funding";
 
 /**
- * What one backer holds behind one proposal: tokens escrowed for them, and the
- * voice that buys on that decision. These are the vault's own two O(1) reads,
+ * Historical escrow position for an existing voucher vault. Its legacy weight
+ * is not used by the Shares conviction ballot. These are the vault's own two O(1) reads,
  * so the panel never has to reconstruct a position list the chain does not
  * enumerate.
  */
@@ -91,8 +91,8 @@ export function ProposalFundingPanel({
       <Card className="p-4" data-testid="proposal-vault">
         <h2 className="text-base font-semibold">Where your money goes</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          This project has chosen to let its backers decide what gets funded.
-          The vault is not deployed yet, so nothing can be pledged until it is.
+          Treasury decisions use the movable Shares allocations in Proposals.
+          This project has no linked legacy escrow vault.
         </p>
       </Card>
     );
@@ -103,9 +103,9 @@ export function ProposalFundingPanel({
       <div>
         <h2 className="text-base font-semibold">Where your money goes</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Pledge and you get vouchers. Spend them on the proposals you back, and
-          the money goes there instead of to whatever the team would have
-          chosen.
+          This is a legacy proposal escrow vault. Vouchers direct deposits and
+          support claims or refunds; they grant no DAO voting power. Treasury
+          governance uses the Shares conviction policy in Proposals.
         </p>
       </div>
 
@@ -274,9 +274,6 @@ function ProposalRow({
         <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums text-black/60 dark:text-white/60">
           <span data-testid="own-escrowed">
             Escrowed for you: {holding.escrowed}
-          </span>
-          <span data-testid="own-weight">
-            Your voice here: {holding.weight}
           </span>
           {proposal.state === "verified" ? (
             <Button

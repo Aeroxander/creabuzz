@@ -379,6 +379,21 @@ export async function ethCall(
   return result;
 }
 
+/** Chain identity used to match the wallet to the credit preview RPC. */
+export async function ethChainId(endpoint: string): Promise<bigint> {
+  return decodeQuantity(String(await rpc(endpoint, "eth_chainId", [])));
+}
+
+/** Receipt polling uses the same bounded RPC requests as other chain reads. */
+export async function ethTransactionReceipt(
+  endpoint: string,
+  hash: string,
+): Promise<{ status?: string } | null> {
+  return (await rpc(endpoint, "eth_getTransactionReceipt", [hash])) as {
+    status?: string;
+  } | null;
+}
+
 /** `eth_blockNumber` — the chain head, as the derivation's current block. */
 export async function ethBlockNumber(endpoint: string): Promise<bigint> {
   return decodeQuantity((await rpc(endpoint, "eth_blockNumber", [])) as string);

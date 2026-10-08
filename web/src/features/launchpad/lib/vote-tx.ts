@@ -151,7 +151,11 @@ export function encodeOpenProposal(id: bigint | string): string {
 }
 
 /** `castVote(id, support)` — 1 for, 0 against, 2 abstain. */
-export function encodeCastVote(id: bigint | string, support: number): string {
+export function encodeCastVote(
+  id: bigint | string,
+  support: number,
+  amount?: bigint | string,
+): string {
   if (
     support !== VOTE_AGAINST &&
     support !== VOTE_FOR &&
@@ -159,7 +163,31 @@ export function encodeCastVote(id: bigint | string, support: number): string {
   ) {
     throw new Error(`support must be 0, 1, or 2: ${support}`);
   }
+  if (amount !== undefined)
+    return (
+      "0x9c028176" +
+      uintWord(id, "id") +
+      uintWord(support, "support") +
+      uintWord(amount, "Shares")
+    );
   return SELECTOR_CAST_VOTE + uintWord(id, "id") + uintWord(support, "support");
+}
+
+/** Replace a source owner's allocation as their authorized delegate. */
+export function encodeCastVoteFor(
+  owner: string,
+  id: bigint | string,
+  support: number,
+  amount: bigint | string,
+): string {
+  encodeCastVote(id, support, amount); // validate support and amounts through the canonical composer
+  return (
+    "0x87906434" +
+    addressWord(owner, "owner") +
+    uintWord(id, "id") +
+    uintWord(support, "support") +
+    uintWord(amount, "Shares")
+  );
 }
 
 /** `queue(id)` — starts the timelock countdown for a Succeeded proposal. */
@@ -170,6 +198,11 @@ export function encodeQueue(id: bigint | string): string {
 /** `executeByVotes(op, to, value, data, nonce)` — execute after votes+timelock. */
 export function encodeExecuteByVotes(intent: ProposalIntent): string {
   return SELECTOR_EXECUTE_BY_VOTES + encodeIntentArgs(intent);
+}
+
+/** Open the actual intent so the policy can authenticate bounded project calls. */
+export function encodeOpenProposalWithAction(intent: ProposalIntent): string {
+  return "0xe1d5ec31" + encodeIntentArgs(intent);
 }
 
 /** `proposalId(op, to, value, data, nonce)` as an `eth_call` (the view
