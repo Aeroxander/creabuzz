@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { wizardToPublish } from "../helpers/wizard";
 
 /**
  * Launch a project into its own DAO from the browser, against a REAL local chain.
@@ -399,6 +400,84 @@ test("a browser that forgot the launch finds its DAO on the chain instead of mak
     (e) => e.kind === 47005 && tag(e, "kind") === "dao-launch",
   );
   expect(JSON.parse(receipt?.content ?? "{}").dao).toBe(dao.toLowerCase());
+});
+
+test("a new launch defaults to the project's own Shares on a network that has a launch kit", async ({
+  page,
+}) => {
+  await mockRelay(page, launchRecord((await head()) + 500));
+  await page.addInitScript(
+    ([nsec, rpcUrl]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [FOUNDER_NSEC, ANVIL_URL],
+  );
+  await page.goto("/launchpad");
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
+  await page.getByTestId("launch-advanced").locator("> summary").click();
+  await expect(page.getByTestId("token-mode-dao")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByRole("button", { name: "Project Shares" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  // This build names a kit for this network, so there is nothing to warn about.
+  await expect(page.getByTestId("dao-kit-missing")).toHaveCount(0);
+  // The older paths are one click away.
+  await page.getByRole("button", { name: "Mint new" }).click();
+  await expect(page.getByTestId("token-mode-dao")).toHaveCount(0);
+});
+
+test("a launch made in the wizard, as published, launches into its DAO", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const relay = await mockRelay(page, launchRecord((await head()) + 500));
+  await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
+  await page.addInitScript(
+    ([nsec, rpcUrl]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [FOUNDER_NSEC, ANVIL_URL],
+  );
+  await page.goto("/launchpad");
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
+  await wizardToPublish(page);
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+
+  // The record the wizard published says the project sells its own Shares.
+  await expect
+    .poll(() => JSON.parse(relay.current().content).tokenPlan?.mode, {
+      timeout: 30_000,
+    })
+    .toBe("dao");
+  const published = relay.current();
+  expect(tag(published, "token")).toBe("");
+
+  await page.goto(
+    `/launchpad/${tag(published, "d")}?author=${published.pubkey}`,
+  );
+  await page.getByRole("tab", { name: /Manage/ }).click();
+  await expect(page.getByTestId("dao-launch-panel")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("dao-launch-gate")).toHaveCount(0);
+  await page.getByTestId("dao-launch-start").click();
+  await expect(page.getByTestId("dao-launch-status")).toContainText(
+    "Your project is live",
+    { timeout: 120_000 },
+  );
+  const launched = relay.current();
+  const dao = tag(launched, "treasury");
+  expect(dao).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  // The wizard's allocation (20% sale, 20% team, the rest the DAO's) came out as Shares.
+  const shares = tag(launched, "token");
+  const total = await callWord(shares, "0x18160ddd");
+  expect(await balanceOf(shares, tag(launched, "auction"))).toBe(total / 5n);
+  expect(await balanceOf(shares, dao)).toBe((total * 3n) / 5n);
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(0n);
 });
 
 test("with no wallet in the browser the launch is off, and nothing is sent", async ({
