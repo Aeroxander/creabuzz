@@ -7,7 +7,13 @@ import {
   ethGetLogs,
   getRpcEndpoint,
 } from "./chain";
-import { readWork, type WorkChain } from "./lib/work-read";
+import {
+  findUnlockOffers,
+  readMilestoneLock,
+  type MilestoneLockView,
+  type UnlockOffer,
+} from "./lib/milestone-lock";
+import { readWork, type WorkChain, type WorkSnapshot } from "./lib/work-read";
 
 /** The configured RPC endpoint as the reader's chain: whole-history log reads for one address and topic filter. */
 function endpointChain(endpoint: string): WorkChain {
@@ -36,6 +42,40 @@ export function useWork(dao: string | null, wallet: string | null) {
     enabled: dao !== null,
     queryFn: () =>
       readWork(endpointChain(getRpcEndpoint()), dao as string, wallet),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export interface MilestoneLockState {
+  view: MilestoneLockView;
+  /** For each milestone still locked, the claim that would unlock it right now, if there is one. */
+  offers: UnlockOffer[];
+}
+
+/**
+ * The connected wallet's locked team Shares and the claims that can unlock them, or null when it has none. It is
+ * keyed under the work query so a step that re-reads the work re-reads this too.
+ */
+export function useMilestoneLock(
+  dao: string | null,
+  wallet: string | null,
+  work: WorkSnapshot | undefined,
+) {
+  return useQuery({
+    queryKey: ["launchpad", "work", dao, "lock", wallet, work?.chainTime ?? 0],
+    enabled: dao !== null && wallet !== null && work !== undefined,
+    queryFn: async (): Promise<MilestoneLockState | null> => {
+      const chain = endpointChain(getRpcEndpoint());
+      const view = await readMilestoneLock(
+        chain,
+        dao as string,
+        wallet as string,
+      );
+      if (!view || view.tranches.length === 0) return null;
+      const offers = await findUnlockOffers(chain, view, work as WorkSnapshot);
+      return { view, offers };
+    },
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });

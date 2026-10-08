@@ -17,9 +17,10 @@ import type { MandateView } from "../lib/work-read";
 import { makeWalletAuctionEffects } from "../lib/wallet-effects";
 import type { Launch } from "../models";
 import { useConnectedWallet } from "../use-connected-wallet";
-import { useWork } from "../use-work";
+import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { FileClaimCard } from "./FileClaimCard";
+import { LockedSharesCard } from "./LockedSharesCard";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
@@ -48,6 +49,7 @@ function chainNumber(value: string | null): number | null {
 export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
   const wallet = useConnectedWallet();
   const work = useWork(dao, wallet.address);
+  const lock = useMilestoneLock(dao, wallet.address, work.data);
   const queryClient = useQueryClient();
   const launchChainId = chainNumber(launch.record.chainId);
   const [busy, setBusy] = useState<string | null>(null);
@@ -112,6 +114,17 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
           </p>
         ) : null}
       </Card>
+
+      {lock.data && wallet.address ? (
+        <LockedSharesCard
+          busy={busy}
+          gate={gate}
+          launch={launch}
+          lock={lock.data}
+          onSend={send}
+          wallet={wallet.address}
+        />
+      ) : null}
 
       {work.isLoading ? (
         <Card className="p-4 text-sm text-muted-foreground">
