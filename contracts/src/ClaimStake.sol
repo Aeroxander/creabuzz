@@ -37,19 +37,19 @@ contract ClaimStake {
     IERC20Minimal public immutable currency;
 
     enum Status {
-        Open,      // claimed, awaiting quorum
-        Approved,  // approval quorum reached; payout claimable
-        Rejected,  // objection quorum reached; stake slashed to the treasury
-        Frozen,    // governance froze the claim (suspicion of fraud)
-        Paid,      // approved + paid out
+        Open, // claimed, awaiting quorum
+        Approved, // approval quorum reached; payout claimable
+        Rejected, // objection quorum reached; stake slashed to the treasury
+        Frozen, // governance froze the claim (suspicion of fraud)
+        Paid, // approved + paid out
         Recovered, // frozen claim unwound: stake back to contributor, reserve to treasury
-        Expired    // the claim ran out of time unapproved: returned, unslashed (G2)
+        Expired // the claim ran out of time unapproved: returned, unslashed (G2)
     }
 
     struct MilestoneClaim {
         address contributor;
-        uint256 amount;      // currency units claimed (escrowed)
-        uint256 stake;       // contributor's collateral, escrowed
+        uint256 amount; // currency units claimed (escrowed)
+        uint256 stake; // contributor's collateral, escrowed
         Status status;
         bytes32 evidenceHash; // Nostr→chain binding (Blossom + canonical claim)
         // ── plan §7 ──────────────────────────────────────────────────────
@@ -66,6 +66,8 @@ contract ClaimStake {
     }
 
     mapping(bytes32 claimId => MilestoneClaim) public claims;
+    /// @notice A funded mandate may bind acceptance before the first attestation.
+    mapping(bytes32 claimId => bool) public acceptanceLocked;
 
     /// @notice Seconds an unapproved claim survives before it lapses (G2).
     uint64 public claimWindow = 30 days;
@@ -111,7 +113,9 @@ contract ClaimStake {
     event RoyaltiesSet(address indexed royalties);
     event ScheduleRequested(bytes32 indexed claimId, address indexed contributor, uint128 allocation);
 
-    event ClaimSubmitted(bytes32 indexed claimId, address contributor, uint256 amount, uint256 stake, bytes32 evidenceHash);
+    event ClaimSubmitted(
+        bytes32 indexed claimId, address contributor, uint256 amount, uint256 stake, bytes32 evidenceHash
+    );
     event ClaimReleased(bytes32 indexed claimId, address contributor, uint256 amount);
     event StakeSlashed(bytes32 indexed claimId, address contributor, uint256 stake);
     event ClaimFrozen(bytes32 indexed claimId);
@@ -248,12 +252,35 @@ contract ClaimStake {
         MilestoneClaim storage claim = claims[claimId];
         if (claim.contributor == address(0)) revert UnknownClaim(claimId);
         if (msg.sender != claim.contributor) revert NotClaimant(msg.sender);
-        if (claim.status != Status.Open) revert CheckLocked(claimId);
+        if (claim.status != Status.Open || acceptanceLocked[claimId]) revert CheckLocked(claimId);
         if (verifiers.approvalCount(claimId) + verifiers.objectionCount(claimId) != 0) {
             revert CheckLocked(claimId);
         }
         claim.checkHash = checkHash;
         emit CheckSet(claimId, checkHash);
+    }
+
+    /// @notice Bind an existing acceptance check to a treasury reservation.
+    /// The treasury cannot substitute a new check for the claimant's terms.
+    function lockCheck(bytes32 claimId, bytes32 checkHash) external {
+        if (msg.sender != treasury) revert NotTreasury();
+        MilestoneClaim storage claim = claims[claimId];
+        if (claim.contributor == address(0)) revert UnknownClaim(claimId);
+        if (claim.status != Status.Open || checkHash == bytes32(0) || claim.checkHash != checkHash) {
+            revert CheckLocked(claimId);
+        }
+        acceptanceLocked[claimId] = true;
+        emit CheckSet(claimId, checkHash);
+    }
+
+    /// @notice Compact terms used to authenticate mandate funding and work awards.
+    function claimTerms(bytes32 claimId)
+        external
+        view
+        returns (address contributor, uint256 amount, bytes32 checkHash, Status status)
+    {
+        MilestoneClaim storage claim = claims[claimId];
+        return (claim.contributor, claim.amount, claim.checkHash, claim.status);
     }
 
     /// @notice G2: a claim nobody settled in time lapses. The contributor
@@ -316,9 +343,8 @@ contract ClaimStake {
             // approved. Fail closed if the ledger is not wired.
             RoyaltyReq storage req = royaltyReq[claimId];
             if (req.allocation > 0) {
-                IRoyaltyDistributor(royalties).mint(
-                    claimId, claim.contributor, req.weight, req.term, req.band, req.allocation
-                );
+                IRoyaltyDistributor(royalties)
+                    .mint(claimId, claim.contributor, req.weight, req.term, req.band, req.allocation);
             }
         } else if (quorum != 0 && verifiers.objectionCount(claimId) - objectionsAtSubmit[claimId] >= quorum) {
             claim.status = Status.Rejected;
@@ -355,7 +381,9 @@ contract ClaimStake {
         claim.status = Status.Paid;
         funded[claimId] = reserved - claim.amount;
         uint256 total = claim.amount + claim.stake;
-        if (!currency.transfer(claim.contributor, total)) revert MintFailed(address(currency), claim.contributor, total);
+        if (!currency.transfer(claim.contributor, total)) {
+            revert MintFailed(address(currency), claim.contributor, total);
+        }
         emit ClaimPaid(claimId);
     }
 

@@ -1,421 +1,435 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
 
-/// @title IConvictionWeight
-/// @notice The `conviction` term of the voting weight — a bounded, non-transferable
-/// credit allowance held on one proposal for some time
-/// (`ConvictionVoting.convictionWeightAt`). Sums into `VotingWeight.weightFor`
-/// alongside work, held and backing (docs/token-voting-design.md §10).
-interface IConvictionWeight {
-    /// @notice Conviction this account has behind one proposal at a past block.
-    /// Honest at the block: credits staked later are ignored, and conviction an
-    /// account has moved away from is not counted.
-    function convictionWeightAt(bytes32 proposalId, address account, uint48 atBlock)
-        external
-        view
-        returns (uint256);
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+import {IVotingWeight} from "./VotingWeight.sol";
+import {TreasuryMandate, TreasuryMandateFactory} from "./TreasuryMandate.sol";
+
+interface IConvictionShares {
+    function balanceOf(address owner) external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function delegates(address owner) external view returns (address);
 }
 
-/// @title ConvictionVoting
-/// @notice Continuous, deadline-free preference on funding proposals
-/// (docs/token-voting-design.md §10): members spend a bounded credit allowance
-/// on the proposals they want funded, and conviction — the weight of that
-/// preference — grows while the credits stay put and fades when they move.
-/// A proposal passes when its accumulated conviction crosses a threshold that
-/// rises with the share of the pool it asks for.
-///
-/// This is the entry-voice replacement: where the vault's backing term answers
-/// "is your money at risk behind this", this answers "have you kept saying so".
-/// The two are summed by `VotingWeight`; nothing here touches capital.
-///
-/// ## The allowance (why this is not a reputation faucet, G6)
-///
-/// Credits are issued per seat by governance — the same bounded seat map the
-/// summon mints — and are non-transferable: there is no transfer function for
-/// them anywhere in this contract. Nothing here reads a score, a badge tier or
-/// a reputation root. Issuance is membership, not measurement.
-///
-/// Because conviction accumulates **linearly** in credits, splitting one
-/// allowance across many addresses gains exactly nothing — one seat holding C
-/// credits and k seats holding C/k each arrive at the same total conviction.
-/// The only way to add weight is to hold more seats, and seats are granted one
-/// approval at a time. Splitting a sybil farm therefore buys nothing; the seat
-/// map is the sybil defence.
-///
-/// ## The recursion
-///
-/// One position of `s` credits on a proposal, last touched at block `t0` with
-/// accumulated conviction `y0`, reads at block `b`:
-///
-/// ```
-/// y(b) = α^(b−t0) · y0 + s · (1 − α^(b−t0)) / (1 − α)
-/// ```
-///
-/// `α` is per block (WAD). Conviction therefore grows toward `s / (1 − α)`
-/// while held, and decays back toward the target when support is withdrawn.
-/// Every stake and unstake is checkpointed, so `convictionWeightAt` is honest
-/// at any past block (the same rule the backing term keeps: "a snapshot ignores
-/// backing that came after it"). Unspent credits carry no weight, ever.
-///
-/// ## The threshold
-///
-/// A proposal asking for share `ρ` of the pool passes when its total conviction
-/// reaches:
-///
-/// ```
-/// threshold(ρ) = max(minConvictionFloor,
-///                    totalIssued / (1 − α) · (minW + (maxW − minW) · ρ))
-/// ```
-///
-/// so an expensive proposal needs a larger, longer-held share of the whole
-/// allowance, and a cheap ask can never pass on crumbs below the floor (the
-/// spam defence: opening many small proposals cannot dilute a real one, because
-/// thresholds are measured against total issuance, never against what happens
-/// to be staked elsewhere). `minW`/`maxW` are WAD fractions; the defaults are
-/// a simulation question, not a design one.
-contract ConvictionVoting is IConvictionWeight {
-    // ---- config ----
+interface IConvictionGovernor {
+    function castingVote() external view returns (bool);
+    function createdAt(uint256 id) external view returns (uint64);
+    function snapshotBlock(uint256 id) external view returns (uint48);
+    function executed(uint256 id) external view returns (bool);
+    function resetConvictionQueue(uint256 id) external;
+}
 
-    /// @notice Who grants seats, issues credits and opens proposals. In a
-    /// summoned DAO this is the DAO's own executor; in tests it is a deployer.
-    address public governance;
+/// @notice Exclusive, movable Shares allocations with short conviction. Loot
+/// does not vote. All executable actions use this one policy and ballot path.
+/// @dev Withdrawal removes its conviction immediately. Added Shares start at
+/// zero; changing sides never carries accumulated support to the other side.
+contract ConvictionVoting is IVotingWeight {
+    uint256 private constant WAD = 1e18;
+    // floor(exp(-ln(2)/43200) * 1e18), a twelve-hour half-life.
+    uint256 public constant DECAY_PER_SECOND = 999983955055097432;
+    uint256 public constant HALF_LIFE = 12 hours;
+    uint256 public constant MAX_ALLOCATIONS = 16;
+    TreasuryMandateFactory public immutable mandateFactory;
+    address public dao;
+    IConvictionShares public shares;
+    uint96 public totalCapacity;
+    mapping(address => uint96) public capacity;
+    mapping(address => address) public delegateOf;
 
-    /// @notice α per block, in WAD. Conviction is multiplied by this once per
-    /// block since the last update.
-    uint256 public immutable decayWad;
-
-    /// @notice `1e18 · WAD / (WAD − decayWad)`: one over (1 − α), WAD-scaled.
-    uint256 public immutable invOneMinusAlphaWad;
-
-    /// @notice Threshold fraction of maximum conviction at an ask of zero.
-    uint256 public immutable minThresholdWad;
-
-    /// @notice Threshold fraction of maximum conviction at an ask of the whole
-    /// pool. Must be at least `minThresholdWad`.
-    uint256 public immutable maxThresholdWad;
-
-    /// @notice Absolute conviction floor every proposal must clear, however
-    /// small its ask. The spam defence.
-    uint256 public immutable minConvictionFloor;
-
-    /// @notice Upper bound on seats per DAO. A bounded loop of grants is the
-    /// only iteration in this contract, and it is bounded here.
-    uint256 public constant MAX_SEATS = 256;
-
-    /// @notice Upper bound on total credits issued (keeps every product in the
-    /// recursion arithmetic far below overflow).
-    uint256 public constant MAX_TOTAL_ISSUED = 2 ** 96;
-
-    // ---- state ----
-
-    struct Proposal {
-        /// @notice Share of the funding pool requested, WAD (0..1e18).
-        uint256 askWad;
-        /// @notice Block the proposal opened at.
-        uint48 openedAtBlock;
-        bool exists;
-    }
-
-    /// @notice One recorded change of an account's stake on a proposal. The
-    /// stored conviction is the accumulated value at `fromBlock`; later blocks
-    /// are computed from here in closed form, so no history is walked.
     struct Checkpoint {
-        uint48 fromBlock;
-        uint256 credits;
-        uint256 conviction;
+        uint48 blockNumber;
+        uint96 capacity;
     }
 
-    /// @notice The settled running total of one proposal.
-    struct Total {
-        uint48 updated;
-        uint256 credits;
-        uint256 conviction;
+    struct Position {
+        uint96 amount;
+        uint192 conviction;
+        uint64 updatedAt;
+        uint8 support;
     }
 
-    mapping(bytes32 => Proposal) public proposals;
-    mapping(bytes32 => mapping(address => Checkpoint[])) internal positions;
-    mapping(bytes32 => Total) public totals;
-
-    mapping(address => bool) public isSeat;
-    uint256 public seatCount;
-    mapping(address => uint256) public unspent;
-    uint256 public totalIssued;
-
-    // ---- errors ----
-
-    error OnlyGovernance();
-    error NotASeat();
-    error UnknownProposal();
-    error ProposalExists();
-    error BadConfig();
-    error SeatLimit();
-    error IssueLimit();
-    error NoCredits();
-    error Underflow();
-
-    // ---- events ----
-
-    event SeatGranted(address indexed seat);
-    event CreditsIssued(address indexed seat, uint256 amount);
-    event ProposalOpened(bytes32 indexed proposalId, uint256 askWad);
-    event Staked(bytes32 indexed proposalId, address indexed account, uint256 credits);
-    event Unstaked(bytes32 indexed proposalId, address indexed account, uint256 credits);
-
-    constructor(
-        address governance_,
-        uint256 decayWad_,
-        uint256 minThresholdWad_,
-        uint256 maxThresholdWad_,
-        uint256 minConvictionFloor_
-    ) {
-        if (governance_ == address(0)) revert BadConfig();
-        if (decayWad_ == 0 || decayWad_ >= 1e18) revert BadConfig();
-        // α cannot be so close to 1 that 1/(1 − α) overflows the recursion.
-        if (1e18 - decayWad_ < 1e12) revert BadConfig();
-        if (minThresholdWad_ > maxThresholdWad_ || maxThresholdWad_ > 1e18) {
-            revert BadConfig();
-        }
-        governance = governance_;
-        decayWad = decayWad_;
-        invOneMinusAlphaWad = 1e36 / (1e18 - decayWad_);
-        minThresholdWad = minThresholdWad_;
-        maxThresholdWad = maxThresholdWad_;
-        minConvictionFloor = minConvictionFloor_;
+    struct Rules {
+        uint96 quorum;
+        uint96 currentYes;
+        uint192 convictionYes;
+        uint64 reviewEndsAt;
+        uint64 expiresAt;
+        uint64 delay;
+        bool bounded;
     }
 
-    modifier onlyGovernance() {
-        if (msg.sender != governance) revert OnlyGovernance();
+    struct Support {
+        uint96 yes;
+        uint96 no;
+        uint96 abstain;
+        uint192 yesConviction;
+        uint192 noConviction;
+        uint192 abstainConviction;
+        uint64 updatedAt;
+    }
+
+    mapping(address => Checkpoint[]) private history;
+    mapping(address => uint256[]) private ownerProposals;
+    mapping(uint256 => mapping(address => uint256)) private ownerIndex;
+    mapping(uint256 => mapping(address => Position)) public positions;
+    mapping(uint256 => Rules) public proposals;
+    mapping(uint256 => Support) private support;
+
+    error Unauthorized();
+    error InvalidInitialization();
+    error CapacityExceeded();
+    error InsufficientShares();
+    error BadSnapshot();
+    error InvalidProposal();
+    error TooManyAllocations();
+    event AllocationChanged(
+        uint256 indexed proposalId, address indexed owner, address indexed caller, uint8 side, uint96 amount
+    );
+    event AllocationDelegateChanged(address indexed owner, address indexed delegate);
+
+    modifier onlyDAO() {
+        if (msg.sender != dao) revert Unauthorized();
         _;
     }
 
-    /// @notice Hand the executor to another address (the DAO's own call).
-    function setGovernance(address next) external onlyGovernance {
-        if (next == address(0)) revert BadConfig();
-        governance = next;
+    constructor(TreasuryMandateFactory factory) {
+        if (address(factory).code.length == 0) revert InvalidInitialization();
+        mandateFactory = factory;
     }
 
-    // ---- issuance: seats and credits ----
-
-    /// @notice Add a seat. A seat is what makes an account eligible for
-    /// credits; the seat map is the sybil defence, so this is the one door.
-    function grantSeat(address seat) external onlyGovernance {
-        if (seat == address(0)) revert BadConfig();
-        if (isSeat[seat]) return;
-        if (seatCount >= MAX_SEATS) revert SeatLimit();
-        isSeat[seat] = true;
-        seatCount += 1;
-        emit SeatGranted(seat);
+    /// @notice Bootstrap every initial Shares holder before proposals open.
+    function initialize(address shares_, address[] calldata holders) external {
+        if (dao != address(0) || shares_.code.length == 0 || holders.length > 256) revert InvalidInitialization();
+        dao = msg.sender;
+        shares = IConvictionShares(shares_);
+        for (uint256 i; i < holders.length; ++i) {
+            address owner = holders[i];
+            if (owner == address(0)) revert InvalidInitialization();
+            if (history[owner].length != 0) continue;
+            uint256 balance = shares.balanceOf(owner);
+            if (balance > type(uint96).max || uint256(totalCapacity) + balance > type(uint96).max) {
+                revert CapacityExceeded();
+            }
+            capacity[owner] = uint96(balance);
+            totalCapacity += uint96(balance);
+            _checkpoint(owner);
+        }
+        if (totalCapacity != shares.totalSupply()) revert InvalidInitialization();
     }
 
-    /// @notice Batch grant, bounded by `MAX_SEATS` through the same door.
-    function grantSeats(address[] calldata seats) external onlyGovernance {
-        for (uint256 i = 0; i < seats.length; i++) {
-            if (seats[i] == address(0)) revert BadConfig();
-            if (isSeat[seats[i]]) continue;
-            if (seatCount >= MAX_SEATS) revert SeatLimit();
-            isSeat[seats[i]] = true;
-            seatCount += 1;
-            emit SeatGranted(seats[i]);
+    /// @notice Only factory-authenticated project approvals use bounded rules.
+    /// Other selectors, value transfers and unknown targets stay unrestricted.
+    function boundedAction(uint8 op, address target, uint256 value, bytes calldata data) external view returns (bool) {
+        return op == 0 && value == 0 && data.length >= 4 && bytes4(data[:4]) == TreasuryMandate.approveProject.selector
+            && mandateFactory.daos(target) == dao;
+    }
+
+    /// @notice Capture supply, approval floors, notice, expiry and execution delay.
+    function openProposal(
+        uint256 id,
+        uint256 supply,
+        uint16 bps,
+        uint96 absolute,
+        uint96 minYes,
+        uint64 ttl,
+        uint64 delay,
+        bool bounded
+    ) external onlyDAO {
+        uint64 review = bounded ? uint64(24 hours) : uint64(48 hours);
+        if (
+            IConvictionGovernor(dao).createdAt(id) != block.timestamp || proposals[id].expiresAt != 0 || supply == 0
+                || bps > 10_000 || ttl <= review + delay || delay == 0
+        ) revert InvalidProposal();
+        uint256 currentFloor = bounded ? (supply * 2000 + 9999) / 10_000 : supply / 2 + 1;
+        if (minYes > currentFloor) currentFloor = minYes;
+        uint256 quorum = (supply * bps + 9999) / 10_000;
+        uint256 floorQuorum = (supply * (bounded ? 2000 : 5000) + 9999) / 10_000;
+        if (floorQuorum > quorum) quorum = floorQuorum;
+        if (absolute > quorum) quorum = absolute;
+        if (quorum > type(uint96).max || currentFloor > type(uint96).max) revert CapacityExceeded();
+        proposals[id] = Rules(
+            uint96(quorum),
+            uint96(currentFloor),
+            uint192(supply * (bounded ? 1000 : 2500) * WAD / 10_000),
+            uint64(block.timestamp) + review,
+            uint64(block.timestamp) + ttl,
+            delay,
+            bounded
+        );
+        support[id].updatedAt = uint64(block.timestamp);
+    }
+
+    /// @notice Snapshot eligibility uses owned Shares, independent of delegation.
+    function getPastCapacity(address owner, uint48 snapshot) public view returns (uint96) {
+        if (snapshot >= block.number) revert BadSnapshot();
+        Checkpoint[] storage h = history[owner];
+        uint256 low;
+        uint256 high = h.length;
+        while (low < high) {
+            uint256 mid = (low + high) / 2;
+            if (h[mid].blockNumber > snapshot) high = mid;
+            else low = mid + 1;
+        }
+        return low == 0 ? 0 : h[low - 1].capacity;
+    }
+
+    /// @notice Sum live positions; terminal proposals release Shares lazily.
+    function allocated(address owner) public view returns (uint256 amount) {
+        uint256[] storage ids = ownerProposals[owner];
+        for (uint256 i; i < ids.length; ++i) {
+            if (_live(ids[i])) amount += positions[ids[i]][owner].amount;
         }
     }
 
-    /// @notice Give a seat more credits. Refills are governance's call and are
-    /// the only way the allowance grows; there is no accrual faucet and no
-    /// self-service claim, which is what keeps issuance bounded and auditable.
-    function refill(address seat, uint256 amount) external onlyGovernance {
-        if (!isSeat[seat]) revert NotASeat();
-        if (totalIssued + amount > MAX_TOTAL_ISSUED) revert IssueLimit();
-        totalIssued += amount;
-        unspent[seat] += amount;
-        emit CreditsIssued(seat, amount);
+    /// @notice Unallocated owned Shares. There is no spending or refill ledger.
+    function available(address owner) public view returns (uint256) {
+        return capacity[owner] - allocated(owner);
     }
 
-    // ---- proposals ----
-
-    /// @notice Open a funding proposal. `askWad` is the share of the pool it
-    /// requests (WAD); it sets how much conviction it will need.
-    function openProposal(bytes32 proposalId, uint256 askWad)
-        external
-        onlyGovernance
-    {
-        if (askWad > 1e18) revert BadConfig();
-        if (proposals[proposalId].exists) revert ProposalExists();
-        proposals[proposalId] =
-            Proposal({askWad: askWad, openedAtBlock: uint48(block.number), exists: true});
-        emit ProposalOpened(proposalId, askWad);
+    /// @notice Bounded enumeration for client allocation management.
+    function allocationsOf(address owner) external view returns (uint256[] memory) {
+        return ownerProposals[owner];
     }
 
-    // ---- staking ----
-
-    /// @notice Put credits behind a proposal. They leave the unspent pool and
-    /// may not back anything else while they are here: one allowance, one
-    /// preference at a time.
-    function stake(bytes32 proposalId, uint256 credits) external {
-        if (!isSeat[msg.sender]) revert NotASeat();
-        if (!proposals[proposalId].exists) revert UnknownProposal();
-        if (credits == 0 || credits > unspent[msg.sender]) revert NoCredits();
-
-        unspent[msg.sender] -= credits;
-        Position memory pos = settlePosition(proposalId, msg.sender);
-        pos.credits += credits;
-        writePosition(proposalId, msg.sender, pos);
-
-        Total memory tot = settleTotal(proposalId);
-        tot.credits += credits;
-        writeTotal(proposalId, tot);
-
-        emit Staked(proposalId, msg.sender, credits);
+    /// @inheritdoc IVotingWeight
+    function weightFor(bytes32 proposalId, address owner, uint48 snapshot) public view returns (uint256) {
+        uint256 id = uint256(proposalId);
+        if (owner == dao || (proposals[id].expiresAt != 0 && !_live(id))) return 0;
+        uint256 availableHere = available(owner) + positions[id][owner].amount;
+        uint256 eligible = getPastCapacity(owner, snapshot);
+        return availableHere < eligible ? availableHere : eligible;
     }
 
-    /// @notice Take credits back. Accumulated conviction is not erased; with
-    /// fewer credits behind the proposal it now decays toward the new target.
-    function unstake(bytes32 proposalId, uint256 credits) external {
-        Position memory pos = settlePosition(proposalId, msg.sender);
-        if (credits == 0 || credits > pos.credits) revert Underflow();
-
-        pos.credits -= credits;
-        writePosition(proposalId, msg.sender, pos);
-        unspent[msg.sender] += credits;
-
-        Total memory tot = settleTotal(proposalId);
-        tot.credits -= credits;
-        writeTotal(proposalId, tot);
-
-        emit Unstaked(proposalId, msg.sender, credits);
-    }
-
-    // ---- reading ----
-
-    /// @notice α^blocks in WAD, by binary exponentiation. Monotone: more
-    /// elapsed blocks never mean more decay factor.
-    function decayFactor(uint256 blocks_) public view returns (uint256) {
-        uint256 base = decayWad;
-        uint256 result = 1e18;
-        uint256 exp = blocks_;
-        while (exp > 0) {
-            if (exp & 1 == 1) result = (result * base) / 1e18;
-            base = (base * base) / 1e18;
-            exp >>= 1;
+    /// @inheritdoc IVotingWeight
+    function allocateWeight(
+        bytes32 proposalId,
+        address owner,
+        address caller,
+        uint48 snapshot,
+        uint8 side,
+        uint256 amount
+    ) external onlyDAO returns (uint96) {
+        uint256 id = uint256(proposalId);
+        if (
+            !IConvictionGovernor(dao).castingVote() || owner == dao
+                || (caller != owner && (delegateOf[owner] == address(0) || caller != delegateOf[owner]))
+        ) revert Unauthorized();
+        if (snapshot != IConvictionGovernor(dao).snapshotBlock(id)) revert BadSnapshot();
+        if (!_live(id) || side > 2) revert InvalidProposal();
+        _prune(owner);
+        uint256 eligible = weightFor(proposalId, owner, snapshot);
+        if (amount == type(uint256).max) amount = eligible;
+        if (amount > eligible || (amount == 0 && positions[id][owner].amount == 0)) revert InsufficientShares();
+        if (ownerIndex[id][owner] == 0 && amount != 0) {
+            if (ownerProposals[owner].length >= MAX_ALLOCATIONS) revert TooManyAllocations();
+            ownerProposals[owner].push(id);
+            ownerIndex[id][owner] = ownerProposals[owner].length;
         }
-        return result;
+        _replace(id, owner, side, uint96(amount));
+        if (amount == 0) _removeIndex(owner, id);
+        _invalidateIfNeeded(id);
+        emit AllocationChanged(id, owner, caller, side, uint96(amount));
+        return uint96(amount);
     }
 
-    /// @notice Current conviction of one account behind one proposal.
-    function convictionOf(bytes32 proposalId, address account)
+    /// @notice Native single delegation authorizes the owner's existing positions.
+    function setDelegate(address owner, address delegate) external onlyDAO {
+        if (shares.delegates(owner) != delegate) revert Unauthorized();
+        delegateOf[owner] = delegate == owner ? address(0) : delegate;
+        emit AllocationDelegateChanged(owner, delegate);
+    }
+
+    /// @notice Authentic token hooks update owned Shares and trim over-allocation.
+    /// Loot transfers, burns and issuance have no governance effect.
+    function ownershipChanged(bool isLoot, address from, address to, uint256 amount) external onlyDAO {
+        if (isLoot || from == to || amount == 0) return;
+        if (amount > type(uint96).max) revert CapacityExceeded();
+        if (from != address(0)) {
+            capacity[from] -= uint96(amount);
+        } else {
+            if (uint256(totalCapacity) + amount > type(uint96).max) revert CapacityExceeded();
+            totalCapacity += uint96(amount);
+        }
+        if (to != address(0)) {
+            if (uint256(capacity[to]) + amount > type(uint96).max) revert CapacityExceeded();
+            capacity[to] += uint96(amount);
+        } else {
+            totalCapacity -= uint96(amount);
+        }
+        if (
+            (from != address(0) && shares.balanceOf(from) != capacity[from])
+                || (to != address(0) && shares.balanceOf(to) != capacity[to]) || shares.totalSupply() != totalCapacity
+        ) revert CapacityExceeded();
+        if (from != address(0)) _trim(from);
+        _checkpoint(from);
+        if (to != address(0)) _checkpoint(to);
+    }
+
+    /// @notice Current and matured FOR/AGAINST/ABSTAIN allocations. Current support uses Shares wei;
+    /// conviction retains 18 extra fractional decimals to avoid tiny-supply deadlocks.
+    function proposalSupport(uint256 id)
         public
         view
-        returns (uint256)
+        returns (
+            uint96 yes,
+            uint96 no,
+            uint96 abstain,
+            uint192 convictionYes,
+            uint192 convictionNo,
+            uint192 convictionAbstain
+        )
     {
-        Checkpoint[] storage history = positions[proposalId][account];
-        if (history.length == 0) return 0;
-        Checkpoint storage last = history[history.length - 1];
-        return grown(last.credits, last.conviction, block.number - last.fromBlock);
-    }
-
-    /// @notice Current total conviction behind one proposal.
-    function totalConviction(bytes32 proposalId) public view returns (uint256) {
-        Total storage tot = totals[proposalId];
-        return grown(tot.credits, tot.conviction, block.number - tot.updated);
-    }
-
-    /// @notice Conviction one account has behind one proposal at a past block
-    /// (`IConvictionWeight`). Credits staked after `atBlock` are ignored.
-    function convictionWeightAt(bytes32 proposalId, address account, uint48 atBlock)
-        external
-        view
-        returns (uint256)
-    {
-        Checkpoint[] storage history = positions[proposalId][account];
-        if (history.length == 0) return 0;
-        if (atBlock < history[0].fromBlock) return 0;
-
-        // Largest checkpoint that had already taken effect at `atBlock`.
-        uint256 lo = 0;
-        uint256 hi = history.length - 1;
-        while (lo < hi) {
-            uint256 mid = (lo + hi + 1) / 2;
-            if (history[mid].fromBlock <= atBlock) lo = mid;
-            else hi = mid - 1;
-        }
-        Checkpoint storage cp = history[lo];
-        return grown(cp.credits, cp.conviction, atBlock - cp.fromBlock);
-    }
-
-    /// @notice Conviction a proposal needs to pass, given its ask.
-    function threshold(bytes32 proposalId) public view returns (uint256) {
-        Proposal storage p = proposals[proposalId];
-        if (!p.exists) revert UnknownProposal();
-        uint256 thresholdWad =
-            minThresholdWad + ((maxThresholdWad - minThresholdWad) * p.askWad) / 1e18;
-        // totalIssued / (1 − α) is the ceiling every possible conviction sum
-        // sits under, so the threshold can never be unreachable in principle.
-        uint256 ceiling = (totalIssued * invOneMinusAlphaWad) / 1e18;
-        uint256 scaled = (ceiling * thresholdWad) / 1e18;
-        return scaled < minConvictionFloor ? minConvictionFloor : scaled;
-    }
-
-    /// @notice Whether accumulated conviction has crossed the threshold.
-    function passed(bytes32 proposalId) external view returns (bool) {
-        return totalConviction(proposalId) >= threshold(proposalId);
-    }
-
-    // ---- internal ----
-
-    struct Position {
-        uint256 credits;
-        uint256 conviction;
-    }
-
-    /// @notice The recursion: one position of `credits` with `conviction`
-    /// accumulated, advanced `elapsed` blocks.
-    function grown(uint256 credits, uint256 conviction, uint256 elapsed)
-        internal
-        view
-        returns (uint256)
-    {
-        uint256 decay = decayFactor(elapsed);
-        return (decay * conviction) / 1e18
-            + (credits * (1e18 - decay)) / (1e18 - decayWad);
-    }
-
-    /// @notice Settle a position to this block and return it in memory.
-    function settlePosition(bytes32 proposalId, address account)
-        internal
-        view
-        returns (Position memory pos)
-    {
-        Checkpoint[] storage history = positions[proposalId][account];
-        if (history.length == 0) return pos;
-        Checkpoint storage last = history[history.length - 1];
-        pos.credits = last.credits;
-        pos.conviction =
-            grown(last.credits, last.conviction, block.number - last.fromBlock);
-    }
-
-    function writePosition(bytes32 proposalId, address account, Position memory pos)
-        internal
-    {
-        Checkpoint[] storage history = positions[proposalId][account];
-        uint48 nowBlock = uint48(block.number);
-        if (history.length > 0 && history[history.length - 1].fromBlock == nowBlock) {
-            history[history.length - 1].credits = pos.credits;
-            history[history.length - 1].conviction = pos.conviction;
-            return;
-        }
-        history.push(
-            Checkpoint({fromBlock: nowBlock, credits: pos.credits, conviction: pos.conviction})
+        Support storage s = support[id];
+        uint256 end = proposals[id].expiresAt;
+        uint256 timestamp = end != 0 && block.timestamp > end ? end : block.timestamp;
+        uint256 elapsed = timestamp - s.updatedAt;
+        return (
+            s.yes,
+            s.no,
+            s.abstain,
+            _accrued(s.yesConviction, s.yes, elapsed),
+            _accrued(s.noConviction, s.no, elapsed),
+            _accrued(s.abstainConviction, s.abstain, elapsed)
         );
     }
 
-    function settleTotal(bytes32 proposalId) internal view returns (Total memory tot) {
-        Total storage stored = totals[proposalId];
-        tot.credits = stored.credits;
-        tot.conviction =
-            grown(stored.credits, stored.conviction, block.number - stored.updated);
-        tot.updated = uint48(block.number);
+    /// @notice Approval requires current backing and conviction on the same ballot.
+    function qualifies(uint256 id) public view returns (bool) {
+        Rules storage p = proposals[id];
+        if (p.expiresAt == 0 || block.timestamp < p.reviewEndsAt || block.timestamp >= p.expiresAt) return false;
+        (uint96 yes, uint96 no, uint96 abstain, uint192 cy,,) = proposalSupport(id);
+        return
+            yes >= p.currentYes && yes > no && cy >= p.convictionYes
+                && uint256(yes) + no + abstain >= p.quorum;
     }
 
-    function writeTotal(bytes32 proposalId, Total memory tot) internal {
-        totals[proposalId] = tot;
+    /// @notice State in native Majeur enum order; support stays movable until execution.
+    function proposalState(uint256 id, bool executed, uint64 queued) external view returns (uint8) {
+        if (executed) return 6;
+        Rules storage p = proposals[id];
+        if (p.expiresAt == 0) return 0;
+        if (block.timestamp >= p.expiresAt) return 5;
+        if (!qualifies(id)) return 1;
+        if (queued != 0 && block.timestamp < uint256(queued) + p.delay) return 2;
+        return 3;
+    }
+
+    /// @notice A proposal's frozen execution delay.
+    function executionDelay(uint256 id) external view returns (uint64) {
+        return proposals[id].delay;
+    }
+
+    /// @inheritdoc IVotingWeight
+    function mayExit(address) external pure returns (bool, uint256) {
+        return (true, 0);
+    }
+
+    function _live(uint256 id) private view returns (bool) {
+        return proposals[id].expiresAt != 0 && block.timestamp < proposals[id].expiresAt
+            && !IConvictionGovernor(dao).executed(id);
+    }
+
+    function _accrued(uint192 conviction, uint96 amount, uint256 elapsed) private pure returns (uint192) {
+        uint256 decay = FixedPointMathLib.rpow(DECAY_PER_SECOND, elapsed, WAD);
+        uint256 result = uint256(conviction) * decay / WAD + uint256(amount) * (WAD - decay);
+        uint256 ceiling = uint256(amount) * WAD;
+        return uint192(result < ceiling ? result : ceiling);
+    }
+
+    function _settle(uint256 id) private {
+        Support storage s = support[id];
+        uint256 elapsed = block.timestamp - s.updatedAt;
+        s.yesConviction = _accrued(s.yesConviction, s.yes, elapsed);
+        s.noConviction = _accrued(s.noConviction, s.no, elapsed);
+        s.abstainConviction = _accrued(s.abstainConviction, s.abstain, elapsed);
+        s.updatedAt = uint64(block.timestamp);
+    }
+
+    function _replace(uint256 id, address owner, uint8 side, uint96 amount) private {
+        _settle(id);
+        Position storage pos = positions[id][owner];
+        uint192 oldConviction = _accrued(pos.conviction, pos.amount, block.timestamp - pos.updatedAt);
+        uint192 newConviction;
+        if (side == pos.support && pos.amount != 0) {
+            newConviction = amount < pos.amount ? uint192(uint256(oldConviction) * amount / pos.amount) : oldConviction;
+        }
+        _changeSupport(id, pos.support, pos.amount, oldConviction, false);
+        _changeSupport(id, side, amount, newConviction, true);
+        pos.amount = amount;
+        pos.support = side;
+        pos.conviction = newConviction;
+        pos.updatedAt = uint64(block.timestamp);
+    }
+
+    function _changeSupport(uint256 id, uint8 side, uint96 amount, uint192 conviction, bool adding) private {
+        Support storage s = support[id];
+        uint96 raw = side == 1 ? s.yes : side == 0 ? s.no : s.abstain;
+        uint192 mature = side == 1 ? s.yesConviction : side == 0 ? s.noConviction : s.abstainConviction;
+        raw = adding ? raw + amount : raw - amount;
+        // Different aggregate/position settlement schedules can differ by a
+        // fractional wei. Retire that dust conservatively; never mint it.
+        mature = adding ? mature + conviction : mature > conviction ? mature - conviction : 0;
+        uint192 ceiling = uint192(uint256(raw) * WAD);
+        if (mature > ceiling) mature = ceiling;
+        if (side == 1) {
+            s.yes = raw;
+            s.yesConviction = mature;
+        } else if (side == 0) {
+            s.no = raw;
+            s.noConviction = mature;
+        } else {
+            s.abstain = raw;
+            s.abstainConviction = mature;
+        }
+    }
+
+    function _trim(address owner) private {
+        _prune(owner);
+        uint256 used = allocated(owner);
+        uint256 balance = capacity[owner];
+        if (used <= balance) return;
+        uint256[] storage ids = ownerProposals[owner];
+        uint256 i;
+        while (i < ids.length) {
+            uint256 id = ids[i];
+            Position storage pos = positions[id][owner];
+            uint96 amount = uint96(uint256(pos.amount) * balance / used);
+            _replace(id, owner, pos.support, amount);
+            _invalidateIfNeeded(id);
+            emit AllocationChanged(id, owner, owner, pos.support, amount);
+            if (amount == 0) _removeIndex(owner, id);
+            else ++i;
+        }
+    }
+
+    function _invalidateIfNeeded(uint256 id) private {
+        if (!qualifies(id)) IConvictionGovernor(dao).resetConvictionQueue(id);
+    }
+
+    function _prune(address owner) private {
+        uint256 i;
+        while (i < ownerProposals[owner].length) {
+            uint256 id = ownerProposals[owner][i];
+            if (!_live(id)) _removeIndex(owner, id);
+            else ++i;
+        }
+    }
+
+    function _removeIndex(address owner, uint256 id) private {
+        uint256 index = ownerIndex[id][owner];
+        if (index == 0) return;
+        uint256[] storage ids = ownerProposals[owner];
+        uint256 last = ids[ids.length - 1];
+        ids[index - 1] = last;
+        ownerIndex[last][owner] = index;
+        ids.pop();
+        delete ownerIndex[id][owner];
+    }
+
+    function _checkpoint(address owner) private {
+        Checkpoint[] storage h = history[owner];
+        uint48 n = uint48(block.number);
+        if (h.length != 0 && h[h.length - 1].blockNumber == n) h[h.length - 1].capacity = capacity[owner];
+        else h.push(Checkpoint(n, capacity[owner]));
     }
 }

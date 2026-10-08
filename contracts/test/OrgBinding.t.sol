@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
+import {newSummoner} from "../src/majeur/MolochPatched.sol";
+
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {OrgAllowance} from "../src/OrgAllowance.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
-import {Call, Moloch, Shares, Summoner} from "majeur/src/Moloch.sol";
+import {Call, Moloch, Shares, Summoner} from "../src/majeur/MolochPatched.sol";
 
 /// @dev Phase 8 tests: summon works, shares land on the holders, and the
 /// OrgAllowance ledger is controllable ONLY by the DAO after the handover.
@@ -36,6 +38,15 @@ contract OrgBindingTest is Test {
     /// window steals the expectation).
     address internal molochImpl;
 
+    function test_deployment_bytecode_fits_evm_limits() public view {
+        assertLe(type(Summoner).creationCode.length + 32, 49_152, "factory initcode");
+        assertLe(type(Moloch).creationCode.length + 32, 49_152, "governor initcode");
+        assertLe(type(OrgBinding).creationCode.length + 32, 49_152, "binding including constructor args");
+        assertLe(address(binding.summoner()).code.length, 24_576, "factory runtime");
+        assertLe(molochImpl.code.length, 24_576, "governor runtime");
+        assertLe(address(binding).code.length, 24_576, "binding runtime");
+    }
+
     function _holders() internal view returns (address[] memory h) {
         h = new address[](3);
         h[0] = ownerAddr;
@@ -51,32 +62,16 @@ contract OrgBindingTest is Test {
         return uint96(t);
     }
 
-    /// @dev The Moloch implementation `b.summoner()` clones. `Summoner` keeps
-    /// it in an unexported immutable (no getter), so mirror the Summoner
-    /// constructor's `new Moloch{salt: bytes32(0)}()`: CREATE2(salt = 0) from
-    /// the summoner over Moloch's creation code.
+    /// @dev Read the constructor-bound implementation from the actual Summoner.
     function _molochImplOf(OrgBinding b) internal view returns (address) {
-        return address(
-            uint160(
-                uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff),
-                            address(b.summoner()),
-                            bytes32(0),
-                            keccak256(type(Moloch).creationCode)
-                        )
-                    )
-                )
-            )
-        );
+        return b.summoner().getImplementation();
     }
 
     function setUp() public {
         vm.prank(ownerAddr);
         allowance = new OrgAllowance();
 
-        binding = new OrgBinding();
+        binding = new OrgBinding(newSummoner());
         molochImpl = _molochImplOf(binding);
 
         address[] memory h = _holders();
@@ -94,7 +89,7 @@ contract OrgBindingTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: _thresholdOf(4e18), // 1% of the 4e18 total
-                proposalTTL: 3 days,
+                proposalTTL: 14 days,
                 timelockDelay: 1 days,
                 molochImpl: molochImpl,
                 salt: keccak256("phase8"),
@@ -136,7 +131,7 @@ contract OrgBindingTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: _thresholdOf(1e18),
-                proposalTTL: 3 days,
+                proposalTTL: 14 days,
                 timelockDelay: 1 days,
                 molochImpl: molochImpl,
                 salt: keccak256("two"),
@@ -194,7 +189,7 @@ contract OrgBindingTest is Test {
     function test_GovernanceDefaultsMatchSummonFastPreset() public view {
         Moloch m = Moloch(payable(dao));
         assertEq(m.proposalThreshold(), _thresholdOf(4e18), "1% threshold");
-        assertEq(m.proposalTTL(), 3 days, "summonFast TTL");
+        assertEq(m.proposalTTL(), 14 days, "summonFast TTL");
         assertEq(m.timelockDelay(), 1 days, "summonFast timelock");
     }
 
@@ -208,17 +203,17 @@ contract OrgBindingTest is Test {
         binding.summonAndBind(root, _govParams(keccak256("g1"), 0, 0, 0));
         // Thresholdless.
         vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
-        binding.summonAndBind(root, _govParams(keccak256("g2"), 0, 3 days, 1 days));
+        binding.summonAndBind(root, _govParams(keccak256("g2"), 0, 14 days, 1 days));
         // No TTL / no timelock.
         vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
         binding.summonAndBind(root, _govParams(keccak256("g3"), 1e16, 0, 1 days));
         vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
-        binding.summonAndBind(root, _govParams(keccak256("g4"), 1e16, 3 days, 0));
+        binding.summonAndBind(root, _govParams(keccak256("g4"), 1e16, 14 days, 0));
         // TTL <= timelock.
         vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
-        binding.summonAndBind(root, _govParams(keccak256("g5"), 1e16, 1 days, 3 days));
+        binding.summonAndBind(root, _govParams(keccak256("g5"), 1e16, 1 days, 14 days));
         vm.expectRevert(OrgBinding.NonProductionGovernance.selector);
-        binding.summonAndBind(root, _govParams(keccak256("g6"), 1e16, 3 days, 3 days));
+        binding.summonAndBind(root, _govParams(keccak256("g6"), 1e16, 14 days, 14 days));
         assertEq(binding.binderOf(root), address(0), "nothing was summoned or recorded");
     }
 
@@ -295,7 +290,7 @@ contract OrgBindingTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: _thresholdOf(1e18),
-                proposalTTL: 3 days,
+                proposalTTL: 14 days,
                 timelockDelay: 1 days,
                 molochImpl: molochImpl,
                 salt: keccak256("v2"),
@@ -323,7 +318,7 @@ contract OrgBindingTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: _thresholdOf(0),
-                proposalTTL: 3 days,
+                proposalTTL: 14 days,
                 timelockDelay: 1 days,
                 molochImpl: molochImpl,
                 salt: keccak256("x"),
@@ -347,7 +342,7 @@ contract OrgBindingTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: _thresholdOf(1e18),
-                proposalTTL: 3 days,
+                proposalTTL: 14 days,
                 timelockDelay: 1 days,
                 molochImpl: molochImpl,
                 salt: keccak256("y"),
@@ -380,7 +375,7 @@ contract OrgBindingTest is Test {
             quorumBps: 500,
             ragequittable: true,
             proposalThreshold: _thresholdOf(1e18),
-            proposalTTL: 3 days,
+            proposalTTL: 14 days,
             timelockDelay: 1 days,
             molochImpl: molochImpl,
             salt: salt,

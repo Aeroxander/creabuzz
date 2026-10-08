@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
+import {ConvictionVoting} from "./ConvictionVoting.sol";
+import {Call, Moloch, Summoner} from "./majeur/MolochPatched.sol";
 
 /// @title OrgBinding — onchain record keeper for the NIP-ORG "Opt-in onchain
 /// binding" of a community org root to a Moloch-family DAO.
@@ -16,15 +17,15 @@ import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
 /// verify one against the other when money is at stake.
 ///
 /// INTEGRATION SURFACE (vendored majeur, gitlink 7d7a36b):
-/// - `lib/majeur/src/Moloch.sol` — `Summoner` (CREATE2 factory; deploys the
+/// - `src/majeur/MolochPatched.sol` — `Summoner` (CREATE2 factory; deploys the
 ///   `Moloch` implementation in its constructor; `summon()` clones + `init()`s
 ///   a DAO, mints `initShares` to `initHolders`, then executes `initCalls`).
 /// - `lib/majeur/src/peripheral/SafeSummoner.sol` — NOT used here: its
 ///   singletons (`SUMMONER`, `MOLOCH_IMPL`, `RENDERER`) are hardcoded to the
 ///   canonical CREATE2/3 addresses of supported chains, which do not exist on
-///   a dev chain. We therefore deploy a fresh `Summoner` in this contract's
-///   constructor. The preset governance defaults `summonFast` builds
-///   (proposalThreshold = 1% of initial supply, 3-day TTL, 1-day timelock,
+///   a dev chain. The deployer supplies a fresh patched `Summoner` to this contract's
+///   constructor; separate deployment keeps initcode below EIP-3860. The preset governance defaults `summonFast` builds
+///   (proposalThreshold = 1% of initial supply, 14-day TTL, 1-day timelock,
 ///   500 bps quorum, ragequit enabled) are reproduced via [[SummonParams]]
 ///   and PRODUCTION-SAFE VALUES ARE ENFORCED — see `summonAndBind`.
 /// - `lib/majeur/src/peripheral/MolochViewHelper.sol` — offchain read helper
@@ -47,7 +48,7 @@ import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
 ///   the only channel that works, because the setters are `onlyDAO`
 ///   (`msg.sender == address(this)`) and `Moloch.init` executes `initCalls`
 ///   from the DAO's own context. Production-safe values are ENFORCED, not
-///   accepted: `NonProductionGovernance` unless threshold > 0, TTL > 0,
+///   accepted: `NonProductionGovernance` unless threshold > 0, TTL > 48 hours,
 ///   timelock > 0, and TTL > timelock (the KF#11 criteria). After the
 ///   summon the three values are read back off the clone and the tx reverts
 ///   (`GovernanceNotApplied`) on any mismatch — a wrong `molochImpl` would
@@ -97,8 +98,8 @@ contract OrgBinding {
         /// 1% of the total initial shares, floored at 1. Must be > 0
         /// (`NonProductionGovernance`).
         uint96 proposalThreshold;
-        /// Proposal expiry in seconds — `summonFast` preset: 3 days.
-        /// Must be > 0 and greater than `timelockDelay`.
+        /// Proposal expiry in seconds — `summonFast` preset: 14 days.
+        /// Must exceed 48 hours plus `timelockDelay`.
         uint64 proposalTTL;
         /// Delay in seconds between a proposal succeeding and its
         /// execution — `summonFast` preset: 1 day. Must be > 0.
@@ -123,7 +124,7 @@ contract OrgBinding {
     // ------------------------------------------------------------------
 
     /// @notice The majeur Summoner factory this contract summons through.
-    /// Freshly deployed per OrgBinding (see NatSpec: why not SafeSummoner).
+    /// Explicitly deployed before OrgBinding to keep initcode below EIP-3860.
     Summoner public immutable summoner;
 
     /// @notice rootId (the org root's 32-byte Nostr event id) => binding.
@@ -151,7 +152,7 @@ contract OrgBinding {
     error HoldersSharesMismatch();
     /// @notice The requested governance config is not production-safe:
     ///         threshold, TTL, and timelock must all be > 0 and
-    ///         TTL must exceed timelock (the KF#11 criteria).
+    ///         TTL must exceed the 48-hour minimum review period and timelock (the KF#11 criteria).
     error NonProductionGovernance();
     /// @notice The summoned clone did not take the requested governance
     ///         values (e.g. `molochImpl` names the wrong implementation and
@@ -166,8 +167,10 @@ contract OrgBinding {
     // Constructor
     // ------------------------------------------------------------------
 
-    constructor() {
-        summoner = new Summoner();
+    /// @notice Use a separately deployed patched factory; avoid nested initcode limits.
+    constructor(Summoner summoner_) {
+        require(address(summoner_).code.length != 0, GovernanceNotApplied());
+        summoner = summoner_;
     }
 
     // ------------------------------------------------------------------
@@ -201,10 +204,8 @@ contract OrgBinding {
         // Production governance is enforced, not accepted: the Moloch
         // defaults (threshold 0, no TTL/timelock) are exactly the defect
         // this wrapper must never re-create.
-        bool productionGovernance = p.proposalThreshold > 0
-            && p.proposalTTL > 0
-            && p.timelockDelay > 0
-            && p.proposalTTL > p.timelockDelay;
+        bool productionGovernance = p.proposalThreshold > 0 && p.proposalTTL > 48 hours && p.timelockDelay > 0
+            && p.proposalTTL > uint256(48 hours) + p.timelockDelay;
         if (!productionGovernance) revert NonProductionGovernance();
         _authorizeBind(rootId);
 
@@ -216,18 +217,12 @@ contract OrgBinding {
         // SafeSummoner (lib/majeur/src/peripheral/SafeSummoner.sol).
         bytes32 create2Salt = keccak256(abi.encode(p.holders, p.shares, p.salt));
         bytes memory creationCode = abi.encodePacked(
-            hex"602d5f8160095f39f35f5f365f5f37365f73",
-            p.molochImpl,
-            hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+            hex"602d5f8160095f39f35f5f365f5f37365f73", p.molochImpl, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
         );
         address predicted = address(
             uint160(
                 uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff), address(summoner), create2Salt, keccak256(creationCode)
-                        )
-                    )
+                    keccak256(abi.encodePacked(bytes1(0xff), address(summoner), create2Salt, keccak256(creationCode)))
                 )
             )
         );
@@ -235,8 +230,7 @@ contract OrgBinding {
         // `summonFast` preset values, mirrored. `Moloch.init` executes these
         // from the DAO's own context, which is what `onlyDAO` accepts.
         Call[] memory initCalls = new Call[](3);
-        initCalls[0] =
-            Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (p.proposalThreshold)));
+        initCalls[0] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (p.proposalThreshold)));
         initCalls[1] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalTTL, (p.proposalTTL)));
         initCalls[2] = Call(predicted, 0, abi.encodeCall(Moloch.setTimelockDelay, (p.timelockDelay)));
 
@@ -260,9 +254,9 @@ contract OrgBinding {
         // unconfigured DAO can never be recorded as bound.
         Moloch configured = Moloch(payable(dao));
         if (
-            configured.proposalThreshold() != p.proposalThreshold
-                || configured.proposalTTL() != p.proposalTTL
-                || configured.timelockDelay() != p.timelockDelay
+            configured.proposalThreshold() != p.proposalThreshold || configured.proposalTTL() != p.proposalTTL
+                || configured.timelockDelay() != p.timelockDelay || configured.votingWeight() == address(0)
+                || ConvictionVoting(configured.votingWeight()).dao() != dao
         ) revert GovernanceNotApplied();
 
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});

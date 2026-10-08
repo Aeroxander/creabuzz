@@ -1,128 +1,160 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.30;
+import {VotingFixture} from "./helpers/VotingFixture.sol";
+import {Moloch, Loot} from "../src/majeur/MolochPatched.sol";
+import {ConvictionVoting} from "../src/ConvictionVoting.sol";
 
-import {Test} from "forge-std/Test.sol";
-import {Call, Moloch, Summoner} from "../src/majeur/MolochPatched.sol";
-import {VotingWeight, ISnapshotVotes, IBackingWeight} from "../src/VotingWeight.sol";
-import {IConvictionWeight} from "../src/ConvictionVoting.sol";
-
-/// @dev A backing source whose answers are set by the test.
-contract MockBacking is IBackingWeight {
-    mapping(bytes32 => mapping(address => uint256)) public weight;
-    mapping(address => uint256) public risk;
-
-    function setWeight(bytes32 proposalId, address who, uint256 amount) external {
-        weight[proposalId][who] = amount;
+contract MolochPatchedTest is VotingFixture {
+    function test_one_path_uses_exclusive_movable_allocations() public {
+        vote(ALICE, 1, 70e18);
+        vm.prank(ALICE);
+        dao.castVote(2, 1);
+        assertEq(ledger.available(ALICE), 0);
+        (uint96 yes,,,,,) = dao.proposalSupport(2);
+        assertEq(yes, 30e18);
+        vm.prank(ALICE);
+        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        dao.castVote(3, 1, 1);
+        assertEq(dao.createdAt(3), 0, "failed allocation also rolls back open");
+        vote(ALICE, 1, 20e18);
+        vote(ALICE, 2, 80e18);
+        assertEq(ledger.available(ALICE), 0);
+        vm.prank(ALICE);
+        dao.cancelVote(1);
+        assertEq(ledger.available(ALICE), 20e18);
     }
 
-    function setRisk(address who, uint256 amount) external {
-        risk[who] = amount;
+    function test_only_shares_vote_and_loot_is_economic() public {
+        vm.prank(BOB);
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        dao.openProposal(1);
+        vote(ALICE, 1, 60e18);
+        vm.prank(BOB);
+        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        dao.castVote(1, 1, 1);
+        assertEq(dao.supplySnapshot(1), 100e18);
+        assertEq(ledger.capacity(BOB), 0);
+        assertEq(loot.balanceOf(BOB), 100e18);
     }
 
-    function backingWeightAt(bytes32 proposalId, address backer, uint48)
-        external
-        view
-        returns (uint256)
-    {
-        return weight[proposalId][backer];
-    }
-
-    function tokensAtRisk(address backer) external view returns (uint256) {
-        return risk[backer];
-    }
-}
-
-/// @dev The Majeur fork's own seams, bound to `VotingWeight`
-/// (docs/token-voting-design.md §7). What `Moloch.vote()` reads is decided by
-/// `weightFor`, and `ragequit` refuses to let a backer leave while their
-/// capital is still behind a proposal that has not resolved.
-contract MolochPatchedTest is Test {
-    address constant ALICE = address(0xA11CE);
-    bytes32 constant PROPOSAL = keccak256("a-proposal");
-
-    Moloch dao;
-    MockBacking backing;
-    VotingWeight weight;
-
-    function setUp() public {
-        Summoner summoner = new Summoner();
-
-        address[] memory holders = new address[](1);
-        holders[0] = ALICE;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 100e18;
-        Call[] memory calls = new Call[](0);
-
-        dao = summoner.summon(
-            "Org", "ORG", "", 5000, true, address(0), bytes32(0), holders, amounts, calls
-        );
-
-        backing = new MockBacking();
-        weight = new VotingWeight(
-            ISnapshotVotes(address(dao.shares())),
-            ISnapshotVotes(address(dao.loot())),
-            IBackingWeight(address(backing)),
-            IConvictionWeight(address(0))
-        );
-
-        // `onlyDAO` is `msg.sender == address(this)`, so only the DAO itself
-        // can bind the seam — exactly as it will be via a proposal.
-        vm.prank(address(dao));
-        dao.setVotingWeight(address(weight));
-    }
-
-    function test_the_seam_decides_the_weight() public {
-        backing.setWeight(PROPOSAL, ALICE, 700);
+    function test_approved_conversion_earns_standing_on_future_snapshots() public {
+        bytes memory data = abi.encodeCall(Moloch.convertLootToShares, (BOB, uint96(100e18)));
+        bytes32 nonce = keccak256("verified contribution");
+        uint256 id = dao.proposalId(0, address(dao), 0, data, nonce);
+        vote(ALICE, id, 100e18);
+        vm.warp(vm.getBlockTimestamp() + 48 hours);
+        dao.queue(id);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+        dao.executeByVotes(0, address(dao), 0, data, nonce);
+        assertTrue(dao.executed(id));
+        assertEq(loot.balanceOf(BOB), 0);
+        assertEq(shares.balanceOf(BOB), 100e18);
+        assertEq(ledger.available(BOB), 100e18);
+        assertEq(ledger.totalCapacity(), 200e18);
+        assertEq(ledger.available(ALICE), 100e18, "executed allocation releases");
+        (uint256 free, uint256 owned, uint256 eligible, uint96 allocated,) = dao.votingAllocationFor(id, ALICE);
+        assertEq(free, owned);
+        assertEq(eligible, 0);
+        assertEq(allocated, 0);
         vm.roll(block.number + 1);
-
-        uint48 snap = uint48(block.number - 1);
-        // Alice holds 100e18 shares (no delegation, so that is her work weight)
-        // and the seam adds 700 of backing.
-        assertEq(dao.weightFor(uint256(PROPOSAL), ALICE, snap), 100e18 + 700);
+        vote(BOB, 2, 100e18);
     }
 
-    function test_backing_weight_is_per_proposal_at_the_seam() public {
-        backing.setWeight(PROPOSAL, ALICE, 700);
-        vm.roll(block.number + 1);
-        uint48 snap = uint48(block.number - 1);
-        assertEq(dao.weightFor(uint256(keccak256("other")), ALICE, snap), 100e18);
-    }
-
-    function test_without_a_seam_the_weight_is_shares_alone() public {
-        Summoner summoner = new Summoner();
-        address[] memory holders = new address[](1);
-        holders[0] = ALICE;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 5e18;
-        Call[] memory calls = new Call[](0);
-        Moloch bare = summoner.summon(
-            "Bare", "BARE", "", 5000, true, address(0), bytes32(0), holders, amounts, calls
-        );
-        vm.roll(block.number + 1);
-        assertEq(bare.weightFor(uint256(PROPOSAL), ALICE, uint48(block.number - 1)), 5e18);
-    }
-
-    function test_the_seam_is_bound_once_only() public {
-        vm.prank(address(dao));
+    function test_review_and_timelock_support_stays_movable() public {
+        bytes memory data = abi.encodeCall(Moloch.setQuorumBps, (uint16(600)));
+        bytes32 nonce = bytes32("rules");
+        uint256 id = dao.proposalId(0, address(dao), 0, data, nonce);
+        vote(ALICE, id, 100e18);
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.executeByVotes(0, address(dao), 0, data, nonce);
+        vm.warp(vm.getBlockTimestamp() + 48 hours);
+        dao.queue(id);
+        assertEq(uint256(dao.state(id)), uint256(Moloch.ProposalState.Queued));
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        vote(ALICE, id, 0);
+        assertEq(dao.queuedAt(id), 0);
+        vote(ALICE, id, 100e18);
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.executeByVotes(0, address(dao), 0, data, nonce);
+        vm.warp(vm.getBlockTimestamp() + 12 hours);
+        dao.queue(id);
         vm.expectRevert();
-        dao.setVotingWeight(address(0xBAD));
-        assertEq(dao.votingWeight(), address(weight));
+        dao.executeByVotes(0, address(dao), 0, data, nonce);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+        dao.executeByVotes(0, address(dao), 0, data, nonce);
+        assertEq(dao.quorumBps(), 600);
     }
 
-    function test_ragequit_is_refused_while_capital_is_at_risk() public {
-        backing.setRisk(ALICE, 1);
-
+    function test_rules_are_captured_and_expiry_releases_queued_allocations() public {
+        vote(ALICE, 1, 100e18);
+        (uint96 quorum, uint96 current, uint192 mature, uint64 notice, uint64 expires, uint64 delay, bool bounded) =
+            dao.proposalVotingRules(1);
+        assertEq(quorum, 50e18);
+        assertEq(current, 50e18 + 1);
+        assertEq(mature, 25e36);
+        assertEq(notice, vm.getBlockTimestamp() + 48 hours);
+        assertEq(expires, vm.getBlockTimestamp() + 14 days);
+        assertEq(delay, 1 days);
+        assertFalse(bounded);
+        vm.prank(address(dao));
+        dao.setQuorumBps(10_000);
+        vm.prank(address(dao));
+        dao.setTimelockDelay(2 days);
+        vm.warp(vm.getBlockTimestamp() + 48 hours);
+        dao.queue(1);
+        vm.warp(expires);
+        assertEq(uint256(dao.state(1)), uint256(Moloch.ProposalState.Expired));
+        assertEq(ledger.available(ALICE), 100e18);
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(Moloch.StillAtRisk.selector, 1));
-        dao.ragequit(new address[](0), 1e18, 0);
+        vm.expectRevert(ConvictionVoting.InvalidProposal.selector);
+        dao.castVote(1, 1, 100e18);
     }
 
-    function test_ragequit_is_allowed_once_nothing_is_at_risk() public {
-        backing.setRisk(ALICE, 0);
-        // The gate is passed: the call gets as far as the token list check and
-        // stops there, rather than being turned away by the exit gate.
+    function test_snapshots_exclude_new_shares() public {
         vm.prank(ALICE);
-        vm.expectRevert(Moloch.LengthMismatch.selector);
-        dao.ragequit(new address[](0), 1e18, 0);
+        dao.openProposal(1);
+        vm.prank(ALICE);
+        shares.transfer(CAROL, 50e18);
+        vm.prank(CAROL);
+        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        dao.castVote(1, 1, 1e18);
+        vm.roll(block.number + 1);
+        vote(CAROL, 2, 50e18);
+    }
+
+    function test_all_in_does_not_prevent_new_proposals_or_exit() public {
+        vote(ALICE, 1, 100e18);
+        vm.prank(ALICE);
+        dao.openProposal(2);
+        vm.deal(address(dao), 100 ether);
+        address[] memory assets = new address[](1);
+        assets[0] = address(0);
+        vm.prank(ALICE);
+        dao.ragequit(assets, 100e18, 0);
+        assertEq(ALICE.balance, 50 ether, "Loot retains the other half of economic rights");
+        assertEq(ledger.totalCapacity(), 0);
+        assertEq(ledger.available(ALICE), 0);
+        (uint96 yes,,,,,) = dao.proposalSupport(1);
+        assertEq(yes, 0);
+    }
+
+    function test_no_futarchy_policy_or_delegatecall_bypass() public {
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.fundFutarchy(1, address(0), 1);
+        vm.prank(address(dao));
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.setVotingWeight(address(1));
+        vm.prank(address(dao));
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.setAutoFutarchy(1, 0);
+        bytes memory data = abi.encodeCall(Moloch.setQuorumBps, (uint16(1)));
+        uint256 id = dao.proposalId(1, address(dao), 0, data, bytes32(0));
+        vote(ALICE, id, 100e18);
+        vm.warp(vm.getBlockTimestamp() + 48 hours);
+        dao.queue(id);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.executeByVotes(1, address(dao), 0, data, bytes32(0));
+        assertFalse(dao.executed(id));
     }
 }

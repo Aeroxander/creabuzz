@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
+import {newSummoner} from "../src/majeur/MolochPatched.sol";
+
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
 import {DaoURIAdapter} from "../src/DaoURIAdapter.sol";
-import {Call, Moloch, Summoner} from "majeur/src/Moloch.sol";
+import {Call, Moloch, Summoner} from "../src/majeur/MolochPatched.sol";
 
 /// @notice Phase 3 acceptance (OA.md/OAv2): the half-built `contractURI()`
 ///         field becomes the ERC-4824 `daoURI()`, the summon carries it, and
@@ -36,7 +38,7 @@ contract DaoURIAdapterTest is Test {
     }
 
     function _summon(string memory uri) internal returns (Moloch dao, OrgBinding binding) {
-        binding = new OrgBinding();
+        binding = new OrgBinding(newSummoner());
         HolderSetup memory h;
         h.holders = new address[](1);
         h.shares = new uint256[](1);
@@ -47,20 +49,7 @@ contract DaoURIAdapterTest is Test {
         // `new Moloch{salt: bytes32(0)}()` — CREATE2(salt = 0) over Moloch's
         // creation code — to derive the clone implementation OrgBinding's
         // CREATE2 DAO prediction needs. (Same formula as the deploy scripts.)
-        address molochImpl = address(
-            uint160(
-                uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff),
-                            address(binding.summoner()),
-                            bytes32(0),
-                            keccak256(type(Moloch).creationCode)
-                        )
-                    )
-                )
-            )
-        );
+        address molochImpl = binding.summoner().getImplementation();
         address daoAddr = binding.summonAndBind(
             bytes32(uint256(1)),
             OrgBinding.SummonParams({
@@ -70,7 +59,7 @@ contract DaoURIAdapterTest is Test {
                 quorumBps: 500,
                 ragequittable: true,
                 proposalThreshold: uint96(1e18 / 100), // 1% of the 1e18 total (floor 1)
-                proposalTTL: 3 days, // summonFast preset
+                proposalTTL: 14 days, // summonFast preset
                 timelockDelay: 1 days, // summonFast preset
                 molochImpl: molochImpl,
                 salt: keccak256("dao-uri"),
@@ -108,7 +97,7 @@ contract DaoURIAdapterTest is Test {
     /// whatever `contractURI()` says, so a bound org must name its own document.
     function test_emptyUri_fallsThroughToTheRenderer_andANamedUriOverridesIt() public {
         DunaRendererMock renderer = new DunaRendererMock();
-        Summoner summoner = new Summoner();
+        Summoner summoner = newSummoner();
         address[] memory holders = new address[](1);
         uint256[] memory shares = new uint256[](1);
         holders[0] = treasury;
@@ -169,7 +158,7 @@ contract DaoURIAdapterTest is Test {
     /// DAO and its adapter exposes that DAO's document.
     function test_resummonUpdatesBothSides_LWW() public {
         bytes32 rid = keccak256("lww-root");
-        OrgBinding binding = new OrgBinding();
+        OrgBinding binding = new OrgBinding(newSummoner());
         (Moloch first, ) = _summon("https://relay.example/first.json");
         binding.bindDao(rid, address(first));
         DaoURIAdapter firstAdapter = new DaoURIAdapter(address(first));

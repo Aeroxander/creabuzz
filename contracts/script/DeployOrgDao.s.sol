@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
+import {newSummoner} from "../src/majeur/MolochPatched.sol";
+
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {OrgAllowance} from "../src/OrgAllowance.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
-import {Moloch} from "majeur/src/Moloch.sol";
+import {Moloch, Summoner} from "../src/majeur/MolochPatched.sol";
 
 /// @notice Phase 8 end-to-end anvil orchestration: deploy the OrgAllowance
 /// ledger, summon a majeur DAO with the org root's holders as initial
@@ -78,7 +80,7 @@ contract DeployOrgDao is Script {
         allowanceAddr = address(allowance);
 
         // 2. The binding record keeper (deploys its own majeur Summoner).
-        OrgBinding binding = new OrgBinding();
+        OrgBinding binding = new OrgBinding(newSummoner());
 
         // `SummonParams.molochImpl` (the implementation the summon's CREATE2
         // DAO prediction bakes into the clone initcode) must be known BEFORE
@@ -99,7 +101,7 @@ contract DeployOrgDao is Script {
 
         // Governance: the SafeSummoner.summonFast preset values — threshold
         // = 1% of the total initial shares floored at 1
-        // (SafeSummoner._defaultThreshold's exact formula), 3-day TTL, 1-day
+        // (SafeSummoner._defaultThreshold's exact formula), 14-day TTL, 1-day
         // timelock. OrgBinding enforces these are production-safe.
         uint256 totalShares = initShares[0] + initShares[1];
         uint96 proposalThreshold = uint96(totalShares / 100 == 0 ? 1 : totalShares / 100);
@@ -111,7 +113,7 @@ contract DeployOrgDao is Script {
             quorumBps: 500, // summonFast default
             ragequittable: true,
             proposalThreshold: proposalThreshold,
-            proposalTTL: 3 days, // summonFast default
+            proposalTTL: 14 days, // summonFast default
             timelockDelay: 1 days, // summonFast default
             molochImpl: implementation,
             salt: keccak256(abi.encodePacked(rootId)),
@@ -178,11 +180,10 @@ contract DeployOrgDao is Script {
     /// `vm.getBroadcast` reverts with "broadcast dir does not exist"), so the
     /// manifest points at `run-latest.json` through `broadcast` and the CLI
     /// resolves the deploy tx + receipt block from there.
-    function _writeDeploymentManifest(
-        OrgBinding binding,
-        address summoner,
-        address implementation
-    ) internal returns (string memory path) {
+    function _writeDeploymentManifest(OrgBinding binding, address summoner, address implementation)
+        internal
+        returns (string memory path)
+    {
         uint64 chainId = uint64(block.chainid);
         path = string.concat("deployments/org-dao-", vm.toString(chainId), ".json");
 

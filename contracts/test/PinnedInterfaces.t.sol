@@ -15,7 +15,7 @@ import {
     LBPInitializationParams as UpstreamParams
 } from "liquidity-launcher/src/interfaces/ILBPInitializer.sol";
 import {IDistributorFactory} from "liquidity-launcher/src/interfaces/IDistributorFactory.sol";
-import {Summoner} from "majeur/src/Moloch.sol";
+import {Summoner} from "../src/majeur/MolochPatched.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
 import {
     IContinuousClearingAuction as MirrorAuction,
