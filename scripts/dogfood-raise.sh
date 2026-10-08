@@ -163,8 +163,9 @@ broadcast_call() { # <step> <to> <value-hex> <data>
 broadcast_create() { # <step> <initcode+args hex>
   local step=$1 data=$2 out
   echo "→ $step: contract creation (data ${#data} chars)"
-  if ! out=$(cast send --json --create --private-key "$ANVIL_KEY" \
-      --rpc-url "$RPC_URL" "$data" 2>&1); then
+  # `--create` is a subcommand in current cast: every option has to come BEFORE it.
+  if ! out=$(cast send --json --private-key "$ANVIL_KEY" \
+      --rpc-url "$RPC_URL" --create "$data" 2>&1); then
     echo "$out"
     fail_step "$step" "cast send --create failed" "-"
   fi
@@ -469,6 +470,7 @@ for i in 0 1 2; do
     # re-sent (the CREATE2 address would collide and revert).
     echo "→ $step: token already deployed at $TOKEN — skipping (idempotent)"
     record_step "$step" "$TOKEN" "skipped — token already deployed"
+    TOKEN_PREEXISTED=1
     continue
   fi
   if [[ $i -eq 1 ]]; then
@@ -514,13 +516,20 @@ total=$(cast call "$TOKEN" "totalSupply()(uint256)" --rpc-url "$RPC_URL" | head 
 total=${total%% *}
 [[ "$total" == "$expected_total" ]] \
   || fail_step "verify-token" "totalSupply $total != expected $expected_total (${TOKEN_SUPPLY} * 1e18)"
-[[ "$balance" == "$expected_treasury" ]] \
-  || fail_step "verify-token" "treasury balance $balance != expected $expected_treasury (supply minus StandardPool's 1-wei router lock — StandardPool.sol:127-128)"
+# A re-run finds the supply already moved: an earlier run funded its auction with the
+# whole treasury balance. Accept that one outcome (balance 0) on a pre-existing token;
+# a fresh token must still hold exactly supply - 1 wei.
+if [[ "${TOKEN_PREEXISTED:-0}" == "1" && "$balance" == "0" ]]; then
+  echo "  ✓ treasury balance 0 on a re-run: the supply was funded into an earlier run's auction"
+else
+  [[ "$balance" == "$expected_treasury" ]] \
+    || fail_step "verify-token" "treasury balance $balance != expected $expected_treasury (supply minus StandardPool's 1-wei router lock — StandardPool.sol:127-128)"
+fi
 router_lock=$(cast call "$TOKEN" "balanceOf(address)(uint256)" "$ROUTER" --rpc-url "$RPC_URL" | head -1)
 router_lock=${router_lock%% *}
 [[ "$router_lock" == "1" ]] \
   || fail_step "verify-token" "router lock balance $router_lock != 1 wei (StandardPool.sol:127-128)"
-echo "  ✓ initial supply: totalSupply $total; treasury $balance (= supply − 1 wei); router lock $router_lock wei"
+echo "  ✓ supply: totalSupply $total; treasury $balance; router lock $router_lock wei"
 record_step "verify-token" "$TOKEN" "ok — code + validator + ruleset + supply"
 
 # ---------------------------------------------------------------------------
@@ -533,6 +542,9 @@ echo
 if [[ "$(code_bytes "$CCA_FACTORY")" == "0" ]]; then
   echo "auction deploy skipped — factory not on this chain (fork-only)"
   record_step "auction-deploy" "-" "skipped — factory not on this chain (fork-only)"
+elif [[ "${TOKEN_PREEXISTED:-0}" == "1" && "$balance" == "0" ]]; then
+  echo "auction deploy skipped — an earlier run already funded its auction with the whole supply"
+  record_step "auction-deploy" "-" "skipped — an earlier run already funded an auction"
 else
   echo "── auction: deploying per auctionFlow's sequence (executor CREATE -> factory.create)"
   EXEC_OUT=$(run_helper auction-executor) || fail_step "auction-executor" "encodeGraduationExecutorDeploy failed"

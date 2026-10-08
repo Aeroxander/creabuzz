@@ -281,10 +281,11 @@ plan_lines() {
   echo "  state:          $STATE_DIR (anvil pid file + logs)"
   echo "  1. anvil        boot, log $LOG_FILE  [skipped: a dev anvil already answers]"
   echo "  2. apptoken infra  scripts/dogfood-raise.sh  [idempotent: skips deployed router/pools/validator, the DEV-ONLY allowlist patch, and an already-minted apptoken]"
-  echo "  3. org dao      forge script DeployOrgDao.s.sol  [skipped: deployments/org-dao-$DEV_CHAIN_ID.json names an OrgBinding that still has code]"
-  echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still has code]"
-  echo "  5. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
-  echo "  6. accounts     print the DEV-ONLY key table to stdout"
+  echo "  3. org dao      forge script DeployOrgDao.s.sol  [skipped: deployments/org-dao-$DEV_CHAIN_ID.json names an OrgBinding that answers summoner()]"
+  echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still says $CURRENCY_SYMBOL]"
+  echo "  5. cca          place the CCA factory + Permit2 at their canonical addresses (anvil_setCode)  [skipped: the code there already matches the build output]"
+  echo "  6. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
+  echo "  7. accounts     print the DEV-ONLY key table to stdout"
 }
 
 # ---------------------------------------------------------------------------
@@ -365,7 +366,13 @@ org_dao_deployed() {
   [[ -f "$manifest" ]] || return 1
   factory=$(manifest_role "$manifest" "factory")
   [[ -n "$factory" ]] || return 1
-  [[ "$(code_bytes "$factory")" != "0" ]]
+  [[ "$(code_bytes "$factory")" != "0" ]] || return 1
+  # Code is not identity: a fresh chain can hand a stale manifest's address to a
+  # different contract (it did: the dev currency's old address became the
+  # OrgBinding). An OrgBinding answers `summoner()` with an address that has code.
+  local summoner
+  summoner=$(cast call "$factory" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null || true)
+  [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]]
 }
 
 deploy_org_dao() {
@@ -408,7 +415,11 @@ currency_deployed() {
   [[ -f "$manifest" ]] || return 1
   address=$(currency_address)
   [[ -n "$address" ]] || return 1
-  [[ "$(code_bytes "$address")" != "0" ]]
+  [[ "$(code_bytes "$address")" != "0" ]] || return 1
+  # Identity, not just code (see org_dao_deployed): the token must still say who it is.
+  local symbol
+  symbol=$(cast call "$address" "symbol()(string)" --rpc-url "$RPC_URL" 2>/dev/null | tr -d '"' || true)
+  [[ "$symbol" == "$CURRENCY_SYMBOL" ]]
 }
 
 deploy_currency() {
@@ -484,6 +495,59 @@ deploy_currency() {
   echo "  ✓ $CURRENCY_SYMBOL at $address (manifest $(currency_manifest_path))"
 }
 
+# The CCA factory and Permit2 exist only on forks of a public chain, so a raise could
+# not run on a bare dev chain. Put their runtime code at the canonical addresses, the
+# same way scripts/web-auction-e2e.sh does. "Already there" means the code MATCHES the
+# build output, not merely that something has code at the address.
+CCA_FACTORY_ADDRESS="0x000000001F26a0044BaA66024e7b6599c61963F8"
+PERMIT2_ADDRESS="0x000000000022D473030F116dDEE9F6B43aC78BA3"
+
+artifact_field() { # <artifact.json> <dotted.path> -> value
+  node -e '
+    const a = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    console.log(process.argv[2].split(".").reduce((o, k) => o[k], a));
+  ' "$1" "$2"
+}
+
+lower_code() { cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null | tr '[:upper:]' '[:lower:]'; }
+
+place_cca() {
+  echo
+  local factory_json="$REPO_ROOT/contracts/out/ContinuousClearingAuctionFactory.sol/ContinuousClearingAuctionFactory.json"
+  local permit2_json="$REPO_ROOT/contracts/out/Permit2.sol/Permit2.json"
+  if [[ ! -f "$factory_json" || ! -f "$permit2_json" ]]; then
+    echo "── cca: building contracts for the factory and Permit2 artifacts"
+    (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build >/dev/null) \
+      || fail_step "cca" "forge build failed"
+  fi
+  local want
+  want=$(artifact_field "$factory_json" deployedBytecode.object | tr '[:upper:]' '[:lower:]')
+  if [[ "$(lower_code "$CCA_FACTORY_ADDRESS")" == "$want" ]]; then
+    echo "── cca: factory already at $CCA_FACTORY_ADDRESS — skipped (code matches the build)"
+  else
+    cast rpc --rpc-url "$RPC_URL" anvil_setCode "$CCA_FACTORY_ADDRESS" "$want" >/dev/null \
+      || fail_step "cca" "anvil_setCode for the factory failed"
+    [[ "$(lower_code "$CCA_FACTORY_ADDRESS")" == "$want" ]] \
+      || fail_step "cca" "factory code at $CCA_FACTORY_ADDRESS does not match the build"
+    echo "  ✓ CCA factory at $CCA_FACTORY_ADDRESS"
+  fi
+  # Permit2: deploy once, copy its runtime code (constructor-resolved values included).
+  if [[ "$(code_bytes "$PERMIT2_ADDRESS")" != "0" ]]; then
+    echo "── cca: Permit2 already at $PERMIT2_ADDRESS — skipped"
+  else
+    local bytecode receipt tmp code
+    bytecode=$(artifact_field "$permit2_json" bytecode.object)
+    receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" --create "$bytecode") \
+      || fail_step "cca" "deploying Permit2 failed"
+    tmp=$(echo "$receipt" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).contractAddress))')
+    code=$(cast code "$tmp" --rpc-url "$RPC_URL")
+    cast rpc --rpc-url "$RPC_URL" anvil_setCode "$PERMIT2_ADDRESS" "$code" >/dev/null \
+      || fail_step "cca" "anvil_setCode for Permit2 failed"
+    [[ "$(code_bytes "$PERMIT2_ADDRESS")" != "0" ]] || fail_step "cca" "Permit2 has no code at $PERMIT2_ADDRESS"
+    echo "  ✓ Permit2 at $PERMIT2_ADDRESS"
+  fi
+}
+
 fund_accounts() {
   echo
   echo "── fund: minting $CURRENCY_SYMBOL up to 1,000,000 per dev account (6dp)"
@@ -492,9 +556,10 @@ fund_accounts() {
   [[ -n "$token" && "$(code_bytes "$token")" != "0" ]] \
     || fail_step "fund" "no currency token address to fund from"
   for i in "${!DEV_ROLES[@]}"; do
+    # cast appends a hint like "1000000000000 [1e12]" once the value is large; take the first
+    # word BEFORE any space is stripped, or a second run reads "1000000000000[1e12]" and fails.
     balance=$(cast call "$token" "balanceOf(address)(uint256)" "${DEV_ADDRESSES[$i]}" \
-      --rpc-url "$RPC_URL" | head -1 | tr -d ' ')
-    balance=${balance%% *}
+      --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
     [[ "$balance" =~ ^[0-9]+$ ]] \
       || fail_step "fund" "balanceOf(${DEV_ADDRESSES[$i]}) returned '$balance'"
     if (( balance >= CURRENCY_PER_ACCOUNT )); then
@@ -553,6 +618,7 @@ up() {
   load_apptoken_infra
   deploy_org_dao
   deploy_currency
+  place_cca
   fund_accounts
 
   echo
@@ -563,6 +629,7 @@ up() {
   echo "  org dao:    factory $(manifest_role "$(org_manifest_path)" factory) (org-dao-$CHAIN_ID.json)"
   echo "  summoner:   $(manifest_role "$(org_manifest_path)" summoner)"
   echo "  currency:   $(currency_address) ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)"
+  echo "  cca:        factory $CCA_FACTORY_ADDRESS, Permit2 $PERMIT2_ADDRESS"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

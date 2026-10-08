@@ -54,14 +54,15 @@ test("dry-run prints the ordered plan and touches no state", () => {
     assert.match(out, /dry run — nothing started, nothing deployed/);
     assert.match(out, /NOT RUNNING/);
 
-    // The six steps, in execution order — dropping or reordering one fails.
+    // The seven steps, in execution order — dropping or reordering one fails.
     const steps = [
       "1. anvil",
       "2. apptoken infra",
       "3. org dao",
       "4. currency",
-      "5. fund",
-      "6. accounts",
+      "5. cca",
+      "6. fund",
+      "7. accounts",
     ];
     let cursor = -1;
     for (const step of steps) {
@@ -73,8 +74,9 @@ test("dry-run prints the ordered plan and touches no state", () => {
     // Idempotency guards are part of the plan, not folklore.
     assert.match(out, /idempotent/);
     assert.match(out, /skipped: a dev anvil already answers/);
-    assert.match(out, /names an OrgBinding that still has code/);
-    assert.match(out, /names a token that still has code/);
+    assert.match(out, /names an OrgBinding that answers summoner\(\)/);
+    assert.match(out, /names a token that still says/);
+    assert.match(out, /code there already matches the build output/);
 
     // Dev accounts: right roles, right (derived) addresses, keys labeled.
     assert.match(out, /DEV-ONLY ACCOUNTS/);
