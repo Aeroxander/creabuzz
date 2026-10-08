@@ -138,8 +138,9 @@ contract TreasuryMandate {
 
     /// @notice Bind a submitted claim to a team's approved project, reserving its payment if it asks for one.
     /// This binds its acceptance check before anything can be released. A claim that asks for no currency (work
-    /// recognised in Shares alone) reserves nothing and is bound the same way.
-    function fundMilestone(bytes32 projectId, bytes32 claimId) external nonReentrant {
+    /// recognised in Shares alone) reserves nothing and is bound the same way. A claim id belongs to whoever filed it
+    /// first, so the manager names the contributor they mean and a claim filed by anyone else is refused.
+    function fundMilestone(bytes32 projectId, bytes32 claimId, address expectedContributor) external nonReentrant {
         Project storage project = projects[projectId];
         if (
             msg.sender != project.manager || closed || block.timestamp >= project.expiresAt
@@ -147,9 +148,10 @@ contract TreasuryMandate {
         ) revert Unauthorized();
         if (claimProject[claimId] != bytes32(0)) revert InvalidClaim();
         (address contributor, uint256 amount, bytes32 checkHash, ClaimStake.Status status) = claims.claimTerms(claimId);
-        if (contributor == address(0) || status != ClaimStake.Status.Open || checkHash != project.checkHash) {
-            revert InvalidClaim();
-        }
+        if (
+            contributor == address(0) || contributor != expectedContributor || status != ClaimStake.Status.Open
+                || checkHash != project.checkHash
+        ) revert InvalidClaim();
         if (amount > uint256(project.budget) - project.reserved) revert BudgetExceeded();
         project.reserved += uint128(amount);
         claimProject[claimId] = projectId;

@@ -74,7 +74,7 @@ contract DaoGovernanceJourneyTest is Test {
         vm.stopPrank();
         (address manager,,,,,,) = mandate.projects(projectId);
         vm.prank(manager);
-        mandate.fundMilestone(projectId, id);
+        mandate.fundMilestone(projectId, id, contributor);
     }
 
     function test_simulated_dao_invests_prioritizes_delivers_rejects_self_payment_and_exits() public {

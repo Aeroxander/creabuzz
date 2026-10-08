@@ -135,7 +135,7 @@ contract TreasuryMandateTest is VotingFixture {
         currency.approve(address(claims), 10e18);
         claims.submitClaim(claim, 200e18, 10e18, keccak256("delivered"));
         claims.setCheck(claim, CHECK);
-        mandate.fundMilestone(bytes32("project"), claim);
+        mandate.fundMilestone(bytes32("project"), claim, BOB);
         vm.expectPartialRevert(ClaimStake.CheckLocked.selector);
         claims.setCheck(claim, keccak256("easier"));
         vm.expectPartialRevert(VerifierSet.ClaimantCannotAttest.selector);
@@ -179,7 +179,7 @@ contract TreasuryMandateTest is VotingFixture {
         claims.submitClaim(claim, 301e18, 0, keccak256("evidence"));
         claims.setCheck(claim, CHECK);
         vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
-        mandate.fundMilestone(bytes32("project"), claim);
+        mandate.fundMilestone(bytes32("project"), claim, BOB);
         vm.stopPrank();
         assertEq(mandate.claimProject(claim), bytes32(0));
         assertFalse(claims.acceptanceLocked(claim));

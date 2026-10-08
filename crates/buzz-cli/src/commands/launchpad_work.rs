@@ -37,7 +37,7 @@ const SIG_APPROVE_PROJECT: &str = "approveProject(bytes32,address,uint128,uint12
 const SIG_AWARD: &str = "awardContribution(address,bytes32,uint96,bool)";
 const SIG_SUBMIT_CLAIM: &str = "submitClaim(bytes32,uint256,uint256,bytes32)";
 const SIG_SET_CHECK: &str = "setCheck(bytes32,bytes32)";
-const SIG_FUND_MILESTONE: &str = "fundMilestone(bytes32,bytes32)";
+const SIG_FUND_MILESTONE: &str = "fundMilestone(bytes32,bytes32,address)";
 const SIG_ATTEST: &str = "attest(bytes32,bool)";
 const SIG_SETTLE: &str = "settle(bytes32)";
 const SIG_PAYOUT: &str = "payout(bytes32)";
@@ -975,7 +975,10 @@ pub async fn cmd_bind(args: &BindArgs) -> Result<(), CliError> {
         .send(
             &spender,
             &chain.mandate,
-            &call(SIG_FUND_MILESTONE, &[project, id]),
+            &call(
+                SIG_FUND_MILESTONE,
+                &[project, id, address_word(&expected, "contributor")?],
+            ),
             "the binding",
         )
         .await?;
@@ -1210,7 +1213,7 @@ mod tests {
             (SIG_SET_CHECK, "5b66d37a"),
             (SIG_SETTLE, "987757dd"),
             (SIG_PAYOUT, "cfefb3d5"),
-            (SIG_FUND_MILESTONE, "4e2606d1"),
+            (SIG_FUND_MILESTONE, "ec7742ad"),
             (SIG_ATTEST, "5747a6b1"),
             (SIG_APPROVE_PROJECT, "7eb44f4d"),
             (SIG_CREATE_MANDATE, "f4e9b42c"),

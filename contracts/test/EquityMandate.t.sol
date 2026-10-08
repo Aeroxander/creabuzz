@@ -84,7 +84,7 @@ contract EquityMandateTest is VotingFixture {
         claims.setCheck(claim, CHECK);
         vm.stopPrank();
         vm.prank(BOB);
-        mandate.fundMilestone(projectId, claim);
+        mandate.fundMilestone(projectId, claim, DAVE);
         vm.prank(ALICE);
         panel.attest(claim, true);
         vm.prank(CAROL);
@@ -210,7 +210,7 @@ contract EquityMandateTest is VotingFixture {
         claims.setCheck(bytes32("waiting"), CHECK);
         vm.stopPrank();
         vm.prank(BOB);
-        mandate.fundMilestone(PROJECT, bytes32("waiting"));
+        mandate.fundMilestone(PROJECT, bytes32("waiting"), DAVE);
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
         dao.awardContribution(address(mandate), bytes32("waiting"), 1e18, false);
@@ -222,6 +222,24 @@ contract EquityMandateTest is VotingFixture {
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
         dao.awardContribution(address(mixed), bytes32("waiting"), 1e18, false);
+    }
+
+    function test_a_manager_binds_only_the_claim_of_the_contributor_they_name() public {
+        _approveProject(PROJECT, 20e18);
+        ClaimStake claims = mandate.claims();
+        // Someone else files a claim under the id the manager was told.
+        vm.prank(CAROL);
+        claims.submitClaim(bytes32("squatted"), 0, 0, keccak256("squatted"));
+        vm.prank(CAROL);
+        claims.setCheck(bytes32("squatted"), CHECK);
+        vm.prank(BOB);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        mandate.fundMilestone(PROJECT, bytes32("squatted"), DAVE);
+        assertEq(mandate.claimProject(bytes32("squatted")), bytes32(0));
+        // Naming the real filer binds it.
+        vm.prank(BOB);
+        mandate.fundMilestone(PROJECT, bytes32("squatted"), CAROL);
+        assertEq(mandate.claimProject(bytes32("squatted")), PROJECT);
     }
 
     function test_closing_the_mandate_stops_awards_from_its_allowances() public {
