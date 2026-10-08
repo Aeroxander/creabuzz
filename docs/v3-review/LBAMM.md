@@ -16,10 +16,23 @@ Every statement below was checked against that source. Where a statement is a de
   Eighteen source files carry `LicenseRef-PolyForm-Strict-1.0.0` and seven carry MIT. So: a local PoC is fine, and
   nothing from LBAMM goes into this (public) repository or onto a live network. We are not going live yet, so this
   costs us nothing today; it does mean "LBAMM is the venue" is a bet on its release.
-- **A local deployment needs more than the two clones.** `lbamm-core` pulls `creator-token-transfer-validator`,
-  `tm-core-lib`, `tm-role-server`, `wrapped-native` and `forge-std` (only some are populated in the clone), and the
-  examples' devnet script deploys the pool types, hooks and secure-proxy contracts from further repositories. Cloning
-  those is a separate download that needs your yes.
+- **It stays outside this repository.** The scripts that run it (`scripts/lib/lbamm-world.sh`) take `LBAMM_DIR`, a clone
+  of `limitbreakinc/lbamm-examples` made with `--recurse-submodules` (the pool types, hooks, secure-proxy and
+  apptoken-dev come with it), and refuse a directory inside this repo. What this repo holds are our own calls into its
+  deployed contracts: ABI encoding written by hand and pinned to `cast`, and the event signatures the indexer reads.
+
+## Running it locally
+
+```bash
+git clone --recurse-submodules https://github.com/limitbreakinc/lbamm-examples.git /somewhere/outside/this/repo
+export LBAMM_DIR=/somewhere/outside/this/repo/lbamm-examples
+
+scripts/cli-market-e2e.sh        # the DAO votes a market; a buyer trades; a locked founder cannot; the fee reaches the treasury
+scripts/market-index-e2e.sh      # the price indexer turns those trades into candles
+scripts/web-market-e2e.sh        # the app's chart and $TICKER chip show them
+```
+
+Each script boots its own throwaway chain with our contracts and LBAMM on it, and cleans up after itself.
 
 ## How a token plugs into LBAMM (verified)
 
@@ -62,19 +75,38 @@ them, until a milestone unlocks a given part.
 - **Why not "the NFT is the key":** a transferable or loseable NFT as the thing that releases Shares can be sold or
   lost; a lock that reads the claim cannot.
 
-## Open design points before any LBAMM pool exists
+## What is built on top of it
 
-1. **Whitelist-only trading is a strong choice.** With the Whitelist ruleset the token cannot move between wallets at all,
-   so the CCA auction contract, the graduation executor and the DAO would each need to be whitelisted or the sale cannot
-   pay out. Plan: ship Vanilla first (transfers free, the milestone lock still binds), and let the DAO vote the stricter
-   ruleset in later. Setting the validator is `Shares.setTransferValidator`, a DAO-only call.
-2. **There is no graduation step into LBAMM yet.** Today the raise settles into the DAO and the sale tokens go out
-   through the auction. Creating a dynamic pool at the clearing price, seeding it, and setting the token hook is new
-   work and needs the local deployment above.
-3. **No price indexer yet.** Cashtag charts show the honest bid price today. A real chart needs LBAMM swap events indexed
-   (Ponder is the intended tool); that needs the same local deployment to have events to index.
+- **A DAO votes its Shares onto the AMM** (`buzz launchpad market seed`): one batch that keeps the AMM's Shares out of
+  the voting supply, names the standard hook as the Shares' hook, sets the hook's fee on the paired currency (default
+  1% on every buy and sell), approves the AMM, creates a dynamic-price pool and seeds it **with Shares only**, from the
+  starting price upward. The DAO needs no currency to start a market; it sells into demand as the price rises.
+- **The lock still binds inside the pool.** A founder whose Shares the milestone lock holds cannot sell them into the
+  pool (the Shares refuse the transfer); a holder with free Shares can, with the same command.
+- **The hook's fee reaches the treasury by a second vote** (`market collect-fees`): the token's side is the DAO, so only a
+  DAO vote can collect it.
+- **`market swap`** trades in a pool from the command line (agents included).
+- **A price indexer** (`services/price-indexer`, Ponder) turns the AMM's `PoolCreated` and `Swap` events into candles,
+  and the app charts them and shows the last trade next to a `$TICKER` (see `services/price-indexer/README.md`).
 
-## Verified locally in this repo (no LBAMM involved)
+## Open design points
+
+1. **Graduation does not seed the market by itself.** After a raise graduates, the DAO votes the market in (above). That
+   keeps LBAMM-specific code out of the contracts we would one day ship, and keeps the decision (how many Shares, what
+   price, what fee) with the DAO; the cost is one more vote. An automatic step would have to be a separate contract
+   that knows the AMM, and should wait until the AMM is releasable.
+2. **Whitelist-only trading is not exercised yet.** With the Whitelist ruleset the token cannot move between wallets at
+   all, so the CCA auction contract, the graduation executor and the DAO would each need to be whitelisted, and the
+   list's id is only known after it is created: that is a two-vote sequence. Today the Shares have no validator
+   (transfers are free) and the milestone lock is the only restriction. `Shares.setTransferValidator` is DAO-only, and
+   the validator itself is verified against our Shares in `scripts/shares-erc20c-e2e.sh`.
+3. **The starting price is an input.** It is not read from the sale's clearing price; the DAO states it (rounded to the
+   nearest price step, 1% at the default step). Reading the clearing price into the vote is a small follow-up.
+4. **No web composer for the market vote.** Like the other DAO votes it is a command-line step for now.
+5. **Prices include fees.** The indexer records the price a swap actually got, which includes the pool's fee and the hook's
+   fee on the paired currency. A pool-price feed would need the pool's state, which the swap event does not carry.
+
+## Verified locally in this repo (without LBAMM)
 
 - Shares reports the ERC-20C creator-token interface and works with the real Limit Break validator V5 on a dev chain
   (`scripts/shares-erc20c-e2e.sh`).

@@ -41,6 +41,19 @@ On top of that, **founders hold and vote with their Shares from the first block,
 | Work tab card "Your team Shares": what is locked, each milestone with its words, an Unlock button once the approved claim exists; nothing is shown to a wallet with nothing locked | `LockedSharesCard.tsx` | `scripts/web-milestone-e2e.sh` (browser, real chain) |
 | The whole path on a real chain: launch through the kit, the founder voting alone with locked Shares, a transfer and a ragequit refused, a reviewed claim, a stranger sending the unlock, exactly the freed part moving and being ragequittable (the same call the lock had refused), the badge soulbound | `scripts/cli-milestone-e2e.sh` | runs green |
 
+## Shares on a market, and prices from it: built and checked (local evaluation only)
+
+LBAMM is evaluation-only, so all of this runs on a throwaway local chain with LBAMM cloned outside the repo
+(`LBAMM_DIR`; see [LBAMM.md](LBAMM.md)).
+
+| Piece | Where | How it was checked |
+|---|---|---|
+| A local LBAMM next to our contracts | `scripts/lib/lbamm-world.sh`, `lbamm-replay.mjs` | deploys on the dev chain; used by every script below |
+| The DAO's vote that puts its Shares on the AMM (hook, fee, one-sided pool seeded with Shares); `market swap`; `market collect-fees` | `crates/buzz-cli/src/commands/launchpad_market.rs` | 12 unit tests with every call pinned to `cast calldata`; tick math checked against the contract's own values; `scripts/cli-market-e2e.sh` on a real chain (the vote, a buyer, a locked founder refused while a free holder sells with the same command, the fee reaches the treasury by a second vote) |
+| A larger gas cap for opening a proposal, growing with the action's size and bounded | `launchpad_gov.rs` | unit test; needed because a six-call batch is bigger than the old flat cap |
+| Price candles from the AMM's trades | `services/price-indexer` (Ponder) | 6 unit tests; `scripts/market-index-e2e.sh` (trades before and after it starts, the pool, candle prices, bad requests) |
+| The launch page charts traded prices and a `$TICKER` chip shows the last trade, each labelled as what it is | `marketFeed.ts` (core), `use-market.ts`, `PriceChartCard.tsx`, `cashtag.ts` | 7 core and 4 web unit tests; `scripts/web-market-e2e.sh` (browser, real chain, real indexer); the 29 mocked specs that show bid prices still pass |
+
 ## Differences from the plan
 
 - **D2 (token architecture) was partly spiked.** The launch still sells the DAO's own Shares directly on the CCA, and
@@ -56,14 +69,15 @@ On top of that, **founders hold and vote with their Shares from the first block,
 
 - Web composer for the DAO's own votes (a new work budget, a project, an award) and for claims that ask for money
   (they need a currency approval): both stay on the command line. Desktop parity (D9).
-- Social: merging Home and Social into one feed, one trust score service, prices and charts on the `$TICKER` chip,
-  one-tap trade sheet. Home (launch discussion, vote-ranked) and Social (a timeline) read different data, so merging
-  them is a product redesign rather than a refactor; I left it for you to decide.
-- Ponder indexer for LBAMM prices and the auction; the cashtag registry rules (D5).
+- Social: merging Home and Social into one feed and one trust score service: **left alone for now, as you said**
+  (Home reads launch discussion ranked by votes and Social reads a timeline, so merging them is a product redesign).
+  A one-tap trade sheet on the `$TICKER` chip is not started either; the chip links to the launch, and the trade itself is
+  `buzz launchpad market swap`.
+- The cashtag registry rules (D5), and an indexer for the auction itself (the sale's bids come from the relay today).
 - Doc updates (`docs/dao-os.md`), the agent review pass, and your own test run. The `buzz-review-completed` marker
   is yours to add.
-- A graduation step into an LBAMM pool (create the pool at the clearing price, seed it, set the token hook and the
-  transfer ruleset). It needs a local LBAMM deployment, which needs further repositories downloaded: your yes first.
+- Whitelist-only trading of the Shares through LBAMM (a two-vote sequence: the list's id is only known after it exists),
+  reading the sale's clearing price into the market vote, and a web composer for it.
 
 ## Known open issues
 

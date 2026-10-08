@@ -86,11 +86,33 @@ scripts/shares-erc20c-e2e.sh
 Working looks like: `PASS: Shares are an apptoken under Limit Break's real validator…`. It uses the real canonical
 transfer validator the dev chain bootstraps, and every setting is chosen by a DAO vote through the CLI.
 
+## 4c. Shares on a market, and the prices from it (local evaluation only)
+
+The Limit Break AMM is evaluation-only software, so this needs a clone of it **outside this repository** (details in
+[LBAMM.md](LBAMM.md)), and one install of the price indexer:
+
+```bash
+git clone --recurse-submodules https://github.com/limitbreakinc/lbamm-examples.git ~/lbamm-examples
+export LBAMM_DIR=~/lbamm-examples
+(cd services/price-indexer && pnpm install --ignore-workspace)
+
+scripts/cli-market-e2e.sh
+scripts/market-index-e2e.sh
+scripts/web-market-e2e.sh
+```
+
+Working looks like: `PASS: the DAO's Shares trade on the AMM, the lock still binds, and the fee reaches the treasury`;
+`PASS: the indexer turned the AMM's trades into candles, live`; and 2 passing browser tests. Read the first script for the
+sequence: the DAO votes a market for 100,000,000 Shares at \$0.01, a buyer trades in, a founder whose Shares are locked is
+refused (a holder with free Shares sells with the very same command), and the fee the hook charged reaches the treasury by
+a second vote. The browser tests show the launch page charting the traded prices and a `$NEB` in a post showing the last
+trade, each labelled as what it is.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that
 links to the launch and shows a price line only if bids exist. Hover or read its label: it says the price is a bid
-price, not a market trade. An unclaimed `$ZZZ` and a price like `$5` stay plain text.
+price, not a market trade. Once the token trades and a price service is configured it shows the last trade instead (4c). An unclaimed `$ZZZ` and a price like `$5` stay plain text.
 
 ## 6. Everything else the agents ran
 
