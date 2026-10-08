@@ -59,6 +59,7 @@ import {
   type WizardState,
 } from "../lib/wizard";
 import {
+  daoLaunchKit,
   defaultChainPreset,
   documentedBlockTimeSeconds,
   localUsdcAddress,
@@ -206,8 +207,16 @@ export function CreateLaunchDialog({
   );
   const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
+  // A launch already made as a DAO stays one when edited (its Shares are the record's token, not an import); a new
+  // one defaults to the project's own Shares wherever this build can launch them.
   const [tokenMode, setTokenMode] = useState<TokenMode>(
-    initial?.token ? "import" : "mint",
+    initial?.tokenPlan?.mode === "dao"
+      ? "dao"
+      : initial?.token
+        ? "import"
+        : daoLaunchKit(chainId)
+          ? "dao"
+          : "mint",
   );
   const [tokenName, setTokenName] = useState(
     () => initial?.tokenPlan?.name ?? ideaTokenDefaults(idea?.name).tokenName,
@@ -863,6 +872,7 @@ export function CreateLaunchDialog({
     setFunding,
     tokenMode,
     setTokenMode,
+    daoKitMissing: !daoLaunchKit(chainId),
     tokenName,
     setTokenName,
     importAddress,

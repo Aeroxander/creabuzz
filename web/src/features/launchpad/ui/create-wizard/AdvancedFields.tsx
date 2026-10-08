@@ -46,6 +46,8 @@ export interface AdvancedFieldsState {
   setFunding(next: FundingStatus | null): void;
   tokenMode: "mint" | "import" | "dao";
   setTokenMode(value: "mint" | "import" | "dao"): void;
+  /** This build has no launch contract on the chosen network, so a DAO launch cannot be sent from here yet. */
+  daoKitMissing: boolean;
   tokenName: string;
   setTokenName(value: string): void;
   importAddress: string;
@@ -113,6 +115,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     funding,
     setFunding,
     tokenMode,
+    daoKitMissing,
     setTokenMode,
     tokenName,
     setTokenName,
@@ -267,6 +270,18 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
               with their share of the treasury. Name, symbol and total supply
               are on the first step.
             </p>
+            {daoKitMissing ? (
+              <p
+                className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                data-testid="dao-kit-missing"
+                role="status"
+              >
+                Launching a project with its own DAO is not set up for this
+                network yet. You can still save the draft, but it cannot be
+                launched here until it is. Pick another network, or mint a token
+                instead.
+              </p>
+            ) : null}
             <Field id="launch-token-name" label="Name">
               <Input
                 id="launch-token-name"

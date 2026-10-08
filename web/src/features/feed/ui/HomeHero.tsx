@@ -42,7 +42,7 @@ const IDEAS = [
   {
     icon: Vote,
     title: "Decide together",
-    body: "Holders vote on how the treasury is spent, and can always exit.",
+    body: "Hold shares in a project's own DAO and you vote on how its treasury is spent, and can always exit.",
   },
   {
     icon: HandCoins,

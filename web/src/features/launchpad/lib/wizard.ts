@@ -785,7 +785,11 @@ export function buildLegacyInput(form: FormState): CreateLaunchInput {
     tickSpacing: form.tickSpacing.trim(),
     requiredRaised: form.requiredRaised.trim(),
     auction: form.auction.trim(),
-    token: form.tokenMode === "import" ? form.importAddress.trim() : "",
+    // A DAO's Shares are linked after its launch; editing the terms must keep that link, not blank it.
+    token:
+      form.tokenMode === "import" || form.tokenMode === "dao"
+        ? form.importAddress.trim()
+        : "",
     treasury: form.treasury.trim(),
     admission: form.admission,
     channels: form.channels,

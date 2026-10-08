@@ -338,9 +338,12 @@ export function LaunchDetailPage({
         <>
           {/* The backer-directed vault: shown to a project that chose proposal
               funding. The controls only appear once the vault is deployed and
-              reachable — a control that cannot act is a dead end. */}
-          {launch.record.funding?.path === "proposals" ||
-          launch.record.proposalVault ? (
+              reachable — a control that cannot act is a dead end. A project
+              that launched with its own DAO has one voice for backers (its
+              Shares), so the vault's vouchers are not offered beside it. */}
+          {(launch.record.funding?.path === "proposals" ||
+            launch.record.proposalVault) &&
+          launch.record.tokenPlan?.mode !== "dao" ? (
             <ProposalFundingPanel
               actions={vault.actions}
               atRisk={vault.data?.atRisk ?? "0"}
