@@ -167,5 +167,29 @@ costs the governor nothing: its size headroom is unchanged.
   validator and the Soulbound ruleset, a transfer is refused and ragequit still works, Vanilla restores transfers, and a
   lock guard holds exactly the locked part.
 
-What is not built yet: the guard that unlocks by milestone (a soulbound milestone NFT per tranche, minted when a
-reviewed claim is paid), and the launch kit's use of it.
+### The milestone lock (built)
+
+The launch kit gives every launch a `MilestoneLock` and names it as the Shares' lock guard before the DAO exists (it
+predicts where the Shares will be, and fails closed if it guessed wrong). The team's Shares are minted straight to
+the team, who vote with them from the first block; the part tied to a milestone cannot move or be burned until that
+milestone is reached.
+
+- **A milestone is judged like any other work.** The team member files a claim in a work budget their DAO voted, against
+  a project whose acceptance check is the milestone's exact words; that budget's independent reviewers approve it;
+  after the challenge window it is paid. Anyone may then send `unlock`, which frees that milestone's part and mints
+  the team member a soulbound `MilestoneBadge`. No further vote is needed: the DAO agreed to the schedule at launch.
+- **What stops it being gamed.** The lock accepts only a budget this DAO created (anyone can make a budget for themselves
+  with friendly reviewers), only the beneficiary's own claim, only against the milestone's words, and a claim
+  unlocks one milestone once.
+- **The badge is a receipt, not the key.** What is released is decided by the lock reading the claim; the badge cannot be
+  sold or lost to undo it, and an NFT-gated perk (a hook that reads the badge) can be added later without being
+  load-bearing for safety.
+- **Leaving.** The DAO can `forfeit` a departed founder's remaining milestones, which is what lets a later vote burn or
+  move those Shares. Nothing else can.
+- **Time is not part of it.** Time vesting was replaced for DAO launches by this; `ShareVesting` stays as a standalone
+  schedule.
+
+Verified on a real local chain by `scripts/cli-milestone-e2e.sh` and `scripts/web-milestone-e2e.sh`.
+
+One consequence to decide on: locked Shares vote. At a 20% sale / 20% team split the founder holds all of the voting
+supply until the sale ends, and about half after it. See `docs/v3-review/PROGRESS.md` (known open issues).

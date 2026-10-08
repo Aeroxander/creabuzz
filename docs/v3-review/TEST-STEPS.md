@@ -12,7 +12,7 @@ Set up once: `. ./bin/activate-hermit`, then make sure Foundry (`forge`, `cast`,
 cd contracts && forge test
 ```
 
-Working looks like: `313 tests passed, 0 failed, 1 skipped` (the skip needs a fork RPC). The fork checker and the
+Working looks like: `339 tests passed, 0 failed, 1 skipped` (the skip needs a fork RPC). The fork checker and the
 Moloch size check:
 
 ```bash
@@ -38,7 +38,8 @@ someone else is not bound, and an award above the project's allowance fails.
 scripts/web-dao-launch-e2e.sh
 ```
 
-Working looks like: 8 passing browser tests. Then try it by hand:
+Working looks like: 8 passing browser tests, including that the founder ends up holding the team's Shares (they vote
+with them) while the lock reports them locked and a transfer from the founder's wallet is refused. Then try it by hand:
 
 ```bash
 just dev-chain                      # prints the kit address and a VITE_DAO_LAUNCH_KITS line
@@ -49,7 +50,7 @@ cd web && VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC=<dUSDC address from dev-
 Import anvil's first dev key into a browser wallet on chain 31337 (the dev-chain output lists it), open
 `/launchpad`, press **Set up a sale**: "Project Shares" should be the selected token. Publish the launch, open it,
 **Manage**, **Launch project**. Working looks like: three steps turn to Done, the page shows the DAO, its Shares and the
-sale, and your wallet holds no Shares. Reload midway through a launch and the page offers **Finish saving**, never a
+sale, and your wallet holds the team Shares (the milestone-tied part says it is locked). Reload midway through a launch and the page offers **Finish saving**, never a
 second launch.
 
 ## 4. The Work tab
@@ -59,6 +60,22 @@ scripts/web-work-e2e.sh
 ```
 
 Working looks like: 1 passing test in which five different wallets file, take on, review, finish and collect a claim.
+
+## 4a. The team's milestone lock, from launch to unlock
+
+```bash
+scripts/cli-milestone-e2e.sh      # the command line, on a real local chain
+scripts/web-milestone-e2e.sh      # the Work tab's Unlock button, in a browser
+```
+
+Working looks like: `PASS: the team's Shares were theirs to vote with, locked until a reviewed milestone freed exactly its
+part`, and 1 passing browser test. Read the script to see the sequence: a project is launched through the kit, the founder
+passes the DAO's own votes with locked Shares, a transfer and a ragequit of locked Shares are refused, a milestone claim
+is approved by reviewers, **a stranger** sends the unlock, exactly the first milestone's part moves (and can be taken
+out of the DAO: the same call the lock refused before), and the founder holds a badge that cannot be transferred.
+
+By hand, after a `scripts/cli-milestone-e2e.sh`-style world, `buzz launchpad work locks --dao <dao>` lists each milestone
+with its state and what to do next.
 
 ## 4b. Shares as an apptoken
 
@@ -81,7 +98,7 @@ price, not a market trade. An unclaimed `$ZZZ` and a price like `$5` stay plain 
 cd web && pnpm test && pnpm check && pnpm typecheck
 cd desktop && pnpm test && pnpm typecheck
 cd packages/creaton-core && pnpm test
-cargo test -p buzz-cli --lib -p buzz-evm-allowance
+cargo test -p buzz-cli --lib -p buzz-evm-allowance   # includes the lock commands, calldata pinned to cast
 node --test scripts/dev-chain.test.mjs scripts/simulate-voting-rules.test.mjs
 ```
 
