@@ -224,6 +224,18 @@ contract EquityMandateTest is VotingFixture {
         dao.awardContribution(address(mixed), bytes32("waiting"), 1e18, false);
     }
 
+    function test_closing_the_mandate_stops_awards_from_its_allowances() public {
+        _approveProject(PROJECT, 20e18);
+        bytes32 claim = bytes32("late");
+        _deliver(claim, PROJECT);
+        vm.prank(address(dao));
+        mandate.close();
+        vm.prank(address(dao));
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        dao.awardContribution(address(mandate), claim, 1e18, false);
+        assertEq(shares.balanceOf(DAVE), 0);
+    }
+
     // ---- which actions get the bounded lane --------------------------------------------------
 
     function test_only_a_well_formed_award_inside_this_daos_mandate_gets_the_bounded_lane() public {

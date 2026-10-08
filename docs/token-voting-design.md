@@ -101,7 +101,8 @@ may ask for no currency at all: it asks to be recognised. Funding locks the agre
 `VerifierSet` provide claimant recusal, distinct reviewer addresses, approval/objection quorum, a three-day
 challenge, payout, expiry and disputed-claim recovery. Returned money does not replenish lifetime project authority.
 
-Unrestricted governance can `close` the mandate, stop new commitments and recover unreserved funds early. Existing
+Unrestricted governance can `close` the mandate, stop new commitments (including any further Shares from its
+allowances) and recover unreserved funds early. Existing
 escrowed claims retain their settlement rules; governance may freeze and unwind disputed claims.
 
 ## Holding, earning standing, delegation and exit
