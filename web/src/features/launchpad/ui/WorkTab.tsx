@@ -43,10 +43,19 @@ function chainNumber(value: string | null): number | null {
  * people have filed. Each claim says what happens to it next and who does it, and the connected wallet gets the
  * button for the step that is theirs (review it, finish it, take the payout, take it on as a project manager).
  *
- * Filing a claim and the DAO's own votes (a new budget, a project, an award) are still command-line steps; the page
- * says so, with the command, rather than offering a form that cannot finish the job.
+ * The DAO's own votes (a new budget, a project, an award) are made on the Decisions tab, and this page points there
+ * wherever one is the next step.
  */
-export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
+export function WorkTab({
+  launch,
+  dao,
+  onOpenDecisions,
+}: {
+  launch: Launch;
+  dao: string;
+  /** Go to the Decisions tab, where the DAO's votes are opened. */
+  onOpenDecisions?: () => void;
+}) {
   const wallet = useConnectedWallet();
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
@@ -152,7 +161,7 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
             Nothing has been set aside for work yet. A work budget is created by
             a vote of the DAO.
           </p>
-          <CommandHelp dao={dao} />
+          <DecisionHelp dao={dao} onOpenDecisions={onOpenDecisions} />
         </Card>
       ) : (
         <>
@@ -176,11 +185,12 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
               gate={gate}
               key={mandate.address}
               mandate={mandate}
+              onOpenDecisions={onOpenDecisions}
               onSend={send}
               wallet={wallet.address}
             />
           ))}
-          <CommandHelp dao={dao} />
+          <DecisionHelp dao={dao} onOpenDecisions={onOpenDecisions} />
         </>
       )}
       {failure ? <FailureNote message={failure} testId="work-failure" /> : null}
@@ -188,13 +198,31 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
   );
 }
 
-function CommandHelp({ dao }: { dao: string }) {
+function DecisionHelp({
+  dao,
+  onOpenDecisions,
+}: {
+  dao: string;
+  onOpenDecisions?: () => void;
+}) {
   return (
     <p className="mt-2 text-xs text-muted-foreground" data-testid="work-help">
-      Filing a claim, and the DAO's own votes (a new budget, a project, an
-      award), use the command line for now:{" "}
-      <code className="break-all">buzz launchpad work --help</code> (DAO{" "}
-      <span className="font-mono">{truncatePubkey(dao)}</span>).
+      A new budget, a project and an award are decisions the DAO votes on
+      {onOpenDecisions ? (
+        <>
+          {" "}
+          — open them on the{" "}
+          <button
+            className="underline"
+            data-testid="work-open-decisions"
+            onClick={onOpenDecisions}
+            type="button"
+          >
+            Decisions tab
+          </button>
+        </>
+      ) : null}{" "}
+      (DAO <span className="font-mono">{truncatePubkey(dao)}</span>).
     </p>
   );
 }
@@ -206,7 +234,7 @@ function MandateCard({
   gate,
   busy,
   onSend,
-  dao,
+  onOpenDecisions,
 }: {
   mandate: MandateView;
   chainTime: number;
@@ -215,6 +243,7 @@ function MandateCard({
   busy: string | null;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   dao: string;
+  onOpenDecisions?: () => void;
 }) {
   const { created } = mandate;
   const decimals = mandate.currency?.decimals ?? 18;
@@ -423,11 +452,17 @@ function MandateCard({
                     className="mt-2 text-xs text-muted-foreground"
                     data-testid="work-award-help"
                   >
-                    To award Shares, a member opens the vote:{" "}
-                    <code className="break-all">
-                      buzz launchpad work award --dao {dao} --mandate{" "}
-                      {mandate.address} --claim {label} --shares &lt;amount&gt;
-                    </code>
+                    Awarding Shares is a decision the DAO votes on.{" "}
+                    {onOpenDecisions ? (
+                      <button
+                        className="underline"
+                        data-testid="work-award-open"
+                        onClick={onOpenDecisions}
+                        type="button"
+                      >
+                        Open it on the Decisions tab
+                      </button>
+                    ) : null}
                   </p>
                 ) : null}
               </li>

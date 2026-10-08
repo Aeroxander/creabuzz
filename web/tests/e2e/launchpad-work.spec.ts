@@ -230,9 +230,9 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await expect(contributor.getByTestId("work-claim-status")).toContainText(
     "Paid",
   );
-  // The award is the DAO's vote: the page says how to open it rather than faking a button.
+  // The award is the DAO's vote: the page sends the member to the Decisions tab to open it.
   await expect(contributor.getByTestId("work-award-help")).toContainText(
-    `--mandate ${MANDATE}`,
+    "Awarding Shares is a decision the DAO votes on",
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
   if (process.env.E2E_SHOTS) {

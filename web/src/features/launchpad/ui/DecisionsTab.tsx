@@ -2,10 +2,12 @@ import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { recordSaleCurrency } from "../chain";
 import type { Launch } from "../models";
-import { useDecisions } from "../use-decisions";
+import { useDecisionContext, useDecisions } from "../use-decisions";
+import { useWork } from "../use-work";
 import { useWalletSend } from "../use-wallet-send";
 import { Button } from "@/shared/ui/button";
 import { DecisionCard } from "./DecisionCard";
+import { DecisionComposer } from "./DecisionComposer";
 
 /**
  * Everything the DAO has put to a vote, read from the chain: what each decision would do, where it stands, and how
@@ -19,6 +21,8 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
     ? recordSaleCurrency(launch.record).decimals
     : undefined;
   const snapshot = decisions.data;
+  const context = useDecisionContext(dao);
+  const work = useWork(dao, wallet.address);
 
   return (
     <div className="flex flex-col gap-4" data-testid="decisions-tab">
@@ -41,6 +45,27 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
           </p>
         ) : null}
       </Card>
+
+      {snapshot && context.data ? (
+        <DecisionComposer
+          busy={busy}
+          ctx={{
+            dao,
+            chainTime: snapshot.chainTime,
+            wallet: wallet.address,
+            factory: context.data.factory,
+            // A work budget needs a currency that exists; a project that sold for none uses its own Shares.
+            currency: launch.record.currency ?? context.data.shares,
+            currencyDecimals: launch.record.currency
+              ? (currencyDecimals ?? null)
+              : null,
+            work: work.data,
+          }}
+          gate={gate}
+          onSend={send}
+          snapshot={snapshot}
+        />
+      ) : null}
 
       {decisions.isLoading ? (
         <Card className="p-4 text-sm text-muted-foreground">

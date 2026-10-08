@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getRpcEndpoint, ethTransactionInput } from "./chain";
+import { ethCall, ethTransactionInput, getRpcEndpoint } from "./chain";
 import { type DecisionChain, readDecisions } from "./lib/decisions";
+import { decodeAddress, encodeCall0, SIGNATURES } from "./lib/work";
 import { endpointChain } from "./use-work";
 
 /** The configured RPC endpoint as the decisions reader's chain: the work reader's, plus a transaction's calldata. */
@@ -25,6 +26,31 @@ export function useDecisions(dao: string | null, wallet: string | null) {
     staleTime: 8_000,
     refetchInterval: (query) =>
       query.state.status === "error" ? false : 15_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** The contracts a decision's forms need to name: the DAO's voting policy, its work budget factory and its Shares. */
+export function useDecisionContext(dao: string | null) {
+  return useQuery({
+    queryKey: ["launchpad", "work", dao, "context"],
+    enabled: dao !== null,
+    queryFn: async () => {
+      const endpoint = getRpcEndpoint();
+      const policy = decodeAddress(
+        await ethCall(endpoint, dao as string, encodeCall0(SIGNATURES.policy)),
+      );
+      const [factory, shares] = await Promise.all([
+        ethCall(endpoint, policy, encodeCall0(SIGNATURES.factory)),
+        ethCall(endpoint, dao as string, encodeCall0("shares()")),
+      ]);
+      return {
+        policy,
+        factory: decodeAddress(factory),
+        shares: decodeAddress(shares),
+      };
+    },
+    staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
 }

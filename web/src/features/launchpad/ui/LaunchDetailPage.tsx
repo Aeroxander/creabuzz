@@ -416,7 +416,11 @@ export function LaunchDetailPage({
         <DecisionsTab dao={workDao} launch={launch} />
       ) : null}
       {tab === "work" && workDao ? (
-        <WorkTab dao={workDao} launch={launch} />
+        <WorkTab
+          dao={workDao}
+          launch={launch}
+          onOpenDecisions={() => setTab("decisions")}
+        />
       ) : null}
       {tab === "manage" && isFounder ? (
         <ManagePanel

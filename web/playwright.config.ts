@@ -28,6 +28,7 @@ export default defineConfig({
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
+        "**/launchpad-journey.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page
