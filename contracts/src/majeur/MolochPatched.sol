@@ -402,6 +402,13 @@ contract Moloch {
         if (_quorumBps != 0) quorumBps = _quorumBps;
         if (_ragequittable) ragequittable = _ragequittable;
         if (_renderer != address(0)) renderer = _renderer;
+    // @@CREABUZZ PATCH BEGIN safe-defaults
+        // With either at zero the policy refuses to open any proposal, and these setters are
+        // onlyDAO, so a DAO born without them could never fix itself. No DAO is born that way:
+        // `initCalls` below may still replace both (set the delay first when lowering it).
+        proposalTTL = 14 days;
+        timelockDelay = 1 days;
+    // @@CREABUZZ PATCH END safe-defaults
 
         address _badges;
         address _shares;
