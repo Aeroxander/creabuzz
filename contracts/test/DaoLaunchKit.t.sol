@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {ShareVesting} from "../src/ShareVesting.sol";
+import {MilestoneLock} from "../src/MilestoneLock.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
-import {Moloch, Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
+import {Call, Moloch, Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {
     LaunchCurrency,
     LaunchPermit2,
@@ -24,8 +24,8 @@ struct KitParams {
     bytes32 salt;
     address[] team;
     uint256[] teamShares;
-    uint64 vestCliff;
-    uint64 vestDuration;
+    bytes32[] milestoneChecks;
+    uint16[] milestoneBps;
     uint256 daoShares;
     uint128 saleSupply;
     bytes auctionConfig;
@@ -35,6 +35,7 @@ struct KitParams {
 interface IKit {
     function launch(KitParams calldata p) external returns (address dao, address executor, address auction);
     function predictExecutor(address launcher, bytes32 salt) external view returns (address);
+    function sharesImplementation() external view returns (address);
 }
 
 /// @notice The one-transaction launch against the real auction factory and the real patched DAO.
@@ -75,7 +76,27 @@ contract DaoLaunchKitTest is Test {
             "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
         );
         Summoner summoner = newSummoner();
-        kit = IKit(vm.deployCode("DaoLaunchKit.sol:DaoLaunchKit", abi.encode(address(summoner), factory)));
+        kit = IKit(
+            vm.deployCode(
+                "DaoLaunchKit.sol:DaoLaunchKit", abi.encode(address(summoner), factory, _sharesImplementation(summoner))
+            )
+        );
+    }
+
+    /// @dev Every DAO this summoner makes clones one Shares implementation. The proxy's runtime code is nine bytes of
+    /// prefix, the implementation's address, then the tail: read it off a DAO made for the purpose.
+    function _sharesImplementation(Summoner summoner) internal returns (address implementation) {
+        address[] memory holders = new address[](1);
+        holders[0] = address(0xBEEF);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 1e18;
+        Moloch probe = summoner.summon(
+            "Probe", "PRB", "", 500, true, address(0), bytes32("probe"), holders, amounts, new Call[](0)
+        );
+        bytes memory code = address(probe.shares()).code;
+        for (uint256 i; i < 20; ++i) {
+            implementation = address(uint160(implementation) << 8 | uint160(uint8(code[9 + i])));
+        }
     }
 
     function _config(address executor) internal view returns (bytes memory) {
@@ -108,8 +129,13 @@ contract DaoLaunchKitTest is Test {
         p.teamShares = new uint256[](2);
         p.teamShares[0] = 225e18;
         p.teamShares[1] = 75e18;
-        p.vestCliff = 180 days;
-        p.vestDuration = 4 * 365 days;
+        // 30% of each founder's Shares unlock with the first milestone, 50% with the second; 20% were never locked.
+        p.milestoneChecks = new bytes32[](2);
+        p.milestoneChecks[0] = keccak256("alpha shipped");
+        p.milestoneChecks[1] = keccak256("first customers");
+        p.milestoneBps = new uint16[](2);
+        p.milestoneBps[0] = 3000;
+        p.milestoneBps[1] = 5000;
         p.daoShares = 300e18; // treasury, milestones, community: the DAO's own, outside voting and outside exits
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
@@ -124,20 +150,42 @@ contract DaoLaunchKitTest is Test {
         return (Moloch(payable(d)), IExecutor(e), IAuction(a));
     }
 
-    function test_one_transaction_creates_a_dao_that_no_one_holds_but_vaults_and_the_auction() public {
+    function test_one_transaction_creates_a_dao_whose_founders_vote_but_cannot_yet_sell_or_ragequit() public {
         _needArtifacts();
         (Moloch dao, IExecutor executor, IAuction auction) = _launch(bytes32("nebula"));
         Shares shares = dao.shares();
         AllocationVoting policy = AllocationVoting(dao.votingWeight());
 
-        // The supply: the team's two vaults, the DAO's own allocation, and the auction. No wallet holds a Share.
+        // The supply: the team (directly, in their own wallets), the DAO's own allocation, and the auction.
         assertEq(shares.totalSupply(), 1000e18);
+        assertEq(shares.balanceOf(founder), 225e18);
+        assertEq(shares.balanceOf(cofounder), 75e18);
         assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO keeps its own allocation");
         assertEq(shares.balanceOf(address(auction)), SALE, "the sale tranche sits in the auction");
         assertEq(shares.balanceOf(address(executor)), 0, "and the executor passed it all on");
-        assertEq(shares.balanceOf(founder), 0);
-        assertEq(shares.balanceOf(cofounder), 0);
         assertEq(shares.balanceOf(address(kit)), 0);
+
+        // The founders vote with all of it from the first block.
+        assertEq(shares.getVotes(founder), 225e18);
+        assertEq(policy.totalCapacity(), 1000e18);
+
+        // The DAO was born pointing its Shares at a lock: 80% of each founder's Shares are held until a milestone.
+        MilestoneLock lock = MilestoneLock(shares.lockGuard());
+        assertTrue(address(lock) != address(0), "the lock was set in the DAO's own initialization");
+        assertEq(lock.dao(), address(dao));
+        assertEq(lock.lockedOf(founder), 180e18);
+        assertEq(lock.lockedOf(cofounder), 60e18);
+        assertEq(lock.lockedOf(alice), 0, "nobody else is held");
+        vm.prank(founder);
+        shares.transfer(alice, 45e18); // the 20% that was never locked
+        vm.prank(founder);
+        vm.expectRevert(Shares.LockedShares.selector);
+        shares.transfer(alice, 1);
+        address[] memory assets = new address[](1);
+        assets[0] = address(currency);
+        vm.prank(founder);
+        vm.expectRevert(Shares.LockedShares.selector);
+        dao.ragequit(assets, 1, 0);
 
         // The executor serves exactly this auction and pays the DAO; the kit, not a wallet, launched it.
         assertEq(executor.launcher(), address(kit));
@@ -152,10 +200,43 @@ contract DaoLaunchKitTest is Test {
         assertEq(dao.proposalThreshold(), 10e18);
         assertEq(dao.proposalTTL(), 14 days);
         assertEq(dao.timelockDelay(), 1 days);
+    }
 
-        // Each vault holds its member's allocation and hands its voting to that member.
-        // (The vault addresses are in the Launched event; here, find them through the policy's holders.)
-        assertEq(policy.totalCapacity(), 1000e18);
+    function test_a_launch_with_no_milestones_locks_nothing() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("free");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.milestoneChecks = new bytes32[](0);
+        p.milestoneBps = new uint16[](0);
+        vm.prank(founder);
+        (address d,,) = kit.launch(p);
+        Shares shares = Moloch(payable(d)).shares();
+        assertEq(shares.lockGuard(), address(0));
+        vm.prank(founder);
+        shares.transfer(alice, 225e18);
+    }
+
+    function test_a_kit_that_misjudges_the_shares_address_reverts_the_whole_launch() public {
+        _needArtifacts();
+        // Same kit, but told the wrong Shares implementation: it would point a lock at an address that is not the DAO's
+        // Shares, so it refuses.
+        IKit wrong = IKit(
+            vm.deployCode(
+                "DaoLaunchKit.sol:DaoLaunchKit",
+                abi.encode(
+                    address(newSummoner()),
+                    vm.deployCode(
+                        "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
+                    ),
+                    address(currency)
+                )
+            )
+        );
+        bytes32 salt = bytes32("wrong impl");
+        KitParams memory p = _params(salt, wrong.predictExecutor(founder, salt));
+        vm.prank(founder);
+        vm.expectRevert(bytes("kit: shares address"));
+        wrong.launch(p);
     }
 
     function test_the_daos_own_allocation_never_votes_and_never_dilutes_an_exit() public {

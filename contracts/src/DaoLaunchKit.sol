@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {GraduationExecutor} from "./GraduationExecutor.sol";
-import {ShareVesting} from "./ShareVesting.sol";
+import {MilestoneLock} from "./MilestoneLock.sol";
 
 /// @dev The one `Call` shape Majeur's `Summoner.summon` takes for its initialization calls.
 struct KitCall {
@@ -45,17 +45,23 @@ interface IKitSetThreshold {
     function setProposalThreshold(uint96 v) external;
 }
 
+interface IKitLockable {
+    function setLockGuard(address guard) external;
+}
+
 /// @title DaoLaunchKit
 /// @notice One transaction that launches a project into a DAO it does not control: the founder's wallet never
-/// holds the supply, the raise, or a payee role.
+/// holds the raise or a payee role.
 ///
 /// In a single call it
-///  1. deploys a `ShareVesting` vault per team member (their allocation votes through a delegate but cannot be
-///     ragequit until it vests: otherwise a founder could withdraw their percentage of the raise on day one);
-///  2. deploys a `GraduationExecutor` it will run (it is the executor's launcher);
-///  3. summons the DAO with the vaults, the executor and (for an allocation the DAO keeps itself) this kit as its only
-///     initial holders, so the sale tranche is minted straight to the executor;
-///  4. points the vaults at the DAO's Shares and the executor's payee at the DAO;
+///  1. deploys a `GraduationExecutor` it will run (it is the executor's launcher);
+///  2. mints the team's Shares straight to the team (they vote from the first block) and, when the launch names
+///     milestones, deploys a `MilestoneLock` that holds part of those Shares back: the locked part cannot be sold or
+///     ragequit until a reviewed milestone unlocks it (and mints the founder a soulbound badge);
+///  3. summons the DAO with the team, the executor and (for an allocation the DAO keeps itself) this kit as its only
+///     initial holders, and, in the DAO's own initialization, points its Shares at the lock, so there is never a
+///     moment when the founders' Shares are free;
+///  4. points the executor's payee at the DAO;
 ///  5. creates the auction on the canonical factory, binds the executor to it, and has the executor fund it.
 ///
 /// Atomic: any failure reverts all of it, so there is no half-configured launch to recover. Every address it creates
@@ -63,14 +69,18 @@ interface IKitSetThreshold {
 /// must name as both recipients) before sending, and nobody else can use the same salt to take those addresses first.
 ///
 /// The kit trusts nothing it is given beyond arithmetic: the auction config it is handed must name the predicted
-/// executor as both recipients or `bindAuction` reverts; the DAO is born with default governance (14-day TTL and
+/// executor as both recipients or `bindAuction` reverts, and the Shares address it predicts for the lock must be the
+/// one the DAO really made or the whole launch reverts. The DAO is born with default governance (14-day TTL and
 /// 1-day timelock) plus the founder-chosen proposal threshold.
 contract DaoLaunchKit {
-    /// @notice Most vaults one launch may create.
+    /// @notice Most team members one launch may name.
     uint256 public constant MAX_TEAM = 16;
 
     IKitSummoner public immutable summoner;
     IKitAuctionFactory public immutable factory;
+    /// @notice The Shares implementation the summoner's DAOs clone: the DAO's Shares address is computed from it, so
+    /// the lock can be pointed at them in the DAO's own initialization.
+    address public immutable sharesImplementation;
 
     struct Params {
         string name;
@@ -82,8 +92,12 @@ contract DaoLaunchKit {
         bytes32 salt;
         address[] team;
         uint256[] teamShares;
-        uint64 vestCliff;
-        uint64 vestDuration;
+        /// The acceptance check of each milestone, in order; they unlock `milestoneBps` of every team member's
+        /// Shares. Empty means the team's Shares are not locked.
+        bytes32[] milestoneChecks;
+        /// The part of each team member's Shares each milestone unlocks (they add up to at most 10,000; the rest is
+        /// not locked at all).
+        uint16[] milestoneBps;
         /// Shares the DAO holds itself from the start: treasury, liquidity, milestones, community. They never vote
         /// (they are outside voting supply) and never count toward a member's ragequit share.
         uint256 daoShares;
@@ -101,7 +115,7 @@ contract DaoLaunchKit {
         address shares,
         address executor,
         address auction,
-        address[] vaults,
+        address lock,
         uint128 saleSupply
     );
 
@@ -109,10 +123,15 @@ contract DaoLaunchKit {
     error TeamMismatch();
     error TooManyTeam();
 
-    constructor(IKitSummoner summoner_, IKitAuctionFactory factory_) {
-        require(address(summoner_).code.length != 0 && address(factory_).code.length != 0, "kit: no code");
+    constructor(IKitSummoner summoner_, IKitAuctionFactory factory_, address sharesImplementation_) {
+        require(
+            address(summoner_).code.length != 0 && address(factory_).code.length != 0
+                && sharesImplementation_.code.length != 0,
+            "kit: no code"
+        );
         summoner = summoner_;
         factory = factory_;
+        sharesImplementation = sharesImplementation_;
     }
 
     /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
@@ -120,21 +139,6 @@ contract DaoLaunchKit {
     /// cannot block this launch by deploying first.
     function predictExecutor(address launcher, bytes32 salt) public view returns (address) {
         return _create2(_executorSalt(launcher, salt), keccak256(_executorInitcode()));
-    }
-
-    /// @notice The vault address for team member `index` of `launcher`'s launch `salt`.
-    function predictVault(
-        address launcher,
-        bytes32 salt,
-        uint256 index,
-        address beneficiary,
-        uint64 start,
-        uint64 cliff,
-        uint64 duration
-    ) external view returns (address) {
-        return _create2(
-            _vaultSalt(launcher, salt, index), keccak256(_vaultInitcode(beneficiary, start, cliff, duration))
-        );
     }
 
     /// @notice The DAO address the summon will produce, given the launch's holders.
@@ -151,19 +155,14 @@ contract DaoLaunchKit {
         if (p.team.length != p.teamShares.length) revert TeamMismatch();
         if (p.team.length > MAX_TEAM) revert TooManyTeam();
 
-        // 1 and 2. Vaults and the executor, each at a deterministic address.
+        // 1 and 2. The executor, and the holders the DAO is born with: the team (directly, so they vote at once),
+        //    the executor, and this kit for the length of the call when the DAO keeps an allocation of its own.
         uint256 n = p.team.length;
         uint256 slots = n + (p.daoShares == 0 ? 1 : 2);
         address[] memory holders = new address[](slots);
         uint256[] memory amounts = new uint256[](slots);
-        ShareVesting[] memory vaults = new ShareVesting[](n);
-        address[] memory vaultAddresses = new address[](n);
         for (uint256 i; i < n; ++i) {
-            vaults[i] = new ShareVesting{salt: _vaultSalt(msg.sender, p.salt, i)}(
-                p.team[i], uint64(block.timestamp), p.vestCliff, p.vestDuration
-            );
-            vaultAddresses[i] = address(vaults[i]);
-            holders[i] = vaultAddresses[i];
+            holders[i] = p.team[i];
             amounts[i] = p.teamShares[i];
         }
         GraduationExecutor exec =
@@ -177,26 +176,38 @@ contract DaoLaunchKit {
             holders[n + 1] = address(this);
             amounts[n + 1] = p.daoShares;
         }
+        address predictedDao = _predictDao(p.salt, holders, amounts);
+        address predictedShares = _predictShares(predictedDao);
 
-        // 3. The DAO. Its only initial holders are contracts this call just made, so nobody but the vaults
-        //    and the executor holds a Share until the auction sells them.
-        KitCall[] memory calls = new KitCall[](p.proposalThreshold == 0 ? 0 : 1);
-        if (p.proposalThreshold != 0) {
-            calls[0] = KitCall(
-                _predictDao(p.salt, holders, amounts),
-                0,
-                abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold))
+        // 3. The milestone lock, if the launch has milestones, and the DAO. The DAO points its own Shares at the lock
+        //    while it is being born (its initialization calls run as the DAO), so the team's Shares are never free.
+        address lock;
+        if (n != 0 && p.milestoneChecks.length != 0) {
+            lock = address(
+                new MilestoneLock{salt: _lockSalt(msg.sender, p.salt)}(
+                    predictedDao, p.team, p.teamShares, p.milestoneChecks, p.milestoneBps
+                )
             );
         }
-        dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, calls);
+        uint256 calls = (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 1);
+        KitCall[] memory initCalls = new KitCall[](calls);
+        uint256 next;
+        if (p.proposalThreshold != 0) {
+            initCalls[next++] =
+                KitCall(predictedDao, 0, abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold)));
+        }
+        if (lock != address(0)) {
+            initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
+        }
+        dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, initCalls);
+        // Fail closed: the addresses the lock and the guard were built on must be the ones that exist.
+        require(dao == predictedDao, "kit: dao address");
         address shares = IKitDao(dao).shares();
+        require(shares == predictedShares, "kit: shares address");
 
         if (p.daoShares != 0) require(IKitErc20(shares).transfer(dao, p.daoShares), "kit: dao allocation");
 
-        // 4. Wire the vaults and the payee.
-        for (uint256 i; i < n; ++i) {
-            vaults[i].init(shares);
-        }
+        // 4. The payee.
         exec.retargetTreasury(dao);
 
         // 5. The auction: created, bound and funded in the same call.
@@ -204,7 +215,7 @@ contract DaoLaunchKit {
         exec.bindAuction(auction);
         exec.fundAuction(auction, p.saleSupply);
 
-        emit Launched(dao, msg.sender, shares, executor, auction, vaultAddresses, p.saleSupply);
+        emit Launched(dao, msg.sender, shares, executor, auction, lock, p.saleSupply);
     }
 
     // ---- address prediction ------------------------------------------------------------------
@@ -213,8 +224,8 @@ contract DaoLaunchKit {
         return keccak256(abi.encode(launcher, salt, "executor"));
     }
 
-    function _vaultSalt(address launcher, bytes32 salt, uint256 index) private pure returns (bytes32) {
-        return keccak256(abi.encode(launcher, salt, "vault", index));
+    function _lockSalt(address launcher, bytes32 salt) private pure returns (bytes32) {
+        return keccak256(abi.encode(launcher, salt, "lock"));
     }
 
     function _executorInitcode() private view returns (bytes memory) {
@@ -224,16 +235,21 @@ contract DaoLaunchKit {
             );
     }
 
-    function _vaultInitcode(address beneficiary, uint64 start, uint64 cliff, uint64 duration)
-        private
-        pure
-        returns (bytes memory)
-    {
-        return abi.encodePacked(type(ShareVesting).creationCode, abi.encode(beneficiary, start, cliff, duration));
-    }
-
     function _create2(bytes32 salt, bytes32 initcodeHash) private view returns (address) {
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initcodeHash)))));
+    }
+
+    /// @dev The DAO makes its Shares as a minimal-proxy clone of the Shares implementation, with CREATE2 from the DAO and
+    /// a salt that is the DAO's own address; the same proxy code the summoner's DAOs use.
+    function _predictShares(address dao) private view returns (address) {
+        bytes memory creationCode = abi.encodePacked(
+            hex"602d5f8160095f39f35f5f365f5f37365f73", sharesImplementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+        );
+        return address(
+            uint160(
+                uint256(keccak256(abi.encodePacked(bytes1(0xff), dao, bytes32(bytes20(dao)), keccak256(creationCode))))
+            )
+        );
     }
 
     /// @dev Mirrors the Summoner's clone address: `keccak256(abi.encode(holders, shares, salt))` against the
