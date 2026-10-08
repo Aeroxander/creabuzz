@@ -169,6 +169,23 @@ export interface WizardState {
  * The form's own fields — exactly what today's submit reads, so the edit
  * dialog and the wizard share one mapping (`buildLegacyInput`).
  */
+/**
+ * Which token a launch form starts on. A launch already made as a DAO stays one when edited (its Shares are the
+ * record's token, not an import); a new one defaults to the project's own Shares wherever this build can launch them
+ * (`hasKit`), and to a minted apptoken elsewhere.
+ */
+export function initialTokenMode(
+  initial:
+    | { token?: string | null; tokenPlan?: { mode: string } | null }
+    | null
+    | undefined,
+  hasKit: boolean,
+): "mint" | "import" | "dao" {
+  if (initial?.tokenPlan?.mode === "dao") return "dao";
+  if (initial?.token) return "import";
+  return hasKit ? "dao" : "mint";
+}
+
 export interface FormState {
   id: string;
   name: string;

@@ -53,6 +53,7 @@ import {
   wizardStepIssues,
   wizardToCreateInput,
   WIZARD_STEPS,
+  initialTokenMode,
   type FormState,
   type MilestoneRow,
   type PricingMode,
@@ -94,8 +95,6 @@ import {
   WizardSteps,
   type WizardController,
 } from "./create-wizard/WizardSteps";
-
-type TokenMode = "mint" | "import" | "dao";
 
 export function CreateLaunchDialog({
   isCreating,
@@ -207,16 +206,8 @@ export function CreateLaunchDialog({
   );
   const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
-  // A launch already made as a DAO stays one when edited (its Shares are the record's token, not an import); a new
-  // one defaults to the project's own Shares wherever this build can launch them.
-  const [tokenMode, setTokenMode] = useState<TokenMode>(
-    initial?.tokenPlan?.mode === "dao"
-      ? "dao"
-      : initial?.token
-        ? "import"
-        : daoLaunchKit(chainId)
-          ? "dao"
-          : "mint",
+  const [tokenMode, setTokenMode] = useState(
+    initialTokenMode(initial, Boolean(daoLaunchKit(chainId))),
   );
   const [tokenName, setTokenName] = useState(
     () => initial?.tokenPlan?.name ?? ideaTokenDefaults(idea?.name).tokenName,
