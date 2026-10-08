@@ -79,6 +79,7 @@ export type AbiType =
   | "bytes"
   | "string"
   | `uint${number}`
+  | `int${number}`
   | { tuple: readonly AbiType[] }
   | { array: AbiType };
 
@@ -114,6 +115,17 @@ function uintWord(value: bigint, bits: number): string {
   if (value < 0n || value >= 1n << BigInt(bits))
     throw new Error(`uint${bits} out of range: ${value}`);
   return word(value);
+}
+
+function intWord(value: bigint, bits: number): string {
+  if (bits <= 0 || bits > 256 || bits % 8 !== 0)
+    throw new Error(`unsupported int width: ${bits}`);
+  if (typeof value !== "bigint") throw new Error("int values must be bigint");
+  const limit = 1n << BigInt(bits - 1);
+  if (value < -limit || value >= limit)
+    throw new Error(`int${bits} out of range: ${value}`);
+  // Two's complement over the full 256-bit word.
+  return word(value < 0n ? (1n << 256n) + value : value);
 }
 
 function isDynamicType(t: AbiType): boolean {
@@ -195,6 +207,11 @@ function encodeValue(t: AbiType, v: AbiValue): EncodedValue {
       return { head: "", tail: word(BigInt(h.length / 2)) + padded };
     }
     default: {
+      const signed = /^int(\d+)$/.exec(t);
+      if (signed) {
+        if (typeof v !== "bigint") throw new Error(`${t} value must be bigint`);
+        return { head: intWord(v, Number(signed[1])), tail: "" };
+      }
       const m = /^uint(\d+)$/.exec(t);
       if (!m) throw new Error(`unsupported ABI type: ${t}`);
       if (typeof v !== "bigint") throw new Error(`${t} value must be bigint`);
@@ -243,6 +260,113 @@ export function encodeParameters(
   values: readonly AbiValue[],
 ): string {
   return `0x${encodeArgsBlock(types, values)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Decoding (the same subset of types), for describing a call someone else composed
+// ---------------------------------------------------------------------------
+
+/** A value read back out of ABI data: bigint, bool, string (address, bytes32 and bytes as 0x hex) or a list. */
+export type DecodedValue = bigint | boolean | string | readonly DecodedValue[];
+
+const MAX_DECODE_ITEMS = 256;
+
+function readWord(hex: string, byteOffset: number): bigint {
+  const start = byteOffset * 2;
+  if (byteOffset < 0 || start + 64 > hex.length)
+    throw new Error("ABI data ends before the value it describes");
+  return BigInt(`0x${hex.slice(start, start + 64)}`);
+}
+
+function decodeValue(
+  t: AbiType,
+  hex: string,
+  blockStart: number,
+  headOffset: number,
+): DecodedValue {
+  if (typeof t === "object" && "tuple" in t) {
+    const base = isDynamicType(t)
+      ? blockStart + Number(readWord(hex, headOffset))
+      : headOffset;
+    return decodeBlock(t.tuple, hex, base);
+  }
+  if (typeof t === "object" && "array" in t) {
+    const base = blockStart + Number(readWord(hex, headOffset));
+    const length = Number(readWord(hex, base));
+    if (length > MAX_DECODE_ITEMS)
+      throw new Error("ABI array is longer than this reader accepts");
+    return decodeBlock(
+      Array.from({ length }, () => t.array),
+      hex,
+      base + 32,
+    );
+  }
+  switch (t) {
+    case "bool":
+      return readWord(hex, headOffset) !== 0n;
+    case "address":
+      return `0x${readWord(hex, headOffset).toString(16).padStart(40, "0")}`;
+    case "bytes32":
+      return `0x${readWord(hex, headOffset).toString(16).padStart(64, "0")}`;
+    case "bytes":
+    case "string": {
+      const base = blockStart + Number(readWord(hex, headOffset));
+      const length = Number(readWord(hex, base));
+      const start = (base + 32) * 2;
+      if (length > 1_000_000 || start + length * 2 > hex.length)
+        throw new Error("ABI bytes run past the data");
+      const body = hex.slice(start, start + length * 2);
+      return t === "bytes"
+        ? `0x${body}`
+        : new TextDecoder().decode(
+            Uint8Array.from(body.match(/../g) ?? [], (b) =>
+              Number.parseInt(b, 16),
+            ),
+          );
+    }
+    default: {
+      const signed = /^int(\d+)$/.exec(t);
+      const raw = readWord(hex, headOffset);
+      if (signed) {
+        const bits = BigInt(signed[1]);
+        const negative = raw >= 1n << 255n;
+        const value = negative ? raw - (1n << 256n) : raw;
+        if (value < -(1n << (bits - 1n)) || value >= 1n << (bits - 1n))
+          throw new Error(`${t} value out of range`);
+        return value;
+      }
+      const m = /^uint(\d+)$/.exec(t);
+      if (!m) throw new Error(`unsupported ABI type: ${t}`);
+      if (raw >= 1n << BigInt(m[1])) throw new Error(`${t} value out of range`);
+      return raw;
+    }
+  }
+}
+
+function decodeBlock(
+  types: readonly AbiType[],
+  hex: string,
+  blockStart: number,
+): DecodedValue[] {
+  const out: DecodedValue[] = [];
+  let headOffset = blockStart;
+  for (const t of types) {
+    out.push(decodeValue(t, hex, blockStart, headOffset));
+    headOffset += headWords(t) * 32;
+  }
+  return out;
+}
+
+/**
+ * Read an argument block (no selector) back into values. Strict about bounds, so a malformed or hostile call data
+ * throws instead of yielding invented values.
+ */
+export function decodeParameters(
+  types: readonly AbiType[],
+  data: string,
+): DecodedValue[] {
+  const hex = bareHex(data, "data");
+  return decodeBlock(types, hex, 0);
 }
 
 /**

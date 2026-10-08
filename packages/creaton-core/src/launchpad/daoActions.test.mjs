@@ -1,0 +1,292 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  awardDecision,
+  collectFeesDecision,
+  DecisionInputError,
+  decodeBatch,
+  describeAction,
+  formatUnits,
+  mandateDecision,
+  parseUnits,
+  projectDecision,
+} from "./daoActions.ts";
+
+const WAD = 10n ** 18n;
+const DAO = "0x00000000000000000000000000000000000000d0";
+const FACTORY = "0x00000000000000000000000000000000000000fa";
+const CUR = "0x00000000000000000000000000000000000000cc";
+const MANDATE = "0x00000000000000000000000000000000000000ee";
+const MANAGER = "0x00000000000000000000000000000000000000aa";
+const R1 = "0x0000000000000000000000000000000000000001";
+const R2 = "0x0000000000000000000000000000000000000002";
+const R3 = "0x0000000000000000000000000000000000000003";
+const AMM = "0x00000000000000000000000000000000000000a1";
+const SHARES = "0x00000000000000000000000000000000000000b1";
+const CLAIM =
+  "0x7777777777777777777777777777777777777777777777777777777777777777";
+const EXP = 1800000000;
+const NOW = 1_700_000_000;
+
+const mandate = (over = {}) => ({
+  dao: DAO,
+  factory: FACTORY,
+  currency: CUR,
+  currencyDecimals: 6,
+  budget: 0n,
+  cap: 0n,
+  shareBudget: 100n * WAD,
+  shareCap: 40n * WAD,
+  expiresAt: EXP,
+  reviewers: [R1, R2, R3],
+  quorum: 2,
+  now: NOW,
+  ...over,
+});
+const refused = (fn, field) =>
+  assert.throws(
+    fn,
+    (e) => e instanceof DecisionInputError && e.field === field,
+    `expected a ${field} refusal`,
+  );
+
+// Every golden below is `cast calldata` for the same inputs.
+test("a Shares-only work budget is one call to the factory, as cast encodes it", () => {
+  const d = mandateDecision(mandate());
+  assert.equal(d.to, FACTORY);
+  assert.equal(d.lane, "unrestricted");
+  assert.equal(
+    d.data,
+    "0xf4e9b42c00000000000000000000000000000000000000000000000000000000000000cc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000056bc75e2d631000000000000000000000000000000000000000000000000000022b1c8c1227a00000000000000000000000000000000000000000000000000000000000006b49d200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003",
+  );
+});
+
+test("a work budget with money approves the factory first and clears the approval after", () => {
+  const d = mandateDecision(
+    mandate({ budget: 5_000_000_000n, cap: 1_000_000_000n }),
+  );
+  assert.equal(d.to, DAO);
+  assert.equal(
+    d.data,
+    "0x11c76fd90000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000036000000000000000000000000000000000000000000000000000000000000000cc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b300000000000000000000000000000000000000000000000000000000000000fa000000000000000000000000000000000000000000000000000000012a05f2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000184f4e9b42c00000000000000000000000000000000000000000000000000000000000000cc000000000000000000000000000000000000000000000000000000012a05f200000000000000000000000000000000000000000000000000000000003b9aca000000000000000000000000000000000000000000000000056bc75e2d631000000000000000000000000000000000000000000000000000022b1c8c1227a00000000000000000000000000000000000000000000000000000000000006b49d2000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b300000000000000000000000000000000000000000000000000000000000000fa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  );
+  const calls = decodeBatch(d.data);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(
+    calls.map((c) => c.to),
+    [CUR, FACTORY, CUR],
+  );
+});
+
+test("a work budget that could not be created is refused with the field to fix", () => {
+  refused(
+    () => mandateDecision(mandate({ shareBudget: 0n, shareCap: 0n })),
+    "budget",
+  );
+  refused(() => mandateDecision(mandate({ cap: 1n })), "cap");
+  refused(() => mandateDecision(mandate({ budget: 5n, cap: 6n })), "cap");
+  refused(() => mandateDecision(mandate({ shareCap: 0n })), "shareCap");
+  refused(() => mandateDecision(mandate({ shareCap: 101n * WAD })), "shareCap");
+  refused(() => mandateDecision(mandate({ expiresAt: NOW })), "expiresAt");
+  refused(() => mandateDecision(mandate({ reviewers: [] })), "reviewers");
+  refused(() => mandateDecision(mandate({ reviewers: [R1, R1] })), "reviewers");
+  refused(() => mandateDecision(mandate({ reviewers: ["nope"] })), "reviewers");
+  refused(() => mandateDecision(mandate({ quorum: 0 })), "quorum");
+  refused(() => mandateDecision(mandate({ quorum: 4 })), "quorum");
+  refused(() => mandateDecision(mandate({ factory: "0x12" })), "factory");
+  refused(
+    () => mandateDecision(mandate({ shareBudget: 1n << 128n, shareCap: 1n })),
+    "shareBudget",
+  );
+});
+
+test("a project approval is a call to its work budget, with the check hashed from its words", () => {
+  const d = projectDecision({
+    mandate: MANDATE,
+    id: "docs",
+    manager: MANAGER,
+    amount: 0n,
+    shares: 40n * WAD,
+    expiresAt: EXP,
+    checkText: "  docs merged and reviewed  ",
+    now: NOW,
+    currencyDecimals: 6,
+  });
+  assert.equal(d.to, MANDATE);
+  assert.equal(d.lane, "bounded");
+  assert.equal(
+    d.data,
+    "0x7eb44f4d646f63730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022b1c8c1227a00000000000000000000000000000000000000000000000000000000000006b49d200e8164af4b3d1186a31c4eecb6012657bf68042eb1ce8130d9d766a096b0418ff",
+  );
+  assert.match(d.title, /“docs”/);
+  refused(
+    () => projectDecision({ ...baseProject(), checkText: " " }),
+    "checkText",
+  );
+  refused(
+    () => projectDecision({ ...baseProject(), amount: 0n, shares: 0n }),
+    "amount",
+  );
+  refused(() => projectDecision({ ...baseProject(), id: "" }), "id");
+  refused(
+    () => projectDecision({ ...baseProject(), expiresAt: NOW - 1 }),
+    "expiresAt",
+  );
+  refused(() => projectDecision({ ...baseProject(), manager: "x" }), "manager");
+});
+
+function baseProject() {
+  return {
+    mandate: MANDATE,
+    id: "docs",
+    manager: MANAGER,
+    amount: 0n,
+    shares: 40n * WAD,
+    expiresAt: EXP,
+    checkText: "docs merged and reviewed",
+    now: NOW,
+    currencyDecimals: 6,
+  };
+}
+
+test("an award is a call to the DAO itself, as cast encodes it", () => {
+  const d = awardDecision({
+    dao: DAO,
+    mandate: MANDATE,
+    claimId: CLAIM,
+    shares: 25n * WAD,
+  });
+  assert.equal(d.to, DAO);
+  assert.equal(d.lane, "bounded");
+  assert.equal(
+    d.data,
+    "0x33184aca00000000000000000000000000000000000000000000000000000000000000ee77777777777777777777777777777777777777777777777777777777777777770000000000000000000000000000000000000000000000015af1d78b58c400000000000000000000000000000000000000000000000000000000000000000000",
+  );
+  refused(
+    () =>
+      awardDecision({
+        dao: DAO,
+        mandate: MANDATE,
+        claimId: "0x12",
+        shares: 1n,
+      }),
+    "claimId",
+  );
+  refused(
+    () =>
+      awardDecision({ dao: DAO, mandate: MANDATE, claimId: CLAIM, shares: 0n }),
+    "shares",
+  );
+});
+
+test("collecting trading fees is a call to the exchange, as cast encodes it", () => {
+  const d = collectFeesDecision({
+    amm: AMM,
+    sharesToken: SHARES,
+    currency: CUR,
+    currencyDecimals: 6,
+    recipient: DAO,
+    amount: 12_345_678n,
+  });
+  assert.equal(d.to, AMM);
+  assert.equal(
+    d.data,
+    "0x5f06713d00000000000000000000000000000000000000000000000000000000000000b100000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000000000000000000000000000000000000000000d00000000000000000000000000000000000000000000000000000000000bc614e",
+  );
+  refused(
+    () =>
+      collectFeesDecision({
+        amm: AMM,
+        sharesToken: SHARES,
+        currency: CUR,
+        currencyDecimals: 6,
+        recipient: DAO,
+        amount: 0n,
+      }),
+    "amount",
+  );
+});
+
+test("every action this module writes is read back as what it is", () => {
+  const ctx = { currencyDecimals: 6 };
+  const budget = describeAction(
+    mandateDecision(mandate({ budget: 5_000_000_000n, cap: 1_000_000_000n })),
+    ctx,
+  );
+  assert.equal(budget.kind, "work-budget");
+  assert.ok(
+    budget.lines.some((l) =>
+      l.includes("Money for work: 5,000 in all, at most 1,000 per project"),
+    ),
+  );
+  assert.ok(
+    budget.lines.some((l) =>
+      l.includes("Shares for work: 100 in all, at most 40 per project"),
+    ),
+  );
+  assert.ok(
+    budget.lines.some((l) => l.startsWith("3 reviewers, 2 must agree")),
+  );
+
+  assert.equal(
+    describeAction(mandateDecision(mandate()), ctx).kind,
+    "work-budget",
+  );
+  const project = describeAction(projectDecision(baseProject()), ctx);
+  assert.equal(project.kind, "project");
+  assert.equal(project.title, "Approve the project “docs”");
+  const award = describeAction(
+    awardDecision({
+      dao: DAO,
+      mandate: MANDATE,
+      claimId: CLAIM,
+      shares: 25n * WAD,
+    }),
+    ctx,
+  );
+  assert.equal(award.kind, "award");
+  assert.match(award.title, /^Award 25 Shares for the claim/);
+  const fees = describeAction(
+    collectFeesDecision({
+      amm: AMM,
+      sharesToken: SHARES,
+      currency: CUR,
+      currencyDecimals: 6,
+      recipient: DAO,
+      amount: 12_345_678n,
+    }),
+    ctx,
+  );
+  assert.equal(fees.kind, "fees");
+  assert.match(fees.lines[0], /12\.34/);
+});
+
+test("anything else is said to be unknown, with where it goes, and never guessed at", () => {
+  const unknown = describeAction({ to: AMM, data: "0xdeadbeef00" });
+  assert.equal(unknown.kind, "unknown");
+  assert.match(unknown.lines[0], new RegExp(AMM));
+  const garbled = describeAction({
+    to: MANDATE,
+    data: "0x7eb44f4d646f6373000000000000000000000000000000000000000000",
+  });
+  assert.equal(garbled.kind, "unknown");
+  // A batch of things it does not know is a batch, described step by step.
+  const batch = describeAction({
+    to: DAO,
+    data: "0x11c76fd900000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000",
+  });
+  assert.equal(batch.kind, "batch");
+  assert.equal(batch.lines.length, 1);
+});
+
+test("amounts are read and shown in whole units", () => {
+  assert.equal(parseUnits("1.5", 6, "x", "x"), 1_500_000n);
+  assert.equal(parseUnits("100", 18, "x", "x"), 100n * WAD);
+  assert.throws(() => parseUnits("1.1234567", 6, "x", "x"), DecisionInputError);
+  assert.throws(() => parseUnits("-1", 6, "x", "x"), DecisionInputError);
+  assert.throws(() => parseUnits("", 6, "x", "x"), DecisionInputError);
+  assert.equal(formatUnits(1_234_567_000_000_000_000_000n, 18), "1,234.56");
+  assert.equal(formatUnits(5n * WAD, 18), "5");
+  assert.equal(formatUnits(12_345_678n, 6, 4), "12.3456");
+});
