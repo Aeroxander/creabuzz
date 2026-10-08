@@ -121,9 +121,15 @@ test("the launch calldata is exactly what cast encodes for the kit's launch(Para
 test("the executor is asked for by its launch salt, and a launch salt is stable per launch", () => {
   const salt = launchSalt("nebula");
   assert.equal(
-    encodeKitPredictExecutor(salt),
-    `${SELECTOR_KIT_PREDICT_EXECUTOR}${salt.slice(2)}`,
+    encodeKitPredictExecutor(SEAT_A, salt),
+    `${SELECTOR_KIT_PREDICT_EXECUTOR}${"0".repeat(24)}${SEAT_A.slice(2)}${salt.slice(2)}`,
   );
+  // cast calldata "predictExecutor(address,bytes32)" 0x1111… 0x2222…
+  assert.equal(
+    encodeKitPredictExecutor(SEAT_A, `0x${"22".repeat(32)}`),
+    "0x4e9a46c700000000000000000000000011111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
+  );
+  assert.throws(() => encodeKitPredictExecutor("0x12", salt));
   assert.equal(salt, launchSalt("nebula"));
   assert.notEqual(salt, launchSalt("other"));
 });

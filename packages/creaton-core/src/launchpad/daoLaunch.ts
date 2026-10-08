@@ -289,22 +289,32 @@ const PARAMS_TYPE: AbiType = {
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
 export const SIGNATURE_KIT_LAUNCH =
   "launch((string,string,string,uint96,bytes32,address[],uint256[],uint64,uint64,uint256,uint128,bytes,bytes32))";
-export const SIGNATURE_KIT_PREDICT_EXECUTOR = "predictExecutor(bytes32)";
+export const SIGNATURE_KIT_PREDICT_EXECUTOR =
+  "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
 export const SELECTOR_KIT_PREDICT_EXECUTOR = selectorOf(
   SIGNATURE_KIT_PREDICT_EXECUTOR,
 );
 
-/** The read that tells the client where the executor will be, so the auction config can name it. */
-export function encodeKitPredictExecutor(salt: string): string {
+/**
+ * The read that tells the client where the executor will be, so the auction config can name it. The launching wallet
+ * is part of the address: another wallet using the same salt gets different addresses.
+ */
+export function encodeKitPredictExecutor(
+  launcher: string,
+  salt: string,
+): string {
+  if (!ADDRESS_RE.test(launcher)) {
+    throw new Error(`launcher address is invalid: ${launcher}`);
+  }
   return encodeFunctionData(
     SIGNATURE_KIT_PREDICT_EXECUTOR,
-    ["bytes32"],
-    [salt],
+    ["address", "bytes32"],
+    [launcher, salt],
   );
 }
 
-/** The one transaction. `executor` is the kit's `predictExecutor(salt)` answer. */
+/** The one transaction. `executor` is the kit's `predictExecutor(launcher, salt)` answer. */
 export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
   if (!ADDRESS_RE.test(executor))
     throw new Error(`executor address is invalid: ${executor}`);

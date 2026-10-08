@@ -59,8 +59,8 @@ interface IKitSetThreshold {
 ///  5. creates the auction on the canonical factory, binds the executor to it, and has the executor fund it.
 ///
 /// Atomic: any failure reverts all of it, so there is no half-configured launch to recover. Every address it creates
-/// is CREATE2 from `salt`, so a client can compute the executor (which the auction config must name as both
-/// recipients) before sending.
+/// is CREATE2 from the launcher's address and `salt`, so a client can compute the executor (which the auction config
+/// must name as both recipients) before sending, and nobody else can use the same salt to take those addresses first.
 ///
 /// The kit trusts nothing it is given beyond arithmetic: the auction config it is handed must name the predicted
 /// executor as both recipients or `bindAuction` reverts; the DAO is born with default governance (14-day TTL and
@@ -115,18 +115,26 @@ contract DaoLaunchKit {
         factory = factory_;
     }
 
-    /// @notice The executor's address for a launch `salt`, before anything is sent. The auction config must name it.
-    function predictExecutor(bytes32 salt) public view returns (address) {
-        return _create2(_executorSalt(salt), keccak256(_executorInitcode()));
+    /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
+    /// name it. The launcher is part of the address, so another wallet reusing a salt gets different addresses and
+    /// cannot block this launch by deploying first.
+    function predictExecutor(address launcher, bytes32 salt) public view returns (address) {
+        return _create2(_executorSalt(launcher, salt), keccak256(_executorInitcode()));
     }
 
-    /// @notice The vault address for team member `index` of a launch `salt`.
-    function predictVault(bytes32 salt, uint256 index, address beneficiary, uint64 start, uint64 cliff, uint64 duration)
-        external
-        view
-        returns (address)
-    {
-        return _create2(_vaultSalt(salt, index), keccak256(_vaultInitcode(beneficiary, start, cliff, duration)));
+    /// @notice The vault address for team member `index` of `launcher`'s launch `salt`.
+    function predictVault(
+        address launcher,
+        bytes32 salt,
+        uint256 index,
+        address beneficiary,
+        uint64 start,
+        uint64 cliff,
+        uint64 duration
+    ) external view returns (address) {
+        return _create2(
+            _vaultSalt(launcher, salt, index), keccak256(_vaultInitcode(beneficiary, start, cliff, duration))
+        );
     }
 
     /// @notice The DAO address the summon will produce, given the launch's holders.
@@ -151,14 +159,15 @@ contract DaoLaunchKit {
         ShareVesting[] memory vaults = new ShareVesting[](n);
         address[] memory vaultAddresses = new address[](n);
         for (uint256 i; i < n; ++i) {
-            vaults[i] = new ShareVesting{salt: _vaultSalt(p.salt, i)}(
+            vaults[i] = new ShareVesting{salt: _vaultSalt(msg.sender, p.salt, i)}(
                 p.team[i], uint64(block.timestamp), p.vestCliff, p.vestDuration
             );
             vaultAddresses[i] = address(vaults[i]);
             holders[i] = vaultAddresses[i];
             amounts[i] = p.teamShares[i];
         }
-        GraduationExecutor exec = new GraduationExecutor{salt: _executorSalt(p.salt)}(address(this), 0, 30 days);
+        GraduationExecutor exec =
+            new GraduationExecutor{salt: _executorSalt(msg.sender, p.salt)}(address(this), 0, 30 days);
         executor = address(exec);
         holders[n] = executor;
         amounts[n] = p.saleSupply;
@@ -174,7 +183,9 @@ contract DaoLaunchKit {
         KitCall[] memory calls = new KitCall[](p.proposalThreshold == 0 ? 0 : 1);
         if (p.proposalThreshold != 0) {
             calls[0] = KitCall(
-                _predictDao(p.salt, holders, amounts), 0, abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold))
+                _predictDao(p.salt, holders, amounts),
+                0,
+                abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold))
             );
         }
         dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, calls);
@@ -198,16 +209,19 @@ contract DaoLaunchKit {
 
     // ---- address prediction ------------------------------------------------------------------
 
-    function _executorSalt(bytes32 salt) private pure returns (bytes32) {
-        return keccak256(abi.encode(salt, "executor"));
+    function _executorSalt(address launcher, bytes32 salt) private pure returns (bytes32) {
+        return keccak256(abi.encode(launcher, salt, "executor"));
     }
 
-    function _vaultSalt(bytes32 salt, uint256 index) private pure returns (bytes32) {
-        return keccak256(abi.encode(salt, "vault", index));
+    function _vaultSalt(address launcher, bytes32 salt, uint256 index) private pure returns (bytes32) {
+        return keccak256(abi.encode(launcher, salt, "vault", index));
     }
 
     function _executorInitcode() private view returns (bytes memory) {
-        return abi.encodePacked(type(GraduationExecutor).creationCode, abi.encode(address(this), uint16(0), uint64(30 days)));
+        return
+            abi.encodePacked(
+                type(GraduationExecutor).creationCode, abi.encode(address(this), uint16(0), uint64(30 days))
+            );
     }
 
     function _vaultInitcode(address beneficiary, uint64 start, uint64 cliff, uint64 duration)
@@ -224,10 +238,16 @@ contract DaoLaunchKit {
 
     /// @dev Mirrors the Summoner's clone address: `keccak256(abi.encode(holders, shares, salt))` against the
     /// minimal-proxy initcode of its Moloch implementation (the same prediction `OrgBinding` makes).
-    function _predictDao(bytes32 salt, address[] memory holders, uint256[] memory amounts) private view returns (address) {
+    function _predictDao(bytes32 salt, address[] memory holders, uint256[] memory amounts)
+        private
+        view
+        returns (address)
+    {
         bytes32 create2Salt = keccak256(abi.encode(holders, amounts, salt));
         bytes memory creationCode = abi.encodePacked(
-            hex"602d5f8160095f39f35f5f365f5f37365f73", summoner.getImplementation(), hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+            hex"602d5f8160095f39f35f5f365f5f37365f73",
+            summoner.getImplementation(),
+            hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
         );
         return address(
             uint160(

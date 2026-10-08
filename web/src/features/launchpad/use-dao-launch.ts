@@ -163,6 +163,7 @@ export function useDaoLaunch(input: {
         },
         kit,
         plan,
+        launcher: wallet.address,
         txStore,
         findLaunch: async (executor) => {
           // The executor was retargeted to the DAO by the kit, so its treasury is the DAO; the kit's own event for
@@ -247,6 +248,7 @@ export function useDaoLaunch(input: {
     record.chainId,
     record.id,
     txStore,
+    wallet.address,
     wallet.wallet,
   ]);
 

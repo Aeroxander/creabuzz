@@ -81,6 +81,7 @@ function world(over = {}) {
     },
     kit: KIT,
     plan,
+    launcher: LAUNCHER,
     txStore: {
       load: () => w.stored,
       save: (h) => {
@@ -309,4 +310,58 @@ test("storage that refuses writes does not stop a launch", async () => {
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, true);
   assert.equal(outcome.progress.txHash, TX);
+});
+
+test("a launch made by another wallet is never saved as this founder's, even with the same terms", async () => {
+  const stranger = "0x00000000000000000000000000000000000000ee";
+  // Found from the chain (this salt's executor already has code), but the kit says someone else launched it.
+  const adopted = world({
+    code: true,
+    findLaunch: async () => ({
+      txHash: TX,
+      logs: [
+        {
+          ...launchedLog(),
+          topics: [TOPIC_KIT_LAUNCHED, topic(DAO), topic(stranger)],
+        },
+      ],
+    }),
+  });
+  const outcome = await runDaoLaunch(adopted.deps);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.retry, "none");
+  assert.match(outcome.message, /different wallet/);
+  assert.equal(adopted.links, 0);
+  assert.equal(adopted.publishes, 0);
+});
+
+test("the wallet is asked for the executor's address, and no launch starts without one", async () => {
+  const asked = [];
+  const w = world();
+  const call = w.deps.effects.call;
+  w.deps.effects.call = async (c) => {
+    asked.push(c.data);
+    return call(c);
+  };
+  await runDaoLaunch(w.deps);
+  assert.match(
+    asked[0],
+    new RegExp(`^0x4e9a46c7${"0".repeat(24)}${LAUNCHER.slice(2)}`),
+  );
+
+  const none = world();
+  none.deps.launcher = null;
+  const outcome = await runDaoLaunch(none.deps);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.retry, "launch");
+  assert.equal(none.sends, 0);
+
+  // Finishing the bookkeeping of a launch this browser already sent needs no wallet.
+  const resumed = world({ stored: TX });
+  resumed.deps.launcher = null;
+  resumed.readReceipt = async () => ({
+    status: "success",
+    logs: [launchedLog()],
+  });
+  assert.equal((await runDaoLaunch(resumed.deps)).ok, true);
 });

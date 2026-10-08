@@ -34,7 +34,7 @@ struct KitParams {
 
 interface IKit {
     function launch(KitParams calldata p) external returns (address dao, address executor, address auction);
-    function predictExecutor(bytes32 salt) external view returns (address);
+    function predictExecutor(address launcher, bytes32 salt) external view returns (address);
 }
 
 /// @notice The one-transaction launch against the real auction factory and the real patched DAO.
@@ -117,7 +117,7 @@ contract DaoLaunchKitTest is Test {
     }
 
     function _launch(bytes32 salt) internal returns (Moloch dao, IExecutor executor, IAuction auction) {
-        address predicted = kit.predictExecutor(salt);
+        address predicted = kit.predictExecutor(founder, salt);
         vm.prank(founder);
         (address d, address e, address a) = kit.launch(_params(salt, predicted));
         assertEq(e, predicted, "the executor lands where the client computed it");
@@ -237,13 +237,17 @@ contract DaoLaunchKitTest is Test {
         uint256 beforeExit = currency.balanceOf(alice); // already holds the 360 her bid was refunded
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        assertEq(currency.balanceOf(alice) - beforeExit, uint256(800e18) * 180e18 / 700e18, "800 over the 700 member Shares, times her 180");
+        assertEq(
+            currency.balanceOf(alice) - beforeExit,
+            uint256(800e18) * 180e18 / 700e18,
+            "800 over the 700 member Shares, times her 180"
+        );
     }
 
     function test_a_launch_cannot_be_repeated_and_a_wrong_auction_config_reverts_everything() public {
         _needArtifacts();
         _launch(bytes32("nebula"));
-        address predicted = kit.predictExecutor(bytes32("nebula"));
+        address predicted = kit.predictExecutor(founder, bytes32("nebula"));
         vm.prank(founder);
         vm.expectRevert(); // CREATE2 collision: the salt is spent
         kit.launch(_params(bytes32("nebula"), predicted));
@@ -256,14 +260,30 @@ contract DaoLaunchKitTest is Test {
         kit.launch(p);
     }
 
+    function test_another_wallet_cannot_use_a_salt_to_take_the_founders_addresses() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("nebula");
+        address stranger = makeAddr("stranger");
+        // The same salt, from a different wallet, predicts different addresses.
+        assertTrue(kit.predictExecutor(stranger, salt) != kit.predictExecutor(founder, salt));
+        // The stranger launches first with the salt they saw the founder use.
+        KitParams memory theirs = _params(salt, kit.predictExecutor(stranger, salt));
+        vm.prank(stranger);
+        kit.launch(theirs);
+        // The founder's launch with that salt is untouched: it lands where the founder computed it.
+        (Moloch dao, IExecutor executor,) = _launch(salt);
+        assertEq(address(executor), kit.predictExecutor(founder, salt));
+        assertEq(executor.treasury(), address(dao), "the founder's executor pays the founder's DAO");
+    }
+
     function test_the_inputs_are_checked() public {
         _needArtifacts();
         bytes32 salt = bytes32("bad inputs");
-        KitParams memory p = _params(salt, kit.predictExecutor(salt));
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
         p.saleSupply = 0;
         vm.expectRevert();
         kit.launch(p);
-        p = _params(salt, kit.predictExecutor(salt));
+        p = _params(salt, kit.predictExecutor(founder, salt));
         p.teamShares = new uint256[](1);
         vm.expectRevert();
         kit.launch(p);

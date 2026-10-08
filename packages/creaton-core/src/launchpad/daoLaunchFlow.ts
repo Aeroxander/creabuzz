@@ -52,6 +52,12 @@ export interface DaoLaunchDeps {
   };
   kit: string;
   plan: DaoLaunchPlan;
+  /**
+   * The wallet that launches, or null when none is connected (finishing the bookkeeping of a launch this browser
+   * already sent needs none). The kit puts the launcher in every address it makes, so a launch is only ever found
+   * or adopted for this wallet, never for someone who used the same name.
+   */
+  launcher: string | null;
   /** Where the mined hash survives a reload. Blocked storage must not stop the launch. */
   txStore: {
     load(): string | null;
@@ -141,11 +147,14 @@ export async function runDaoLaunch(
 
   // 1. The transaction, once.
   if (progress.txHash === null) {
+    if (deps.launcher === null) {
+      return stop("send", "Connect your wallet to launch.", "launch");
+    }
     let data: string | null = null;
     try {
       const answer = await deps.effects.call({
         to: deps.kit,
-        data: encodeKitPredictExecutor(deps.plan.salt),
+        data: encodeKitPredictExecutor(deps.launcher, deps.plan.salt),
       });
       const executor = addressWord(answer);
       if (executor === null) {
@@ -244,6 +253,17 @@ export async function runDaoLaunch(
         "confirm",
         "The launch went through, but its result could not be read from the network's reply. Your hash is kept: try again, or look the transaction up on a block explorer.",
         "finish",
+      );
+    }
+    // The kit records who launched. A launch by any other wallet is not this founder's, whatever it is called.
+    if (
+      deps.launcher !== null &&
+      launched.launcher.toLowerCase() !== deps.launcher.toLowerCase()
+    ) {
+      return stop(
+        "confirm",
+        "That launch was made by a different wallet, so it was not saved to this page. Check the transaction on a block explorer.",
+        "none",
       );
     }
     if (launched.saleSupply !== deps.plan.saleSupply) {
