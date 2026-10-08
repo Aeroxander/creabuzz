@@ -1,6 +1,6 @@
 /**
  * Splits a note's text into what a client renders: plain text, links,
- * hashtags, `nostr:` mentions, quoted-event references and inline images.
+ * hashtags, `$TICKER` cashtags, `nostr:` mentions, quoted-event references and inline images.
  * Pure and alias-free: `social.test.mjs` drives it under `node --test`.
  */
 
@@ -11,11 +11,13 @@ export type Token =
   | { type: "link"; url: string }
   | { type: "image"; url: string }
   | { type: "hashtag"; tag: string }
+  | { type: "cashtag"; symbol: string }
   | { type: "mention"; pubkey: string }
   | { type: "event"; id: string; author?: string };
 
+// A cashtag is `$` and a ticker of 2 to 8 letters or digits that starts with a letter, so `$5` and `$100` stay prices.
 const TOKEN =
-  /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]|nostr:[0-9a-z]+|(?<=^|[\s(])#[\p{L}\p{N}_-]{2,64})/gu;
+  /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]|nostr:[0-9a-z]+|(?<=^|[\s(])#[\p{L}\p{N}_-]{2,64}|(?<=^|[\s(])\$[A-Za-z][A-Za-z0-9]{1,7}(?![A-Za-z0-9$]))/gu;
 const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?[^\s]*)?$/i;
 
 export function isImageUrl(url: string): boolean {
@@ -42,6 +44,8 @@ export function tokenize(text: string): Token[] {
       tokens.push({ type: "text", text: text.slice(last, index) });
     if (raw.startsWith("#")) {
       tokens.push({ type: "hashtag", tag: raw.slice(1).toLowerCase() });
+    } else if (raw.startsWith("$")) {
+      tokens.push({ type: "cashtag", symbol: raw.slice(1).toUpperCase() });
     } else if (raw.startsWith("nostr:")) {
       tokens.push(entityToken(parseEntity(raw), raw));
     } else if (isImageUrl(raw)) {
@@ -53,6 +57,15 @@ export function tokenize(text: string): Token[] {
   }
   if (last < text.length) tokens.push({ type: "text", text: text.slice(last) });
   return tokens;
+}
+
+/** Tickers written as `$TICKER`, upper-cased and deduplicated, in the order they first appear. */
+export function cashtagSymbols(text: string): string[] {
+  return [
+    ...new Set(
+      tokenize(text).flatMap((t) => (t.type === "cashtag" ? [t.symbol] : [])),
+    ),
+  ];
 }
 
 /** Pubkeys mentioned with `nostr:npub…` / `nostr:nprofile…`, deduplicated. */

@@ -7,6 +7,8 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { displayText } from "../../feed/lib/feed-events";
 import { tokenize } from "../lib/content";
+import { cashtagLabel } from "../lib/cashtag";
+import { useCashtagOwners } from "../use-cashtags";
 import { usePeople } from "../use-people";
 import { useNotesById } from "../use-social-data";
 
@@ -22,6 +24,28 @@ function Mention({ pubkey }: { pubkey: string }) {
       to="/u/$pubkey"
     >
       @{resolveUserName(people[pubkey], pubkey)}
+    </Link>
+  );
+}
+
+/**
+ * `$TICKER`: a link to the launch that owns the ticker, or plain text when nobody has claimed it. No price is shown
+ * here until the indexer can say where it came from: a number with no source would be invented.
+ */
+function Cashtag({ symbol }: { symbol: string }) {
+  const launch = useCashtagOwners().get(symbol);
+  if (!launch) return <>${symbol}</>;
+  return (
+    <Link
+      aria-label={cashtagLabel(symbol, launch)}
+      className="relative z-10 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-emerald-800 hover:underline dark:text-emerald-300"
+      data-testid="social-cashtag"
+      params={{ launchId: launch.record.id }}
+      search={{ action: undefined, author: launch.record.author }}
+      title={cashtagLabel(symbol, launch)}
+      to="/launchpad/$launchId"
+    >
+      ${symbol}
     </Link>
   );
 }
@@ -123,6 +147,8 @@ export function PostContent({
                   #{token.tag}
                 </Link>
               );
+            case "cashtag":
+              return <Cashtag key={key} symbol={token.symbol} />;
             case "mention":
               return <Mention key={key} pubkey={token.pubkey} />;
             case "link":
