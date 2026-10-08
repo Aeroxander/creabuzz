@@ -1,5 +1,9 @@
 # Governance mechanism study
 
+> **Superseded 2026-10-08.** The voting rule this document describes (accruing conviction against bars set as a
+> fraction of all Shares) was replaced after review: see [the current design](../token-voting-design.md), [the voting-rules
+> study](voting-v2-study.md) and [the review](../v3-review/PLAN.md). Kept as the record of why.
+
 Run: `. ./bin/activate-hermit; node scripts/simulate-dao-governance.mjs`.
 Seed: 20261008. This models governance incentives; local-EVM journeys separately verify implementation.
 

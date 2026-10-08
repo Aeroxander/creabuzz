@@ -1,5 +1,9 @@
 # Governance refinement and DAO simulation
 
+> **Superseded 2026-10-08.** The voting rule this document describes (accruing conviction against bars set as a
+> fraction of all Shares) was replaced after review: see [the current design](token-voting-design.md), [the voting-rules
+> study](simulations/voting-v2-study.md) and [the review](v3-review/PLAN.md). Kept as the record of why.
+
 Status: local implementation and validation complete, 2026-10-08. Evidence and
 remaining limits are recorded in [the validation report](simulations/governance-validation.md).
 This replaces the rechargeable

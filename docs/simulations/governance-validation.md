@@ -1,5 +1,9 @@
 # Governance refinement: evidence and limits
 
+> **Superseded 2026-10-08.** The voting rule this document describes (accruing conviction against bars set as a
+> fraction of all Shares) was replaced after review: see [the current design](../token-voting-design.md), [the voting-rules
+> study](voting-v2-study.md) and [the review](../v3-review/PLAN.md). Kept as the record of why.
+
 Local development study, 2026-10-08. The goal is a DAO that can choose priorities,
 authorize finite budgets, execute work and verify results with one voting design.
 This is a tested candidate, without a production deployment or security audit.
