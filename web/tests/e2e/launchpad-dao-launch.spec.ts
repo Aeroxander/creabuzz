@@ -11,7 +11,7 @@ import { wizardToPublish } from "../helpers/wizard";
  *
  *   scripts/web-dao-launch-e2e.sh
  *
- * What is real: the chain, the contracts (forge-built), every transaction, the vesting vaults, the auction and its
+ * What is real: the chain, the contracts (forge-built), every transaction, the team's milestone lock, the auction and its
  * graduation. What is stubbed: the relay (an in-memory mock that stores what the page publishes) and the wallet
  * (`window.ethereum` forwarding to Anvil's unlocked accounts).
  */
@@ -19,7 +19,7 @@ import { wizardToPublish } from "../helpers/wizard";
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
 const CURRENCY = process.env.E2E_CURRENCY ?? "";
 const KIT = process.env.E2E_LAUNCH_KIT ?? "";
-// Anvil's first dev account: the founder, and the wallet the team's Shares vest to.
+// Anvil's first dev account: the founder, and the wallet that holds (and votes with) the team's Shares.
 const FOUNDER_WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 // Anvil's second dev account: the backer.
 const BACKER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
@@ -66,8 +66,12 @@ const word = (value: string | bigint) =>
     .toLowerCase()
     .padStart(64, "0");
 
-async function callWord(to: string, data: string): Promise<bigint> {
-  return BigInt(String(await rpc("eth_call", [{ to, data }, "latest"])));
+async function callWord(
+  to: string,
+  data: string,
+  from?: string,
+): Promise<bigint> {
+  return BigInt(String(await rpc("eth_call", [{ from, to, data }, "latest"])));
 }
 
 const balanceOf = (token: string, holder: string) =>
@@ -135,6 +139,26 @@ function launchRecord(startBlock: number): StoredEvent {
         liquidity: 15,
         milestones: 10,
         community: 5,
+      },
+      // The team's Shares are theirs from the first block, but locked behind these two milestones.
+      unlocks: {
+        mode: "milestones",
+        allocationPct: 10,
+        milestones: [
+          {
+            claim: "m1",
+            label: "alpha shipped",
+            percent: 40,
+            verifier: "founder",
+          },
+          {
+            claim: "m2",
+            label: "mainnet live",
+            percent: 60,
+            verifier: "founder",
+          },
+        ],
+        months: null,
       },
     }),
     sig: "sig",
@@ -226,6 +250,7 @@ test("the founder launches a project into its own DAO with one button, and the p
   const summary = page.getByTestId("dao-launch-summary");
   await expect(summary).toContainText("200,000,000 Shares");
   await expect(summary).toContainText("600,000,000 Shares (they never vote)");
+  await expect(summary).toContainText("100% locked until its milestones");
 
   if (process.env.E2E_SHOTS) {
     await panel.screenshot({ path: `${process.env.E2E_SHOTS}/before.png` });
@@ -263,16 +288,24 @@ test("the founder launches a project into its own DAO with one button, and the p
   const payload = JSON.parse(receipt?.content ?? "{}");
   expect(payload.dao).toBe(dao.toLowerCase());
   expect(tag(receipt as StoredEvent, "tx")).toMatch(/^0x[0-9a-f]{64}$/);
-  const [vault] = payload.vaults as string[];
-  expect(vault).toMatch(/^0x[0-9a-f]{40}$/);
+  const lock = payload.lock as string;
+  expect(lock).toMatch(/^0x[0-9a-f]{40}$/);
+  expect(payload.milestones).toHaveLength(2);
 
-  // The chain agrees. The sale holds the sale tranche, the team's Shares sit in a
-  // vault (not in the founder's wallet), the DAO holds its own part, and the
-  // founder holds nothing at all.
+  // The chain agrees. The sale holds the sale tranche, the founder holds the whole
+  // team allocation (and so votes with it), the DAO holds its own part.
   expect(await balanceOf(shares, auction)).toBe(SALE);
-  expect(await balanceOf(shares, vault)).toBe(TEAM);
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(TEAM);
   expect(await balanceOf(shares, dao)).toBe(DAO_OWN);
-  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(0n);
+
+  // ...but none of it can leave until a milestone is reached: the lock says all of it is held back,
+  // and the Shares refuse a transfer.
+  const lockedOf = (holder: string) =>
+    callWord(lock, `0xa5f1e282${word(holder)}`);
+  expect(await lockedOf(FOUNDER_WALLET)).toBe(TEAM);
+  await expect(
+    callWord(shares, `0xa9059cbb${word(BACKER)}${word(1n)}`, FOUNDER_WALLET),
+  ).rejects.toThrow();
 
   // The DAO is the payee: nothing the founder signs can move the raise.
   const executor = payload.executor as string;
@@ -477,7 +510,8 @@ test("a launch made in the wizard, as published, launches into its DAO", async (
   const total = await callWord(shares, "0x18160ddd");
   expect(await balanceOf(shares, tag(launched, "auction"))).toBe(total / 5n);
   expect(await balanceOf(shares, dao)).toBe((total * 3n) / 5n);
-  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(0n);
+  // The team's 20% is in the founder's wallet from the first block (it votes), held back by the milestone lock.
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(total / 5n);
 });
 
 test("with no wallet in the browser the launch is off, and nothing is sent", async ({
@@ -591,8 +625,8 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
   expect(w(7)).toBe(1n); // executed
   expect((await balanceOf(CURRENCY, dao)) - daoMoneyBefore).toBe(raised);
   expect(await balanceOf(CURRENCY, executor)).toBe(0n);
-  // Unsold Shares went to the DAO too, never to a wallet.
+  // Unsold Shares went to the DAO too, never to a wallet: the founder still holds only the team allocation.
   expect(await balanceOf(shares, executor)).toBe(0n);
-  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(0n);
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(TEAM);
   await backerPage.close();
 });

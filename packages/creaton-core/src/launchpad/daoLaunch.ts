@@ -2,7 +2,7 @@
  * Launching a project into a DAO it does not control, in one transaction (`contracts/src/DaoLaunchKit.sol`).
  *
  * The old launch sold a token the founder minted and paid the raise to a wallet the founder chose. This path sells
- * the DAO's own Shares, vests the team's allocation, and settles the raise into the DAO, all in one atomic call, so
+ * the DAO's own Shares, holds back the team's allocation until its milestones, and settles the raise into the DAO, all in one atomic call, so
  * the client's job shrinks to: validate the plan, ask the kit where the executor will be (the auction config has to
  * name it), send one transaction, read one event.
  *
@@ -29,12 +29,18 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 /** The auction library rejects a sale larger than 2^100 base units. */
 const MAX_SALE_WEI = 1n << 100n;
 const MAX_UINT96 = (1n << 96n) - 1n;
-const DAY = 86_400;
+/** The lock holds at most this many milestones per team member. */
+export const MAX_MILESTONES = 8;
 
 export interface DaoLaunchSeat {
-  /** The team member's wallet: the address the vesting vault releases to. */
+  /** The team member's wallet: they hold and vote with their Shares from the first block. */
   address: string;
   /** Share of the TEAM allocation, in whole percent. The seats add up to 100. */
+  percent: number;
+}
+
+export interface DaoLaunchMilestone {
+  check: string;
   percent: number;
 }
 
@@ -47,8 +53,13 @@ export interface DaoLaunchInputs {
   allocation: { sale: number; team: number; dao: number };
   /** Required when `allocation.team` is above zero. */
   team: DaoLaunchSeat[];
-  /** The team's allocation unlocks linearly after the cliff. */
-  vesting: { cliffDays: number; durationDays: number };
+  /**
+   * What holds the team's Shares back: each milestone is judged by reviewers against its `check` (the exact words of
+   * its acceptance check) and unlocks `percent` of every team member's Shares. The founders hold and vote with all of
+   * them from the first block; only the unlocked part can be sold or ragequit. They add up to at most 100; what they
+   * leave out is never locked. Empty locks nothing.
+   */
+  milestones: DaoLaunchMilestone[];
   /** Whole Shares needed to open a proposal; "0" lets any holder. */
   proposalThreshold: string;
   /** Sale currency; null or "" is the chain's native currency. */
@@ -81,8 +92,12 @@ export interface DaoLaunchPlan {
   salt: string;
   team: string[];
   teamShares: bigint[];
-  vestCliff: bigint;
-  vestDuration: bigint;
+  /** keccak256 of each milestone's words, in order. */
+  milestoneChecks: string[];
+  /** The part of every team member's Shares each milestone unlocks, in basis points. */
+  milestoneBps: number[];
+  /** The words behind the hashes, for the receipt and the screen. */
+  milestones: DaoLaunchMilestone[];
   daoShares: bigint;
   saleSupply: bigint;
   totalSupply: bigint;
@@ -112,6 +127,11 @@ function percent(value: number, field: string): number {
     fail(field, `${field} must be a whole percent from 0 to 100.`);
   }
   return value;
+}
+
+/** keccak256 of some words: how an acceptance check is committed to. */
+export function keccak(words: string): string {
+  return `0x${bytesToHex(keccak_256(utf8ToBytes(words)))}`;
 }
 
 /** A launch's salt: stable across retries (so the addresses can be found again) and unique per launch. */
@@ -158,7 +178,7 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
   const teamShares: bigint[] = [];
   if (teamTotal > 0n) {
     if (inputs.team.length === 0) {
-      fail("team", "Name who the team allocation vests to.");
+      fail("team", "Name who holds the team allocation.");
     }
     if (inputs.team.length > 16)
       fail("team", "A launch has at most 16 team seats.");
@@ -180,15 +200,44 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
     if (wei === 0n) fail("team", "A team seat is too small to hold a Share.");
   }
 
-  const { cliffDays, durationDays } = inputs.vesting;
-  if (!Number.isInteger(cliffDays) || !Number.isInteger(durationDays)) {
-    fail("vesting", "Vesting is set in whole days.");
+  const milestones = teamTotal > 0n ? inputs.milestones : [];
+  if (milestones.length > MAX_MILESTONES) {
+    fail("milestones", `A launch has at most ${MAX_MILESTONES} milestones.`);
   }
-  if (
-    teamTotal > 0n &&
-    (durationDays <= 0 || cliffDays < 0 || cliffDays > durationDays)
-  ) {
-    fail("vesting", "Vesting needs a duration, and a cliff no longer than it.");
+  const milestoneChecks: string[] = [];
+  const milestoneBps: number[] = [];
+  let milestonePercent = 0;
+  for (const milestone of milestones) {
+    const words = milestone.check.trim();
+    if (words === "") {
+      fail(
+        "milestones",
+        "Every milestone needs the words it will be judged by.",
+      );
+    }
+    if (
+      !Number.isInteger(milestone.percent) ||
+      milestone.percent < 1 ||
+      milestone.percent > 100
+    ) {
+      fail(
+        "milestones",
+        "Each milestone unlocks a whole percent from 1 to 100.",
+      );
+    }
+    const hash = keccak(words);
+    if (milestoneChecks.includes(hash)) {
+      fail("milestones", `Two milestones are worded the same: ${words}`);
+    }
+    milestonePercent += milestone.percent;
+    milestoneChecks.push(hash);
+    milestoneBps.push(milestone.percent * 100);
+  }
+  if (milestonePercent > 100) {
+    fail(
+      "milestones",
+      `The milestones unlock ${milestonePercent}% of the team's Shares, which is more than all of them.`,
+    );
   }
 
   const threshold = wholeUnits(
@@ -254,8 +303,12 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
     salt: inputs.salt.toLowerCase(),
     team: teamAddresses,
     teamShares,
-    vestCliff: BigInt(cliffDays * DAY),
-    vestDuration: BigInt(durationDays * DAY),
+    milestoneChecks,
+    milestoneBps,
+    milestones: milestones.map((m) => ({
+      check: m.check.trim(),
+      percent: m.percent,
+    })),
     daoShares,
     saleSupply,
     totalSupply: total,
@@ -277,8 +330,8 @@ const PARAMS_TYPE: AbiType = {
     "bytes32", // salt
     { array: "address" }, // team
     { array: "uint256" }, // teamShares
-    "uint64", // vestCliff
-    "uint64", // vestDuration
+    { array: "bytes32" }, // milestoneChecks
+    { array: "uint16" }, // milestoneBps
     "uint256", // daoShares
     "uint128", // saleSupply
     "bytes", // auctionConfig
@@ -288,7 +341,7 @@ const PARAMS_TYPE: AbiType = {
 
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
 export const SIGNATURE_KIT_LAUNCH =
-  "launch((string,string,string,uint96,bytes32,address[],uint256[],uint64,uint64,uint256,uint128,bytes,bytes32))";
+  "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],uint256,uint128,bytes,bytes32))";
 export const SIGNATURE_KIT_PREDICT_EXECUTOR =
   "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
@@ -335,8 +388,8 @@ export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
         plan.salt,
         plan.team,
         plan.teamShares,
-        plan.vestCliff,
-        plan.vestDuration,
+        plan.milestoneChecks,
+        plan.milestoneBps.map(BigInt),
         plan.daoShares,
         plan.saleSupply,
         auctionConfig,
@@ -350,11 +403,11 @@ export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
 // The Launched event
 // ---------------------------------------------------------------------------
 
-/** `Launched(address,address,address,address,address,address[],uint128)`. */
+/** `Launched(address,address,address,address,address,address,uint128)`. */
 export const TOPIC_KIT_LAUNCHED = `0x${bytesToHex(
   keccak_256(
     utf8ToBytes(
-      "Launched(address,address,address,address,address,address[],uint128)",
+      "Launched(address,address,address,address,address,address,uint128)",
     ),
   ),
 )}`;
@@ -365,7 +418,8 @@ export interface KitLaunched {
   shares: string;
   executor: string;
   auction: string;
-  vaults: string[];
+  /** The milestone lock holding the team's Shares, or null when the launch locked nothing. */
+  lock: string | null;
   saleSupply: bigint;
 }
 
@@ -401,31 +455,16 @@ export function decodeKitLaunched(
       continue;
     }
     const data = log.data.replace(/^0x/, "");
-    if (data.length < 64 * 6 || data.length % 64 !== 0) continue;
+    if (data.length !== 64 * 5) continue;
     const w = (i: number) => data.slice(i * 64, (i + 1) * 64);
-    const offset = Number(BigInt(`0x${w(3)}`)) / 32;
-    if (
-      !Number.isInteger(offset) ||
-      offset < 5 ||
-      data.length < (offset + 1) * 64
-    )
-      continue;
-    const count = Number(BigInt(`0x${w(offset)}`));
-    if (
-      !Number.isSafeInteger(count) ||
-      count > 64 ||
-      data.length < (offset + 1 + count) * 64
-    )
-      continue;
+    const lock = wordAddress(w(3));
     return {
       dao: wordAddress((topics[1] as string).replace(/^0x/, "")),
       launcher: wordAddress((topics[2] as string).replace(/^0x/, "")),
       shares: wordAddress(w(0)),
       executor: wordAddress(w(1)),
       auction: wordAddress(w(2)),
-      vaults: Array.from({ length: count }, (_, i) =>
-        wordAddress(w(offset + 1 + i)),
-      ),
+      lock: BigInt(lock) === 0n ? null : lock,
       saleSupply: BigInt(`0x${w(4)}`),
     };
   }
@@ -444,6 +483,8 @@ export function describeDaoLaunch(plan: DaoLaunchPlan): {
    * outstanding (locked, but theirs) and share the treasury with the backers once they unlock.
    */
   backersExitBps: number;
+  /** The part of the team's allocation held back until a milestone is reached, in basis points (0 when none is). */
+  teamLockedBps: number;
 } {
   const team = plan.teamShares.reduce((a, b) => a + b, 0n);
   const outstanding = plan.saleSupply + team;
@@ -453,6 +494,7 @@ export function describeDaoLaunch(plan: DaoLaunchPlan): {
     treasury: plan.daoShares,
     total: plan.totalSupply,
     backersExitBps: Number((plan.saleSupply * 10_000n) / outstanding),
+    teamLockedBps: plan.milestoneBps.reduce((a, b) => a + b, 0),
   };
 }
 
@@ -486,27 +528,23 @@ export interface DaoLaunchRecordLike {
   startBlock: number | null;
   endBlock: number | null;
   claimBlock: number | null;
+  /** What the project's own allocation releases against (the wizard's unlock plan). */
+  unlocks: {
+    mode: string;
+    milestones: { label: string; percent: number }[];
+  } | null;
 }
-
-/** Vesting the team allocation starts from: a six-month cliff, then linear over four years. */
-export const DEFAULT_TEAM_VESTING = {
-  cliffDays: 180,
-  durationDays: 1460,
-} as const;
 
 /**
  * A record's launch inputs. The record stores the SALE tranche (`tokenPlan.supply`) and a percentage split, so the
- * total is the tranche over its share; the team allocation vests to the founder's wallet, and the treasury,
- * liquidity, milestone and community parts are the DAO's own from the start.
+ * total is the tranche over its share. The team allocation goes to the founder's wallet and votes from the first
+ * block, held back by the unlock plan's milestones (the words of each milestone are what its reviewers judge it by);
+ * the treasury, liquidity, milestone and community parts are the DAO's own from the start.
  */
 export function daoLaunchInputsFromRecord(
   record: DaoLaunchRecordLike,
   founder: string,
-  options: {
-    cliffDays?: number;
-    durationDays?: number;
-    proposalThreshold?: string;
-  } = {},
+  options: { proposalThreshold?: string } = {},
 ): DaoLaunchInputs {
   const plan = record.tokenPlan;
   if (plan?.mode !== "dao") {
@@ -529,6 +567,18 @@ export function daoLaunchInputsFromRecord(
   const total = (tranche * 100n) / BigInt(sale);
   const { team, treasury, liquidity, milestones, community } =
     record.allocation;
+  // The team's Shares unlock by milestones in a DAO launch: not by time. A record that never said locks nothing.
+  const unlocks = record.unlocks;
+  if (team > 0 && unlocks?.mode === "time") {
+    fail(
+      "unlocks",
+      "A launch into its own DAO unlocks the team's Shares by milestones, not by time. Choose milestones, or no lock.",
+    );
+  }
+  const lockMilestones =
+    team > 0 && unlocks?.mode === "milestones"
+      ? unlocks.milestones.map((m) => ({ check: m.label, percent: m.percent }))
+      : [];
   const threshold =
     options.proposalThreshold ??
     (total / 100n > 0n ? (total / 100n).toString() : "1");
@@ -542,10 +592,7 @@ export function daoLaunchInputsFromRecord(
       dao: treasury + liquidity + milestones + community,
     },
     team: team > 0 ? [{ address: founder, percent: 100 }] : [],
-    vesting: {
-      cliffDays: options.cliffDays ?? DEFAULT_TEAM_VESTING.cliffDays,
-      durationDays: options.durationDays ?? DEFAULT_TEAM_VESTING.durationDays,
-    },
+    milestones: lockMilestones,
     proposalThreshold: threshold,
     currency: record.currency,
     floorPrice: record.floorPrice ?? "",
@@ -600,7 +647,7 @@ export function daoLaunchGate(input: {
       ok: false,
       reason: "no-wallet",
       message:
-        "Connect your wallet to launch. It is the wallet your team allocation vests to.",
+        "Connect your wallet to launch. It is the wallet that holds your team allocation.",
     };
   }
   if (
@@ -636,14 +683,13 @@ export function daoLaunchReceiptContent(input: {
     shares: launched.shares,
     executor: launched.executor,
     auction: launched.auction,
-    vaults: launched.vaults,
+    lock: launched.lock,
     totalShares: plan.totalSupply.toString(),
     saleShares: plan.saleSupply.toString(),
     teamShares: plan.teamShares.map(String),
     daoShares: plan.daoShares.toString(),
     team: plan.team,
-    vestCliffSeconds: plan.vestCliff.toString(),
-    vestDurationSeconds: plan.vestDuration.toString(),
+    milestones: plan.milestones,
     ragequittable: true,
   };
 }

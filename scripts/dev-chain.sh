@@ -286,7 +286,7 @@ plan_lines() {
   echo "  3. org dao      forge script DeployOrgDao.s.sol  [skipped: deployments/org-dao-$DEV_CHAIN_ID.json names an OrgBinding that answers summoner()]"
   echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still says $CURRENCY_SYMBOL]"
   echo "  5. cca          place the CCA factory + Permit2 at their canonical addresses (anvil_setCode)  [skipped: the code there already matches the build output]"
-  echo "  6. launch kit   deploy DaoLaunchKit (summoner + CCA factory)  [skipped: deployments/dao-launch-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner and factory]"
+  echo "  6. launch kit   deploy DaoLaunchKit (summoner + CCA factory + the Shares implementation)  [skipped: deployments/dao-launch-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner and factory]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -559,6 +559,25 @@ kit_address() {
   manifest_role "$(kit_manifest_path)" "launch-kit"
 }
 
+# The Shares implementation every DAO this summoner makes clones. A DAO's Shares is a minimal proxy: nine bytes of
+# prefix, the implementation's address, then the tail, so read it off the newest DAO the summoner made. The kit needs
+# it to predict where a new DAO's Shares will be (it sets the team's lock there before the DAO exists).
+shares_implementation() { # <summoner> -> address
+  local dao shares code
+  dao=$(cast logs --json --rpc-url "$RPC_URL" --from-block 0 --address "$1" "NewDAO(address,address)" 2>/dev/null \
+    | node -e '
+      const logs = JSON.parse(require("fs").readFileSync(0, "utf8"));
+      if (logs.length) console.log("0x" + logs[logs.length - 1].topics[2].slice(-40));
+    ' 2>/dev/null || true)
+  [[ -n "$dao" ]] || return 1
+  shares=$(cast call "$dao" "shares()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}') || return 1
+  [[ -n "$shares" ]] || return 1
+  code=$(cast code "$shares" --rpc-url "$RPC_URL" 2>/dev/null) || return 1
+  # "0x" + 9 bytes (18 hex characters) of prefix, then 20 bytes (40 characters).
+  [[ ${#code} -ge 60 ]] || return 1
+  echo "0x${code:20:40}"
+}
+
 # Guard: the manifest exists, its kit has code, and it still points at THIS chain's Summoner and CCA factory.
 # A kit left over from a chain that was restarted (fresh state, stale manifest) names a summoner that is gone.
 launch_kit_deployed() {
@@ -572,7 +591,8 @@ launch_kit_deployed() {
   summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   got_factory=$(cast call "$address" "factory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]] \
-    && [[ "$(lower "$got_factory")" == "$(lower "$CCA_FACTORY_ADDRESS")" ]]
+    && [[ "$(lower "$got_factory")" == "$(lower "$CCA_FACTORY_ADDRESS")" ]] \
+    && [[ -n "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]]
 }
 
 deploy_launch_kit() {
@@ -589,10 +609,14 @@ deploy_launch_kit() {
   if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/DaoLaunchKit.sol) >/dev/null; then
     fail_step "launch-kit" "forge build src/DaoLaunchKit.sol failed"
   fi
-  local bytecode args data receipt status address block
+  local bytecode args data receipt status address block shares_impl
+  shares_impl=$(shares_implementation "$summoner") \
+    || fail_step "launch-kit" "cannot read the Shares implementation off a DAO this summoner made"
+  [[ "$(code_bytes "$shares_impl")" != "0" ]] \
+    || fail_step "launch-kit" "the Shares implementation $shares_impl has no code"
   bytecode=$(artifact_field "$REPO_ROOT/contracts/out/DaoLaunchKit.sol/DaoLaunchKit.json" bytecode.object) \
     || fail_step "launch-kit" "cannot read the DaoLaunchKit artifact"
-  args=$(cast abi-encode "constructor(address,address)" "$summoner" "$CCA_FACTORY_ADDRESS") \
+  args=$(cast abi-encode "constructor(address,address,address)" "$summoner" "$CCA_FACTORY_ADDRESS" "$shares_impl") \
     || fail_step "launch-kit" "cast abi-encode constructor args failed"
   data="0x${bytecode#0x}${args#0x}"
   if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
@@ -610,13 +634,15 @@ deploy_launch_kit() {
     || fail_step "launch-kit" "deploy tx mined as ${status:-unknown} (no address)"
   [[ "$(code_bytes "$address")" != "0" ]] \
     || fail_step "launch-kit" "receipt reported $address but there is no code there"
+  [[ "$(lower "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$shares_impl")" ]] \
+    || fail_step "launch-kit" "the deployed kit does not report the Shares implementation $shares_impl"
   node -e '
     const fs = require("fs");
     const [file, chainId, tx, block, address] = process.argv.slice(1);
     fs.writeFileSync(file, JSON.stringify({
       chainId: Number(chainId),
       project: "buzz-dev-chain",
-      note: "scripts/dev-chain.sh — DaoLaunchKit(summoner, CCA factory)",
+      note: "scripts/dev-chain.sh — DaoLaunchKit(summoner, CCA factory, Shares implementation)",
       tx,
       block: Number(block),
       roles: [{ role: "launch-kit", address }],

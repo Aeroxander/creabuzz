@@ -18,12 +18,6 @@ import { UnauditedNotice } from "./UnauditedNotice";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 0 });
 
-function years(seconds: bigint): string {
-  const months = Math.round(Number(seconds) / (30.4375 * 86_400));
-  if (months >= 24 && months % 12 === 0) return `${months / 12} years`;
-  return months === 1 ? "1 month" : `${months} months`;
-}
-
 /** Basis points as a plain percentage: "50%", "57.1%". */
 function percentText(bps: number): string {
   const whole = bps / 100;
@@ -33,8 +27,8 @@ function percentText(bps: number): string {
 type StepStatus = "done" | "running" | "failed" | "pending";
 
 /**
- * Launch the project with its own DAO: one transaction creates the DAO, opens the sale of its Shares, vests the
- * team's allocation to the founder's wallet and points the raise at the DAO's treasury. Nothing is held by the
+ * Launch the project with its own DAO: one transaction creates the DAO, opens the sale of its Shares, gives the
+ * team's allocation to the founder's wallet (locked until its milestones) and points the raise at the DAO's treasury. Nothing is held by the
  * founder's wallet in between, and nothing needs to be deployed first.
  *
  * Only the transaction spends money, and it is sent once. Saving the result to this launch and publishing its
@@ -139,7 +133,8 @@ export function DaoLaunchPanel({
         One transaction creates the project's DAO and opens the sale of its
         Shares. The raise goes straight to the DAO's treasury, never to your
         wallet, and backers can leave with their part of it. Your team
-        allocation vests to your wallet over time.
+        allocation is yours to vote with from the start; the part tied to a
+        milestone cannot be sold or taken out until that milestone is reached.
       </p>
       {summary ? (
         <dl
@@ -152,7 +147,9 @@ export function DaoLaunchPanel({
           <dd>
             {shares(summary.team)} Shares
             {plan && summary.team > 0n
-              ? `, unlocking after ${years(plan.vestCliff)}, fully by ${years(plan.vestDuration)}`
+              ? summary.teamLockedBps > 0
+                ? `, ${percentText(summary.teamLockedBps)} locked until ${plan.milestones.length === 1 ? "its milestone is" : "its milestones are"} reached`
+                : ", none of it locked"
               : ""}
           </dd>
           <dt className="text-black/60 dark:text-white/60">Kept by the DAO</dt>
@@ -164,7 +161,7 @@ export function DaoLaunchPanel({
             {percentText(summary.backersExitBps)} of the treasury if the sale
             sells out
             {summary.team > 0n
-              ? `; your team's ${percentText(10_000 - summary.backersExitBps)} unlocks over time`
+              ? `; your team's ${percentText(10_000 - summary.backersExitBps)} ${summary.teamLockedBps > 0 ? "is held back until its milestones are reached" : "is not locked"}`
               : ""}
           </dd>
         </dl>

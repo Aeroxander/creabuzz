@@ -41,12 +41,24 @@ surface that wraps upstream primitives:
   project's share allowance. A mandate with no currency is how a project
   that never raised rewards contributors.
 - `src/DaoLaunchKit.sol` — launches a project into a DAO in one atomic
-  transaction: vesting vaults for the team (`src/ShareVesting.sol`), a
-  `GraduationExecutor` it runs, the DAO (via the Summoner), the sale on the
-  canonical CCA, and the raise's payee set to the DAO. Built with solc 0.8.26
+  transaction: the team's Shares minted straight to the team and held back by
+  a `MilestoneLock`, a `GraduationExecutor` it runs, the DAO (via the
+  Summoner), the sale on the canonical CCA, and the raise's payee set to the
+  DAO. Needs the Shares implementation address (every DAO the Summoner makes
+  clones one) so it can name the lock before the DAO exists. Built with solc 0.8.26
   (the CCA's pin), so the tests that exercise it deploy its artifact; set
   `REQUIRE_CONTRACT_ARTIFACTS=1` to make a missing artifact fail instead of
   skip.
+- `src/MilestoneLock.sol` + `src/MilestoneBadge.sol` — the team's Shares are
+  theirs to hold and vote with from the first block, but a milestone-tied part
+  cannot be transferred or burned (so not sold and not ragequit) until that
+  milestone is reached. A milestone is a work claim approved by a mandate's
+  independent reviewers; `unlock` is permissionless and mints the founder a
+  soulbound badge. The DAO can `forfeit` a departed founder's remaining
+  tranches. The Shares contract exposes the lock as its `lockGuard` and is
+  ERC-20C compatible (see `docs/token-voting-design.md`).
+- `src/ShareVesting.sol` — time vesting. The launch kit no longer uses it
+  (milestones replaced time); it remains for DAOs that want a plain schedule.
 - `src/OrgAllowance.sol` — agent spend allowances that enforce where money
   moves: `spendTo` debits the ledger and pays from the treasury in one call
   (`spend` is advisory accounting only); spends may not name a future epoch.

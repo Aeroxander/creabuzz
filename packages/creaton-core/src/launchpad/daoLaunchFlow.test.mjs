@@ -9,6 +9,7 @@ const EXECUTOR = "0x6666666666666666666666666666666666666666";
 const DAO = "0x7777777777777777777777777777777777777777";
 const SHARES = "0x8888888888888888888888888888888888888888";
 const AUCTION = "0x9999999999999999999999999999999999999999";
+const LOCK = "0x3333333333333333333333333333333333333333";
 const LAUNCHER = "0x1111111111111111111111111111111111111111";
 const TX = `0x${"ab".repeat(32)}`;
 
@@ -18,7 +19,7 @@ const plan = planDaoLaunch({
   totalSupply: "1000",
   allocation: { sale: 40, team: 30, dao: 30 },
   team: [{ address: LAUNCHER, percent: 100 }],
-  vesting: { cliffDays: 180, durationDays: 1460 },
+  milestones: [{ check: "alpha shipped", percent: 100 }],
   proposalThreshold: "10",
   currency: null,
   floorPrice: "79228162514264337593543950336",
@@ -39,9 +40,8 @@ const launchedLog = (saleSupply = plan.saleSupply, emitter = KIT) => ({
     word(SHARES),
     word(EXECUTOR),
     word(AUCTION),
-    word(5 * 32), // the vaults array starts after the five head words
+    word(LOCK),
     word(saleSupply),
-    word(0), // no vaults
   ].join("")}`,
 });
 
