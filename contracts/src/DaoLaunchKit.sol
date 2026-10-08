@@ -31,6 +31,10 @@ interface IKitDao {
     function shares() external view returns (address);
 }
 
+interface IKitErc20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
 interface IKitAuctionFactory {
     function create(address token, uint256 amount, bytes calldata configData, bytes32 salt)
         external
@@ -49,8 +53,8 @@ interface IKitSetThreshold {
 ///  1. deploys a `ShareVesting` vault per team member (their allocation votes through a delegate but cannot be
 ///     ragequit until it vests: otherwise a founder could withdraw their percentage of the raise on day one);
 ///  2. deploys a `GraduationExecutor` it will run (it is the executor's launcher);
-///  3. summons the DAO with the vaults and the executor as its only initial holders, so the sale tranche is minted
-///     straight to the executor;
+///  3. summons the DAO with the vaults, the executor and (for an allocation the DAO keeps itself) this kit as its only
+///     initial holders, so the sale tranche is minted straight to the executor;
 ///  4. points the vaults at the DAO's Shares and the executor's payee at the DAO;
 ///  5. creates the auction on the canonical factory, binds the executor to it, and has the executor fund it.
 ///
@@ -80,6 +84,9 @@ contract DaoLaunchKit {
         uint256[] teamShares;
         uint64 vestCliff;
         uint64 vestDuration;
+        /// Shares the DAO holds itself from the start: treasury, liquidity, milestones, community. They never vote
+        /// (they are outside voting supply) and never count toward a member's ragequit share.
+        uint256 daoShares;
         /// Shares minted to the executor for the auction.
         uint128 saleSupply;
         /// `abi.encode(AuctionParameters)` with the PREDICTED executor as tokensRecipient and fundsRecipient.
@@ -138,8 +145,9 @@ contract DaoLaunchKit {
 
         // 1 and 2. Vaults and the executor, each at a deterministic address.
         uint256 n = p.team.length;
-        address[] memory holders = new address[](n + 1);
-        uint256[] memory amounts = new uint256[](n + 1);
+        uint256 slots = n + (p.daoShares == 0 ? 1 : 2);
+        address[] memory holders = new address[](slots);
+        uint256[] memory amounts = new uint256[](slots);
         ShareVesting[] memory vaults = new ShareVesting[](n);
         address[] memory vaultAddresses = new address[](n);
         for (uint256 i; i < n; ++i) {
@@ -154,6 +162,12 @@ contract DaoLaunchKit {
         executor = address(exec);
         holders[n] = executor;
         amounts[n] = p.saleSupply;
+        // The DAO's own allocation is minted to this kit for the length of the call (the DAO's address is not known
+        // until the summon) and passed on the moment the DAO exists.
+        if (p.daoShares != 0) {
+            holders[n + 1] = address(this);
+            amounts[n + 1] = p.daoShares;
+        }
 
         // 3. The DAO. Its only initial holders are contracts this call just made, so nobody but the vaults
         //    and the executor holds a Share until the auction sells them.
@@ -165,6 +179,8 @@ contract DaoLaunchKit {
         }
         dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, calls);
         address shares = IKitDao(dao).shares();
+
+        if (p.daoShares != 0) require(IKitErc20(shares).transfer(dao, p.daoShares), "kit: dao allocation");
 
         // 4. Wire the vaults and the payee.
         for (uint256 i; i < n; ++i) {

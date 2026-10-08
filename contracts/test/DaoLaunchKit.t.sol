@@ -26,6 +26,7 @@ struct KitParams {
     uint256[] teamShares;
     uint64 vestCliff;
     uint64 vestDuration;
+    uint256 daoShares;
     uint128 saleSupply;
     bytes auctionConfig;
     bytes32 auctionSalt;
@@ -105,10 +106,11 @@ contract DaoLaunchKitTest is Test {
         p.team[0] = founder;
         p.team[1] = cofounder;
         p.teamShares = new uint256[](2);
-        p.teamShares[0] = 450e18;
-        p.teamShares[1] = 150e18;
+        p.teamShares[0] = 225e18;
+        p.teamShares[1] = 75e18;
         p.vestCliff = 180 days;
         p.vestDuration = 4 * 365 days;
+        p.daoShares = 300e18; // treasury, milestones, community: the DAO's own, outside voting and outside exits
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
         p.auctionSalt = salt;
@@ -128,8 +130,9 @@ contract DaoLaunchKitTest is Test {
         Shares shares = dao.shares();
         AllocationVoting policy = AllocationVoting(dao.votingWeight());
 
-        // The supply: the team's two vaults and the auction. No wallet holds a Share.
+        // The supply: the team's two vaults, the DAO's own allocation, and the auction. No wallet holds a Share.
         assertEq(shares.totalSupply(), 1000e18);
+        assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO keeps its own allocation");
         assertEq(shares.balanceOf(address(auction)), SALE, "the sale tranche sits in the auction");
         assertEq(shares.balanceOf(address(executor)), 0, "and the executor passed it all on");
         assertEq(shares.balanceOf(founder), 0);
@@ -153,6 +156,46 @@ contract DaoLaunchKitTest is Test {
         // Each vault holds its member's allocation and hands its voting to that member.
         // (The vault addresses are in the Launched event; here, find them through the policy's holders.)
         assertEq(policy.totalCapacity(), 1000e18);
+    }
+
+    function test_the_daos_own_allocation_never_votes_and_never_dilutes_an_exit() public {
+        _needArtifacts();
+        (Moloch dao, IExecutor executor, IAuction auction) = _launch(bytes32("own"));
+        Shares shares = dao.shares();
+        AllocationVoting policy = AllocationVoting(dao.votingWeight());
+        vm.roll(START_BLOCK);
+        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        address carol = makeAddr("carol");
+        uint256 carolBid = _bid(address(auction), carol, 240e18, 2 * Q96, Q96);
+        uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
+        vm.roll(END_BLOCK + 1);
+        auction.checkpoint();
+        executor.executeGraduation(address(auction));
+        vm.roll(END_BLOCK + 2);
+        vm.prank(bob);
+        auction.exitBid(bobBid);
+        vm.prank(alice);
+        auction.exitPartiallyFilledBid(aliceBid, START_BLOCK, 0);
+        vm.prank(carol);
+        auction.exitPartiallyFilledBid(carolBid, START_BLOCK, 0);
+        vm.roll(CLAIM_BLOCK);
+        vm.prank(alice);
+        auction.claimTokens(aliceBid);
+        vm.roll(block.number + 1);
+        // Voting supply leaves out the DAO's own 300: 1000 total, 700 that could ever vote.
+        vm.prank(alice);
+        dao.castVote(1, 1, 180e18);
+        (uint96 votingSupply,,,,,,,,,) = dao.proposalVotingRules(1);
+        assertEq(votingSupply, 700e18);
+        assertEq(policy.weightFor(bytes32(uint256(1)), address(dao), uint48(block.number - 1)), 0);
+        // And her exit divides the treasury by the 700 that are members' Shares, not by 1000.
+        address[] memory assets = new address[](1);
+        assets[0] = address(currency);
+        uint256 before_ = currency.balanceOf(alice);
+        vm.prank(alice);
+        dao.ragequit(assets, 180e18, 0);
+        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 700e18);
+        assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO's allocation is untouched");
     }
 
     function test_the_whole_launch_ends_with_the_raise_in_the_dao_and_votes_in_the_backers_hands() public {
@@ -194,7 +237,7 @@ contract DaoLaunchKitTest is Test {
         uint256 beforeExit = currency.balanceOf(alice); // already holds the 360 her bid was refunded
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        assertEq(currency.balanceOf(alice) - beforeExit, 144e18, "800 over 1000 Shares, times the 180 she holds");
+        assertEq(currency.balanceOf(alice) - beforeExit, uint256(800e18) * 180e18 / 700e18, "800 over the 700 member Shares, times her 180");
     }
 
     function test_a_launch_cannot_be_repeated_and_a_wrong_auction_config_reverts_everything() public {

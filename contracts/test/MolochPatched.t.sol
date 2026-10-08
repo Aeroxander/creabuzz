@@ -123,6 +123,20 @@ contract MolochPatchedTest is VotingFixture {
         dao.castVote(1, 1, 100e18);
     }
 
+    function test_shares_the_dao_holds_itself_do_not_dilute_an_exit() public {
+        vm.prank(address(dao));
+        shares.mintFromMoloch(address(dao), 100e18); // 100 of the DAO's own beside ALICE's 100
+        vm.deal(address(dao), 100 ether);
+        address[] memory assets = new address[](1);
+        assets[0] = address(0);
+        vm.prank(ALICE);
+        dao.ragequit(assets, 50e18, 0);
+        // Members hold 200 units (ALICE's 100 Shares and BOB's 100 Loot); the DAO's own 100 Shares are nobody's.
+        // Burning 50 of the 200 pays a quarter of the 100 ether. (Counting the DAO's 100 in the total, 300, would
+        // have paid her 16.67.)
+        assertEq(ALICE.balance, 25 ether);
+    }
+
     function test_snapshots_exclude_new_shares() public {
         vm.prank(ALICE);
         dao.openProposal(1);
@@ -154,9 +168,9 @@ contract MolochPatchedTest is VotingFixture {
     function test_no_futarchy_policy_or_delegatecall_bypass() public {
         vm.expectRevert(Moloch.NotOk.selector);
         dao.fundFutarchy(1, address(0), 1);
-        vm.prank(address(dao));
-        vm.expectRevert(Moloch.NotOk.selector);
-        dao.setVotingWeight(address(1));
+        // The voting policy cannot be swapped: there is no entry point to try (the old stub only reverted).
+        (bool swapped,) = address(dao).call(abi.encodeWithSignature("setVotingWeight(address)", address(1)));
+        assertFalse(swapped);
         vm.prank(address(dao));
         vm.expectRevert(Moloch.NotOk.selector);
         dao.setAutoFutarchy(1, 0);

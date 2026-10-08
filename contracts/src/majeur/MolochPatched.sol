@@ -64,8 +64,8 @@ contract Moloch {
     address immutable policyImpl;
     bool public castingVote;
     bool public convertingLoot;
-    /// @notice Compatibility entry point. The voting policy is fixed at creation.
-    function setVotingWeight(address) public payable onlyDAO { revert NotOk(); }
+    // (No `setVotingWeight`: the policy is fixed at creation, and a stub that only reverted cost bytes this contract
+    // does not have.)
 
     /// @notice Maximum eligible target allocation at the opening snapshot.
     function weightFor(uint256 id, address owner, uint48 snapshot) public view returns (uint256) {
@@ -1037,6 +1037,11 @@ contract Moloch {
             Loot _loot = loot;
 
             uint256 total = _shares.totalSupply() + _loot.totalSupply();
+    // @@CREABUZZ PATCH BEGIN ragequit-excludes-treasury-shares
+            // Shares the DAO holds itself (an allocation kept for grants, milestones, liquidity) belong to no one and
+            // can never be ragequit: leaving them in the denominator would shrink every member's exit by their weight.
+            total -= _shares.balanceOf(address(this)) + _loot.balanceOf(address(this));
+    // @@CREABUZZ PATCH END ragequit-excludes-treasury-shares
             if (sharesToBurn != 0) _shares.burnFromMoloch(msg.sender, sharesToBurn);
             if (lootToBurn != 0) _loot.burnFromMoloch(msg.sender, lootToBurn);
 
