@@ -73,10 +73,10 @@ On top of that, **founders hold and vote with their Shares from the first block,
 - The Work tab reads whole-history logs the same way, bounded in count (8 budgets, 50 projects, 100 claims) but not in
   block range.
 
-- **The founder's locked Shares vote from day one.** At a 20% sale / 20% team split the founder holds all of the voting
-  supply until the sale ends, and then about half of it. That is what "founders vote but cannot sell" means, and it is
-  the point to decide on: the alternative is for locked Shares not to vote until they unlock. The launch panel says
-  how much is locked; the exit screens elsewhere do not yet.
+- **The founder's locked Shares vote from day one** (decided, D13). At a 20% sale / 20% team split the founder holds all
+  of the voting supply until the sale ends, and then about half of it. The protections for everyone else are review
+  time, hold time, the execution delay and exit rights. The launch panel says how much is locked; the exit screens
+  elsewhere do not yet.
 - A milestone is judged by a **project** whose acceptance check is the milestone's exact words, so each milestone
   needs a project the DAO votes in (the claim's check has to equal the project's to be bound). The Work tab says to
   file the claim "with these exact words"; it cannot yet create the project.

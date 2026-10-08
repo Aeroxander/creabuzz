@@ -18,6 +18,7 @@ column says what that costs.
 | D10 | Working tree | New branch `v4-governance-rework`, WIP committed unchanged as checkpoint commits first | Reviewable diff against what you had | n/a |
 | D11 | Team allocation | **Held and voted by the team from day one, locked by milestones** (replaces time vesting for DAO launches). The lock lives in `Shares`, so it also stops ragequit; a soulbound badge is the receipt | You asked for founders who can vote but not sell or ragequit until a milestone; a lock in the token cannot be bypassed by trading elsewhere | Medium: the kit's ABI and the Work tab depend on it |
 | D12 | Market venue | **LBAMM with Shares as the apptoken**, no Uniswap v4 pool beside it; not integrated yet. Start with Vanilla transfers, the DAO can vote stricter rules in | You do not want both venues; LBAMM is evaluation-only so nothing goes on a public network | Low until a pool exists. See [LBAMM.md](LBAMM.md) |
+| D13 | Do locked founder Shares vote? | **Yes, from day one** (you confirmed on 2026-10-09). The part tied to a milestone cannot be sold or taken out, but it counts when the DAO votes | "Founders vote but cannot sell" is the point; the protection is review time, hold time, the execution delay and exit rights for everyone else | Low: it is how the Shares already work. Only a guard that hid locked Shares from voting weight would change it |
 
 Hard limits I am holding to regardless: nothing is pushed (the remote is a public repo), mainnet stays off, every
 launch flow keeps its "unaudited" notice, no secrets or keys are written to the repo.
