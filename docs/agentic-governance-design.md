@@ -2,6 +2,11 @@
 
 `draft` `design` `web` `desktop` `cli` `contracts`
 
+**Voting update 2026-10-08:** [the candidate Shares conviction policy](token-voting-design.md)
+supersedes the original D1/D3/D7 voting routes: every executable decision uses
+one movable allocation ballot, single-source delegation, and no futarchy rewards.
+Signals, evidence, receipts, scoped execution and the visible dissent door remain.
+
 Design contract for the governance slice. Principle source: the
 legitimacy-infrastructure paper ("DAOs are legitimacy infrastructure for new
 organizational forms", provided 2026-09-26) — v1's failure was applying one
@@ -32,13 +37,13 @@ and does not ship. This test is the acceptance criterion for every panel in
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | **Decision routing over ballots.** Proposal kind selects the native mechanism (§2). Never a generic yes/no across decision types. | **decided** |
+| D1 | **One voting design.** All executable proposal kinds use the Shares conviction ballot; signals remain deliberation (§2). | **decided** |
 | D2 | **Ragequit is always visible** on every governance surface — the dissent door legitimizes the rest. | **decided** |
-| D3 | **Delegation is first-class:** majeur's split delegation surfaces in the main flow, not a settings page. Agents may be delegates under attenuating, revocable grants. | **decided** |
+| D3 | **Delegation is first-class:** single-owner allocation delegation surfaces in the main flow, not a settings page. Agents may be delegates under attenuating, revocable grants. | **decided** |
 | D4 | **Every governance action emits a receipt** (47005 vocabulary, §5) + an audit-chain entry. The observational boundary is the product. | **decided** |
 | D5 | **Authority is visible:** proposal and vote cards render the acting grant chain — who acted, under which grant, with what budget/scope, bound to what evidence. | **decided** |
-| D6 | **Quorum math in plain language** before any vote: snapshot block, quorum (bps or absolute), FOR>AGAINST, minYes, TTL, timelock — the exact majeur rules, spelled out. | **decided** |
-| D7 | **Futarchy stays scoped to budget/subDAO allocation only** (reaffirmed from the launchpad plan; the paper's "mechanism per information structure" is the reason). | **decided** |
+| D6 | **Quorum math in plain language** before any vote: snapshot block, current and matured backing, minimum review, captured quorum, TTL and timelock — the exact policy rules, spelled out. | **decided** |
+| D7 | **Budget proposals use the same Shares policy.** Futarchy funding and rewards are disabled. | **decided** |
 | D8 | **Mirror-only fallback:** every action degrades honestly to record-only (treasury action against the recorded verdict) when the launch is not wired onchain — the same rule as the tranche join (`claim-submit.ts`). | **decided** |
 | D9 | **Agent reasoning stays tiered** in governance contexts: channel sees verb/object/outcome; full chain of thought is owner-only. Raw reasoning never enters shared channels (information-flow rule). | **decided** |
 | D10 | Vote-mirror vocabulary: extend the 47005 receipt tables vs new kinds; delegation UX granularity; agent vote policy (mandate vs advisory). | open (§6) |
@@ -46,22 +51,23 @@ and does not ship. This test is the acceptance criterion for every panel in
 ## 2. The decision-routing map (the spine)
 
 The 47004 proposal record already distinguishes `plain | futarchy-budget |
-signal` — that marker IS the routing key. Each kind gets its native
-mechanism, chosen to match the decision's information structure:
+signal`. Signals carry discussion; both executable kinds share the same ballot:
 
 | Decision | Why that mechanism | Surface | Onchain target |
 |---|---|---|---|
 | **`signal`** — sentiment, roadmap taste | Distributed knowledge: deliberation aggregates it; a vote misprices it | Discussion thread + linked git issue; outcome = a wiki standup summary. **No ballot.** | none |
-| **`plain`** — parameters, general policy | Bounded yes/no with stakes: majeur's ruleset (N-1 snapshot, quorum bps/absolute, FOR>AGAINST + minYes, TTL + timelock, execute-by-votes or permits) | Proposal card + D6 quorum math + authority chain | majeur `submitProposal` / `submitVote` / `processProposal` |
-| **`futarchy-budget`** — budget & subDAO allocation | Forecasting, not opinion: markets price outcomes better than ballots | Card + market state, futarchy-marked | majeur futarchy reward pools (per-proposal; YES auto-resolves on execute, NO via `resolve`) |
-| **Membership / contribution entry** | Contribution evidence, not token weight: tribute joins by contribution; badges tier by delivery | Org-board join flow (Tribute lock → vote → claim shares/loot) + soulbound badge | majeur Tribute peripheral |
+| **`plain`** — parameters, general policy | Opening Shares snapshot; current majority and FOR conviction floor; minimum review, expiry and execution delay | Proposal card + captured requirements + authority chain | patched Majeur `openProposalWithAction` / `castVote` / `executeByVotes` |
+| **`futarchy-budget`** — legacy record marker for budget & subDAO allocation | Same governor; authenticated, finite project approvals have captured lower floors | Proposal card + movable Shares allocation + receipts | patched Majeur conviction ballot; no market or reward pool |
+| **Membership / contribution entry** | A Shares ballot can award standing from a paid delivery proof or approve ordinary membership; consuming a proof is limited to once | Contribution evidence, governor proposal and ownership receipt | patched Majeur `awardContribution` / `convertLootToShares`; existing Tribute entry remains available |
+| **Verified project delivery** | Managers reserve within approved finite projects; reviewers verify delivery and a challenge window precedes payment | Project claims and onchain evidence | `TreasuryMandate` + `ClaimStake` + `VerifierSet` |
 | **Recurring budget ops** | Delegated execution, not deliberation: a vote per invoice is theater | Treasury panel (exists: allowances + TapVest bars) | `setAllowance` / `spendAllowance` |
 | **Dissent / exit** | The market that disciplines all of the above | RagequitPanel (exists) — **linked from every governance surface (D2)** | majeur `ragequit` |
 | **Emergency** | Circuit breaker, not governance | Admin card with the invalidation window spelled out | majeur `bumpConfig` |
 
-**Delegation surface (D3):** proportional split delegation by seat/topic,
-rendering each delegate's authority chain; agent delegates show their grant
-scope, cap, expiry, and revocation entry (the existing revocation curtain).
+**Delegation surface (D3):** one delegate per source owner, managing that
+owner's exclusive Shares allocations. V1 grants
+a delegate authority over the full allocation authority until re-delegation.
+Per-proposal caps and expiry need additional enforcement and are not shipped.
 
 ## 3. The agentic layer
 
@@ -77,8 +83,10 @@ What makes this *agentic* governance rather than chat next to a ballot:
   `47004 state: "agent-draft"` records under the `governance.proposal` budget
   gate → human counter-signs one `openProposal` envelope. The channel-thread
   deliberation step remains the `signal` path.
-- **A2 Agent delegates.** Hold delegated votes strictly under attenuating
-  NIP-ORG grants (scope, cap, expiry), revocable at any time. The grant chain
+- **A2 Agent delegates.** V1 onchain delegation authorizes the whole source
+  allocation authority until re-delegation. NIP-ORG scope, cap and expiry are coordination
+  policy; the ballot contract does not enforce them. Additional onchain
+  attenuation is future work. The grant chain
   is rendered on every vote they cast (D5). **Status (2026-09-27):** the
   delegation surface ships — `encodeDelegate`/`encodeDelegatesView`
   (cast-pinned), the `DelegationCard` (equity-map dropdown incl. agent
@@ -143,9 +151,9 @@ the feed already pairs claim/verdict into timelines:
    delegation (recommended; grants already carry the authority) vs
    advisory-only (agents propose, humans always click). A3/A2 assume the
    former with revocation as the backstop.
-4. **Futarchy plumbing depth** — v1 ships `signal` + `plain` + allowances +
-   ragequit; `futarchy-budget` cards render market state read-only until the
-   market peripheral work (launchpad plan P3) lands.
+4. **Legacy proposal records** — `futarchy-budget` retains its record vocabulary
+   for compatibility. Executable budget decisions use the same Shares ballot;
+   there is no future market activation assumed by the current policy.
 5. **Quorum-math source** — render from the record's params vs read the live
    DAO config (`MolochViewHelper`-style reads); read-only chain reads win for
    honesty but the record should carry the advertised params for pre-deploy

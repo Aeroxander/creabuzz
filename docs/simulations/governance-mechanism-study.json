@@ -1,0 +1,254 @@
+{
+  "seed": 20261008,
+  "kind": "mechanism model, not deployment or security audit",
+  "assumptions": [
+    "Shares supply 1000; no Loot votes; exclusive, movable allocations",
+    "Constant support during each trial; a 24-hour execution delay is additional",
+    "Unrestricted actions require current majority and 25 percent conviction",
+    "Bounded projects require 20 percent current support and 10 percent conviction",
+    "Mature support alone cannot authorize an action after stake is withdrawn",
+    "Current AGAINST counts immediately; older opposition conviction is not a separate veto",
+    "Mandate caps must be enforced by authenticated deployed contracts"
+  ],
+  "scenarios": [
+    {
+      "name": "Retired credits: conserved minority defeats recently active majority",
+      "observed": {
+        "coalition": 300,
+        "majorityRecoveredAfter48h": 200,
+        "winsWithSufficientQuorum": true
+      }
+    },
+    {
+      "name": "Unrestricted minority fails even after maximum conviction",
+      "observed": {
+        "decisionHours": null
+      }
+    },
+    {
+      "name": "Majority can redirect without a seven-day refill",
+      "observed": {
+        "redirectedShares": 700,
+        "decisionHours": 48
+      }
+    },
+    {
+      "name": "Bounded project receives timely approval",
+      "observed": {
+        "decisionHours": 24
+      }
+    },
+    {
+      "name": "Weak support does not become authority merely by waiting",
+      "observed": {
+        "decisionHours": null
+      }
+    },
+    {
+      "name": "Withdrawn conviction is removed and new support starts fresh",
+      "observed": {
+        "oldScore": 656.25,
+        "oldRemainingScore": 187.5,
+        "movedScoreAtStart": 0,
+        "remainingCurrentSupport": 200
+      }
+    },
+    {
+      "name": "Concurrent allocations cannot manufacture majority approval",
+      "observed": {
+        "first": null,
+        "second": null,
+        "afterReallocation": 48
+      }
+    },
+    {
+      "name": "Bounded mandate caps aggregate exposure despite many project identities",
+      "observed": {
+        "treasury": 100000,
+        "mandate": 10000,
+        "perProjectCap": 2000,
+        "maxApprovedProjects": 5,
+        "maximumExposure": 10000
+      }
+    },
+    {
+      "name": "Mature opposition would entrench a former minority after a current majority changes",
+      "observed": {
+        "olderNo": 467.8125,
+        "previousCandidateHours": 95,
+        "refinedHours": 12
+      }
+    },
+    {
+      "name": "A controlling owner remains controlling under linear Shares capacity",
+      "observed": {
+        "ownerPercent": 60,
+        "decisionHours": 48
+      }
+    },
+    {
+      "name": "Reusable token ballots approve both priorities; exclusive allocations require a choice",
+      "observed": {
+        "reusableYesOnEach": 700,
+        "allocatedYesOnEach": 350,
+        "reusableBothPass": true,
+        "allocationDecisions": [
+          null,
+          null
+        ]
+      }
+    }
+  ],
+  "sweep": [
+    {
+      "participation": 0.3,
+      "halfLifeHours": 6,
+      "trials": 1000,
+      "approved": 24,
+      "failedApproval": 976,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.3,
+      "halfLifeHours": 12,
+      "trials": 1000,
+      "approved": 31,
+      "failedApproval": 969,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.3,
+      "halfLifeHours": 24,
+      "trials": 1000,
+      "approved": 24,
+      "failedApproval": 976,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.3,
+      "halfLifeHours": 48,
+      "trials": 1000,
+      "approved": 28,
+      "failedApproval": 972,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.5,
+      "halfLifeHours": 6,
+      "trials": 1000,
+      "approved": 240,
+      "failedApproval": 760,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.5,
+      "halfLifeHours": 12,
+      "trials": 1000,
+      "approved": 231,
+      "failedApproval": 769,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.5,
+      "halfLifeHours": 24,
+      "trials": 1000,
+      "approved": 243,
+      "failedApproval": 757,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.5,
+      "halfLifeHours": 48,
+      "trials": 1000,
+      "approved": 221,
+      "failedApproval": 779,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.7,
+      "halfLifeHours": 6,
+      "trials": 1000,
+      "approved": 644,
+      "failedApproval": 356,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.7,
+      "halfLifeHours": 12,
+      "trials": 1000,
+      "approved": 638,
+      "failedApproval": 362,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.7,
+      "halfLifeHours": 24,
+      "trials": 1000,
+      "approved": 613,
+      "failedApproval": 387,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.7,
+      "halfLifeHours": 48,
+      "trials": 1000,
+      "approved": 620,
+      "failedApproval": 380,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.9,
+      "halfLifeHours": 6,
+      "trials": 1000,
+      "approved": 920,
+      "failedApproval": 80,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.9,
+      "halfLifeHours": 12,
+      "trials": 1000,
+      "approved": 926,
+      "failedApproval": 74,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.9,
+      "halfLifeHours": 24,
+      "trials": 1000,
+      "approved": 939,
+      "failedApproval": 61,
+      "medianApprovalHours": 48
+    },
+    {
+      "participation": 0.9,
+      "halfLifeHours": 48,
+      "trials": 1000,
+      "approved": 940,
+      "failedApproval": 60,
+      "medianApprovalHours": 48
+    }
+  ],
+  "changedMajority": [
+    {
+      "halfLifeHours": 6,
+      "formerCandidateHours": 48,
+      "refinedHours": 6
+    },
+    {
+      "halfLifeHours": 12,
+      "formerCandidateHours": 95,
+      "refinedHours": 12
+    },
+    {
+      "halfLifeHours": 24,
+      "formerCandidateHours": 182,
+      "refinedHours": 24
+    },
+    {
+      "halfLifeHours": 48,
+      "formerCandidateHours": 335,
+      "refinedHours": 48
+    }
+  ]
+}

@@ -63,9 +63,12 @@ The full event vocabulary is [NIP-ORG](docs/nips/NIP-ORG.md): org nodes
   verb. The org graph *is* the integration.
 - **Budgets bound autonomy, never people.** An agent may run 50 times and
   spend up to a ceiling per epoch; past that, the action becomes a
-  human-approval request. A person's own decisions are governance, not a
-  budget line. Incentives live on the capital boundary; the craft interior is
-  measured for improvement, never metered per person.
+  human-approval request. A person's own work decisions are not an agent budget
+  line. At the opt-in capital boundary, onchain treasury governance uses the
+  Shares allocations and finite team mandates described in
+  [the voting design](docs/token-voting-design.md); discussion and proportional
+  exit remain available. The craft interior is measured for improvement, never
+  metered per person.
 
 ## The on-ramp, and where the old tool fits
 

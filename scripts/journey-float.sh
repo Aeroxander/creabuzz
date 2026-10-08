@@ -24,6 +24,5 @@ sleep 5
 forge script script/JourneyFloat.s.sol:JourneyFloatB \
   --rpc-url "$RPC" --broadcast --skip-simulation
 
-echo "… governance leg: summon -> propose -> vote -> execute"
-forge script script/JourneyGov.s.sol:JourneyGov \
-  --rpc-url "$RPC" --broadcast --skip-simulation
+echo "… governance simulation: summon -> propose -> vote -> 48-hour review -> timelock -> execute"
+forge script script/JourneyGov.s.sol:JourneyGov

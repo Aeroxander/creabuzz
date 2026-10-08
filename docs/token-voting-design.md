@@ -1,250 +1,160 @@
-# Token and voting power: the decisions
+# Shares allocations, short conviction, and accountable budgets
 
-`draft` `decision` `contracts` `web`
+Candidate implementation for fresh DAOs, refined 2026-10-08. This replaces the
+experimental rechargeable voting allowance. It has been exercised locally; it
+has not been audited or deployed for production funds. See the
+[simulation report](simulations/governance-validation.md) for evidence and limits.
 
-Companion to [funding-and-governance-plan.md](funding-and-governance-plan.md) §5–§6,
-which this **replaces on the voting-power question only**. That plan is the
-authority for the four funding paths, the proposal vault, and the finance
-controls; the other `docs/*-plan.md` notes are background and are not binding.
+## One governance mechanism
 
-Everything here is decided. Items still needing a spike are listed in §8 and
-are questions of *cost*, not of direction.
+Shares confer governance standing and economic ownership. Loot confers economic
+ownership and proportional ragequit rights, without votes. The patched Majeur
+`castVote` path records an allocation in `ConvictionVoting`; native token vote
+checkpoints do not provide a second executable tally. `tallies` reads matured
+support from that same policy. Futarchy rewards, policy replacement, split
+delegation and proposal delegatecall are disabled for this deployment family.
 
-**Status:** the vault, the weight seam and the Majeur fork patch are built and
-tested (`contracts/src/ProposalVault.sol`, `VotingWeight.sol`,
-`majeur/MolochPatched.sol`). The web funding declaration and the
-backer-facing panel are built. Still open: wiring the panel to a deployed
-vault, and a proposal-funding scene in the simulation.
+An owner with 100 Shares can allocate 70 to one proposal and 30 to another, or
+all 100 to one priority. Those Shares remain owned and transferable. A cast sets
+the desired allocation, rather than spending a consumable balance. Recasting
+changes it; zero withdraws it. Expiry or execution releases the allocation for
+other proposals. There is no recharge timer, weekly reset, or reward for voting
+frequency. Holding Shares preserves eligibility even after months of inactivity.
 
----
+This improves prioritization and allows conviction to reflect sustained support.
+It does **not** eliminate wealth concentration: a holder of 60% of Shares can
+still authorize an unrestricted action alone. Wallet splitting does not increase
+linear allocation capacity. Nonlinear voting would require a separate defensible
+identity or membership model to avoid rewarding wallet splitting.
 
-## 1. The question
+## How conviction works
 
-Design B (plan §5) makes the project token and Majeur's `Shares`/`Loot` the
-same thing: `Loot` is sold in the auction and traded in the pool, `Shares` are
-earned by work. The plan then said voting power should **grow with time held**.
+Current support and conviction are different measurements of the **same**
+allocation. With a twelve-hour half-life and constant allocation A:
 
-That rule is wrong for this product, and the objection is the one that matters:
-*holding is costless once you have bought.* A rule that multiplies weight by
-time-passed rewards parking capital and entrenches whoever arrived first. The
-product's own promise is the opposite — every project shows an honest funding
-status, backers direct money to proposals rather than to whatever the team
-fancies (plan §4), and work is what earns a seat at the table.
-
-So the rule becomes: **weight follows capital you directed and work you
-delivered. Not capital you parked.**
-
-## 2. What "vouching" means here
-
-Not a reputation point, not a score, not an entry in a participation graph.
-
-A backer deposits currency into the **proposal vault** and receives **vouchers**
-1:1 (plan §4). Spending vouchers on a proposal is **backing** it: the money
-moves to that proposal's milestone reserve, minus a tax to the treasury. That
-act — directing capital somewhere the team would not have put it — is the
-participation the product is about.
-
-This matters for the invariant. [legitimacy-synthesis.md](legitimacy-synthesis.md)
-G6 says *no score, badge tier or activity count may feed voting power*, and it
-is enforced by a source-scanning test. Backing is not a score: it is capital
-that can be lost. The governing principle is the one the research notes already
-reached — **we slash stake, not reputation** — so G6 holds, and no design below
-reads any score in a weight path.
-
-## 3. The weight model
-
-For account `a` at snapshot block `b`:
-
-```
-votes(a, b) = work(a, b)            // Shares, Majeur's existing machinery
-            + held(a, b)            // Loot held, flat
-            + backing(a, b)         // Loot committed to proposals, compounding
+```text
+C(next) = C(previous) × decay + A × (1 - decay)
+decay   = 2 ^ (-elapsed / 12 hours)
 ```
 
-**Work.** `Shares` earned by verified work. Weight is Majeur's `getVotes` as
-built — delegatable, checkpointed, split-delegatable. No change. Work is
-converted to shares through milestone claims carrying a written acceptance
-check and named verifiers (plan §7 G16), so it is *verified delivery*, never an
-activity count.
+Conviction approaches A: 50% after 12 hours, 75% after 24, 93.75% after 48.
+Newly added Shares start at zero conviction. Reducing an allocation removes its
+proportional conviction immediately. Changing sides clears conviction. Moving
+Shares to another proposal cannot carry the previous proposal's conviction.
+Repeatedly casting an unchanged position preserves its conviction. Conviction
+retains fractional Shares wei internally, so even a one-wei supply can approve.
+Client reads use 18 decimals for current Shares and 36 for accumulated support.
 
-**Held.** `Loot` balance at the snapshot, 1:1, **no growth**. Buying at the
-auction or in the pool gives you ownership and nothing more; waiting earns
-nothing.
+A proposal needs both current FOR and matured FOR floors, current FOR > current
+AGAINST, and current turnout including ABSTAIN. Opposition counts immediately; its
+accumulated history is not a separate veto over a new current majority.
+Waiting cannot make withdrawn or insufficient current support executable.
 
-**Backing.** The new term. For each proposal `p` the account has committed
-`Loot` to and that `p` has not yet resolved:
-
-```
-backing(a, b) = Σ_p  escrowed(a, p) × (1 + min(age(a, p, b) / T, 1))
-```
-
-`age` is blocks since the commitment, `T` is the same 12-month window the plan
-named. So a commitment earns its stake back plus at most 100% more: **at most
-2× the escrowed amount**, and only while the capital is actually at risk.
-Backing weight is per-proposal — it buys you voice over *the decision you
-paid to influence*.
-
-Four properties this has to have, and does:
-
-| Property | Why it holds |
-| --- | --- |
-| Passive holding earns nothing | `held` is flat; only `escrowed` compounds |
-| Flash buyers get nothing | buying `Loot` gives `held`; `backing` requires escrow |
-| Splitting or merging gains nothing | `backing` is summed over (account, proposal) pairs |
-| Weight cannot be sold | `backing` is tied to escrow, which is not transferable |
-
-Unspent vouchers carry **no** weight — already decided in plan §4, and it is
-load-bearing here: refundable money must never vote.
-
-## 4. The two tracks stay separate in kind
-
-`Shares` is a claim on the treasury earned by delivery. `Loot` is an
-investment. They add into one tally but they must not blur:
-
-- **`Shares` stays delegable** — it already is, with split delegation across up
-  to four delegates. Deleting that would be throwing away working code to
-  satisfy a sentence in a plan.
-- **`Loot` and `backing` weight are not delegable.** Investment weight is a
-  stake, not a representation. Someone who wants a say on a proposal moves
-  capital behind it.
-
-## 5. Quorum
-
-The plan said "quorum against fully matured supply". With no maturation there
-is no such quantity, and computing a backing-aware total is O(holders).
-
-**Decided:** quorum is measured against `sharesSupply + lootSupply` at the
-snapshot — the same two quantities the plan already snapshots. Backing weight
-is *extra* weight above that denominator, so this is strictly harder to reach
-than a backing-inclusive denominator. Conservative, cheap, and it never makes
-quorum mathematically unreachable.
-
-## 6. Exit discipline (the real security question)
-
-Weight without an exit rule is a rate limit, not a protection. Plan §4 already
-closes *buy-then-ragequit* with the join-price rule. The other direction is
-currently open and must be closed in the same change:
-
-**No exit while your weight is counted in a pending proposal.** `ragequit`
-(plan §5) and release of escrowed tokens are refused for any account with
-backing weight behind an unresolved proposal it has voted on. Until that
-proposal resolves, the capital stays where the vote was cast.
-
-Everything else — budget caps, the challenge window, verifier recusal, the
-claim expiry (plan §7) — is what bounds what a proposal can actually move.
-§3 buys a capital commitment; §7 is what stops that commitment being worth
-making.
-
-## 7. Where the code diverges from Majeur
-
-We are **not** writing our own Majeur. `Moloch.sol` ships as one compilation
-unit — `Moloch`, `Shares`, `Loot`, `Badges` — with the token implementations
-created in the constructor and cloned by `create2`, so none of them can be
-swapped without editing the file. The plan's discipline stands: **one fork,
-patch confined to marked regions, and a CI check that it differs from upstream
-only there.**
-
-The regions, kept as small as the design allows — all implemented in
-`contracts/src/majeur/MolochPatched.sol` as **additive-only** patches, so that
-stripping them leaves upstream verbatim and `scripts/check-majeur-fork.mjs`
-(enforced by `just majeur-fork-check`, part of `just check`) can prove it:
-
-| Region | Change | Size |
+| Captured requirement | Unrestricted action | Authenticated project approval |
 | --- | --- | --- |
-| `Loot` | balance checkpoints (`balanceOfAt`/`totalSupplyAt`) | ~60 lines, copied from `Shares`' existing mechanism minus delegation |
-| `Moloch.vote()` | `weight = weightFor(id, msg.sender, snap)` | 1 line |
-| `Moloch.openProposal()` | supply = shares + loot at snapshot | 1 line |
-| `Moloch` | `weightFor()` + the exit gate | ~30 lines |
-| `Shares` | **unchanged** | 0 |
+| Current FOR | Strictly more than 50% of opening Shares supply | At least 20% |
+| Matured FOR | At least 25% of opening supply | At least 10% |
+| Current turnout | At least 50% | At least 20% |
+| Minimum review | 48 hours | 24 hours |
+| Execution delay | Positive DAO-configured delay; default 24 hours | Same |
+| Expiry | DAO-configured TTL; default 14 days | Same |
 
-Backing lives **outside** the fork, in a peripheral, following Majeur's own
-`src/peripheral/` pattern (`ShareSale`, `Tribute`, `TapVest`, `ShareBurner`).
-The fork reads it through one interface. That is what keeps the divergence
-cost flat as the mechanism evolves.
+Native quorum and absolute requirements can raise these floors. Supply is
+captured at the previous block; Loot is excluded. Rules freeze when opened.
+Notice and timelock are separate: the candidate permits an unrestricted action
+in 72 hours and a sufficiently supported project in 48 hours, including the
+24-hour delay. These are minimums, not promises about actual turnout.
 
-Dropping time-weighting is what makes this cheap: no balance-time integrals,
-no new supply aggregate, no per-account integral checkpoints.
+Voting remains open until execution or expiry, including during the timelock.
+Lost approval clears the queued timestamp. Recovering approval requires queueing
+again and waiting a full new delay. Against votes and Shares transfers/burns can
+cause this reset. Queued proposals expire too. TTL must exceed the unrestricted
+review period plus execution delay; setters reject configurations violating it.
 
-## 8. Still to spike
+## Budgets turn decisions into work
 
-Cost questions only — none of them change direction.
+An unrestricted vote can approve a finite treasury mandate. Execute one
+`batchCalls` intent that approves its currency budget to the factory, calls
+`TreasuryMandateFactory.create`, then clears the ERC-20 approval. Creation pulls
+the exact budget into the new mandate atomically. Fee-taking deposits fail.
 
-1. `Loot` checkpoints: storage growth under real pool trading, and whether
-   entries older than the snapshot lookback can be pruned opportunistically.
-2. Whether `backing`'s age term needs its own checkpoint array or whether the
-   escrow record's start block suffices (it should).
-3. The exit gate's bookkeeping: cheaply answering "does account `a` have weight
-   behind an unresolved proposal" without an O(proposals) scan.
-4. Whether `VoteCancelled` and the tally accounting survive a per-proposal
-   `voteWeight` unchanged (they already store weight per proposal, so this is
-   likely a no-op).
+The mandate fixes its DAO, currency, lifetime budget, per-project cap, expiration
+and reviewer panel. Factory provenance is required for lower-support voting:
+only `approveProject` on a mandate created for this DAO, with zero ETH and
+normal CALL, receives project requirements. A UI's proposal kind or an arbitrary
+contract claiming to be a mandate cannot lower requirements. Open these intents
+with `openProposalWithAction`; arbitrary-ID opening conservatively uses
+unrestricted requirements.
 
-## 9. Decisions this supersedes in the plan
+A project fixes a manager, budget, expiration and acceptance-check hash. The
+manager reserves milestone claims within that budget without another treasury
+vote. Funding locks the agreed check. Existing `ClaimStake` and `VerifierSet`
+provide claimant recusal, distinct reviewer addresses, approval/objection quorum,
+three-day challenge, payout, expiry and disputed-claim recovery. Returned money
+does not replenish lifetime project authority. Lower-support voters may allocate
+bad projects, but cannot increase the mandate's cap or bypass verification.
 
-- §6 "votes grow with time held" → **replaced** by §3 above.
-- §6 "needs a balance-history checkpoint (balance and running balance-time
-  total)" → **replaced** by plain `Loot` checkpoints; no balance-time integral.
-- §6 "earned votes are not delegable in version 1" → **narrowed**: `Shares`
-  delegation is kept as built; only `Loot` and backing weight are
-  non-delegable.
+Unrestricted governance can `close` the mandate, stop new commitments and recover
+unreserved funds early. Existing escrowed claims retain their settlement rules;
+governance may freeze and unwind disputed claims. Closing, changing the DAO,
+issuing ownership, direct treasury transfers and new mandates all use the higher
+requirements. The aim is to vote on priorities and limited budgets, while teams
+execute and reviewers verify delivery.
 
-Everything else in that plan stands, including G6 and the join-price rule.
+## Holding, earning standing, delegation and exit
 
----
+Initial Shares holders can vote after a historical block exists. New Shares
+issuance or transfers confer standing for future snapshots; they cannot rewrite
+an existing proposal's eligibility. Loot holders may earn Shares through approved
+contributions. `awardContribution` consumes a paid mandate claim once, then mints
+a specified Shares award or converts Loot 1:1 into Shares. The conversion keeps
+total economic units constant. Governance still approves the award size.
+Existing direct issuance and conversion remain unrestricted governance actions;
+the paid-claim helper does not prevent a governing majority colluding to issue
+Shares without genuine work.
 
-## 10. Conviction: the entry voice, as a bounded allowance
+A single `Shares.delegate` authorizes a delegate to manage the source owner's
+allocations; it creates no second capacity. Owners can override positions and
+revoke delegation. This grants the owner's full allocation authority: relay
+role scopes, expiry and per-proposal delegation caps are not enforced by this
+contract. Do not advertise them as onchain limits.
 
-`draft` `decision` `contracts`
+Transfers and burns update cached owned Shares through authenticated token hooks.
+If an owner has allocated more than their remaining Shares, live positions and
+conviction are reduced proportionally. Transferring free Shares leaves positions
+unchanged. Incoming Shares bring no conviction. No owner may have more than 16
+live allocations; initial holder enumeration is capped at 256 and supply at
+uint96. Expired/executed positions are pruned lazily without a keeper.
 
-Added after the owner asked whether proposal funding should run on conviction
-voting instead of capital-backed entry voice. **Decided:** conviction replaces
-*investing as voice* on allocation decisions; the vault's money leg is
-untouched, and discrete governance stays exactly as §3–§7 describe.
+Ragequit remains available for Shares and Loot. It returns a proportional share
+of the assets actually held by Majeur, excluding funds already committed into a
+separate mandate or claim escrow. Members receive notice and timelock before
+that commitment. Market price and treasury valuation do not enter the voting
+algorithm: an investment buys a specified ownership quantity, not a permanent
+right to direct a fixed dollar amount. Treasury growth, losses and dilution
+change economic exposure while ownership proportions govern decisions.
 
-The mechanism lives in `contracts/src/ConvictionVoting.sol` and sums into
-`VotingWeight` as a fourth optional term, beside backing:
+## Trust and deployment boundaries
 
-```
-votes(a, b) = work + held + backing + conviction(a, p, b)
-```
+- The initial Shares distribution and trusted policy implementation are deployment
+  choices. Existing DAOs do not acquire this policy automatically; this is a new
+  constructor and deployment family, without an upgrade/migration promise.
+- Reviewer addresses are not proof of independent people. Reviewers can collude,
+  and a governing majority can authorize self-dealing. Public evidence and
+  recusal help accountability without proving good work cryptographically.
+- Low turnout can block unrestricted governance. Delegation concentrates authority
+  as well as improving participation. Project approval can be opposed by moving
+  Shares; otherwise a minority can waste a bounded mandate's allocation authority.
+- Milestone escrow expects ordinary exact-transfer ERC-20 currency. Token upgrades,
+  issuer freezes, malicious callbacks or transfer fees remain currency trust risks.
+- Votes, ownership, proposals and attestations are public. RPC/indexer/frontend
+  availability affects access and discovery; direct contract interaction and
+  permissionless expiry recovery remain available. No transaction runs merely
+  because time has passed: someone must queue, execute, settle or recover it.
 
-A DAO that wants conviction out of its discrete votes wires
-`conviction = address(0)` and the tally reverts to §3 verbatim.
-
-**How it works.** Credits are issued per seat by governance — the same bounded
-seat map the summon mints — and are non-transferable. Staking credits on a
-proposal makes conviction grow toward `credits / (1 − α)` while they stay, and
-decay once they move. A proposal asking share `ρ` of the pool passes when its
-total conviction reaches a threshold that rises with `ρ`, never below an
-absolute floor.
-
-**Why this does not contradict §1.** The objection there was that *holding* is
-costless. This is not holding: an allowance can back **one proposal at a time**
-(`test_one_allowance_cannot_back_two_proposals_at_once`), so directing it has an
-opportunity cost, and withdrawing support lets the accumulated conviction fade.
-Growth is bought with persistence at the expense of every alternative, which is
-the same shape as backing's "compounding while at risk" — cost, then growth.
-
-**Properties, tested in `contracts/test/ConvictionVoting.t.sol`:**
-
-| Property | Why it holds |
-| --- | --- |
-| A sybil gains nothing by splitting | conviction is linear in credits; k identities holding C/k reach exactly one identity holding C |
-| Issuance is the only door | non-seats hold nothing and stake nothing; seats are granted one approval at a time (bounded by `MAX_SEATS`) |
-| One allowance, one preference | staked credits leave the unspent pool; the books are unspent + staked = issued |
-| Unspent credits carry no weight | mirrors §3's voucher rule: nothing accrues without a stake |
-| Small asks cannot pass on crumbs | an absolute conviction floor binds every threshold; thresholds scale off *total issuance*, so opening proposals never dilutes a real one |
-| Snapshots are honest | every stake is checkpointed; `convictionWeightAt` ignores credits staked after the queried block |
-
-**G6.** Nothing in the module reads a score, a badge tier or a reputation root.
-Issuance is membership, not measurement — the seat map is the sybil defence, and
-no trust-graph or oracle is needed while seats stay granted (v1). A
-score-modulated multiplier would only need the anchored root's Merkle proof
-verified in-contract; making the score *derivation* trustless is a later
-hardening question (an oracle such as WAVS), not a prerequisite.
-
-**Still open.** Parameter defaults (`α`, `minW`/`maxW`, floor) are a simulation
-question; per-epoch refills are plain governance calls for now; futarchy's
-budget/subDAO scope is parked until conviction has run on live proposals. Exit
-discipline: conviction is not capital and does not gate `ragequit` in v1 — if
-conviction alone ever draws on the treasury pool, revisit §6 for it.
+The design adapts configurable conviction accumulation described by
+[Gardens](https://docs.gardens.fund/conviction-voting/conviction-parameters) to
+exclusive allocations and explicit current-support floors. Shares/Loot economics
+follow [Majeur](https://github.com/z0r0z/majeur#token-system). The chosen thresholds
+and half-life are candidates validated against specified scenarios, not evidence
+of optimal voting or a claim that DAOs become decentralized automatically.

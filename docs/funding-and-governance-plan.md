@@ -1,5 +1,12 @@
 # Funding, finance office and voting power: the plan
 
+> **Voting policy updated 2026-10-07:**
+> [Token ownership and rechargeable voting](token-voting-design.md) supersedes
+> this plan's voting growth, backing weight, and voucher-as-voice proposals.
+> Fresh DAOs use one candidate Shares allocation and short-conviction policy; Loot has economic rights without voting. The voucher vault section
+> is historical escrow design for existing integrations, not the new admission
+> or voting path. Existing milestone verification and treasury controls remain.
+
 `draft` `plan` `web` `desktop` `cli` `contracts`
 
 Branch: `claude/org-graph-social-token` (cut from `claude/org-graph-social` at
@@ -178,7 +185,7 @@ Two coherent designs; **leaning B**, spike first (section 11):
 | --- | --- | --- |
 | Project token | TokenMaster apptoken | Loot, sold in the auction, tradable under transfer rules |
 | Investor exit | TokenMaster floor only | Majeur ragequit at treasury value per token |
-| Investor votes | Stake in a vault; votes grow | Computed in Loot from time held; no staking step |
+| Investor votes | Stake in a vault; votes grow | Shares allocate governance support; Loot confers economics only (current refinement) |
 | Contributors | Shares with ragequit | Shares, earned, non-transferable |
 | Weakness | Contributors exit at treasury value, investors at the floor | Rework of sale and graduation; bigger Majeur patch |
 
@@ -213,6 +220,8 @@ time-passed rewards parking capital. Instead:
 
 - **Work** — `Shares` earned by verified work, on Majeur's existing
   delegatable checkpointed machinery. Unchanged.
+> Historical weight/voucher alternatives below are superseded by [the current single policy](token-voting-design.md). They are not a parallel governance path.
+
 - **Held** — `Loot` at the snapshot, 1:1, flat. Waiting earns nothing.
 - **Backing** — `Loot` committed to a proposal through the voucher vault
   (§4) earns up to 2× its escrowed amount, per proposal, only while that
@@ -313,7 +322,7 @@ A scripted story runner instead of more isolated tests, run with one command
 2. **Launch Studio preset**, gated on stance.
 3. **Spike** (section 11), then lock A or B.
 4. **Finance controls** (contracts, section 7).
-5. **Voting power growth** and apptoken Loot/Shares (design B patch).
+5. **Shares allocation governance** and apptoken Loot/Shares (current refinement).
 6. **Proposal vault and vouchers**, then **open sale** and **contributors-only**.
 7. Imports (wrapped tokens, levels 1 to 3).
 
