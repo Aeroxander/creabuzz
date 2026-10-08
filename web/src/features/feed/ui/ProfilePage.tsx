@@ -31,10 +31,10 @@ import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { EMPTY_TALLY } from "../lib/ranking";
+import { trustTierLabel } from "../lib/trust-weight";
 import { useVoteTallies, useVoteWeights } from "../use-feed";
 import { FollowButton } from "./FollowButton";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
-import { formatScore } from "./VoteButtons";
 
 type Tab = "posts" | "replies" | "media" | "likes" | "launches";
 
@@ -146,8 +146,8 @@ function Launches({ pubkey }: { pubkey: string }) {
           className="text-xs text-black/60 dark:text-white/60"
           data-testid="profile-vote-weight"
         >
-          Their vote counts {formatScore(weight)}×. Votes count more once
-          someone with a role in the organisation has accepted a person's work.
+          Trust: {trustTierLabel(weight)}. Votes count more once someone with a
+          role in the organisation has accepted a person's work.
         </p>
       ) : null}
       {founded.length === 0 ? (

@@ -30,6 +30,7 @@ import {
   acceptedContributions,
   MAX_WEIGHT,
   NEWCOMER_WEIGHT,
+  trustTierLabel,
   orgGraphFromEvents,
   voteWeights,
 } from "./trust-weight.ts";
@@ -323,6 +324,13 @@ describe("trust weights", () => {
       undefined,
     );
     assert.equal(voteWeights(graph, records)(ALICE), 1.25);
+  });
+
+  it("names a voter's tier in words and never exposes the weight", () => {
+    assert.equal(trustTierLabel(NEWCOMER_WEIGHT), "Newcomer");
+    assert.equal(trustTierLabel(1), "Contributor");
+    assert.equal(trustTierLabel(1.25), "Contributor");
+    assert.equal(trustTierLabel(MAX_WEIGHT), "Organisation member");
   });
 
   it("with no org graph everyone is a newcomer", () => {

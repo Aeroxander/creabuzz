@@ -36,6 +36,18 @@ export const CONTRIBUTOR_WEIGHT = 1;
 export const PER_EXTRA_ACCEPTED = 0.25;
 export const MAX_WEIGHT = 2;
 
+/**
+ * What to call a voter in plain words. The weight itself never reaches the screen: it is an
+ * internal ranking input, and showing "0.2" for a newcomer read like a bug.
+ */
+export function trustTierLabel(
+  weight: number,
+): "Newcomer" | "Contributor" | "Organisation member" {
+  if (weight >= MAX_WEIGHT) return "Organisation member";
+  if (weight > NEWCOMER_WEIGHT) return "Contributor";
+  return "Newcomer";
+}
+
 function dTag(event: SignedEventLike): string | null {
   const tag = event.tags.find((t) => t[0] === "d");
   return tag && typeof tag[1] === "string" && tag[1] !== "" ? tag[1] : null;

@@ -151,8 +151,9 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys", asy
   const card = page
     .getByTestId("note-card")
     .filter({ hasText: "Weighted post" });
-  // 2 (admin) − 5 × 0.2 (newcomers) = 1.
-  await expect(card.getByTestId("note-vote-score")).toContainText("1");
+  // The number is the plain headcount: 1 up (admin) − 5 down (newcomers). Trust only
+  // changes ranking, never the figure, so no decimal can appear.
+  await expect(card.getByTestId("note-vote-score")).toHaveText(/-4/);
   await expect(card.getByTestId("note-vote-down")).toHaveAttribute(
     "title",
     "5 downvotes",
@@ -163,7 +164,7 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys", asy
     "aria-pressed",
     "true",
   );
-  await expect(card.getByTestId("note-vote-score")).toContainText("1.2");
+  await expect(card.getByTestId("note-vote-score")).toHaveText(/-3/);
   const mine = relay.events.find((e) => e.kind === 7 && e.pubkey === ME);
   expect(mine?.tags).toContainEqual(["e", note.id]);
   expect(mine?.content).toBe("+");

@@ -12,16 +12,18 @@ import {
 import { EMPTY_TALLY, type VoteTally } from "../lib/ranking";
 import { usePublishFeedEvent } from "../use-feed";
 
-/** Weighted scores are fractional; show one decimal only when it matters. */
-export function formatScore(score: number): string {
-  const rounded = Math.round(score * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+/**
+ * The number people see is the plain headcount: people who voted up minus people who voted down. How much
+ * each vote counts toward *ranking* is a separate, internal matter (`trust-weight.ts`), so no decimal ever
+ * appears and the same like reads the same everywhere.
+ */
+export function netVotes(tally: Pick<VoteTally, "up" | "down">): number {
+  return tally.up - tally.down;
 }
 
 /**
- * Up/down voting on a note or a launch. The score shown is the trust-weighted
- * sum; the button titles give the raw headcount, so nobody has to take the
- * weighting on faith.
+ * Up/down voting on a note or a launch. The number is the plain headcount (net
+ * votes); ranking leans on trusted voters more, but that stays out of sight.
  */
 export function VoteButtons({
   target,
@@ -94,7 +96,7 @@ export function VoteButtons({
         data-testid={`${testId}-score`}
       >
         <span className="sr-only">Score </span>
-        {formatScore(tally.score)}
+        {netVotes(tally)}
       </span>
       {button("-")}
     </div>
