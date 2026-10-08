@@ -36,6 +36,8 @@ export const SIGNATURES = {
   quorum: "quorum()",
   reviewer: "verifiers(address)",
   attest: "attest(bytes32,bool)",
+  submitClaim: "submitClaim(bytes32,uint256,uint256,bytes32)",
+  setCheck: "setCheck(bytes32,bytes32)",
   settle: "settle(bytes32)",
   payout: "payout(bytes32)",
   bind: "fundMilestone(bytes32,bytes32,address)",
@@ -98,6 +100,37 @@ export function encodeBind(
     [projectId, claimId, contributor],
   );
 }
+
+/** A claim that asks for no currency and stakes none: it asks to be recognised, not paid. */
+export function encodeSubmitRecognitionClaim(
+  claimId: string,
+  evidenceHash: string,
+): string {
+  assertWord(claimId, "claim id");
+  assertWord(evidenceHash, "evidence hash");
+  return encodeFunctionData(
+    SIGNATURES.submitClaim,
+    ["bytes32", "uint256", "uint256", "bytes32"],
+    [claimId, 0n, 0n, evidenceHash],
+  );
+}
+
+export function encodeSetCheck(claimId: string, checkHash: string): string {
+  assertWord(claimId, "claim id");
+  assertWord(checkHash, "check hash");
+  return encodeFunctionData(
+    SIGNATURES.setCheck,
+    ["bytes32", "bytes32"],
+    [claimId, checkHash],
+  );
+}
+
+/** The hash of some words: how an acceptance check or a piece of evidence is committed to. */
+export function hashText(text: string): string {
+  return `0x${bytesToHex(keccak_256(utf8ToBytes(text.trim())))}`;
+}
+
+export const ZERO_WORD = `0x${"0".repeat(64)}`;
 
 export function encodeIsReviewer(address: string): string {
   if (!ADDRESS_RE.test(address)) throw new Error(`not an address: ${address}`);
@@ -390,7 +423,7 @@ export function nextStep(
         : {
             kind: "award",
             who: "dao",
-            text: "Approved and paid. The DAO can vote to award Shares for it.",
+            text: `${record.amount > 0n ? "Approved and paid" : "Approved"}. The DAO can vote to award Shares for it.`,
           };
     case "Frozen":
       return {

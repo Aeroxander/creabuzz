@@ -19,6 +19,7 @@ import type { Launch } from "../models";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FileClaimCard } from "./FileClaimCard";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
@@ -60,8 +61,13 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
       ? `Your wallet is on chain ${wallet.chainId}, but this project is on chain ${launchChainId}. Switch networks in your wallet.`
       : null;
 
-  const send = async (key: string, to: string, data: string) => {
-    if (!wallet.wallet || launchChainId === null || gate) return;
+  /** Send one transaction as the connected wallet; true once it landed and the page re-read the chain. */
+  const send = async (
+    key: string,
+    to: string,
+    data: string,
+  ): Promise<boolean> => {
+    if (!wallet.wallet || launchChainId === null || gate) return false;
     setBusy(key);
     setFailure(null);
     try {
@@ -77,8 +83,10 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
       await queryClient.invalidateQueries({
         queryKey: ["launchpad", "work", dao],
       });
+      return true;
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -140,6 +148,13 @@ export function WorkTab({ launch, dao }: { launch: Launch; dao: string }) {
               This DAO has more work than is shown here. The newest is listed.
             </p>
           ) : null}
+          <FileClaimCard
+            busy={busy}
+            gate={gate}
+            mandates={work.data?.mandates ?? []}
+            onSend={send}
+            wallet={wallet.address}
+          />
           {work.data?.mandates.map((mandate) => (
             <MandateCard
               busy={busy}
@@ -185,7 +200,7 @@ function MandateCard({
   wallet: string | null;
   gate: string | null;
   busy: string | null;
-  onSend: (key: string, to: string, data: string) => Promise<void>;
+  onSend: (key: string, to: string, data: string) => Promise<boolean>;
   dao: string;
 }) {
   const { created } = mandate;

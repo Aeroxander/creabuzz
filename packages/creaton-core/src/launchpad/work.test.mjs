@@ -15,6 +15,9 @@ import {
   encodeBind,
   encodeCallId,
   encodeIsReviewer,
+  encodeSetCheck,
+  encodeSubmitRecognitionClaim,
+  hashText,
   idLabel,
   idWord,
   nextStep,
@@ -181,6 +184,12 @@ test("each state of a claim has one next step and one person who takes it", () =
   // Paid: the DAO may award Shares once; not at all without a project; nothing after.
   const paid = view({ record: { status: "Paid" } });
   assert.equal(nextStep(paid, 0, WINDOW).kind, "award");
+  // A claim that asked for no money is not described as paid.
+  assert.match(nextStep(paid, 0, WINDOW).text, /^Approved\. The DAO/);
+  assert.match(
+    nextStep(view({ record: { status: "Paid", amount: 5n } }), 0, WINDOW).text,
+    /^Approved and paid\./,
+  );
   assert.equal(nextStep({ ...paid, project: null }, 0, WINDOW).kind, "none");
   assert.equal(
     nextStep({ ...paid, sharesAwarded: true }, 0, WINDOW).kind,
@@ -194,4 +203,27 @@ test("each state of a claim has one next step and one person who takes it", () =
     nextStep(view({ record: { status: "Rejected" } }), 0, WINDOW).kind,
     "none",
   );
+});
+
+test("filing a claim for recognition is cast's calldata, with the words hashed the way the CLI hashes them", () => {
+  const evidence = hashText("https://example.com/pr/1");
+  assert.equal(
+    evidence,
+    "0x59cf64d9fc220ab056956a9aa237e80755fec5c7c43134b03acc3962e30e026a",
+  );
+  assert.equal(
+    encodeSubmitRecognitionClaim(ID, evidence),
+    "0x26d3f6d477726974652d646f6373000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000059cf64d9fc220ab056956a9aa237e80755fec5c7c43134b03acc3962e30e026a",
+  );
+  const check = hashText("  docs merged and reviewed ");
+  assert.equal(
+    check,
+    "0xe8164af4b3d1186a31c4eecb6012657bf68042eb1ce8130d9d766a096b0418ff",
+    "surrounding space does not change the check",
+  );
+  assert.equal(
+    encodeSetCheck(ID, check),
+    "0x5b66d37a77726974652d646f637300000000000000000000000000000000000000000000e8164af4b3d1186a31c4eecb6012657bf68042eb1ce8130d9d766a096b0418ff",
+  );
+  assert.throws(() => encodeSetCheck("0x12", check));
 });

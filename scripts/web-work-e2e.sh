@@ -2,10 +2,10 @@
 #
 # scripts/web-work-e2e.sh — the contributor path in the WEB app, against a REAL local chain.
 #
-# Uses the same world as `cli-no-raise-e2e.sh` (a throwaway dev chain, a DAO, a Shares-only work budget, a project and
-# a claim, all made with `buzz launchpad work`), stops with the claim filed but not yet taken on, and runs
-# web/tests/e2e/launchpad-work.spec.ts, where the project manager takes the claim on, two reviewers approve it,
-# anyone finishes it, and the contributor takes it after the challenge window, each as that person's wallet.
+# Uses the same world as `cli-no-raise-e2e.sh` (a throwaway dev chain, a DAO, a Shares-only work budget and a project,
+# all made with `buzz launchpad work`), stops before any claim exists, and runs web/tests/e2e/launchpad-work.spec.ts:
+# the contributor files a claim, the project manager takes it on, two reviewers approve it, anyone finishes it, and
+# the contributor takes it after the challenge window, each as that person's wallet.
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain, nothing else.
 #
@@ -18,7 +18,6 @@ WORLD_NAME=web-work
 world_up
 world_mandate
 world_project
-world_claim_filed
 
 if lsof -ti tcp:4173 >/dev/null 2>&1; then
   fail "port 4173 is already serving something: a stale preview would run an old build (lsof -ti tcp:4173 | xargs kill)"

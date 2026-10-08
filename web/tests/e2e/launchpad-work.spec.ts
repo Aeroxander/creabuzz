@@ -5,10 +5,9 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
 /**
  * The contributor path in the browser, against a REAL local chain.
  *
- * Opt-in: `scripts/web-work-e2e.sh` builds the world (a DAO with a Shares-only work budget, a project, and a claim
- * that is filed but not yet taken on) and runs this spec. Each person acts from their own wallet:
- * the manager takes the claim on, two reviewers approve it, anyone finishes it, and after the challenge window the
- * contributor takes it. What is stubbed: the relay (it only serves the launch record) and the wallet
+ * Opt-in: `scripts/web-work-e2e.sh` builds the world (a DAO with a Shares-only work budget and a project, and no claim
+ * yet) and runs this spec. Each person acts from their own wallet: the contributor files a claim, the manager
+ * takes it on, two reviewers approve it, anyone finishes it, and after the challenge window the contributor takes it. What is stubbed: the relay (it only serves the launch record) and the wallet
  * (`window.ethereum` forwarding to Anvil's unlocked accounts).
  */
 
@@ -121,6 +120,30 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
 }) => {
   test.setTimeout(240_000);
 
+  // ── the contributor files a claim that asks for no money ───────────────────
+  const filer = await context.newPage();
+  await openWork(filer, CONTRIBUTOR);
+  await expect(filer.getByTestId("work-claims")).toHaveCount(0);
+  // Words that do not make a claim are refused before the wallet is asked.
+  await filer.getByTestId("work-claim-submit").click();
+  await expect(filer.getByTestId("work-claim-problem")).toContainText(
+    "short name",
+  );
+  await filer.getByTestId("work-claim-name").fill("write-docs");
+  await filer.getByTestId("work-claim-submit").click();
+  await expect(filer.getByTestId("work-claim-problem")).toContainText(
+    "where the work is",
+  );
+  await filer
+    .getByTestId("work-claim-evidence")
+    .fill("https://example.com/pr/1");
+  await filer.getByTestId("work-claim-check").fill("docs merged and reviewed");
+  await filer.getByTestId("work-claim-submit").click();
+  await expect(filer.getByTestId("work-claim-filed")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(claimNext(filer)).toContainText("Waiting for a project manager");
+
   // ── the manager takes the claim on ─────────────────────────────────────────
   const manager = await context.newPage();
   await openWork(manager, MANAGER);
@@ -212,4 +235,9 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     `--mandate ${MANDATE}`,
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
+  if (process.env.E2E_SHOTS) {
+    await contributor
+      .getByTestId("work-tab")
+      .screenshot({ path: `${process.env.E2E_SHOTS}/work.png` });
+  }
 });
