@@ -4,6 +4,11 @@ pragma solidity ^0.8.24;
 import {IContinuousClearingAuction, ICcaFinalization, ILBPInitializer} from "./CCA.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
+/// @notice The one auction-side call the executor makes while funding: tell the auction its tokens arrived.
+interface IAuctionTokenReceiver {
+    function onTokensReceived() external;
+}
+
 /// @title GraduationExecutor
 /// @notice Executes the graduation handoff: sweeps the auction's proceeds and
 /// routes them into apptoken rails (plan §7.2 decision — apptoken, not v4).
@@ -51,6 +56,13 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// after graduation, only while no pool was recorded, and only pays the
 /// treasury. Before then the reserve can go nowhere but the recorded pool.
 ///
+/// TWO ROLES. The `launcher` is whoever deployed the executor: it runs the launch (binds the auction,
+/// funds it, and may point the payee at the DAO once) and never receives money. The `treasury` is the
+/// payee and the only party that can move the reserve afterwards. For a launch that settles into a DAO
+/// the launcher calls `retargetTreasury(dao)` once, before binding, so the raise lands in the DAO and
+/// the founder's wallet is never a payee. When nobody retargets, launcher and treasury are the same
+/// wallet and behaviour is exactly what it was before the split.
+///
 /// TRUST ASSUMPTIONS (accepted, documented):
 /// - A treasury that cannot receive ETH makes an ETH graduation revert
 ///   atomically (`_pay` fails); the raise stays in the auction until the
@@ -60,7 +72,13 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 contract GraduationExecutor is ILBPInitializer {
     using SafeTransferLib for address;
 
-    address public immutable treasury;
+    /// @notice The payee of the raise, unsold supply and any reserve release. Set at construction; the
+    /// launcher may retarget it once, before the auction is bound.
+    address public treasury;
+    /// @notice Whoever deployed this executor. Runs the launch; never a payee.
+    address public immutable launcher;
+    /// @notice True once `retargetTreasury` has been used.
+    bool public treasuryRetargeted;
     /// @notice Reserve share in basis points (e.g. 4000 = 40% to the TM floor).
     uint16 public immutable reserveBps;
     /// @notice Seconds after graduation before an unreleased reserve may be
@@ -119,6 +137,10 @@ contract GraduationExecutor is ILBPInitializer {
     );
     event ReserveReleased(address indexed auction, address pool, uint256 amount);
     event StuckReserveWithdrawn(address indexed auction, address currency, uint256 amount);
+    /// @notice Emitted once, when the launcher points the payee at a different treasury (a DAO).
+    event TreasuryRetargeted(address indexed previous, address indexed treasury);
+    /// @notice Emitted when the sale tranche is moved from the executor into its auction.
+    event AuctionFunded(address indexed auction, address token, uint256 amount);
     /// @notice Emitted once, when the treasury binds the executor to its auction.
     event AuctionBound(address indexed auction, address currency);
     /// @notice Emitted when a failed launch's sale supply is returned to the treasury.
@@ -143,6 +165,12 @@ contract GraduationExecutor is ILBPInitializer {
     error AuctionNotBound(address auction, address bound);
     /// @notice `bindAuction` already ran; the binding is one-shot.
     error AlreadyBound(address bound);
+    /// @notice Only the launcher (or, where noted, the treasury) may call this.
+    error OnlyLauncher(address caller);
+    /// @notice The treasury can be retargeted once, and only before an auction is bound.
+    error CannotRetarget();
+    /// @notice The executor holds less of the sale token than asked.
+    error InsufficientSaleTokens(uint256 held, uint256 wanted);
     /// @notice The address handed to `bindAuction` is not a contract.
     error NotAnAuction(address auction);
     /// @notice ETH was sent to the executor by anyone but the bound auction.
@@ -167,18 +195,29 @@ contract GraduationExecutor is ILBPInitializer {
             revert BadReserveLock(reserveLockSeconds_);
         }
         treasury = treasury_;
+        launcher = msg.sender;
         reserveBps = reserveBps_;
         reserveLockSeconds = reserveLockSeconds_;
     }
 
+    /// @notice Point the payee at a different treasury, once, before an auction is bound. The launcher
+    /// uses it to make a DAO that did not exist yet the destination of the raise.
+    function retargetTreasury(address newTreasury) external {
+        if (msg.sender != launcher) revert OnlyLauncher(msg.sender);
+        if (treasuryRetargeted || boundAuction != address(0) || newTreasury == address(0)) revert CannotRetarget();
+        emit TreasuryRetargeted(treasury, newTreasury);
+        treasury = newTreasury;
+        treasuryRetargeted = true;
+    }
+
     /// @notice One-shot: bind this executor to the one auction it will settle.
-    /// Treasury only, called right after the auction is created (the executor
-    /// is deployed first because it must be the auction's recipient).
+    /// Launcher or treasury, called right after the auction is created (the
+    /// executor is deployed first because it must be the auction's recipient).
     /// @dev Verifies the auction names this executor as BOTH recipients, so a
     /// mis-wired launch fails here — while a fresh executor can still be
     /// deployed — not at graduation. The currency may be ERC-20 or native.
     function bindAuction(address auction) external {
-        if (msg.sender != treasury) revert OnlyTreasury(msg.sender);
+        if (msg.sender != treasury && msg.sender != launcher) revert OnlyTreasury(msg.sender);
         if (boundAuction != address(0)) revert AlreadyBound(boundAuction);
         if (auction.code.length == 0) revert NotAnAuction(auction);
         IContinuousClearingAuction cca = IContinuousClearingAuction(auction);
@@ -191,6 +230,21 @@ contract GraduationExecutor is ILBPInitializer {
         }
         boundAuction = auction;
         emit AuctionBound(auction, currency);
+    }
+
+    /// @notice Move the sale tranche this executor holds into its bound auction and tell the auction it arrived.
+    /// For a DAO launch the DAO mints the tranche to the executor when it is summoned, so the founder's wallet
+    /// never holds the supply. Launcher or treasury; before graduation only.
+    function fundAuction(address auction, uint256 amount) external nonReentrant {
+        if (msg.sender != treasury && msg.sender != launcher) revert OnlyTreasury(msg.sender);
+        _requireBound(auction);
+        if (graduations[auction].executed) revert AlreadyExecuted(auction);
+        address token = IContinuousClearingAuction(auction).token();
+        uint256 held = _tokenBalance(token, address(this));
+        if (held < amount) revert InsufficientSaleTokens(held, amount);
+        token.safeTransfer(auction, amount);
+        IAuctionTokenReceiver(auction).onTokensReceived();
+        emit AuctionFunded(auction, token, amount);
     }
 
     /// @dev Every entry point serves the bound auction and nothing else.
