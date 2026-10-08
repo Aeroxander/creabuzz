@@ -96,8 +96,9 @@ kind or an arbitrary contract claiming to be a mandate cannot lower the bars. Op
 `openProposalWithAction`; opening by id alone conservatively uses the unrestricted lane.
 
 A project fixes a manager, a currency budget and a share budget, an expiration and an acceptance-check hash. The
-manager binds milestone claims, reserving currency for those that ask for it, without another treasury vote. A claim
-may ask for no currency at all: it asks to be recognised. Funding locks the agreed check. `ClaimStake` and
+manager binds milestone claims, naming the contributor they mean (a claim id belongs to whoever filed it first),
+reserving currency for those that ask for it, without another treasury vote. A claim may ask for no currency at
+all: it asks to be recognised. Funding locks the agreed check. `ClaimStake` and
 `VerifierSet` provide claimant recusal, distinct reviewer addresses, approval/objection quorum, a three-day
 challenge, payout, expiry and disputed-claim recovery. Returned money does not replenish lifetime project authority.
 
