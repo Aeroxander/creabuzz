@@ -26,11 +26,19 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 | A **Work** tab: a DAO's work budgets, projects and claims read from the chain; file a claim for recognition, take a claim on, review, finish, take the payout, each from the person's own wallet | `web/src/features/launchpad/ui/WorkTab.tsx`, `FileClaimCard.tsx`, core `work.ts` / `workRead.ts` | 12 core unit tests (calldata and events pinned to `cast`, a fake-chain reader); `scripts/web-work-e2e.sh` runs the whole path in a browser against a real local chain (found and fixed a hook-order crash in the launch page) |
 | A closed mandate awards no more Shares; a manager binds only the claim of the contributor they name (the contract refuses a claim someone else filed under the id) | `TreasuryMandate.sol` | `EquityMandate.t.sol` (9 tests); full forge suite 313 passed |
 
+## Shares as an apptoken: checked
+
+The DAO's Shares can implement the ERC-20C interface, and a lock on a holder's Shares can stop both selling and
+ragequit without touching the governor. See `docs/token-voting-design.md` ("Shares as an apptoken") and
+`SharesCreatorToken.t.sol` (13 tests), plus `scripts/shares-erc20c-e2e.sh` against the real validator. Not built yet:
+the milestone NFT and the guard that reads it.
+
 ## Differences from the plan
 
-- **D2 (token architecture) was not spiked.** The launch sells the DAO's own Shares directly on the CCA. It does not
-  wrap them in an apptoken, so there are no programmable transfer or fee hooks on them, and nothing here uses
-  TokenMaster or LBAMM. The spike in `PLAN.md` §5 (can a DAO's Shares be an apptoken?) is still open.
+- **D2 (token architecture) was partly spiked.** The launch still sells the DAO's own Shares directly on the CCA, and
+  nothing uses TokenMaster or LBAMM. But Shares now carry the apptoken (ERC-20C) interface and a lock hook, verified
+  against the real transfer validator (above). The market venue (LBAMM, with Shares as the apptoken) is not
+  integrated.
 - The curated bid-gate track is not supported in DAO mode (the panel says so).
 - A launch record can launch once: the kit's addresses come from a per-launch salt, so relaunching after a failed raise
   needs a new record.

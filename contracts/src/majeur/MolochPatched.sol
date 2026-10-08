@@ -1333,6 +1333,18 @@ contract Moloch {
     }
 }
 
+// @@CREABUZZ PATCH BEGIN erc20c-interfaces
+/// @notice The Limit Break transfer validator's ERC-20 entry point and its collection registration.
+interface IShareTransferValidator {
+    function validateTransfer(address caller, address from, address to, uint256 tokenId, uint256 amount) external;
+    function setTokenTypeOfCollection(address collection, uint16 tokenType) external;
+}
+
+/// @notice Who may not move how many of a holder's Shares: the floor a balance cannot go below.
+interface ISharesLockGuard {
+    function lockedOf(address holder) external view returns (uint256);
+}
+// @@CREABUZZ PATCH END erc20c-interfaces
 contract Shares {
     /* ERRORS */
     error BadBlock();
@@ -1420,12 +1432,18 @@ contract Shares {
 
     function transfer(address to, uint256 amount) public returns (bool) {
         _checkUnlocked(msg.sender, to);
+    // @@CREABUZZ PATCH BEGIN erc20c-validate-transfer
+        _validateTransfer(msg.sender, to, amount);
+    // @@CREABUZZ PATCH END erc20c-validate-transfer
         _moveTokens(msg.sender, to, amount);
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) public returns (bool) {
         _checkUnlocked(from, to);
+    // @@CREABUZZ PATCH BEGIN erc20c-validate-transfer-from
+        _validateTransfer(from, to, amount);
+    // @@CREABUZZ PATCH END erc20c-validate-transfer-from
 
         uint256 allowed = allowance[from][msg.sender];
         if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;
@@ -1437,6 +1455,69 @@ contract Shares {
     function setTransfersLocked(bool locked) public payable onlyDAO {
         transfersLocked = locked;
     }
+    // @@CREABUZZ PATCH BEGIN erc20c-surface
+    /// @notice ERC-20C: the transfer validator the DAO chose (zero until it chooses one, unlike the stock ERC-20C,
+    /// which falls back to a default validator that may not exist on a chain). It sees plain transfers only: minting
+    /// and burning (ragequit) never reach it, so a validator can never block an exit.
+    address private _transferValidator;
+    /// @notice A contract that says how many of a holder's Shares are locked: they vote, but cannot be moved or
+    /// ragequit while locked.
+    address public lockGuard;
+
+    event TransferValidatorUpdated(address oldValidator, address newValidator);
+    event LockGuardUpdated(address oldGuard, address newGuard);
+    error LockedShares();
+
+    /// @notice The collection admin a validator checks. It is the DAO, so only the DAO can configure its rules.
+    function owner() external view returns (address) {
+        return DAO;
+    }
+
+    function getTransferValidator() public view returns (address) {
+        return _transferValidator;
+    }
+
+    function getTransferValidationFunction() external pure returns (bytes4 functionSignature, bool isViewFunction) {
+        return (IShareTransferValidator.validateTransfer.selector, false);
+    }
+
+    function setTransferValidator(address validator) public payable onlyDAO {
+        require(validator == address(0) || validator.code.length != 0, Unauthorized());
+        emit TransferValidatorUpdated(_transferValidator, validator);
+        _transferValidator = validator;
+        // Tell the validator what kind of token this is (20 = ERC-20); a validator that does not ask is fine.
+        if (validator != address(0)) {
+            try IShareTransferValidator(validator).setTokenTypeOfCollection(address(this), 20) {} catch {}
+        }
+    }
+
+    function setLockGuard(address guard) public payable onlyDAO {
+        require(guard == address(0) || guard.code.length != 0, Unauthorized());
+        emit LockGuardUpdated(lockGuard, guard);
+        lockGuard = guard;
+    }
+
+    /// @dev ERC-165: this is an ICreatorToken (0xad0d7f6c).
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == 0xad0d7f6c;
+    }
+
+    function _validateTransfer(address from, address to, uint256 amount) internal {
+        address validator = _transferValidator;
+        if (validator != address(0) && msg.sender != validator) {
+            IShareTransferValidator(validator).validateTransfer(msg.sender, from, to, 0, amount);
+        }
+    }
+
+    /// @dev The DAO's own Shares are never locked. A burn is a ragequit (or a governance burn): locked Shares are
+    /// not exempt from either, so a holder cannot leave with Shares they have not earned.
+    function _requireUnlocked(address from, uint256 amount) internal view {
+        address guard = lockGuard;
+        if (guard == address(0) || from == DAO) return;
+        uint256 locked = ISharesLockGuard(guard).lockedOf(from);
+        if (locked != 0 && balanceOf[from] < amount + locked) revert LockedShares();
+    }
+    // @@CREABUZZ PATCH END erc20c-surface
 
     function mintFromMoloch(address to, uint256 amount) public payable onlyDAO {
         _mint(to, amount);
@@ -1445,6 +1526,9 @@ contract Shares {
     }
 
     function burnFromMoloch(address from, uint256 amount) public payable onlyDAO {
+    // @@CREABUZZ PATCH BEGIN shares-burn-lock
+        _requireUnlocked(from, amount);
+    // @@CREABUZZ PATCH END shares-burn-lock
         balanceOf[from] -= amount;
         unchecked {
             totalSupply -= amount;
@@ -1476,6 +1560,9 @@ contract Shares {
     }
 
     function _moveTokens(address from, address to, uint256 amount) internal {
+    // @@CREABUZZ PATCH BEGIN shares-transfer-lock
+        _requireUnlocked(from, amount);
+    // @@CREABUZZ PATCH END shares-transfer-lock
     // @@CREABUZZ PATCH BEGIN shares-transfer-recipient
         require(from != address(0) && to != address(0), Unauthorized());
     // @@CREABUZZ PATCH END shares-transfer-recipient

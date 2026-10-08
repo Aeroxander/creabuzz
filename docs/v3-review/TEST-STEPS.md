@@ -60,6 +60,15 @@ scripts/web-work-e2e.sh
 
 Working looks like: 1 passing test in which five different wallets file, take on, review, finish and collect a claim.
 
+## 4b. Shares as an apptoken
+
+```bash
+scripts/shares-erc20c-e2e.sh
+```
+
+Working looks like: `PASS: Shares are an apptoken under Limit Break's real validator…`. It uses the real canonical
+transfer validator the dev chain bootstraps, and every setting is chosen by a DAO vote through the CLI.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

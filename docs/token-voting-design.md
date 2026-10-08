@@ -147,3 +147,25 @@ members notice before a commitment. Market price and treasury valuation never en
 
 The bars and times are candidates validated against stated scenarios, not evidence of optimal voting or a claim that
 a DAO becomes decentralized automatically.
+
+## Shares as an apptoken (ERC-20C), and locked Shares
+
+The DAO's Shares present Limit Break's creator-token interface (`ICreatorToken`, ERC-165 id `0xad0d7f6c`), so the
+canonical transfer validator, and the tools built on it, treat them as an apptoken. The DAO is the collection owner
+(`owner()`), so only a vote can choose the validator or its ruleset. The patch is in `Shares`, not in `Moloch`, and
+costs the governor nothing: its size headroom is unchanged.
+
+- **No default validator.** Stock ERC-20C falls back to a default validator that may not exist on a chain. Shares
+  start with none; the DAO chooses one (`setTransferValidator`) and can remove it again.
+- **A validator sees plain transfers only.** Mints and burns never reach it (as in the standard), so no ruleset,
+  hostile or broken, can block ragequit or an award.
+- **Lock guard.** The DAO may name a guard contract that says how many of a holder's Shares are locked
+  (`lockedOf`). Locked Shares vote (they count in the holder's capacity and delegation) but cannot be transferred or
+  burned, so they cannot be sold and cannot be ragequit; only the unlocked part can. The DAO's own Shares are never
+  locked, and the DAO can remove the guard. A governance burn of locked Shares is held by the same wall.
+- **Verified** with the real validator on a local chain (`scripts/shares-erc20c-e2e.sh`): the DAO votes the
+  validator and the Soulbound ruleset, a transfer is refused and ragequit still works, Vanilla restores transfers, and a
+  lock guard holds exactly the locked part.
+
+What is not built yet: the guard that unlocks by milestone (a soulbound milestone NFT per tranche, minted when a
+reviewed claim is paid), and the launch kit's use of it.
