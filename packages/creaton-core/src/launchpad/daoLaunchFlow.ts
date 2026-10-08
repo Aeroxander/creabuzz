@@ -10,7 +10,11 @@
  * fakes.
  */
 
-import type { AuctionEffects } from "./auctionPlan.ts";
+import type {
+  AuctionEffects,
+  AuctionSendCall,
+  AuctionTxReceiptWithLogs,
+} from "./auctionPlan.ts";
 import {
   type DaoLaunchPlan,
   decodeKitLaunched,
@@ -43,7 +47,9 @@ export const EMPTY_DAO_LAUNCH_PROGRESS: DaoLaunchProgress = {
 export type DaoLaunchStep = "send" | "confirm" | "link" | "publish";
 
 export interface DaoLaunchDeps {
-  effects: Pick<AuctionEffects, "call" | "send" | "codeAt">;
+  effects: Pick<AuctionEffects, "call" | "codeAt"> & {
+    send(call: AuctionSendCall): Promise<AuctionTxReceiptWithLogs>;
+  };
   kit: string;
   plan: DaoLaunchPlan;
   /** Where the mined hash survives a reload. Blocked storage must not stop the launch. */

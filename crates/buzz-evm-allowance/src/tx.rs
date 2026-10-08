@@ -15,6 +15,10 @@ use crate::error::AllowanceError;
 /// not a spend.
 pub const MAX_GAS: u64 = 300_000;
 
+/// The highest cap a caller may ask for with `AllowanceClient::with_gas_cap`: enough to deploy a mandate and its
+/// reviewer panel in one governance execution, far under a block. Anything above is refused, not clamped silently.
+pub const MAX_GAS_CEILING: u64 = 8_000_000;
+
 /// RLP-encode a byte string (scalars are pre-minimized by the caller).
 pub(crate) fn rlp_bytes(data: &[u8]) -> Vec<u8> {
     if data.len() == 1 && data[0] < 0x80 {

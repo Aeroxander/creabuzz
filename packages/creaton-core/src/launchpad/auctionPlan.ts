@@ -77,7 +77,13 @@ export interface AuctionTxReceipt {
   gasUsed: string;
   /** Created address — populated only for contract-creation sends. */
   contractAddress: string | null;
-  /** The receipt's event logs, when the sender reports them (a browser wallet does; the desktop IPC does not). */
+}
+
+/**
+ * A receipt that also carries its event logs, which a browser wallet reports and the desktop IPC does not. Kept apart
+ * from {@link AuctionTxReceipt}, which mirrors the Rust wire struct field for field.
+ */
+export interface AuctionTxReceiptWithLogs extends AuctionTxReceipt {
   logs?: readonly unknown[];
 }
 

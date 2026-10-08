@@ -45,6 +45,9 @@ pub struct VoteArgs {
 }
 
 const RPC_TIMEOUT: Duration = buzz_evm_allowance::DEFAULT_RPC_TIMEOUT;
+/// Executing a passed proposal can deploy contracts (a mandate and its reviewer panel), which costs far more than
+/// the 300k a spend is held to. Still a hard cap, and the client holds it under its own ceiling.
+const PROCESS_GAS_CAP: u64 = 6_000_000;
 const RECEIPT_DEADLINE: Duration = buzz_evm_allowance::DEFAULT_RECEIPT_DEADLINE;
 
 // Selectors computed from canonical signatures at runtime; tests pin them
@@ -54,6 +57,7 @@ const SIG_CAST_VOTE: &str = "castVote(uint256,uint8)";
 const SIG_EXECUTE_BY_VOTES: &str = "executeByVotes(uint8,address,uint256,bytes,bytes32)";
 const SIG_PROPOSAL_ID: &str = "proposalId(uint8,address,uint256,bytes,bytes32)";
 const SIG_STATE: &str = "state(uint256)";
+const SIG_QUEUE: &str = "queue(uint256)";
 
 /// `ProposalState` labels in majeur's declaration order (D6 copy).
 const STATES: [&str; 7] = [
@@ -153,6 +157,13 @@ pub fn encode_open_proposal(id: &str) -> Result<Vec<u8>, CliError> {
     Ok(out)
 }
 
+/// `queue(uint256)`: start the execution delay once the bars have held for their time.
+pub fn encode_queue(id: &str) -> Result<Vec<u8>, CliError> {
+    let mut out = abi::selector(SIG_QUEUE).to_vec();
+    out.extend_from_slice(&uint256_word(id)?);
+    Ok(out)
+}
+
 /// `castVote(uint256,uint8)`.
 pub fn encode_cast_vote(id: &str, support: u8) -> Result<Vec<u8>, CliError> {
     if support > 2 {
@@ -245,6 +256,41 @@ pub fn encode_execute_by_votes(
     let mut out = abi::selector(SIG_EXECUTE_BY_VOTES).to_vec();
     out.extend_from_slice(&encode_intent_args(op, to, value, data, nonce)?);
     Ok(out)
+}
+
+/// Send one bounded-gas call to `target_hex` and wait for its receipt, in the words every chain-local command uses
+/// for a refusal at simulation, an onchain revert and an unconfirmed send.
+pub(crate) async fn send_contract_call(
+    rpc: &Arc<dyn EvmRpc>,
+    rpc_timeout: Duration,
+    target_hex: &str,
+    spender: &k256::ecdsa::SigningKey,
+    data: &[u8],
+    what: &str,
+    gas_cap: u64,
+) -> Result<String, CliError> {
+    let tx_client = AllowanceClient::from_transport(rpc.clone(), target_hex)
+        .map_err(cli_error("tx client"))?
+        .with_gas_cap(gas_cap)
+        .with_rpc_timeout(rpc_timeout)
+        .with_receipt_deadline(RECEIPT_DEADLINE);
+    let receipt = tx_client
+        .send_contract_tx(spender, data)
+        .await
+        .map_err(|e| match e {
+            AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
+                "the contract refused {what} at simulation; nothing was broadcast: {detail}"
+            )),
+            AllowanceError::SpendReverted { tx_hash } => {
+                CliError::Other(format!("{what} transaction {tx_hash} reverted onchain"))
+            }
+            AllowanceError::SpendUnconfirmed { .. } => CliError::Other(format!(
+                "{what} not confirmed within the deadline — check the receipt; \
+                 do NOT re-submit blindly"
+            )),
+            other => CliError::Other(format!("{what} failed: {other}")),
+        })?;
+    Ok(receipt.tx_hash)
 }
 
 /// The bounded read/write client over the shared value-layer transport.
@@ -344,27 +390,27 @@ impl GovClient {
         data: &[u8],
         what: &str,
     ) -> Result<String, CliError> {
-        let tx_client = AllowanceClient::from_transport(self.rpc.clone(), &self.dao_hex())
-            .map_err(cli_error("tx client"))?
-            .with_rpc_timeout(self.rpc_timeout)
-            .with_receipt_deadline(RECEIPT_DEADLINE);
-        let receipt = tx_client
-            .send_contract_tx(spender, data)
+        self.send_capped(spender, data, what, buzz_evm_allowance::tx::MAX_GAS)
             .await
-            .map_err(|e| match e {
-                AllowanceError::SpendRejectedByContract { detail } => CliError::Other(format!(
-                    "the DAO refused {what} at simulation; nothing was broadcast: {detail}"
-                )),
-                AllowanceError::SpendReverted { tx_hash } => {
-                    CliError::Other(format!("{what} transaction {tx_hash} reverted onchain"))
-                }
-                AllowanceError::SpendUnconfirmed { .. } => CliError::Other(format!(
-                    "{what} not confirmed within the deadline — check the receipt; \
-                     do NOT re-submit blindly"
-                )),
-                other => CliError::Other(format!("{what} failed: {other}")),
-            })?;
-        Ok(receipt.tx_hash)
+    }
+
+    async fn send_capped(
+        &self,
+        spender: &k256::ecdsa::SigningKey,
+        data: &[u8],
+        what: &str,
+        gas_cap: u64,
+    ) -> Result<String, CliError> {
+        send_contract_call(
+            &self.rpc,
+            self.rpc_timeout,
+            &self.dao_hex(),
+            spender,
+            data,
+            what,
+            gas_cap,
+        )
+        .await
     }
 
     /// Replace the source owner allocation for direct or delegated ballots.
@@ -384,6 +430,15 @@ impl GovClient {
         .await
     }
 
+    /// Queue a proposal whose support has held long enough; anyone may.
+    pub async fn queue(
+        &self,
+        spender: &k256::ecdsa::SigningKey,
+        id: &str,
+    ) -> Result<String, CliError> {
+        self.send(spender, &encode_queue(id)?, "queue").await
+    }
+
     pub async fn execute_by_votes(
         &self,
         spender: &k256::ecdsa::SigningKey,
@@ -393,10 +448,11 @@ impl GovClient {
         data: &str,
         nonce: &str,
     ) -> Result<String, CliError> {
-        self.send(
+        self.send_capped(
             spender,
             &encode_execute_by_votes(op, to, value, data, nonce)?,
             "executeByVotes",
+            PROCESS_GAS_CAP,
         )
         .await
     }
@@ -404,7 +460,7 @@ impl GovClient {
 
 // ── CLI commands ────────────────────────────────────────────────────────────
 
-fn load_chain() -> Result<(String, k256::ecdsa::SigningKey), CliError> {
+pub(crate) fn load_chain() -> Result<(String, k256::ecdsa::SigningKey), CliError> {
     let rpc_url = std::env::var(ENV_EVM_RPC_URL)
         .ok()
         .filter(|v| !v.is_empty());
@@ -472,6 +528,18 @@ pub async fn cmd_vote(
     println!(
         "{}",
         json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id, "support": support, "shares": shares, "owner": owner })
+    );
+    Ok(())
+}
+
+/// `buzz launchpad queue` — start the execution delay after the support has held.
+pub async fn cmd_queue(dao: &str, id: &str) -> Result<(), CliError> {
+    let (rpc_url, spender) = load_chain()?;
+    let client = GovClient::new_http(&rpc_url, dao)?;
+    let tx_hash = client.queue(&spender, id).await?;
+    println!(
+        "{}",
+        json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id })
     );
     Ok(())
 }
@@ -573,10 +641,7 @@ mod tests {
     fn selectors_match_cast_sig() {
         assert_eq!(hex::encode(abi::selector(SIG_OPEN_PROPOSAL)), "31288f40");
         assert_eq!(hex::encode(abi::selector(SIG_CAST_VOTE)), "56781388");
-        // `queue(uint256)` is part of the documented lifecycle but has no CLI
-        // command yet (that subcommand belongs in `lib.rs`); the pin stays so
-        // the future `launchpad queue` step cannot drift from `cast sig`.
-        assert_eq!(hex::encode(abi::selector("queue(uint256)")), "ddf0b009");
+        assert_eq!(hex::encode(abi::selector(SIG_QUEUE)), "ddf0b009");
         assert_eq!(hex::encode(abi::selector(SIG_EXECUTE_BY_VOTES)), "ee5b2895");
         assert_eq!(hex::encode(abi::selector(SIG_PROPOSAL_ID)), "997506ba");
         assert_eq!(hex::encode(abi::selector(SIG_STATE)), "3e4f49e6");

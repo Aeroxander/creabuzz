@@ -60,6 +60,7 @@ pub struct AllowanceClient {
     spender: Option<SigningKey>,
     rpc_timeout: Duration,
     receipt_deadline: Duration,
+    gas_cap: u64,
 }
 
 impl AllowanceClient {
@@ -77,6 +78,7 @@ impl AllowanceClient {
             spender: None,
             rpc_timeout: DEFAULT_RPC_TIMEOUT,
             receipt_deadline: DEFAULT_RECEIPT_DEADLINE,
+            gas_cap: tx::MAX_GAS,
         })
     }
 
@@ -95,6 +97,13 @@ impl AllowanceClient {
     /// Override the per-RPC-call ceiling.
     pub fn with_rpc_timeout(mut self, timeout: Duration) -> Self {
         self.rpc_timeout = timeout;
+        self
+    }
+
+    /// Raise the gas a single call may use, for callers whose call legitimately costs more than a `spend` (executing
+    /// a governance action that deploys contracts). The cap stays a cap: it is held to [`tx::MAX_GAS_CEILING`].
+    pub fn with_gas_cap(mut self, cap: u64) -> Self {
+        self.gas_cap = cap.min(tx::MAX_GAS_CEILING);
         self
     }
 
@@ -257,10 +266,10 @@ impl AllowanceClient {
             }
             Err(e) => return Err(e),
         };
-        if estimated > tx::MAX_GAS {
+        if estimated > self.gas_cap {
             return Err(AllowanceError::GasEstimateOverCap {
                 estimated,
-                cap: tx::MAX_GAS,
+                cap: self.gas_cap,
             });
         }
 
@@ -533,6 +542,76 @@ mod tests {
 
     const SPENDER_KEY: &str = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
     const PAYEE: &str = "0x00000000000000000000000000000000000000d3";
+
+    /// The same node, but every call is estimated at `gas`.
+    struct EstimatesAt {
+        inner: SendMockRpc,
+        gas: u64,
+    }
+
+    #[async_trait::async_trait]
+    impl EvmRpc for EstimatesAt {
+        async fn call(
+            &self,
+            method: &'static str,
+            params: Value,
+            timeout: Duration,
+        ) -> Result<Value, AllowanceError> {
+            if method == "eth_estimateGas" {
+                return Ok(Value::String(format!("0x{:x}", self.gas)));
+            }
+            self.inner.call(method, params, timeout).await
+        }
+    }
+
+    fn node_estimating(gas: u64) -> Arc<EstimatesAt> {
+        Arc::new(EstimatesAt {
+            inner: SendMockRpc {
+                estimate_data: Mutex::new(vec![]),
+                sent_raw: Mutex::new(vec![]),
+            },
+            gas,
+        })
+    }
+
+    /// A call that costs more than a spend is refused by default, allowed when the caller raises the cap, and
+    /// never allowed past the ceiling however high the caller asks.
+    #[tokio::test]
+    async fn the_gas_cap_can_be_raised_but_only_to_the_ceiling() {
+        let key =
+            SigningKey::from_slice(&hex::decode(SPENDER_KEY.trim_start_matches("0x")).unwrap())
+                .unwrap();
+        let data = [0xde, 0xad, 0xbe, 0xef];
+        let deploys_a_mandate = 3_765_016;
+
+        let default = AllowanceClient::from_transport(node_estimating(deploys_a_mandate), CONTRACT)
+            .unwrap()
+            .with_receipt_deadline(Duration::from_secs(5));
+        match default.send_contract_tx(&key, &data).await {
+            Err(AllowanceError::GasEstimateOverCap { estimated, cap }) => {
+                assert_eq!((estimated, cap), (deploys_a_mandate, tx::MAX_GAS));
+            }
+            other => panic!("expected the default cap to refuse, got {other:?}"),
+        }
+
+        let raised = AllowanceClient::from_transport(node_estimating(deploys_a_mandate), CONTRACT)
+            .unwrap()
+            .with_gas_cap(6_000_000)
+            .with_receipt_deadline(Duration::from_secs(5));
+        assert!(raised.send_contract_tx(&key, &data).await.is_ok());
+
+        let greedy =
+            AllowanceClient::from_transport(node_estimating(tx::MAX_GAS_CEILING + 1), CONTRACT)
+                .unwrap()
+                .with_gas_cap(u64::MAX)
+                .with_receipt_deadline(Duration::from_secs(5));
+        match greedy.send_contract_tx(&key, &data).await {
+            Err(AllowanceError::GasEstimateOverCap { cap, .. }) => {
+                assert_eq!(cap, tx::MAX_GAS_CEILING)
+            }
+            other => panic!("expected the ceiling to refuse, got {other:?}"),
+        }
+    }
 
     /// `record_spend_to` must put `spendTo(...)` — the enforced payout — on the
     /// wire with the recipient, and `record_spend` must keep sending the

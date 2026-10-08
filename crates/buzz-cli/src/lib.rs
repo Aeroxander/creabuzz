@@ -1470,6 +1470,15 @@ pub enum LaunchpadCmd {
     },
     /// Cast a majeur vote (for | against | abstain)
     Vote(commands::launchpad_gov::VoteArgs),
+    /// Queue a proposal once its support has held for the lane's time (anyone may)
+    Queue {
+        /// Bound DAO address (`0x…`)
+        #[arg(long)]
+        dao: String,
+        /// Proposal id (0x + 64 hex)
+        #[arg(long)]
+        id: String,
+    },
     /// Execute a passed proposal after votes + timelock
     Process {
         /// Bound DAO address (`0x…`)
@@ -1490,6 +1499,11 @@ pub enum LaunchpadCmd {
         /// The same nonce `propose` used
         #[arg(long)]
         nonce: String,
+    },
+    /// The contributor path: mandate, project, claim, reviewers, payout, award
+    Work {
+        #[command(subcommand)]
+        step: commands::launchpad_work::WorkCmd,
     },
     /// Read a proposal's state (the D6 quorum-math input)
     ProposalState {
@@ -3664,8 +3678,10 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             gov_cmd,
             LaunchpadCmd::Propose { .. }
                 | LaunchpadCmd::Vote(..)
+                | LaunchpadCmd::Queue { .. }
                 | LaunchpadCmd::Process { .. }
                 | LaunchpadCmd::ProposalState { .. }
+                | LaunchpadCmd::Work { .. }
         ) {
             use LaunchpadCmd::*;
             return match gov_cmd {
@@ -3687,6 +3703,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     )
                     .await
                 }
+                Queue { dao, id } => commands::launchpad_gov::cmd_queue(dao, id).await,
                 Process {
                     dao,
                     op,
@@ -3698,6 +3715,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 ProposalState { dao, id } => {
                     commands::launchpad_gov::cmd_proposal_state(dao, id).await
                 }
+                Work { step } => commands::launchpad_work::run(step).await,
                 _ => unreachable!("only chain-local variants matched"),
             };
         }
@@ -4201,13 +4219,15 @@ mod tests {
                 "process",
                 "proposal-state",
                 "propose",
+                "queue",
                 "record-bid",
                 "record-claim",
                 "record-proposal",
                 "record-receipt",
                 "record-verdict",
                 "show",
-                "vote"
+                "vote",
+                "work"
             ]
         );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
@@ -4238,7 +4258,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 17),
+            ("launchpad", 19),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

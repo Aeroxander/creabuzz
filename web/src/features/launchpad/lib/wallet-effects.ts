@@ -24,7 +24,7 @@
 import type {
   AuctionEffects,
   AuctionSendCall,
-  AuctionTxReceipt,
+  AuctionTxReceiptWithLogs,
 } from "./auctionFlow.ts";
 import { decodeQuantity } from "../chain.ts";
 import { walletError } from "./wallet-errors.ts";
@@ -109,7 +109,7 @@ export function makeWalletAuctionEffects(
       return result;
     },
 
-    send: async (call: AuctionSendCall): Promise<AuctionTxReceipt> => {
+    send: async (call: AuctionSendCall): Promise<AuctionTxReceiptWithLogs> => {
       await requireChain();
       const tx: Record<string, string> = {
         from: deployer,

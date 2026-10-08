@@ -15,12 +15,14 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 | Dev chain deploys the launch kit | `scripts/dev-chain.sh` | `scripts/dev-chain.test.mjs`; run for real three times |
 | Whole-number vote and trust-tier display (no more "0.2") | `web/src/features/feed/*` | web unit tests and `feed.spec.ts` |
 
-## Built, not yet verified
+## Also built and checked
 
-- CLI `buzz launchpad work …` (`crates/buzz-cli/src/commands/launchpad_work.rs`): written with `cast`-pinned calldata
-  tests; first compile found a missing match arm, now fixed; test run pending.
-- Wizard defaulting to "Project Shares" where a build names a launch kit for the chosen network (typechecks; the
-  launchpad e2e has not been re-run against it).
+| Piece | Where | How it was checked |
+|---|---|---|
+| CLI front doors for the contributor path: `buzz launchpad work mandate/project/award` (compose the votes), `claim/check/bind/attest/settle/payout` (send), `state` (read), plus the missing `queue` | `crates/buzz-cli/src/commands/launchpad_work.rs`, `launchpad_gov.rs` | 12 unit tests with calldata pinned to `cast`; `scripts/cli-no-raise-e2e.sh` runs the whole no-raise journey with the CLI alone against a real local chain (mandate, project, claim, recusal, challenge window, payout, over-budget award refused, award, 25 Shares held) |
+| A higher, still bounded gas cap for executing a proposal (a mandate deploys three contracts) | `buzz-evm-allowance` `with_gas_cap`, ceiling 8M | unit test: refused by default, allowed when raised, never past the ceiling |
+| `$TICKER` cashtags link to the launch that owns the ticker | `web/src/features/social` | tokenizer and ownership unit tests; `social-cashtag.spec.ts` |
+| New launches default to the project's own Shares where a kit exists; vouchers hidden beside a DAO's Shares | web launchpad | `launchpad.spec.ts` 28 passed (the default only flips in a build that names a kit; that flip itself has no browser test) |
 
 ## Differences from the plan
 
@@ -35,8 +37,9 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 ## Not started
 
 - Web (and later desktop) screens for mandates, claims, attestation and awards (D9: CLI first).
-- Hiding the ProposalVault and voucher UI (D8), and the Home hero copy that says holders vote before a launch has a DAO.
-- Social: one Home, one trust score, `$TICKER` chips and charts, one-tap trade sheet.
+- Social: merging Home and Social into one feed, one trust score service, prices and charts on the `$TICKER` chip,
+  one-tap trade sheet. Home (launch discussion, vote-ranked) and Social (a timeline) read different data, so merging
+  them is a product redesign rather than a refactor; I left it for you to decide.
 - Ponder indexer for LBAMM prices and the auction; the cashtag registry rules (D5).
 - Doc updates (`docs/dao-os.md`, `contracts/README.md`), the agent review pass, and your own test run. The
   `buzz-review-completed` marker is yours to add.
