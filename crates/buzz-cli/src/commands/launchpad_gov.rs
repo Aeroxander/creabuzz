@@ -24,6 +24,26 @@ use crate::error::CliError;
 
 use super::org::{validate_eth_address, ENV_EVM_RPC_URL, ENV_SPENDER_KEY};
 
+/// Options for the single Shares conviction ballot.
+#[derive(clap::Args)]
+pub struct VoteArgs {
+    /// Bound DAO address (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// Proposal id (0x + 64 hex; `propose` prints it)
+    #[arg(long)]
+    pub id: String,
+    /// for | against | abstain
+    #[arg(long)]
+    pub support: String,
+    /// Target Shares allocation (18 decimals); zero withdraws, omitted = all eligible
+    #[arg(long)]
+    pub shares: Option<String>,
+    /// Source owner when voting as their authorized delegate
+    #[arg(long)]
+    pub owner: Option<String>,
+}
+
 const RPC_TIMEOUT: Duration = buzz_evm_allowance::DEFAULT_RPC_TIMEOUT;
 const RECEIPT_DEADLINE: Duration = buzz_evm_allowance::DEFAULT_RECEIPT_DEADLINE;
 
@@ -143,6 +163,74 @@ pub fn encode_cast_vote(id: &str, support: u8) -> Result<Vec<u8>, CliError> {
     let mut out = abi::selector(SIG_CAST_VOTE).to_vec();
     out.extend_from_slice(&uint256_word(id)?);
     out.extend_from_slice(&abi::encode_uint256(support as u128));
+    Ok(out)
+}
+
+/// Parse human Shares allocation as exact 18-decimal token units.
+pub fn voting_shares_word(value: &str) -> Result<[u8; 32], CliError> {
+    let parts: Vec<&str> = value.trim().split('.').collect();
+    if parts.is_empty()
+        || parts.len() > 2
+        || parts[0].is_empty()
+        || !parts[0].bytes().all(|b| b.is_ascii_digit())
+        || (parts.len() == 2
+            && (parts[1].is_empty()
+                || parts[1].len() > 18
+                || !parts[1].bytes().all(|b| b.is_ascii_digit())))
+    {
+        return Err(CliError::Usage(
+            "Shares must be nonnegative with at most 18 decimals".into(),
+        ));
+    }
+    let fraction = parts.get(1).copied().unwrap_or("");
+    let raw = format!(
+        "{}{}{}",
+        parts[0],
+        fraction,
+        "0".repeat(18 - fraction.len())
+    );
+    let word = uint256_word(&raw)?;
+    if word[..20].iter().any(|b| *b != 0) {
+        return Err(CliError::Usage(
+            "Shares must be nonnegative and fit the voting capacity".into(),
+        ));
+    }
+    Ok(word)
+}
+
+/// Encode a movable owner or delegated allocation through the single DAO policy.
+pub fn encode_allocation_vote(
+    id: &str,
+    support: u8,
+    shares: Option<&str>,
+    owner: Option<&str>,
+) -> Result<Vec<u8>, CliError> {
+    if shares.is_none() && owner.is_none() {
+        return encode_cast_vote(id, support);
+    }
+    if support > 2 {
+        return Err(CliError::Usage("support must be 0, 1, or 2".into()));
+    }
+    let amount = match shares {
+        Some(value) => voting_shares_word(value)?,
+        None => [0xff; 32],
+    };
+    let signature = if owner.is_some() {
+        "castVoteFor(address,uint256,uint8,uint256)"
+    } else {
+        "castVote(uint256,uint8,uint256)"
+    };
+    let mut out = abi::selector(signature).to_vec();
+    if let Some(owner) = owner {
+        let address = abi::parse_address(&validate_eth_address(owner, "source owner")?)
+            .map_err(cli_error("source owner"))?;
+        let mut word = [0u8; 32];
+        word[12..].copy_from_slice(&address);
+        out.extend_from_slice(&word);
+    }
+    out.extend_from_slice(&uint256_word(id)?);
+    out.extend_from_slice(&abi::encode_uint256(support as u128));
+    out.extend_from_slice(&amount);
     Ok(out)
 }
 
@@ -279,23 +367,21 @@ impl GovClient {
         Ok(receipt.tx_hash)
     }
 
-    pub async fn open_proposal(
-        &self,
-        spender: &k256::ecdsa::SigningKey,
-        id: &str,
-    ) -> Result<String, CliError> {
-        self.send(spender, &encode_open_proposal(id)?, "openProposal")
-            .await
-    }
-
+    /// Replace the source owner allocation for direct or delegated ballots.
     pub async fn cast_vote(
         &self,
         spender: &k256::ecdsa::SigningKey,
         id: &str,
         support: u8,
+        shares: Option<&str>,
+        owner: Option<&str>,
     ) -> Result<String, CliError> {
-        self.send(spender, &encode_cast_vote(id, support)?, "castVote")
-            .await
+        self.send(
+            spender,
+            &encode_allocation_vote(id, support, shares, owner)?,
+            "castVote",
+        )
+        .await
     }
 
     pub async fn execute_by_votes(
@@ -347,10 +433,21 @@ pub async fn cmd_propose(
     data: &str,
     nonce: &str,
 ) -> Result<(), CliError> {
+    if op != 0 {
+        return Err(CliError::Usage(
+            "Shares governance supports CALL only (op 0)".into(),
+        ));
+    }
     let (rpc_url, spender) = load_chain()?;
     let client = GovClient::new_http(&rpc_url, dao)?;
     let id = client.proposal_id(op, to, value, data, nonce).await?;
-    let tx_hash = client.open_proposal(&spender, &id).await?;
+    let mut open = encode_execute_by_votes(op, to, value, data, nonce)?;
+    open[..4].copy_from_slice(&abi::selector(
+        "openProposalWithAction(uint8,address,uint256,bytes,bytes32)",
+    ));
+    let tx_hash = client
+        .send(&spender, &open, "openProposalWithAction")
+        .await?;
     println!(
         "{}",
         json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id })
@@ -359,14 +456,22 @@ pub async fn cmd_propose(
 }
 
 /// `buzz launchpad vote` — cast for | against | abstain.
-pub async fn cmd_vote(dao: &str, id: &str, support: &str) -> Result<(), CliError> {
+pub async fn cmd_vote(
+    dao: &str,
+    id: &str,
+    support: &str,
+    shares: Option<&str>,
+    owner: Option<&str>,
+) -> Result<(), CliError> {
     let (rpc_url, spender) = load_chain()?;
     let client = GovClient::new_http(&rpc_url, dao)?;
     let support = support_word(support)?;
-    let tx_hash = client.cast_vote(&spender, id, support).await?;
+    let tx_hash = client
+        .cast_vote(&spender, id, support, shares, owner)
+        .await?;
     println!(
         "{}",
-        json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id, "support": support })
+        json!({ "status": "ok", "txHash": tx_hash, "dao": client.dao_hex(), "id": id, "support": support, "shares": shares, "owner": owner })
     );
     Ok(())
 }
@@ -380,6 +485,11 @@ pub async fn cmd_process(
     data: &str,
     nonce: &str,
 ) -> Result<(), CliError> {
+    if op != 0 {
+        return Err(CliError::Usage(
+            "Shares governance supports CALL only (op 0)".into(),
+        ));
+    }
     let (rpc_url, spender) = load_chain()?;
     let client = GovClient::new_http(&rpc_url, dao)?;
     let id = client.proposal_id(op, to, value, data, nonce).await?;
@@ -534,5 +644,26 @@ mod tests {
                 .unwrap(),
             "Succeeded"
         );
+    }
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::*;
+    #[test]
+    fn allocation_amount_and_delegated_vectors() {
+        let amount = voting_shares_word("1.5").unwrap();
+        assert_eq!(amount, uint256_word("1500000000000000000").unwrap());
+        let call = encode_allocation_vote("1", 1, Some("1.5"), None).unwrap();
+        assert_eq!(hex::encode(&call[..4]), "9c028176");
+        assert_eq!(&call[68..100], &amount);
+        let owner = "0x1111111111111111111111111111111111111111";
+        let delegated = encode_allocation_vote("1", 0, None, Some(owner)).unwrap();
+        assert_eq!(hex::encode(&delegated[..4]), "87906434");
+        assert_eq!(&delegated[100..132], &[0xff; 32]);
+        assert_eq!(voting_shares_word("0").unwrap(), [0; 32]);
+        for invalid in ["-1", "1e18", "1.0000000000000000001", "1."] {
+            assert!(voting_shares_word(invalid).is_err());
+        }
     }
 }

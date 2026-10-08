@@ -1452,7 +1452,7 @@ pub enum LaunchpadCmd {
         /// Bound DAO address (`0x…`)
         #[arg(long)]
         dao: String,
-        /// Operation: 0 = call, 1 = delegatecall
+        /// Operation: 0 = CALL (fixed governance policy)
         #[arg(long, default_value_t = 0)]
         op: u8,
         /// Target of the operation (`0x…`)
@@ -1469,23 +1469,13 @@ pub enum LaunchpadCmd {
         nonce: String,
     },
     /// Cast a majeur vote (for | against | abstain)
-    Vote {
-        /// Bound DAO address (`0x…`)
-        #[arg(long)]
-        dao: String,
-        /// Proposal id (0x + 64 hex; `propose` prints it)
-        #[arg(long)]
-        id: String,
-        /// for | against | abstain
-        #[arg(long)]
-        support: String,
-    },
+    Vote(commands::launchpad_gov::VoteArgs),
     /// Execute a passed proposal after votes + timelock
     Process {
         /// Bound DAO address (`0x…`)
         #[arg(long)]
         dao: String,
-        /// Operation: 0 = call, 1 = delegatecall
+        /// Operation: 0 = CALL (fixed governance policy)
         #[arg(long, default_value_t = 0)]
         op: u8,
         /// Target of the operation (`0x…`)
@@ -3673,7 +3663,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         if matches!(
             gov_cmd,
             LaunchpadCmd::Propose { .. }
-                | LaunchpadCmd::Vote { .. }
+                | LaunchpadCmd::Vote(..)
                 | LaunchpadCmd::Process { .. }
                 | LaunchpadCmd::ProposalState { .. }
         ) {
@@ -3687,8 +3677,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     data,
                     nonce,
                 } => commands::launchpad_gov::cmd_propose(dao, *op, to, value, data, nonce).await,
-                Vote { dao, id, support } => {
-                    commands::launchpad_gov::cmd_vote(dao, id, support).await
+                Vote(args) => {
+                    commands::launchpad_gov::cmd_vote(
+                        &args.dao,
+                        &args.id,
+                        &args.support,
+                        args.shares.as_deref(),
+                        args.owner.as_deref(),
+                    )
+                    .await
                 }
                 Process {
                     dao,
