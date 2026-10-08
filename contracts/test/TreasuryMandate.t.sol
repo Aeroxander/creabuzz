@@ -76,7 +76,7 @@ contract TreasuryMandateTest is VotingFixture {
         assertFalse(ledger.boundedAction(0, address(mandate), 0, abi.encodeCall(TreasuryMandate.returnUnused, ())));
         vm.prank(ALICE);
         uint256 id = dao.openProposalWithAction(0, address(mandate), 0, data, bytes32(0));
-        (uint96 votingSupply, uint96 quorum,, uint16 approvalBps, uint64 notice,,, uint64 hold, bool bounded) =
+        (uint96 votingSupply, uint96 quorum,, uint16 approvalBps, uint64 notice,,, uint64 hold, bool bounded, bool exclusive) =
             dao.proposalVotingRules(id);
         assertEq(votingSupply, 100e18);
         assertEq(quorum, 50e18, "native 50% quorum can raise the bounded lane's 10% quorum");
@@ -84,13 +84,14 @@ contract TreasuryMandateTest is VotingFixture {
         assertEq(hold, 6 hours);
         assertEq(notice, vm.getBlockTimestamp() + 24 hours);
         assertTrue(bounded);
+        assertFalse(exclusive, "approvals inside a funded budget do not compete for the same Shares");
     }
 
     function test_arbitrary_id_and_foreign_mandate_cannot_claim_bounded_rules() public {
         bytes memory data = projectData(bytes32("arbitrary"), 1e18);
         uint256 id = dao.proposalId(0, address(mandate), 0, data, bytes32(0));
         vote(ALICE, id, 20e18);
-        (,,,,,,,, bool bounded) = dao.proposalVotingRules(id);
+        (,,,,,,,, bool bounded,) = dao.proposalVotingRules(id);
         assertFalse(bounded);
         address[] memory reviewers = new address[](1);
         reviewers[0] = ALICE;

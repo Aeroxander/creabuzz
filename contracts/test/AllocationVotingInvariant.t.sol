@@ -63,6 +63,13 @@ contract AllocationHandler is Test {
         vm.roll(block.number + 1);
     }
 
+    /// @dev Flip the unrestricted lane between exclusive and reusable backing: open proposals keep the rule
+    /// they were opened under, new ones get the new rule, and every invariant must still hold.
+    function toggleExclusive(bool exclusive) external {
+        vm.prank(address(dao));
+        policy.setLane(false, 2000, 6600, 48 hours, 12 hours, exclusive);
+    }
+
     function queue(uint256 slot) external {
         uint256 id = ids[slot % 8];
         if (dao.state(id) != Moloch.ProposalState.Succeeded) failedQueues++;
@@ -81,12 +88,13 @@ contract AllocationVotingInvariantTest is VotingFixture {
         vm.roll(block.number + 1);
         handler = new AllocationHandler(dao, ALICE, BOB, CAROL);
         targetContract(address(handler));
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](6);
         selectors[0] = handler.allocate.selector;
         selectors[1] = handler.transfer.selector;
         selectors[2] = handler.delegate.selector;
         selectors[3] = handler.elapse.selector;
         selectors[4] = handler.queue.selector;
+        selectors[5] = handler.toggleExclusive.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -100,8 +108,8 @@ contract AllocationVotingInvariantTest is VotingFixture {
             assertEq(ledger.available(owner) + ledger.allocated(owner), owned);
             uint256[] memory live = ledger.allocationsOf(owner);
             for (uint256 k; k < live.length; ++k) {
-                (uint96 amount, uint8 side) = ledger.positions(live[k], owner);
-                if (side == 0) assertLe(amount, owned, "opposition can never exceed what is owned");
+                (uint96 amount,) = ledger.positions(live[k], owner);
+                assertLe(amount, owned, "no single position can exceed what is owned");
             }
             assertLe(ledger.allocationsOf(owner).length, 16);
             sum += owned;

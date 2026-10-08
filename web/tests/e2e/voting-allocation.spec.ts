@@ -157,12 +157,13 @@ async function votingWorld(
           86400,
           12 * 3600, // hold
           0,
+          1, // backing is exclusive
         ]
           .map(word)
           .join("");
     }
     if (data.startsWith("0xb1f792c9") && unopened && !spent)
-      result = "0x" + word(0).repeat(9);
+      result = "0x" + word(0).repeat(10);
     if (data.startsWith("0x54b31217")) {
       if (failed) {
         await route.fulfill({

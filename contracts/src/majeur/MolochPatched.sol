@@ -83,8 +83,8 @@ contract Moloch {
         return (policy.available(owner), policy.capacity(owner), policy.weightFor(bytes32(id), owner, snap), amount, side, policy.opposeWeightFor(bytes32(id), owner, snap));
     }
 
-    /// @notice Frozen voting supply, quorum, approval bar, notice, expiry, delay, hold time and risk class.
-    function proposalVotingRules(uint256 id) public view returns (uint96 votingSupply, uint96 quorum, uint96 minYes, uint16 approvalBps, uint64 reviewEndsAt, uint64 expiresAt, uint64 delay, uint64 hold, bool bounded) {
+    /// @notice Frozen voting supply, quorum, approval bar, notice, expiry, delay, hold time, risk class and whether backing is exclusive.
+    function proposalVotingRules(uint256 id) public view returns (uint96 votingSupply, uint96 quorum, uint96 minYes, uint16 approvalBps, uint64 reviewEndsAt, uint64 expiresAt, uint64 delay, uint64 hold, bool bounded, bool exclusive) {
         return AllocationVoting(votingWeight).proposals(id);
     }
 

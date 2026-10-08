@@ -21,11 +21,14 @@ interface IAllocationGovernor {
 /// @notice Movable Shares allocations. Loot does not vote. Every executable action uses this one
 /// policy and one ballot path.
 ///
-/// BACKING is exclusive: Shares that back one proposal (FOR) or count toward its quorum (ABSTAIN) are
-/// not available to back another, so a holder must choose priorities. OPPOSITION is free: an AGAINST
-/// allocation can sit on every proposal at full weight. Otherwise a majority busy backing its own
-/// priorities could not also oppose a hostile one, and relative thresholds would let a minority
-/// through unopposed. Opposition is a brake, not a budget.
+/// BACKING can be exclusive: in an exclusive lane, Shares that back one proposal (FOR) or count toward
+/// its quorum (ABSTAIN) are not available to back another, so a holder must choose priorities. The
+/// unrestricted (treasury-scale) lane is exclusive by default; the bounded lane is not, because a
+/// funded mandate's budget already caps what its approvals can spend and the simulation showed that
+/// splitting Shares across concurrent approvals roughly halves how many good ones pass.
+/// OPPOSITION is always free: an AGAINST allocation can sit on every proposal at full weight.
+/// Otherwise a majority busy backing its own priorities could not also oppose a hostile one, and
+/// relative thresholds would let a minority through unopposed. Opposition is a brake, not a budget.
 ///
 /// How a proposal is approved. Requirements are captured when it opens and never change after:
 ///  - QUORUM  yes + no + abstain >= a share of VOTING supply (see below);
@@ -68,12 +71,14 @@ contract AllocationVoting is IVotingWeight {
         uint8 support;
     }
 
-    /// @dev One lane's bars. `quorumBps` is of voting supply; `approvalBps` is of votes cast for or against.
+    /// @dev One lane's bars. `quorumBps` is of voting supply; `approvalBps` is of votes cast for or against;
+    /// `exclusive` makes backing (not opposition) draw from a single pool of Shares.
     struct Lane {
         uint16 quorumBps;
         uint16 approvalBps;
         uint64 review;
         uint64 hold;
+        bool exclusive;
     }
 
     struct Rules {
@@ -86,6 +91,7 @@ contract AllocationVoting is IVotingWeight {
         uint64 delay;
         uint64 hold;
         bool bounded;
+        bool exclusive;
     }
 
     struct Support {
@@ -121,7 +127,9 @@ contract AllocationVoting is IVotingWeight {
         uint256 indexed proposalId, address indexed owner, address indexed caller, uint8 side, uint96 amount
     );
     event AllocationDelegateChanged(address indexed owner, address indexed delegate);
-    event LaneSet(bool indexed bounded, uint16 quorumBps, uint16 approvalBps, uint64 review, uint64 hold);
+    event LaneSet(
+        bool indexed bounded, uint16 quorumBps, uint16 approvalBps, uint64 review, uint64 hold, bool exclusive
+    );
     event ExclusionSet(address indexed holder, bool excluded);
 
     modifier onlyDAO() {
@@ -139,8 +147,8 @@ contract AllocationVoting is IVotingWeight {
         if (dao != address(0) || shares_.code.length == 0 || holders.length > 256) revert InvalidInitialization();
         dao = msg.sender;
         shares = IAllocationShares(shares_);
-        lanes[0] = Lane({quorumBps: 2000, approvalBps: 6600, review: 48 hours, hold: 12 hours});
-        lanes[1] = Lane({quorumBps: 1000, approvalBps: 5500, review: 24 hours, hold: 6 hours});
+        lanes[0] = Lane({quorumBps: 2000, approvalBps: 6600, review: 48 hours, hold: 12 hours, exclusive: true});
+        lanes[1] = Lane({quorumBps: 1000, approvalBps: 5500, review: 24 hours, hold: 6 hours, exclusive: false});
         _setExcluded(BURN, true);
         for (uint256 i; i < holders.length; ++i) {
             address owner = holders[i];
@@ -165,7 +173,7 @@ contract AllocationVoting is IVotingWeight {
     /// quorum 5% to 60% of voting supply, approval above half but at most 90% of votes cast, review one to
     /// fourteen days, and a hold no longer than the review or a week. (A DAO that sets a bar nobody can
     /// meet could never lower it again.)
-    function setLane(bool bounded, uint16 quorumBps, uint16 approvalBps, uint64 review, uint64 hold)
+    function setLane(bool bounded, uint16 quorumBps, uint16 approvalBps, uint64 review, uint64 hold, bool exclusive)
         external
         onlyDAO
     {
@@ -173,8 +181,8 @@ contract AllocationVoting is IVotingWeight {
             quorumBps < 500 || quorumBps > 6000 || approvalBps < 5001 || approvalBps > 9000 || review < 1 days
                 || review > 14 days || hold > review || hold > 7 days
         ) revert InvalidLane();
-        lanes[bounded ? 1 : 0] = Lane(quorumBps, approvalBps, review, hold);
-        emit LaneSet(bounded, quorumBps, approvalBps, review, hold);
+        lanes[bounded ? 1 : 0] = Lane(quorumBps, approvalBps, review, hold, exclusive);
+        emit LaneSet(bounded, quorumBps, approvalBps, review, hold, exclusive);
     }
 
     /// @notice Keep (or stop keeping) an address's Shares out of voting supply. For holders that can
@@ -233,7 +241,8 @@ contract AllocationVoting is IVotingWeight {
             expiresAt: uint64(block.timestamp) + ttl,
             delay: delay,
             hold: lane.hold,
-            bounded: bounded
+            bounded: bounded,
+            exclusive: lane.exclusive
         });
     }
 
@@ -256,13 +265,13 @@ contract AllocationVoting is IVotingWeight {
         return low == 0 ? 0 : h[low - 1].capacity;
     }
 
-    /// @notice Shares committed to backing (FOR) or quorum (ABSTAIN) on live proposals. AGAINST is free and not
-    /// counted. Terminal proposals release their Shares lazily.
+    /// @notice Shares committed to backing (FOR) or quorum (ABSTAIN) on live proposals in exclusive lanes.
+    /// AGAINST, and backing in a lane that is not exclusive, is free and not counted. Terminal proposals
+    /// release their Shares lazily.
     function allocated(address owner) public view returns (uint256 amount) {
         uint256[] storage ids = ownerProposals[owner];
         for (uint256 i; i < ids.length; ++i) {
-            Position storage pos = positions[ids[i]][owner];
-            if (pos.support != 0 && _live(ids[i])) amount += pos.amount;
+            if (_commits(ids[i], positions[ids[i]][owner].support) && _live(ids[i])) amount += positions[ids[i]][owner].amount;
         }
     }
 
@@ -282,15 +291,18 @@ contract AllocationVoting is IVotingWeight {
     }
 
     /// @inheritdoc IVotingWeight
-    /// @dev The most Shares `owner` can put behind (FOR or ABSTAIN) this proposal: what is free, plus what already
-    /// backs it, capped by the snapshot. An existing AGAINST position holds nothing back.
+    /// @dev The most Shares `owner` can put behind (FOR or ABSTAIN) this proposal, capped by the snapshot. In an
+    /// exclusive lane that is what is free plus what already backs it; elsewhere, everything they own.
     function weightFor(bytes32 proposalId, address owner, uint48 snapshot) public view returns (uint256) {
         uint256 id = uint256(proposalId);
         if (owner == dao || (proposals[id].expiresAt != 0 && !_live(id))) return 0;
-        Position storage pos = positions[id][owner];
-        uint256 availableHere = available(owner) + (pos.support != 0 ? pos.amount : 0);
+        uint256 room = capacity[owner];
+        if (proposals[id].expiresAt == 0 || proposals[id].exclusive) {
+            Position storage pos = positions[id][owner];
+            room = available(owner) + (_commits(id, pos.support) ? pos.amount : 0);
+        }
         uint256 eligible = getPastCapacity(owner, snapshot);
-        return availableHere < eligible ? availableHere : eligible;
+        return room < eligible ? room : eligible;
     }
 
     /// @notice The most Shares `owner` can set AGAINST this proposal: all of what they own, capped by the snapshot,
@@ -465,6 +477,11 @@ contract AllocationVoting is IVotingWeight {
         return (value * bps + 9999) / 10_000;
     }
 
+    /// @dev Whether a position on `id` draws from the owner's single pool of Shares.
+    function _commits(uint256 id, uint8 side) private view returns (bool) {
+        return side != 0 && proposals[id].exclusive;
+    }
+
     function _live(uint256 id) private view returns (bool) {
         return proposals[id].expiresAt != 0 && block.timestamp < proposals[id].expiresAt
             && !IAllocationGovernor(dao).executed(id);
@@ -499,7 +516,7 @@ contract AllocationVoting is IVotingWeight {
             Position storage pos = positions[id][owner];
             uint256 current = pos.amount;
             uint256 target;
-            if (pos.support == 0) target = current < balance ? current : balance;
+            if (!_commits(id, pos.support)) target = current < balance ? current : balance;
             else target = scale ? current * balance / used : current;
             if (target != current) {
                 uint8 side = pos.support;

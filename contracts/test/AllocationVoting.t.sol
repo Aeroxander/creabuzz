@@ -158,27 +158,28 @@ contract AllocationVotingTest is VotingFixture {
 
     function test_lane_settings_are_dao_only_and_bounded() public {
         vm.expectRevert(AllocationVoting.Unauthorized.selector);
-        ledger.setLane(false, 2000, 6600, 48 hours, 12 hours);
+        ledger.setLane(false, 2000, 6600, 48 hours, 12 hours, true);
         vm.startPrank(address(dao));
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 499, 6600, 48 hours, 12 hours); // quorum under 5%
+        ledger.setLane(false, 499, 6600, 48 hours, 12 hours, true); // quorum under 5%
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 6001, 6600, 48 hours, 12 hours); // a quorum most DAOs could never reach
+        ledger.setLane(false, 6001, 6600, 48 hours, 12 hours, true); // a quorum most DAOs could never reach
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 2000, 5000, 48 hours, 12 hours); // approval must be strictly above half
+        ledger.setLane(false, 2000, 5000, 48 hours, 12 hours, true); // approval must be strictly above half
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 2000, 9001, 48 hours, 12 hours);
+        ledger.setLane(false, 2000, 9001, 48 hours, 12 hours, true);
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 2000, 6600, 23 hours, 12 hours);
+        ledger.setLane(false, 2000, 6600, 23 hours, 12 hours, true);
         vm.expectRevert(AllocationVoting.InvalidLane.selector);
-        ledger.setLane(false, 2000, 6600, 48 hours, 49 hours); // hold longer than review
-        ledger.setLane(false, 3000, 7000, 3 days, 1 days);
+        ledger.setLane(false, 2000, 6600, 48 hours, 49 hours, true); // hold longer than review
+        ledger.setLane(false, 3000, 7000, 3 days, 1 days, true);
         vm.stopPrank();
-        (uint16 q, uint16 a, uint64 review, uint64 hold) = ledger.lanes(0);
+        (uint16 q, uint16 a, uint64 review, uint64 hold, bool exclusive) = ledger.lanes(0);
         assertEq(q, 3000);
         assertEq(a, 7000);
         assertEq(review, 3 days);
         assertEq(hold, 1 days);
+        assertTrue(exclusive);
     }
 
     function test_a_lane_change_never_rewrites_an_open_proposal() public {
@@ -186,7 +187,7 @@ contract AllocationVotingTest is VotingFixture {
         vote(ALICE, ID, 1e18);
         AllocationVoting.Rules memory before_ = _rules(ID);
         vm.prank(address(dao));
-        ledger.setLane(false, 6000, 9000, 14 days, 7 days);
+        ledger.setLane(false, 6000, 9000, 14 days, 7 days, true);
         AllocationVoting.Rules memory after_ = _rules(ID);
         assertEq(after_.quorum, before_.quorum);
         assertEq(after_.approvalBps, before_.approvalBps);
@@ -346,8 +347,50 @@ contract AllocationVotingTest is VotingFixture {
         assertEq(second, 20e18);
     }
 
+    // ---- a lane that is not exclusive -----------------------------------------------------------
+
+    function test_a_reusable_lane_lets_the_same_shares_back_every_proposal() public {
+        _three();
+        vm.prank(address(dao));
+        ledger.setLane(false, 2000, 6600, 48 hours, 12 hours, false);
+        vote(ALICE, 1, 50e18);
+        vote(ALICE, 2, 50e18);
+        vote(ALICE, 3, 50e18);
+        assertEq(ledger.allocated(ALICE), 0, "nothing is drawn from a single pool in this lane");
+        assertEq(ledger.available(ALICE), 50e18);
+        (uint96 a,,,) = ledger.proposalSupport(1);
+        (uint96 b,,,) = ledger.proposalSupport(2);
+        assertEq(a, 50e18);
+        assertEq(b, 50e18);
+    }
+
+    function test_the_lane_is_frozen_at_opening_so_an_open_proposal_keeps_its_rule() public {
+        _three();
+        vote(ALICE, 1, 50e18); // opened while the lane is exclusive
+        vm.prank(address(dao));
+        ledger.setLane(false, 2000, 6600, 48 hours, 12 hours, false);
+        vote(ALICE, 2, 50e18); // a new proposal in the now-reusable lane
+        assertEq(ledger.allocated(ALICE), 50e18, "only the exclusive one counts");
+        assertTrue(_rules(1).exclusive);
+        assertFalse(_rules(2).exclusive);
+    }
+
+    function test_leaving_shares_trims_reusable_backing_to_the_balance_too() public {
+        _three();
+        vm.prank(address(dao));
+        ledger.setLane(false, 2000, 6600, 48 hours, 12 hours, false);
+        vote(ALICE, 1, 50e18);
+        vote(ALICE, 2, 50e18);
+        vm.prank(ALICE);
+        shares.transfer(address(0xD00D), 30e18);
+        (uint96 a,,,) = ledger.proposalSupport(1);
+        (uint96 b,,,) = ledger.proposalSupport(2);
+        assertEq(a, 20e18);
+        assertEq(b, 20e18);
+    }
+
     function _rules(uint256 id) internal view returns (AllocationVoting.Rules memory r) {
-        (r.votingSupply, r.quorum, r.minYes, r.approvalBps, r.reviewEndsAt, r.expiresAt, r.delay, r.hold, r.bounded) =
+        (r.votingSupply, r.quorum, r.minYes, r.approvalBps, r.reviewEndsAt, r.expiresAt, r.delay, r.hold, r.bounded, r.exclusive) =
             ledger.proposals(id);
     }
 }

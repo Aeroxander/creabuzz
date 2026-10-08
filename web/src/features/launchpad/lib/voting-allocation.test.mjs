@@ -86,7 +86,7 @@ test("replacing an existing allocation includes its Shares in eligibility", () =
 test("the bars are quorum and approval, and support has to hold", () => {
   // votingSupply 100, quorum 20, minYes 0, approval 66%, review ends 1000, expires 200000, delay 100, hold 50, unrestricted
   const rules = decodeVotingRules(
-    response(100, 20, 0, 6600, 1000, 200000, 100, 50, 0),
+    response(100, 20, 0, 6600, 1000, 200000, 100, 50, 0, 1),
   );
   assert.equal(encodeVotingRules("1"), `0xb1f792c9${word(1)}`);
   assert.match(
@@ -94,6 +94,11 @@ test("the bars are quorum and approval, and support has to hold", () => {
     /66% of the votes cast must be in favour/,
   );
   assert.match(votingRulesSummary(rules), /Treasury-level action/);
+  assert.match(votingRulesSummary(rules), /not available to back another/);
+  assert.doesNotMatch(
+    votingRulesSummary({ ...rules, exclusive: false }),
+    /not available to back another/,
+  );
   assert.match(
     votingRulesSummary({ ...rules, bounded: true }),
     /funded budget/,
@@ -134,13 +139,13 @@ test("the bars are quorum and approval, and support has to hold", () => {
       .status,
     "needs-votes",
   );
-  assert.equal(decodeVotingRules(response(0, 0, 0, 0, 0, 0, 0, 0, 0)), null);
+  assert.equal(decodeVotingRules(response(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)), null);
   assert.throws(
-    () => decodeVotingRules(response(1, 1, 0, 6600, 900, 900, 1, 0, 0)),
+    () => decodeVotingRules(response(1, 1, 0, 6600, 900, 900, 1, 0, 0, 0)),
     "expiry before review end",
   );
   assert.throws(
-    () => decodeVotingRules(response(1, 1, 0, 5000, 100, 900, 1, 0, 0)),
+    () => decodeVotingRules(response(1, 1, 0, 5000, 100, 900, 1, 0, 0, 0)),
     "approval must exceed half",
   );
   assert.throws(() => decodeVotingSupport(response(1, 0, 0, 1n << 64n)));

@@ -97,18 +97,21 @@ export interface VotingRules {
   /** How long quorum and approval must have held without a break. */
   hold: bigint;
   bounded: boolean;
+  /** Whether backing here draws from one pool of Shares (a holder splits their Shares between proposals). */
+  exclusive: boolean;
 }
 /** Opening freezes these requirements; later settings cannot change them. */
 export function encodeVotingRules(id: string): string {
   return `0xb1f792c9${word(proposalId(id))}`;
 }
 export function decodeVotingRules(data: string): VotingRules | null {
-  const w = decode(data, 9);
+  const w = decode(data, 10);
   if (
     w.slice(0, 3).some((v) => v > MAX_CAPACITY) ||
     w[3] > 10_000n ||
     w.slice(4, 8).some((v) => v > MAX_UINT64) ||
-    w[8] > 1n
+    w[8] > 1n ||
+    w[9] > 1n
   )
     throw new Error("The voting rules response is inconsistent.");
   if (w[5] === 0n) return null;
@@ -124,6 +127,7 @@ export function decodeVotingRules(data: string): VotingRules | null {
     delay: w[6],
     hold: w[7],
     bounded: w[8] === 1n,
+    exclusive: w[9] === 1n,
   };
 }
 export interface VotingSupport {
@@ -156,7 +160,7 @@ export function votingRulesSummary(
     return "Proposal rules unavailable until opened and read from chain.";
   const date = (v: bigint) => new Date(Number(v) * 1000).toLocaleString();
   const percent = Number(rules.approvalBps) / 100;
-  return `${rules.bounded ? "Approval inside a funded budget" : "Treasury-level action"} · At least ${formatVotingShares(rules.quorum)} Shares must take part · ${percent}% of the votes cast must be in favour · Support has to hold for ${span(rules.hold)} · Earliest approval ${date(rules.reviewEndsAt)} · Expires ${date(rules.expiresAt)} · Waits ${span(rules.delay)} after approval`;
+  return `${rules.bounded ? "Approval inside a funded budget" : "Treasury-level action"} · At least ${formatVotingShares(rules.quorum)} Shares must take part · ${percent}% of the votes cast must be in favour · Support has to hold for ${span(rules.hold)} · Earliest approval ${date(rules.reviewEndsAt)} · Expires ${date(rules.expiresAt)} · Waits ${span(rules.delay)} after approval${rules.exclusive ? " · Shares you back here are not available to back another proposal" : ""}`;
 }
 /** Shares still needed in favour for the approval bar, given the opposition as it stands. */
 function approvalShortfall(rules: VotingRules, support: VotingSupport): bigint {

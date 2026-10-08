@@ -96,7 +96,8 @@ contract MolochPatchedTest is VotingFixture {
             uint64 expires,
             uint64 delay,
             uint64 hold,
-            bool bounded
+            bool bounded,
+            bool exclusive
         ) = dao.proposalVotingRules(1);
         assertEq(votingSupply, 100e18);
         assertEq(quorum, 50e18, "the governor's own 50% quorum beats the 20% lane quorum");
@@ -107,6 +108,7 @@ contract MolochPatchedTest is VotingFixture {
         assertEq(delay, 1 days);
         assertEq(hold, 12 hours);
         assertFalse(bounded);
+        assertTrue(exclusive, "treasury-scale proposals draw from one pool of Shares");
         vm.prank(address(dao));
         dao.setQuorumBps(10_000);
         vm.prank(address(dao));
