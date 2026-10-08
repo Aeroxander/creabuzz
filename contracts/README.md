@@ -30,6 +30,23 @@ surface that wraps upstream primitives:
   claim's payout per claim (`fund(claimId, amount)`); an objection quorum sends
   the stake and the claim's reserve to the treasury; `resolveFrozen` unwinds a
   frozen claim.
+- `src/AllocationVoting.sol` — the DAO's one ballot (the patched Majeur governor
+  delegates to it): movable Shares allocations, two lanes (treasury-scale, and
+  bounded inside a funded mandate), support that must hold for a set time,
+  free opposition. The DAO's own Shares are outside voting supply and out of
+  the ragequit denominator. See `docs/token-voting-design.md`.
+- `src/TreasuryMandate.sol` — a finite, DAO-approved budget of currency, of
+  Shares, or both. Projects get an allowance inside it; claims are verified
+  by `ClaimStake` + `VerifierSet`; approved work is awarded Shares up to the
+  project's share allowance. A mandate with no currency is how a project
+  that never raised rewards contributors.
+- `src/DaoLaunchKit.sol` — launches a project into a DAO in one atomic
+  transaction: vesting vaults for the team (`src/ShareVesting.sol`), a
+  `GraduationExecutor` it runs, the DAO (via the Summoner), the sale on the
+  canonical CCA, and the raise's payee set to the DAO. Built with solc 0.8.26
+  (the CCA's pin), so the tests that exercise it deploy its artifact; set
+  `REQUIRE_CONTRACT_ARTIFACTS=1` to make a missing artifact fail instead of
+  skip.
 - `src/OrgAllowance.sol` — agent spend allowances that enforce where money
   moves: `spendTo` debits the ledger and pays from the treasury in one call
   (`spend` is advisory accounting only); spends may not name a future epoch.

@@ -26,14 +26,22 @@ for money.
 4. **Approve.** When an agent hits its budget the overrun becomes an approval
    card in "Needs me" with a human's name on it. Approving lets the retry
    through; the decision is on the audit chain.
-5. **Fund.** The project launches a token: one guided flow mints the token,
-   deploys the auction, funds it and binds the settlement contract. Sandbox
-   (simulated) first, testnet next, mainnet only behind an explicit switch.
-6. **Govern.** The raise settles into a treasury owned by a majeur DAO.
-   Shareholders can always ragequit.
-7. **Reward.** Contributions — by people and agents — are drafted, reviewed by
-   a human other than the contributor, and feed shares, royalties and budget
-   ladders.
+5. **Fund.** The project launches with its own DAO: one transaction creates
+   the DAO, vests the team's Shares, opens the sale of the DAO's own Shares
+   and points the raise at the DAO's treasury, so the founder's wallet never
+   holds the supply or the money. (A project that wants a programmable
+   apptoken instead can still mint one and sell that.) Sandbox (simulated)
+   first, testnet next, mainnet only behind an explicit switch. A project may
+   also skip the raise and go straight to contributors (step 7).
+6. **Govern.** The DAO is a patched majeur whose one ballot is movable
+   Shares allocations (`docs/token-voting-design.md`). Backers who bought in
+   the sale vote and can always ragequit; the DAO's own Shares neither vote
+   nor dilute an exit.
+7. **Reward.** Contributions — by people and agents — are claimed, reviewed by
+   a human other than the contributor, and then paid in currency, recognised
+   in Shares, or both, inside a mandate the DAO approved. A mandate with no
+   currency lets a project with an empty treasury reward work in Shares,
+   bounded by a share budget the broad vote capped.
 
 ## Design rules (the wiring contract)
 
