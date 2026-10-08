@@ -46,7 +46,7 @@ function Spark({ points }: { points: number[] }) {
     .join(" ");
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
       className="inline-block align-middle"
       height={height}
       viewBox={`0 0 ${width} ${height}`}
