@@ -2,14 +2,14 @@
 pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {Call, Moloch, Summoner, Shares, Loot, newSummoner} from "../../src/majeur/MolochPatched.sol";
-import {ConvictionVoting} from "../../src/ConvictionVoting.sol";
+import {AllocationVoting} from "../../src/AllocationVoting.sol";
 
 abstract contract VotingFixture is Test {
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
     address internal constant CAROL = address(0xCA401);
     Moloch internal dao;
-    ConvictionVoting internal ledger;
+    AllocationVoting internal ledger;
     Shares internal shares;
     Loot internal loot;
 
@@ -21,7 +21,7 @@ abstract contract VotingFixture is Test {
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = 100e18;
         dao = summoner.summon("Org", "ORG", "", 5000, true, address(0), bytes32(0), holders, amounts, new Call[](0));
-        ledger = ConvictionVoting(dao.votingWeight());
+        ledger = AllocationVoting(dao.votingWeight());
         shares = dao.shares();
         loot = dao.loot();
         vm.prank(address(dao));

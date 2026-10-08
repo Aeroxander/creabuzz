@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
-import {ConvictionVoting} from "../src/ConvictionVoting.sol";
+import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {VotingFixture} from "./helpers/VotingFixture.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {Moloch} from "../src/majeur/MolochPatched.sol";
@@ -76,10 +76,12 @@ contract TreasuryMandateTest is VotingFixture {
         assertFalse(ledger.boundedAction(0, address(mandate), 0, abi.encodeCall(TreasuryMandate.returnUnused, ())));
         vm.prank(ALICE);
         uint256 id = dao.openProposalWithAction(0, address(mandate), 0, data, bytes32(0));
-        (uint96 quorum, uint96 current, uint192 mature, uint64 notice,,, bool bounded) = dao.proposalVotingRules(id);
-        assertEq(quorum, 50e18, "native 50% quorum can raise the bounded floor");
-        assertEq(current, 20e18);
-        assertEq(mature, 10e36);
+        (uint96 votingSupply, uint96 quorum,, uint16 approvalBps, uint64 notice,,, uint64 hold, bool bounded) =
+            dao.proposalVotingRules(id);
+        assertEq(votingSupply, 100e18);
+        assertEq(quorum, 50e18, "native 50% quorum can raise the bounded lane's 10% quorum");
+        assertEq(approvalBps, 5500);
+        assertEq(hold, 6 hours);
         assertEq(notice, vm.getBlockTimestamp() + 24 hours);
         assertTrue(bounded);
     }
@@ -88,7 +90,7 @@ contract TreasuryMandateTest is VotingFixture {
         bytes memory data = projectData(bytes32("arbitrary"), 1e18);
         uint256 id = dao.proposalId(0, address(mandate), 0, data, bytes32(0));
         vote(ALICE, id, 20e18);
-        (,,,,,, bool bounded) = dao.proposalVotingRules(id);
+        (,,,,,,,, bool bounded) = dao.proposalVotingRules(id);
         assertFalse(bounded);
         address[] memory reviewers = new address[](1);
         reviewers[0] = ALICE;
@@ -202,11 +204,11 @@ contract TreasuryMandateTest is VotingFixture {
     function test_deployment_sizes_fit_real_evm_limits() public {
         assertLe(address(mandate).code.length, 24576);
         assertLe(address(mandate.claims()).code.length, 24576);
-        ConvictionVoting implementation = new ConvictionVoting(ledger.mandateFactory());
+        AllocationVoting implementation = new AllocationVoting(ledger.mandateFactory());
         assertLe(address(implementation).code.length, 24576);
         assertLe(address(ledger.mandateFactory()).code.length, 24576);
         assertLe(type(TreasuryMandateFactory).creationCode.length, 49152);
         assertLe(type(TreasuryMandate).creationCode.length + 32 * 8 + 32 * 32, 49152);
-        assertLe(type(ConvictionVoting).creationCode.length + 32, 49152);
+        assertLe(type(AllocationVoting).creationCode.length + 32, 49152);
     }
 }

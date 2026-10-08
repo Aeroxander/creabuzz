@@ -4,11 +4,11 @@ import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {VotingFixture} from "./helpers/VotingFixture.sol";
 import {Moloch, Shares} from "../src/majeur/MolochPatched.sol";
-import {ConvictionVoting} from "../src/ConvictionVoting.sol";
+import {AllocationVoting} from "../src/AllocationVoting.sol";
 
 contract AllocationHandler is Test {
     Moloch public dao;
-    ConvictionVoting public policy;
+    AllocationVoting public policy;
     Shares public shares;
     address[3] public actors;
     uint256[8] public ids;
@@ -19,7 +19,7 @@ contract AllocationHandler is Test {
 
     constructor(Moloch governor, address a, address b, address c) {
         dao = governor;
-        policy = ConvictionVoting(governor.votingWeight());
+        policy = AllocationVoting(governor.votingWeight());
         shares = governor.shares();
         actors = [a, b, c];
         for (uint256 i; i < 8; ++i) {
@@ -71,7 +71,7 @@ contract AllocationHandler is Test {
     }
 }
 
-contract ConvictionVotingInvariantTest is VotingFixture {
+contract AllocationVotingInvariantTest is VotingFixture {
     AllocationHandler internal handler;
 
     function setUp() public override {
@@ -98,6 +98,11 @@ contract ConvictionVotingInvariantTest is VotingFixture {
             assertEq(ledger.capacity(owner), owned);
             assertLe(ledger.allocated(owner), owned);
             assertEq(ledger.available(owner) + ledger.allocated(owner), owned);
+            uint256[] memory live = ledger.allocationsOf(owner);
+            for (uint256 k; k < live.length; ++k) {
+                (uint96 amount, uint8 side) = ledger.positions(live[k], owner);
+                if (side == 0) assertLe(amount, owned, "opposition can never exceed what is owned");
+            }
             assertLe(ledger.allocationsOf(owner).length, 16);
             sum += owned;
         }
@@ -105,21 +110,20 @@ contract ConvictionVotingInvariantTest is VotingFixture {
         assertEq(ledger.totalCapacity(), sum);
     }
 
-    function invariant_raw_support_matches_positions_and_conviction_never_exceeds_backing() public view {
+    function invariant_support_matches_positions_and_the_hold_clock_matches_the_bars() public view {
         for (uint256 i; i < 8; ++i) {
             uint256 id = handler.ids(i);
-            (uint96 yes, uint96 no, uint96 abstain, uint192 cy, uint192 cn, uint192 ca) = ledger.proposalSupport(id);
+            (uint96 yes, uint96 no, uint96 abstain, uint64 since) = ledger.proposalSupport(id);
             uint256[3] memory sums;
             for (uint256 a; a < 3; ++a) {
-                (uint96 amount,,, uint8 side) = ledger.positions(id, handler.actors(a));
+                (uint96 amount, uint8 side) = ledger.positions(id, handler.actors(a));
                 sums[side] += amount;
             }
             assertEq(yes, sums[1]);
             assertEq(no, sums[0]);
             assertEq(abstain, sums[2]);
-            assertLe(cy, uint256(yes) * 1e18);
-            assertLe(cn, uint256(no) * 1e18);
-            assertLe(ca, uint256(abstain) * 1e18);
+            // The hold clock runs exactly while quorum and approval hold.
+            assertEq(since != 0, ledger.thresholdsMet(id), "qualifiedSince is set iff the bars hold");
             assertLe(uint256(yes) + no + abstain, 100e18);
             if (dao.queuedAt(id) != 0 && dao.state(id) != Moloch.ProposalState.Expired) assertTrue(ledger.qualifies(id));
         }

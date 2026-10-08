@@ -16,6 +16,6 @@ interface IVotingWeight {
         uint8 support,
         uint256 amount
     ) external returns (uint96);
-    /// @notice Economic exit is independent of allocation or conviction.
+    /// @notice Economic exit is independent of allocation or how long support has held.
     function mayExit(address owner) external pure returns (bool, uint256);
 }

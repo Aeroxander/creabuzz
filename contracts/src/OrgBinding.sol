@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {ConvictionVoting} from "./ConvictionVoting.sol";
+import {AllocationVoting} from "./AllocationVoting.sol";
 import {Call, Moloch, Summoner} from "./majeur/MolochPatched.sol";
 
 /// @title OrgBinding — onchain record keeper for the NIP-ORG "Opt-in onchain
@@ -256,7 +256,7 @@ contract OrgBinding {
         if (
             configured.proposalThreshold() != p.proposalThreshold || configured.proposalTTL() != p.proposalTTL
                 || configured.timelockDelay() != p.timelockDelay || configured.votingWeight() == address(0)
-                || ConvictionVoting(configured.votingWeight()).dao() != dao
+                || AllocationVoting(configured.votingWeight()).dao() != dao
         ) revert GovernanceNotApplied();
 
         Binding memory b = Binding({dao: dao, boundAt: uint64(block.timestamp)});

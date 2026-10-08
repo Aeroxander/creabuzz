@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, Vm} from "forge-std/Test.sol";
 import {Call, Moloch, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
-import {ConvictionVoting} from "../src/ConvictionVoting.sol";
+import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {ClaimStake} from "../src/ClaimStake.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
@@ -20,12 +20,17 @@ contract DaoGovernanceJourneyTest is Test {
     bytes32 internal constant CHECK = keccak256("published acceptance criteria");
     Moloch internal dao;
     MandateCurrency internal cash;
-    ConvictionVoting internal policy;
+    AllocationVoting internal policy;
     TreasuryMandate internal mandate;
 
     function ballot(address owner, uint256 id, uint256 shares_) internal {
         vm.prank(owner);
         dao.castVote(id, 1, shares_);
+    }
+
+    function oppose(address owner, uint256 id, uint256 shares_) internal {
+        vm.prank(owner);
+        dao.castVote(id, 0, shares_);
     }
 
     function majority(uint256 id) internal {
@@ -96,7 +101,7 @@ contract DaoGovernanceJourneyTest is Test {
         vm.prank(address(dao));
         dao.setTimelockDelay(1 days);
         vm.roll(block.number + 1);
-        policy = ConvictionVoting(dao.votingWeight());
+        policy = AllocationVoting(dao.votingWeight());
         cash = new MandateCurrency();
         cash.mint(address(dao), 100000e18);
         execute(
@@ -115,10 +120,12 @@ contract DaoGovernanceJourneyTest is Test {
         assertEq(dao.loot().balanceOf(INVESTOR), 100e18);
         assertEq(policy.capacity(INVESTOR), 0, "Loot investment has economics, no implicit votes");
 
-        // A conserved 30% coalition cannot withdraw the entire treasury, even when other Shares are allocated.
+        // A 30% coalition proposes to withdraw almost the whole treasury. Unopposed it would clear the 20% quorum
+        // with 100% approval: a low bar is what makes opposition necessary, and opposition is free.
         bytes memory drain = abi.encodeCall(IERC20.transfer, (COALITION, uint256(90000e18)));
         uint256 drainId = dao.proposalId(0, address(cash), 0, drain, bytes32("drain"));
         ballot(COALITION, drainId, 300e18);
+        assertTrue(policy.thresholdsMet(drainId), "an unopposed 30% holder meets the bars; only opposition stops it");
         TreasuryMandateFactory factory = policy.mandateFactory();
         address[] memory reviewers = new address[](3);
         reviewers[0] = FOUNDER;
@@ -154,10 +161,14 @@ contract DaoGovernanceJourneyTest is Test {
         ballot(FOUNDER, competingId, 200e18);
         ballot(TEAM, competingId, 100e18);
         ballot(MEMBER, competingId, 50e18);
+        // Every Share of the other 700 backs a priority, and they still oppose the drain at full weight.
+        oppose(FOUNDER, drainId, 400e18);
+        oppose(TEAM, drainId, 200e18);
+        oppose(MEMBER, drainId, 100e18);
         vm.warp(vm.getBlockTimestamp() + 48 hours);
-        assertFalse(policy.qualifies(drainId));
-        assertFalse(policy.qualifies(budgetId));
-        assertFalse(policy.qualifies(competingId));
+        assertFalse(policy.qualifies(drainId), "300 FOR against 700 AGAINST");
+        assertTrue(policy.qualifies(budgetId), "two priorities at 350 each can both clear the bars");
+        assertTrue(policy.qualifies(competingId));
         vm.expectRevert(Moloch.NotOk.selector);
         dao.executeByVotes(0, address(cash), 0, drain, bytes32("drain"));
         ballot(FOUNDER, competingId, 0);

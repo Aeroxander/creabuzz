@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 // @@CREABUZZ PATCH BEGIN seam-interface
-import {ConvictionVoting} from "../ConvictionVoting.sol";
+import {AllocationVoting} from "../AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../TreasuryMandate.sol";
 import {IVotingWeight} from "../VotingWeight.sol";
 // @@CREABUZZ PATCH END seam-interface
@@ -61,7 +61,7 @@ contract Moloch {
     Loot public loot;
     // @@CREABUZZ PATCH BEGIN voting-weight
     address public votingWeight;
-    address immutable convictionImpl;
+    address immutable policyImpl;
     bool public castingVote;
     bool public convertingLoot;
     /// @notice Compatibility entry point. The voting policy is fixed at creation.
@@ -74,40 +74,40 @@ contract Moloch {
 
     /// @notice Shares available, owned, eligible here, and currently allocated here.
     function votingAllocationFor(uint256 id, address owner) public view returns (uint256 available, uint256 owned, uint256 eligible, uint96 amount, uint8 side) {
-        ConvictionVoting policy = ConvictionVoting(votingWeight);
+        AllocationVoting policy = AllocationVoting(votingWeight);
         uint48 snap = snapshotBlock[id];
         if (snap == 0) snap = toUint48(block.number - 1);
-        (amount,,, side) = policy.positions(id, owner);
-        (,,,, uint64 expiry,,) = policy.proposals(id);
+        (amount, side) = policy.positions(id, owner);
+        uint64 expiry = policy.expiryOf(id);
         if (executed[id] || (expiry != 0 && block.timestamp >= expiry)) amount = 0;
         return (policy.available(owner), policy.capacity(owner), policy.weightFor(bytes32(id), owner, snap), amount, side);
     }
 
-    /// @notice Frozen quorum, current/mature approval, notice, expiry, delay and risk class.
-    function proposalVotingRules(uint256 id) public view returns (uint96 quorum, uint96 currentYes, uint192 convictionYes, uint64 reviewEndsAt, uint64 expiresAt, uint64 delay, bool bounded) {
-        return ConvictionVoting(votingWeight).proposals(id);
+    /// @notice Frozen voting supply, quorum, approval bar, notice, expiry, delay, hold time and risk class.
+    function proposalVotingRules(uint256 id) public view returns (uint96 votingSupply, uint96 quorum, uint96 minYes, uint16 approvalBps, uint64 reviewEndsAt, uint64 expiresAt, uint64 delay, uint64 hold, bool bounded) {
+        return AllocationVoting(votingWeight).proposals(id);
     }
 
-    /// @notice Current and matured support from the same authoritative ballot.
-    function proposalSupport(uint256 id) public view returns (uint96 yes, uint96 no, uint96 abstain, uint192 convictionYes, uint192 convictionNo, uint192 convictionAbstain) {
-        return ConvictionVoting(votingWeight).proposalSupport(id);
+    /// @notice Current allocations from the one authoritative ballot, and since when quorum and approval have held.
+    function proposalSupport(uint256 id) public view returns (uint96 yes, uint96 no, uint96 abstain, uint64 qualifiedSince) {
+        return AllocationVoting(votingWeight).proposalSupport(id);
     }
 
     /// @notice Open an actual hashed intent, allowing authenticated bounded projects.
     function openProposalWithAction(uint8 op, address to, uint256 value, bytes calldata data, bytes32 nonce) public returns (uint256 id) {
         id = _intentHashId(op, to, value, data, nonce);
-        bool bounded = ConvictionVoting(votingWeight).boundedAction(op, to, value, data);
-        _openConvictionProposal(id, msg.sender, bounded);
+        bool bounded = AllocationVoting(votingWeight).boundedAction(op, to, value, data);
+        _openAllocationProposal(id, msg.sender, bounded);
     }
 
     /// @notice Replace an allocation; zero withdraws it and max uses available Shares.
     function castVote(uint256 id, uint8 side, uint256 amount) public {
-        _castConvictionVote(id, side, msg.sender, amount);
+        _castAllocationVote(id, side, msg.sender, amount);
     }
 
     /// @notice A delegate replaces the source owner's allocation without a second pool.
     function castVoteFor(address owner, uint256 id, uint8 side, uint256 amount) public {
-        _castConvictionVote(id, side, owner, amount);
+        _castAllocationVote(id, side, owner, amount);
     }
 
     /// @notice Proportional conversion changes ownership type atomically. Its new
@@ -123,7 +123,7 @@ contract Moloch {
     /// @notice Award governance standing for a paid, independently verified mandate claim.
     /// The same delivery cannot be used for this award twice.
     function awardContribution(address mandate, bytes32 claimId, uint96 amount, bool convert) public payable onlyDAO {
-        ConvictionVoting policy = ConvictionVoting(votingWeight);
+        AllocationVoting policy = AllocationVoting(votingWeight);
         require(amount != 0 && policy.mandateFactory().daos(mandate) == address(this), NotOk());
         address owner = TreasuryMandate(mandate).consumeContribution(claimId);
         if (convert) convertLootToShares(owner, amount);
@@ -134,30 +134,30 @@ contract Moloch {
     function onOwnershipChanged(address from, address to, uint256 amount) public {
         bool isLoot = msg.sender == address(loot);
         require(isLoot || msg.sender == address(shares), Unauthorized());
-        if (votingWeight != address(0)) ConvictionVoting(votingWeight).ownershipChanged(isLoot, from, to, amount);
+        if (votingWeight != address(0)) AllocationVoting(votingWeight).ownershipChanged(isLoot, from, to, amount);
     }
 
     /// @notice Authenticate native Shares delegation against the sole allocation ledger.
     function onVotingDelegateChanged(address owner, address delegate) public {
         require(msg.sender == address(shares), Unauthorized());
-        ConvictionVoting(votingWeight).setDelegate(owner, delegate);
+        AllocationVoting(votingWeight).setDelegate(owner, delegate);
     }
 
     /// @notice Invalidate the entire execution delay after lost support. Only the
     /// immutable policy may call this callback; later recovery must queue afresh.
-    function resetConvictionQueue(uint256 id) external {
+    function resetApprovalQueue(uint256 id) external {
         require(msg.sender == votingWeight, Unauthorized());
         if (queuedAt[id] != 0) {
             delete queuedAt[id];
-            emit ConvictionQueueReset(id);
+            emit ApprovalQueueReset(id);
         }
     }
-    event ConvictionQueueReset(uint256 indexed id);
+    event ApprovalQueueReset(uint256 indexed id);
 
-    function _openConvictionProposal(uint256 id, address owner, bool bounded) internal {
+    function _openAllocationProposal(uint256 id, address owner, bool bounded) internal {
         if (executed[id]) revert AlreadyExecuted();
         if (snapshotBlock[id] != 0) return;
-        ConvictionVoting policy = ConvictionVoting(votingWeight);
+        AllocationVoting policy = AllocationVoting(votingWeight);
         if (owner == address(this) || policy.capacity(owner) < proposalThreshold || policy.capacity(owner) == 0) revert Unauthorized();
         uint48 snap = toUint48(block.number - 1);
         uint256 supply = shares.getPastTotalSupply(snap);
@@ -171,10 +171,10 @@ contract Moloch {
         emit Opened(id, snap, supply);
     }
 
-    function _castConvictionVote(uint256 id, uint8 side, address owner, uint256 amount) internal {
+    function _castAllocationVote(uint256 id, uint8 side, address owner, uint256 amount) internal {
         if (executed[id]) revert AlreadyExecuted();
         if (side > 2) revert NotOk();
-        if (createdAt[id] == 0) _openConvictionProposal(id, owner, false);
+        if (createdAt[id] == 0) _openAllocationProposal(id, owner, false);
         castingVote = true;
         uint96 weight = IVotingWeight(votingWeight).allocateWeight(bytes32(id), owner, msg.sender, snapshotBlock[id], side, amount);
         castingVote = false;
@@ -185,14 +185,14 @@ contract Moloch {
         emit Voted(id, owner, side, weight);
     }
 
-    function _executeConvictionProposal(uint8 op, address to, uint256 value, bytes calldata data, bytes32 nonce)
+    function _executeAllocationProposal(uint8 op, address to, uint256 value, bytes calldata data, bytes32 nonce)
         internal returns (bool ok, bytes memory retData)
     {
         uint256 id = _intentHashId(op, to, value, data, nonce);
         if (executed[id]) revert AlreadyExecuted();
         ProposalState st = state(id);
         if (st != ProposalState.Succeeded && st != ProposalState.Queued) revert NotOk();
-        uint64 delay = ConvictionVoting(votingWeight).executionDelay(id);
+        uint64 delay = AllocationVoting(votingWeight).executionDelay(id);
         if (queuedAt[id] == 0) {
             queuedAt[id] = uint64(block.timestamp);
             emit Queued(id, queuedAt[id]);
@@ -219,15 +219,14 @@ contract Moloch {
         uint96 abstainVotes;
     }
     // @@CREABUZZ PATCH BEGIN conviction-tallies
-    /* Native tally storage is superseded by the single conviction policy.
+    /* Native tally storage is superseded by the single allocation policy.
     // @@CREABUZZ PATCH END conviction-tallies
     mapping(uint256 id => Tally) public tallies;
     // @@CREABUZZ PATCH BEGIN conviction-tallies-end
     */
-    /// @notice Matured allocations from the authoritative voting policy.
+    /// @notice Current allocations from the authoritative voting policy.
     function tallies(uint256 id) public view returns (uint96 yes, uint96 no, uint96 abstain) {
-        (,,, uint192 cy, uint192 cn, uint192 ca) = ConvictionVoting(votingWeight).proposalSupport(id);
-        return (uint96(cy / 1e18), uint96(cn / 1e18), uint96(ca / 1e18));
+        (yes, no, abstain,) = AllocationVoting(votingWeight).proposalSupport(id);
     }
     // @@CREABUZZ PATCH END conviction-tallies-end
 
@@ -375,7 +374,7 @@ contract Moloch {
         lootImpl = address(new Loot{salt: _salt}());
     // @@CREABUZZ PATCH BEGIN allowance-implementation
         require(policyImplementation.code.length != 0, NotOk());
-        convictionImpl = policyImplementation;
+        policyImpl = policyImplementation;
     // @@CREABUZZ PATCH END allowance-implementation
     }
 
@@ -422,8 +421,8 @@ contract Moloch {
         loot = Loot(_loot = _init(lootImpl, _salt));
         Loot(_loot).init();
     // @@CREABUZZ PATCH BEGIN allowance-initialization
-        votingWeight = _init(convictionImpl, _salt);
-        ConvictionVoting(votingWeight).initialize(_shares, initHolders);
+        votingWeight = _init(policyImpl, _salt);
+        AllocationVoting(votingWeight).initialize(_shares, initHolders);
     // @@CREABUZZ PATCH END allowance-initialization
 
         // initialization calls
@@ -464,7 +463,7 @@ contract Moloch {
     /// ensuring Majeur ERC20Votes-style checkpoints can be queried safely:
     function openProposal(uint256 id) public {
     // @@CREABUZZ PATCH BEGIN allowance-open
-        _openConvictionProposal(id, msg.sender, false);
+        _openAllocationProposal(id, msg.sender, false);
         return;
         /* Upstream text retained for the additive fork checker. The policy above is authoritative.
     // @@CREABUZZ PATCH END allowance-open
@@ -541,7 +540,7 @@ contract Moloch {
     /// auto-opens the proposal on first vote (threshold uses current votes by design):
     function castVote(uint256 id, uint8 support) public {
     // @@CREABUZZ PATCH BEGIN allowance-vote
-        _castConvictionVote(id, support, msg.sender, type(uint256).max);
+        _castAllocationVote(id, support, msg.sender, type(uint256).max);
         return;
         /* Upstream text retained for the additive fork checker. The policy above is authoritative.
     // @@CREABUZZ PATCH END allowance-vote
@@ -598,7 +597,7 @@ contract Moloch {
     // @@CREABUZZ PATCH BEGIN allowance-no-refund
         uint8 previous = hasVoted[id][msg.sender];
         require(previous != 0, NotOk());
-        _castConvictionVote(id, previous - 1, msg.sender, 0);
+        _castAllocationVote(id, previous - 1, msg.sender, 0);
         return;
         /* Upstream text retained for the additive fork checker. The policy above is authoritative.
     // @@CREABUZZ PATCH END allowance-no-refund
@@ -635,7 +634,7 @@ contract Moloch {
         if (queuedAt[id] != 0) revert NotOk();
 
     // @@CREABUZZ PATCH BEGIN conviction-cancel-proposal
-        (uint96 yes, uint96 no, uint96 abstain,,,) = ConvictionVoting(votingWeight).proposalSupport(id);
+        (uint96 yes, uint96 no, uint96 abstain,) = AllocationVoting(votingWeight).proposalSupport(id);
         if ((yes | no | abstain) != 0) revert NotOk();
         /*
     // @@CREABUZZ PATCH END conviction-cancel-proposal
@@ -653,7 +652,7 @@ contract Moloch {
 
     function state(uint256 id) public view returns (ProposalState) {
     // @@CREABUZZ PATCH BEGIN allowance-state
-        return ProposalState(ConvictionVoting(votingWeight).proposalState(id, executed[id], queuedAt[id]));
+        return ProposalState(AllocationVoting(votingWeight).proposalState(id, executed[id], queuedAt[id]));
         /* Upstream text retained for the additive fork checker. The policy above is authoritative.
     // @@CREABUZZ PATCH END allowance-state
         if (executed[id]) return ProposalState.Executed;
@@ -738,7 +737,7 @@ contract Moloch {
         bytes32 nonce
     ) public payable nonReentrant returns (bool ok, bytes memory retData) {
     // @@CREABUZZ PATCH BEGIN allowance-execute
-        return _executeConvictionProposal(op, to, value, data, nonce);
+        return _executeAllocationProposal(op, to, value, data, nonce);
         /* Upstream text is retained for the fork checker; the policy above is authoritative.
     // @@CREABUZZ PATCH END allowance-execute
         uint256 id = _intentHashId(op, to, value, data, nonce);
@@ -2513,7 +2512,7 @@ contract Summoner {
 /// @notice Deploy the three separate creation transactions for a fresh governor.
 function newSummoner() returns (Summoner) {
     TreasuryMandateFactory factory = new TreasuryMandateFactory();
-    ConvictionVoting policy = new ConvictionVoting(factory);
+    AllocationVoting policy = new AllocationVoting(factory);
     return new Summoner(address(policy));
 }
 // @@CREABUZZ PATCH END conviction-deployment-helper

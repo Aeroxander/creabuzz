@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 import {VotingFixture} from "./helpers/VotingFixture.sol";
 import {Moloch, Loot} from "../src/majeur/MolochPatched.sol";
-import {ConvictionVoting} from "../src/ConvictionVoting.sol";
+import {AllocationVoting} from "../src/AllocationVoting.sol";
 
 contract MolochPatchedTest is VotingFixture {
     function test_one_path_uses_exclusive_movable_allocations() public {
@@ -10,10 +10,10 @@ contract MolochPatchedTest is VotingFixture {
         vm.prank(ALICE);
         dao.castVote(2, 1);
         assertEq(ledger.available(ALICE), 0);
-        (uint96 yes,,,,,) = dao.proposalSupport(2);
+        (uint96 yes,,,) = dao.proposalSupport(2);
         assertEq(yes, 30e18);
         vm.prank(ALICE);
-        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        vm.expectRevert(AllocationVoting.InsufficientShares.selector);
         dao.castVote(3, 1, 1);
         assertEq(dao.createdAt(3), 0, "failed allocation also rolls back open");
         vote(ALICE, 1, 20e18);
@@ -30,7 +30,7 @@ contract MolochPatchedTest is VotingFixture {
         dao.openProposal(1);
         vote(ALICE, 1, 60e18);
         vm.prank(BOB);
-        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        vm.expectRevert(AllocationVoting.InsufficientShares.selector);
         dao.castVote(1, 1, 1);
         assertEq(dao.supplySnapshot(1), 100e18);
         assertEq(ledger.capacity(BOB), 0);
@@ -87,14 +87,25 @@ contract MolochPatchedTest is VotingFixture {
 
     function test_rules_are_captured_and_expiry_releases_queued_allocations() public {
         vote(ALICE, 1, 100e18);
-        (uint96 quorum, uint96 current, uint192 mature, uint64 notice, uint64 expires, uint64 delay, bool bounded) =
-            dao.proposalVotingRules(1);
-        assertEq(quorum, 50e18);
-        assertEq(current, 50e18 + 1);
-        assertEq(mature, 25e36);
+        (
+            uint96 votingSupply,
+            uint96 quorum,
+            uint96 minYes,
+            uint16 approvalBps,
+            uint64 notice,
+            uint64 expires,
+            uint64 delay,
+            uint64 hold,
+            bool bounded
+        ) = dao.proposalVotingRules(1);
+        assertEq(votingSupply, 100e18);
+        assertEq(quorum, 50e18, "the governor's own 50% quorum beats the 20% lane quorum");
+        assertEq(minYes, 0);
+        assertEq(approvalBps, 6600);
         assertEq(notice, vm.getBlockTimestamp() + 48 hours);
         assertEq(expires, vm.getBlockTimestamp() + 14 days);
         assertEq(delay, 1 days);
+        assertEq(hold, 12 hours);
         assertFalse(bounded);
         vm.prank(address(dao));
         dao.setQuorumBps(10_000);
@@ -106,7 +117,7 @@ contract MolochPatchedTest is VotingFixture {
         assertEq(uint256(dao.state(1)), uint256(Moloch.ProposalState.Expired));
         assertEq(ledger.available(ALICE), 100e18);
         vm.prank(ALICE);
-        vm.expectRevert(ConvictionVoting.InvalidProposal.selector);
+        vm.expectRevert(AllocationVoting.InvalidProposal.selector);
         dao.castVote(1, 1, 100e18);
     }
 
@@ -116,7 +127,7 @@ contract MolochPatchedTest is VotingFixture {
         vm.prank(ALICE);
         shares.transfer(CAROL, 50e18);
         vm.prank(CAROL);
-        vm.expectRevert(ConvictionVoting.InsufficientShares.selector);
+        vm.expectRevert(AllocationVoting.InsufficientShares.selector);
         dao.castVote(1, 1, 1e18);
         vm.roll(block.number + 1);
         vote(CAROL, 2, 50e18);
@@ -134,7 +145,7 @@ contract MolochPatchedTest is VotingFixture {
         assertEq(ALICE.balance, 50 ether, "Loot retains the other half of economic rights");
         assertEq(ledger.totalCapacity(), 0);
         assertEq(ledger.available(ALICE), 0);
-        (uint96 yes,,,,,) = dao.proposalSupport(1);
+        (uint96 yes,,,) = dao.proposalSupport(1);
         assertEq(yes, 0);
     }
 
