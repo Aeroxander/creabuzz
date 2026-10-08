@@ -362,7 +362,7 @@ pub fn bytes32_arg(value: &str, what: &str) -> Result<[u8; 32], CliError> {
     Ok(out)
 }
 
-fn word_of(value: &BigUint) -> [u8; 32] {
+pub(crate) fn word_of(value: &BigUint) -> [u8; 32] {
     let raw = value.to_bytes_be();
     let mut out = [0u8; 32];
     out[32 - raw.len()..].copy_from_slice(&raw);
@@ -424,7 +424,7 @@ fn units_or_zero(
     }
 }
 
-fn address_word(value: &str, what: &str) -> Result<[u8; 32], CliError> {
+pub(crate) fn address_word(value: &str, what: &str) -> Result<[u8; 32], CliError> {
     let address = abi::parse_address(&validate_eth_address(value, what)?)
         .map_err(|e| CliError::Usage(format!("{what}: {e}")))?;
     Ok(abi::encode_address_word(&address))
@@ -435,7 +435,7 @@ fn address_bytes(value: &str, what: &str) -> Result<[u8; 20], CliError> {
         .map_err(|e| CliError::Usage(format!("{what}: {e}")))
 }
 
-fn call(signature: &str, words: &[[u8; 32]]) -> Vec<u8> {
+pub(crate) fn call(signature: &str, words: &[[u8; 32]]) -> Vec<u8> {
     let mut out = abi::selector(signature).to_vec();
     for word in words {
         out.extend_from_slice(word);
@@ -443,7 +443,7 @@ fn call(signature: &str, words: &[[u8; 32]]) -> Vec<u8> {
     out
 }
 
-fn u64_word(value: u64) -> [u8; 32] {
+pub(crate) fn u64_word(value: u64) -> [u8; 32] {
     abi::encode_uint256(value as u128)
 }
 
@@ -633,7 +633,11 @@ fn fresh_nonce(kind: &str, data: &[u8]) -> String {
     format!("0x{}", hex::encode(abi::keccak256(&preimage)))
 }
 
-fn nonce_arg(given: &Option<String>, kind: &str, data: &[u8]) -> Result<String, CliError> {
+pub(crate) fn nonce_arg(
+    given: &Option<String>,
+    kind: &str,
+    data: &[u8],
+) -> Result<String, CliError> {
     match given {
         Some(n) => {
             let word = bytes32_arg(n, "nonce")?;
@@ -655,27 +659,37 @@ fn now_secs() -> u64 {
         .unwrap_or_default()
 }
 
+/// The intent a compose step prints: what to propose, which lane it takes and the line that opens it.
+pub(crate) fn intent_json(
+    kind: &str,
+    dao: &str,
+    to: &str,
+    data: &[u8],
+    nonce: &str,
+    lane: &str,
+    note: &str,
+) -> serde_json::Value {
+    let data_hex = format!("0x{}", hex::encode(data));
+    json!({
+        "status": "ok",
+        "kind": kind,
+        "dao": dao,
+        "to": to,
+        "op": 0,
+        "value": "0",
+        "data": data_hex,
+        "nonce": nonce,
+        "lane": lane,
+        "note": note,
+        "next": format!(
+            "buzz launchpad propose --dao {dao} --to {to} --data {data_hex} --nonce {nonce}"
+        ),
+    })
+}
+
 /// What the compose steps print: the intent, and the line that opens it.
 fn print_intent(kind: &str, dao: &str, to: &str, data: &[u8], nonce: &str, lane: &str, note: &str) {
-    let data_hex = format!("0x{}", hex::encode(data));
-    println!(
-        "{}",
-        json!({
-            "status": "ok",
-            "kind": kind,
-            "dao": dao,
-            "to": to,
-            "op": 0,
-            "value": "0",
-            "data": data_hex,
-            "nonce": nonce,
-            "lane": lane,
-            "note": note,
-            "next": format!(
-                "buzz launchpad propose --dao {dao} --to {to} --data {data_hex} --nonce {nonce}"
-            ),
-        })
-    );
+    println!("{}", intent_json(kind, dao, to, data, nonce, lane, note));
 }
 
 // ── compose ─────────────────────────────────────────────────────────────────────────────────
@@ -846,13 +860,13 @@ pub fn cmd_award(args: &AwardArgs) -> Result<(), CliError> {
 
 // ── chain steps ─────────────────────────────────────────────────────────────────────────────
 
-struct Chain {
+pub(crate) struct Chain {
     rpc: Arc<dyn EvmRpc>,
     mandate: String,
 }
 
 impl Chain {
-    fn open(rpc_url: &str, mandate: &str) -> Result<Self, CliError> {
+    pub(crate) fn open(rpc_url: &str, mandate: &str) -> Result<Self, CliError> {
         let rpc: Arc<dyn EvmRpc> = Arc::new(
             HttpEvmRpc::new(rpc_url).map_err(|e| CliError::Other(format!("rpc init: {e}")))?,
         );
@@ -883,7 +897,7 @@ impl Chain {
             .map_err(|e| CliError::Other(format!("malformed eth_call result: {e}")))
     }
 
-    async fn word(&self, to: &str, data: &[u8]) -> Result<[u8; 32], CliError> {
+    pub(crate) async fn word(&self, to: &str, data: &[u8]) -> Result<[u8; 32], CliError> {
         let bytes = self.eth_call(to, data).await?;
         bytes
             .get(..32)
@@ -891,7 +905,25 @@ impl Chain {
             .ok_or_else(|| CliError::Other("eth_call result too short for a word".into()))
     }
 
-    async fn address_of(&self, to: &str, signature: &str) -> Result<String, CliError> {
+    /// The latest block's timestamp: the chain's own clock, which a local test chain can move far from the wall clock.
+    pub(crate) async fn latest_block_time(&self) -> Result<u64, CliError> {
+        let block = self
+            .rpc
+            .call(
+                "eth_getBlockByNumber",
+                json!(["latest", false]),
+                RPC_TIMEOUT,
+            )
+            .await
+            .map_err(|e| CliError::Other(format!("eth_getBlockByNumber: {e}")))?;
+        let text = block["timestamp"]
+            .as_str()
+            .ok_or_else(|| CliError::Other("the latest block has no timestamp".into()))?;
+        u64::from_str_radix(text.trim_start_matches("0x"), 16)
+            .map_err(|e| CliError::Other(format!("malformed block timestamp: {e}")))
+    }
+
+    pub(crate) async fn address_of(&self, to: &str, signature: &str) -> Result<String, CliError> {
         let word = self.word(to, &abi::selector(signature)).await?;
         Ok(format!("0x{}", hex::encode(&word[12..])))
     }
@@ -905,23 +937,27 @@ impl Chain {
         ))
     }
 
-    async fn send(
+    pub(crate) async fn send(
         &self,
         spender: &k256::ecdsa::SigningKey,
         to: &str,
         data: &[u8],
         what: &str,
     ) -> Result<String, CliError> {
-        send_contract_call(
-            &self.rpc,
-            RPC_TIMEOUT,
-            to,
-            spender,
-            data,
-            what,
-            buzz_evm_allowance::tx::MAX_GAS,
-        )
-        .await
+        self.send_capped(spender, to, data, what, buzz_evm_allowance::tx::MAX_GAS)
+            .await
+    }
+
+    /// Like [`Chain::send`] for a call that legitimately costs more (the cap is still held to the client's ceiling).
+    pub(crate) async fn send_capped(
+        &self,
+        spender: &k256::ecdsa::SigningKey,
+        to: &str,
+        data: &[u8],
+        what: &str,
+        gas_cap: u64,
+    ) -> Result<String, CliError> {
+        send_contract_call(&self.rpc, RPC_TIMEOUT, to, spender, data, what, gas_cap).await
     }
 }
 

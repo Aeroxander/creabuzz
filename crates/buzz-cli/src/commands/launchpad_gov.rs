@@ -48,6 +48,17 @@ const RPC_TIMEOUT: Duration = buzz_evm_allowance::DEFAULT_RPC_TIMEOUT;
 /// Executing a passed proposal can deploy contracts (a mandate and its reviewer panel), which costs far more than
 /// the 300k a spend is held to. Still a hard cap, and the client holds it under its own ceiling.
 const PROCESS_GAS_CAP: u64 = 6_000_000;
+/// Opening a proposal pays for the action it carries, byte by byte (calldata, hashing, the event): this much on top of
+/// the usual cap for each byte, so a large batch is not refused for being large while a small one keeps the tight cap.
+const PROPOSE_GAS_PER_ACTION_BYTE: u64 = 40;
+/// The most opening a proposal may be allowed, however large the action.
+const PROPOSE_GAS_CEILING: u64 = 2_000_000;
+
+/// The gas cap for opening a proposal whose action is `action_len` bytes long.
+fn propose_gas_cap(action_len: usize) -> u64 {
+    (buzz_evm_allowance::tx::MAX_GAS + PROPOSE_GAS_PER_ACTION_BYTE * action_len as u64)
+        .min(PROPOSE_GAS_CEILING)
+}
 const RECEIPT_DEADLINE: Duration = buzz_evm_allowance::DEFAULT_RECEIPT_DEADLINE;
 
 // Selectors computed from canonical signatures at runtime; tests pin them
@@ -502,7 +513,12 @@ pub async fn cmd_propose(
         "openProposalWithAction(uint8,address,uint256,bytes,bytes32)",
     ));
     let tx_hash = client
-        .send(&spender, &open, "openProposalWithAction")
+        .send_capped(
+            &spender,
+            &open,
+            "openProposalWithAction",
+            propose_gas_cap(open.len()),
+        )
         .await?;
     println!(
         "{}",
@@ -593,6 +609,15 @@ pub async fn cmd_proposal_state(dao: &str, id: &str) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opening_a_proposal_may_cost_more_the_larger_its_action_is_but_never_without_bound() {
+        let base = buzz_evm_allowance::tx::MAX_GAS;
+        assert_eq!(propose_gas_cap(0), base);
+        assert!(propose_gas_cap(3_500) > 400_000);
+        assert!(propose_gas_cap(3_500) < propose_gas_cap(7_000));
+        assert_eq!(propose_gas_cap(10_000_000), PROPOSE_GAS_CEILING);
+    }
     use std::collections::HashMap;
     use std::sync::Mutex;
 

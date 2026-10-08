@@ -1505,6 +1505,11 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
+    /// Put the DAO's Shares on the Limit Break AMM (compose the vote)
+    Market {
+        #[command(subcommand)]
+        step: commands::launchpad_market::MarketCmd,
+    },
     /// Read a proposal's state (the D6 quorum-math input)
     ProposalState {
         /// Bound DAO address (`0x…`)
@@ -3682,6 +3687,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 | LaunchpadCmd::Process { .. }
                 | LaunchpadCmd::ProposalState { .. }
                 | LaunchpadCmd::Work { .. }
+                | LaunchpadCmd::Market { .. }
         ) {
             use LaunchpadCmd::*;
             return match gov_cmd {
@@ -3716,6 +3722,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     commands::launchpad_gov::cmd_proposal_state(dao, id).await
                 }
                 Work { step } => commands::launchpad_work::run(step).await,
+                Market { step } => commands::launchpad_market::run(step).await,
                 _ => unreachable!("only chain-local variants matched"),
             };
         }
@@ -4214,6 +4221,7 @@ mod tests {
                 "delete",
                 "deployment",
                 "list",
+                "market",
                 "mint-token",
                 "post-update",
                 "process",
@@ -4258,7 +4266,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 19),
+            ("launchpad", 20),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),
