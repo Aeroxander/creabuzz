@@ -42,10 +42,10 @@ export function governanceRoute(kind: ProposalKind): GovernanceRoute {
     case "futarchy-budget":
     case "plain":
       return {
-        mechanism: "Shares conviction",
+        mechanism: "Shares vote",
         ballot: true,
         rationale:
-          "Shares support priorities with a 12-hour conviction half-life. Support remains movable until execution. Loot does not vote.",
+          "Shares back priorities and opposition is free. A proposal needs enough Shares taking part and enough of the votes in favour, and that support has to hold before it can run. Support stays movable until it does. Loot does not vote.",
       };
   }
 }
@@ -59,34 +59,6 @@ export interface QuorumParams {
   /** Raw seconds behind `proposalTtl` (the A5 watch's clock input). */
   proposalTtlSeconds?: bigint | null;
   timelockDelay?: string | null;
-}
-
-/**
- * D6: the rules in one plain-language line, before anyone votes. Unknown
- * values say "per DAO config" — never invented numbers.
- */
-export function quorumSummary(params: QuorumParams = {}): string {
-  let quorum: string;
-  if (params.quorumBps != null && params.quorumBps > 0) {
-    quorum = `quorum ${params.quorumBps / 100}% of snapshot supply`;
-  } else if (params.quorumAbsolute != null && params.quorumAbsolute > 0) {
-    quorum = `quorum ${params.quorumAbsolute} absolute`;
-  } else {
-    quorum = "quorum per DAO config";
-  }
-  const minYes =
-    params.minYes != null && params.minYes > 0
-      ? `minYes ${params.minYes}`
-      : "minYes per DAO config";
-  const ttl =
-    params.proposalTtl != null
-      ? `TTL ${params.proposalTtl}`
-      : "TTL per DAO config";
-  const lock =
-    params.timelockDelay != null
-      ? `timelock ${params.timelockDelay}`
-      : "timelock per DAO config";
-  return `N-1 ownership snapshot · 48-hour voting window · ${quorum} · FOR must beat AGAINST · ${minYes} · ${ttl} · ${lock}`;
 }
 
 /** D8: the record-only fallback — no onchain binding, no invented actions. */

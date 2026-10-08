@@ -27,7 +27,7 @@ import {
 
 /**
  * Historical escrow position for an existing voucher vault. Its legacy weight
- * is not used by the Shares conviction ballot. These are the vault's own two O(1) reads,
+ * is not used by the Shares ballot. These are the vault's own two O(1) reads,
  * so the panel never has to reconstruct a position list the chain does not
  * enumerate.
  */
@@ -105,7 +105,7 @@ export function ProposalFundingPanel({
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This is a legacy proposal escrow vault. Vouchers direct deposits and
           support claims or refunds; they grant no DAO voting power. Treasury
-          governance uses the Shares conviction policy in Proposals.
+          governance uses the Shares ballot in Proposals.
         </p>
       </div>
 

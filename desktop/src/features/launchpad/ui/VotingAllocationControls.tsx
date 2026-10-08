@@ -60,6 +60,7 @@ export function VotingAllocationControls({
     if (
       allocation.data &&
       parsed !== ALL_VOTING_SHARES &&
+      parsed > allocation.data.opposable &&
       parsed > allocation.data.eligible
     )
       validation = "That amount exceeds your eligible Shares on this proposal.";
@@ -74,10 +75,16 @@ export function VotingAllocationControls({
     !account ||
     !allocation.data ||
     allocation.isError ||
-    (parsed === 0n
-      ? allocation.data.amount === 0n
-      : allocation.data.eligible === 0n) ||
     validation !== null;
+  /** Backing is limited by what is free; opposition only by what is owned. */
+  function cannotSend(support: number): boolean {
+    if (disabled || !allocation.data) return true;
+    const cap =
+      support === 0 ? allocation.data.opposable : allocation.data.eligible;
+    if (parsed === 0n) return allocation.data.amount === 0n;
+    if (cap === 0n) return true;
+    return parsed !== ALL_VOTING_SHARES && parsed > cap;
+  }
   async function submit(support: number, withdraw = false) {
     if (
       withdraw
@@ -86,7 +93,7 @@ export function VotingAllocationControls({
           !allocation.data ||
           allocation.isError ||
           allocation.data.amount === 0n
-        : disabled
+        : cannotSend(support)
     )
       return;
     setActiveSupport(support);
@@ -109,9 +116,10 @@ export function VotingAllocationControls({
       data-testid="voting-allocation-controls"
     >
       <p className="text-xs text-muted-foreground">
-        Allocate Shares across proposals. New support builds conviction with a
-        12-hour half-life. Change or withdraw it anytime before execution. Loot
-        does not vote.
+        Back the proposals you want with your Shares; you can split them, and
+        support has to hold for a while before a proposal can run. Opposing a
+        proposal never uses your Shares up. Change or withdraw anything before
+        it runs. Loot does not vote.
       </p>
       <label className="block text-xs" htmlFor={`${id}-source`}>
         Vote on behalf of (optional)
@@ -134,7 +142,7 @@ export function VotingAllocationControls({
         data-testid="voting-allocation-balance"
       >
         {allocation.data && !allocation.isError
-          ? `${formatVotingShares(allocation.data.available)} free / ${formatVotingShares(allocation.data.owned)} owned · ${formatVotingShares(allocation.data.amount)} allocated here · ${formatVotingShares(allocation.data.eligible)} eligible for this proposal`
+          ? `${formatVotingShares(allocation.data.available)} free / ${formatVotingShares(allocation.data.owned)} owned · ${formatVotingShares(allocation.data.amount)} allocated here · ${formatVotingShares(allocation.data.eligible)} can back this proposal · ${formatVotingShares(allocation.data.opposable)} can oppose it`
           : !validOwner
             ? "Connect your wallet or enter a source owner to view your Shares."
             : allocation.isError
@@ -194,7 +202,7 @@ export function VotingAllocationControls({
             size="sm"
             variant={support === 1 ? "default" : "outline"}
             data-testid={`proposal-vote-${label.toLowerCase()}`}
-            disabled={disabled || activeSupport !== null}
+            disabled={cannotSend(support) || activeSupport !== null}
             onClick={() => void submit(support)}
           >
             {activeSupport === support ? "Voting…" : label}

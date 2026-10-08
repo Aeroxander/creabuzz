@@ -23,7 +23,6 @@ import type {
   LaunchReceipt,
   ProposalKind,
 } from "@/features/launchpad/launchpadModels";
-import type { DaoGovParams } from "@/features/launchpad/lib/daoGovConfig";
 import type {
   ProposalAction,
   ProposalState,
@@ -61,8 +60,8 @@ export function routeDecision(kind: ProposalKind): DecisionRoute {
     default:
       return {
         kind,
-        mechanism: "Shares conviction",
-        why: "Movable Shares allocations, 12-hour conviction half-life, captured backing requirements, minimum review and execution delay.",
+        mechanism: "Shares vote",
+        why: "Movable Shares allocations with free opposition, requirements frozen when the proposal opens, a minimum review, support that has to hold, and an execution delay.",
         ballot: true,
         note: "Shares alone allocate support. Loot retains economic rights. Every executable proposal uses this policy.",
       };
@@ -290,60 +289,4 @@ export function resolveDaoBinding(
     }
   }
   return newest;
-}
-
-// ---------------------------------------------------------------------------
-// D6 — quorum math in plain language
-// ---------------------------------------------------------------------------
-
-/** "per DAO config" — what an unread slot renders. Never a guessed number. */
-const PER_DAO_CONFIG = "per DAO config";
-
-function formatGovDuration(seconds: number): string {
-  if (seconds <= 0) return `${seconds}s`;
-  if (seconds % 86_400 === 0) return `${seconds / 86_400}d`;
-  if (seconds % 3_600 === 0) return `${seconds / 3_600}h`;
-  if (seconds % 60 === 0) return `${seconds / 60}m`;
-  return `${seconds}s`;
-}
-
-function quorumSegment(params: DaoGovParams | null): string {
-  const abs = params?.quorumAbsolute ?? null;
-  const bps = params?.quorumBps ?? null;
-  if (abs === null && bps === null) return `quorum ${PER_DAO_CONFIG}`;
-  const parts: string[] = [];
-  if (abs !== null && abs > 0n) parts.push(`${abs} absolute`);
-  if (bps !== null && bps > 0) parts.push(`${bps} bps`);
-  return parts.length === 0 ? "quorum off" : `quorum ${parts.join(" + ")}`;
-}
-
-function absoluteSegment(label: string, value: bigint | number | null): string {
-  if (value === null) return `${label} ${PER_DAO_CONFIG}`;
-  const n = typeof value === "bigint" ? value : BigInt(value);
-  return n === 0n ? `${label} off` : `${label} ${n}`;
-}
-
-function durationSegment(label: string, seconds: number | null): string {
-  if (seconds === null) return `${label} ${PER_DAO_CONFIG}`;
-  return seconds === 0
-    ? `${label} off`
-    : `${label} ${formatGovDuration(seconds)}`;
-}
-
-/**
- * D6: the exact majeur ruleset spelled out before any vote — snapshot block,
- * quorum (bps or absolute), FOR>AGAINST, minYes, TTL, timelock. Known values
- * render as numbers; anything the DAO config read did not answer renders as
- * "per DAO config" (never invented). `params === null` (record-only, or the
- * read failed) keeps every configured slot honest.
- */
-export function quorumSummary(params: DaoGovParams | null): string[] {
-  return [
-    "N-1 snapshot",
-    quorumSegment(params),
-    "FOR>AGAINST",
-    absoluteSegment("minYes", params?.minYesAbsolute ?? null),
-    durationSegment("TTL", params?.ttlSeconds ?? null),
-    durationSegment("timelock", params?.timelockSeconds ?? null),
-  ];
 }

@@ -224,18 +224,26 @@ test("queued governance keeps delegated reallocation and withdrawal reachable", 
         let words: (number | bigint)[] = [0];
         if (data.startsWith("0x3e4f49e6")) words = [2];
         if (data.startsWith("0x54b31217"))
-          words = [100n * unit - amount, 100n * unit, 100n * unit, amount, 1];
-        if (data.startsWith("0x4bcaf6aa"))
-          words = [amount, 0, 0, (amount * unit) / 2n, 0, 0];
+          words = [
+            100n * unit - amount,
+            100n * unit,
+            100n * unit,
+            amount,
+            1,
+            100n * unit,
+          ];
+        if (data.startsWith("0x4bcaf6aa")) words = [amount, 0, 0, 0];
         if (data.startsWith("0xb1f792c9")) {
           const now = Math.floor(Date.now() / 1000);
           words = [
-            50n * unit,
-            51n * unit,
-            25n * unit * unit,
+            100n * unit,
+            20n * unit,
+            0,
+            6600,
             now - 48 * 3600,
             now + 14 * 86400,
             86400,
+            12 * 3600,
             0,
           ];
         }

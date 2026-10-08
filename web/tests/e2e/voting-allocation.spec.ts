@@ -39,7 +39,7 @@ async function votingWorld(
       "launch",
       [
         ["d", "allocations"],
-        ["name", "Conviction DAO"],
+        ["name", "Allocation DAO"],
         ["t", "dao-launchpad"],
       ],
       { pitch: "One voting design.", stage: "graduated" },
@@ -142,25 +142,27 @@ async function votingWorld(
     if (data.startsWith("0x3e4f49e6") && unopened && !spent)
       result = "0x" + word(0);
     if (data.startsWith("0x4bcaf6aa"))
-      result = "0x" + [allocated, 0n, 0n, 0n, 0n, 0n].map(word).join("");
+      result = "0x" + [allocated, 0n, 0n, 0n].map(word).join("");
     if (data.startsWith("0xb1f792c9")) {
       const now = Math.floor(Date.now() / 1000);
       result =
         "0x" +
         [
-          50n * unit,
-          51n * unit,
-          25n * unit * unit,
+          100n * unit, // voting supply
+          20n * unit, // quorum
+          0n, // absolute floor in favour
+          6600, // share of the votes cast that must be in favour
           now + 48 * 3600,
           now + 14 * 86400,
           86400,
+          12 * 3600, // hold
           0,
         ]
           .map(word)
           .join("");
     }
     if (data.startsWith("0xb1f792c9") && unopened && !spent)
-      result = "0x" + word(0).repeat(7);
+      result = "0x" + word(0).repeat(9);
     if (data.startsWith("0x54b31217")) {
       if (failed) {
         await route.fulfill({
@@ -174,14 +176,21 @@ async function votingWorld(
       }
       result =
         "0x" +
-        [100n * unit - allocated, 100n * unit, 100n * unit, allocated, 1n]
+        [
+          100n * unit - allocated,
+          100n * unit,
+          100n * unit,
+          allocated,
+          1n,
+          100n * unit, // opposition is free: all of it can oppose
+        ]
           .map(word)
           .join("");
     }
     await route.fulfill({ json: { jsonrpc: "2.0", id: body.id, result } });
   });
   await page.goto("/launchpad");
-  await page.getByText("Conviction DAO", { exact: true }).click();
+  await page.getByText("Allocation DAO", { exact: true }).click();
   await page.getByRole("tab", { name: /Proposals/ }).click();
   await expect(
     page.getByText("Approve a budget", { exact: true }),
@@ -204,7 +213,9 @@ test("budget proposal replaces an allocation and permits withdrawal through the 
   await expect(page.getByTestId("voting-allocation-balance")).toContainText(
     "100 free / 100 owned",
   );
-  await expect(page.getByText(/Turnout ≥ 50/)).toBeVisible();
+  await expect(
+    page.getByText(/At least 20 Shares must take part/),
+  ).toBeVisible();
   await page.getByLabel("Shares to allocate").fill("101");
   await expect(page.getByTestId("proposal-vote-for")).toBeDisabled();
   await page.getByLabel("Shares to allocate").fill("70");
@@ -217,7 +228,7 @@ test("budget proposal replaces an allocation and permits withdrawal through the 
     data: "0x9c028176" + word(1) + word(1) + word(70n * unit),
   });
   await expect(page.getByTestId("voting-allocation-balance")).toContainText(
-    "30 free / 100 owned · 70 allocated here · 100 eligible",
+    "30 free / 100 owned · 70 allocated here · 100 can back this proposal · 100 can oppose it",
   );
   await expect(page.getByTestId("proposal-vote-for")).toBeEnabled();
   await page.getByLabel("Shares to allocate").fill("bad input");

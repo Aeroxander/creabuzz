@@ -10,7 +10,6 @@ import {
   authorityLine,
   decodeProposalState,
   governanceRoute,
-  quorumSummary,
   RECEIPTS_COPY,
   RECORD_ONLY_COPY,
 } from "./governance-view.ts";
@@ -26,46 +25,14 @@ describe("the routing map (D1)", () => {
   it("plain matters route to the token vote with the ruleset rationale", () => {
     const route = governanceRoute("plain");
     assert.equal(route.ballot, true);
-    assert.match(route.mechanism, /Shares conviction/);
-    assert.match(route.rationale, /12-hour conviction half-life/);
+    assert.match(route.mechanism, /Shares vote/);
+    assert.match(route.rationale, /support has to hold/);
   });
 
   it("budget matters use the same Shares ballot", () => {
     const route = governanceRoute("futarchy-budget");
-    assert.equal(route.mechanism, "Shares conviction");
+    assert.equal(route.mechanism, "Shares vote");
     assert.equal(route.ballot, true);
-  });
-});
-
-describe("quorum math in plain language (D6)", () => {
-  it("assembles known params", () => {
-    const line = quorumSummary({
-      quorumBps: 500,
-      minYes: 1,
-      proposalTtl: "7d",
-      timelockDelay: "2d",
-    });
-    assert.match(line, /N-1 ownership snapshot/);
-    assert.match(line, /quorum 5% of snapshot supply/);
-    assert.match(line, /FOR must beat AGAINST/);
-    assert.match(line, /minYes 1/);
-    assert.match(line, /TTL 7d/);
-    assert.match(line, /timelock 2d/);
-  });
-
-  it("never invents numbers it does not have", () => {
-    const line = quorumSummary();
-    assert.match(line, /quorum per DAO config/);
-    assert.match(line, /minYes per DAO config/);
-    assert.match(line, /TTL per DAO config/);
-    assert.match(line, /timelock per DAO config/);
-  });
-
-  it("names the absolute quorum when bps is off (majeur's two modes)", () => {
-    const line = quorumSummary({ quorumBps: 0, quorumAbsolute: 3 });
-    assert.match(line, /quorum 3 absolute/);
-    const bothOff = quorumSummary({ quorumBps: 0, quorumAbsolute: 0 });
-    assert.match(bothOff, /quorum per DAO config/);
   });
 });
 

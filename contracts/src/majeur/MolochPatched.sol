@@ -72,15 +72,15 @@ contract Moloch {
         return IVotingWeight(votingWeight).weightFor(bytes32(id), owner, snapshot);
     }
 
-    /// @notice Shares available, owned, eligible here, and currently allocated here.
-    function votingAllocationFor(uint256 id, address owner) public view returns (uint256 available, uint256 owned, uint256 eligible, uint96 amount, uint8 side) {
+    /// @notice Shares available, owned, eligible to back here, currently allocated here, and eligible to oppose here.
+    function votingAllocationFor(uint256 id, address owner) public view returns (uint256 available, uint256 owned, uint256 eligible, uint96 amount, uint8 side, uint256 opposable) {
         AllocationVoting policy = AllocationVoting(votingWeight);
         uint48 snap = snapshotBlock[id];
         if (snap == 0) snap = toUint48(block.number - 1);
         (amount, side) = policy.positions(id, owner);
         uint64 expiry = policy.expiryOf(id);
         if (executed[id] || (expiry != 0 && block.timestamp >= expiry)) amount = 0;
-        return (policy.available(owner), policy.capacity(owner), policy.weightFor(bytes32(id), owner, snap), amount, side);
+        return (policy.available(owner), policy.capacity(owner), policy.weightFor(bytes32(id), owner, snap), amount, side, policy.opposeWeightFor(bytes32(id), owner, snap));
     }
 
     /// @notice Frozen voting supply, quorum, approval bar, notice, expiry, delay, hold time and risk class.

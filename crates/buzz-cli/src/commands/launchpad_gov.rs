@@ -24,7 +24,7 @@ use crate::error::CliError;
 
 use super::org::{validate_eth_address, ENV_EVM_RPC_URL, ENV_SPENDER_KEY};
 
-/// Options for the single Shares conviction ballot.
+/// Options for the single Shares ballot.
 #[derive(clap::Args)]
 pub struct VoteArgs {
     /// Bound DAO address (`0x…`)

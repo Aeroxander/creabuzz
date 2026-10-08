@@ -34,8 +34,8 @@ contract AllocationHandler is Test {
         uint256 id = ids[slot];
         Moloch.ProposalState state = dao.state(id);
         if (state == Moloch.ProposalState.Expired || state == Moloch.ProposalState.Executed) ids[slot] = id = nextId++;
-        (,, uint256 eligible, uint96 current,) = dao.votingAllocationFor(id, owner);
-        uint256 amount = amountSeed % (eligible + 1);
+        (,, uint256 eligible, uint96 current,, uint256 opposable) = dao.votingAllocationFor(id, owner);
+        uint256 amount = amountSeed % ((side % 3 == 0 ? opposable : eligible) + 1);
         if (amount == 0 && current == 0) return;
         vm.prank(owner);
         dao.castVote(id, side % 3, amount);

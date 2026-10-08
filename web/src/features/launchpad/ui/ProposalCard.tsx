@@ -36,6 +36,7 @@ import {
   encodeVotingRules,
   votingRulesSummary,
   votingRuleWatch,
+  votingStatusLabel,
 } from "../lib/voting-allocation";
 import { VotingAllocationControls } from "./VotingAllocationControls";
 import { ethCall, getRpcEndpoint } from "../chain";
@@ -352,7 +353,7 @@ export function ProposalCard({
                   : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
             }`}
           >
-            {watch.status}
+            {votingStatusLabel(watch.status)}
           </span>{" "}
           {watch.detail}
         </p>

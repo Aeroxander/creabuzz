@@ -80,6 +80,7 @@ import {
   encodeVotingRules,
   votingRulesSummary,
   votingRuleWatch,
+  votingStatusLabel,
 } from "../lib/voting-allocation";
 import { VotingAllocationControls } from "@/features/launchpad/ui/VotingAllocationControls";
 import { Button } from "@/shared/ui/button";
@@ -633,7 +634,7 @@ function ProposalCard({
                   : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
             }`}
           >
-            {watch.status}
+            {votingStatusLabel(watch.status)}
           </span>{" "}
           {watch.detail}
         </p>

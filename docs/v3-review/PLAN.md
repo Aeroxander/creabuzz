@@ -30,7 +30,7 @@ several things the product copy promises do not exist.
 | F3 | The reserve "floor" is not a floor: the token owner can withdraw it, and **no client ever releases it**, so after graduation there is **no market at all** | High | Read the TokenMaster source |
 | F4 | People who back a raise get **no DAO rights** (no vote, no ragequit). Home copy says "Holders vote" | High | Read, traced |
 | F5 | Governance liveness: the unrestricted lane needs >50% of **all** Shares (dead stake included); your own sweep: about 3% of proposals pass at 30% participation, about 23% at 50% | High | Your sim + my Study B |
-| F6 | Mandates, project approvals, milestone funding, claims and contribution awards have **no screen or command in web, desktop or CLI**; web and desktop can only open the strict lane, and the CLI can reach the cheap lane only with hand-encoded calldata | High | Grepped every client tree |
+| F6 | Mandates, project approvals, milestone funding, claims and contribution awards have **no screen or command that creates or runs them** in web, desktop or CLI. (Opening an already-known intent through the cheap lane does work, in all three.) | High | Grepped every client tree |
 | F7 | Conviction accrual adds little (your sim says the 48h review dominates every half-life) and costs the contract its simplicity | Design | Your sim |
 | F8 | `TieredSellRouter` trusts the keeper's `amount`; LBAMM integration does not exist yet | Medium | Read |
 | F9 | No way to earn Shares for **unpaid** work (awards need a paid claim) | Medium | Read |
@@ -174,12 +174,13 @@ the verifiers, which is the right layer to rely on.
 
 Grepped `web/`, `desktop/`, `crates/`, `packages/`, `mobile/` and `scripts/` for `TreasuryMandateFactory`,
 `approveProject`, `fundMilestone`, `awardContribution` and `consumeContribution`: **no matches outside contracts and
-tests.** `openProposalWithAction` appears once, in the CLI (`buzz launchpad propose`, `launchpad_gov.rs::cmd_propose`), which
-takes a target and raw calldata, so the cheap lane is reachable there only if you hand-encode `approveProject`.
-The web and desktop vote encoders cover `castVote`, `queue` and `executeByVotes` only, and the first `castVote`
-auto-opens a proposal with `bounded = false` (`MolochPatched.sol:177`). So in the web and desktop apps every proposal is
-the strict >50% lane, and the lane the whole mandate design exists for cannot be opened. There is also no way to
-create a mandate, fund a milestone, submit, attest or pay a claim, or award Shares from any screen.
+tests.** So nothing in any client builds the calldata for creating a mandate, approving a project, funding a milestone
+or awarding Shares, and there is no screen or command for submitting, attesting or paying a claim.
+
+*Correction to my first draft:* I wrote that web and desktop could only open the strict lane. That was wrong. Web
+(`ProposalCard.tsx`, `vote-tx.ts`), desktop (`voteTx.ts`) and the CLI (`buzz launchpad propose`) all open a known intent
+through `openProposalWithAction`, which is what routes it to the cheaper lane, and a browser spec covers it. What is
+missing is the front door that produces those intents and runs the claim lifecycle after them.
 
 ### F7. Conviction accrual (Design)
 
@@ -376,10 +377,9 @@ way to pay or reward people without a >50% vote, and no UI for the mandate flow.
    not cash was paid. Same recusal, quorum and challenge window.
 3. **A way to get money in without a raise:** open pledges (donations or dues to the DAO), a revenue splitter
    (`RoyaltyDistributor` already exists), and the mandate flow from the first pledge.
-4. **Front doors** (F6): CLI subcommands that build the calldata for what `buzz launchpad propose` only accepts raw
-   today (create mandate, approve project, submit claim, fund milestone, attest, challenge, pay, award), then the same
-   screens in web and desktop, where the first `castVote` must open the right lane. CLI first, because agents use it
-   (AGENTS.md).
+4. **Front doors** (F6): CLI subcommands that build the calldata `buzz launchpad propose` accepts only raw today
+   (create mandate, approve project, submit claim, fund milestone, attest, challenge, pay, award), then the same screens
+   in web and desktop. CLI first, because agents use it (AGENTS.md).
 5. **Org graph link:** project seats, grants and budgets already live on the relay; show the mandate and claim state
    next to them.
 

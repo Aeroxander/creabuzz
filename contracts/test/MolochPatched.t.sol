@@ -52,7 +52,7 @@ contract MolochPatchedTest is VotingFixture {
         assertEq(ledger.available(BOB), 100e18);
         assertEq(ledger.totalCapacity(), 200e18);
         assertEq(ledger.available(ALICE), 100e18, "executed allocation releases");
-        (uint256 free, uint256 owned, uint256 eligible, uint96 allocated,) = dao.votingAllocationFor(id, ALICE);
+        (uint256 free, uint256 owned, uint256 eligible, uint96 allocated,,) = dao.votingAllocationFor(id, ALICE);
         assertEq(free, owned);
         assertEq(eligible, 0);
         assertEq(allocated, 0);

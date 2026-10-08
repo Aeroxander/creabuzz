@@ -13,7 +13,6 @@ import {
   governanceReceiptMirror,
   PROPOSAL_ACTION_LABELS,
   proposalReceipts,
-  quorumSummary,
   RECEIPTS_VOCABULARY,
   RECORD_ONLY_COPY,
   renderedActions,
@@ -36,12 +35,12 @@ test("routeDecision maps every 47004 kind to its native mechanism", () => {
   assert.match(signal.note, /No ballot/);
 
   const futarchy = routeDecision("futarchy-budget");
-  assert.equal(futarchy.mechanism, "Shares conviction");
+  assert.equal(futarchy.mechanism, "Shares vote");
   assert.equal(futarchy.ballot, true);
   assert.match(futarchy.note, /Shares|policy/i);
 
   const plain = routeDecision("plain");
-  assert.equal(plain.mechanism, "Shares conviction");
+  assert.equal(plain.mechanism, "Shares vote");
   assert.equal(plain.ballot, true);
 });
 
@@ -172,68 +171,6 @@ test("RECORD_ONLY_COPY is the verbatim D8 fallback", () => {
 // ---------------------------------------------------------------------------
 // D6 — quorum-summary assembly
 // ---------------------------------------------------------------------------
-
-test("quorumSummary spells the majeur rules; unknowns say per DAO config", () => {
-  assert.deepEqual(quorumSummary(null), [
-    "N-1 snapshot",
-    "quorum per DAO config",
-    "FOR>AGAINST",
-    "minYes per DAO config",
-    "TTL per DAO config",
-    "timelock per DAO config",
-  ]);
-});
-
-test("quorumSummary renders known values and the documented off switches", () => {
-  assert.deepEqual(
-    quorumSummary({
-      quorumBps: 600,
-      quorumAbsolute: 0n,
-      minYesAbsolute: 100n,
-      ttlSeconds: 172_800,
-      timelockSeconds: 86_400,
-    }),
-    [
-      "N-1 snapshot",
-      "quorum 600 bps",
-      "FOR>AGAINST",
-      "minYes 100",
-      "TTL 2d",
-      "timelock 1d",
-    ],
-  );
-  assert.deepEqual(
-    quorumSummary({
-      quorumBps: 0,
-      quorumAbsolute: 0n,
-      minYesAbsolute: 0n,
-      ttlSeconds: 0,
-      timelockSeconds: 0,
-    }),
-    [
-      "N-1 snapshot",
-      "quorum off",
-      "FOR>AGAINST",
-      "minYes off",
-      "TTL off",
-      "timelock off",
-    ],
-  );
-});
-
-test("quorumSummary combines both quorum flavors and keeps partial reads honest", () => {
-  const combined = quorumSummary({
-    quorumBps: 600,
-    quorumAbsolute: 1000n,
-    minYesAbsolute: null,
-    ttlSeconds: 900,
-    timelockSeconds: null,
-  });
-  assert.equal(combined[1], "quorum 1000 absolute + 600 bps");
-  assert.equal(combined[3], "minYes per DAO config");
-  assert.equal(combined[4], "TTL 15m");
-  assert.equal(combined[5], "timelock per DAO config");
-});
 
 // ---------------------------------------------------------------------------
 // D5 — authority lines
