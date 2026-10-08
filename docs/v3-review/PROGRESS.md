@@ -60,5 +60,7 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 - An unopposed holder above quorum can pass an action; review time, hold time, the execution delay and ragequit are the
   protection.
 - The sell-rate gate is advisory (F8) and the TokenMaster reserve is not a price floor (see `PLAN.md` §3); both are unchanged.
-- Pre-existing failures: `feed.spec.ts` "posts are only copied to public relays when the author opts in", and the web
-  file-size ratchet on `WikiView.tsx`.
+- Pre-existing failures, checked by running the same specs on the commit before this work (they fail identically
+  there): 13 of the 204 mocked browser specs (`feed.spec.ts` "posts are only copied to public relays…", six
+  wiki/multi-user specs, and five in `smoke.spec.ts` such as "home page loads with Creaton branding"), and the web
+  file-size ratchet on `WikiView.tsx`. The other 176 pass, 15 are skipped (they need a local chain).
