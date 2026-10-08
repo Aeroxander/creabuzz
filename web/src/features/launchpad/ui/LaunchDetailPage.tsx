@@ -72,6 +72,7 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { ManagePanel } from "./ManagePanel";
+import { DecisionsTab } from "./DecisionsTab";
 import { WorkTab } from "./WorkTab";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
@@ -90,6 +91,7 @@ type Tab =
   | "proposals"
   | "treasury"
   | "mybids"
+  | "decisions"
   | "work"
   | "manage";
 
@@ -251,6 +253,7 @@ export function LaunchDetailPage({
     ...(launch.record.auction
       ? [{ id: "mybids" as const, label: "My bids" }]
       : []),
+    ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
     ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
     { id: "manage", label: "Manage", founderOnly: true },
   ];
@@ -408,6 +411,9 @@ export function LaunchDetailPage({
             });
           }}
         />
+      ) : null}
+      {tab === "decisions" && workDao ? (
+        <DecisionsTab dao={workDao} launch={launch} />
       ) : null}
       {tab === "work" && workDao ? (
         <WorkTab dao={workDao} launch={launch} />

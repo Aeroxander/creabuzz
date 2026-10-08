@@ -445,6 +445,17 @@ export async function ethTransactionReceipt(
   } | null;
 }
 
+/** The calldata of a mined transaction, or null when the node does not know it. */
+export async function ethTransactionInput(
+  endpoint: string,
+  hash: string,
+): Promise<string | null> {
+  const tx = await rpc(endpoint, "eth_getTransactionByHash", [hash]);
+  if (tx === null || typeof tx !== "object") return null;
+  const input = (tx as { input?: unknown }).input;
+  return typeof input === "string" ? input : null;
+}
+
 /** `eth_blockNumber` — the chain head, as the derivation's current block. */
 export async function ethBlockNumber(endpoint: string): Promise<bigint> {
   return decodeQuantity((await rpc(endpoint, "eth_blockNumber", [])) as string);
