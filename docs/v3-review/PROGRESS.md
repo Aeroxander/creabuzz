@@ -80,9 +80,9 @@ On top of that, **founders hold and vote with their Shares from the first block,
 - A milestone is judged by a **project** whose acceptance check is the milestone's exact words, so each milestone
   needs a project the DAO votes in (the claim's check has to equal the project's to be bound). The Work tab says to
   file the claim "with these exact words"; it cannot yet create the project.
-- The wizard's unlock step still says the **founder** attests each milestone. For a launch into its own DAO the
-  reviewers of a work budget decide, not the founder; that wording should change. A "short vesting by time" plan is
-  refused for a DAO launch with a plain reason (milestones replaced time there).
+- The wizard's unlock step now says what happens for a launch into its own DAO (the reviewers of a work budget judge a
+  milestone by its words, not the founder), and a "short vesting by time" plan is refused there with a plain reason.
+  The unlock step of the old token-mint flow is unchanged.
 - The DAO cannot burn or move a locked founder's Shares (a governance removal) until it calls `forfeit` for them first;
   that is deliberate, and `forfeit` is a DAO-only call.
 - `ShareVesting.sol` is no longer used by the launch kit. It is kept as a standalone schedule; remove it if nobody
