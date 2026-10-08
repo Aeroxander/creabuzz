@@ -244,6 +244,10 @@ pub struct BindArgs {
     /// The claim's id
     #[arg(long)]
     pub id: String,
+    /// Who you mean to bind: the contributor's address. A claim id is first come, first served, so this refuses
+    /// a claim someone else filed under the id you were told
+    #[arg(long)]
+    pub contributor: String,
 }
 
 #[derive(Args)]
@@ -961,8 +965,12 @@ pub async fn cmd_check(args: &CheckArgs) -> Result<(), CliError> {
 pub async fn cmd_bind(args: &BindArgs) -> Result<(), CliError> {
     let project = bytes32_arg(&args.project, "project id")?;
     let id = bytes32_arg(&args.id, "claim id")?;
+    let expected = validate_eth_address(&args.contributor, "contributor")?;
     let (rpc_url, spender) = load_chain()?;
     let chain = Chain::open(&rpc_url, &args.mandate)?;
+    // Binding reserves the claim's payment and counts its work against the project: check whose claim it is first.
+    let report = chain.claim_report(&args.mandate, &id).await?;
+    ensure_claim_is_theirs(&report, &expected)?;
     let tx = chain
         .send(
             &spender,
@@ -976,8 +984,27 @@ pub async fn cmd_bind(args: &BindArgs) -> Result<(), CliError> {
         &chain.mandate,
         &args.id,
         &tx,
-        json!({ "project": args.project }),
+        json!({ "project": args.project, "contributor": expected,
+                "amount": report["amount"], "asksForCurrency": report["asksForCurrency"] }),
     );
+    Ok(())
+}
+
+/// Refuse to bind a claim that is not the contributor's, or is no longer open.
+pub fn ensure_claim_is_theirs(report: &serde_json::Value, expected: &str) -> Result<(), CliError> {
+    let actual = report["contributor"].as_str().unwrap_or_default();
+    if !actual.eq_ignore_ascii_case(expected) {
+        return Err(CliError::Usage(format!(
+            "that claim was filed by {actual}, not {expected}: a claim id belongs to whoever filed it first, \
+             so nothing was bound. Ask the contributor for a new id."
+        )));
+    }
+    if report["status"] != "Open" {
+        return Err(CliError::Usage(format!(
+            "that claim is {}, not open, so it cannot be bound",
+            report["status"].as_str().unwrap_or("in an unknown state")
+        )));
+    }
     Ok(())
 }
 
@@ -1519,6 +1546,30 @@ mod tests {
         assert_eq!(report["sharesAwarded"], false);
         assert!(report["project"].is_string());
         assert!(report["next"].as_str().unwrap().contains("payout"));
+    }
+
+    #[test]
+    fn a_claim_filed_by_someone_else_is_not_bound() {
+        let theirs = json!({ "contributor": "0x00000000000000000000000000000000000000aa", "status": "Open" });
+        assert!(
+            ensure_claim_is_theirs(&theirs, "0x00000000000000000000000000000000000000aa").is_ok()
+        );
+        // Case does not matter; a different address does.
+        assert!(
+            ensure_claim_is_theirs(&theirs, "0x00000000000000000000000000000000000000AA").is_ok()
+        );
+        let squatted =
+            ensure_claim_is_theirs(&theirs, "0x00000000000000000000000000000000000000bb")
+                .unwrap_err()
+                .to_string();
+        assert!(
+            squatted.contains("filed by 0x00000000000000000000000000000000000000aa"),
+            "{squatted}"
+        );
+        let late = json!({ "contributor": "0x00000000000000000000000000000000000000aa", "status": "Paid" });
+        assert!(
+            ensure_claim_is_theirs(&late, "0x00000000000000000000000000000000000000aa").is_err()
+        );
     }
 
     #[tokio::test]

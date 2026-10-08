@@ -118,7 +118,11 @@ step "the contributor files a claim that asks for no money"
 echo "the docs, merged" > "$STATE/evidence.txt"
 as $KEY_CONTRIBUTOR work claim --mandate "$MANDATE" --id write-docs --evidence-file "$STATE/evidence.txt" >/dev/null
 as $KEY_CONTRIBUTOR work check --mandate "$MANDATE" --id write-docs --check-text "docs merged and reviewed" >/dev/null
-as $KEY_MANAGER work bind --mandate "$MANDATE" --project docs --id write-docs >/dev/null
+# A claim id is first come, first served: binding names the contributor it means, and refuses anyone else's.
+if as $KEY_MANAGER work bind --mandate "$MANDATE" --project docs --id write-docs --contributor "$REVIEWER1" >/dev/null 2>&1; then
+  fail "bound a claim that someone else filed"
+fi
+as $KEY_MANAGER work bind --mandate "$MANDATE" --project docs --id write-docs --contributor "$CONTRIBUTOR" >/dev/null
 state=$(as $KEY_CONTRIBUTOR work state --mandate "$MANDATE" --id write-docs)
 [[ "$(echo "$state" | jget status)" == "Open" && "$(echo "$state" | jget asksForCurrency)" == "false" ]] \
   || fail "the claim should be open and ask for nothing: $state"
