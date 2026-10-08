@@ -16,6 +16,7 @@ import {
   defaultChainPreset,
   getRpcEndpoint,
   isDevBuild,
+  priceIndexerUrl,
 } from "./chain.ts";
 
 const RECORD = {
@@ -325,4 +326,23 @@ test("getRpcEndpoint: saved choice, then VITE_CHAIN_RPC_URL, then default", () =
     DEFAULT_RPC_ENDPOINT,
   );
   assert.equal(getRpcEndpoint(), DEFAULT_RPC_ENDPOINT);
+});
+
+test("the price service is only ever a plain http(s) address the build names", () => {
+  assert.equal(priceIndexerUrl({}), null);
+  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "  " }), null);
+  assert.equal(
+    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "http://127.0.0.1:42069/" }),
+    "http://127.0.0.1:42069",
+  );
+  assert.equal(
+    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "https://prices.example/api/" }),
+    "https://prices.example/api",
+  );
+  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "ftp://x" }), null);
+  assert.equal(
+    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "javascript:1" }),
+    null,
+  );
+  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "nonsense" }), null);
 });

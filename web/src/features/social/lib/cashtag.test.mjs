@@ -128,6 +128,37 @@ describe("the price a chip shows", () => {
     );
   });
 
+  it("is the last trade on the market once the token has traded, and says so", () => {
+    const price = cashtagPrice(
+      { bids: [{ createdAt: 10, maxPrice: "0.01" }], floorPrice: "0.005" },
+      toPrice,
+      { latest: 0.0123, points: [0.01, 0.011, 0.0123] },
+    );
+    assert.deepEqual(price, {
+      source: "market",
+      latest: 0.0123,
+      points: [0.01, 0.011, 0.0123],
+    });
+    const label = cashtagLabel("NEB", launch("a", "NEB", 1), {
+      price,
+      unit: "USDC",
+      text: "0.0123",
+    });
+    assert.match(label, /Last trade price 0\.0123 USDC per token/);
+    assert.doesNotMatch(label, /not a market trade/);
+    // A market price that is not a usable number never replaces what was recorded.
+    for (const latest of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(
+        cashtagPrice(
+          { bids: [{ createdAt: 10, maxPrice: "0.01" }], floorPrice: null },
+          toPrice,
+          { latest, points: [latest] },
+        )?.source,
+        "bids",
+      );
+    }
+  });
+
   it("falls back to the sale's starting price when nobody has bid, never to an invented number", () => {
     assert.deepEqual(cashtagPrice({ bids: [], floorPrice: "0.005" }, toPrice), {
       source: "floor",

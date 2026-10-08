@@ -114,6 +114,11 @@ export interface ChainEnv {
    * (the kit is deployed per chain, so there is no address to guess).
    */
   VITE_DAO_LAUNCH_KITS?: string;
+  /**
+   * The price service's base URL (`services/price-indexer`). Without one, prices come only from recorded bids and the
+   * sale's floor, as they always did.
+   */
+  VITE_PRICE_INDEXER_URL?: string;
 }
 
 function viteEnv(): ChainEnv | undefined {
@@ -146,6 +151,22 @@ export function daoLaunchKit(
     const address = (map as Record<string, unknown>)[String(chainId)];
     return typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address)
       ? address.toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The price service's base URL, or null when the build names none or it is not a plain http(s) URL. */
+export function priceIndexerUrl(
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  const raw = env?.VITE_PRICE_INDEXER_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.origin + url.pathname.replace(/\/+$/, "")
       : null;
   } catch {
     return null;

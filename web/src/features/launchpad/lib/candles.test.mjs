@@ -5,6 +5,7 @@ import {
   atomicToWhole,
   bucketCandles,
   defaultTimeframe,
+  defaultTimeframeForSpan,
   q96ToPrice,
 } from "./candles.ts";
 
@@ -68,4 +69,12 @@ test("the default timeframe keeps the chart under about sixty candles", () => {
     ]),
     "1d",
   );
+});
+
+test("the default timeframe for a span is the smallest that stays readable", () => {
+  assert.equal(defaultTimeframeForSpan(0), "1m");
+  assert.equal(defaultTimeframeForSpan(30 * 60), "1m");
+  assert.equal(defaultTimeframeForSpan(10 * 3_600), "15m");
+  assert.equal(defaultTimeframeForSpan(40 * 86_400), "1d");
+  assert.equal(defaultTimeframeForSpan(10_000 * 86_400), "1w");
 });

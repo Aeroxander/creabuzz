@@ -60,19 +60,23 @@ export function tickerOwners<L extends CashtagLaunch>(
 
 /** A price the chip may show, and where it came from. */
 export interface CashtagPrice {
-  /** `bids`: the highest price recorded bids would pay. `floor`: the sale's starting price, when nobody has bid. */
-  source: "bids" | "floor";
+  /**
+   * `market`: the price of the last trade on the market. `bids`: the highest price recorded bids would pay. `floor`:
+   * the sale's starting price, when nobody has bid.
+   */
+  source: "market" | "bids" | "floor";
   latest: number;
   /** Oldest first; at most {@link SPARK_POINTS}. A single point draws no line. */
   points: number[];
 }
 
-/** How many bids a chip's trend line draws. */
+/** How many prices a chip's trend line draws. */
 export const SPARK_POINTS = 12;
 
 /**
- * The price a chip shows for a launch, from what is actually recorded: the highest price each bid said it would pay
- * (newest last), or the sale's floor price when there are no bids. It is not a market trade and the chip says so.
+ * The price a chip shows for a launch. Once the token has traded, the last trade on the market (`market`, with its
+ * recent closes, oldest first). Before that, only what is recorded: the highest price each bid said it would pay
+ * (newest last), or the sale's floor price when there are no bids; those are not market trades and the chip says so.
  * Null when there is nothing honest to show. `toPrice` turns a stored Q96 price into whole currency per token.
  */
 export function cashtagPrice(
@@ -81,7 +85,15 @@ export function cashtagPrice(
     floorPrice: string | null;
   },
   toPrice: (q96: string | null) => number | null,
+  market: { latest: number; points: readonly number[] } | null = null,
 ): CashtagPrice | null {
+  if (market && Number.isFinite(market.latest) && market.latest > 0) {
+    return {
+      source: "market",
+      latest: market.latest,
+      points: market.points.slice(-SPARK_POINTS),
+    };
+  }
   const points = [...input.bids]
     .sort((a, b) => a.createdAt - b.createdAt)
     .flatMap((bid) => {
@@ -105,6 +117,9 @@ export function cashtagLabel(
 ): string {
   const base = `$${symbol}: ${launch.record.name}, ${stageWords(launch.record.stage)}`;
   if (!price) return base;
+  if (price.price.source === "market") {
+    return `${base}. Last trade price ${price.text} ${price.unit} per token`;
+  }
   const what =
     price.price.source === "bids"
       ? "Highest recent bid price"

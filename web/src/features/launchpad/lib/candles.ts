@@ -100,13 +100,17 @@ export const TIMEFRAMES = [
 
 export type TimeframeId = (typeof TIMEFRAMES)[number]["id"];
 
+/** The smallest timeframe that keeps a chart over `spanSeconds` readable (under ~60 candles). */
+export function defaultTimeframeForSpan(spanSeconds: number): TimeframeId {
+  for (const frame of TIMEFRAMES) {
+    if (spanSeconds / frame.seconds <= 60) return frame.id;
+  }
+  return "1w";
+}
+
 /** The smallest timeframe that keeps the chart readable (under ~60 candles). */
 export function defaultTimeframe(points: readonly PricePoint[]): TimeframeId {
   if (points.length === 0) return "1h";
   const times = points.map((p) => p.time);
-  const span = Math.max(...times) - Math.min(...times);
-  for (const frame of TIMEFRAMES) {
-    if (span / frame.seconds <= 60) return frame.id;
-  }
-  return "1w";
+  return defaultTimeframeForSpan(Math.max(...times) - Math.min(...times));
 }
