@@ -23,6 +23,7 @@ import {
   ZERO_ADDRESS,
   type AbiType,
 } from "./evmAbi.ts";
+import { hashText } from "./work.ts";
 
 const WAD = 10n ** 18n;
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -129,11 +130,6 @@ function percent(value: number, field: string): number {
   return value;
 }
 
-/** keccak256 of some words: how an acceptance check is committed to. */
-export function keccak(words: string): string {
-  return `0x${bytesToHex(keccak_256(utf8ToBytes(words)))}`;
-}
-
 /** A launch's salt: stable across retries (so the addresses can be found again) and unique per launch. */
 export function launchSalt(launchId: string): string {
   return `0x${bytesToHex(keccak_256(utf8ToBytes(`creaton.launch:${launchId}`)))}`;
@@ -225,7 +221,8 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
         "Each milestone unlocks a whole percent from 1 to 100.",
       );
     }
-    const hash = keccak(words);
+    // The same hash a claim's check is stated with (`hashText`), so the milestone and its claim can meet.
+    const hash = hashText(words);
     if (milestoneChecks.includes(hash)) {
       fail("milestones", `Two milestones are worded the same: ${words}`);
     }

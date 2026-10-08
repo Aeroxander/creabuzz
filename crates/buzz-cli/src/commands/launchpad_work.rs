@@ -50,6 +50,14 @@ const SIG_CHALLENGE_WINDOW: &str = "challengeWindow()";
 const SIG_APPROVAL_COUNT: &str = "approvalCount(bytes32)";
 const SIG_OBJECTION_COUNT: &str = "objectionCount(bytes32)";
 const SIG_QUORUM: &str = "quorum()";
+const SIG_DAO_SHARES: &str = "shares()";
+const SIG_SHARES_LOCK_GUARD: &str = "lockGuard()";
+const SIG_UNLOCK: &str = "unlock(address,uint256,address,bytes32)";
+const SIG_LOCKED_OF: &str = "lockedOf(address)";
+const SIG_TRANCHE_COUNT: &str = "trancheCount(address)";
+const SIG_TRANCHE_OF: &str = "trancheOf(address,uint256)";
+/// `MilestoneLock.MAX_TRANCHES`: a lock never has more, so a longer answer is not read further.
+const MAX_LOCK_TRANCHES: u64 = 8;
 
 /// `ClaimStake.Status` in declaration order.
 const CLAIM_STATES: [&str; 7] = [
@@ -85,6 +93,10 @@ pub enum WorkCmd {
     Payout(ClaimRefArgs),
     /// Read where a claim stands and what happens next
     State(ClaimRefArgs),
+    /// Read the Shares a team member still has locked and the milestones that free them
+    Locks(LocksArgs),
+    /// Unlock a milestone's Shares with a paid claim of the holder's (anyone)
+    Unlock(UnlockArgs),
 }
 
 #[derive(Args)]
@@ -273,6 +285,35 @@ pub struct ClaimRefArgs {
     pub id: String,
 }
 
+#[derive(Args)]
+pub struct LocksArgs {
+    /// The DAO whose Shares are locked (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// The team member to read (`0x…`); defaults to the wallet in BUZZ_SPENDER_KEY
+    #[arg(long)]
+    pub holder: Option<String>,
+}
+
+#[derive(Args)]
+pub struct UnlockArgs {
+    /// The DAO whose Shares are locked (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// Whose Shares to unlock (`0x…`): the wallet that filed the claim
+    #[arg(long)]
+    pub beneficiary: String,
+    /// Which milestone, counting from 0 (see `work locks`)
+    #[arg(long)]
+    pub index: u64,
+    /// The mandate the claim was filed in (`0x…`); it must be one this DAO created
+    #[arg(long)]
+    pub mandate: String,
+    /// The claim's id
+    #[arg(long)]
+    pub id: String,
+}
+
 /// Dispatch one step.
 pub async fn run(step: &WorkCmd) -> Result<(), CliError> {
     match step {
@@ -286,6 +327,8 @@ pub async fn run(step: &WorkCmd) -> Result<(), CliError> {
         WorkCmd::Settle(args) => cmd_settle(args).await,
         WorkCmd::Payout(args) => cmd_payout(args).await,
         WorkCmd::State(args) => cmd_state(args).await,
+        WorkCmd::Locks(args) => cmd_locks(args).await,
+        WorkCmd::Unlock(args) => cmd_unlock(args).await,
     }
 }
 
@@ -448,7 +491,8 @@ fn hash_arg(hash: Option<&str>, text: Option<&str>, what: &str) -> Result<[u8; 3
                 )))
             }
         }),
-        (None, Some(t)) if !t.trim().is_empty() => Ok(abi::keccak256(t.as_bytes())),
+        // Trimmed, so a check typed here hashes exactly as the same words typed in the app.
+        (None, Some(t)) if !t.trim().is_empty() => Ok(abi::keccak256(t.trim().as_bytes())),
         _ => Err(CliError::Usage(format!(
             "give the {what} as a 0x hash or as text"
         ))),
@@ -881,6 +925,29 @@ impl Chain {
     }
 }
 
+/// `MilestoneLock.unlock(beneficiary, index, mandate, claimId)`.
+pub fn encode_unlock(
+    beneficiary: &str,
+    index: u64,
+    mandate: &str,
+    claim_id: &[u8; 32],
+) -> Result<Vec<u8>, CliError> {
+    if index >= MAX_LOCK_TRANCHES {
+        return Err(CliError::Usage(format!(
+            "a lock has at most {MAX_LOCK_TRANCHES} milestones, counted from 0 (got {index})"
+        )));
+    }
+    Ok(call(
+        SIG_UNLOCK,
+        &[
+            address_word(beneficiary, "beneficiary")?,
+            u64_word(index),
+            address_word(mandate, "mandate")?,
+            *claim_id,
+        ],
+    ))
+}
+
 fn print_sent(what: &str, mandate: &str, id: &str, tx_hash: &str, extra: serde_json::Value) {
     println!(
         "{}",
@@ -1120,7 +1187,126 @@ pub async fn cmd_state(args: &ClaimRefArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+pub async fn cmd_unlock(args: &UnlockArgs) -> Result<(), CliError> {
+    let id = bytes32_arg(&args.id, "claim id")?;
+    let data = encode_unlock(&args.beneficiary, args.index, &args.mandate, &id)?;
+    let (rpc_url, spender) = load_chain()?;
+    let chain = Chain::open(&rpc_url, &args.mandate)?;
+    let lock = chain.lock_of(&args.dao).await?;
+    let tx = chain.send(&spender, &lock, &data, "the unlock").await?;
+    print_sent(
+        "unlock",
+        &chain.mandate,
+        &args.id,
+        &tx,
+        json!({ "lock": lock, "beneficiary": args.beneficiary, "milestone": args.index }),
+    );
+    Ok(())
+}
+
+pub async fn cmd_locks(args: &LocksArgs) -> Result<(), CliError> {
+    let rpc_url = std::env::var(ENV_EVM_RPC_URL)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            CliError::Usage(format!("work locks reads the chain: set {ENV_EVM_RPC_URL}"))
+        })?;
+    let holder = match &args.holder {
+        Some(h) => validate_eth_address(h, "holder")?,
+        None => {
+            let (_, spender) = load_chain()?;
+            format!(
+                "0x{}",
+                hex::encode(buzz_evm_allowance::tx::address_from_key(&spender))
+            )
+        }
+    };
+    // The handle is opened for the DAO: these reads are about it, not about a mandate.
+    let chain = Chain::open(&rpc_url, &args.dao)?;
+    let report = chain.lock_report(&args.dao, &holder).await?;
+    println!("{report}");
+    Ok(())
+}
+
 impl Chain {
+    /// The milestone lock a DAO's Shares name. A DAO whose Shares name none holds nothing back.
+    async fn lock_of(&self, dao: &str) -> Result<String, CliError> {
+        let dao = validate_eth_address(dao, "dao")?;
+        let shares = self.address_of(&dao, SIG_DAO_SHARES).await?;
+        let lock = self.address_of(&shares, SIG_SHARES_LOCK_GUARD).await?;
+        if lock.trim_start_matches("0x").bytes().all(|b| b == b'0') {
+            return Err(CliError::Usage(
+                "this DAO's Shares have no milestone lock: nothing of the team's is held back"
+                    .into(),
+            ));
+        }
+        Ok(lock)
+    }
+
+    pub(crate) async fn lock_report(
+        &self,
+        dao: &str,
+        holder: &str,
+    ) -> Result<serde_json::Value, CliError> {
+        let lock = self.lock_of(dao).await?;
+        let holder_word = address_word(holder, "holder")?;
+        let locked = BigUint::from_bytes_be(
+            &self
+                .word(&lock, &call(SIG_LOCKED_OF, &[holder_word]))
+                .await?,
+        );
+        let count = BigUint::from_bytes_be(
+            &self
+                .word(&lock, &call(SIG_TRANCHE_COUNT, &[holder_word]))
+                .await?,
+        );
+        let count = u64::try_from(count)
+            .unwrap_or(MAX_LOCK_TRANCHES)
+            .min(MAX_LOCK_TRANCHES);
+        let mut milestones = Vec::new();
+        for index in 0..count {
+            let record = self
+                .eth_call(
+                    &lock,
+                    &call(SIG_TRANCHE_OF, &[holder_word, u64_word(index)]),
+                )
+                .await?;
+            if record.len() < 4 * 32 {
+                return Err(CliError::Other("the milestone record is too short".into()));
+            }
+            let unlocked = record[2 * 32..3 * 32].iter().any(|b| *b != 0);
+            let forfeited = record[3 * 32..4 * 32].iter().any(|b| *b != 0);
+            let state = if unlocked {
+                "unlocked"
+            } else if forfeited {
+                "given up"
+            } else {
+                "locked"
+            };
+            milestones.push(json!({
+                "index": index,
+                "check": format!("0x{}", hex::encode(&record[..32])),
+                "amount": big_word(&record, 1).to_string(),
+                "state": state,
+                "next": if state == "locked" {
+                    "file a claim in a mandate this DAO created, state exactly this milestone's words as its check \
+                     (work claim, then work check), and once the reviewers approve it and the challenge window \
+                     passes, run: buzz launchpad work unlock"
+                } else {
+                    "nothing more to do"
+                },
+            }));
+        }
+        Ok(json!({
+            "status": "ok",
+            "dao": dao,
+            "lock": lock,
+            "holder": holder,
+            "locked": locked.to_string(),
+            "milestones": milestones,
+        }))
+    }
+
     pub(crate) async fn claim_report(
         &self,
         mandate: &str,
@@ -1223,6 +1409,12 @@ mod tests {
             (SIG_MANDATE_VERIFIERS, "26779776"),
             (SIG_CLAIM, "eff0f592"),
             (SIG_APPROVE, "095ea7b3"),
+            (SIG_UNLOCK, "33484b20"),
+            (SIG_LOCKED_OF, "a5f1e282"),
+            (SIG_TRANCHE_COUNT, "29dc62b4"),
+            (SIG_TRANCHE_OF, "1141e136"),
+            (SIG_SHARES_LOCK_GUARD, "36bc529d"),
+            (SIG_DAO_SHARES, "03314efa"),
         ];
         for (signature, expected) in cases {
             assert_eq!(
@@ -1549,6 +1741,125 @@ mod tests {
         assert_eq!(report["sharesAwarded"], false);
         assert!(report["project"].is_string());
         assert!(report["next"].as_str().unwrap().contains("payout"));
+    }
+
+    /// `cast calldata "unlock(address,uint256,address,bytes32)" 0x1111… 1 0x2222… 0x3333…`
+    #[test]
+    fn unlock_calldata_is_what_cast_encodes() {
+        let data = encode_unlock(
+            "0x1111111111111111111111111111111111111111",
+            1,
+            "0x2222222222222222222222222222222222222222",
+            &[0x33u8; 32],
+        )
+        .unwrap();
+        assert_eq!(
+            hex::encode(data),
+            "33484b200000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000100000000000000000000000022222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333"
+        );
+        let too_far = encode_unlock(
+            "0x1111111111111111111111111111111111111111",
+            MAX_LOCK_TRANCHES,
+            "0x2222222222222222222222222222222222222222",
+            &[0u8; 32],
+        );
+        assert!(too_far.is_err());
+    }
+
+    #[test]
+    fn check_text_hashes_the_same_with_or_without_stray_spaces() {
+        let clean = hash_arg(None, Some("alpha shipped"), "check").unwrap();
+        let padded = hash_arg(None, Some("  alpha shipped\n"), "check").unwrap();
+        assert_eq!(clean, padded);
+        // keccak256("alpha shipped"), the same word the app and the launch kit commit a milestone to.
+        assert_eq!(
+            hex::encode(clean),
+            "584c2cefcd48562da6fb9889be81b5ec58deec77062db839bf9de9f7bbb9aab8"
+        );
+    }
+
+    fn lock_world() -> (Chain, &'static str, &'static str) {
+        let dao = "0x00000000000000000000000000000000000000aa";
+        let shares = "0x00000000000000000000000000000000000000bb";
+        let lock = "0x00000000000000000000000000000000000000cc";
+        let sel = |s: &str| hex::encode(abi::selector(s));
+        let mut answers = HashMap::new();
+        answers.insert(
+            format!("{dao}:{}", sel(SIG_DAO_SHARES)),
+            format!("0x{:0>64}", &shares[2..]),
+        );
+        answers.insert(
+            format!("{shares}:{}", sel(SIG_SHARES_LOCK_GUARD)),
+            format!("0x{:0>64}", &lock[2..]),
+        );
+        answers.insert(
+            format!("{lock}:{}", sel(SIG_LOCKED_OF)),
+            format!("0x{}", word_hex(40)),
+        );
+        answers.insert(
+            format!("{lock}:{}", sel(SIG_TRANCHE_COUNT)),
+            format!("0x{}", word_hex(1)),
+        );
+        // check 0xa1.., amount 40, not unlocked, not forfeited
+        answers.insert(
+            format!("{lock}:{}", sel(SIG_TRANCHE_OF)),
+            format!(
+                "0x{}{}{}{}",
+                "a1".repeat(32),
+                word_hex(40),
+                word_hex(0),
+                word_hex(0)
+            ),
+        );
+        let rpc: Arc<dyn EvmRpc> = Arc::new(MockRpc {
+            answers: Mutex::new(answers),
+        });
+        (Chain::with_transport(rpc, dao).unwrap(), dao, lock)
+    }
+
+    #[tokio::test]
+    async fn locks_report_what_is_held_back_and_what_to_do() {
+        let (chain, dao, lock) = lock_world();
+        let holder = "0x00000000000000000000000000000000000000dd";
+        let report = chain.lock_report(dao, holder).await.unwrap();
+        assert_eq!(report["lock"], lock);
+        assert_eq!(report["locked"], "40");
+        assert_eq!(report["milestones"][0]["state"], "locked");
+        assert_eq!(report["milestones"][0]["amount"], "40");
+        assert_eq!(
+            report["milestones"][0]["check"],
+            format!("0x{}", "a1".repeat(32))
+        );
+        assert!(report["milestones"][0]["next"]
+            .as_str()
+            .unwrap()
+            .contains("work unlock"));
+    }
+
+    #[tokio::test]
+    async fn a_dao_whose_shares_name_no_lock_says_so_instead_of_failing_oddly() {
+        let dao = "0x00000000000000000000000000000000000000aa";
+        let shares = "0x00000000000000000000000000000000000000bb";
+        let sel = |s: &str| hex::encode(abi::selector(s));
+        let mut answers = HashMap::new();
+        answers.insert(
+            format!("{dao}:{}", sel(SIG_DAO_SHARES)),
+            format!("0x{:0>64}", &shares[2..]),
+        );
+        answers.insert(
+            format!("{shares}:{}", sel(SIG_SHARES_LOCK_GUARD)),
+            format!("0x{}", "0".repeat(64)),
+        );
+        let rpc: Arc<dyn EvmRpc> = Arc::new(MockRpc {
+            answers: Mutex::new(answers),
+        });
+        let chain = Chain::with_transport(rpc, dao).unwrap();
+        let error = chain
+            .lock_report(dao, "0x00000000000000000000000000000000000000dd")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no milestone lock"), "{error}");
     }
 
     #[test]

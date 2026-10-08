@@ -1,0 +1,80 @@
+// scripts/lib/kit-launch.mjs — what the launch page does, for a shell script: turn a launch record into the launch
+// kit's calldata (the same `@creaton/core` code the app runs), and read the DAO the kit made out of a receipt.
+//
+// ⚠️  DEV ONLY. Used by the throwaway-world e2e scripts; nothing here signs or sends.
+//
+//   node --experimental-strip-types scripts/lib/kit-launch.mjs plan   <rpc> <kit> <launcher> <currency> <startBlock>
+//       prints {"to","data"} for `cast send`.
+//   node --experimental-strip-types scripts/lib/kit-launch.mjs decode <kit> <receipt.json>
+//       prints {"dao","shares","executor","auction","lock","launcher"} from the receipt's Launched event.
+
+import { readFileSync } from "node:fs";
+
+import {
+  daoLaunchInputsFromRecord,
+  decodeKitLaunched,
+  encodeKitLaunch,
+  encodeKitPredictExecutor,
+  planDaoLaunch,
+} from "../../packages/creaton-core/src/launchpad/daoLaunch.ts";
+
+const [mode, ...args] = process.argv.slice(2);
+
+async function ethCall(rpc, to, data) {
+  const res = await fetch(rpc, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_call",
+      params: [{ to, data }, "latest"],
+    }),
+  });
+  const body = await res.json();
+  if (body.error) throw new Error(JSON.stringify(body.error));
+  return body.result;
+}
+
+if (mode === "plan") {
+  const [rpc, kit, launcher, currency, start] = args;
+  const startBlock = Number(start);
+  // A 200M-Share sale of a 1B supply in the dev USDC ($0.01 a Share, a $300,000 threshold); the team's 20% is held
+  // back by two milestones, worded exactly as the project that judges each will word its acceptance check.
+  const record = {
+    id: "milestone-e2e",
+    author: launcher.toLowerCase(),
+    chainId: "31337",
+    tokenPlan: { mode: "dao", name: "Nebula", symbol: "NEB", supply: "200000000" },
+    allocation: { sale: 20, team: 20, treasury: 30, liquidity: 15, milestones: 10, community: 5 },
+    currency,
+    floorPrice: "792281625140000",
+    tickSpacing: "79228162514",
+    requiredRaised: "299999999998",
+    startBlock,
+    endBlock: startBlock + 200,
+    claimBlock: startBlock + 260,
+    unlocks: {
+      mode: "milestones",
+      milestones: [
+        { label: "alpha shipped", percent: 40 },
+        { label: "mainnet live", percent: 60 },
+      ],
+    },
+  };
+  const plan = planDaoLaunch(daoLaunchInputsFromRecord(record, launcher));
+  const executor = `0x${(await ethCall(rpc, kit, encodeKitPredictExecutor(launcher, plan.salt))).slice(-40)}`;
+  console.log(JSON.stringify({ to: kit, data: encodeKitLaunch(plan, executor) }));
+} else if (mode === "decode") {
+  const [kit, receiptPath] = args;
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  const launched = decodeKitLaunched(receipt.logs ?? [], kit);
+  if (!launched) {
+    console.error("no Launched event from the kit in that receipt");
+    process.exit(1);
+  }
+  console.log(JSON.stringify(launched, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+} else {
+  console.error("usage: kit-launch.mjs plan|decode …");
+  process.exit(2);
+}
