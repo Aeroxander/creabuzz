@@ -17,6 +17,8 @@ fs_permissions = [{ access = "read-write", path = "./deployments" }]
 compilation_restrictions = [
   { paths = "src/GraduationExecutor.sol", version = "=0.8.26" },
   { paths = "src/hooks/AllowlistHook.sol", version = "=0.8.26" },
+  # The kit creates a GraduationExecutor, so it compiles with it.
+  { paths = "src/DaoLaunchKit.sol", version = "=0.8.26" },
 ]
 
 [rpc_endpoints]

@@ -5,48 +5,14 @@ import "forge-std/Test.sol";
 import {ShareVesting} from "../src/ShareVesting.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {Call, Moloch, Summoner, Shares, newSummoner} from "../src/majeur/MolochPatched.sol";
-import {LaunchCurrency, LaunchPermit2} from "./helpers/LaunchMocks.sol";
-
-// The auction graph is pinned to solc 0.8.26 and the patched DAO needs 0.8.30, so neither the auction nor
-// the executor is imported here: both are deployed from their build artifacts and driven through these.
-interface IPermit2Approve {
-    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
-}
-
-interface IExecutor {
-    function launcher() external view returns (address);
-    function treasury() external view returns (address);
-    function retargetTreasury(address) external;
-    function bindAuction(address) external;
-    function fundAuction(address, uint256) external;
-    function executeGraduation(address) external;
-    function recoverFailedLaunch(address) external;
-}
-
-interface IAuction {
-    function submitBid(uint256 maxPrice, uint128 amount, address owner, uint256 prevTickPrice, bytes calldata hookData)
-        external
-        returns (uint256);
-    function exitBid(uint256 bidId) external;
-    function exitPartiallyFilledBid(uint256 bidId, uint64 lastFullyFilledCheckpointBlock, uint64 outbidBlock) external;
-    function claimTokens(uint256 bidId) external;
-    function checkpoint() external;
-}
-
-/// @dev Same layout as `AuctionParameters` in the auction's own interface file.
-struct AuctionParams {
-    address currency;
-    address tokensRecipient;
-    address fundsRecipient;
-    uint64 startBlock;
-    uint64 endBlock;
-    uint64 claimBlock;
-    uint256 tickSpacing;
-    address validationHook;
-    uint256 floorPrice;
-    uint128 requiredCurrencyRaised;
-    bytes auctionStepsData;
-}
+import {
+    LaunchCurrency,
+    LaunchPermit2,
+    IPermit2Approve,
+    IExecutor,
+    IAuction,
+    AuctionParams
+} from "./helpers/LaunchMocks.sol";
 
 /// @notice A raise that settles into the DAO whose own Shares it sells, on the real auction and the real
 /// patched DAO: the founder's allocation vests, the raise lands in the DAO treasury, the people who bid

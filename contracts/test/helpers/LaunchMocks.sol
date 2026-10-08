@@ -69,3 +69,50 @@ contract LaunchPermit2 {
         if (!LaunchCurrency(token).transferFrom(from, to, amount)) revert TokenTransferFailed();
     }
 }
+
+// The auction graph is pinned to solc 0.8.26 and the patched DAO needs 0.8.30, so a test that uses both cannot
+// import the auction or the executor: it deploys them from their build artifacts and drives them through these.
+interface IPermit2Approve {
+    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
+}
+
+interface IExecutor {
+    function launcher() external view returns (address);
+    function treasury() external view returns (address);
+    function retargetTreasury(address) external;
+    function bindAuction(address) external;
+    function fundAuction(address, uint256) external;
+    function executeGraduation(address) external;
+    function recoverFailedLaunch(address) external;
+    function boundAuction() external view returns (address);
+    function treasuryRetargeted() external view returns (bool);
+}
+
+interface IAuction {
+    function submitBid(uint256 maxPrice, uint128 amount, address owner, uint256 prevTickPrice, bytes calldata hookData)
+        external
+        returns (uint256);
+    function exitBid(uint256 bidId) external;
+    function exitPartiallyFilledBid(uint256 bidId, uint64 lastFullyFilledCheckpointBlock, uint64 outbidBlock) external;
+    function claimTokens(uint256 bidId) external;
+    function checkpoint() external;
+    function tokensRecipient() external view returns (address);
+    function fundsRecipient() external view returns (address);
+    function token() external view returns (address);
+}
+
+/// @dev Same layout as `AuctionParameters` in the auction's own interface file.
+struct AuctionParams {
+    address currency;
+    address tokensRecipient;
+    address fundsRecipient;
+    uint64 startBlock;
+    uint64 endBlock;
+    uint64 claimBlock;
+    uint256 tickSpacing;
+    address validationHook;
+    uint256 floorPrice;
+    uint128 requiredCurrencyRaised;
+    bytes auctionStepsData;
+}
+
