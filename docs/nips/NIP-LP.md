@@ -173,7 +173,10 @@ NIP-09 tombstoned. ERC-4824 projections present `agent-draft` as DAOIP-5
 
 Anyone MAY publish; usually an indexer bot. `a` = launch coordinate,
 `tx` = chain tx hash, `kind` = one of
-`auction-created | bid | sweep | claim | lock | summon | stream | cancel | ragequit`.
+`auction-created | bid | sweep | claim | lock | summon | dao-launch | stream | cancel | ragequit`.
+`dao-launch` is the launch kit creating a project's DAO and opening its sale in one transaction; its payload names
+the `dao`, the `shares` token, the `auction`, the graduation `executor` and the team's vesting `vaults`, and unlike
+`summon` it does not mark the launch graduated (the raise has not happened yet).
 Content is the mirrored payload JSON. Advisory: clients MUST cross-check
 the chain before acting on money.
 

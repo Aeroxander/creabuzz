@@ -295,7 +295,7 @@ export async function publishMirror(
 }
 
 export interface TokenPlan {
-  mode: "mint";
+  mode: "mint" | "dao";
   name: string;
   symbol: string;
   supply: string;

@@ -94,7 +94,7 @@ import {
   type WizardController,
 } from "./create-wizard/WizardSteps";
 
-type TokenMode = "mint" | "import";
+type TokenMode = "mint" | "import" | "dao";
 
 export function CreateLaunchDialog({
   isCreating,

@@ -102,7 +102,8 @@ export function resolveDaoBinding(input: {
   let newest: DaoBinding | null = null;
   let newestAt = -1;
   for (const receipt of input.receipts) {
-    if (receipt.table !== "summon") continue;
+    // `summon` is a Summoner call; `dao-launch` is the launch kit making the DAO and its sale in one transaction.
+    if (receipt.table !== "summon" && receipt.table !== "dao-launch") continue;
     const dao = receipt.payload.dao;
     if (typeof dao !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(dao)) continue;
     if (receipt.createdAt >= newestAt) {

@@ -132,6 +132,7 @@ export function makeWalletAuctionEffects(
           blockNumber?: string;
           gasUsed?: string;
           contractAddress?: string | null;
+          logs?: unknown;
         } | null;
         if (receipt) {
           return {
@@ -140,6 +141,8 @@ export function makeWalletAuctionEffects(
             blockNumber: Number(hexQuantity(receipt.blockNumber, "block")),
             gasUsed: hexQuantity(receipt.gasUsed ?? "0x0", "gas").toString(),
             contractAddress: receipt.contractAddress ?? null,
+            // Present only when the wallet reports them, so a receipt without logs keeps its old shape.
+            ...(Array.isArray(receipt.logs) ? { logs: receipt.logs } : {}),
           };
         }
         if (now() >= deadline) {

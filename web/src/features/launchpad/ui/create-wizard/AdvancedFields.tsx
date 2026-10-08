@@ -44,8 +44,8 @@ export interface AdvancedFieldsState {
   /** The funding declaration; null is "nothing declared yet". */
   funding: FundingStatus | null;
   setFunding(next: FundingStatus | null): void;
-  tokenMode: "mint" | "import";
-  setTokenMode(value: "mint" | "import"): void;
+  tokenMode: "mint" | "import" | "dao";
+  setTokenMode(value: "mint" | "import" | "dao"): void;
   tokenName: string;
   setTokenName(value: string): void;
   importAddress: string;
@@ -234,7 +234,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Token</span>
           <div className="flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
-            {(["mint", "import"] as const).map((mode) => (
+            {(["dao", "mint", "import"] as const).map((mode) => (
               <button
                 key={mode}
                 aria-pressed={tokenMode === mode}
@@ -246,12 +246,37 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
                 }`}
                 type="button"
               >
-                {mode === "mint" ? "Mint new" : "Import"}
+                {mode === "dao"
+                  ? "Project Shares"
+                  : mode === "mint"
+                    ? "Mint new"
+                    : "Import"}
               </button>
             ))}
           </div>
         </div>
-        {tokenMode === "mint" ? (
+        {tokenMode === "dao" ? (
+          <div
+            className="mt-2 flex flex-col gap-3"
+            data-testid="token-mode-dao"
+          >
+            <p className="text-xs text-black/60 dark:text-white/60">
+              Sell the project's own Shares. One launch creates the project's
+              DAO and the sale together: the raise lands in the DAO, the team's
+              Shares unlock over time, and everyone who buys can vote and leave
+              with their share of the treasury. Name, symbol and total supply
+              are on the first step.
+            </p>
+            <Field id="launch-token-name" label="Name">
+              <Input
+                id="launch-token-name"
+                onChange={(e) => setTokenName(e.target.value)}
+                placeholder="Nebula"
+                value={tokenName}
+              />
+            </Field>
+          </div>
+        ) : tokenMode === "mint" ? (
           <div className="mt-2 flex flex-col gap-3">
             <p className="text-xs text-black/60 dark:text-white/60">
               No addresses needed. Minting deploys a reserve-backed apptoken and

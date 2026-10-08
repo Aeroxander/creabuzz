@@ -199,7 +199,7 @@ export interface FormState {
   vestingPresent: boolean;
   /** The founder changed the ladder in this session. */
   vestingDirty: boolean;
-  tokenMode: "mint" | "import";
+  tokenMode: "mint" | "import" | "dao";
   tokenName: string;
   symbol: string;
   /** Sale tranche in whole tokens — the record's `tokenPlan.supply`. */
@@ -792,9 +792,9 @@ export function buildLegacyInput(form: FormState): CreateLaunchInput {
     allocation: form.allocation,
     vesting: publishableVesting(form),
     tokenPlan:
-      form.tokenMode === "mint"
+      form.tokenMode === "mint" || form.tokenMode === "dao"
         ? {
-            mode: "mint",
+            mode: form.tokenMode,
             name: form.tokenName.trim() || deriveTokenName(form.name),
             symbol: form.symbol.trim(),
             supply: form.supply.trim(),
@@ -856,9 +856,9 @@ export function wizardToCreateInput(
     name: form.name.trim(),
     stage: options.stage ?? legacy.stage,
     tokenPlan:
-      form.tokenMode === "mint"
+      form.tokenMode === "mint" || form.tokenMode === "dao"
         ? {
-            mode: "mint",
+            mode: form.tokenMode,
             name: form.tokenName.trim() || deriveTokenName(form.name),
             symbol: form.symbol.trim() || deriveSymbol(form.name),
             // `form.supply` is the tranche — what the record has always

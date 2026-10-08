@@ -77,6 +77,8 @@ export interface AuctionTxReceipt {
   gasUsed: string;
   /** Created address — populated only for contract-creation sends. */
   contractAddress: string | null;
+  /** The receipt's event logs, when the sender reports them (a browser wallet does; the desktop IPC does not). */
+  logs?: readonly unknown[];
 }
 
 /** One unsigned send. `to` omitted = contract creation (the IPC contract). */

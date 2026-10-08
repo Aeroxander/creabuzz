@@ -208,6 +208,29 @@ function TX() {
   return `0x${"d".repeat(64)}`;
 }
 
+test("a DAO made by the launch kit is found from its dao-launch receipt, newest first", () => {
+  const older = {
+    table: "summon",
+    payload: { dao: `0x${"a1".repeat(20)}` },
+    tx: TX(),
+    createdAt: 100,
+  };
+  const launch = {
+    table: "dao-launch",
+    payload: { table: "dao-launch", dao: DAO },
+    tx: `0x${"c".repeat(64)}`,
+    createdAt: 200,
+  };
+  assert.deepEqual(
+    resolveDaoBinding({ receipts: [older, launch], orgBindings: [] }),
+    {
+      dao: DAO,
+      source: "summon-receipt",
+      ref: `0x${"c".repeat(64)}`,
+    },
+  );
+});
+
 test("an org root binding parses only from content.onchain with a real address", () => {
   const bound = parseOrgBinding(
     orgEvent(37010, ROOT_ID, {

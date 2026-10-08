@@ -109,6 +109,11 @@ export interface ChainEnv {
   VITE_ENABLE_MAINNET?: string;
   /** Address of the dev USDC on a local chain (a local deploy has no fixed one). */
   VITE_LOCAL_USDC?: string;
+  /**
+   * The launch kit per chain, as JSON: `{"31337":"0x…"}`. A chain with no entry cannot launch a DAO from the app
+   * (the kit is deployed per chain, so there is no address to guess).
+   */
+  VITE_DAO_LAUNCH_KITS?: string;
 }
 
 function viteEnv(): ChainEnv | undefined {
@@ -121,6 +126,30 @@ export function localUsdcAddress(
 ): string | null {
   const value = env?.VITE_LOCAL_USDC?.trim();
   return value ? value : null;
+}
+
+/**
+ * The launch kit on `chainId`, or null when the build does not name one (never guessed: a wrong address would send
+ * a founder's launch to a stranger's contract). Strict: the map must be a JSON object of chain id to address.
+ */
+export function daoLaunchKit(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  const raw = env?.VITE_DAO_LAUNCH_KITS?.trim();
+  if (!raw || chainId === null) return null;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map)) {
+      return null;
+    }
+    const address = (map as Record<string, unknown>)[String(chainId)];
+    return typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address)
+      ? address.toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** What a launch record's sale raises in, on its own chain. */
@@ -388,9 +417,10 @@ export async function ethChainId(endpoint: string): Promise<bigint> {
 export async function ethTransactionReceipt(
   endpoint: string,
   hash: string,
-): Promise<{ status?: string } | null> {
+): Promise<{ status?: string; logs?: unknown[] } | null> {
   return (await rpc(endpoint, "eth_getTransactionReceipt", [hash])) as {
     status?: string;
+    logs?: unknown[];
   } | null;
 }
 

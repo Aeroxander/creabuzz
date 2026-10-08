@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import type { ConnectedWalletState } from "../use-connected-wallet";
-import type { SendGate } from "../lib/auction-copy";
 
 /**
  * Small pieces shared by the auction deploy and graduation panels: a step row,
@@ -135,7 +134,13 @@ export function WalletStrip({
 }
 
 /** The reason a panel cannot send yet, when there is one. */
-export function GateNote({ gate, testId }: { gate: SendGate; testId: string }) {
+export function GateNote({
+  gate,
+  testId,
+}: {
+  gate: { ok: true } | { ok: false; message: string };
+  testId: string;
+}) {
   if (gate.ok) return null;
   return (
     <p

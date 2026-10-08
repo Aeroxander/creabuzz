@@ -40,6 +40,7 @@ import {
   planVerdictSubmit,
 } from "../lib/claim-submit";
 import { AuctionSection } from "./AuctionSection";
+import { DaoLaunchPanel } from "./DaoLaunchPanel";
 import { recordToInput } from "../lib/record-input";
 import { TokenMintPanel } from "./TokenMintPanel";
 import { TrustGraphCuratorPanel } from "./TrustGraphCuratorPanel";
@@ -664,7 +665,16 @@ export function ManagePanel({
         </div>
       </Card>
 
-      {record.tokenPlan && !record.token ? (
+      {record.tokenPlan?.mode === "dao" ? (
+        <DaoLaunchPanel
+          launch={launch}
+          // Like the auction link below: propagate the publish error so the run can offer a retry, and keep every
+          // field the record holds.
+          onLink={(link) => save.mutateAsync(toInput(link))}
+        />
+      ) : null}
+
+      {record.tokenPlan && record.tokenPlan.mode !== "dao" && !record.token ? (
         <TokenMintPanel
           launch={launch}
           // Merge through `toInput`: the mint link and the one-click deploy

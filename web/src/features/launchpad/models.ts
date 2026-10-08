@@ -158,7 +158,11 @@ export interface LaunchRecord {
    */
   legalWrapper: string | null;
   tokenPlan: {
-    mode: "mint";
+    /**
+     * "mint": a reserve-backed apptoken minted before the sale. "dao": the project's own Shares, created
+     * with its DAO in one launch transaction (`lib/dao-launch.ts`); the supply is still the sale tranche.
+     */
+    mode: "mint" | "dao";
     name: string;
     symbol: string;
     supply: string;
@@ -457,7 +461,7 @@ function parseTokenPlan(value: unknown): LaunchRecord["tokenPlan"] {
   }
   const plan = value as Record<string, unknown>;
   if (
-    plan.mode !== "mint" ||
+    (plan.mode !== "mint" && plan.mode !== "dao") ||
     typeof plan.name !== "string" ||
     typeof plan.symbol !== "string" ||
     typeof plan.supply !== "string"
@@ -465,7 +469,7 @@ function parseTokenPlan(value: unknown): LaunchRecord["tokenPlan"] {
     return null;
   }
   return {
-    mode: "mint",
+    mode: plan.mode,
     name: plan.name,
     symbol: plan.symbol,
     supply: plan.supply,
