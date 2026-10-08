@@ -22,7 +22,9 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 | CLI front doors for the contributor path: `buzz launchpad work mandate/project/award` (compose the votes), `claim/check/bind/attest/settle/payout` (send), `state` (read), plus the missing `queue` | `crates/buzz-cli/src/commands/launchpad_work.rs`, `launchpad_gov.rs` | 12 unit tests with calldata pinned to `cast`; `scripts/cli-no-raise-e2e.sh` runs the whole no-raise journey with the CLI alone against a real local chain (mandate, project, claim, recusal, challenge window, payout, over-budget award refused, award, 25 Shares held) |
 | A higher, still bounded gas cap for executing a proposal (a mandate deploys three contracts) | `buzz-evm-allowance` `with_gas_cap`, ceiling 8M | unit test: refused by default, allowed when raised, never past the ceiling |
 | `$TICKER` cashtags link to the launch that owns the ticker | `web/src/features/social` | tokenizer and ownership unit tests; `social-cashtag.spec.ts` |
-| New launches default to the project's own Shares where a kit exists; vouchers hidden beside a DAO's Shares | web launchpad | `launchpad.spec.ts` 28 passed (the default only flips in a build that names a kit; that flip itself has no browser test) |
+| New launches default to the project's own Shares where a kit exists; vouchers hidden beside a DAO's Shares | web launchpad | `launchpad.spec.ts` 28 passed; two browser tests in `launchpad-dao-launch.spec.ts` (the default, and a wizard-made launch launching with the wizard's allocation on chain) |
+| A **Work** tab: a DAO's work budgets, projects and claims read from the chain; file a claim for recognition, take a claim on, review, finish, take the payout, each from the person's own wallet | `web/src/features/launchpad/ui/WorkTab.tsx`, `FileClaimCard.tsx`, core `work.ts` / `workRead.ts` | 12 core unit tests (calldata and events pinned to `cast`, a fake-chain reader); `scripts/web-work-e2e.sh` runs the whole path in a browser against a real local chain (found and fixed a hook-order crash in the launch page) |
+| A closed mandate awards no more Shares; a manager binds only the claim of the contributor they name (the contract refuses a claim someone else filed under the id) | `TreasuryMandate.sol` | `EquityMandate.t.sol` (9 tests); full forge suite 313 passed |
 
 ## Differences from the plan
 
@@ -36,7 +38,8 @@ says what is built, how it was checked, and what is not done, so nobody has to r
 
 ## Not started
 
-- Web (and later desktop) screens for mandates, claims, attestation and awards (D9: CLI first).
+- Web composer for the DAO's own votes (a new work budget, a project, an award) and for claims that ask for money
+  (they need a currency approval): both stay on the command line. Desktop parity (D9).
 - Social: merging Home and Social into one feed, one trust score service, prices and charts on the `$TICKER` chip,
   one-tap trade sheet. Home (launch discussion, vote-ranked) and Social (a timeline) read different data, so merging
   them is a product redesign rather than a refactor; I left it for you to decide.
@@ -45,6 +48,12 @@ says what is built, how it was checked, and what is not done, so nobody has to r
   `buzz-review-completed` marker is yours to add.
 
 ## Known open issues
+
+- The recovery path that finds a launch again from the chain reads the kit's log from block 0. A public RPC that
+  refuses a range that wide makes it fail with a retryable error rather than a wrong answer; it should start from the
+  sale's start block.
+- The Work tab reads whole-history logs the same way, bounded in count (8 budgets, 50 projects, 100 claims) but not in
+  block range.
 
 - The founder's vested Shares dilute what backers can leave with. The launch panel now says by how much; the exit
   screens elsewhere do not yet.
