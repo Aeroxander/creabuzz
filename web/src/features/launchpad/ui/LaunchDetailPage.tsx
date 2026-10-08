@@ -29,7 +29,7 @@ import {
   useLaunch,
   usePublishMirror,
 } from "../use-launches";
-import { effectiveStage, type Launch } from "../models";
+import { effectiveStage, isEvmAddress, type Launch } from "../models";
 import { effectiveFunding } from "../lib/funding";
 import { isIdea } from "../lib/idea";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
@@ -72,6 +72,7 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { ManagePanel } from "./ManagePanel";
+import { WorkTab } from "./WorkTab";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
 import { TrackRecordCard } from "./TrackRecordCard";
@@ -89,6 +90,7 @@ type Tab =
   | "proposals"
   | "treasury"
   | "mybids"
+  | "work"
   | "manage";
 
 export function LaunchDetailPage({
@@ -148,6 +150,8 @@ export function LaunchDetailPage({
   >(null);
   const follows = useLaunchFollows();
   const navigate = useNavigate();
+  // Read before any early return: hooks keep their order. It resolves which DAO, if any, this launch belongs to.
+  const orgMoney = useOrgMoney();
 
   // Consume the deep link once: `bid` opens the bid dialog (sender picker);
   // `exit`/`claim` land on the My-bids section and expand the matching bid's
@@ -222,10 +226,20 @@ export function LaunchDetailPage({
     }
   };
 
+  const daoBinding = resolveDaoBinding({
+    receipts: launch.receipts,
+    orgBindings: orgMoney.data?.bindings ?? [],
+  });
   const idea = isIdea(launch.record);
   const coord = launchCoord(launch.record);
   const followed = follows.followed.has(coord);
 
+  // The Work tab needs a DAO to read: the one this launch settled into, or the one its community bound.
+  const workDao =
+    isEvmAddress(launch.record.treasury ?? "") &&
+    launch.record.tokenPlan?.mode === "dao"
+      ? (launch.record.treasury as string)
+      : (daoBinding?.dao ?? null);
   const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
     { id: "overview", label: "Overview" },
     // A simulated launch has no public discussion to join.
@@ -237,6 +251,7 @@ export function LaunchDetailPage({
     ...(launch.record.auction
       ? [{ id: "mybids" as const, label: "My bids" }]
       : []),
+    ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
     { id: "manage", label: "Manage", founderOnly: true },
   ];
   // An idea has no money, proposals or treasury yet; showing those tabs empty
@@ -393,6 +408,9 @@ export function LaunchDetailPage({
             });
           }}
         />
+      ) : null}
+      {tab === "work" && workDao ? (
+        <WorkTab dao={workDao} launch={launch} />
       ) : null}
       {tab === "manage" && isFounder ? (
         <ManagePanel
