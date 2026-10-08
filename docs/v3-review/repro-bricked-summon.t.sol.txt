@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+// SCRATCH: adversarial probes for the v3 governance review. Not part of the product; delete before commit.
+import {Test} from "forge-std/Test.sol";
+import {Call, Moloch, Summoner, Shares, Loot, newSummoner} from "../src/majeur/MolochPatched.sol";
+import {ConvictionVoting} from "../src/ConvictionVoting.sol";
+
+contract ReviewScratch is Test {
+    address internal constant ALICE = address(0xA11CE);
+    address internal constant BOB = address(0xB0B);
+
+    function _summonBare(uint256 a, uint256 b) internal returns (Moloch dao) {
+        vm.warp(1 days);
+        Summoner summoner = newSummoner();
+        address[] memory holders = new address[](2);
+        holders[0] = ALICE;
+        holders[1] = BOB;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = a;
+        amounts[1] = b;
+        // EXACTLY what web/src/features/projects/lib/summon-composer.ts sends: no initCalls.
+        dao = summoner.summon("Org", "ORG", "", 500, true, address(0), bytes32(0), holders, amounts, new Call[](0));
+        vm.roll(block.number + 1);
+    }
+
+    /// H1: a DAO summoned the way the web SummonDialog does it (no initCalls) can never open a proposal.
+    function test_H1_bare_summon_is_bricked() public {
+        Moloch dao = _summonBare(60e18, 40e18);
+        assertEq(dao.proposalTTL(), 0, "default TTL");
+        assertEq(dao.timelockDelay(), 0, "default timelock");
+        bytes memory data = abi.encodeCall(Moloch.setProposalTTL, (uint64(14 days)));
+        uint256 id = dao.proposalId(0, address(dao), 0, data, bytes32("n"));
+        vm.prank(ALICE);
+        vm.expectRevert();
+        dao.castVote(id, 1, 60e18);
+        // and the only way out is a proposal, so the DAO cannot fix itself:
+        vm.prank(ALICE);
+        vm.expectRevert();
+        dao.openProposal(id);
+    }
+
+    /// H3: Shares held by the DAO itself are counted in the supply that thresholds use, but can never vote.
+    function test_H3_dao_held_shares_dilute_every_threshold() public {
+        Moloch dao = _summonBare(60e18, 40e18);
+        Shares s = dao.shares();
+        vm.prank(address(dao));
+        s.mintFromMoloch(address(dao), 100e18);
+        vm.roll(block.number + 1);
+        ConvictionVoting policy = ConvictionVoting(dao.votingWeight());
+        uint48 snap = uint48(block.number - 1);
+        bytes32 id = bytes32(uint256(1));
+        assertEq(policy.weightFor(id, address(dao), snap), 0, "dao cannot vote");
+        assertEq(s.totalSupply(), 200e18, "but its shares are in totalSupply");
+    }
+}

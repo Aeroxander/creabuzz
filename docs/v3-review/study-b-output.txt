@@ -1,0 +1,147 @@
+Study B — liveness (good proposals passed) | safety (harmful proposals passed)
+team 25%, dead stake 5%, 197 public wallets; small = approval inside a capped mandate, large = outside one
+
+public turnout 0.05, adversary 0%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              89% |   6%        16% |   0%
+  Plain token vote (10% quorum, simple majority)                                92% |   7%        92% |   7%
+  Supermajority (66% of cast, 20% quorum) for everything                        79% |   2%        78% |   3%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         50% |   0%        79% |   2%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     89% |   8%        78% |   1%
+
+public turnout 0.05, adversary 8%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              89% |  15%        17% |   0%
+  Plain token vote (10% quorum, simple majority)                                91% |  16%        91% |  14%
+  Supermajority (66% of cast, 20% quorum) for everything                        73% |   4%        73% |   5%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         28% |   0%        73% |   5%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     87% |   9%        73% |   4%
+
+public turnout 0.05, adversary 18%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              83% |  29%        26% |   1%
+  Plain token vote (10% quorum, simple majority)                                84% |  31%        83% |  30%
+  Supermajority (66% of cast, 20% quorum) for everything                        58% |   8%        56% |   8%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         28% |   1%        56% |   9%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     79% |  17%        58% |   8%
+
+public turnout 0.15, adversary 0%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              92% |   6%        21% |   1%
+  Plain token vote (10% quorum, simple majority)                                94% |   6%        93% |   4%
+  Supermajority (66% of cast, 20% quorum) for everything                        80% |   1%        81% |   2%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         47% |   0%        80% |   3%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     92% |   4%        81% |   1%
+
+public turnout 0.15, adversary 8%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              92% |  15%        26% |   1%
+  Plain token vote (10% quorum, simple majority)                                93% |  11%        93% |  11%
+  Supermajority (66% of cast, 20% quorum) for everything                        75% |   2%        75% |   2%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         25% |   0%        74% |   2%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     89% |   8%        74% |   4%
+
+public turnout 0.15, adversary 18%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              86% |  29%        34% |   2%
+  Plain token vote (10% quorum, simple majority)                                85% |  30%        87% |  28%
+  Supermajority (66% of cast, 20% quorum) for everything                        60% |   6%        58% |   7%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         27% |   0%        60% |   7%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     81% |  17%        60% |   5%
+
+public turnout 0.3, adversary 0%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              95% |   5%        41% |   1%
+  Plain token vote (10% quorum, simple majority)                                96% |   4%        96% |   3%
+  Supermajority (66% of cast, 20% quorum) for everything                        84% |   1%        82% |   1%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         40% |   0%        83% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     92% |   2%        84% |   1%
+
+public turnout 0.3, adversary 8%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              95% |  10%        40% |   1%
+  Plain token vote (10% quorum, simple majority)                                94% |  11%        94% |   8%
+  Supermajority (66% of cast, 20% quorum) for everything                        76% |   2%        77% |   1%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         22% |   0%        79% |   2%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     91% |   4%        75% |   1%
+
+public turnout 0.3, adversary 18%, delegation 0
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              88% |  25%        43% |   2%
+  Plain token vote (10% quorum, simple majority)                                89% |  24%        87% |  25%
+  Supermajority (66% of cast, 20% quorum) for everything                        62% |   4%        61% |   3%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         24% |   0%        61% |   5%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     82% |  14%        61% |   3%
+
+public turnout 0.05, adversary 0%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              96% |   5%        57% |   1%
+  Plain token vote (10% quorum, simple majority)                                96% |   3%        96% |   2%
+  Supermajority (66% of cast, 20% quorum) for everything                        83% |   1%        84% |   0%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         34% |   0%        84% |   0%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     94% |   3%        82% |   1%
+
+public turnout 0.05, adversary 8%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              94% |   8%        53% |   1%
+  Plain token vote (10% quorum, simple majority)                                95% |   8%        95% |   7%
+  Supermajority (66% of cast, 20% quorum) for everything                        78% |   1%        78% |   1%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         21% |   0%        80% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     91% |   6%        74% |   1%
+
+public turnout 0.05, adversary 18%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              90% |  19%        56% |   1%
+  Plain token vote (10% quorum, simple majority)                                90% |  21%        90% |  16%
+  Supermajority (66% of cast, 20% quorum) for everything                        64% |   3%        63% |   2%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         22% |   0%        66% |   2%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     85% |   9%        62% |   5%
+
+public turnout 0.15, adversary 0%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              97% |   3%        59% |   1%
+  Plain token vote (10% quorum, simple majority)                                96% |   4%        97% |   3%
+  Supermajority (66% of cast, 20% quorum) for everything                        85% |   0%        84% |   2%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         31% |   0%        84% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     94% |   2%        86% |   1%
+
+public turnout 0.15, adversary 8%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              95% |   7%        61% |   1%
+  Plain token vote (10% quorum, simple majority)                                96% |   6%        95% |   5%
+  Supermajority (66% of cast, 20% quorum) for everything                        79% |   1%        78% |   1%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         18% |   0%        79% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     92% |   4%        77% |   1%
+
+public turnout 0.15, adversary 18%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              90% |  20%        59% |   3%
+  Plain token vote (10% quorum, simple majority)                                90% |  17%        91% |  20%
+  Supermajority (66% of cast, 20% quorum) for everything                        64% |   2%        66% |   2%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         19% |   0%        65% |   3%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     86% |  13%        64% |   3%
+
+public turnout 0.3, adversary 0%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              97% |   5%        73% |   2%
+  Plain token vote (10% quorum, simple majority)                                97% |   3%        97% |   3%
+  Supermajority (66% of cast, 20% quorum) for everything                        87% |   1%        84% |   0%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         29% |   0%        83% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     94% |   1%        85% |   1%
+
+public turnout 0.3, adversary 8%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              96% |   5%        71% |   1%
+  Plain token vote (10% quorum, simple majority)                                96% |   4%        95% |   6%
+  Supermajority (66% of cast, 20% quorum) for everything                        80% |   2%        81% |   0%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         16% |   0%        79% |   1%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     95% |   4%        80% |   0%
+
+public turnout 0.3, adversary 18%, delegation 0.5
+  rule                                                                         small good|bad   large good|bad
+  Current v3 (large: >50% of supply; small: >=20%)                              92% |  13%        64% |   2%
+  Plain token vote (10% quorum, simple majority)                                92% |  16%        92% |  18%
+  Supermajority (66% of cast, 20% quorum) for everything                        68% |   2%        67% |   1%
+  Tiered (small: optimistic, 7.5% veto; large: 66% of cast, 20% quorum)         19% |   0%        65% |   2%
+  Tiered-B (small: 55% of cast, 10% quorum; large: 66% of cast, 20% quorum)     85% |   6%        68% |   1%
+
