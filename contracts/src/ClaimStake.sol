@@ -193,7 +193,8 @@ contract ClaimStake {
         // overwrite it (and strand the first contributor's stake): refuse it.
         if (evidenceHash == bytes32(0)) revert NoEvidence();
         if (claims[claimId].evidenceHash != bytes32(0)) revert AlreadySettled(claimId);
-        if (amount == 0 && stake == 0) revert EmptyClaim();
+        // A claim may carry no money at all: it asks to be recognised (in Shares), not paid. Nothing is escrowed for
+        // it, so there is nothing to protect with a stake, and it earns nothing until a project's manager binds it.
         // The claimed amount is paid only from what the treasury reserves for
         // THIS claim (`fund`); the contributor's stake is pulled from their own
         // balance into escrow, so a spam claim actually risks something.
@@ -381,7 +382,7 @@ contract ClaimStake {
         claim.status = Status.Paid;
         funded[claimId] = reserved - claim.amount;
         uint256 total = claim.amount + claim.stake;
-        if (!currency.transfer(claim.contributor, total)) {
+        if (total != 0 && !currency.transfer(claim.contributor, total)) {
             revert MintFailed(address(currency), claim.contributor, total);
         }
         emit ClaimPaid(claimId);

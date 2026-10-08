@@ -51,7 +51,8 @@ contract DaoGovernanceJourneyTest is Test {
 
     function project(bytes32 name, address manager, uint128 amount, address voter, uint256 backing) internal {
         bytes memory data = abi.encodeCall(
-            TreasuryMandate.approveProject, (name, manager, amount, uint64(vm.getBlockTimestamp() + 30 days), CHECK)
+            TreasuryMandate.approveProject,
+            (name, manager, amount, uint128(20e18), uint64(vm.getBlockTimestamp() + 30 days), CHECK)
         );
         vm.prank(voter);
         uint256 id = dao.openProposalWithAction(0, address(mandate), 0, data, name);
@@ -71,7 +72,7 @@ contract DaoGovernanceJourneyTest is Test {
         claims.submitClaim(id, amount, stake, keccak256(abi.encode(id, contributor)));
         claims.setCheck(id, CHECK);
         vm.stopPrank();
-        (address manager,,,,) = mandate.projects(projectId);
+        (address manager,,,,,,) = mandate.projects(projectId);
         vm.prank(manager);
         mandate.fundMilestone(projectId, id);
     }
@@ -142,6 +143,8 @@ contract DaoGovernanceJourneyTest is Test {
                     address(cash),
                     uint128(10000e18),
                     uint128(2000e18),
+                    uint128(100e18),
+                    uint128(50e18),
                     uint64(vm.getBlockTimestamp() + 90 days),
                     reviewers,
                     uint256(2)
@@ -183,7 +186,8 @@ contract DaoGovernanceJourneyTest is Test {
         for (uint256 i; i < logs.length; ++i) {
             if (
                 logs[i].emitter == address(factory)
-                    && logs[i].topics[0] == keccak256("MandateCreated(address,address,address,uint128,uint128)")
+                    && logs[i].topics[0]
+                        == keccak256("MandateCreated(address,address,address,uint128,uint128,uint128,uint128)")
             ) mandate = TreasuryMandate(address(uint160(uint256(logs[i].topics[2]))));
         }
         assertTrue(address(mandate) != address(0));

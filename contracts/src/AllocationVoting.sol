@@ -195,11 +195,24 @@ contract AllocationVoting is IVotingWeight {
         return excluded;
     }
 
-    /// @notice Only factory-authenticated project approvals use the bounded lane.
-    /// Other selectors, value transfers and unknown targets stay unrestricted.
+    /// @dev `Moloch.awardContribution(address mandate, bytes32 claimId, uint96 amount, bool convert)`.
+    bytes4 private constant AWARD_CONTRIBUTION = bytes4(keccak256("awardContribution(address,bytes32,uint96,bool)"));
+
+    /// @notice Two actions use the bounded lane, both inside a mandate the broad vote already created and funded:
+    /// approving a project (the target is the mandate), and awarding Shares for a claim that mandate's reviewers
+    /// approved (the target is the DAO itself, and the mandate is the first argument). An award's size cannot
+    /// outrun its project's share budget: the mandate refuses it when the DAO executes it. Other selectors, value
+    /// transfers and unknown mandates stay unrestricted.
     function boundedAction(uint8 op, address target, uint256 value, bytes calldata data) external view returns (bool) {
-        return op == 0 && value == 0 && data.length >= 4 && bytes4(data[:4]) == TreasuryMandate.approveProject.selector
-            && mandateFactory.daos(target) == dao;
+        if (op != 0 || value != 0 || data.length < 4) return false;
+        bytes4 selector = bytes4(data[:4]);
+        if (selector == TreasuryMandate.approveProject.selector) return mandateFactory.daos(target) == dao;
+        // A well-formed award only: four words after the selector, an address with no stray high bits.
+        if (selector == AWARD_CONTRIBUTION && target == dao && data.length == 4 + 4 * 32) {
+            uint256 word = uint256(bytes32(data[4:36]));
+            return word <= type(uint160).max && mandateFactory.daos(address(uint160(word))) == dao;
+        }
+        return false;
     }
 
     /// @notice Capture voting supply, the lane's bars, notice, expiry and execution delay.

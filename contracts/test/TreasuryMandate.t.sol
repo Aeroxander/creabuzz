@@ -44,14 +44,15 @@ contract TreasuryMandateTest is VotingFixture {
         currency.approve(address(factory), 1000e18);
         vm.prank(address(dao));
         mandate = factory.create(
-            address(currency), 1000e18, 300e18, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 2
+            address(currency), 1000e18, 300e18, 100e18, 50e18, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 2
         );
     }
 
     function projectData(bytes32 id, uint128 amount) internal view returns (bytes memory) {
         return
             abi.encodeCall(
-                TreasuryMandate.approveProject, (id, BOB, amount, uint64(vm.getBlockTimestamp() + 30 days), CHECK)
+                TreasuryMandate.approveProject,
+                (id, BOB, amount, uint128(20e18), uint64(vm.getBlockTimestamp() + 30 days), CHECK)
             );
     }
 
@@ -98,23 +99,23 @@ contract TreasuryMandateTest is VotingFixture {
         currency.mint(address(this), 1000e18);
         currency.approve(address(ledger.mandateFactory()), 1000e18);
         TreasuryMandate foreign = ledger.mandateFactory()
-            .create(address(currency), 1000e18, 300e18, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1);
+            .create(address(currency), 1000e18, 300e18, 0, 0, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1);
         assertFalse(ledger.boundedAction(0, address(foreign), 0, data));
     }
 
     function test_lifetime_and_project_caps_survive_refunds_and_new_identities() public {
         vm.prank(address(dao));
-        mandate.approveProject(bytes32("one"), BOB, 300e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("one"), BOB, 300e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         vm.prank(address(dao));
-        mandate.approveProject(bytes32("two"), BOB, 300e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("two"), BOB, 300e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         vm.prank(address(dao));
-        mandate.approveProject(bytes32("three"), BOB, 300e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
-        vm.prank(address(dao));
-        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
-        mandate.approveProject(bytes32("four"), BOB, 101e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("three"), BOB, 300e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
-        mandate.approveProject(bytes32("large"), BOB, 301e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("four"), BOB, 101e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        vm.prank(address(dao));
+        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
+        mandate.approveProject(bytes32("large"), BOB, 301e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         assertEq(mandate.allocated(), 900e18);
         vm.warp(vm.getBlockTimestamp() + 90 days);
         mandate.returnUnused();
@@ -171,7 +172,7 @@ contract TreasuryMandateTest is VotingFixture {
 
     function test_failed_funding_rolls_back_reservation_and_check_lock() public {
         vm.prank(address(dao));
-        mandate.approveProject(bytes32("project"), BOB, 300e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("project"), BOB, 300e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         ClaimStake claims = mandate.claims();
         bytes32 claim = bytes32("too-big");
         vm.startPrank(BOB);
@@ -182,13 +183,13 @@ contract TreasuryMandateTest is VotingFixture {
         vm.stopPrank();
         assertEq(mandate.claimProject(claim), bytes32(0));
         assertFalse(claims.acceptanceLocked(claim));
-        (,, uint128 reserved,,) = mandate.projects(bytes32("project"));
+        (,, uint128 reserved,,,,) = mandate.projects(bytes32("project"));
         assertEq(reserved, 0);
     }
 
     function test_closing_recovers_unreserved_funds_without_new_project_authority() public {
         vm.prank(address(dao));
-        mandate.approveProject(bytes32("project"), BOB, 300e18, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("project"), BOB, 300e18, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         vm.prank(address(dao));
         mandate.close();
         assertTrue(mandate.closed());
@@ -196,7 +197,7 @@ contract TreasuryMandateTest is VotingFixture {
         assertEq(mandate.allocated(), 300e18);
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidProject.selector);
-        mandate.approveProject(bytes32("replacement"), BOB, 1, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
+        mandate.approveProject(bytes32("replacement"), BOB, 1, 0, uint64(vm.getBlockTimestamp() + 30 days), CHECK);
         currency.mint(address(mandate), 10e18);
         mandate.returnUnused();
         assertEq(currency.balanceOf(address(dao)), 1010e18);

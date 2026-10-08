@@ -125,7 +125,7 @@ contract Moloch {
     function awardContribution(address mandate, bytes32 claimId, uint96 amount, bool convert) public payable onlyDAO {
         AllocationVoting policy = AllocationVoting(votingWeight);
         require(amount != 0 && policy.mandateFactory().daos(mandate) == address(this), NotOk());
-        address owner = TreasuryMandate(mandate).consumeContribution(claimId);
+        address owner = TreasuryMandate(mandate).consumeContribution(claimId, amount);
         if (convert) convertLootToShares(owner, amount);
         else shares.mintFromMoloch(owner, amount);
     }

@@ -83,16 +83,23 @@ An unrestricted vote can approve a finite treasury mandate. Execute one `batchCa
 currency budget to the factory, calls `TreasuryMandateFactory.create`, then clears the ERC-20 approval. Creation
 pulls the exact budget into the new mandate atomically. Fee-taking deposits fail.
 
-The mandate fixes its DAO, currency, lifetime budget, per-project cap, expiration and reviewer panel. Factory
-provenance is required for the bounded lane: only `approveProject` on a mandate created for this DAO, with zero ETH
-and a normal CALL, receives the bounded bars. A UI's proposal kind or an arbitrary contract claiming to be a mandate
-cannot lower the bars. Open these intents with `openProposalWithAction`; opening by id alone conservatively uses the
-unrestricted lane.
+The mandate fixes its DAO, currency, lifetime budget, per-project cap, expiration and reviewer panel. It also fixes
+a **share budget** and a per-project share cap: the most Shares it can ever cause to be awarded. Either budget may be
+zero, but not both. A mandate with no currency moves no money and needs no approval: it is how a project with no
+treasury (one that never raised) rewards contributors. The broad vote that creates it is the vote on how much
+dilution the work may cost.
 
-A project fixes a manager, budget, expiration and acceptance-check hash. The manager reserves milestone claims
-within that budget without another treasury vote. Funding locks the agreed check. `ClaimStake` and `VerifierSet`
-provide claimant recusal, distinct reviewer addresses, approval/objection quorum, a three-day challenge, payout,
-expiry and disputed-claim recovery. Returned money does not replenish lifetime project authority.
+Factory provenance is required for the bounded lane. Two actions receive the bounded bars, both with zero ETH and a
+normal CALL: `approveProject` on a mandate created for this DAO, and `awardContribution` aimed at the DAO itself
+for a mandate created for this DAO (a well-formed call only: exact length, no stray address bits). A UI's proposal
+kind or an arbitrary contract claiming to be a mandate cannot lower the bars. Open these intents with
+`openProposalWithAction`; opening by id alone conservatively uses the unrestricted lane.
+
+A project fixes a manager, a currency budget and a share budget, an expiration and an acceptance-check hash. The
+manager binds milestone claims, reserving currency for those that ask for it, without another treasury vote. A claim
+may ask for no currency at all: it asks to be recognised. Funding locks the agreed check. `ClaimStake` and
+`VerifierSet` provide claimant recusal, distinct reviewer addresses, approval/objection quorum, a three-day
+challenge, payout, expiry and disputed-claim recovery. Returned money does not replenish lifetime project authority.
 
 Unrestricted governance can `close` the mandate, stop new commitments and recover unreserved funds early. Existing
 escrowed claims retain their settlement rules; governance may freeze and unwind disputed claims.
@@ -101,8 +108,11 @@ escrowed claims retain their settlement rules; governance may freeze and unwind 
 
 Initial Shares holders can vote once a historical block exists. New Shares confer standing for future snapshots,
 never for a proposal already open. Loot holders can earn Shares through approved contributions:
-`awardContribution` consumes a paid mandate claim once, then mints Shares or converts Loot 1:1. Governance still
-approves the size of the award, and a governing majority can issue Shares without genuine work.
+`awardContribution` consumes an approved mandate claim once (paid, or approved with nothing to pay), counts the
+award against its project's share budget, then mints Shares or converts Loot 1:1. The size of each award is a vote
+in the bounded lane, and the mandate refuses one larger than the project has left, however the vote went. A
+governing majority can still issue Shares without genuine work through the unrestricted lane; the bounded path is
+the one that needs verified work.
 
 A single `Shares.delegate` authorizes a delegate to manage the owner's allocations; it creates no second capacity.
 The owner can override and revoke. This grants the owner's full allocation authority: relay role scopes, expiry
