@@ -119,29 +119,38 @@ export function FileClaimCard({
         </label>
       ) : null}
       <div className="mt-2 grid gap-2">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">Name this claim</span>
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="font-medium" htmlFor="work-claim-name-input">
+            Name this claim
+          </label>
           <Input
             data-testid="work-claim-name"
+            id="work-claim-name-input"
             maxLength={32}
             onChange={(e) => setName(e.target.value)}
             placeholder="write-the-docs"
             value={name}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">Where the work is</span>
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="font-medium" htmlFor="work-claim-evidence-input">
+            Where the work is
+          </label>
           <Input
             data-testid="work-claim-evidence"
+            id="work-claim-evidence-input"
             onChange={(e) => setEvidence(e.target.value)}
             placeholder="A link, or a short description"
             value={evidence}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">How it should be judged</span>
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="font-medium" htmlFor="work-claim-check-input">
+            How it should be judged
+          </label>
           <Input
             data-testid="work-claim-check"
+            id="work-claim-check-input"
             onChange={(e) => setCheck(e.target.value)}
             placeholder="The project's acceptance check, in its exact words"
             value={check}
@@ -150,7 +159,7 @@ export function FileClaimCard({
             Use the words the project uses. If they differ, its manager cannot
             take your claim on.
           </span>
-        </label>
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
