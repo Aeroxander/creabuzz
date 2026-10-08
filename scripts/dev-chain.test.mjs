@@ -54,15 +54,16 @@ test("dry-run prints the ordered plan and touches no state", () => {
     assert.match(out, /dry run — nothing started, nothing deployed/);
     assert.match(out, /NOT RUNNING/);
 
-    // The seven steps, in execution order — dropping or reordering one fails.
+    // The eight steps, in execution order — dropping or reordering one fails.
     const steps = [
       "1. anvil",
       "2. apptoken infra",
       "3. org dao",
       "4. currency",
       "5. cca",
-      "6. fund",
-      "7. accounts",
+      "6. launch kit",
+      "7. fund",
+      "8. accounts",
     ];
     let cursor = -1;
     for (const step of steps) {
@@ -77,6 +78,7 @@ test("dry-run prints the ordered plan and touches no state", () => {
     assert.match(out, /names an OrgBinding that answers summoner\(\)/);
     assert.match(out, /names a token that still says/);
     assert.match(out, /code there already matches the build output/);
+    assert.match(out, /names a kit that still points at this summoner and factory/);
 
     // Dev accounts: right roles, right (derived) addresses, keys labeled.
     assert.match(out, /DEV-ONLY ACCOUNTS/);

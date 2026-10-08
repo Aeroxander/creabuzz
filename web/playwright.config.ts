@@ -23,6 +23,7 @@ export default defineConfig({
         "**/launchpad.spec.ts",
         "**/voting-allocation.spec.ts",
         "**/launchpad-auction.spec.ts",
+        "**/launchpad-dao-launch.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page
         // content. One assertion, but it is the whole bug.

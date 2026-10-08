@@ -65,6 +65,7 @@ function world(over = {}) {
     linkError: null,
     publishError: null,
     readReceipt: async () => null,
+    findLaunch: async () => null,
     ...over,
   };
   w.deps = {
@@ -90,6 +91,7 @@ function world(over = {}) {
       },
     },
     readReceipt: (h) => w.readReceipt(h),
+    findLaunch: (executor) => w.findLaunch(executor),
     link: async () => {
       w.links += 1;
       if (w.linkError) throw w.linkError;
@@ -120,7 +122,7 @@ test("a declined or unconfirmed send is reported as unknown and may be tried aga
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
   assert.equal(outcome.step, "send");
-  assert.equal(outcome.mayResend, true);
+  assert.equal(outcome.retry, "launch");
   assert.match(outcome.message, /rejected/);
   assert.equal(w.stored, null);
 });
@@ -137,17 +139,52 @@ test("a mined revert creates nothing and stores nothing", async () => {
   });
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
-  assert.equal(outcome.mayResend, true);
+  assert.equal(outcome.retry, "launch");
   assert.equal(w.stored, null);
   assert.equal(w.links, 0);
 });
 
-test("a launch whose salt already made its DAO is refused before the wallet is asked", async () => {
+test("a launch whose salt already made its DAO is found again from the chain, not made twice", async () => {
+  const w = world({
+    code: true,
+    findLaunch: async (executor) => {
+      assert.equal(
+        executor,
+        EXECUTOR,
+        "it asks for the executor the kit predicted",
+      );
+      return { txHash: TX, logs: [launchedLog()] };
+    },
+  });
+  const outcome = await runDaoLaunch(w.deps);
+  assert.equal(outcome.ok, true);
+  assert.equal(w.sends, 0, "the wallet was never asked");
+  assert.equal(w.links, 1);
+  assert.equal(w.publishes, 1);
+  assert.equal(outcome.progress.txHash, TX);
+  assert.equal(outcome.progress.launched.dao, DAO);
+});
+
+test("a DAO that exists but cannot be found again stops for a person, and sends nothing", async () => {
   const w = world({ code: true });
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
-  assert.equal(outcome.mayResend, false);
+  assert.equal(outcome.retry, "none");
   assert.match(outcome.message, /already created its DAO/);
+  assert.equal(w.sends, 0);
+  assert.equal(w.links, 0);
+});
+
+test("a failed lookup of an existing DAO may be tried again, and still sends nothing", async () => {
+  const w = world({
+    code: true,
+    findLaunch: async () => {
+      throw new Error("rpc timeout");
+    },
+  });
+  const outcome = await runDaoLaunch(w.deps);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.retry, "launch");
   assert.equal(w.sends, 0);
 });
 
@@ -157,8 +194,8 @@ test("the hash is stored the moment it mines, so a failed save is retried withou
   assert.equal(first.ok, false);
   assert.equal(first.step, "link");
   assert.equal(
-    first.mayResend,
-    false,
+    first.retry,
+    "finish",
     "the money step is done: never offer to send again",
   );
   assert.equal(w.stored, TX, "the hash survives for a reload");
@@ -201,7 +238,7 @@ test("a stored hash the network has not confirmed yet waits, and keeps the hash"
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
   assert.equal(outcome.step, "confirm");
-  assert.equal(outcome.mayResend, false);
+  assert.equal(outcome.retry, "finish");
   assert.equal(w.stored, TX);
   assert.equal(w.sends, 0);
 });
@@ -211,7 +248,7 @@ test("a stored hash that turns out to have reverted is forgotten so the founder 
   w.readReceipt = async () => ({ status: "reverted", logs: [] });
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
-  assert.equal(outcome.mayResend, true);
+  assert.equal(outcome.retry, "launch");
   assert.equal(w.stored, null);
   assert.equal(outcome.progress.txHash, null);
 });
@@ -253,6 +290,7 @@ test("a launch that does not match the terms on the page is not saved", async ()
   const outcome = await runDaoLaunch(w.deps);
   assert.equal(outcome.ok, false);
   assert.match(outcome.message, /does not match/);
+  assert.equal(outcome.retry, "none");
   assert.equal(w.links, 0);
 });
 

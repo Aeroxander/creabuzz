@@ -24,6 +24,12 @@ function years(seconds: bigint): string {
   return months === 1 ? "1 month" : `${months} months`;
 }
 
+/** Basis points as a plain percentage: "50%", "57.1%". */
+function percentText(bps: number): string {
+  const whole = bps / 100;
+  return `${Number.isInteger(whole) ? whole : whole.toFixed(1)}%`;
+}
+
 type StepStatus = "done" | "running" | "failed" | "pending";
 
 /**
@@ -107,8 +113,14 @@ export function DaoLaunchPanel({
 
   const waitingToFinish = resumable && !running && !failure && !done;
   const canFinish =
-    !running && (failure?.mayResend === false || waitingToFinish);
-  const canStart = !running && !done && !canFinish && gate.ok && plan !== null;
+    !running && (failure?.retry === "finish" || waitingToFinish);
+  const canStart =
+    !running &&
+    !done &&
+    !canFinish &&
+    failure?.retry !== "none" &&
+    gate.ok &&
+    plan !== null;
   const statusText = running
     ? "Working…"
     : done
@@ -145,6 +157,16 @@ export function DaoLaunchPanel({
           </dd>
           <dt className="text-black/60 dark:text-white/60">Kept by the DAO</dt>
           <dd>{shares(summary.treasury)} Shares (they never vote)</dd>
+          <dt className="text-black/60 dark:text-white/60">
+            Backers can leave with
+          </dt>
+          <dd>
+            {percentText(summary.backersExitBps)} of the treasury if the sale
+            sells out
+            {summary.team > 0n
+              ? `; your team's ${percentText(10_000 - summary.backersExitBps)} unlocks over time`
+              : ""}
+          </dd>
         </dl>
       ) : null}
       <UnauditedNotice chainId={record.chainId} />
@@ -193,7 +215,7 @@ export function DaoLaunchPanel({
           >
             Finish saving
           </Button>
-        ) : (
+        ) : done ? null : (
           <Button
             aria-busy={running}
             data-testid="dao-launch-start"
@@ -205,7 +227,7 @@ export function DaoLaunchPanel({
             {running ? "Launching…" : "Launch project"}
           </Button>
         )}
-        {failure?.mayResend ? (
+        {failure?.retry === "launch" ? (
           <span className="text-sm text-black/60 dark:text-white/60">
             Nothing was created, so you can try again.
           </span>

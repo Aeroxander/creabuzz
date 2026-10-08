@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DaoLaunchPlanError,
+  describeDaoLaunch,
   SELECTOR_KIT_LAUNCH,
   SELECTOR_KIT_PREDICT_EXECUTOR,
   TOPIC_KIT_LAUNCHED,
@@ -186,4 +187,14 @@ test("the launch is read from the kit's own event, and only from the kit", () =>
     null,
   );
   assert.equal(decodeKitLaunched([], KIT), null);
+});
+
+test("backers' exit share counts the team's locked Shares and leaves the DAO's own out", () => {
+  // 400 sold + 300 team, 300 kept by the DAO: backers are 400 of the 700 that can leave.
+  assert.equal(describeDaoLaunch(planDaoLaunch(inputs())).backersExitBps, 5714);
+  // No team allocation: the whole treasury is the backers'.
+  const noTeam = planDaoLaunch(
+    inputs({ allocation: { sale: 40, team: 0, dao: 60 }, team: [] }),
+  );
+  assert.equal(describeDaoLaunch(noTeam).backersExitBps, 10_000);
 });

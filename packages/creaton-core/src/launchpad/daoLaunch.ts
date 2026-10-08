@@ -428,12 +428,21 @@ export function describeDaoLaunch(plan: DaoLaunchPlan): {
   team: bigint;
   treasury: bigint;
   total: bigint;
+  /**
+   * The part of the treasury backers can leave with if the whole sale sells and all of them leave, in basis points.
+   * The DAO's own Shares do not count, so it is the sale against the sale plus the team: the team's Shares are
+   * outstanding (locked, but theirs) and share the treasury with the backers once they unlock.
+   */
+  backersExitBps: number;
 } {
+  const team = plan.teamShares.reduce((a, b) => a + b, 0n);
+  const outstanding = plan.saleSupply + team;
   return {
     sale: plan.saleSupply,
-    team: plan.teamShares.reduce((a, b) => a + b, 0n),
+    team,
     treasury: plan.daoShares,
     total: plan.totalSupply,
+    backersExitBps: Number((plan.saleSupply * 10_000n) / outstanding),
   };
 }
 

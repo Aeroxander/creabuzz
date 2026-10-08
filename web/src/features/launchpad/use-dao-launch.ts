@@ -10,6 +10,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import {
   daoLaunchKit,
+  ethCall,
+  ethGetLogs,
   ethTransactionReceipt,
   getRpcEndpoint,
   isMainnetChain,
@@ -22,6 +24,7 @@ import {
   DaoLaunchPlanError,
   describeDaoLaunch,
   planDaoLaunch,
+  TOPIC_KIT_LAUNCHED,
   type DaoLaunchGate,
   type DaoLaunchPlan,
 } from "./lib/dao-launch";
@@ -29,6 +32,7 @@ import {
   EMPTY_DAO_LAUNCH_PROGRESS,
   runDaoLaunch,
   type DaoLaunchProgress,
+  type DaoLaunchRetry,
   type DaoLaunchStep,
 } from "./lib/dao-launch-flow";
 import { graduationTxStore } from "./lib/graduation-progress";
@@ -38,6 +42,8 @@ import type { ConnectedWalletState } from "./use-connected-wallet";
 import { usePublishMirror } from "./use-launches";
 
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+/** `GraduationExecutor.treasury()`. */
+const SELECTOR_TREASURY = "0x61d027b3";
 
 function chainNumber(value: string | null): number | null {
   if (value === null) return null;
@@ -62,7 +68,7 @@ export interface DaoLaunchState {
   failure: {
     step: DaoLaunchStep;
     message: string;
-    mayResend: boolean;
+    retry: DaoLaunchRetry;
   } | null;
   done: boolean;
 }
@@ -158,6 +164,21 @@ export function useDaoLaunch(input: {
         kit,
         plan,
         txStore,
+        findLaunch: async (executor) => {
+          // The executor was retargeted to the DAO by the kit, so its treasury is the DAO; the kit's own event for
+          // that DAO carries the rest.
+          const endpoint = getRpcEndpoint();
+          const treasury = await ethCall(endpoint, executor, SELECTOR_TREASURY);
+          const dao = `0x${treasury.replace(/^0x/, "").slice(-40)}`;
+          const logs = await ethGetLogs(endpoint, {
+            address: kit,
+            topics: [TOPIC_KIT_LAUNCHED, `0x${dao.slice(2).padStart(64, "0")}`],
+            fromBlock: "0x0",
+            toBlock: "latest",
+          });
+          const first = logs[0];
+          return first ? { txHash: first.transactionHash, logs } : null;
+        },
         readReceipt: async (hash) => {
           const found = await ethTransactionReceipt(getRpcEndpoint(), hash);
           if (!found) return null;
@@ -206,7 +227,7 @@ export function useDaoLaunch(input: {
           setFailure({
             step: outcome.step,
             message: outcome.message,
-            mayResend: outcome.mayResend,
+            retry: outcome.retry,
           });
           setResumable(txStore.load() !== null);
         }

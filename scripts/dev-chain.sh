@@ -21,6 +21,8 @@
 #      `deployments/org-dao-<chainid>.json` manifest)
 #   4. a USDC-like currency mock for sales: MockPairedTokenERC20("Dev USDC",
 #      "dUSDC", 6 decimals) + `deployments/dev-currency-<chainid>.json`
+#      then the CCA factory + Permit2 placed at their canonical addresses, then
+#      the DaoLaunchKit (one-transaction DAO launch) + `deployments/dao-launch-kit-<chainid>.json`
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -284,8 +286,9 @@ plan_lines() {
   echo "  3. org dao      forge script DeployOrgDao.s.sol  [skipped: deployments/org-dao-$DEV_CHAIN_ID.json names an OrgBinding that answers summoner()]"
   echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still says $CURRENCY_SYMBOL]"
   echo "  5. cca          place the CCA factory + Permit2 at their canonical addresses (anvil_setCode)  [skipped: the code there already matches the build output]"
-  echo "  6. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
-  echo "  7. accounts     print the DEV-ONLY key table to stdout"
+  echo "  6. launch kit   deploy DaoLaunchKit (summoner + CCA factory)  [skipped: deployments/dao-launch-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner and factory]"
+  echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
+  echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
 
 # ---------------------------------------------------------------------------
@@ -548,6 +551,83 @@ place_cca() {
   fi
 }
 
+kit_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/dao-launch-kit-${CHAIN_ID}.json"
+}
+
+kit_address() {
+  manifest_role "$(kit_manifest_path)" "launch-kit"
+}
+
+# Guard: the manifest exists, its kit has code, and it still points at THIS chain's Summoner and CCA factory.
+# A kit left over from a chain that was restarted (fresh state, stale manifest) names a summoner that is gone.
+launch_kit_deployed() {
+  local manifest address summoner want_summoner got_factory
+  manifest=$(kit_manifest_path)
+  [[ -f "$manifest" ]] || return 1
+  address=$(kit_address)
+  [[ -n "$address" ]] || return 1
+  [[ "$(code_bytes "$address")" != "0" ]] || return 1
+  want_summoner=$(lower "$(manifest_role "$(org_manifest_path)" summoner)")
+  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  got_factory=$(cast call "$address" "factory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]] \
+    && [[ "$(lower "$got_factory")" == "$(lower "$CCA_FACTORY_ADDRESS")" ]]
+}
+
+deploy_launch_kit() {
+  echo
+  if launch_kit_deployed; then
+    echo "── launch kit: already at $(kit_address) — skipped (idempotent)"
+    return 0
+  fi
+  local summoner
+  summoner=$(manifest_role "$(org_manifest_path)" summoner)
+  [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
+    || fail_step "launch-kit" "no deployed Summoner to point the kit at (org dao step first)"
+  echo "── launch kit: deploying DaoLaunchKit (summoner $summoner, CCA factory $CCA_FACTORY_ADDRESS)"
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/DaoLaunchKit.sol) >/dev/null; then
+    fail_step "launch-kit" "forge build src/DaoLaunchKit.sol failed"
+  fi
+  local bytecode args data receipt status address block
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/DaoLaunchKit.sol/DaoLaunchKit.json" bytecode.object) \
+    || fail_step "launch-kit" "cannot read the DaoLaunchKit artifact"
+  args=$(cast abi-encode "constructor(address,address)" "$summoner" "$CCA_FACTORY_ADDRESS") \
+    || fail_step "launch-kit" "cast abi-encode constructor args failed"
+  data="0x${bytecode#0x}${args#0x}"
+  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+      --create "$data" 2>&1); then
+    echo "$receipt" >&2
+    fail_step "launch-kit" "cast send --create failed"
+  fi
+  status=$(node -e '
+    const r = JSON.parse(process.argv[1]);
+    console.log(r.status === "0x1" || r.status === 1 ? "success" : String(r.status ?? "?"));
+  ' "$receipt")
+  address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
+  block=$(node -e 'console.log(Number(BigInt(JSON.parse(process.argv[1]).blockNumber ?? "0x0")))' "$receipt")
+  [[ "$status" == "success" && -n "$address" ]] \
+    || fail_step "launch-kit" "deploy tx mined as ${status:-unknown} (no address)"
+  [[ "$(code_bytes "$address")" != "0" ]] \
+    || fail_step "launch-kit" "receipt reported $address but there is no code there"
+  node -e '
+    const fs = require("fs");
+    const [file, chainId, tx, block, address] = process.argv.slice(1);
+    fs.writeFileSync(file, JSON.stringify({
+      chainId: Number(chainId),
+      project: "buzz-dev-chain",
+      note: "scripts/dev-chain.sh — DaoLaunchKit(summoner, CCA factory)",
+      tx,
+      block: Number(block),
+      roles: [{ role: "launch-kit", address }],
+    }) + "\n");
+  ' "$(kit_manifest_path)" "$CHAIN_ID" \
+    "$(node -e 'console.log(JSON.parse(process.argv[1]).transactionHash ?? "")' "$receipt")" \
+    "$block" "$address" \
+    || fail_step "launch-kit" "deployed at $address but could not write $(kit_manifest_path)"
+  echo "  ✓ DaoLaunchKit at $address (manifest $(kit_manifest_path))"
+}
+
 fund_accounts() {
   echo
   echo "── fund: minting $CURRENCY_SYMBOL up to 1,000,000 per dev account (6dp)"
@@ -619,6 +699,7 @@ up() {
   deploy_org_dao
   deploy_currency
   place_cca
+  deploy_launch_kit
   fund_accounts
 
   echo
@@ -630,6 +711,8 @@ up() {
   echo "  summoner:   $(manifest_role "$(org_manifest_path)" summoner)"
   echo "  currency:   $(currency_address) ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)"
   echo "  cca:        factory $CCA_FACTORY_ADDRESS, Permit2 $PERMIT2_ADDRESS"
+  echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
+  echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"
@@ -704,7 +787,7 @@ status() {
     fi
   fi
 
-  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json; do
+  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json; do
     [[ -f "$f" ]] || continue
     while read -r role address; do
       [[ -n "$role" && -n "$address" ]] || continue

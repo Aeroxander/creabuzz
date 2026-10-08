@@ -57,6 +57,13 @@ export interface DaoLaunchDeps {
     status: "success" | "reverted";
     logs: readonly unknown[];
   } | null>;
+  /**
+   * The launch this salt already made, found from the chain by its executor, or null when it cannot be found. Lets a
+   * launch whose browser forgot the hash (another device, cleared site data) finish instead of dead-ending.
+   */
+  findLaunch(
+    executor: string,
+  ): Promise<{ txHash: string; logs: readonly unknown[] } | null>;
   /** Save the DAO, its Shares and the auction on the launch record. Must reject on failure. */
   link(launched: KitLaunched): Promise<unknown>;
   /** Publish the receipt, bound to the transaction. Must reject on failure. */
@@ -65,14 +72,19 @@ export interface DaoLaunchDeps {
   onProgress?(progress: DaoLaunchProgress): void;
 }
 
+/**
+ * What pressing the button again does after a stop. `launch`: nothing was created, so a fresh attempt is safe.
+ * `finish`: the DAO exists, so only the bookkeeping is retried and nothing is sent. `none`: it needs a person.
+ */
+export type DaoLaunchRetry = "launch" | "finish" | "none";
+
 export type DaoLaunchOutcome =
   | { ok: true; progress: DaoLaunchProgress }
   | {
       ok: false;
       step: DaoLaunchStep;
       message: string;
-      /** Whether pressing the button again could send the transaction a second time. Never true after it mined. */
-      mayResend: boolean;
+      retry: DaoLaunchRetry;
       progress: DaoLaunchProgress;
     };
 
@@ -103,8 +115,15 @@ export async function runDaoLaunch(
   const stop = (
     step: DaoLaunchStep,
     message: string,
-    mayResend = false,
-  ): DaoLaunchOutcome => ({ ok: false, step, message, mayResend, progress });
+    retry: DaoLaunchRetry,
+  ): DaoLaunchOutcome => ({ ok: false, step, message, retry, progress });
+  const remember = (txHash: string) => {
+    try {
+      deps.txStore.save(txHash);
+    } catch {
+      // The run holds the hash in memory; only surviving a reload is lost.
+    }
+  };
 
   // A hash stored by an earlier run of this page means the money step already happened.
   if (progress.txHash === null) {
@@ -116,7 +135,7 @@ export async function runDaoLaunch(
 
   // 1. The transaction, once.
   if (progress.txHash === null) {
-    let data: string;
+    let data: string | null = null;
     try {
       const answer = await deps.effects.call({
         to: deps.kit,
@@ -127,46 +146,53 @@ export async function runDaoLaunch(
         return stop(
           "send",
           "The launch contract gave an unexpected answer. Check that this network has the launch contract.",
-          true,
+          "launch",
         );
       }
-      // The salt is stable per launch on purpose: a second send of the same launch would collide with the first and
-      // revert instead of creating a second DAO. Saying so here beats a failed transaction.
+      // The salt is stable per launch on purpose: a second send would collide with the first and revert instead of
+      // creating a second DAO. So code at the executor's address means this launch already happened, and the DAO
+      // is found from the chain rather than made again.
       if (await deps.effects.codeAt(executor)) {
-        return stop(
-          "send",
-          "This launch has already created its DAO on this network, so it cannot be launched again. To raise again, start a new launch.",
-        );
+        const found = await deps.findLaunch(executor);
+        if (found === null || !TX_HASH_RE.test(found.txHash)) {
+          return stop(
+            "send",
+            "This launch has already created its DAO on this network, but it could not be found again from here. It cannot be launched a second time: check the network, or start a new launch.",
+            "none",
+          );
+        }
+        remember(found.txHash);
+        logs = found.logs;
+        update({ txHash: found.txHash });
+      } else {
+        data = encodeKitLaunch(deps.plan, executor);
       }
-      data = encodeKitLaunch(deps.plan, executor);
     } catch (error) {
       return stop(
         "send",
         `Could not prepare the launch: ${messageOf(error)}`,
-        true,
+        "launch",
       );
     }
-    let receipt: Awaited<ReturnType<typeof deps.effects.send>>;
-    try {
-      receipt = await deps.effects.send({ to: deps.kit, data });
-    } catch (error) {
-      // A declined or timed-out send: the outcome is not known, so say so and let the founder look before retrying.
-      return stop("send", messageOf(error), true);
+    if (data !== null) {
+      let receipt: Awaited<ReturnType<typeof deps.effects.send>>;
+      try {
+        receipt = await deps.effects.send({ to: deps.kit, data });
+      } catch (error) {
+        // A declined or timed-out send: the outcome is not known, so say so and let the founder look before retrying.
+        return stop("send", messageOf(error), "launch");
+      }
+      if (receipt.status !== "success") {
+        return stop(
+          "send",
+          "The network rejected the launch, so nothing was created. Nothing was spent beyond the network fee.",
+          "launch",
+        );
+      }
+      remember(receipt.txHash);
+      logs = receipt.logs ?? null;
+      update({ txHash: receipt.txHash });
     }
-    if (receipt.status !== "success") {
-      return stop(
-        "send",
-        "The network rejected the launch, so nothing was created. Nothing was spent beyond the network fee.",
-        true,
-      );
-    }
-    try {
-      deps.txStore.save(receipt.txHash);
-    } catch {
-      // The run holds the hash in memory; only surviving a reload is lost.
-    }
-    logs = receipt.logs ?? null;
-    update({ txHash: receipt.txHash });
   }
 
   // 2. What it made.
@@ -180,12 +206,14 @@ export async function runDaoLaunch(
         return stop(
           "confirm",
           `Could not read the launch: ${messageOf(error)}`,
+          "finish",
         );
       }
       if (found === null) {
         return stop(
           "confirm",
           "The network has not confirmed the launch yet. Try again in a moment.",
+          "finish",
         );
       }
       if (found.status !== "success") {
@@ -199,7 +227,7 @@ export async function runDaoLaunch(
         return stop(
           "confirm",
           "That launch was rejected by the network, so nothing was created. You can launch again.",
-          true,
+          "launch",
         );
       }
       logs = found.logs;
@@ -209,12 +237,14 @@ export async function runDaoLaunch(
       return stop(
         "confirm",
         "The launch went through, but its result could not be read from the network's reply. Your hash is kept: try again, or look the transaction up on a block explorer.",
+        "finish",
       );
     }
     if (launched.saleSupply !== deps.plan.saleSupply) {
       return stop(
         "confirm",
         "The launch on the network does not match the terms on this page, so it was not saved. Check the transaction on a block explorer.",
+        "none",
       );
     }
     update({ launched });
@@ -230,6 +260,7 @@ export async function runDaoLaunch(
       return stop(
         "link",
         `The DAO is live, but saving it to this launch failed: ${messageOf(error)} Retrying only saves it again; it never sends the money twice.`,
+        "finish",
       );
     }
     update({ linked: true });
@@ -243,6 +274,7 @@ export async function runDaoLaunch(
       return stop(
         "publish",
         `The DAO is live and saved, but publishing its receipt failed: ${messageOf(error)} Retrying only publishes it again.`,
+        "finish",
       );
     }
     update({ published: true });
