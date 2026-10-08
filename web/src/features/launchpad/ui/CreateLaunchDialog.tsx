@@ -774,6 +774,7 @@ export function CreateLaunchDialog({
       onRaiseTarget,
     },
     unlocks: {
+      ownDao: tokenMode === "dao",
       issues: wizardStepIssues(wizard, form, "unlocks"),
       onLabel: (index, value) =>
         setMilestoneRows(

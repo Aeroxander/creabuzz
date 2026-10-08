@@ -565,6 +565,13 @@ export function wizardStepIssues(
     }
   }
   if (step === "unlocks") {
+    // A launch into its own DAO locks the team's Shares by milestones: time vesting has no meaning there, and the
+    // record cannot be edited into something else after it is published.
+    if (form.tokenMode === "dao" && wizard.unlockMode === "time") {
+      issues.push(
+        "A project with its own DAO locks its team's Shares behind milestones, or not at all. Choose milestones or no lock.",
+      );
+    }
     for (const issue of unlockPlanIssues(
       unlockPlanFromWizard(wizard, form.allocation),
     )) {

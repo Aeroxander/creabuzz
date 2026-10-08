@@ -88,6 +88,8 @@ export interface WizardController {
     onRaiseTarget(value: string): void;
   };
   unlocks: {
+    /** The project launches with its own DAO: the team's Shares are locked behind milestones, never by time. */
+    ownDao: boolean;
     issues: readonly string[];
     onLabel(index: number, value: string): void;
     onPercent(index: number, value: string): void;
@@ -412,6 +414,7 @@ function SaleStep({ controller }: { controller: WizardController }) {
 
 function UnlockStep({ controller }: { controller: WizardController }) {
   const { wizard, patch, unlocks, editing } = controller;
+  const ownDao = unlocks.ownDao;
   if (editing) {
     // The published unlock plan is carried through a save untouched
     // (`FormState.unlocks`); an editor here would be a control that writes
@@ -431,9 +434,13 @@ function UnlockStep({ controller }: { controller: WizardController }) {
   return (
     <div className="flex flex-col gap-3" data-testid="wizard-step-unlocks">
       <Select
-        hint="Your own allocation, and what it releases against."
+        hint={
+          ownDao
+            ? "Your team's Shares are yours to vote with from the start. A milestone decides when a part of them can be sold or taken out of the DAO."
+            : "Your own allocation, and what it releases against."
+        }
         id="unlock-mode"
-        label="Your unlocks"
+        label={ownDao ? "Your locks" : "Your unlocks"}
         onChange={(event) =>
           patch({
             unlockMode: event.target.value as WizardState["unlockMode"],
@@ -442,10 +449,22 @@ function UnlockStep({ controller }: { controller: WizardController }) {
         options={[
           {
             value: "milestones",
-            label: "Milestone unlocks (recommended)",
+            label: ownDao
+              ? "Milestone locks (recommended)"
+              : "Milestone unlocks (recommended)",
           },
-          { value: "time", label: "Short vesting" },
-          { value: "none", label: "No vesting" },
+          // With its own DAO there is no time option; one already chosen stays visible so it can be changed.
+          ...(!ownDao || wizard.unlockMode === "time"
+            ? [
+                {
+                  value: "time",
+                  label: ownDao
+                    ? "Short vesting (not available with its own DAO)"
+                    : "Short vesting",
+                },
+              ]
+            : []),
+          { value: "none", label: ownDao ? "No lock" : "No vesting" },
         ]}
         testId="unlock-mode"
         value={wizard.unlockMode}
@@ -469,15 +488,18 @@ function UnlockStep({ controller }: { controller: WizardController }) {
       ) : null}
       {wizard.unlockMode === "none" ? (
         <p className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
-          Nothing locks: everything your allocation holds releases when the sale
-          closes.
+          {ownDao
+            ? "Nothing is locked: your team Shares can be sold or taken out of the DAO straight away."
+            : "Nothing locks: everything your allocation holds releases when the sale closes."}
         </p>
       ) : null}
       <p
         className="rounded-lg border border-amber-300/60 p-3 text-xs text-amber-800 dark:border-amber-500/40 dark:text-amber-200"
         data-testid="unlock-gap"
       >
-        {UNLOCK_ENFORCEMENT_GAP}
+        {ownDao
+          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold or taken out of the DAO until the DAO's reviewers approve the work for it. The words of a milestone are what the reviewers judge it by."
+          : UNLOCK_ENFORCEMENT_GAP}
       </p>
       {unlocks.customLadderNote ? (
         <p className="text-xs text-black/60 dark:text-white/60">
