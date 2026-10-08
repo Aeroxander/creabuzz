@@ -36,12 +36,12 @@ test("routeDecision maps every 47004 kind to its native mechanism", () => {
   assert.match(signal.note, /No ballot/);
 
   const futarchy = routeDecision("futarchy-budget");
-  assert.equal(futarchy.mechanism, "Futarchy market");
-  assert.equal(futarchy.ballot, false);
-  assert.match(futarchy.note, /markets land/i);
+  assert.equal(futarchy.mechanism, "Shares conviction");
+  assert.equal(futarchy.ballot, true);
+  assert.match(futarchy.note, /Shares|policy/i);
 
   const plain = routeDecision("plain");
-  assert.equal(plain.mechanism, "Majeur ballot");
+  assert.equal(plain.mechanism, "Shares conviction");
   assert.equal(plain.ballot, true);
 });
 
@@ -72,8 +72,13 @@ test("renderedActions routes by kind — signal never gets a ballot (D1 anti-the
         bound: true,
         hasOperation: true,
       }),
-      [],
-      `futarchy-budget stays read-only at state ${state}`,
+      renderedActions({
+        kind: "plain",
+        state,
+        bound: true,
+        hasOperation: true,
+      }),
+      `budget and plain proposals share the same actions at state ${state}`,
     );
   }
 });
@@ -91,11 +96,28 @@ test("renderedActions: plain routes the ballot and the lifecycle", () => {
     "vote-against",
     "vote-abstain",
   ]);
-  assert.deepEqual(renderedActions({ ...base, state: "Succeeded" }), ["queue"]);
-  assert.deepEqual(renderedActions({ ...base, state: "Queued" }), []);
+  assert.deepEqual(renderedActions({ ...base, state: "Succeeded" }), [
+    "vote-for",
+    "vote-against",
+    "vote-abstain",
+    "queue",
+  ]);
+  assert.deepEqual(renderedActions({ ...base, state: "Queued" }), [
+    "vote-for",
+    "vote-against",
+    "vote-abstain",
+  ]);
+  assert.deepEqual(
+    renderedActions({ ...base, state: "Succeeded", hasOperation: true }),
+    ["vote-for", "vote-against", "vote-abstain", "execute"],
+  );
   assert.deepEqual(
     renderedActions({ ...base, state: "Queued", hasOperation: true }),
-    ["execute"],
+    ["vote-for", "vote-against", "vote-abstain"],
+  );
+  assert.deepEqual(
+    renderedActions({ ...base, state: "Unopened", hasOperation: true }),
+    ["open"],
   );
   for (const state of ["Defeated", "Expired", "Executed"]) {
     assert.deepEqual(renderedActions({ ...base, state }), [], state);

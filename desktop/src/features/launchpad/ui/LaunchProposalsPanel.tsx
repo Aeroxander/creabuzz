@@ -8,7 +8,7 @@
  *
  * 1. **Which mechanism** (the D1 routing map, spelled out per kind:
  *    `signal` = deliberation with NO ballot, `plain` = the majeur ballot,
- *    `futarchy-budget` = read-only market note — markets land later);
+ *    `futarchy-budget` = the same allowance ballot);
  * 2. **Who held authority** (D5: the proposer + grant provenance or its
  *    honest fallback, and the sender of every action);
  * 3. **Where the receipts are** (D4: the kind:47005 proposal/vote/execute
@@ -42,7 +42,6 @@ import {
   governanceReceiptMirror,
   PROPOSAL_ACTION_LABELS,
   proposalReceipts,
-  quorumSummary,
   RECEIPTS_VOCABULARY,
   RECORD_ONLY_COPY,
   renderedActions,
@@ -51,10 +50,6 @@ import {
   type ProposalAction,
   type ProposalDaoBinding,
 } from "@/features/launchpad/lib/decisionRouting";
-import {
-  loadDaoGovParams,
-  type DaoGovParams,
-} from "@/features/launchpad/lib/daoGovConfig";
 import { getRpcEndpoint } from "@/features/launchpad/lib/chainRpc";
 import {
   buildProposalActionCall,
@@ -66,14 +61,7 @@ import {
   publishSignedEvent,
   usePublishLaunchMirrorMutation,
 } from "@/features/launchpad/hooks";
-import {
-  decodeTallies,
-  quorumWatch,
-} from "@/features/launchpad/lib/quorumWatch";
-import {
-  computeProposalId,
-  encodeTalliesView,
-} from "@/features/launchpad/lib/voteTx";
+import { computeProposalId } from "@/features/launchpad/lib/voteTx";
 import { WikiDraftComposer } from "./WikiDraftComposer";
 import { useEvmChainStatusQuery } from "@/features/launchpad/mintHooks";
 import { useWalletStatusQuery } from "@/features/launchpad/walletHooks";
@@ -85,6 +73,15 @@ import { invokeTauri } from "@/shared/api/tauri";
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import {
+  decodeVotingRules,
+  encodeVotingSupport,
+  decodeVotingSupport,
+  encodeVotingRules,
+  votingRulesSummary,
+  votingRuleWatch,
+} from "../lib/voting-allocation";
+import { VotingAllocationControls } from "@/features/launchpad/ui/VotingAllocationControls";
 import { Button } from "@/shared/ui/button";
 
 /** `evm_call()` result (the shared IPC shape in `mintHooks.ts`). */
@@ -105,7 +102,7 @@ const KIND_STYLES: Record<string, string> = {
 };
 
 function kindLabel(kind: string): string {
-  return kind === "futarchy-budget" ? "Futarchy · budget" : kind;
+  return kind === "futarchy-budget" ? "Budget" : kind;
 }
 
 function errorText(error: unknown): string {
@@ -117,8 +114,8 @@ function lifecycleNote(state: ProposalState, hasOperation: boolean): string {
   switch (state) {
     case "Queued":
       return hasOperation
-        ? "Queued. Run Execute after the timelock (per DAO config)."
-        : "Queued. The timelock (per DAO config) runs before execution. This record doesn't carry the details Execute needs, so the action isn't offered here.";
+        ? "Queued. Run Execute after the captured timelock."
+        : "Queued. The captured timelock runs before execution. This record doesn't carry the details Execute needs, so the action isn't offered here.";
     case "Defeated":
       return "Defeated. FOR did not beat AGAINST, or the minYes floor failed. Nothing executes.";
     case "Expired":
@@ -220,24 +217,6 @@ function ProposalCard({
   const bound = Boolean(daoBinding && proposal.proposalId);
   const hasOperation = proposal.intent !== null;
 
-  // D6's numbers come from the DAO's own config getters — the chain reads
-  // win for honesty; an unread slot renders "per DAO config".
-  const govConfigQuery = useQuery({
-    queryKey: ["launchpad", "gov", "config", rpcUrl, daoBinding?.dao ?? ""],
-    queryFn: (): Promise<DaoGovParams> => {
-      if (!daoBinding) throw new Error("no DAO bound");
-      return loadDaoGovParams((data) =>
-        invokeTauri<EvmCallResult>("evm_call", {
-          rpcUrl,
-          to: daoBinding.dao,
-          data,
-        }).then((result) => result.returnData),
-      );
-    },
-    enabled: Boolean(daoBinding),
-    staleTime: 60_000,
-  });
-
   // Every action is gated on the real `state(id)` read (D1 mechanics).
   const stateQuery = useQuery({
     queryKey: [
@@ -259,11 +238,21 @@ function ProposalCard({
       }).then((result) => decodeProposalState(result.returnData));
     },
     enabled: bound,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 15_000,
     staleTime: 15_000,
   });
 
   const action = useMutation({
-    mutationFn: async (actionId: ProposalAction) => {
+    mutationFn: async ({
+      actionId,
+      allocation,
+      sourceOwner,
+    }: {
+      actionId: ProposalAction;
+      allocation?: bigint;
+      sourceOwner?: string;
+    }) => {
       if (!daoBinding || !proposal.proposalId) {
         throw new Error("no onchain binding");
       }
@@ -271,6 +260,8 @@ function ProposalCard({
         dao: daoBinding.dao,
         proposalId: proposal.proposalId,
         action: actionId,
+        allocation,
+        sourceOwner,
         intent: proposal.intent,
       });
       const receipt = await invokeTauri<GovTxReceipt>("evm_send_transaction", {
@@ -318,7 +309,8 @@ function ProposalCard({
   const talliesQuery = useQuery({
     queryKey: [
       "launchpad",
-      "tallies",
+      "gov",
+      "support",
       rpcUrl,
       daoBinding?.dao,
       proposal.proposalId,
@@ -327,24 +319,44 @@ function ProposalCard({
       invokeTauri<EvmCallResult>("evm_call", {
         rpcUrl,
         to: daoBinding?.dao ?? "",
-        data: encodeTalliesView(proposal.proposalId ?? "0x0"),
-      }).then((result) => decodeTallies(result.returnData)),
-    enabled: bound && proposal.kind === "plain" && Boolean(proposal.proposalId),
-    staleTime: 15_000,
+        data: encodeVotingSupport(proposal.proposalId ?? "0x0"),
+      }).then((result) => decodeVotingSupport(result.returnData)),
+    enabled:
+      bound && proposal.kind !== "signal" && Boolean(proposal.proposalId),
+    staleTime: 5_000,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 5_000,
+    retry: 1,
     refetchOnWindowFocus: false,
   });
+  const rulesQuery = useQuery({
+    queryKey: [
+      "launchpad",
+      "gov",
+      "proposal-rules",
+      rpcUrl,
+      daoBinding?.dao,
+      proposal.proposalId,
+    ],
+    queryFn: async () => {
+      const result = await invokeTauri<EvmCallResult>("evm_call", {
+        rpcUrl,
+        to: daoBinding?.dao ?? "",
+        data: encodeVotingRules(proposal.proposalId ?? "0x0"),
+      });
+      return decodeVotingRules(result.returnData);
+    },
+    enabled: bound && proposal.kind !== "signal",
+    staleTime: 30_000,
+    retry: 1,
+  });
   const watch =
-    talliesQuery.data && govConfigQuery.data
-      ? quorumWatch({
-          tallies: talliesQuery.data,
-          minYes:
-            govConfigQuery.data.minYesAbsolute != null
-              ? BigInt(govConfigQuery.data.minYesAbsolute)
-              : null,
-          ttlEndsAt: null,
-          createdAt: BigInt(proposal.createdAt),
-          now: BigInt(Math.floor(Date.now() / 1000)),
-        })
+    talliesQuery.data && rulesQuery.data
+      ? votingRuleWatch(
+          rulesQuery.data,
+          talliesQuery.data,
+          BigInt(Math.floor(Date.now() / 1000)),
+        )
       : null;
 
   const state = stateQuery.data ?? null;
@@ -593,7 +605,7 @@ function ProposalCard({
       </section>
 
       {/* D6 — the exact majeur rules, in plain language before any vote. */}
-      {proposal.kind === "plain" ? (
+      {proposal.kind !== "signal" ? (
         <p
           className="mt-2 text-2xs text-muted-foreground"
           data-testid="proposal-quorum"
@@ -601,7 +613,7 @@ function ProposalCard({
           <span className="font-medium text-foreground">
             Passing rules (majeur):
           </span>{" "}
-          {quorumSummary(govConfigQuery.data ?? null).join(" · ")}
+          {votingRulesSummary(rulesQuery.data)}
         </p>
       ) : null}
 
@@ -652,19 +664,51 @@ function ProposalCard({
             {actions.length > 0 ? (
               <>
                 <div className="flex flex-wrap items-center gap-2">
-                  {actions.map((actionId) => (
-                    <Button
-                      data-testid={`proposal-action-${actionId}`}
-                      disabled={chainId === 0 || !wallet || action.isPending}
-                      key={actionId}
-                      onClick={() => action.mutate(actionId)}
-                      size="sm"
-                      type="button"
-                      variant={actionId === "vote-for" ? "default" : "outline"}
-                    >
-                      {PROPOSAL_ACTION_LABELS[actionId] ?? actionId}
-                    </Button>
-                  ))}
+                  {actions.some((actionId) => actionId.startsWith("vote-")) ? (
+                    <VotingAllocationControls
+                      account={wallet}
+                      dao={daoBinding?.dao ?? ""}
+                      proposalId={proposal.proposalId ?? "0"}
+                      rpcUrl={rpcUrl}
+                      pending={action.isPending}
+                      read={(data) =>
+                        invokeTauri<EvmCallResult>("evm_call", {
+                          rpcUrl,
+                          to: daoBinding?.dao,
+                          data,
+                        }).then((result) => result.returnData)
+                      }
+                      onVote={(support, allocation, sourceOwner) =>
+                        action.mutateAsync({
+                          actionId:
+                            support === 1
+                              ? "vote-for"
+                              : support === 0
+                                ? "vote-against"
+                                : "vote-abstain",
+                          allocation,
+                          sourceOwner,
+                        })
+                      }
+                    />
+                  ) : null}
+                  {actions
+                    .filter((actionId) => !actionId.startsWith("vote-"))
+                    .map((actionId) => (
+                      <Button
+                        data-testid={`proposal-action-${actionId}`}
+                        disabled={chainId === 0 || !wallet || action.isPending}
+                        key={actionId}
+                        onClick={() => action.mutate({ actionId })}
+                        size="sm"
+                        type="button"
+                        variant={
+                          actionId === "vote-for" ? "default" : "outline"
+                        }
+                      >
+                        {PROPOSAL_ACTION_LABELS[actionId] ?? actionId}
+                      </Button>
+                    ))}
                 </div>
                 <p className="mt-1 text-2xs text-muted-foreground">
                   {walletPending

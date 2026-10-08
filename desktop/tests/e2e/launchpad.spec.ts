@@ -180,3 +180,98 @@ test.describe("bidder money plane hands off to the web app", () => {
     await expectWebHandoff(page, { action: "claim" });
   });
 });
+
+test("queued governance keeps delegated reallocation and withdrawal reachable", async ({
+  page,
+}) => {
+  const dao = "0x1111111111111111111111111111111111111111";
+  const source = "0x2222222222222222222222222222222222222222";
+  const seeded = launchpadEvents();
+  seeded.push({
+    ...seeded[0],
+    id: "c".repeat(64),
+    kind: 47004,
+    tags: [["a", `37001:${MOCK_PUBKEY}:nebula`]],
+    content: JSON.stringify({
+      proposalId: "1",
+      title: "Fund the team",
+      state: "open",
+      kind: "plain",
+      onchain: { chain: "31337", dao },
+    }),
+  });
+  await installMockBridge(page, { launchpadEvents: seeded });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: (
+          command: string,
+          payload?: { data?: string },
+        ) => Promise<unknown>;
+      };
+      allocationSends?: string[];
+    };
+    const original = w.__TAURI_INTERNALS__.invoke.bind(w.__TAURI_INTERNALS__);
+    let amount = 0n;
+    const unit = 10n ** 18n;
+    const word = (v: bigint | number) =>
+      BigInt(v).toString(16).padStart(64, "0");
+    w.allocationSends = [];
+    w.__TAURI_INTERNALS__.invoke = async (command, payload) => {
+      if (command === "evm_call") {
+        const data = payload?.data ?? "";
+        let words: (number | bigint)[] = [0];
+        if (data.startsWith("0x3e4f49e6")) words = [2];
+        if (data.startsWith("0x54b31217"))
+          words = [100n * unit - amount, 100n * unit, 100n * unit, amount, 1];
+        if (data.startsWith("0x4bcaf6aa"))
+          words = [amount, 0, 0, (amount * unit) / 2n, 0, 0];
+        if (data.startsWith("0xb1f792c9")) {
+          const now = Math.floor(Date.now() / 1000);
+          words = [
+            50n * unit,
+            51n * unit,
+            25n * unit * unit,
+            now - 48 * 3600,
+            now + 14 * 86400,
+            86400,
+            0,
+          ];
+        }
+        return { returnData: `0x${words.map(word).join("")}` };
+      }
+      if (command === "evm_send_transaction") {
+        const data = payload?.data ?? "";
+        w.allocationSends?.push(data);
+        amount = BigInt(`0x${data.slice(-64)}`);
+      }
+      return original(command, payload);
+    };
+  });
+  await page.getByTestId("open-launchpad-view").click();
+  await page.getByTestId("launchpad-launch-card").click();
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await expect(page.getByTestId("voting-allocation-controls")).toBeVisible();
+  await page.getByLabel("Vote on behalf of (optional)").fill(source);
+  await page.getByLabel("Shares to allocate").fill("70");
+  await page.getByTestId("proposal-vote-for").click();
+  await expect(page.getByTestId("voting-allocation-balance")).toContainText(
+    "70 allocated here",
+  );
+  await page.getByLabel("Shares to allocate").fill("invalid amount");
+  await page.getByTestId("proposal-vote-withdraw").click();
+  await expect(page.getByTestId("voting-allocation-balance")).toContainText(
+    "100 free",
+  );
+  const sends = await page.evaluate(
+    () => (window as unknown as { allocationSends: string[] }).allocationSends,
+  );
+  const word = (v: bigint | number) => BigInt(v).toString(16).padStart(64, "0");
+  expect(sends).toEqual(
+    [70n * 10n ** 18n, 0n].map(
+      (amount) =>
+        `0x87906434${source.slice(2).padStart(64, "0")}${word(1)}${word(1)}${word(amount)}`,
+    ),
+  );
+});

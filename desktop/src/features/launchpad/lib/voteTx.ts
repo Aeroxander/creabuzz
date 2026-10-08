@@ -47,6 +47,14 @@ export const SIGNATURE_QUEUE = "queue(uint256)";
 /** `executeByVotes(uint8,address,uint256,bytes,bytes32)` — post-votes exec. */
 export const SIGNATURE_EXECUTE_BY_VOTES =
   "executeByVotes(uint8,address,uint256,bytes,bytes32)";
+/** Open the actual intent so the policy can authenticate bounded project calls. */
+export function encodeOpenProposalWithAction(intent: ProposalIntent): string {
+  return encodeExecuteByVotes(intent).replace(
+    SELECTOR_EXECUTE_BY_VOTES,
+    "0xe1d5ec31",
+  );
+}
+
 /** `proposalId(uint8,address,uint256,bytes,bytes32)` — the id view. */
 export const SIGNATURE_PROPOSAL_ID =
   "proposalId(uint8,address,uint256,bytes,bytes32)";
@@ -240,7 +248,11 @@ export function encodeOpenProposal(id: bigint | string): string {
 }
 
 /** `castVote(id, support)` — 1 for, 0 against, 2 abstain. */
-export function encodeCastVote(id: bigint | string, support: number): string {
+export function encodeCastVote(
+  id: bigint | string,
+  support: number,
+  amount?: bigint | string,
+): string {
   if (
     support !== VOTE_AGAINST &&
     support !== VOTE_FOR &&
@@ -248,10 +260,36 @@ export function encodeCastVote(id: bigint | string, support: number): string {
   ) {
     throw new Error(`support must be 0, 1, or 2: ${support}`);
   }
+  return amount === undefined
+    ? encodeFunctionData(
+        SIGNATURE_CAST_VOTE,
+        ["uint256", "uint8"],
+        [requireUint(id, "id"), BigInt(support)],
+      )
+    : encodeFunctionData(
+        "castVote(uint256,uint8,uint256)",
+        ["uint256", "uint8", "uint256"],
+        [requireUint(id, "id"), BigInt(support), requireUint(amount, "Shares")],
+      );
+}
+
+/** Replace a source owner's allocation as their authorized delegate. */
+export function encodeCastVoteFor(
+  owner: string,
+  id: bigint | string,
+  support: number,
+  amount: bigint | string,
+): string {
+  encodeCastVote(id, support, amount);
   return encodeFunctionData(
-    SIGNATURE_CAST_VOTE,
-    ["uint256", "uint8"],
-    [requireUint(id, "id"), BigInt(support)],
+    "castVoteFor(address,uint256,uint8,uint256)",
+    ["address", "uint256", "uint8", "uint256"],
+    [
+      requireAddress(owner, "owner"),
+      requireUint(id, "id"),
+      BigInt(support),
+      requireUint(amount, "Shares"),
+    ],
   );
 }
 
@@ -361,6 +399,8 @@ export function buildProposalActionCall(input: {
   /** The onchain proposal id (decimal or 0x-hex integer string). */
   proposalId: string;
   action: ProposalAction;
+  allocation?: bigint;
+  sourceOwner?: string;
   /** Required for `execute` — the recorded operation. */
   intent?: ProposalIntent | null;
 }): EvmCall {
@@ -368,23 +408,50 @@ export function buildProposalActionCall(input: {
   const { proposalId, action } = input;
   switch (action) {
     case "open":
-      return { to: dao, data: encodeOpenProposal(proposalId), value: "0x0" };
+      return {
+        to: dao,
+        data: input.intent
+          ? encodeOpenProposalWithAction(input.intent)
+          : encodeOpenProposal(proposalId),
+        value: "0x0",
+      };
     case "vote-for":
       return {
         to: dao,
-        data: encodeCastVote(proposalId, VOTE_FOR),
+        data: input.sourceOwner
+          ? encodeCastVoteFor(
+              input.sourceOwner,
+              proposalId,
+              VOTE_FOR,
+              input.allocation ?? (1n << 256n) - 1n,
+            )
+          : encodeCastVote(proposalId, VOTE_FOR, input.allocation),
         value: "0x0",
       };
     case "vote-against":
       return {
         to: dao,
-        data: encodeCastVote(proposalId, VOTE_AGAINST),
+        data: input.sourceOwner
+          ? encodeCastVoteFor(
+              input.sourceOwner,
+              proposalId,
+              VOTE_AGAINST,
+              input.allocation ?? (1n << 256n) - 1n,
+            )
+          : encodeCastVote(proposalId, VOTE_AGAINST, input.allocation),
         value: "0x0",
       };
     case "vote-abstain":
       return {
         to: dao,
-        data: encodeCastVote(proposalId, VOTE_ABSTAIN),
+        data: input.sourceOwner
+          ? encodeCastVoteFor(
+              input.sourceOwner,
+              proposalId,
+              VOTE_ABSTAIN,
+              input.allocation ?? (1n << 256n) - 1n,
+            )
+          : encodeCastVote(proposalId, VOTE_ABSTAIN, input.allocation),
         value: "0x0",
       };
     case "queue":

@@ -58,21 +58,13 @@ export function routeDecision(kind: ProposalKind): DecisionRoute {
         ballot: false,
         note: "Discuss in channel / linked issue. The outcome is a wiki standup summary, not a tally. No ballot: a vote would misprice distributed sentiment.",
       };
-    case "futarchy-budget":
-      return {
-        kind,
-        mechanism: "Futarchy market",
-        why: "Budget and subDAO allocation is forecasting, not opinion. Markets price outcomes better than ballots.",
-        ballot: false,
-        note: "Read-only market note: markets land with the futarchy market peripheral (design scope: budget & subDAO allocation only).",
-      };
     default:
       return {
-        kind: "plain",
-        mechanism: "Majeur ballot",
-        why: "A bounded yes/no with stakes: N-1 snapshot, quorum + minYes, FOR>AGAINST, TTL + timelock. The exact majeur ruleset.",
+        kind,
+        mechanism: "Shares conviction",
+        why: "Movable Shares allocations, 12-hour conviction half-life, captured backing requirements, minimum review and execution delay.",
         ballot: true,
-        note: "",
+        note: "Shares alone allocate support. Loot retains economic rights. Every executable proposal uses this policy.",
       };
   }
 }
@@ -91,7 +83,7 @@ export const PROPOSAL_ACTION_LABELS: Record<string, string> = {
   "vote-against": "Against",
   "vote-abstain": "Abstain",
   queue: "Queue (start timelock)",
-  execute: "Execute",
+  execute: "Execute / start timelock",
 };
 
 /**
@@ -110,19 +102,24 @@ export function renderedActions(input: {
   hasOperation: boolean;
 }): readonly ProposalAction[] {
   if (!input.bound || !input.state) return [];
-  // Only `plain` routes to the ballot; `signal` gets none even when bound
-  // (anti-theater) and `futarchy-budget` stays read-only until its markets.
+  // All executable proposals use the same Shares policy; signals remain discussion.
   if (!routeDecision(input.kind).ballot) return [];
   switch (input.state) {
     case "Unopened":
       // First votes auto-open; the explicit open fixes the N-1 snapshot first.
+      if (input.hasOperation) return ["open"];
       return ["open", "vote-for", "vote-against", "vote-abstain"];
     case "Active":
       return ["vote-for", "vote-against", "vote-abstain"];
     case "Succeeded":
-      return ["queue"];
+      return [
+        "vote-for",
+        "vote-against",
+        "vote-abstain",
+        ...(input.hasOperation ? ["execute" as const] : ["queue" as const]),
+      ];
     case "Queued":
-      return input.hasOperation ? ["execute"] : [];
+      return ["vote-for", "vote-against", "vote-abstain"];
     default:
       return [];
   }
