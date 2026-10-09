@@ -88,6 +88,14 @@ const record = {
   sig: "sig",
 };
 
+/** With `E2E_SHOTS=<dir>`, save the page as it looks now, so a person can read the product off real data. */
+async function shot(page: Page, name: string) {
+  const dir = process.env.E2E_SHOTS;
+  if (!dir) return;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true });
+}
+
 async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
@@ -185,6 +193,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await expect(founder.getByTestId("decisions-empty")).toBeVisible({
     timeout: 20_000,
   });
+  await shot(founder, "1-decisions-empty");
 
   // ── 1. the founder puts a work budget to a vote, in a form ─────────────────────────────
   await founder.getByTestId("decision-new").click();
@@ -205,6 +214,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await expect(founder.getByTestId("decision-draft")).toContainText(
     "2 reviewers, 2 must agree on each claim",
   );
+  await shot(founder, "2-composer");
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toContainText(
     "Set aside a work budget",
@@ -212,6 +222,22 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
       timeout: 60_000,
     },
   );
+  await shot(founder, "3-decision-opened");
+
+  // The DAO's front page says it needs the founder's vote, and the button goes to where it is cast.
+  await founder.getByRole("tab", { name: "Overview" }).click();
+  await expect(founder.getByTestId("dao-needs-you")).toContainText(
+    "Open for your vote: Set aside a work budget",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("dao-summary")).toContainText(
+    "1 decision is open",
+  );
+  await expect(founder.getByTestId("dao-figure-yours")).toContainText(
+    "200,000,000 Shares",
+  );
+  await founder.getByTestId("dao-attention").getByRole("button").click();
+  await expect(founder.getByTestId("decisions-tab")).toBeVisible();
   await carryOut(founder, 175_000, 90_000);
 
   // ── 2. a project inside it, approved the same way (the lighter vote) ───────────────────
@@ -241,6 +267,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
+  await shot(contributor, "4-work-tab");
   await contributor.getByTestId("work-claim-name").fill("write-docs");
   await contributor
     .getByTestId("work-claim-evidence")
@@ -253,6 +280,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
 
   const manager = await context.newPage();
   await openAs(manager, MANAGER, "Work");
+  await shot(manager, "5-claim-to-take-on");
   await manager.getByTestId("work-bind").click();
   await expect(manager.getByTestId("work-claim-next")).toContainText(
     "0 of 2 approvals",
@@ -304,4 +332,17 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   });
   await carryOut(founder, 90_000, 90_000);
   expect(await sharesOf(CONTRIBUTOR)).toBe(25n * WAD);
+  // Everything is done: nothing is waiting, and the three decisions show as done.
+  await founder.getByRole("tab", { name: "Overview" }).click();
+  await expect(founder.getByTestId("dao-needs-you")).toContainText(
+    "Nothing is waiting for you",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("dao-latest")).toContainText(
+    "Award 25 Shares for the claim “write-docs”",
+  );
+  for (const tab of ["Overview", "Decisions", "Treasury"] as const) {
+    await founder.getByRole("tab", { name: tab }).click();
+    await shot(founder, `6-${tab.toLowerCase()}`);
+  }
 });

@@ -67,8 +67,9 @@ export function LaunchHero({
   if (record.requiredRaised) {
     stats.push({ label: "Target", value: money(record.requiredRaised) });
   }
-  // An idea has no sale yet, so the default split is not a fact about it.
-  if (record.allocation && !idea) {
+  // An idea has no sale yet, so the default split is not a fact about it; a project whose sale is over is no longer
+  // "up for sale".
+  if (record.allocation && !idea && stage !== "graduated") {
     stats.push({
       label: "Up for sale",
       value: `${record.allocation.sale}% of supply`,

@@ -75,6 +75,7 @@ import {
 import { ManagePanel } from "./ManagePanel";
 import { DecisionsTab } from "./DecisionsTab";
 import { WorkTab } from "./WorkTab";
+import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { LaunchContractsCard } from "./LaunchContractsCard";
 import { TrackRecordCard } from "./TrackRecordCard";
@@ -273,6 +274,37 @@ export function LaunchDetailPage({
       )
     : tabs;
 
+  const raiseOverview = (
+    <>
+      {/* The backer-directed vault: shown to a project that chose proposal
+              funding. The controls only appear once the vault is deployed and
+              reachable — a control that cannot act is a dead end. A project
+              that launched with its own DAO has one voice for backers (its
+              Shares), so the vault's vouchers are not offered beside it. */}
+      {(launch.record.funding?.path === "proposals" ||
+        launch.record.proposalVault) &&
+      launch.record.tokenPlan?.mode !== "dao" ? (
+        <ProposalFundingPanel
+          actions={vault.actions}
+          atRisk={vault.data?.atRisk ?? "0"}
+          currentBlock={blockHeight === null ? null : Number(blockHeight)}
+          floorPerToken={vault.data?.floorPerToken ?? "0"}
+          own={vault.data?.own ?? {}}
+          pricePerToken={vault.data?.pricePerToken ?? "0"}
+          proposals={vault.data?.proposals ?? []}
+          taxBps={vault.data?.taxBps ?? 0}
+          vault={launch.record.proposalVault}
+          vouchers={vault.data?.vouchers ?? "0"}
+        />
+      ) : null}
+      {/* The TrustGraph surface: gate state, published roots, the graph. */}
+      <PriceChartCard launch={launch} />
+      {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}
+      <TrustGateCard launch={launch} />
+      <OverviewTab launch={launch} />
+    </>
+  );
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
       <LaunchHero
@@ -285,7 +317,7 @@ export function LaunchDetailPage({
                 onToggle={(onDone) => follows.toggle(coord, onDone)}
                 supportersRoom={launch.record.chat.supporters}
               />
-            ) : (
+            ) : stage === "graduated" ? null : (
               <Button onClick={() => setBidOpen(true)}>Back this launch</Button>
             )}
             {isFounder ? (
@@ -361,34 +393,17 @@ export function LaunchDetailPage({
         <IdeaOverview record={launch.record} />
       ) : null}
       {tab === "overview" && !idea ? (
-        <>
-          {/* The backer-directed vault: shown to a project that chose proposal
-              funding. The controls only appear once the vault is deployed and
-              reachable — a control that cannot act is a dead end. A project
-              that launched with its own DAO has one voice for backers (its
-              Shares), so the vault's vouchers are not offered beside it. */}
-          {(launch.record.funding?.path === "proposals" ||
-            launch.record.proposalVault) &&
-          launch.record.tokenPlan?.mode !== "dao" ? (
-            <ProposalFundingPanel
-              actions={vault.actions}
-              atRisk={vault.data?.atRisk ?? "0"}
-              currentBlock={blockHeight === null ? null : Number(blockHeight)}
-              floorPerToken={vault.data?.floorPerToken ?? "0"}
-              own={vault.data?.own ?? {}}
-              pricePerToken={vault.data?.pricePerToken ?? "0"}
-              proposals={vault.data?.proposals ?? []}
-              taxBps={vault.data?.taxBps ?? 0}
-              vault={launch.record.proposalVault}
-              vouchers={vault.data?.vouchers ?? "0"}
-            />
-          ) : null}
-          {/* The TrustGraph surface: gate state, published roots, the graph. */}
-          <PriceChartCard launch={launch} />
-          {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}
-          <TrustGateCard launch={launch} />
-          <OverviewTab launch={launch} />
-        </>
+        workDao && stage === "graduated" ? (
+          <DaoOverview
+            dao={workDao}
+            launch={launch}
+            onOpen={(target) => setTab(target)}
+          >
+            {raiseOverview}
+          </DaoOverview>
+        ) : (
+          raiseOverview
+        )
       ) : null}
       {tab === "discussion" && !sandbox ? (
         <LaunchDiscussion record={launch.record} updates={launch.updates} />
