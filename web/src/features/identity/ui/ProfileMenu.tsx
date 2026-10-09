@@ -159,7 +159,13 @@ export function ProfileMenu({
     if (!open) return;
     const close = () => setOpen(false);
     const handler = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-testid='profile-menu']")) {
+      // The popover is portalled to the document root, so it is not inside the
+      // trigger's element: a press inside either one is not "outside".
+      if (
+        !(e.target as HTMLElement).closest(
+          "[data-testid='profile-menu'], [data-testid='profile-popover']",
+        )
+      ) {
         close();
       }
     };
