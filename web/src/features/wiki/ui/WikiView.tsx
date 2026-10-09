@@ -28,13 +28,9 @@ import {
   type WikiPage,
 } from "../use-wiki-pages";
 import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
-import {
-  DELETE_LABEL,
-  PURGE_LABEL,
-  deleteDialogCopy,
-} from "../lib/delete-copy";
-import type { TombstonedPage } from "../lib/page-index";
+import { DELETE_LABEL, PURGE_LABEL } from "../lib/delete-copy";
 import { useKnowledge } from "../use-knowledge";
+import { useWikiRemoval } from "../use-wiki-removal";
 import { provenanceLine, type KnowledgePage } from "../lib/knowledge";
 import { canDeletePage } from "../lib/page-index";
 import { describeLive } from "../lib/live-status";
@@ -46,12 +42,7 @@ import { SuggestCorrectionDialog } from "./SuggestCorrectionDialog";
 import { WikiEditor } from "./WikiEditor";
 import { WikiGraph } from "./WikiGraph";
 import { RecentlyDeleted } from "./RecentlyDeleted";
-import {
-  PurgeConfirmDialog,
-  RestoreConfirmDialog,
-} from "./DeleteConfirmDialogs";
 import { ScopeEditor } from "./ScopeEditor";
-import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 type Tab = "edit" | "graph";
 
@@ -96,6 +87,14 @@ export function WikiView({
   const [activeSlug, setActiveSlug] = useState<string | null>(
     () => initialSlug ?? pages[0]?.slug ?? null,
   );
+  const removal = useWikiRemoval({
+    activeSlug,
+    setActiveSlug,
+    readFreshPages,
+    deletePage,
+    restoreTombstonedPage,
+    viewerIsAdmin: knowledge.viewerIsAdmin,
+  });
   type EditMode = "wysiwyg" | "source" | "preview";
   const [mode, setMode] = useState<EditMode>("wysiwyg");
   const [saving, setSaving] = useState(false);
@@ -103,18 +102,6 @@ export function WikiView({
   const [pageSearch, setPageSearch] = useState("");
   /** Open naming dialog: `new` creates, otherwise it renames that page. */
   const [dialog, setDialog] = useState<null | "new" | { rename: string }>(null);
-  const [pendingDelete, setPendingDelete] = useState<WikiPage | null>(null);
-  /** Permanent delete (admins, typed confirm) — a page or a tombstoned row. */
-  const [pendingPurge, setPendingPurge] = useState<{
-    slug: string;
-    authorPubkey?: string;
-  } | null>(null);
-  const [purgeBusy, setPurgeBusy] = useState(false);
-  /** Tombstoned page awaiting the plain restore confirmation. */
-  const [pendingRestore, setPendingRestore] = useState<TombstonedPage | null>(
-    null,
-  );
-  const [restoreBusy, setRestoreBusy] = useState(false);
   /** "Recently deleted" list open instead of the page body. */
   const [showTrash, setShowTrash] = useState(false);
   /** Admin scope editor open (also the "Settle scope" path). */
@@ -568,7 +555,7 @@ export function WikiView({
               <button
                 type="button"
                 key="delete"
-                onClick={() => setPendingDelete(active)}
+                onClick={() => removal.requestDelete(active)}
                 className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 text-red-700 dark:border-white/15 dark:text-red-400"
                 data-testid="wiki-delete"
                 title="Delete this page"
@@ -581,7 +568,7 @@ export function WikiView({
               <button
                 type="button"
                 key="purge"
-                onClick={() => setPendingPurge(active)}
+                onClick={() => removal.requestPurge(active)}
                 className="inline-flex items-center gap-1 rounded border border-red-700/40 px-2 py-1 text-red-700 dark:border-red-400/40 dark:text-red-400"
                 data-testid="wiki-purge-open"
                 title="Delete this page permanently"
@@ -704,19 +691,13 @@ export function WikiView({
         ) : null}
         {showTrash ? (
           <RecentlyDeleted
-            busySlug={
-              restoreBusy
-                ? (pendingRestore?.slug ?? null)
-                : purgeBusy
-                  ? (pendingPurge?.slug ?? null)
-                  : null
-            }
+            busySlug={removal.busySlug}
             entries={tombstones.data ?? []}
             error={tombstones.error}
             isAdmin={knowledge.viewerIsAdmin}
             isLoading={tombstones.isLoading}
-            onPurge={(entry) => setPendingPurge(entry)}
-            onRestore={(entry) => setPendingRestore(entry)}
+            onPurge={(entry) => removal.requestPurge(entry)}
+            onRestore={(entry) => removal.requestRestore(entry)}
             onRetry={() => void tombstones.refetch()}
           />
         ) : tab === "graph" ? (
@@ -883,134 +864,7 @@ export function WikiView({
         />
       ) : null}
 
-      <ConfirmDialog
-        confirmLabel={
-          pendingDelete ? deleteDialogCopy(pendingDelete.slug).confirmLabel : ""
-        }
-        description={
-          pendingDelete ? deleteDialogCopy(pendingDelete.slug).description : ""
-        }
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={() => {
-          const page = pendingDelete;
-          setPendingDelete(null);
-          if (!page) return;
-          if (activeSlug === page.slug) setActiveSlug(null);
-          // Whether the page exists on the relay is decided from the relay, not
-          // from this tab's list: a page created and saved moments ago is not in
-          // the cached list yet, and treating it as local-only left a published
-          // page live for everyone else.
-          void (async () => {
-            try {
-              const fresh = await readFreshPages();
-              const published = fresh.find((p) => p.slug === page.slug);
-              if (!published) {
-                toast.success(`Discarded ${page.slug}`);
-                return;
-              }
-              await deletePage(published, {
-                purge: false,
-                viewerIsAdmin: knowledge.viewerIsAdmin,
-              });
-              toast.success(`Moved ${page.slug} to Recently deleted`);
-              void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
-            } catch (error) {
-              // "Discarded" and "Deleted" both say the page is gone; a failed
-              // read tells us nothing about that, so say nothing was changed.
-              toast.error("Couldn't delete page", {
-                description: `The server did not answer, so the page was not deleted. ${errorMessage(error)}`,
-              });
-            }
-          })();
-        }}
-        open={pendingDelete !== null}
-        title={pendingDelete ? deleteDialogCopy(pendingDelete.slug).title : ""}
-      />
-
-      <PurgeConfirmDialog
-        busy={purgeBusy}
-        onCancel={() => setPendingPurge(null)}
-        onConfirm={() => {
-          const target = pendingPurge;
-          setPendingPurge(null);
-          if (!target) return;
-          setPurgeBusy(true);
-          void (async () => {
-            try {
-              // A tombstoned row is already on the relay; a toolbar target is
-              // resolved against a fresh read like the restorable delete.
-              let author = target.authorPubkey;
-              if (!author) {
-                const fresh = await readFreshPages();
-                const published = fresh.find((p) => p.slug === target.slug);
-                if (!published) {
-                  toast.success(`Discarded ${target.slug}`);
-                  return;
-                }
-                author = published.authorPubkey;
-              }
-              await deletePage(
-                {
-                  slug: target.slug,
-                  content: "",
-                  updatedAt: 0,
-                  authorPubkey: author,
-                },
-                { purge: true, viewerIsAdmin: true },
-              );
-              toast.success(`Deleted ${target.slug} permanently`);
-              void queryClient.invalidateQueries({
-                queryKey: ["wiki-pages"],
-              });
-              void queryClient.invalidateQueries({
-                queryKey: ["wiki-tombstones"],
-              });
-            } catch (error) {
-              toast.error("Couldn't delete the page permanently", {
-                description: errorMessage(error),
-              });
-            } finally {
-              setPurgeBusy(false);
-            }
-          })();
-        }}
-        open={pendingPurge !== null}
-        slug={pendingPurge?.slug ?? null}
-      />
-
-      <RestoreConfirmDialog
-        busy={restoreBusy}
-        onCancel={() => setPendingRestore(null)}
-        onConfirm={() => {
-          const entry = pendingRestore;
-          setPendingRestore(null);
-          if (!entry) return;
-          setRestoreBusy(true);
-          void (async () => {
-            try {
-              await restoreTombstonedPage(entry);
-              toast.success(`Restored ${entry.slug}`);
-              void queryClient.invalidateQueries({
-                queryKey: ["wiki-pages"],
-              });
-              void queryClient.invalidateQueries({
-                queryKey: ["wiki-tombstones"],
-              });
-              void queryClient.invalidateQueries({
-                queryKey: ["knowledge-pages"],
-              });
-            } catch (error) {
-              toast.error("Couldn't restore that page", {
-                description: errorMessage(error),
-              });
-            } finally {
-              setRestoreBusy(false);
-            }
-          })();
-        }}
-        open={pendingRestore !== null}
-        slug={pendingRestore?.slug ?? null}
-      />
+      {removal.dialogs}
 
       {suggestOpen && activeSlug ? (
         <SuggestCorrectionDialog
