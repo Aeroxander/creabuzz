@@ -1,7 +1,7 @@
 # The persona drafting loop (B1) — wiki → proposal drafts
 
 *2026-09-28. Closes the agentic-governance A-series (docs/agentic-governance-design.md):
-agent-proposes → delegation → votes/quorum-watch → agent-executes under the
+agent-proposes → delegation → votes/turn-out badge → agent-executes under the
 supervision gate. This document is the loop that feeds it: an agent reading its
 own wiki and drafting proposals. Status notation matches the token-lifecycle
 doc: every decision carries `status:` and nobody has to ask what is done.*
@@ -27,7 +27,7 @@ human wiki (44001) ────────────────────�
                                     │
                           47004 `open` + proposalId (supersedes draft)
                                     │
-              votes + quorum-watch → queue/executeByVotes (A2–A5, unchanged)
+              votes + turn-out badge → queue/executeByVotes (A2–A5, unchanged)
 ```
 
 The distill loop already writes the wiki ("wiki-insightful, not procedural").

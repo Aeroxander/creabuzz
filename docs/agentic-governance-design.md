@@ -103,15 +103,13 @@ What makes this *agentic* governance rather than chat next to a ballot:
   governance leak is the worst leak.
 - **A5 Quorum watch.** Agents nudge on quorum risk and TTL deadlines as
   channel messages with explicit agent identity — turnout work is exactly the
-  toil agents should absorb. **Status (2026-09-27):** the watch ships —
-  `web/lib/quorum-watch.ts` + `desktop/lib/quorumWatch.ts` (the two visible
-  gates: the FOR>AGAINST margin and the `minYes` floor; the bps quorum is
-  adjudicated by the DAO at tally time and the copy says so), the badge on
-  BOTH platforms' proposal cards (leading / needs-votes / at-risk / expired
-  with a compact clock), and `nudgeReminderParts` — the agent-authored NIP-ER
-  reminder shape (tags valid per `validate_event_reminder`). The
-  agent-authored send loop is the runtime integration: an agent reads the
-  watch and publishes the reminder.
+  toil agents should absorb. **Status (2026-10-09):** the badge ships on the
+  proposal cards (leading / needs-votes / at-risk / expired with a compact
+  clock), computed by `votingRuleWatch` from the live tallies and the rules read
+  off the chain; the bps quorum is adjudicated by the DAO at tally time and the
+  copy says so. The agent-authored nudge (a NIP-ER reminder an agent publishes
+  when turnout is at risk) is **not built**: an earlier draft of its message
+  shape was removed in the 2026-10-09 clean-up because nothing sent it.
 
 ## 4. Slice plan
 
