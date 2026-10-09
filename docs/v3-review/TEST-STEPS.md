@@ -124,6 +124,21 @@ before anything is sent, what would happen; a decision needs enough Shares to op
 hold less), then holders back it, the review and support periods pass, someone starts the wait, and someone runs it. On a
 test chain you can move time with `cast rpc anvil_increaseTime <seconds>` then `cast rpc anvil_mine`.
 
+## 4e. The product pass (2026-10-09)
+
+```bash
+cd web && pnpm test && pnpm check                       # 1,315 unit tests; lint, copy, px-text
+cd web && pnpm build && pnpm exec playwright test --project=smoke org-setup.spec.ts launchpad.spec.ts projects.spec.ts
+E2E_TOUR=/tmp/tour pnpm exec playwright test --project=smoke tour.spec.ts   # one PNG per first-run page and step
+scripts/web-dao-journey-e2e.sh                          # E2E_SHOTS=/tmp/dao saves the DAO's pages as PNGs
+cargo test -p buzz-core -p buzz-relay -p buzz-cli -p buzz-db --lib --bins --tests
+DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/<a copy of your dev database> cargo run -p buzz-admin -- migrate
+```
+
+By hand: open **Communities** on a server where you are the owner, then **Org**: you are offered "Start your
+organization"; answer four short questions and the chart appears. Open a graduated project: it opens on "Where things
+stand" and "Needs you", and the raise is folded under "About the raise this project came from".
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

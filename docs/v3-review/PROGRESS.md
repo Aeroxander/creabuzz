@@ -80,6 +80,22 @@ Not in a form yet (still the command line): changing the DAO's voting rules, who
 off, closing a work budget, releasing a departed founder's locked Shares (a DAO-only power), a whitelist-only trading rule,
 and anything custom. Desktop and mobile have none of the new pages.
 
+## Product review pass: upstream sync and a friendlier web app (2026-10-09)
+
+You asked whether the whole product makes sense, to bring in the latest Buzz, and to improve the web app (token forms, creating
+an organization, the Paperclip ideas). The assessment is in [PRODUCT-REVIEW.md](PRODUCT-REVIEW.md); this is what was built and
+how it was checked.
+
+| Piece | Where | How it was checked |
+|---|---|---|
+| **block/buzz main merged** (106 commits; 25 conflicts resolved) | merge commit `0348d2c0a`, desktop fixes `32b7e6548` | `cargo test` for buzz-core, buzz-relay, buzz-cli and buzz-db: 2,887 passed, 0 failed; 28 Postgres-backed migration and schema tests; the 9 per-test-database tests run the way upstream's wrapper runs them; upstream's new source guard; `buzz-admin migrate` on a copy of the local dev database; every real-chain browser journey. Desktop `tsc` and `cargo check --tests` clean. |
+| Our migrations renumbered 0054-0058 -> 0058-0062 (upstream took 0054-0057), with a startup repair for databases that recorded them under either older numbering | `migrations/`, `crates/buzz-db/src/runtime/migration.rs` | tests for both eras, a fresh database and a second run; the copy of the dev database went 54-58 -> 58-62 and upstream's four applied |
+| Our three tables in upstream's one-file-per-table schema | `schema/tables/public`, `schema/triggers` | the desired-state vs migrations parity test |
+| **Start an organization** on the web (name, first helper, how much helpers may do alone, review) | `web/src/features/fleet/` | 10 unit tests; `org-setup.spec.ts` (publishes, reads the records back; a refusing server gets a plain message and a retry) |
+| A DAO's front page: where things stand, what needs you, treasury / Shares / yours, latest decisions | `DaoOverview.tsx`, `lib/dao-overview.ts` | 8 unit tests; the real-chain DAO journey asserts it |
+| Sale wizard, token creation, Manage tab and dialogs in plain words; six tabs instead of seven; Home opens on what is yours | `web/src/features/launchpad`, `AppNav.tsx`, `feed/ui/HomeYours.tsx` | `pnpm test` 1,315 passed; `pnpm check` clean apart from the old `WikiView.tsx` size; the mocked browser suite (below) |
+| `tour.spec.ts`: one screenshot per first-run page and creation step | `web/tests/e2e/tour.spec.ts` | opt-in: `E2E_TOUR=<dir> pnpm exec playwright test --project=smoke tour.spec.ts` |
+
 ## Differences from the plan
 
 - **D2 (token architecture) was partly spiked.** The launch still sells the DAO's own Shares directly on the CCA, and
