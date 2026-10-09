@@ -42,6 +42,28 @@ export function combineNodeBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return keccak_256(new Uint8Array([...lo, ...hi]));
 }
 
+/**
+ * Every level of the sorted-pair tree over `leaves` (already in tree order):
+ * leaves first, the single root last. Odd nodes are carried up alone, exactly
+ * as `buzz trustgraph compose-root` does.
+ */
+export function merkleLevels(leaves: Uint8Array[]): Uint8Array[][] {
+  const levels: Uint8Array[][] = [leaves];
+  while (levels[levels.length - 1].length > 1) {
+    const current = levels[levels.length - 1];
+    const next: Uint8Array[] = [];
+    for (let i = 0; i < current.length; i += 2) {
+      next.push(
+        i + 1 < current.length
+          ? combineNodeBytes(current[i], current[i + 1])
+          : current[i],
+      );
+    }
+    levels.push(next);
+  }
+  return levels;
+}
+
 export function verifyScoreProof(
   root: string,
   member: string,

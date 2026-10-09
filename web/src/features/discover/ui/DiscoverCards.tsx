@@ -26,12 +26,14 @@ import { isIdea } from "@/features/launchpad/lib/idea";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import { ProgressBar } from "@/features/launchpad/ui/widgets";
-import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import type { ProjectSummary } from "@/features/projects/lib/state";
-import { RoleChip } from "@/features/projects/ui/BoardPage";
+import {
+  ProjectCardFrame,
+  RoleChip,
+} from "@/features/projects/ui/ProjectCardFrame";
 
 /** One address line: full value, mono, linked when an explorer is known. */
 function AddressLine({
@@ -257,76 +259,45 @@ export function DiscoverProjectCard({
 }) {
   const joinable = card.openRoles.length > 0;
   return (
-    <li>
-      <Card
-        className="flex h-full flex-col gap-3 p-4"
-        data-testid="discover-project"
-      >
-        <div className="flex items-start justify-between gap-2">
+    <ProjectCardFrame
+      aside={
+        <span
+          className={
+            joinable
+              ? "shrink-0 rounded-full bg-sky-500/15 px-2 py-0.5 text-2xs font-medium text-sky-700 dark:text-sky-300"
+              : "shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50"
+          }
+          data-testid="discover-project-hiring"
+        >
+          {joinable ? `Hiring · ${card.openRoles.length} open` : "Roles full"}
+        </span>
+      }
+      card={card}
+      cardTestId="discover-project"
+      nameOf={nameOf}
+      titleTestId="discover-project-title"
+    >
+      {joinable ? (
+        <Button asChild size="sm">
           <Link
-            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
-            data-testid="discover-project-title"
+            search={{ action: "join", author: card.founder }}
+            to="/projects/$projectId"
+            params={{ projectId: card.projectId }}
+          >
+            Request to join
+          </Link>
+        </Button>
+      ) : (
+        <Button asChild size="sm" variant="outline">
+          <Link
             search={{ action: undefined, author: card.founder }}
             to="/projects/$projectId"
             params={{ projectId: card.projectId }}
           >
-            {card.name}
+            View project
           </Link>
-          <span
-            className={
-              joinable
-                ? "shrink-0 rounded-full bg-sky-500/15 px-2 py-0.5 text-2xs font-medium text-sky-700 dark:text-sky-300"
-                : "shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50"
-            }
-            data-testid="discover-project-hiring"
-          >
-            {joinable ? `Hiring · ${card.openRoles.length} open` : "Roles full"}
-          </span>
-        </div>
-        <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-          {card.summary || "No pitch yet. Open it and read the roles."}
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {card.openRoles.map((role) => (
-            <RoleChip filled={false} key={role.slug} role={role} />
-          ))}
-          {card.filledRoles > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50">
-              <Users className="h-3 w-3" aria-hidden />
-              {card.members} {card.members === 1 ? "member" : "members"}
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/50 dark:text-white/50">
-          <span className="truncate" title={card.founder}>
-            {nameOf(card.founder)}
-          </span>
-          <span className="shrink-0">
-            Updated {relativeTime(card.updatedAt)}
-          </span>
-        </div>
-        {joinable ? (
-          <Button asChild size="sm">
-            <Link
-              search={{ action: "join", author: card.founder }}
-              to="/projects/$projectId"
-              params={{ projectId: card.projectId }}
-            >
-              Request to join
-            </Link>
-          </Button>
-        ) : (
-          <Button asChild size="sm" variant="outline">
-            <Link
-              search={{ action: undefined, author: card.founder }}
-              to="/projects/$projectId"
-              params={{ projectId: card.projectId }}
-            >
-              View project
-            </Link>
-          </Button>
-        )}
-      </Card>
-    </li>
+        </Button>
+      )}
+    </ProjectCardFrame>
   );
 }

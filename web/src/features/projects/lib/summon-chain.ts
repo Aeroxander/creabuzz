@@ -1,9 +1,8 @@
 /**
  * The chain reads the summon flow needs, in one small module.
  *
- * `launchpad/chain.ts` is the launchpad's own RPC seam and is READ-ONLY for
- * this feature, so the one read it does not expose — `eth_getTransactionReceipt`
- * — lives here rather than being patched into it.
+ * The receipt read itself is `launchpad/chain.ts`'s `ethTransactionReceipt`;
+ * this module only interprets what it returns.
  *
  * What it answers, honestly:
  *
@@ -22,6 +21,8 @@
  * unbounded wait, and a terminal `unknown` rather than a forever-poll.
  */
 
+import { ethTransactionReceipt } from "../../launchpad/chain.ts";
+
 /** `cast keccak "NewDAO(address,address)"` — the Summoner's event topic. */
 export const NEWDAO_TOPIC =
   "0x567cac11d4a66456bbe20dc60d3579ec446a4e2fffae2a85f82ad0f1f18214f1";
@@ -38,41 +39,8 @@ export interface ConfirmedSummon {
   reason?: string;
 }
 
-async function postRpc(
-  endpoint: string,
-  method: string,
-  params: unknown[],
-  timeoutMs = 6_000,
-): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`rpc http ${res.status}`);
-    const body = (await res.json()) as {
-      result?: unknown;
-      error?: { message?: string };
-    };
-    if (body.error) throw new Error(body.error.message ?? "rpc error");
-    return body.result;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 interface RpcLog {
   topics?: unknown;
-}
-
-interface RpcReceipt {
-  status?: unknown;
-  logs?: unknown;
-  blockNumber?: unknown;
 }
 
 /** Pull the `NewDAO` DAO address out of a receipt's logs. */
@@ -96,9 +64,8 @@ export async function fetchSummonReceipt(
   endpoint: string,
   txHash: string,
 ): Promise<ConfirmedSummon | null> {
-  const raw = await postRpc(endpoint, "eth_getTransactionReceipt", [txHash]);
-  if (raw === null || typeof raw !== "object") return null;
-  const receipt = raw as RpcReceipt;
+  const receipt = await ethTransactionReceipt(endpoint, txHash);
+  if (receipt === null || typeof receipt !== "object") return null;
   const logs = Array.isArray(receipt.logs) ? (receipt.logs as RpcLog[]) : [];
   const status = receipt.status === "0x0" ? "reverted" : "success";
   const blockNumber =

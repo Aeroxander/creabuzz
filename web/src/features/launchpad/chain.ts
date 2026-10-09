@@ -470,10 +470,15 @@ export async function ethChainId(endpoint: string): Promise<bigint> {
 export async function ethTransactionReceipt(
   endpoint: string,
   hash: string,
-): Promise<{ status?: string; logs?: unknown[] } | null> {
+): Promise<{
+  status?: string;
+  logs?: unknown[];
+  blockNumber?: string;
+} | null> {
   return (await rpc(endpoint, "eth_getTransactionReceipt", [hash])) as {
     status?: string;
     logs?: unknown[];
+    blockNumber?: string;
   } | null;
 }
 

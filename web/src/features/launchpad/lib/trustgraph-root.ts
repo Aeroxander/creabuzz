@@ -17,7 +17,11 @@
 
 import { bytesToHex } from "@noble/hashes/utils.js";
 
-import { combineNodeBytes, scoreLeafBytes } from "./trust-score.ts";
+import {
+  combineNodeBytes,
+  merkleLevels,
+  scoreLeafBytes,
+} from "./trust-score.ts";
 
 /** The canonical program id the launchpad's community track reads. */
 export const DEFAULT_PROGRAM = "trustgraphs.output.nostr-member.v1";
@@ -103,19 +107,7 @@ export function composeRootBundle(args: {
   rows.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
   // Level-by-level tree; proofs walk the sibling at (i ^ 1) per level.
-  const levels: Uint8Array[][] = [rows.map((r) => r.leaf)];
-  while (levels[levels.length - 1].length > 1) {
-    const current = levels[levels.length - 1];
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      next.push(
-        i + 1 < current.length
-          ? combineNodeBytes(current[i], current[i + 1])
-          : current[i],
-      );
-    }
-    levels.push(next);
-  }
+  const levels = merkleLevels(rows.map((r) => r.leaf));
   const root = levels[levels.length - 1][0];
   const rootHex = `0x${bytesToHex(root)}`;
 

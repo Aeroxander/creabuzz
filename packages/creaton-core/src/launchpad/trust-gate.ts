@@ -15,7 +15,7 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 
 import {
-  combineNodeBytes,
+  merkleLevels,
   scoreLeafBytes,
   verifyScoreProof,
 } from "./trust-score.ts";
@@ -82,19 +82,7 @@ export function treeLevels(
   }
   rows.sort((a, b) => (a.member < b.member ? -1 : a.member > b.member ? 1 : 0));
 
-  const levels: Uint8Array[][] = [rows.map((r) => r.leaf)];
-  while (levels[levels.length - 1].length > 1) {
-    const current = levels[levels.length - 1];
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      next.push(
-        i + 1 < current.length
-          ? combineNodeBytes(current[i], current[i + 1])
-          : current[i],
-      );
-    }
-    levels.push(next);
-  }
+  const levels = merkleLevels(rows.map((r) => r.leaf));
   const hexLevels = levels.map((level) =>
     level.map((n) => `0x${bytesToHex(n)}`),
   );

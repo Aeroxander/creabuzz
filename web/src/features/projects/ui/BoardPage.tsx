@@ -9,49 +9,20 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, LayoutGrid, Plus, Users } from "lucide-react";
+import { ArrowRight, LayoutGrid, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { relativeTime } from "@/shared/lib/relative-time";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { errorMessage, QueryError } from "@/shared/ui/query-error";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
-import type { RoleDeclaration } from "../lib/manifest";
 import type { ProjectSummary } from "../lib/state";
 import { PROJECT_EVENT_KINDS, useBoard } from "../use-projects";
 import { PitchDialog } from "./PitchDialog";
-
-/**
- * The open/filled role chip. Exported for `features/discover` so the
- * directory prints the same `%` chip the board does — one component, one
- * label owner, no drift between two views of the same role.
- */
-export function RoleChip({
-  role,
-  filled,
-}: {
-  role: RoleDeclaration;
-  filled: boolean;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium ${
-        filled
-          ? "bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50"
-          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-      }`}
-      data-testid={filled ? "role-chip-filled" : "role-chip-open"}
-    >
-      {filled ? <Check className="h-3 w-3" aria-hidden /> : null}
-      {role.label} · {role.pct}%
-    </span>
-  );
-}
+import { ProjectCardFrame } from "./ProjectCardFrame";
 
 function ProjectCard({
   card,
@@ -63,61 +34,31 @@ function ProjectCard({
   nameOf: (pubkey: string) => string;
 }) {
   return (
-    <li>
-      <Card className="flex h-full flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-2">
-          <Link
-            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
-            data-testid="board-card-title"
-            search={{ action: undefined, author: card.founder }}
-            to="/projects/$projectId"
-            params={{ projectId: card.projectId }}
-          >
-            {card.name}
-          </Link>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            {needsFounderAttention(card, me) ? (
-              <span
-                className="rounded-full bg-amber-500/15 px-2 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300"
-                data-testid="board-needs-you"
-              >
-                {card.pendingRequests} need you
-              </span>
-            ) : null}
-            {card.myRequestPending ? (
-              <span
-                className="rounded-full bg-sky-500/15 px-2 py-0.5 text-2xs font-medium text-sky-700 dark:text-sky-300"
-                data-testid="board-my-request"
-              >
-                Your request is waiting
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-          {card.summary || "No pitch yet. Open it and read the roles."}
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {card.openRoles.map((role) => (
-            <RoleChip filled={false} key={role.slug} role={role} />
-          ))}
-          {card.filledRoles > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50">
-              <Users className="h-3 w-3" aria-hidden />
-              {card.members} {card.members === 1 ? "member" : "members"}
+    <ProjectCardFrame
+      aside={
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {needsFounderAttention(card, me) ? (
+            <span
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300"
+              data-testid="board-needs-you"
+            >
+              {card.pendingRequests} need you
+            </span>
+          ) : null}
+          {card.myRequestPending ? (
+            <span
+              className="rounded-full bg-sky-500/15 px-2 py-0.5 text-2xs font-medium text-sky-700 dark:text-sky-300"
+              data-testid="board-my-request"
+            >
+              Your request is waiting
             </span>
           ) : null}
         </div>
-        <div className="mt-auto flex items-center justify-between gap-2 text-2xs text-black/50 dark:text-white/50">
-          <span className="truncate" title={card.founder}>
-            {nameOf(card.founder)}
-          </span>
-          <span className="shrink-0">
-            Updated {relativeTime(card.updatedAt)}
-          </span>
-        </div>
-      </Card>
-    </li>
+      }
+      card={card}
+      nameOf={nameOf}
+      titleTestId="board-card-title"
+    />
   );
 }
 
