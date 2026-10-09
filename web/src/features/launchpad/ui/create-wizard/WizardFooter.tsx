@@ -42,13 +42,20 @@ export function WizardFooter({
           <Button
             data-testid="launch-recommended-terms"
             onClick={onRecommended}
+            title="Fill in the terms we recommend for a project like yours"
             size="sm"
             type="button"
             variant="outline"
           >
-            Recommended terms
+            Use recommended terms
           </Button>
-          <Button onClick={onDefaults} size="sm" type="button" variant="ghost">
+          <Button
+            onClick={onDefaults}
+            size="sm"
+            title="Fill every step with a simple, standard sale"
+            type="button"
+            variant="ghost"
+          >
             Quick start defaults
           </Button>
         </>

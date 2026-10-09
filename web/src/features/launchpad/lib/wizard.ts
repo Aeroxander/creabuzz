@@ -90,27 +90,27 @@ export interface WizardStepMeta {
 export const WIZARD_STEPS: readonly WizardStepMeta[] = [
   {
     key: "token",
-    label: "Token",
-    title: "Your token",
-    blurb: "Name, symbol, and how much there is.",
+    label: "Project",
+    title: "About your project",
+    blurb: "Name it, say what it is, and decide how many Shares exist.",
   },
   {
     key: "sale",
-    label: "Sale",
-    title: "Your sale",
-    blurb: "How it sells, how long it runs, and what it raises.",
+    label: "Raise",
+    title: "Your raise",
+    blurb: "How the sale works, how long it runs, and what it has to reach.",
   },
   {
     key: "unlocks",
-    label: "Unlocks",
-    title: "Your unlocks",
-    blurb: "What your own allocation releases against.",
+    label: "Your Shares",
+    title: "Your own Shares",
+    blurb: "What the team holds, and what has to happen before it can be sold.",
   },
   {
     key: "dao",
-    label: "DAO",
-    title: "Your DAO",
-    blurb: "Whether this becomes a DAO at graduation, and its budget.",
+    label: "Rules",
+    title: "After the raise",
+    blurb: "Whether the project becomes a DAO, and what it may spend.",
   },
 ];
 

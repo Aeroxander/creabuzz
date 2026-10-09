@@ -32,6 +32,14 @@ import {
  * the CREATE2 code check (idempotent retry), and the record write-back run
  * exactly as desktop `lib/mintFlow.ts` prescribes.
  */
+/** What a step's state is called on screen. */
+const STEP_WORDS = {
+  pending: "waiting",
+  running: "working…",
+  done: "done",
+  failed: "did not go through",
+} as const;
+
 function DeployTokenFlow({
   launch,
   onLink,
@@ -135,12 +143,12 @@ function DeployTokenFlow({
   return (
     <div className="mt-3 rounded-lg border border-black/10 p-3 dark:border-white/10">
       <h3 className="text-sm font-semibold text-black dark:text-white">
-        Deploy token here
+        Create the token here
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Runs the deploy script&apos;s three calls in the browser. The passkey
-        path sends them as one sponsored, atomic UserOp; the wallet path sends
-        three sequential transactions.
+        Three steps create the token and open trading. With a passkey they go
+        out as one step with the fee covered; with a wallet you confirm three
+        transactions.
       </p>
       <SenderPickerControls state={picker} testIdPrefix="mint-" />
       <ol className="mt-3 flex flex-col gap-1">
@@ -151,7 +159,7 @@ function DeployTokenFlow({
           >
             <span>{step.label}</span>
             <span data-testid={`mint-step-${step.id}`}>
-              {state.steps[index].status}
+              {STEP_WORDS[state.steps[index].status]}
               {state.steps[index].txHash
                 ? ` · ${state.steps[index].txHash}`
                 : ""}
@@ -159,15 +167,15 @@ function DeployTokenFlow({
           </li>
         ))}
         <li className="flex items-center justify-between text-sm text-black/80 dark:text-white/80">
-          <span>Record mirror (token tag)</span>
+          <span>Save it on your project page</span>
           <span data-testid="mint-step-link">
             {state.phase === "linking"
-              ? "linking"
+              ? STEP_WORDS.running
               : state.phase === "success"
-                ? "done"
+                ? STEP_WORDS.done
                 : state.failure?.stage === "link"
-                  ? "failed"
-                  : "pending"}
+                  ? STEP_WORDS.failed
+                  : STEP_WORDS.pending}
           </span>
         </li>
       </ol>
@@ -177,15 +185,16 @@ function DeployTokenFlow({
           data-testid="mint-failure"
         >
           {state.failure.stage === "prepare"
-            ? `Preflight check (${state.failure.check}) blocked this deploy: ${state.failure.reason}`
+            ? `We stopped before sending anything: ${state.failure.reason}`
             : state.failure.stage === "link"
-              ? `The token deploy landed at ${state.tokenAddress ?? "the computed address"}, but the record write failed (${state.failure.reason}). Only the record write needs retrying.`
-              : `${MINT_STEPS[state.failure.stepIndex ?? 0].label} failed: ${state.failure.reason}`}
+              ? `The token was created at ${state.tokenAddress ?? "its new address"}, but saving it on your project page failed (${state.failure.reason}). Only that last step needs trying again.`
+              : `${MINT_STEPS[state.failure.stepIndex ?? 0].label} did not go through: ${state.failure.reason}`}
         </p>
       ) : null}
       {state.phase === "success" ? (
         <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-          Deployed and linked: {state.tokenAddress}
+          The token is live at {state.tokenAddress} and saved on your project
+          page.
         </p>
       ) : null}
       <div className="mt-3 flex gap-2">
@@ -196,7 +205,7 @@ function DeployTokenFlow({
           size="sm"
           type="button"
         >
-          {busy || running ? "Working…" : "Deploy token"}
+          {busy || running ? "Working…" : "Create the token"}
         </Button>
         {planToRetry ? (
           <Button
@@ -208,8 +217,8 @@ function DeployTokenFlow({
             variant="outline"
           >
             {planToRetry.kind === "record"
-              ? "Retry record write"
-              : `Retry from step ${planToRetry.resumeAt + 1}`}
+              ? "Save it on the project page again"
+              : `Try again from step ${planToRetry.resumeAt + 1}`}
           </Button>
         ) : null}
       </div>
@@ -284,30 +293,35 @@ export function TokenMintPanel({
   };
   return (
     <Card className="p-4">
-      <h2 className="text-base font-semibold">Mint {plan.symbol}</h2>
+      <h2 className="text-base font-semibold">Create {plan.symbol}</h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        {plan.supply} {plan.symbol} · reserve-backed apptoken. Deploy from this
-        browser below, or run the CLI where your keys live and paste the address
-        back here.
+        {plan.supply} {plan.symbol} will exist, backed by a reserve. Create it
+        here in your browser, or use the command line where your keys live and
+        paste the token&apos;s address back below.
       </p>
       <DeployTokenFlow launch={launch} onLink={onLink} />
-      <div className="mt-2 flex items-center gap-2 rounded-lg bg-black/5 px-2 py-1.5 dark:bg-white/10">
-        <code className="min-w-0 flex-1 truncate font-mono text-xs">
-          {command}
-        </code>
-        <Button
-          onClick={() => void copy()}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Copy
-        </Button>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-3">
+      <details className="mt-3 text-sm">
+        <summary className="cursor-pointer font-medium select-none">
+          Use the command line instead
+        </summary>
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-black/5 px-2 py-1.5 dark:bg-white/10">
+          <code className="min-w-0 flex-1 truncate font-mono text-xs">
+            {command}
+          </code>
+          <Button
+            onClick={() => void copy()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Copy
+          </Button>
+        </div>
+      </details>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="text-sm font-medium" htmlFor="mint-treasury">
-            Treasury
+            Where the money goes
           </label>
           <Input
             id="mint-treasury"
@@ -319,7 +333,7 @@ export function TokenMintPanel({
         </div>
         <div>
           <label className="text-sm font-medium" htmlFor="mint-address">
-            Minted token address
+            Token address
           </label>
           <span className="mt-1 flex gap-1">
             <Input
@@ -340,19 +354,20 @@ export function TokenMintPanel({
               type="button"
               variant="outline"
             >
-              {verifyState === "checking" ? "…" : "Link"}
+              {verifyState === "checking" ? "…" : "Save"}
             </Button>
           </span>
         </div>
       </div>
       {verifyState === "missing" ? (
         <p className="mt-1 text-xs text-amber-600">
-          No contract at this address on the configured RPC.
+          Nothing was found at that address on this network. Check the address
+          and the network.
         </p>
       ) : null}
       {verifyState === "error" ? (
         <p className="mt-1 text-xs text-amber-600">
-          Couldn&apos;t reach the chain. Check the RPC endpoint.
+          Couldn&apos;t reach the network. Check your connection and try again.
         </p>
       ) : null}
     </Card>

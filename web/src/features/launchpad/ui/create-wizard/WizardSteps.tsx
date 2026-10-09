@@ -185,7 +185,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
       <Field
         id="launch-name"
         label="Name"
-        hint="The project's name. It also names the launch and suggests the symbol."
+        hint="What people see. It also sets the page address and suggests the symbol."
       >
         <input
           className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm text-black dark:border-white/15 dark:text-white"
@@ -232,7 +232,11 @@ function TokenStep({ controller }: { controller: WizardController }) {
         pitch={token.pitch}
       />
       <div className="flex flex-col gap-3 sm:flex-row">
-        <Field id="launch-symbol" label="Symbol">
+        <Field
+          id="launch-symbol"
+          label="Symbol"
+          hint="A short ticker, like NEB."
+        >
           <input
             className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm uppercase text-black dark:border-white/15 dark:text-white"
             id="launch-symbol"
@@ -245,7 +249,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
         <Field
           id="launch-supply"
           label="Total supply"
-          hint="Whole tokens. The part your allocation marks as sold is what the sale offers."
+          hint="How many exist in all. The part you put up for sale is chosen just below."
         >
           <input
             className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
@@ -260,11 +264,11 @@ function TokenStep({ controller }: { controller: WizardController }) {
       </div>
       <dl className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
         <div className="flex justify-between gap-2">
-          <dt className="text-black/60 dark:text-white/60">Token name</dt>
+          <dt className="text-black/60 dark:text-white/60">Called</dt>
           <dd data-testid="token-name-preview">{token.tokenName || "—"}</dd>
         </div>
         <div className="mt-1 flex justify-between gap-2">
-          <dt className="text-black/60 dark:text-white/60">Launch address</dt>
+          <dt className="text-black/60 dark:text-white/60">Page address</dt>
           <dd className="font-mono text-xs" data-testid="launch-id-preview">
             {token.launchId || "—"}
           </dd>
@@ -278,8 +282,8 @@ function TokenStep({ controller }: { controller: WizardController }) {
         totalSupply={token.totalSupply}
       />
       <p className="text-xs text-black/60 dark:text-white/60">
-        Everything else (emission, treasury, fees) has a sensible default.
-        Change it in Advanced.
+        Everything else has a sensible default. Open Advanced at the bottom to
+        change it.
       </p>
     </div>
   );
@@ -384,7 +388,7 @@ function SaleStep({ controller }: { controller: WizardController }) {
         </Field>
       ) : (
         <Field
-          hint={`What the sale has to reach to graduate, in whole ${sale.currency.symbol}.`}
+          hint={`The least the sale must raise, in whole ${sale.currency.symbol}. Below that, every bid is refunded.`}
           id="sale-raise"
           label={`Raise target (${sale.currency.symbol})`}
         >
@@ -437,10 +441,10 @@ function UnlockStep({ controller }: { controller: WizardController }) {
         hint={
           ownDao
             ? "Your team's Shares are yours to vote with from the start. A milestone decides when a part of them can be sold or taken out of the DAO."
-            : "Your own allocation, and what it releases against."
+            : "What has to happen before you can sell your own tokens."
         }
         id="unlock-mode"
-        label={ownDao ? "Your locks" : "Your unlocks"}
+        label="Your own Shares"
         onChange={(event) =>
           patch({
             unlockMode: event.target.value as WizardState["unlockMode"],
@@ -449,9 +453,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
         options={[
           {
             value: "milestones",
-            label: ownDao
-              ? "Milestone locks (recommended)"
-              : "Milestone unlocks (recommended)",
+            label: "Locked until milestones are met (recommended)",
           },
           // With its own DAO there is no time option; one already chosen stays visible so it can be changed.
           ...(!ownDao || wizard.unlockMode === "time"
@@ -459,12 +461,12 @@ function UnlockStep({ controller }: { controller: WizardController }) {
                 {
                   value: "time",
                   label: ownDao
-                    ? "Short vesting (not available with its own DAO)"
-                    : "Short vesting",
+                    ? "Released over time (not available with its own DAO)"
+                    : "Released over a few months",
                 },
               ]
             : []),
-          { value: "none", label: ownDao ? "No lock" : "No vesting" },
+          { value: "none", label: ownDao ? "Not locked" : "Not locked" },
         ]}
         testId="unlock-mode"
         value={wizard.unlockMode}
@@ -474,9 +476,9 @@ function UnlockStep({ controller }: { controller: WizardController }) {
       ) : null}
       {wizard.unlockMode === "time" ? (
         <Select
-          hint="The startup default, but faster: months from close until your allocation releases."
+          hint="How many months after the sale closes until your Shares are all free."
           id="unlock-months"
-          label="Short vesting"
+          label="Released over"
           onChange={(event) => patch({ months: Number(event.target.value) })}
           options={SHORT_VESTING_MONTHS.map((months) => ({
             value: String(months),
@@ -533,13 +535,10 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
           className="flex items-end gap-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
           key={row.claim}
         >
-          <div className="w-8 shrink-0 pb-2 font-mono text-xs text-black/50 dark:text-white/50">
-            {row.claim}
+          <div className="w-6 shrink-0 pb-2 text-sm font-semibold text-black/50 dark:text-white/50">
+            {index + 1}
           </div>
-          <Field
-            id={`milestone-label-${index}`}
-            label={index === 0 ? "Milestone" : `Milestone ${index + 1}`}
-          >
+          <Field id={`milestone-label-${index}`} label="What has to happen">
             <input
               className="h-9 w-full rounded-md border border-black/15 bg-transparent px-2 text-sm text-black dark:border-white/15 dark:text-white"
               id={`milestone-label-${index}`}
@@ -550,7 +549,7 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
             />
           </Field>
           <div className="w-20 shrink-0">
-            <Field id={`milestone-percent-${index}`} label="%">
+            <Field id={`milestone-percent-${index}`} label="Unlocks %">
               <input
                 className="h-9 w-full rounded-md border border-black/15 bg-transparent px-2 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
                 id={`milestone-percent-${index}`}
@@ -591,12 +590,13 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
         >
           {total === 100
             ? "Adds up to 100% of your milestone allocation."
-            : `Tranches add up to ${total}%. They must add up to 100%.`}
+            : `These add up to ${total}%. They need to add up to 100%.`}
         </span>
       </div>
       <p className="text-xs text-black/60 dark:text-white/60">
-        Who attests each one: you, the founder, for now. The verifier-set picker
-        arrives with the rest of the verifier work.
+        {controller.unlocks.ownDao
+          ? "The DAO's reviewers decide whether each milestone was met."
+          : "You confirm each milestone yourself for now."}
       </p>
       {unlocks.issues.length > 0 ? (
         <ul className="space-y-0.5 text-xs text-red-600 dark:text-red-400">
@@ -615,7 +615,7 @@ function DaoStep({ controller }: { controller: WizardController }) {
     <div className="flex flex-col gap-3" data-testid="wizard-step-dao">
       <fieldset className="rounded-lg border border-black/10 p-3 dark:border-white/10">
         <legend className="text-sm font-medium text-black dark:text-white">
-          Form a DAO at graduation?
+          Turn the project into a DAO when the raise succeeds?
         </legend>
         <div className="mt-1 flex gap-4">
           <label className="flex items-center gap-1.5 text-sm">
@@ -638,12 +638,12 @@ function DaoStep({ controller }: { controller: WizardController }) {
           </label>
         </div>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          The summon itself happens from the Project Board after graduation.
-          This records the choice on the launch.
+          A DAO lets everyone who holds Shares vote on how the money is spent.
+          This only records your choice; you set the DAO up after the sale.
         </p>
       </fieldset>
       <Select
-        hint="Recorded on the launch and named in the DAO metadata at summon. Starting with nothing is a choice, not a gap. Decide before token launch."
+        hint="Shown on the project page. Starting with none is a fine choice; you can decide later."
         id="dao-legal-wrapper"
         label="Legal wrapper"
         onChange={(event) => patch({ legalWrapper: event.target.value })}
@@ -655,7 +655,7 @@ function DaoStep({ controller }: { controller: WizardController }) {
         value={wizard.legalWrapper}
       />
       <Select
-        hint="What the launch can spend each month, as a share of what the sale must raise."
+        hint="How much the project may spend each month, as a share of what the sale raises."
         id="dao-budget"
         label="Operating budget"
         onChange={(event) => dao.onShare(Number(event.target.value))}
@@ -691,7 +691,7 @@ function DaoStep({ controller }: { controller: WizardController }) {
         className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
         data-testid="dao-equity-map"
       >
-        <p className="font-medium">Equity map</p>
+        <p className="font-medium">Who gets what</p>
         <p className="mt-0.5 text-xs text-black/60 dark:text-white/60">
           {dao.equityNote}
         </p>

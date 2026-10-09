@@ -224,7 +224,8 @@ export function LaunchesPage() {
             <Button
               onClick={() => setCreateOpen(true)}
               size="sm"
-              variant="outline"
+              title="Skip the idea stage and set up a sale with your own terms"
+              variant="ghost"
             >
               Set up a sale
             </Button>

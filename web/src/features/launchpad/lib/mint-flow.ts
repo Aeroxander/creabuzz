@@ -201,18 +201,18 @@ export async function prepareDeploy(
 export const MINT_STEPS = [
   {
     id: "deploy",
-    label: "Deploy token",
-    detail: "Creates the token and its pool (usually the slow step).",
+    label: "Create the token",
+    detail: "Creates the token and its trading pool. Usually the slow step.",
   },
   {
     id: "validator",
-    label: "Transfer validator",
-    detail: "Wires the transfer validator on the new token.",
+    label: "Set the transfer rules",
+    detail: "Attaches the rules that decide who may move the token.",
   },
   {
     id: "ruleset",
-    label: "Trading ruleset",
-    detail: "Opens trading with the Vanilla ruleset.",
+    label: "Open trading",
+    detail: "Turns trading on with the standard rules.",
   },
 ] as const;
 

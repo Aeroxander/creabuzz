@@ -257,7 +257,7 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
     await expect(page.getByTestId("mint-failure")).toHaveCount(0);
   } else {
     await page.locator("#mint-address").fill(SALE_TOKEN);
-    await page.getByRole("button", { name: "Link", exact: true }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
   }
   await latestWhere((r) => r.tags.some((t) => t[0] === "token"));
 

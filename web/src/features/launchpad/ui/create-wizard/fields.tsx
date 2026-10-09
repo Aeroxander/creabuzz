@@ -148,7 +148,7 @@ export function Stepper({
 }) {
   const index = steps.findIndex((step) => step.key === current);
   return (
-    <nav aria-label="Create launch steps" data-testid="wizard-stepper">
+    <nav aria-label="Steps to set up a sale" data-testid="wizard-stepper">
       <ol className="flex flex-wrap items-center gap-1.5">
         {steps.map((step, position) => {
           const done = position < index;

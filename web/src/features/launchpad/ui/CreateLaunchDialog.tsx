@@ -1,4 +1,3 @@
-import { UnauditedNotice } from "./UnauditedNotice";
 import { useEffect, useState } from "react";
 
 import { useChannels } from "@/features/channels/use-channels";
@@ -87,6 +86,7 @@ import { Modal } from "./Modal";
 import { ParamIssueList } from "./create-wizard/ParamIssueList";
 import { QuickSale } from "./create-wizard/QuickSale";
 import { WizardFooter } from "./create-wizard/WizardFooter";
+import { WizardHeader } from "./create-wizard/WizardHeader";
 import {
   AdvancedFields,
   type AdvancedFieldsState,
@@ -827,8 +827,8 @@ export function CreateLaunchDialog({
         : null,
       equity,
       equityNote: project
-        ? `${equity?.length ?? 0} seat${(equity?.length ?? 0) === 1 ? "" : "s"} from the Project Board. The summon mints exactly this map.`
-        : "No Project Board entry for this launch yet. Seats are minted from the board's map when you summon; the founder holds everything until then.",
+        ? `${equity?.length ?? 0} ${(equity?.length ?? 0) === 1 ? "person" : "people"} from the project's team list. The DAO starts with exactly these Shares.`
+        : "No team list for this project yet. Until you add one, you hold all the Shares.",
     },
     stepIssues,
   };
@@ -918,19 +918,12 @@ export function CreateLaunchDialog({
   };
 
   return (
-    <Modal label={isEdit ? "Edit launch" : "New launch"} onClose={onClose} wide>
-      <h2 className="text-lg font-semibold text-black dark:text-white">
-        {isEdit ? "Edit launch" : "New launch"}
-      </h2>
-      <UnauditedNotice />
-      {relaunchNote ? (
-        <p
-          className="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200"
-          data-testid="launch-relaunch-note"
-        >
-          {relaunchNote}
-        </p>
-      ) : null}
+    <Modal
+      label={isEdit ? "Edit terms" : "Set up a sale"}
+      onClose={onClose}
+      wide
+    >
+      <WizardHeader isEdit={isEdit} quick={quick} relaunchNote={relaunchNote} />
       <div className="mt-3 flex max-h-[68vh] flex-col gap-3 overflow-y-auto pr-1">
         {isEdit ? (
           <>
