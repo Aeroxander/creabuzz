@@ -1,7 +1,8 @@
 /**
  * Org view — the community org chart.
  *
- * Two modes, read-only for now:
+ * Two modes. The chart itself is read-only; a community with no organization
+ * is offered the setup flow (`OrgSetup`) above the roster:
  * - When `37010` org nodes exist for this community, they render as a tree
  *   of role/team seats with their occupants (humans + agents) under each —
  *   the NIP-ORG org chart.
@@ -9,7 +10,7 @@
  *   agent roster, exactly as before. Communities without an org see no
  *   regression.
  *
- * Editing (publish a `37010`) is the next step, not this one.
+ * Editing an existing chart is the next step, not this one.
  */
 
 import { useMemo, useState } from "react";
@@ -30,6 +31,7 @@ import {
   BudgetList,
 } from "@/features/budgets/ui/BudgetAuthorForm";
 import { AgentStopDialog, type AgentStopTarget } from "./AgentStopDialog";
+import { OrgSetup } from "./OrgSetup";
 
 const TEAM_SUGGESTIONS = [
   "Platform",
@@ -38,6 +40,13 @@ const TEAM_SUGGESTIONS = [
   "Support",
   "Ops",
 ];
+
+/** What a seat is called on screen; the record's own spelling is snake_case. */
+const SEAT_KIND_LABEL: Record<string, string> = {
+  team: "Team",
+  role: "Role",
+  agent_seat: "Helper",
+};
 
 function AgentOrgCard({
   agent,
@@ -164,7 +173,7 @@ function OrgNodeCard({
               variant="outline"
               className="px-1.5 py-0 text-2xs capitalize"
             >
-              {node.entry.kind}
+              {SEAT_KIND_LABEL[node.entry.kind] ?? node.entry.kind}
             </Badge>
           </div>
           <p className="mt-0.5 truncate text-2xs text-black/60 dark:text-white/60">
@@ -262,7 +271,7 @@ function OrgChartView({
   const seatCount = pubkeys.length;
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 p-4">
+    <div className="flex min-w-0 shrink-0 flex-col gap-3 p-4">
       <PageHeader
         title="Org"
         action={
@@ -272,7 +281,7 @@ function OrgChartView({
           </span>
         }
       />
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+      <div className="space-y-4">
         {loading && forest.length === 0 ? (
           <p className="text-xs text-black/60 dark:text-white/60">
             Loading org chart…
@@ -303,6 +312,14 @@ function setTeamFn(agent: AgentCapabilities, team: string | null) {
 export function OrgView() {
   const { agents, loading } = useAgentRoster();
   const { forest, loading: chartLoading } = useOrgChart();
+  // The setup stays up while it is running: the chart appears the moment the first record lands, and a later record
+  // that fails must still have somewhere to say so and to retry.
+  const [setup, setSetup] = useState<"idle" | "running" | "finished">("idle");
+  // The limits list reads once; remount it when setup has just added one.
+  const budgetsKey = setup === "finished" ? "after-setup" : "initial";
+  const showSetup =
+    setup === "running" ||
+    (setup === "idle" && !chartLoading && forest.length === 0);
 
   // Show the chart as soon as any `37010` node exists; while it is still
   // loading with an empty roster, show the chart shell (the fallback would
@@ -310,8 +327,12 @@ export function OrgView() {
   // the pre-org roster fallback renders exactly as before.
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-      {/* The Phase 4 instrument (OA.md §6) — recomputable via `buzz diag`. */}
-      <OrgDiagnosticCard />
+      {showSetup ? (
+        <OrgSetup
+          onFinish={() => setSetup("finished")}
+          onStart={() => setSetup("running")}
+        />
+      ) : null}
       {forest.length > 0 || (chartLoading && agents.length === 0) ? (
         <OrgChartView forest={forest} loading={chartLoading} />
       ) : (
@@ -326,9 +347,30 @@ export function OrgView() {
         <h2 className="text-sm font-semibold text-black dark:text-white">
           Budgets
         </h2>
-        <BudgetList />
-        <BudgetAuthorForm />
+        <BudgetList key={budgetsKey} />
+        <details data-testid="org-budget-author">
+          <summary className="cursor-pointer text-sm font-medium select-none">
+            Set a limit for one helper
+          </summary>
+          <div className="mt-2">
+            <BudgetAuthorForm />
+          </div>
+        </details>
       </section>
+      {/* The Phase 4 instrument (OA.md §6), recomputable via `buzz diag`. It reads like a lab report, so it is
+          there for whoever wants it and out of the way for everyone else. */}
+      <details
+        className="border-t border-black/10 p-3 dark:border-white/10"
+        data-testid="org-health"
+      >
+        <summary className="cursor-pointer text-sm font-semibold select-none">
+          Activity and health checks
+          <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
+            for the curious
+          </span>
+        </summary>
+        <OrgDiagnosticCard />
+      </details>
     </div>
   );
 }
@@ -362,7 +404,7 @@ function OrgRosterFallback({
   const online = agents.filter((a) => a.alive).length;
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 p-4">
+    <div className="flex min-w-0 shrink-0 flex-col gap-3 p-4">
       <PageHeader
         title="Org"
         action={
@@ -391,7 +433,7 @@ function OrgRosterFallback({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+      <div className="space-y-4">
         {loading && agents.length === 0 ? (
           <p className="text-xs text-black/60 dark:text-white/60">
             Loading roster…
