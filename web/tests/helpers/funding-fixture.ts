@@ -8,7 +8,7 @@ import { getPublicKey } from "nostr-tools/pure";
  * projects.
  *
  * Four projects that between them cover the rule the plan states
- * (docs/funding-and-governance-plan.md §2): a declared stance stands, and the
+ * (docs/archive/funding-and-governance-plan.md §2): a declared stance stands, and the
  * records behind it only correct the card where the two contradict.
  *
  * | project | says            | records show  | card must say    |

@@ -5,12 +5,12 @@
 > grants gated nothing at runtime, budgets metered only counters, the LLM
 > gateway was uncapped, and there was no CI lane for the contracts. The
 > product contract and the *enforced vs advisory* table now live in
-> [`docs/dao-os.md`](dao-os.md); read this file as history, not as a current
+> [`docs/dao-os.md`](../dao-os.md); read this file as history, not as a current
 > readiness claim.
 
 Three parallel audits (desktop features, backend/CLI/protocol, docs-vs-reality)
 against feat/org-graph at 76011dfda, spot-verified. Companion to
-`docs/production-readiness-audit.md` (2026-09-21, org/DAO scope only).
+`docs/archive/production-readiness-audit.md` (2026-09-21, org/DAO scope only).
 
 ## Verdict
 

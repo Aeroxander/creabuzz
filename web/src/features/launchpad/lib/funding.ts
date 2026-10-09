@@ -1,6 +1,6 @@
 /**
  * Funding status — what a project says about raising, and what the chain says
- * about it (plan §2, docs/funding-and-governance-plan.md).
+ * about it (plan §2, docs/archive/funding-and-governance-plan.md).
  *
  * The technical `stage` (draft -> review -> live -> funding -> graduated) is a
  * machine's view of a sale. This is the project's own word: a stance a founder

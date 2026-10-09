@@ -1,7 +1,7 @@
 # creabuzz — a DAO OS
 
 > Agentic Slack + a DAO launchpad, wired into one loop. This is the product
-> contract the code is held to. Where an older plan (`ORG_COMMUNITY_PLAN.md`,
+> contract the code is held to. Where an older plan (`docs/archive/ORG_COMMUNITY_PLAN.md`,
 > `docs/dao-launchpad-plan.md`, `docs/next-gen-launchpad-plan.md`) disagrees
 > with this file, this file wins.
 

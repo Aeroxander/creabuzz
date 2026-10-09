@@ -1,12 +1,12 @@
 # ORG_COMMUNITY_PLAN.md — Paperclip-inspired, community-native org
 
-> Supersedes the framing of `ORG_PHASES_2_4_PLAN.md` (kept below as Phases 2–4
+> Supersedes the framing of `docs/archive/ORG_PHASES_2_4_PLAN.md` (kept below as Phases 2–4
 > UI detail). Direction: **take inspiration from Paperclip, do not embed it**.
 > The relay event log is the only system of record for anything a community
-> shares. Authoritative docs: [VISION_ORG.md](VISION_ORG.md),
-> [docs/paperclip-parity-plan.md](docs/paperclip-parity-plan.md),
-> [docs/nips/NIP-ORG.md](docs/nips/NIP-ORG.md),
-> [docs/paperclip-bridge.md](docs/paperclip-bridge.md).
+> shares. Authoritative docs: [VISION_ORG.md](../../VISION_ORG.md),
+> [docs/paperclip-parity-plan.md](../paperclip-parity-plan.md),
+> [docs/nips/NIP-ORG.md](../nips/NIP-ORG.md),
+> [docs/paperclip-bridge.md](../paperclip-bridge.md).
 
 ## The one-sentence direction
 
@@ -175,11 +175,11 @@ budgeted principal must counter-sign) before enforcement goes live.
 ## Phase 1 — Desktop org UI (done, pending Phase 0 fixes)
 
 Route `/org`, `OrgChart`, forms, mutations, `lib/tree.ts` — as documented in
-`ORG_PHASES_2_4_PLAN.md`.
+`docs/archive/ORG_PHASES_2_4_PLAN.md`.
 
 ## Phase 2 — Grant chains + budget consumption (UI)
 
-As specified in `ORG_PHASES_2_4_PLAN.md` §2, with two amendments:
+As specified in `docs/archive/ORG_PHASES_2_4_PLAN.md` §2, with two amendments:
 
 - **Grant chain verification must match `buzz-sdk` exactly** — after Phase
   0A-5 fixes the SDK. Reuse the same entailment/root-standing/expiry rules;
@@ -191,7 +191,7 @@ As specified in `ORG_PHASES_2_4_PLAN.md` §2, with two amendments:
 
 ## Phase 3 — Contribution records + review workflow (UI)
 
-As specified in `ORG_PHASES_2_4_PLAN.md` §3. Additions:
+As specified in `docs/archive/ORG_PHASES_2_4_PLAN.md` §3. Additions:
 
 - Review LWW updates must copy **all** prior fields (not just status) so
   the republished record does not silently drop dimensions/evidence.
@@ -201,7 +201,7 @@ As specified in `ORG_PHASES_2_4_PLAN.md` §3. Additions:
 
 ## Phase 4 — Polish, onboarding, integration
 
-As specified in `ORG_PHASES_2_4_PLAN.md` §4, plus:
+As specified in `docs/archive/ORG_PHASES_2_4_PLAN.md` §4, plus:
 
 - Onboarding wizard state must be community-scoped (community id in the
   persistence key) or it leaks across communities.
@@ -353,7 +353,7 @@ artifacts removed.
 
 ## Audit round (2026-09-21) — production readiness + parity
 
-- docs/production-readiness-audit.md: all areas READY or
+- docs/archive/production-readiness-audit.md: all areas READY or
   READY-WITH-CAVEATS; zero data-loss/security blockers. Top
   recommendations: rotate the classifier key (chat exposure),
   multi-reviewer contribution protocol decision, stale-chain hint,

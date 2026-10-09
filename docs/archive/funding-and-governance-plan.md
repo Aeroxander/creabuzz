@@ -1,7 +1,7 @@
 # Funding, finance office and voting power: the plan
 
 > **Voting policy updated 2026-10-07:**
-> [Token ownership and rechargeable voting](token-voting-design.md) supersedes
+> [Token ownership and rechargeable voting](../token-voting-design.md) supersedes
 > this plan's voting growth, backing weight, and voucher-as-voice proposals.
 > Fresh DAOs use one candidate Shares allocation and short-conviction policy; Loot has economic rights without voting. The voucher vault section
 > is historical escrow design for existing integrations, not the new admission
@@ -19,9 +19,9 @@ chain-correction rule, the 30-day nudge, the discovery chips and badges, and
 the simulation skeleton (`just simulate`). Everything else is not built yet.
 See §2.1 for the three judgement calls made while building it.
 
-Related: [legitimacy-synthesis.md](legitimacy-synthesis.md) (gaps G1 to G20 used
-below), [token-lifecycle-design.md](token-lifecycle-design.md),
-[agentic-governance-design.md](agentic-governance-design.md),
+Related: [legitimacy-synthesis.md](../legitimacy-synthesis.md) (gaps G1 to G20 used
+below), [token-lifecycle-design.md](../token-lifecycle-design.md),
+[agentic-governance-design.md](../agentic-governance-design.md),
 [web-mvp-audit.md](web-mvp-audit.md).
 
 ## 1. What we are building
@@ -213,14 +213,14 @@ shown as a protection badge on cards:
 ## 6. Voting power (design B)
 
 **Superseded on the weight rule** by
-[token-voting-design.md](token-voting-design.md), which replaces "grows with
+[token-voting-design.md](../token-voting-design.md), which replaces "grows with
 time held" with "weight follows capital you directed and work you delivered".
 Holding is costless once you have bought, so a rule that multiplies weight by
 time-passed rewards parking capital. Instead:
 
 - **Work** — `Shares` earned by verified work, on Majeur's existing
   delegatable checkpointed machinery. Unchanged.
-> Historical weight/voucher alternatives below are superseded by [the current single policy](token-voting-design.md). They are not a parallel governance path.
+> Historical weight/voucher alternatives below are superseded by [the current single policy](../token-voting-design.md). They are not a parallel governance path.
 
 - **Held** — `Loot` at the snapshot, 1:1, flat. Waiting earns nothing.
 - **Backing** — `Loot` committed to a proposal through the voucher vault

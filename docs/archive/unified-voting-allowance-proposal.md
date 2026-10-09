@@ -6,7 +6,7 @@ minority that conserved its credits. Loot also acquired governance authority
 that conflicted with its intended economic-only role.
 
 The current candidate is [Shares allocations with short conviction and finite
-mandates](token-voting-design.md). It uses one governor, movable support, no
+mandates](../token-voting-design.md). It uses one governor, movable support, no
 consumable credit balance and no refill algorithm. See the
-[mechanism study](simulations/governance-mechanism-study.md) for the counterexample.
+[mechanism study](../simulations/governance-mechanism-study.md) for the counterexample.
 No deployed DAO or production migration is implied by this local replacement.

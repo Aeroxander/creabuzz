@@ -16,7 +16,7 @@ const SEEN_KEY = "buzz.notifications.seen";
 /**
  * How often the feed is re-read.
  *
- * The relay does not fan out `#p` filters (docs/web-ui-roadmap.md §2), so a
+ * The relay does not fan out `#p` filters (docs/archive/web-ui-roadmap.md §2), so a
  * live subscription would not deliver mentions; polling is what works. 15s
  * keeps a mention visible about as fast as the reader would notice, without a
  * request per tab per second.
@@ -54,7 +54,7 @@ export function useNotifications(): {
    * This used to run exactly once, when the hook mounted: a mention that
    * arrived while the app was open never raised the badge, so the bell only
    * ever showed what had happened before the page loaded. `#p` filters are not
-   * fanned out by the relay (see docs/web-ui-roadmap.md §2), so polling is the
+   * fanned out by the relay (see docs/archive/web-ui-roadmap.md §2), so polling is the
    * mechanism that works; a focus refresh covers a tab that was parked.
    */
   const refresh = useCallback(async () => {

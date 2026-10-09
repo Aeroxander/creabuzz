@@ -630,8 +630,8 @@ jobs:
         # NIP-ORG conformance over the live WebSocket seam (LWW lifecycle,
         # p-gate, binding authority) with direct DB fixture setup. Must run in
         # CI: these tests pin the org authority model — see
-        # docs/production-readiness-audit.md and
-        # docs/app-readiness-audit-2026-09-22.md.
+        # docs/archive/production-readiness-audit.md and
+        # docs/archive/app-readiness-audit-2026-09-22.md.
         run: |
           cargo test -p buzz-test-client --test e2e_org -- --ignored --nocapture
         env:

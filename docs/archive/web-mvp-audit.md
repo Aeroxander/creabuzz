@@ -2,7 +2,7 @@
 
 Written against `claude/org-graph-social` (off `feat/org-graph`), using the real
 app against a seeded relay (`web/tests/e2e-real/seed-demo.mjs`). The product
-contract is [dao-os.md](dao-os.md); this file is about whether the **web client**
+contract is [dao-os.md](../dao-os.md); this file is about whether the **web client**
 lets a person walk that loop without a terminal or the desktop app.
 
 ## The loop a person must be able to finish in the browser

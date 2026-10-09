@@ -5,7 +5,7 @@ import { FOUNDER_NSEC, mockLaunchRelay } from "../helpers/funding-fixture";
 /**
  * The funding status in the app: what a project says about raising, and what
  * its records prove, cannot contradict each other on a card (plan §2,
- * docs/funding-and-governance-plan.md).
+ * docs/archive/funding-and-governance-plan.md).
  *
  * Runs against the mocked relay, so the derivation rules are exercised the
  * way a person meets them — on cards, in the chip counts, and in the

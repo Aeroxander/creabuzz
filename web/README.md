@@ -7,7 +7,7 @@ agent fleet (including an in-tab agent), the work board, notifications, search,
 profiles, repositories, and the DAO launchpad.
 
 The desktop app remains the reference client; feature-parity work is tracked in
-`docs/web-ui-roadmap.md`.
+`docs/archive/web-ui-roadmap.md`.
 
 ## Surfaces
 
@@ -122,7 +122,7 @@ unset, so the default smoke run is unaffected.
 
 `scripts/web-mint-e2e.sh` runs the founder's whole journey (idea, sale, mint the
 token from the browser, deploy, bid, admit) on the apptoken local environment
-against a real relay; see `docs/web-mvp-audit.md` ("Two chain worlds").
+against a real relay; see `docs/archive/web-mvp-audit.md` ("Two chain worlds").
 
 The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
 **built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or
