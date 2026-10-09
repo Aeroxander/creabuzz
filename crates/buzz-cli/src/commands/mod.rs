@@ -5,6 +5,7 @@ pub mod channels;
 pub mod diag;
 pub mod dms;
 pub mod emoji;
+mod evm_read;
 pub mod feed;
 pub mod gifs;
 pub mod issues;

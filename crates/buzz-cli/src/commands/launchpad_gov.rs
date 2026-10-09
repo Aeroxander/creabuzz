@@ -22,6 +22,7 @@ use serde_json::json;
 
 use crate::error::CliError;
 
+use super::evm_read::{cli_error, eth_call_hex, eth_call_word};
 use super::org::{validate_eth_address, ENV_EVM_RPC_URL, ENV_SPENDER_KEY};
 
 /// Options for the single Shares ballot.
@@ -79,10 +80,6 @@ const STATES: [&str; 7] = [
     "Expired",
     "Executed",
 ];
-
-fn cli_error(context: &'static str) -> impl Fn(AllowanceError) -> CliError {
-    move |e| CliError::Other(format!("{context}: {e}"))
-}
 
 /// One 32-byte word from a decimal or `0x`-hex integer string (proposal ids
 /// are full uint256 hashes and do not fit narrower types).
@@ -325,28 +322,7 @@ impl GovClient {
     }
 
     async fn call_word(&self, data: &[u8]) -> Result<u128, CliError> {
-        let params = json!([
-            { "to": self.dao_hex(), "data": format!("0x{}", hex::encode(data)) },
-            "latest",
-        ]);
-        let value = self
-            .rpc
-            .call("eth_call", params, self.rpc_timeout)
-            .await
-            .map_err(cli_error("eth_call"))?;
-        let hex_str = value
-            .as_str()
-            .ok_or_else(|| CliError::Other("eth_call returned a non-string result".into()))?;
-        let clean = hex_str.trim().trim_start_matches("0x");
-        let bytes = hex::decode(clean)
-            .map_err(|e| CliError::Other(format!("malformed eth_call result: {e}")))?;
-        if bytes.len() < 32 {
-            return Err(CliError::Other(format!(
-                "eth_call result too short for a word: {} bytes",
-                bytes.len()
-            )));
-        }
-        abi::decode_uint256(&bytes[..32]).map_err(cli_error("decode"))
+        eth_call_word(self.rpc.as_ref(), &self.dao_hex(), data, self.rpc_timeout).await
     }
 
     /// `proposalId(op, to, value, data, nonce)` — the authoritative id (it
@@ -361,18 +337,8 @@ impl GovClient {
     ) -> Result<String, CliError> {
         let mut call = abi::selector(SIG_PROPOSAL_ID).to_vec();
         call.extend_from_slice(&encode_intent_args(op, to, value, data, nonce)?);
-        let params = json!([
-            { "to": self.dao_hex(), "data": format!("0x{}", hex::encode(&call)) },
-            "latest",
-        ]);
-        let value = self
-            .rpc
-            .call("eth_call", params, self.rpc_timeout)
-            .await
-            .map_err(cli_error("eth_call"))?;
-        let hex_str = value
-            .as_str()
-            .ok_or_else(|| CliError::Other("eth_call returned a non-string result".into()))?;
+        let hex_str =
+            eth_call_hex(self.rpc.as_ref(), &self.dao_hex(), &call, self.rpc_timeout).await?;
         Ok(format!("0x{}", hex_str.trim().trim_start_matches("0x")))
     }
 

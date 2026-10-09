@@ -30,6 +30,7 @@ use serde_json::json;
 use crate::client::BuzzClient;
 use crate::error::CliError;
 
+use super::evm_read::cli_error;
 use super::org::{validate_eth_address, ENV_EVM_RPC_URL, ENV_SPENDER_KEY};
 use super::{parse_write_response, with_git_provenance};
 
@@ -131,10 +132,6 @@ pub fn delivery_score(s: &DeliverySignals) -> u128 {
     let good = scale(s.approved_milestones.saturating_add(s.contribution_records));
     let bad = scale(s.slashed_claims.saturating_add(s.rejected_claims));
     good.saturating_sub(bad)
-}
-
-fn cli_error(context: &'static str) -> impl Fn(AllowanceError) -> CliError {
-    move |e| CliError::Other(format!("{context}: {e}"))
 }
 
 /// Leaf = `keccak256(abi.encode(member, score))` — address left-padded to 32

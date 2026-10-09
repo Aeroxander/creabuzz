@@ -28,10 +28,10 @@ use std::time::Duration;
 
 use buzz_evm_allowance::tx;
 use buzz_evm_allowance::{abi, AllowanceClient, AllowanceError, EvmRpc, HttpEvmRpc};
-use serde_json::json;
 
 use crate::error::CliError;
 
+use super::evm_read::{cli_error, eth_call_address, eth_call_word};
 use super::org::{validate_eth_address, ENV_EVM_RPC_URL, ENV_SPENDER_KEY};
 
 /// Per-RPC round-trip ceiling (mirrors the allowance client default).
@@ -121,59 +121,12 @@ impl MolochClient {
 
     /// One `eth_call` view read decoded as a single 32-byte word.
     async fn call_word(&self, data: &[u8]) -> Result<u128, CliError> {
-        let params = json!([
-            { "to": self.dao_hex(), "data": format!("0x{}", hex::encode(data)) },
-            "latest",
-        ]);
-        let value = self
-            .rpc
-            .call("eth_call", params, self.rpc_timeout)
-            .await
-            .map_err(cli_error("eth_call"))?;
-        let hex_str = value
-            .as_str()
-            .ok_or_else(|| CliError::Other("eth_call returned a non-string result".into()))?;
-        let clean = hex_str.trim().trim_start_matches("0x");
-        let bytes = hex::decode(clean)
-            .map_err(|e| CliError::Other(format!("malformed eth_call result: {e}")))?;
-        if bytes.len() < 32 {
-            return Err(CliError::Other(format!(
-                "eth_call result too short for a word: {} bytes",
-                bytes.len()
-            )));
-        }
-        abi::decode_uint256(&bytes[..32]).map_err(cli_error("decode"))
+        eth_call_word(self.rpc.as_ref(), &self.dao_hex(), data, self.rpc_timeout).await
     }
 
     /// One `eth_call` view read decoded as a 20-byte address.
     async fn call_address(&self, data: &[u8]) -> Result<[u8; 20], CliError> {
-        let params = json!([
-            { "to": self.dao_hex(), "data": format!("0x{}", hex::encode(data)) },
-            "latest",
-        ]);
-        let value = self
-            .rpc
-            .call("eth_call", params, self.rpc_timeout)
-            .await
-            .map_err(cli_error("eth_call"))?;
-        let hex_str = value
-            .as_str()
-            .ok_or_else(|| CliError::Other("eth_call returned a non-string result".into()))?;
-        let clean = hex_str.trim().trim_start_matches("0x");
-        let bytes = hex::decode(clean)
-            .map_err(|e| CliError::Other(format!("malformed eth_call result: {e}")))?;
-        if bytes.len() < 32 {
-            return Err(CliError::Other(format!(
-                "eth_call result too short for a word: {} bytes",
-                bytes.len()
-            )));
-        }
-        let word: [u8; 32] = bytes[..32]
-            .try_into()
-            .map_err(|_| CliError::Other("word slice mismatch".into()))?;
-        word[12..]
-            .try_into()
-            .map_err(|_| CliError::Other("address slice mismatch".into()))
+        eth_call_address(self.rpc.as_ref(), &self.dao_hex(), data, self.rpc_timeout).await
     }
 
     async fn call_bool(&self, data: &[u8]) -> Result<bool, CliError> {
@@ -205,31 +158,13 @@ impl MolochClient {
     pub async fn balance_of(&self, token: [u8; 20], owner: [u8; 20]) -> Result<u128, CliError> {
         let mut data = abi::selector(SIG_BALANCE_OF).to_vec();
         data.extend_from_slice(&abi::encode_address_word(&owner));
-        let params = json!([
-            {
-                "to": format!("0x{}", hex::encode(token)),
-                "data": format!("0x{}", hex::encode(&data)),
-            },
-            "latest",
-        ]);
-        let value = self
-            .rpc
-            .call("eth_call", params, self.rpc_timeout)
-            .await
-            .map_err(cli_error("eth_call"))?;
-        let hex_str = value
-            .as_str()
-            .ok_or_else(|| CliError::Other("eth_call returned a non-string result".into()))?;
-        let clean = hex_str.trim().trim_start_matches("0x");
-        let bytes = hex::decode(clean)
-            .map_err(|e| CliError::Other(format!("malformed eth_call result: {e}")))?;
-        if bytes.len() < 32 {
-            return Err(CliError::Other(format!(
-                "balanceOf result too short for a word: {} bytes",
-                bytes.len()
-            )));
-        }
-        abi::decode_uint256(&bytes[..32]).map_err(cli_error("decode"))
+        eth_call_word(
+            self.rpc.as_ref(),
+            &format!("0x{}", hex::encode(token)),
+            &data,
+            self.rpc_timeout,
+        )
+        .await
     }
 
     /// Broadcast `ragequit` from `spender` and wait, bounded, for the
@@ -296,10 +231,6 @@ pub struct MemberView {
     pub loot_token: String,
     pub shares: u128,
     pub loot: u128,
-}
-
-fn cli_error(context: &'static str) -> impl Fn(AllowanceError) -> CliError {
-    move |e| CliError::Other(format!("{context}: {e}"))
 }
 
 // ── CLI command ────────────────────────────────────────────────────────────
