@@ -384,7 +384,12 @@ export const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
 export const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
 
 const TOKEN_DECIMALS = 18n; // the script hardcodes 18
-const MAX_INFRASTRUCTURE_FEE_BPS = 250n; // deployParams.maxInfrastructureFeeBPS
+/**
+ * `deployParams.maxInfrastructureFeeBPS` in `DeployAppToken.s.sol` — the cap
+ * `encodeDeployToken` bakes into the deploy call. A live router fee above it
+ * makes `deployToken` revert (`InvalidInfrastructureFeeBPS`).
+ */
+export const MAX_INFRASTRUCTURE_FEE_BPS = 250n;
 const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
 
 function resolveTokenDeployParams(
@@ -636,14 +641,14 @@ export function encodeSetRulesetOfCollection(
  */
 export function buildTokenDeployCalls(
   params: TokenDeployCallsParams,
-): EvmCall[] {
+): Array<EvmCall & { value: string }> {
   const p = resolveTokenDeployParams(params);
   // The script: `realTV = tv == address(0) ? 0x721C...42e3 : tv`.
   const realTransferValidator =
     p.defaultTransferValidator.toLowerCase() === ZERO_ADDRESS
       ? CANONICAL_TRANSFER_VALIDATOR
       : p.defaultTransferValidator;
-  const deploy: EvmCall = {
+  const deploy: EvmCall & { value: string } = {
     to: p.router,
     data: encodeDeployToken(params),
     value: valueHex(p.pairedDepositWei),

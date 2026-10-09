@@ -29,6 +29,11 @@ import type {
   SendCallsResult,
   SenderCall,
 } from "../../identity/lib/sponsoredSender.ts";
+import {
+  createStepFlow,
+  type StepFlowAction,
+  type StepFlowState,
+} from "@creaton/core/launchpad/step-flow.ts";
 import type { SummonTx } from "./summon-composer.ts";
 import type { ConfirmedSummon } from "./summon-chain.ts";
 
@@ -47,131 +52,44 @@ export const SUMMON_STEP_LABELS: Record<SummonStepId, string> = {
 /** The plan, in order: the money write first, its record second. */
 export const SUMMON_ORDER: readonly SummonStepId[] = ["send", "mirror"];
 
-export type SummonStepStatus =
-  | "pending"
-  | "active"
-  | "done"
-  | "failed"
-  | "skipped";
+export type SummonFlowAction = StepFlowAction<SummonStepId, SummonReceipt>;
 
-export type SummonFlowPhase = "idle" | "running" | "failed" | "done";
-
-export interface SummonFlowState {
-  phase: SummonFlowPhase;
-  order: SummonStepId[];
-  steps: Record<SummonStepId, SummonStepStatus>;
-  receipts: Partial<Record<SummonStepId, SummonReceipt>>;
-  failedStep: SummonStepId | null;
-  /** Names the failed step and the reason (Review-Proven Rule 1). */
-  errorMessage: string | null;
+export type SummonFlowState = StepFlowState<SummonStepId, SummonReceipt> & {
   /**
    * A summon tx whose outcome the chain never reported. The tx may still land,
    * so the flow will not send again until the user reconciles onchain
    * (Review-Proven Rule 4: a retry loop needs a terminal state — this is it).
    */
   reconcile: boolean;
-}
+};
 
-export type SummonFlowAction =
-  | { type: "reset"; order: readonly SummonStepId[] }
-  | { type: "step-start"; step: SummonStepId }
-  | { type: "step-done"; step: SummonStepId; receipt?: SummonReceipt }
-  | {
-      type: "step-failed";
-      step: SummonStepId;
-      message: string;
-      /** Kept on failure so "check the chain" can name the hash. */
-      receipt?: SummonReceipt;
-    };
-
-const ALL_STEP_IDS: readonly SummonStepId[] = ["send", "mirror"];
-
-function freshSteps(
-  order: readonly SummonStepId[],
-): Record<SummonStepId, SummonStepStatus> {
-  const steps = {} as Record<SummonStepId, SummonStepStatus>;
-  for (const id of ALL_STEP_IDS) {
-    steps[id] = order.includes(id) ? "pending" : "skipped";
-  }
-  return steps;
-}
+const summonFlow = createStepFlow<SummonStepId, SummonReceipt>(
+  SUMMON_ORDER,
+  SUMMON_STEP_LABELS,
+);
 
 export function initialSummonFlowState(): SummonFlowState {
-  return {
-    phase: "idle",
-    order: [],
-    steps: freshSteps([]),
-    receipts: {},
-    failedStep: null,
-    errorMessage: null,
-    reconcile: false,
-  };
+  return { ...summonFlow.initial(), reconcile: false };
 }
 
-/** Pure step-orchestrator reducer (contract of `ragequit-flow.ts:101-144`). */
+/** Pure step-orchestrator reducer (contract of `step-flow.ts`). */
 export function summonFlowReducer(
   state: SummonFlowState,
   action: SummonFlowAction,
 ): SummonFlowState {
-  switch (action.type) {
-    case "reset": {
-      const order = [...action.order];
-      return { ...initialSummonFlowState(), order, steps: freshSteps(order) };
-    }
-    case "step-start": {
-      return {
-        ...state,
-        phase: "running",
-        steps: { ...state.steps, [action.step]: "active" },
-        failedStep: null,
-        errorMessage: null,
-      };
-    }
-    case "step-done": {
-      const steps = { ...state.steps, [action.step]: "done" as const };
-      const receipts = action.receipt
-        ? { ...state.receipts, [action.step]: action.receipt }
-        : state.receipts;
-      const allDone = state.order.every((id) => steps[id] === "done");
-      return {
-        ...state,
-        phase: allDone ? "done" : "running",
-        steps,
-        receipts,
-        failedStep: null,
-        errorMessage: null,
-      };
-    }
-    case "step-failed": {
-      const receipts = action.receipt
-        ? { ...state.receipts, [action.step]: action.receipt }
-        : state.receipts;
-      const reconcile =
-        state.reconcile ||
-        (action.step === "send" && action.receipt?.status === "unknown");
-      return {
-        ...state,
-        phase: "failed",
-        steps: { ...state.steps, [action.step]: "failed" as const },
-        receipts,
-        failedStep: action.step,
-        errorMessage: `${SUMMON_STEP_LABELS[action.step]} failed: ${action.message}`,
-        reconcile,
-      };
-    }
-  }
+  const reconcile =
+    action.type !== "reset" &&
+    (state.reconcile ||
+      (action.type === "step-failed" &&
+        action.step === "send" &&
+        action.receipt?.status === "unknown"));
+  return { ...summonFlow.reducer(state, action), reconcile };
 }
 
 /** Steps not yet confirmed done — what a retry may still run. */
-export function remainingSummonSteps(state: SummonFlowState): SummonStepId[] {
-  return state.order.filter((id) => state.steps[id] !== "done");
-}
+export const remainingSummonSteps = summonFlow.remaining;
 
-export function completedSummonSteps(
-  state: SummonFlowState,
-): Set<SummonStepId> {
-  return new Set(state.order.filter((id) => state.steps[id] === "done"));
-}
+export const completedSummonSteps = summonFlow.completed;
 
 export interface SummonResume {
   completed: ReadonlySet<SummonStepId>;

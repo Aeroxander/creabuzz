@@ -30,6 +30,7 @@ import {
   DEFAULT_TOKENMASTER_ROUTER,
   encodeDeployToken,
   encodeFunctionData,
+  MAX_INFRASTRUCTURE_FEE_BPS,
   selectorOf,
   ZERO_ADDRESS,
   type EvmCall,
@@ -138,13 +139,8 @@ export const SELECTOR_COMPUTE_DEPLOYMENT_ADDRESS = selectorOf(
   SIGNATURE_COMPUTE_DEPLOYMENT_ADDRESS,
 );
 
-/**
- * `deployParams.maxInfrastructureFeeBPS` in `DeployAppToken.s.sol` (250) —
- * the cap `encodeDeployToken` bakes into the deploy call. A live router fee
- * above it makes `deployToken` revert (`InvalidInfrastructureFeeBPS`), so the
- * preflight blocks instead of sending a doomed transaction.
- */
-export const MAX_INFRASTRUCTURE_FEE_BPS = 250n;
+/** The cap lives in `@creaton/core`; the preflight below blocks a live router fee above it. */
+export { MAX_INFRASTRUCTURE_FEE_BPS };
 
 /** The `router.infrastructureFeeBPS()` view call (no arguments). */
 export function buildInfraFeeView(

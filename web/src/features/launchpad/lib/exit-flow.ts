@@ -28,6 +28,11 @@ import type {
   SendCallsResult,
   SenderCall,
 } from "../../identity/lib/sponsoredSender.ts";
+import {
+  createStepFlow,
+  type StepFlowAction,
+  type StepFlowState,
+} from "@creaton/core/launchpad/step-flow.ts";
 import type { UnsignedTx } from "./bid-tx.ts";
 import type { ExitStepCall, ExitStepId } from "./my-bids.ts";
 import { EXIT_STEP_LABELS } from "./my-bids.ts";
@@ -55,124 +60,28 @@ export function flowOutcomeMessage(receipt: FlowReceipt): string {
   return `the outcome of transaction ${receipt.txHash} is still unknown. Check whether it landed before retrying`;
 }
 
-/** Per-step status. `skipped` = not part of this plan. */
-export type ExitStepStatus =
-  | "pending"
-  | "active"
-  | "done"
-  | "failed"
-  | "skipped";
-
-/**
- * - `idle`: no attempt started.
- * - `running`: a step is in flight.
- * - `failed`: a step failed; retry sends only the remaining steps.
- * - `done`: every step confirmed.
- */
-export type ExitFlowPhase = "idle" | "running" | "failed" | "done";
-
 /** The full observable state of one exit/claim attempt. */
-export interface ExitFlowState {
-  phase: ExitFlowPhase;
-  /** Planned step order. */
-  order: ExitStepId[];
-  steps: Record<ExitStepId, ExitStepStatus>;
-  receipts: Partial<Record<ExitStepId, FlowReceipt>>;
-  failedStep: ExitStepId | null;
-  /** Names the failed step and the reason (Review-Proven Rule 1). */
-  errorMessage: string | null;
-}
+export type ExitFlowState = StepFlowState<ExitStepId, FlowReceipt>;
 
 /** State transition events, emitted by {@link runExitFlow}. */
-export type ExitFlowAction =
-  | { type: "reset"; order: readonly ExitStepId[] }
-  | { type: "step-start"; step: ExitStepId }
-  | { type: "step-done"; step: ExitStepId; receipt?: FlowReceipt }
-  | { type: "step-failed"; step: ExitStepId; message: string };
+export type ExitFlowAction = StepFlowAction<ExitStepId, FlowReceipt>;
 
-const ALL_STEP_IDS: readonly ExitStepId[] = ["checkpoint", "exit", "claim"];
-
-function freshSteps(
-  order: readonly ExitStepId[],
-): Record<ExitStepId, ExitStepStatus> {
-  const steps = {} as Record<ExitStepId, ExitStepStatus>;
-  for (const id of ALL_STEP_IDS) {
-    steps[id] = order.includes(id) ? "pending" : "skipped";
-  }
-  return steps;
-}
+const exitFlow = createStepFlow<ExitStepId, FlowReceipt>(
+  ["checkpoint", "exit", "claim"],
+  EXIT_STEP_LABELS,
+);
 
 /** The state before any attempt: nothing planned, nothing sent. */
-export function initialExitFlowState(): ExitFlowState {
-  return {
-    phase: "idle",
-    order: [],
-    steps: freshSteps([]),
-    receipts: {},
-    failedStep: null,
-    errorMessage: null,
-  };
-}
+export const initialExitFlowState = exitFlow.initial;
 
 /** Pure step-orchestrator reducer (port of exitHooks.ts:963-1011). */
-export function exitFlowReducer(
-  state: ExitFlowState,
-  action: ExitFlowAction,
-): ExitFlowState {
-  switch (action.type) {
-    case "reset": {
-      const order = [...action.order];
-      return {
-        ...initialExitFlowState(),
-        order,
-        steps: freshSteps(order),
-      };
-    }
-    case "step-start": {
-      return {
-        ...state,
-        phase: "running",
-        steps: { ...state.steps, [action.step]: "active" },
-        failedStep: null,
-        errorMessage: null,
-      };
-    }
-    case "step-done": {
-      const steps = { ...state.steps, [action.step]: "done" as const };
-      const receipts = action.receipt
-        ? { ...state.receipts, [action.step]: action.receipt }
-        : state.receipts;
-      const allDone = state.order.every((id) => steps[id] === "done");
-      return {
-        ...state,
-        phase: allDone ? "done" : "running",
-        steps,
-        receipts,
-        failedStep: null,
-        errorMessage: null,
-      };
-    }
-    case "step-failed": {
-      return {
-        ...state,
-        phase: "failed",
-        steps: { ...state.steps, [action.step]: "failed" as const },
-        failedStep: action.step,
-        errorMessage: `${EXIT_STEP_LABELS[action.step]} failed: ${action.message}`,
-      };
-    }
-  }
-}
+export const exitFlowReducer = exitFlow.reducer;
 
 /** Steps not yet confirmed done — exactly what a retry will (re-)send. */
-export function remainingExitSteps(state: ExitFlowState): ExitStepId[] {
-  return state.order.filter((id) => state.steps[id] !== "done");
-}
+export const remainingExitSteps = exitFlow.remaining;
 
 /** Steps already confirmed done — never re-sent on retry. */
-export function completedExitSteps(state: ExitFlowState): Set<ExitStepId> {
-  return new Set(state.order.filter((id) => state.steps[id] === "done"));
-}
+export const completedExitSteps = exitFlow.completed;
 
 /** Where a retry picks up. */
 export interface ExitResume {

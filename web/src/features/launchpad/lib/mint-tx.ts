@@ -24,29 +24,20 @@
  * desktop's `mintFlow.test.mjs` `cast` vectors are the byte-parity bind.
  */
 import {
-  CANONICAL_TRANSFER_VALIDATOR,
   DEFAULT_STANDARD_POOL_FACTORY,
   DEFAULT_TOKENMASTER_ROUTER,
-  INITIAL_SPEND_CREATOR_SHARE_BPS,
-  MAX_SPEND_CREATOR_SHARE_BPS,
-  MAX_TOKEN_FEE_BPS,
-  MAX_TOKEN_SPREAD_BPS,
-  SIGNATURE_DEPLOY_TOKEN,
-  SIGNATURE_SET_RULESET_OF_COLLECTION,
-  SIGNATURE_SET_TRANSFER_VALIDATOR,
-  ZERO_ADDRESS,
   encodeDeployToken,
-  encodeSetRulesetOfCollection,
-  encodeSetTransferValidator,
 } from "@creaton/core/launchpad/evmCalls.ts";
-import type { TokenDeployCallsParams } from "@creaton/core/launchpad/evmCalls.ts";
+import type {
+  EvmCall,
+  TokenDeployCallsParams,
+} from "@creaton/core/launchpad/evmCalls.ts";
 
 /** The encoders live once, in `@creaton/core`; they are re-exported here so this module's callers keep one import site. */
 export {
   CANONICAL_TRANSFER_VALIDATOR,
-  DEFAULT_STANDARD_POOL_FACTORY,
-  DEFAULT_TOKENMASTER_ROUTER,
   INITIAL_SPEND_CREATOR_SHARE_BPS,
+  MAX_INFRASTRUCTURE_FEE_BPS,
   MAX_SPEND_CREATOR_SHARE_BPS,
   MAX_TOKEN_FEE_BPS,
   MAX_TOKEN_SPREAD_BPS,
@@ -54,9 +45,14 @@ export {
   SIGNATURE_SET_RULESET_OF_COLLECTION,
   SIGNATURE_SET_TRANSFER_VALIDATOR,
   ZERO_ADDRESS,
-  encodeDeployToken,
+  buildTokenDeployCalls,
   encodeSetRulesetOfCollection,
   encodeSetTransferValidator,
+} from "@creaton/core/launchpad/evmCalls.ts";
+export {
+  DEFAULT_STANDARD_POOL_FACTORY,
+  DEFAULT_TOKENMASTER_ROUTER,
+  encodeDeployToken,
 };
 export type { TokenDeployCallsParams };
 
@@ -79,135 +75,8 @@ export const SELECTOR_INFRA_FEE_BPS = "0xa82f4d02";
 /** Selector of {@link SIGNATURE_COMPUTE_DEPLOYMENT_ADDRESS} (`cast`: `0x8d33f2bf`). */
 export const SELECTOR_COMPUTE_DEPLOYMENT_ADDRESS = "0x8d33f2bf";
 
-/**
- * `deployParams.maxInfrastructureFeeBPS` in `DeployAppToken.s.sol` (250) —
- * the cap `encodeDeployToken` bakes into the deploy call. A live router fee
- * above it makes `deployToken` revert (`InvalidInfrastructureFeeBPS`).
- */
-export const MAX_INFRASTRUCTURE_FEE_BPS = 250n; // the script hardcodes 18
-const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
-
 /** One unsigned call — the shape both senders receive unmodified. */
-export interface MintEvmCall {
-  to: string;
-  data: string;
-  value: string;
-}
-
-interface ResolvedTokenDeployParams {
-  name: string;
-  symbol: string;
-  treasury: string;
-  owner: string;
-  tokenAddress: string;
-  salt: bigint;
-  initialSupplyAmount: bigint;
-  pairedDepositWei: bigint;
-  spreadBps: number;
-  buyFeeBps: number;
-  sellFeeBps: number;
-  defaultTransferValidator: string;
-  router: string;
-  factory: string;
-}
-
-function resolveTokenDeployParams(
-  params: TokenDeployCallsParams,
-): ResolvedTokenDeployParams {
-  const spreadBps = params.spreadBps ?? 100;
-  const buyFeeBps = params.buyFeeBps ?? 200;
-  const sellFeeBps = params.sellFeeBps ?? 200;
-  // The deploy script refuses these too (`AboveCeiling`): fail here, not on chain.
-  for (const [label, value, ceiling] of [
-    ["spreadBps", spreadBps, MAX_TOKEN_SPREAD_BPS],
-    ["buyFeeBps", buyFeeBps, MAX_TOKEN_FEE_BPS],
-    ["sellFeeBps", sellFeeBps, MAX_TOKEN_FEE_BPS],
-  ] as const) {
-    if (!Number.isInteger(value) || value < 0 || BigInt(value) > ceiling) {
-      throw new Error(
-        `${label} must be an integer in 0..${ceiling} (the pool's immutable ceiling): ${value}`,
-      );
-    }
-  }
-  return {
-    name: params.name,
-    symbol: params.symbol,
-    treasury: params.treasury,
-    owner: params.owner ?? params.treasury,
-    tokenAddress: params.tokenAddress,
-    salt: params.salt ?? 1n,
-    initialSupplyAmount: params.initialSupplyAmount ?? 1_000_000n * 10n ** 18n,
-    pairedDepositWei: params.pairedDepositWei ?? 10n ** 17n, // 0.1 ether
-    spreadBps,
-    buyFeeBps,
-    sellFeeBps,
-    defaultTransferValidator: params.defaultTransferValidator ?? ZERO_ADDRESS,
-    router: params.router ?? DEFAULT_TOKENMASTER_ROUTER,
-    factory: params.factory ?? DEFAULT_STANDARD_POOL_FACTORY,
-  };
-}
-
-function valueHex(value: bigint): string {
-  return `0x${value.toString(16)}`;
-}
-
-/**
- * Compose the exact onchain call sequence of `DeployAppToken.s.sol`'s
- * broadcast section (port of evmCalls.ts:838-866):
- *
- * 1. `router.deployToken{value: pairedDepositWei}(deployParams, empty
- *    signature)` — deploys the token + Standard pool via CREATE2 at
- *    `tokenAddress`, mints `initialSupplyAmount` to `treasury`, and deposits
- *    `pairedDepositWei` of native pairing as the pool's starting reserve.
- * 2. `token.setTransferValidator(realTV)` — `realTV` resolves the zero address
- *    to {@link CANONICAL_TRANSFER_VALIDATOR} exactly like the script.
- *    Owner-only: the broadcaster must be `treasury`.
- * 3. `realTV.setRulesetOfCollection(token, 1, address(0), 0, 0)` — Vanilla
- *    ruleset (id 1 = open trading).
- *
- * The COMPOSER is sender-agnostic; the SEND strategy differs by sender (the
- * launchpad money-action contract): through `sponsoredSender.ts` these become
- * ONE batched UserOp (atomic, kernel-0.3.3 CALLTYPE_BATCH), through the
- * injected wallet three sequential transactions. Same bytes either way.
- */
-export function buildTokenDeployCalls(
-  params: TokenDeployCallsParams,
-): MintEvmCall[] {
-  const p = resolveTokenDeployParams(params);
-  // The script: `realTV = tv == address(0) ? 0x721C...42e3 : tv`.
-  const realTransferValidator =
-    p.defaultTransferValidator.toLowerCase() === ZERO_ADDRESS
-      ? CANONICAL_TRANSFER_VALIDATOR
-      : p.defaultTransferValidator;
-  const deploy: MintEvmCall = {
-    to: p.router,
-    data: encodeDeployToken(params),
-    value: valueHex(p.pairedDepositWei),
-  };
-  // Calls 2-3 are OWNER ops signed by the treasury wallet: when the token is
-  // launched with a different owner (the DAO) they would revert, so the owner
-  // wires the validator itself.
-  if (p.owner.toLowerCase() !== p.treasury.toLowerCase()) return [deploy];
-  return [
-    deploy,
-    {
-      to: p.tokenAddress,
-      data: encodeSetTransferValidator(realTransferValidator),
-      value: valueHex(0n),
-    },
-    {
-      to: realTransferValidator,
-      data: encodeSetRulesetOfCollection(
-        p.tokenAddress,
-        VANILLA_RULESET_ID,
-        ZERO_ADDRESS,
-        0n,
-        0n,
-      ),
-      value: valueHex(0n),
-    },
-  ];
-}
+export type MintEvmCall = EvmCall & { value: string };
 
 // ---------------------------------------------------------------------------
 // ABI layout probing (mintFlow.ts:174-278) — the CREATE2 preflight splices the
@@ -299,7 +168,7 @@ export function buildComputeDeploymentAddressView(
   // (DeployAppToken.s.sol passes the same `pairedDeposit` to both).
   const pairedWord = argWord(poolBlock.slice(2), 5);
   return {
-    to: resolveTokenDeployParams(params).factory,
+    to: params.factory ?? DEFAULT_STANDARD_POOL_FACTORY,
     data:
       SELECTOR_COMPUTE_DEPLOYMENT_ADDRESS +
       saltWord +
