@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
+import { HashtagRow } from "./HashtagRow";
 import { PersonRow } from "./PersonRow";
 
 export function SearchBox({ initial = "" }: { initial?: string }) {
@@ -58,18 +59,7 @@ function TrendingCard() {
       <ul data-testid="social-rail-trending">
         {hashtags.map(({ tag, count }) => (
           <li key={tag}>
-            <Link
-              className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              params={{ tag }}
-              to="/social/tag/$tag"
-            >
-              <span className="block text-sm font-bold text-black dark:text-white">
-                #{tag}
-              </span>
-              <span className="text-xs text-black/60 dark:text-white/60">
-                {count} {count === 1 ? "person" : "people"} posting
-              </span>
-            </Link>
+            <HashtagRow compact count={count} tag={tag} />
           </li>
         ))}
       </ul>

@@ -1,9 +1,9 @@
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
 import { useNotesById } from "../use-social-data";
+import { HashtagRow } from "./HashtagRow";
 import { PersonRow } from "./PersonRow";
 import { PostList } from "./PostList";
 import { SearchBox } from "./RightRail";
@@ -83,18 +83,7 @@ function Hashtags() {
     >
       {hashtags.map(({ tag, count }) => (
         <li key={tag}>
-          <Link
-            className="block px-4 py-3 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-            params={{ tag }}
-            to="/social/tag/$tag"
-          >
-            <span className="block text-base font-bold text-black dark:text-white">
-              #{tag}
-            </span>
-            <span className="text-xs text-black/60 dark:text-white/60">
-              {count} {count === 1 ? "person" : "people"} posting
-            </span>
-          </Link>
+          <HashtagRow count={count} tag={tag} />
         </li>
       ))}
     </ul>

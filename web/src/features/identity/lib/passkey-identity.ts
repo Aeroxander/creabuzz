@@ -15,6 +15,8 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { storedIdentityHex } from "../../../shared/lib/identity.ts";
 
 import {
+  b64urlDecode,
+  b64urlEncode,
   createPasskey,
   deriveNostrSecretKey,
   evmOwnerFromR1,
@@ -70,25 +72,10 @@ function notifyPasskeySessionChange(): void {
   for (const listener of sessionListeners) listener();
 }
 
-export function b64ToBytes(value: string): Uint8Array {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  const bin = atob(padded);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-function bytesToB64(bytes: Uint8Array): string {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function persist(state: PasskeyState): void {
   try {
     localStorage.setItem(CRED_KEY, state.credentialId);
-    localStorage.setItem(SALT_KEY, bytesToB64(state.salt));
+    localStorage.setItem(SALT_KEY, b64urlEncode(state.salt));
     localStorage.setItem(PUBKEY_KEY, state.pubkey);
     localStorage.setItem(MODE_KEY, state.mode);
     // Only non-secret, public material is durable: the r1 owner key is public
@@ -113,7 +100,7 @@ function loadStored(): PasskeyState | null {
       localStorage.getItem(MODE_KEY) === "unlock" ? "unlock" : "prf";
     return {
       credentialId,
-      salt: b64ToBytes(salt),
+      salt: b64urlDecode(salt),
       pubkey,
       mode,
       r1UncompressedHex: localStorage.getItem(R1_KEY),

@@ -32,6 +32,11 @@ import {
   type TaskRowEvent,
 } from "./lib/task-planning";
 import {
+  type NewTaskInput,
+  publishNewTask,
+  publishTaskEvent,
+} from "./lib/task-publish";
+import {
   parseTask,
   type FleetTask,
   type TaskPriority,
@@ -489,44 +494,12 @@ export function useWorkBoard(channels?: { id: string }[]): {
   ]);
 
   const createTask = useCallback(
-    async (input: {
-      title: string;
-      description?: string;
-      assignee?: string;
-      channelId?: string;
-      priority?: TaskPriority;
-      due?: number | null;
-      labels?: string[];
-      milestone?: string | null;
-      reward?: number | null;
-    }) => {
-      const id =
-        "task-" +
-        Date.now().toString(36) +
-        Math.random().toString(36).slice(2, 6);
-      const tags: string[][] = [["d", id]];
-      if (input.assignee) tags.push(["p", input.assignee]);
-      if (input.channelId) tags.push(["h", input.channelId]);
-      const signed = await signAsUser({
-        kind: KIND_AGENT_TASK,
-        tags,
-        content: JSON.stringify({
-          title: input.title,
-          description: input.description ?? "",
-          status: input.assignee ? "assigned" : "open",
-          priority: input.priority ?? "normal",
-          due: input.due ?? null,
-          labels: input.labels ?? [],
-          milestone: input.milestone ?? null,
-          reward: input.reward ?? null,
-        }),
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted)
-        throw new Error(result.message ?? "task publish rejected");
-    },
+    (input: Omit<NewTaskInput, "parentEventId">) =>
+      publishNewTask({
+        ...input,
+        milestone: input.milestone ?? null,
+        reward: input.reward ?? null,
+      }),
     [],
   );
 
@@ -538,10 +511,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
       ];
       if (task.channelId) tags.push(["h", task.channelId]);
       if (task.parentEventId) tags.push(["e", task.parentEventId]);
-      const signed = await signAsUser({
-        kind: KIND_AGENT_TASK,
+      await publishTaskEvent(
         tags,
-        content: JSON.stringify({
+        {
           title: task.title,
           description: task.description,
           status,
@@ -552,13 +524,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
           milestone: task.milestone,
           reward: task.reward,
           _taskId: task.id,
-        }),
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted)
-        throw new Error(result.message ?? "task update rejected");
+        },
+        "task update rejected",
+      );
     },
     [],
   );

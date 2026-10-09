@@ -15,11 +15,10 @@ import {
   type NostrEvent,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK } from "@/shared/constants/kinds";
 import { readMilestone, readReward } from "./lib/task-planning";
+import { type NewTaskInput, publishNewTask } from "./lib/task-publish";
 
 export type TaskStatus =
   | "open"
@@ -172,43 +171,7 @@ export function useAgentTasks(): {
   }, []);
 
   const createTask = useCallback(
-    async (input: {
-      title: string;
-      description?: string;
-      assignee?: string;
-      channelId?: string;
-      parentEventId?: string;
-      priority?: TaskPriority;
-      due?: number | null;
-      labels?: string[];
-    }) => {
-      const id =
-        "task-" +
-        Date.now().toString(36) +
-        Math.random().toString(36).slice(2, 6);
-      const tags: string[][] = [["d", id]];
-      if (input.assignee) tags.push(["p", input.assignee]);
-      if (input.parentEventId) tags.push(["e", input.parentEventId]);
-      if (input.channelId) tags.push(["h", input.channelId]);
-      const signed = await signAsUser({
-        kind: KIND_AGENT_TASK,
-        tags,
-        content: JSON.stringify({
-          title: input.title,
-          description: input.description ?? "",
-          status: input.assignee ? "assigned" : "open",
-          priority: input.priority ?? "normal",
-          due: input.due ?? null,
-          labels: input.labels ?? [],
-        }),
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "task publish rejected");
-      }
-    },
+    (input: NewTaskInput) => publishNewTask(input),
     [],
   );
 
