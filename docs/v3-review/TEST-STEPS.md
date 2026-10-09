@@ -108,6 +108,22 @@ refused (a holder with free Shares sells with the very same command), and the fe
 a second vote. The browser tests show the launch page charting the traded prices and a `$NEB` in a post showing the last
 trade, each labelled as what it is.
 
+## 4d. Running a DAO from the app, no command line
+
+```bash
+scripts/web-decisions-e2e.sh        # a decision opened elsewhere is read, backed, waited out and run in the page
+scripts/web-dao-journey-e2e.sh      # budget -> project -> claim -> review -> payout -> award, all in pages
+scripts/web-paid-work-e2e.sh        # the same with money: a paid claim with a deposit, and the contributor is paid
+LBAMM_DIR=~/lbamm-examples scripts/web-market-journey-e2e.sh   # a market voted in, traded on the launch page, fees collected, a payment out
+```
+
+Working looks like `1 passed` for each. To try it by hand, run `just dev-chain`, build the web app with the env lines it
+prints (`VITE_LAUNCHPAD_CHAIN_ID`, `VITE_LOCAL_USDC`, `VITE_DAO_LAUNCH_KITS`, and for a market `VITE_LBAMM_ADDRESSES` from
+a local LBAMM), launch a project, open it, and use **Decisions** → **New decision**. Each form shows, in plain words and
+before anything is sent, what would happen; a decision needs enough Shares to open (the DAO's minimum is shown if you
+hold less), then holders back it, the review and support periods pass, someone starts the wait, and someone runs it. On a
+test chain you can move time with `cast rpc anvil_increaseTime <seconds>` then `cast rpc anvil_mine`.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

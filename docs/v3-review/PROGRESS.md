@@ -54,6 +54,32 @@ LBAMM is evaluation-only, so all of this runs on a throwaway local chain with LB
 | Price candles from the AMM's trades | `services/price-indexer` (Ponder) | 6 unit tests; `scripts/market-index-e2e.sh` (trades before and after it starts, the pool, candle prices, bad requests) |
 | The launch page charts traded prices and a `$TICKER` chip shows the last trade, each labelled as what it is | `marketFeed.ts` (core), `use-market.ts`, `PriceChartCard.tsx`, `cashtag.ts` | 7 core and 4 web unit tests; `scripts/web-market-e2e.sh` (browser, real chain, real indexer); the 29 mocked specs that show bid prices still pass |
 
+## Everything a person does is in the app, not the command line: built and checked
+
+You said nobody will vote or set up decisions through a command line, so every step a person takes now has a page. Each
+journey below runs in a real browser against a real local chain, each step as the wallet of the person whose job it is.
+
+| What a person does | Where | Checked by |
+|---|---|---|
+| Launch a project into its own DAO, locking the team's Shares behind milestones | Manage tab / wizard | `scripts/web-dao-launch-e2e.sh` |
+| See every decision the DAO has put to a vote, read from the chain (whoever opened it), with what it would do in plain words, where it stands, who backs it and the rules it must meet | **Decisions** tab | `scripts/web-decisions-e2e.sh` |
+| Back, oppose or take back a vote; start the wait; run a decision | Decisions tab | same |
+| **Put something to a vote** from a form: a work budget (Shares and/or money), a project, an award of Shares for a claim, putting Shares on the market, collecting the trading fees, paying from the treasury | Decisions tab, "New decision" | `scripts/web-dao-journey-e2e.sh`, `web-paid-work-e2e.sh`, `web-market-journey-e2e.sh` |
+| File a claim for work, optionally asking to be paid with a deposit; the manager takes it on; reviewers approve; finish it; take the payout | Work tab | `web-work-e2e.sh`, `web-paid-work-e2e.sh` |
+| Unlock a founder's locked Shares by milestone | Work tab | `web-milestone-e2e.sh` |
+| Buy and sell the Shares on their market; a founder with locked Shares is told how many they may sell | Launch page, trade card | `web-market-journey-e2e.sh` |
+| See the traded price on the chart and next to a `$TICKER` | Launch page, posts | `web-market-e2e.sh` |
+
+How it holds up: the app only describes a decision as (say) a market, a work budget or a payment if its calls are aimed where a
+real one's are (the DAO, its factory, its work budgets, its exchange) and a batch's approvals are exactly the budget's;
+anything else is described as the steps it is, or as unknown, so a voter is never told more than the calls do. A decision
+opened without its details says so and warns that nobody can tell what backing it would approve. The command line still
+exists, for agents.
+
+Not in a form yet (still the command line): changing the DAO's voting rules, who may open a decision, turning exit on or
+off, closing a work budget, releasing a departed founder's locked Shares (a DAO-only power), a whitelist-only trading rule,
+and anything custom. Desktop and mobile have none of the new pages.
+
 ## Differences from the plan
 
 - **D2 (token architecture) was partly spiked.** The launch still sells the DAO's own Shares directly on the CCA, and
@@ -67,8 +93,7 @@ LBAMM is evaluation-only, so all of this runs on a throwaway local chain with LB
 
 ## Not started
 
-- Web composer for the DAO's own votes (a new work budget, a project, an award) and for claims that ask for money
-  (they need a currency approval): both stay on the command line. Desktop parity (D9).
+- The decision forms for the rarer powers listed above, and desktop and mobile parity (D9).
 - Social: merging Home and Social into one feed and one trust score service: **left alone for now, as you said**
   (Home reads launch discussion ranked by votes and Social reads a timeline, so merging them is a product redesign).
   A one-tap trade sheet on the `$TICKER` chip is not started either; the chip links to the launch, and the trade itself is
@@ -77,7 +102,7 @@ LBAMM is evaluation-only, so all of this runs on a throwaway local chain with LB
 - Doc updates (`docs/dao-os.md`), the agent review pass, and your own test run. The `buzz-review-completed` marker
   is yours to add.
 - Whitelist-only trading of the Shares through LBAMM (a two-vote sequence: the list's id is only known after it exists),
-  reading the sale's clearing price into the market vote, and a web composer for it.
+  and reading the sale's clearing price into the market vote.
 
 ## Known open issues
 
