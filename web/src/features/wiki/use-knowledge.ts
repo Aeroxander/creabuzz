@@ -40,6 +40,7 @@ import {
   type ScopeStatus,
 } from "./lib/knowledge";
 import { isAdminRole, viewerRoleFromEvents } from "./lib/live-members";
+import { buildPages } from "./lib/page-index";
 import {
   buildHistory,
   restorePayload,
@@ -188,6 +189,10 @@ export function useKnowledge(enabled = true): KnowledgeState {
     enabled,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
+    // The page list is shared: a page another person publishes or deletes has
+    // to reach this list while it is open, not only after a reload. The page
+    // editor polls at the same cadence (use-wiki-pages).
+    refetchInterval: enabled ? 5000 : false,
   });
 
   const orgQuery = useQuery({
@@ -221,7 +226,17 @@ export function useKnowledge(enabled = true): KnowledgeState {
   });
 
   const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
-  const groups = useMemo(() => classifyEvents(events), [events]);
+  const groups = useMemo(() => {
+    const classified = classifyEvents(events);
+    // A page whose deletion record came back with it is not live: hide it the
+    // way the page editor's own list does (a relay that already filters
+    // deleted pages never sends the pair).
+    const live = new Set(buildPages(events).map((page) => page.slug));
+    return {
+      ...classified,
+      team: classified.team.filter((page) => live.has(page.slug)),
+    };
+  }, [events]);
   const resolver = useMemo(
     () => teamSeatResolver(orgQuery.data ?? []),
     [orgQuery.data],

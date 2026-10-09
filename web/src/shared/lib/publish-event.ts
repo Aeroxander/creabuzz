@@ -110,5 +110,15 @@ export function publishEvent(
         reject(new Error("WebSocket connection failed"));
       }
     });
+
+    // A server that hangs up without answering is a failure now, not after the
+    // timeout: the caller can say so (or move to the next relay) at once.
+    ws.addEventListener("close", () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error("The connection closed before the server answered"));
+      }
+    });
   });
 }
