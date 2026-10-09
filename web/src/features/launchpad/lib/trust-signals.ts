@@ -63,6 +63,10 @@ import {
 } from "../../../shared/constants/kinds.ts";
 import type { LaunchReceipt } from "../models.ts";
 import { EVIDENCE_HASH_RE, TX_HASH_RE } from "./milestone-receipt.ts";
+import {
+  eventTagValue as tagValue,
+  eventContentObject as contentObject,
+} from "../../../shared/lib/event-fields.ts";
 
 /** Workflow approval outcomes — `crates/buzz-core/src/kind.rs:695-697`. */
 export const KIND_APPROVAL_GRANT = 46030;
@@ -527,23 +531,6 @@ interface ApprovalDraft {
   createdAt: number;
   /** `e` tag (event id) or `d` tag (action id) naming what was decided. */
   target: string | null;
-}
-
-function contentObject(event: NostrEvent): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(event.content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Malformed content is a null parse, not a crash (org-money convention).
-  }
-  return null;
-}
-
-function tagValue(event: NostrEvent, name: string): string | null {
-  const tag = event.tags.find((t) => t[0] === name && t.length >= 1);
-  return tag && tag.length >= 2 && tag[1] ? tag[1] : null;
 }
 
 /**

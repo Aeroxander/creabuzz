@@ -15,6 +15,8 @@
  * Alias-free on purpose: `wiki-history.test.mjs` drives it under `node --test`.
  */
 
+import { eventTagValue as tagValue } from "../../../shared/lib/event-fields.ts";
+
 /** The team page kind (human wiki) — the only kind with per-page history. */
 export const KIND_WIKI_PAGE = 44001;
 
@@ -40,15 +42,6 @@ export interface Revision {
   content: string;
   /** Team scope tag (`team:<id>`) this revision carried, or null. */
   scope: string | null;
-}
-
-function tagValue(event: HistoryEvent, name: string): string | null {
-  for (const tag of event.tags) {
-    if (tag[0] === name && typeof tag[1] === "string" && tag[1].length > 0) {
-      return tag[1];
-    }
-  }
-  return null;
 }
 
 /** A correction-suggestion proposal is a record about a page, not a revision. */

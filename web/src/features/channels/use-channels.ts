@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { getTag } from "@/shared/lib/event-fields";
 
 /** A NIP-29 channel resolved from its kind:39000 metadata event. */
 export interface Channel {
@@ -16,10 +17,6 @@ export interface Channel {
 }
 
 const KIND_CHANNEL_METADATA = 39000;
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
-}
 
 /** Deduplicate addressable events, keeping the latest per (pubkey, kind, d). */
 function dedupLatest(events: NostrEvent[]): NostrEvent[] {

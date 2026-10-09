@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryEventsHttp } from "@/shared/lib/http-query";
 import type { NostrEvent, NostrFilter } from "@/shared/lib/nostr-client";
+import { getTag } from "@/shared/lib/event-fields";
 
 /**
  * What search looks at.
@@ -55,10 +56,6 @@ export function useSearch(term: string, channelIds: string[]) {
     enabled: term.trim().length >= 2,
     staleTime: 30_000,
   });
-}
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
 }
 
 export function eventChannelId(event: NostrEvent): string | undefined {

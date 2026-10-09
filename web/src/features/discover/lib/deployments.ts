@@ -28,6 +28,10 @@
  * `project` is carried as `null`, which the caller counts as `unlinked`.
  */
 import type { NostrEvent } from "@/shared/lib/nostr-client";
+import {
+  eventTagValue as tagValue,
+  eventContentObject as contentObject,
+} from "../../../shared/lib/event-fields.ts";
 
 /** The deployment record kind. Mirrors `crates/buzz-core/src/kind.rs`. */
 export const KIND_DEPLOYMENT = 37018;
@@ -55,23 +59,6 @@ export interface DeploymentRecord {
   project: string | null;
   note: string | null;
   createdAt: number;
-}
-
-function contentObject(event: NostrEvent): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(event.content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function tagValue(event: NostrEvent, name: string): string | null {
-  const tag = event.tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 && tag[1] ? tag[1] : null;
 }
 
 /** `"<chainId>:<role>"` — the d tag, when it parses. */

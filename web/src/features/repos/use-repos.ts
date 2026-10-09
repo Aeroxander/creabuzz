@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { mockRepos } from "./mock-repos";
+import { getTag } from "@/shared/lib/event-fields";
 
 export interface Repo {
   id: string;
@@ -13,11 +14,6 @@ export interface Repo {
   owner: string;
   contributors: string[];
   createdAt: number;
-}
-
-/** Extract the first value for a given tag name from a Nostr event. */
-export function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
 }
 
 /** Extract all values for a given tag name from a Nostr event. */

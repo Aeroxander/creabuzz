@@ -31,6 +31,10 @@
 // Relative import, because the node:test runner imports this module directly
 // and cannot resolve Vite's `@/` alias.
 import { KIND_EVM_BINDING } from "../../../shared/constants/kinds.ts";
+import {
+  eventTagValue as tagValue,
+  eventContentObject as contentObject,
+} from "../../../shared/lib/event-fields.ts";
 
 // Structural input, as `lib/manifest.ts` `parsePitch` does: the node:test
 // runner imports this module directly, so it stays free of Vite-only aliases.
@@ -63,23 +67,6 @@ export interface BindingRecord {
   /** `content.revoked === true` — the binding was withdrawn. */
   revoked: boolean;
   createdAt: number;
-}
-
-function contentObject(event: BindingEvent): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(event.content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Malformed content is a null parse, not a crash (org-money.ts:49).
-  }
-  return null;
-}
-
-function tagValue(event: BindingEvent, name: string): string | null {
-  const tag = event.tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 && tag[1] ? tag[1] : null;
 }
 
 /**

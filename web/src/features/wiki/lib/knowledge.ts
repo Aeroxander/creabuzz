@@ -53,6 +53,8 @@
  * Alias-free on purpose: `knowledge.test.mjs` drives it under `node --test`.
  */
 
+import { eventTagValue as tagValue } from "../../../shared/lib/event-fields.ts";
+
 /** The team page kind (human wiki). Product name: "Team page". */
 export const KIND_WIKI_PAGE = 44001;
 /** The agent page kind (agent wiki). Product name: "Agent page". */
@@ -115,15 +117,6 @@ export interface KnowledgePage {
   provenance: AgentProvenance | null;
   /** The team-node id this page's edits are scoped to, or null (open editing). */
   scope: string | null;
-}
-
-function tagValue(event: KnowledgeEvent, name: string): string | null {
-  for (const tag of event.tags) {
-    if (tag[0] === name && typeof tag[1] === "string" && tag[1].length > 0) {
-      return tag[1];
-    }
-  }
-  return null;
 }
 
 /** First `t`-tag value carrying `prefix`; null when absent. */

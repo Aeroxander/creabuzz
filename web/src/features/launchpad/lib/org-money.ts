@@ -30,6 +30,7 @@
  */
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { decodeU256, ethCall } from "../chain.ts";
+import { eventContentObject as contentObject } from "../../../shared/lib/event-fields.ts";
 
 /** The `onchain` binding the `buzz org bind` update carries (org.rs:889-896). */
 export interface OrgBinding {
@@ -38,18 +39,6 @@ export interface OrgBinding {
   dao: string;
   chain: string | null;
   boundAt: number | null;
-}
-
-function contentObject(event: NostrEvent): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(event.content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Malformed content is a null parse, not a crash (index-org.ts convention).
-  }
-  return null;
 }
 
 /**

@@ -197,6 +197,12 @@ export type ProposalKind = "plain" | "futarchy-budget" | "signal";
  * shape).
  */
 import type { ProposalIntent } from "./lib/vote-tx.ts";
+import { eventContentObject } from "../../shared/lib/event-fields.ts";
+
+/** The mirror's JSON body; malformed mirrors read as empty and are dropped by the caller. */
+function contentObject(event: NostrEvent): Record<string, unknown> {
+  return eventContentObject(event) ?? {};
+}
 
 export type { ProposalIntent };
 
@@ -284,18 +290,6 @@ function tagValues(event: NostrEvent, name: string): string[] {
 
 export function launchCoordinate(author: string, launchId: string): string {
   return `${KIND_LAUNCH_RECORD}:${author}:${launchId}`;
-}
-
-function contentObject(event: NostrEvent): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(event.content);
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-  } catch {
-    // Malformed mirrors are dropped by the caller.
-  }
-  return {};
 }
 
 function str(value: unknown): string | null {

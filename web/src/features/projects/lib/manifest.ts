@@ -34,6 +34,7 @@
  */
 
 import { KIND_ORG_PITCH } from "../../../shared/constants/kinds.ts";
+import { parseJsonObject, tagValue } from "../../../shared/lib/event-fields.ts";
 
 /** Project id (`d` of the org node and the pitch). Relay caps `d` at 64; the join-request `d` needs room for `/<role>/<requester-16>`. */
 export const PROJECT_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -74,23 +75,10 @@ export interface PitchManifest {
   overPool: boolean;
 }
 
-function tagValue(tags: string[][], name: string): string | null {
-  const tag = tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 && tag[1] ? tag[1] : null;
-}
-
+/** Malformed content still surfaces the tag-declared structure, so it reads as empty. */
 function contentObject(content: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Malformed content still surfaces the tag-declared structure.
-  }
-  return {};
+  return parseJsonObject(content) ?? {};
 }
-
 /** Sum of declared stakes — the pool usage. */
 export function declaredPool(roles: readonly RoleDeclaration[]): number {
   return roles.reduce((total, role) => total + role.pct, 0);

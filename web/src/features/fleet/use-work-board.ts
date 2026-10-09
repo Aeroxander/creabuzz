@@ -41,6 +41,7 @@ import {
   type FleetTask,
   type TaskPriority,
 } from "./use-agent-tasks";
+import { getTag } from "@/shared/lib/event-fields";
 
 export const KIND_GIT_STATUS_OPEN = 1630;
 export const KIND_GIT_STATUS_MERGED = 1631;
@@ -94,10 +95,6 @@ interface GitIssue {
   tags: string[][];
   pubkey: string;
   created_at: number;
-}
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
 }
 
 function taskApprover(event: NostrEvent): string | null {

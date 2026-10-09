@@ -28,6 +28,7 @@ import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { getTag } from "@/shared/lib/event-fields";
 
 export interface DmConversation {
   /** The conversation's channel id, used as the `h` tag of its messages. */
@@ -40,10 +41,6 @@ export interface DmConversation {
 /** One conversation-list query key, shared by the list and its refetches. */
 export function dmConversationsKey(me: string | null): string[] {
   return ["dm-conversations", me ?? "none"];
-}
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
 }
 
 /**

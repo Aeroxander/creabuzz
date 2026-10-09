@@ -38,10 +38,7 @@ import { useAgentRoster } from "@/features/fleet/use-agent-roster";
 import { PresenceStrip } from "@/features/presence/ui/PresenceStrip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Bot } from "lucide-react";
-
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
-}
+import { getTag } from "@/shared/lib/event-fields";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 

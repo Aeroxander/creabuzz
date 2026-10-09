@@ -32,6 +32,7 @@
 
 import { KIND_ORG_GRANT } from "../../../shared/constants/kinds.ts";
 import { PROJECT_ID_RE, ROLE_SLUG_RE } from "./manifest.ts";
+import { tagValue } from "../../../shared/lib/event-fields.ts";
 
 const PUBKEY_RE = /^[0-9a-f]{64}$/;
 
@@ -49,11 +50,6 @@ export interface OwnershipGrant {
   grantee: string;
   revoked: boolean;
   createdAt: number;
-}
-
-function tagValue(tags: string[][], name: string): string | null {
-  const tag = tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 && tag[1] ? tag[1] : null;
 }
 
 /**
