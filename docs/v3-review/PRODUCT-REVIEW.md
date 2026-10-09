@@ -160,7 +160,8 @@ deleted, 17 added (the shared helpers and their tests).
 - The TanStack Query refetch timers in the web app: they pause in a hidden tab and the data is live while you look.
 
 **Checked after the last change:** web typecheck, 1,224 web unit tests, 680 core tests, the web checks (`pnpm check`),
-the desktop typecheck, `cargo fmt`, the whole Rust workspace with `cargo check --all-targets` (no warnings left), 744
+the desktop typecheck and its 8,119 unit tests, seven real-chain browser journeys (work, paid work, DAO launch, DAO,
+decisions, milestone, auction), `cargo fmt`, the whole Rust workspace with `cargo check --all-targets` (no warnings left), 744
 CLI tests, the Paperclip, agwiki and provider tests, and the mocked browser suite: 180 pass, 26 are skipped (they need
 a local chain), and the same 13 fail that failed before this work started.
 
