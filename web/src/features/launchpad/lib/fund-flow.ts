@@ -31,6 +31,12 @@ import {
   ethCall,
   ethGetBalance,
 } from "../chain.ts";
+import {
+  buildGraduationsView,
+  decodeGraduationRecord,
+  type GraduationRecord,
+} from "@creaton/core/launchpad/graduationFlow.ts";
+import { addressWordValue } from "@creaton/core/launchpad/auctionPlan.ts";
 import type { LaunchReceipt } from "../models.ts";
 import { ETH_TOKEN } from "./ragequit-tx.ts";
 
@@ -42,72 +48,12 @@ export const SELECTOR_GRADUATIONS = "0x62e3857f"; // graduations(address)
 export const SELECTOR_RESERVE_BPS = "0x38925449"; // reserveBps()
 export const SELECTOR_TREASURY = "0x61d027b3"; // treasury()
 
-function addressWord(address: string): string {
-  return address.toLowerCase().slice(2).padStart(64, "0");
-}
-
-function wordList(hex: string): string[] {
-  const body = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (body.length % 64 !== 0) {
-    throw new Error(`fund-flow: expected whole ABI words, got ${hex}`);
-  }
-  const out: string[] = [];
-  for (let i = 0; i < body.length; i += 64) out.push(body.slice(i, i + 64));
-  return out;
-}
-
-function wordValue(w: string): bigint {
-  return BigInt(`0x${w}`);
-}
-
-function addressWordValue(w: string): string {
-  return `0x${w.slice(24).toLowerCase()}`;
-}
-
 // ----------------------------------------------------- graduation record ----
-
-/** The `graduations(address)` record (GraduationExecutor.sol:34-45). */
-export interface GraduationRecord {
-  initialPriceX96: bigint;
-  tokensSold: bigint;
-  currencyRaised: bigint;
-  reserveEscrow: bigint;
-  treasuryShare: bigint;
-  unsoldTokens: bigint;
-  tokenMasterPool: string;
-  executed: boolean;
-}
-
-/** Decode the 8-word `graduations(address)` getter return (struct-as-words). */
-export function decodeGraduationRecord(returnData: string): GraduationRecord {
-  const w = wordList(returnData);
-  if (w.length !== 8) {
-    throw new Error(
-      `expected 8 words from graduations(address), got ${w.length}`,
-    );
-  }
-  return {
-    initialPriceX96: wordValue(w[0]),
-    tokensSold: wordValue(w[1]),
-    currencyRaised: wordValue(w[2]),
-    reserveEscrow: wordValue(w[3]),
-    treasuryShare: wordValue(w[4]),
-    unsoldTokens: wordValue(w[5]),
-    tokenMasterPool: addressWordValue(w[6]),
-    executed: wordValue(w[7]) !== 0n,
-  };
-}
-
-/** The executor's `graduations(auction)` view call. */
-export function buildGraduationsView(
-  executor: string,
-  auction: string,
-): { to: string; data: string } {
-  return {
-    to: executor.toLowerCase(),
-    data: `${SELECTOR_GRADUATIONS}${addressWord(auction)}`,
-  };
-}
+// The record, its decoder and the `graduations(auction)` view call live once in
+// `@creaton/core`; they are re-exported here so this module's callers keep one
+// import site.
+export { buildGraduationsView, decodeGraduationRecord };
+export type { GraduationRecord };
 
 /** The onchain side of the split, as the panel reads it. */
 export interface GraduationState {
@@ -143,11 +89,7 @@ export async function fetchGraduationState(
   const [treasuryRaw, bpsRaw, recordRaw] = await Promise.all([
     ethCall(endpoint, executor, SELECTOR_TREASURY),
     ethCall(endpoint, executor, SELECTOR_RESERVE_BPS),
-    ethCall(
-      endpoint,
-      executor,
-      `${SELECTOR_GRADUATIONS}${addressWord(auction)}`,
-    ),
+    ethCall(endpoint, executor, buildGraduationsView(executor, auction).data),
   ]);
   return {
     executor,
@@ -162,9 +104,11 @@ export async function fetchGraduationState(
 }
 
 function decodeAddressWord(returnData: string, message: string): string {
-  const w = wordList(returnData);
-  if (w.length < 1) throw new Error(`fund-flow: ${message}`);
-  return addressWordValue(w[0]);
+  try {
+    return addressWordValue(returnData);
+  } catch {
+    throw new Error(`fund-flow: ${message}`);
+  }
 }
 
 /**

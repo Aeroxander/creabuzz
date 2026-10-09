@@ -210,7 +210,7 @@ test("decoders reject short or garbled returns, never guess", () => {
     decodeAddressWord(words(addressWord(ADDRESS))),
     ADDRESS.toLowerCase(),
   );
-  assert.throws(() => decodeAddressWord("0x"), /ABI words/);
+  assert.throws(() => decodeAddressWord("0x"), /whole-word hex/);
   // High bits set: not an address word.
   assert.throws(
     () => decodeAddressWord(words(word((1n << 160n) | 5n))),

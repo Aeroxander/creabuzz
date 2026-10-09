@@ -1,3 +1,5 @@
+import { wordValue, words as wordList } from "./auctionPlan.ts";
+
 /** `cast sig 'claimableOf(address)'` (golden). */
 export const SELECTOR_CLAIMABLE_OF = "0x8903ab9d";
 /** `cast sig 'allocOf(address)'` (golden). */
@@ -168,20 +170,6 @@ export interface AttestedRoyaltyReq {
   term: bigint;
   band: number;
   allocation: bigint;
-}
-
-function wordList(hex: string): string[] {
-  const body = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (body.length === 0 || body.length % 64 !== 0) {
-    throw new Error(`royalty: expected whole ABI words, got ${hex}`);
-  }
-  const out: string[] = [];
-  for (let i = 0; i < body.length; i += 64) out.push(body.slice(i, i + 64));
-  return out;
-}
-
-function wordValue(word: string): bigint {
-  return BigInt(`0x${word}`);
 }
 
 /** Decode a 32-byte word to a JS number (uint32/uint8 return values). */
