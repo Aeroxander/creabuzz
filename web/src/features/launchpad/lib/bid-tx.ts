@@ -18,41 +18,52 @@
 
 // Extension included on purpose: this module is driven by `bid-tx.test.mjs`
 // under `node --test`, which does not resolve extensionless specifiers.
+import {
+  PERMIT2_ADDRESS,
+  SELECTOR_CLAIM_TOKENS,
+  SELECTOR_CLAIM_TOKENS_BATCH,
+  SELECTOR_ERC20_APPROVE,
+  SELECTOR_EXIT_BID,
+  SELECTOR_EXIT_PARTIALLY_FILLED_BID,
+  SELECTOR_PERMIT2_APPROVE,
+  SELECTOR_SUBMIT_BID,
+  bidPlanWithDefaultHint,
+  encodeClaimTokens,
+  encodeClaimTokensBatch,
+  encodeErc20Approve,
+  encodeExitBid,
+  encodeExitPartiallyFilledBid,
+  encodePermit2Approve,
+  encodeSubmitBid,
+} from "@creaton/core/launchpad/evmCalls.ts";
+import type { BidPlan } from "@creaton/core/launchpad/evmCalls.ts";
+
+/** The encoders live once, in `@creaton/core`; they are re-exported here so this module's callers keep one import site. */
+export {
+  PERMIT2_ADDRESS,
+  SELECTOR_CLAIM_TOKENS,
+  SELECTOR_CLAIM_TOKENS_BATCH,
+  SELECTOR_ERC20_APPROVE,
+  SELECTOR_EXIT_BID,
+  SELECTOR_EXIT_PARTIALLY_FILLED_BID,
+  SELECTOR_PERMIT2_APPROVE,
+  SELECTOR_SUBMIT_BID,
+  bidPlanWithDefaultHint,
+  encodeClaimTokens,
+  encodeClaimTokensBatch,
+  encodeErc20Approve,
+  encodeExitBid,
+  encodeExitPartiallyFilledBid,
+  encodePermit2Approve,
+  encodeSubmitBid,
+};
+export type { BidPlan };
+
 import { maxBidPrice } from "./launch-params.ts";
-
-/** Canonical Permit2 (used by every CCA deployment for currency pulls). */
-export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-
-// Selectors, keccak-256 first 4 bytes of the canonical signature.
-// submitBid(uint256,uint128,address,uint256,bytes)
-export const SELECTOR_SUBMIT_BID = "0xa52c8728";
-// exitBid(uint256)
-export const SELECTOR_EXIT_BID = "0x8e4deb17";
-// exitPartiallyFilledBid(uint256,uint64,uint64)
-export const SELECTOR_EXIT_PARTIALLY_FILLED_BID = "0x36dec5f2";
 // checkpoint() — materialize the current block's checkpoint
 export const SELECTOR_CHECKPOINT = "0xc2c4c5c1";
-// claimTokens(uint256)
-export const SELECTOR_CLAIM_TOKENS = "0x46e04a2f";
-// claimTokensBatch(address,uint256[])
-export const SELECTOR_CLAIM_TOKENS_BATCH = "0xb8f163d6";
-// approve(address,address,uint160,uint48) on Permit2
-export const SELECTOR_PERMIT2_APPROVE = "0x87517c45";
-// approve(address,uint256) on the ERC-20 currency (the holder -> Permit2 leg)
-export const SELECTOR_ERC20_APPROVE = "0x095ea7b3";
 // allowance(address,address) on the ERC-20 currency
 export const SELECTOR_ERC20_ALLOWANCE = "0xdd62ed3e";
-
-export interface BidPlan {
-  maxPriceQ96: bigint;
-  /** Bid budget in currency smallest units (USDC 6 decimals). */
-  amount: bigint;
-  /** The bidder receiving tokens and refunds. `address(0)` reverts onchain. */
-  owner: string;
-  /** Gas hint: Q96 price of the nearest initialized tick below maxPrice. */
-  prevTickPriceQ96: bigint;
-  hookData: string;
-}
 
 export interface UnsignedTx {
   to: string;
@@ -155,106 +166,9 @@ function encodeAddress(a: string): string {
   return pad32(BigInt(`0x${h}`));
 }
 
-/** ABI-encode `submitBid(uint256,uint128,address,uint256,bytes)`. */
-export function encodeSubmitBid(plan: BidPlan): string {
-  const hookData = plan.hookData.replace(/^0x/, "");
-  if (!/^[0-9a-f]*$/.test(hookData)) throw new Error("hookData must be hex");
-  const tailBytesLen = hookData.length / 2;
-  const head =
-    SELECTOR_SUBMIT_BID.slice(2) +
-    pad32(plan.maxPriceQ96) +
-    pad32(plan.amount) +
-    encodeAddress(plan.owner) +
-    pad32(plan.prevTickPriceQ96) +
-    pad32(0xa0n); // offset of hookData tail
-  // ABI packs `bytes` right-padded to a multiple of 32 bytes, with its byte
-  // length in a 32-byte word. Unpadded tails make calldata shorter than the
-  // decoder expects and the whole call misparse.
-  const paddedData = hookData.padEnd(Math.ceil(tailBytesLen / 32) * 64, "0");
-  const tail = pad32(BigInt(tailBytesLen)) + paddedData;
-  return `0x${head}${tail}`;
-}
-
-/** ABI-encode `exitBid(uint256)`. */
-export function encodeExitBid(bidId: bigint): string {
-  return `0x${SELECTOR_EXIT_BID.slice(2)}${pad32(bidId)}`;
-}
-
-/**
- * ABI-encode `exitPartiallyFilledBid(uint256,uint64,uint64)` — the refund of
- * the unfilled share of a partially filled (or outbid) bid. The two hints are
- * checkpoint block numbers the caller derives from the checkpoint walk
- * (`lib/my-bids.ts`); the contract validates them against its latest state and
- * reverts `InvalidLastFullyFilledCheckpointHint` / `InvalidOutbidBlock
- * CheckpointHint` when they are stale, so they must be derived fresh per send.
- */
-export function encodeExitPartiallyFilledBid(
-  bidId: bigint,
-  lastFullyFilledCheckpointBlock: bigint,
-  outbidBlock: bigint,
-): string {
-  return (
-    "0x" +
-    SELECTOR_EXIT_PARTIALLY_FILLED_BID.slice(2) +
-    pad32(bidId) +
-    pad32(lastFullyFilledCheckpointBlock) +
-    pad32(outbidBlock)
-  );
-}
-
 /** ABI-encode the bare `checkpoint()` call (no args). */
 export function encodeCheckpointCallData(): string {
   return SELECTOR_CHECKPOINT;
-}
-
-/** ABI-encode `claimTokens(uint256)`. */
-export function encodeClaimTokens(bidId: bigint): string {
-  return `0x${SELECTOR_CLAIM_TOKENS.slice(2)}${pad32(bidId)}`;
-}
-
-/** ABI-encode `claimTokensBatch(address,uint256[])` with non-empty ids. */
-export function encodeClaimTokensBatch(
-  owner: string,
-  bidIds: bigint[],
-): string {
-  if (bidIds.length === 0)
-    throw new Error("claim batch needs at least one bid id");
-  const head =
-    SELECTOR_CLAIM_TOKENS_BATCH.slice(2) + encodeAddress(owner) + pad32(0x40n); // offset of the dynamic array
-  const tail = pad32(BigInt(bidIds.length)) + bidIds.map(pad32).join("");
-  return `0x${head}${tail}`;
-}
-
-/**
- * ABI-encode `approve(address,address,uint160,uint48)` on Permit2 — the
- * allowance a USDC bid needs before `submitBid` (`permit2TransferFrom` pulls
- * `amount` from the sender). Amounts are capped at 2^160-1 and the deadline at
- * 2^48-1 by the calldata width; the caller should pass a sane deadline.
- */
-export function encodePermit2Approve(
-  token: string,
-  spender: string,
-  amount: bigint,
-  deadline: bigint,
-): string {
-  return (
-    "0x" +
-    SELECTOR_PERMIT2_APPROVE.slice(2) +
-    encodeAddress(token) +
-    encodeAddress(spender) +
-    pad32(amount) +
-    pad32(deadline)
-  );
-}
-
-/**
- * ABI-encode `approve(spender, amount)` on the ERC-20 currency. Permit2 pulls
- * a bid's funds with `transferFrom`, so the bidder must first approve PERMIT2
- * on the token itself; `Permit2.approve` (above) only sets Permit2's own
- * per-spender allowance and reverts the pull for a first-time bidder without it.
- */
-export function encodeErc20Approve(spender: string, amount: bigint): string {
-  return `0x${SELECTOR_ERC20_APPROVE.slice(2)}${encodeAddress(spender)}${pad32(amount)}`;
 }
 
 /** ABI-encode `allowance(owner, spender)` on the ERC-20 currency. */
@@ -346,17 +260,4 @@ export function buildBidCalls(input: {
     native ? { ...bid, value: `0x${input.plan.amount.toString(16)}` } : bid,
   );
   return calls;
-}
-
-/**
- * A bid plan whose previous-tick hint defaults to the launch's own floor price
- * (the auction's first initialized tick) unless the caller supplies a better
- * one. Passing the launch floor is what the 4-arg `submitBid` overload does
- * onchain, and it is always valid.
- */
-export function bidPlanWithDefaultHint(
-  plan: Omit<BidPlan, "prevTickPriceQ96">,
-  floorPriceQ96: bigint,
-): BidPlan {
-  return { ...plan, prevTickPriceQ96: floorPriceQ96 };
 }

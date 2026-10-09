@@ -24,32 +24,45 @@
  * desktop's `mintFlow.test.mjs` `cast` vectors are the byte-parity bind.
  */
 import {
-  abiEncode,
-  abiEncodeCall,
-  type AbiField,
+  CANONICAL_TRANSFER_VALIDATOR,
+  DEFAULT_STANDARD_POOL_FACTORY,
+  DEFAULT_TOKENMASTER_ROUTER,
+  INITIAL_SPEND_CREATOR_SHARE_BPS,
+  MAX_SPEND_CREATOR_SHARE_BPS,
+  MAX_TOKEN_FEE_BPS,
+  MAX_TOKEN_SPREAD_BPS,
+  SIGNATURE_DEPLOY_TOKEN,
+  SIGNATURE_SET_RULESET_OF_COLLECTION,
+  SIGNATURE_SET_TRANSFER_VALIDATOR,
+  ZERO_ADDRESS,
+  encodeDeployToken,
+  encodeSetRulesetOfCollection,
+  encodeSetTransferValidator,
+} from "@creaton/core/launchpad/evmCalls.ts";
+import type { TokenDeployCallsParams } from "@creaton/core/launchpad/evmCalls.ts";
+
+/** The encoders live once, in `@creaton/core`; they are re-exported here so this module's callers keep one import site. */
+export {
+  CANONICAL_TRANSFER_VALIDATOR,
+  DEFAULT_STANDARD_POOL_FACTORY,
+  DEFAULT_TOKENMASTER_ROUTER,
+  INITIAL_SPEND_CREATOR_SHARE_BPS,
+  MAX_SPEND_CREATOR_SHARE_BPS,
+  MAX_TOKEN_FEE_BPS,
+  MAX_TOKEN_SPREAD_BPS,
+  SIGNATURE_DEPLOY_TOKEN,
+  SIGNATURE_SET_RULESET_OF_COLLECTION,
+  SIGNATURE_SET_TRANSFER_VALIDATOR,
+  ZERO_ADDRESS,
+  encodeDeployToken,
+  encodeSetRulesetOfCollection,
+  encodeSetTransferValidator,
+};
+export type { TokenDeployCallsParams };
+
+import {
   functionSelector,
 } from "../../identity/lib/userop-abi.ts";
-
-/** Canonical zero address — native pairing / "no validator yet" marker. */
-export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-
-/** The TokenMaster router `DeployAppToken.s.sol` defaults to (APPTOKEN_ROUTER). */
-export const DEFAULT_TOKENMASTER_ROUTER =
-  "0x0E00009d00d1000069ed00A908e00081F5006008";
-
-/**
- * The StandardPool factory `DeployAppToken.s.sol` defaults to
- * (APPTOKEN_STANDARD_FACTORY).
- */
-export const DEFAULT_STANDARD_POOL_FACTORY =
-  "0x000000c5F2DF717F497BeAcCE161F8b042310d17";
-
-/**
- * The canonical creator-token Transfer Validator the deploy script wires when
- * APPTOKEN_TV is unset (`DeployAppToken.s.sol`, `realTV`).
- */
-export const CANONICAL_TRANSFER_VALIDATOR =
-  "0x721C008fdff27BF06E7E123956E2Fe03B63342e3";
 
 /** `infrastructureFeeBPS() -> uint16` on the TokenMaster router. */
 export const SIGNATURE_INFRA_FEE_BPS = "infrastructureFeeBPS()";
@@ -68,42 +81,12 @@ export const SELECTOR_INFRA_FEE_BPS = "0xa82f4d02";
 /** Selector of {@link SIGNATURE_COMPUTE_DEPLOYMENT_ADDRESS} (`cast`: `0x8d33f2bf`). */
 export const SELECTOR_COMPUTE_DEPLOYMENT_ADDRESS = "0x8d33f2bf";
 
-/** `setTransferValidator(address)` — ERC-20C owner op on the new token. */
-export const SIGNATURE_SET_TRANSFER_VALIDATOR = "setTransferValidator(address)";
-/** `setRulesetOfCollection(address,uint8,address,uint8,uint16)` — TV ruleset. */
-export const SIGNATURE_SET_RULESET_OF_COLLECTION =
-  "setRulesetOfCollection(address,uint8,address,uint8,uint16)";
-/**
- * `deployToken(...)` — TokenMaster router entry point
- * (`ITokenMasterRouter.deployToken(DeploymentParameters,SignatureECDSA)`).
- * Tuple types follow `tm-tokenmaster/src/DataTypes.sol` field order exactly.
- */
-export const SIGNATURE_DEPLOY_TOKEN =
-  "deployToken((address,bytes32,address,bool,bool," +
-  "(string,string,uint8,address,address,uint256,bytes,address,bool,address,uint256),uint16)," +
-  "(uint256,bytes32,bytes32))";
-
 /**
  * `deployParams.maxInfrastructureFeeBPS` in `DeployAppToken.s.sol` (250) —
  * the cap `encodeDeployToken` bakes into the deploy call. A live router fee
  * above it makes `deployToken` revert (`InvalidInfrastructureFeeBPS`).
  */
-export const MAX_INFRASTRUCTURE_FEE_BPS = 250n;
-
-/**
- * Immutable pool ceilings (docs/dao-os.md R4), mirrored from
- * `contracts/script/DeployAppToken.s.sol` and desktop `evmCalls.ts` (pinned by
- * `mint-tx.test.mjs`). They used to be 10_000 / 9999 bps — "the owner may
- * charge a 100% fee" — a rug-capable configuration. Whoever owns the token can
- * move fees and spreads anywhere BELOW these, never above.
- */
-export const MAX_TOKEN_FEE_BPS = 1_000n;
-export const MAX_TOKEN_SPREAD_BPS = 1_000n;
-/** Ceiling on the creator's spend share: equal to its initial value, so it can only go down. */
-export const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
-export const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
-
-const TOKEN_DECIMALS = 18n; // the script hardcodes 18
+export const MAX_INFRASTRUCTURE_FEE_BPS = 250n; // the script hardcodes 18
 const VANILLA_RULESET_ID = 1n; // open trading; tighten later via the validator
 
 /** One unsigned call — the shape both senders receive unmodified. */
@@ -111,66 +94,6 @@ export interface MintEvmCall {
   to: string;
   data: string;
   value: string;
-}
-
-/** Inputs for {@link buildTokenDeployCalls} (desktop `TokenDeployCallsParams`). */
-export interface TokenDeployCallsParams {
-  /** `PoolDeploymentParameters.name`. */
-  name: string;
-  /** `PoolDeploymentParameters.symbol`. */
-  symbol: string;
-  /**
-   * APPTOKEN_TREASURY — token `initialOwner` AND `initialSupplyRecipient`.
-   * The deploy script requires broadcaster == treasury (the validator wiring
-   * is an owner op); the signing account must be this address.
-   */
-  treasury: string;
-  /**
-   * The precomputed deterministic token address — `tokenAddress` in
-   * `DeploymentParameters`. Derived from
-   * `StandardPoolFactory.computeDeploymentAddress(...)` (a view call).
-   */
-  tokenAddress: string;
-  /** APPTOKEN_SALT → `bytes32(tokenSalt)`. Default 1n (the script default). */
-  salt?: bigint;
-  /**
-   * Initial supply in base units (18 decimals). The script computes
-   * `APPTOKEN_INITIAL_SUPPLY * 1e18`; pass the product. Default 1_000_000e18.
-   */
-  initialSupplyAmount?: bigint;
-  /**
-   * APPTOKEN_PAIRED_DEPOSIT_WEI — the native starting reserve, sent as
-   * `msg.value` with `deployToken` (native pairing requires it to be nonzero).
-   * Default 0.1 ether.
-   */
-  pairedDepositWei?: bigint;
-  /** APPTOKEN_SPREAD_BPS — initial buy+sell spread. Default 100. */
-  spreadBps?: number;
-  /** APPTOKEN_BUY_FEE_BPS — initial buy fee. Default 200. */
-  buyFeeBps?: number;
-  /** APPTOKEN_SELL_FEE_BPS — initial sell fee. Default 200. */
-  sellFeeBps?: number;
-  /**
-   * APPTOKEN_TV — `poolParams.defaultTransferValidator`, exactly as the script
-   * passes it (may be the zero address = no validator at construction). The
-   * post-deploy wiring resolves the zero address to
-   * {@link CANONICAL_TRANSFER_VALIDATOR}, mirroring the script's `realTV`.
-   */
-  defaultTransferValidator?: string;
-  /** APPTOKEN_ROUTER — TokenMaster router. Default {@link DEFAULT_TOKENMASTER_ROUTER}. */
-  router?: string;
-  /** APPTOKEN_STANDARD_FACTORY. Default {@link DEFAULT_STANDARD_POOL_FACTORY}. */
-  factory?: string;
-  /**
-   * APPTOKEN_OWNER — `poolParams.initialOwner`, the holder of the token's fee
-   * and spread levers (below the immutable ceilings). Defaults to `treasury`.
-   * Pass the DAO to launch DAO-owned. The transfer-validator wiring (calls 2-3
-   * of {@link buildTokenDeployCalls}) is an OWNER op, so those calls are only
-   * composed when the owner is the treasury wallet that signs. To hand a
-   * treasury-owned token to the DAO after graduation use
-   * {@link buildTransferTokenOwnershipCall}.
-   */
-  owner?: string;
 }
 
 interface ResolvedTokenDeployParams {
@@ -228,152 +151,6 @@ function resolveTokenDeployParams(
 
 function valueHex(value: bigint): string {
   return `0x${value.toString(16)}`;
-}
-
-function bytes32Hex(value: bigint): string {
-  return `0x${value.toString(16).padStart(64, "0")}`;
-}
-
-function zero32(): string {
-  return `0x${"0".repeat(64)}`;
-}
-
-/**
- * `DeploymentParameters.poolParams.encodedInitializationArgs` — the script's
- * `abi.encode(StandardPoolInitializationParameters{...})`. All fields are
- * static, so the encoding is 28 flat words. Field order:
- * `pools/standard-token-pool/DataTypes.sol` (port of evmCalls.ts:690-775).
- */
-function encodeStandardPoolInitArgs(p: ResolvedTokenDeployParams): string {
-  const buyParams: AbiField = {
-    kind: "tuple",
-    fields: [
-      { kind: "uint", value: BigInt(p.spreadBps) }, // buySpreadBPS
-      { kind: "uint", value: BigInt(p.buyFeeBps) }, // buyFeeBPS
-      { kind: "uint", value: 10n ** 18n }, // buyCostPairedTokenNumerator
-      { kind: "uint", value: 10n ** 18n }, // buyCostPoolTokenDenominator
-      { kind: "bool", value: false }, // useTargetSupply
-      { kind: "uint", value: 0n }, // reserved
-      { kind: "uint", value: 0n }, // buyDemandFeeBPS
-      { kind: "uint", value: 0n }, // targetSupplyBaseline
-      { kind: "uint", value: 0n }, // targetSupplyBaselineScaleFactor
-      { kind: "uint", value: 0n }, // targetSupplyGrowthRatePerSecond
-      { kind: "uint", value: 0n }, // targetSupplyBaselineTimestamp
-    ],
-  };
-  const sellParams: AbiField = {
-    kind: "tuple",
-    fields: [
-      { kind: "uint", value: BigInt(p.spreadBps) }, // sellSpreadBPS
-      { kind: "uint", value: BigInt(p.sellFeeBps) }, // sellFeeBPS
-    ],
-  };
-  const spendParams: AbiField = {
-    kind: "tuple",
-    fields: [{ kind: "uint", value: INITIAL_SPEND_CREATOR_SHARE_BPS }], // creatorShareBPS — script's 5000
-  };
-  return abiEncode([
-    {
-      kind: "tuple",
-      fields: [
-        { kind: "address", value: p.treasury }, // initialSupplyRecipient
-        { kind: "uint", value: p.initialSupplyAmount },
-        { kind: "uint", value: 0n }, // minBuySpreadBPS
-        { kind: "uint", value: MAX_TOKEN_SPREAD_BPS }, // maxBuySpreadBPS
-        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxBuyFeeBPS
-        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxBuyDemandFeeBPS
-        { kind: "uint", value: 0n }, // minSellSpreadBPS
-        { kind: "uint", value: MAX_TOKEN_SPREAD_BPS }, // maxSellSpreadBPS
-        { kind: "uint", value: MAX_TOKEN_FEE_BPS }, // maxSellFeeBPS
-        { kind: "uint", value: MAX_SPEND_CREATOR_SHARE_BPS }, // maxSpendCreatorShareBPS
-        { kind: "uint", value: 0n }, // creatorEmissionRateNumerator
-        { kind: "uint", value: 1n }, // creatorEmissionRateDenominator
-        { kind: "uint", value: 0n }, // creatorEmissionsHardCap
-        buyParams, // initialBuyParameters
-        sellParams, // initialSellParameters
-        spendParams, // initialSpendParameters
-        { kind: "uint", value: 0n }, // initialPausedState
-      ],
-    },
-  ]);
-}
-
-/**
- * ABI-encode `router.deployToken{value: pairedDepositWei}(deployParams,
- * SignatureECDSA({v: 0, r: 0, s: 0}))` — the deploy script's one router call.
- * The empty signature matches the script (permissionless on fresh/local
- * deployments). Struct field order: `tm-tokenmaster/src/DataTypes.sol`.
- */
-export function encodeDeployToken(params: TokenDeployCallsParams): string {
-  const p = resolveTokenDeployParams(params);
-  return abiEncodeCall(SIGNATURE_DEPLOY_TOKEN, [
-    {
-      kind: "tuple",
-      fields: [
-        { kind: "address", value: p.factory }, // tokenFactory
-        { kind: "bytes32", value: bytes32Hex(p.salt) }, // tokenSalt
-        { kind: "address", value: p.tokenAddress },
-        { kind: "bool", value: false }, // blockTransactionsFromUntrustedChannels
-        { kind: "bool", value: false }, // restrictPairingToLists
-        {
-          kind: "tuple",
-          fields: [
-            { kind: "string", value: p.name },
-            { kind: "string", value: p.symbol },
-            { kind: "uint", value: TOKEN_DECIMALS }, // tokenDecimals — 18
-            { kind: "address", value: p.owner }, // initialOwner (APPTOKEN_OWNER)
-            { kind: "address", value: ZERO_ADDRESS }, // pairedToken — native
-            { kind: "uint", value: p.pairedDepositWei },
-            {
-              kind: "bytes",
-              value: encodeStandardPoolInitArgs(p),
-            }, // encodedInitializationArgs
-            { kind: "address", value: p.defaultTransferValidator },
-            { kind: "bool", value: false }, // useRouterForPairedTransfers
-            { kind: "address", value: ZERO_ADDRESS }, // partnerFeeRecipient
-            { kind: "uint", value: 0n }, // partnerFeeBPS
-          ],
-        }, // poolParams
-        { kind: "uint", value: MAX_INFRASTRUCTURE_FEE_BPS },
-      ],
-    }, // DeploymentParameters
-    {
-      kind: "tuple",
-      fields: [
-        { kind: "uint", value: 0n },
-        { kind: "bytes32", value: zero32() },
-        { kind: "bytes32", value: zero32() },
-      ],
-    }, // empty signature
-  ]);
-}
-
-/** ABI-encode `token.setTransferValidator(validator)` (ERC-20C owner op). */
-export function encodeSetTransferValidator(validator: string): string {
-  return abiEncodeCall(SIGNATURE_SET_TRANSFER_VALIDATOR, [
-    { kind: "address", value: validator },
-  ]);
-}
-
-/**
- * ABI-encode `validator.setRulesetOfCollection(collection, rulesetId,
- * customRuleset, globalOptions, rulesetOptions)` (the deploy script's pinned
- * `IValidatorRuleset` surface).
- */
-export function encodeSetRulesetOfCollection(
-  collection: string,
-  rulesetId: bigint,
-  customRuleset: string,
-  globalOptions: bigint,
-  rulesetOptions: bigint,
-): string {
-  return abiEncodeCall(SIGNATURE_SET_RULESET_OF_COLLECTION, [
-    { kind: "address", value: collection },
-    { kind: "uint", value: rulesetId },
-    { kind: "address", value: customRuleset },
-    { kind: "uint", value: globalOptions },
-    { kind: "uint", value: rulesetOptions },
-  ]);
 }
 
 /**

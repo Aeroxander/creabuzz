@@ -1,6 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -14,9 +11,8 @@ import {
   SIGNATURES,
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
-import { makeWalletAuctionEffects } from "../lib/wallet-effects";
 import type { Launch } from "../models";
-import { useConnectedWallet } from "../use-connected-wallet";
+import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { FileClaimCard } from "./FileClaimCard";
@@ -31,12 +27,6 @@ const date = (seconds: number) =>
     month: "short",
     day: "numeric",
   });
-
-function chainNumber(value: string | null): number | null {
-  if (value === null) return null;
-  const n = Number(value.trim());
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
 
 /**
  * The work a project's DAO has set aside money or Shares for: its budgets, the projects inside them and the claims
@@ -56,52 +46,9 @@ export function WorkTab({
   /** Go to the Decisions tab, where the DAO's votes are opened. */
   onOpenDecisions?: () => void;
 }) {
-  const wallet = useConnectedWallet();
+  const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
-  const queryClient = useQueryClient();
-  const launchChainId = chainNumber(launch.record.chainId);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  const gate = !wallet.address
-    ? "Connect your wallet to act on a claim."
-    : launchChainId !== null &&
-        wallet.chainId !== null &&
-        wallet.chainId !== launchChainId
-      ? `Your wallet is on chain ${wallet.chainId}, but this project is on chain ${launchChainId}. Switch networks in your wallet.`
-      : null;
-
-  /** Send one transaction as the connected wallet; true once it landed and the page re-read the chain. */
-  const send = async (
-    key: string,
-    to: string,
-    data: string,
-  ): Promise<boolean> => {
-    if (!wallet.wallet || launchChainId === null || gate) return false;
-    setBusy(key);
-    setFailure(null);
-    try {
-      const effects = makeWalletAuctionEffects({
-        provider: wallet.wallet.provider,
-        deployer: wallet.wallet.address,
-        chainId: launchChainId,
-      });
-      const receipt = await effects.send({ to, data });
-      if (receipt.status !== "success") {
-        throw new Error("The network rejected that step, so nothing changed.");
-      }
-      await queryClient.invalidateQueries({
-        queryKey: ["launchpad", "work", dao],
-      });
-      return true;
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : String(error));
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">

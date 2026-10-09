@@ -4,6 +4,12 @@ import { Button } from "@/shared/ui/button";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "./Modal";
+import {
+  resolveSender,
+  SenderPickerControls,
+  senderErrorMessage,
+  useSenderPicker,
+} from "./SenderPicker";
 import { UnauditedNotice } from "./UnauditedNotice";
 import {
   clearingPrice,
@@ -29,18 +35,7 @@ import { floorPricePerToken } from "../lib/launch-params";
 import { priceFormat } from "../lib/sale-currency";
 import { priceToAtomic, priceToQ96, unitsToPlain } from "../lib/sale-plans";
 import { TX_HASH_RE } from "../lib/milestone-receipt";
-import { createInjectedWalletSender } from "../lib/wallet-sender";
 import type { LaunchRecord } from "../models";
-import { kernel033ChainRpcUrl } from "@/features/identity/lib/kernel033";
-import {
-  createSponsoredSender,
-  SponsoredSenderUnavailableError,
-} from "@/features/identity/lib/sponsoredSender";
-import {
-  PaymasterDeniedError,
-  zerodevConfigFromEnv,
-} from "@/features/identity/lib/zerodev";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import { OwnershipOnlyNote } from "./widgets";
 
@@ -110,9 +105,7 @@ export function RecordBidDialog({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [clearing, setClearing] = useState<bigint | null>(null);
-  const [senderKind, setSenderKind] = useState<"wallet" | "passkey">("wallet");
-  const [passkeyAccount, setPasskeyAccount] = useState<string | null>(null);
-  const [passkeyNote, setPasskeyNote] = useState<string | null>(null);
+  const picker = useSenderPicker();
 
   const auction = record.auction;
   const floorPriceQ96 = toAtomic(record.floorPrice) ?? null;
@@ -190,79 +183,13 @@ export function RecordBidDialog({
     );
   }, [clearing, floorPriceQ96, plan, tickSpacingQ96]);
 
-  const wallet = window.ethereum as
-    | {
-        request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-      }
-    | undefined;
-
-  // The passkey sender runs on the sponsored stack's chain (Sepolia in this
-  // wave): the ZeroDev chain id plus `kernel033ChainRpcUrl`'s RPC for the
-  // kernel reads. Missing config is an explicit unavailable state below.
-  const chainId = zerodevConfigFromEnv().chainId ?? 0;
-  const sponsoredRpcUrl = useMemo(() => {
-    if (!Number.isInteger(chainId) || chainId <= 0) return "";
-    try {
-      return kernel033ChainRpcUrl(chainId);
-    } catch {
-      return "";
-    }
-  }, [chainId]);
-  const sponsoredSender = useMemo(
-    () => createSponsoredSender({ chainId, rpcUrl: sponsoredRpcUrl }),
-    [chainId, sponsoredRpcUrl],
-  );
-  const sponsoredStatus = useMemo(
-    () => sponsoredSender.availability(),
-    [sponsoredSender],
-  );
-
-  // Derive the counterfactual account when the passkey option is picked.
-  // Fence the async result (Rule 2): a stale derivation must not write state.
-  useEffect(() => {
-    if (senderKind !== "passkey") return;
-    let alive = true;
-    setPasskeyAccount(null);
-    setPasskeyNote(null);
-    sponsoredSender.getAddress().then(
-      (address) => {
-        if (alive) setPasskeyAccount(address);
-      },
-      (err: unknown) => {
-        if (alive) {
-          setPasskeyNote(
-            err instanceof Error
-              ? err.message
-              : "Could not derive the account.",
-          );
-        }
-      },
-    );
-    return () => {
-      alive = false;
-    };
-  }, [senderKind, sponsoredSender]);
-
-  let passkeyStatusText = "Deriving the account address…";
-  if (!sponsoredStatus.available) {
-    passkeyStatusText =
-      `${sponsoredStatus.reason ?? ""} ${sponsoredStatus.action ?? ""}`.trim();
-  } else if (passkeyNote) {
-    passkeyStatusText = passkeyNote;
-  } else if (passkeyAccount) {
-    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)}: tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
-  }
-
   const sendBid = async () => {
     if (!auction || !plan) return;
     resumeRef.current = () => void sendBid();
     setError(null);
     setSending(true);
     try {
-      const sender =
-        senderKind === "passkey"
-          ? sponsoredSender
-          : createInjectedWalletSender(wallet);
+      const sender = resolveSender(picker);
       const senderAddress = await sender.getAddress();
       // Owner is the sending account: tokens and refunds settle there. The
       // budget is pulled from the CALLER onchain, so the composed calldata is
@@ -302,16 +229,7 @@ export function RecordBidDialog({
       // manual button stays for a record that fails or a bid made elsewhere.
       publishBid(result.txHash);
     } catch (err) {
-      if (err instanceof PaymasterDeniedError) {
-        setError(`${err.serverMessage} ${err.dashboardAction}`);
-      } else if (
-        err instanceof SponsoredSenderUnavailableError &&
-        err.availability.action
-      ) {
-        setError(`${err.message} ${err.availability.action}`);
-      } else {
-        setError(err instanceof Error ? err.message : "The bid was not sent.");
-      }
+      setError(senderErrorMessage(err, "The bid was not sent."));
     } finally {
       setSending(false);
     }
@@ -369,47 +287,7 @@ export function RecordBidDialog({
           bids. You can compose the terms below but nothing will send.
         </p>
       ) : null}
-      <fieldset className="mt-3 rounded-lg border border-black/10 p-3 dark:border-white/10">
-        <legend className="text-sm font-medium">Pay with</legend>
-        <label className="flex items-start gap-2 text-sm text-black/80 dark:text-white/80">
-          <input
-            checked={senderKind === "wallet"}
-            data-testid="bid-sender-wallet"
-            name="bid-sender"
-            onChange={() => setSenderKind("wallet")}
-            type="radio"
-          />
-          <span>
-            Your wallet
-            {!wallet ? (
-              <span className="block text-xs text-black/60 dark:text-white/60">
-                No wallet was found in this browser. Use your passkey account
-                instead.
-              </span>
-            ) : null}
-          </span>
-        </label>
-        <label className="mt-2 flex items-start gap-2 text-sm text-black/80 dark:text-white/80">
-          <input
-            checked={senderKind === "passkey"}
-            data-testid="bid-sender-passkey"
-            name="bid-sender"
-            onChange={() => setSenderKind("passkey")}
-            type="radio"
-          />
-          <span>
-            Your passkey account (fees are covered on the test network)
-            {senderKind === "passkey" ? (
-              <span
-                className="block text-xs text-black/60 dark:text-white/60"
-                data-testid="bid-sender-passkey-status"
-              >
-                {passkeyStatusText}
-              </span>
-            ) : null}
-          </span>
-        </label>
-      </fieldset>
+      <SenderPickerControls state={picker} testIdPrefix="bid-" />
       <div className="mt-3 flex flex-col gap-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
