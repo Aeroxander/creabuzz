@@ -70,8 +70,6 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Portfolio",
     icon: Briefcase,
     matches: (p) => p.startsWith("/portfolio"),
-    // On phones: the link beside Home's title.
-    wideOnly: true,
   },
 ];
 

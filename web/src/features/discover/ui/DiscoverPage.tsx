@@ -137,7 +137,7 @@ export function DiscoverPage() {
             </Button>
           </div>
         }
-        description="Everything on this server, in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role. What is happening, whether it needs you, and the one click to join."
+        description="Everything on this server in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role."
         title={
           <span className="flex items-center gap-2">
             <Search aria-hidden className="h-5 w-5" /> Discover

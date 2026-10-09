@@ -38,11 +38,11 @@ export function PageHeader({
     return (
       <div
         className={cn(
-          "flex min-w-0 items-start justify-between gap-4",
+          "flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-2",
           className,
         )}
       >
-        <div className="min-w-0 space-y-1">{copy}</div>
+        <div className="min-w-0 flex-1 basis-56 space-y-1">{copy}</div>
         <div className="shrink-0">{action}</div>
       </div>
     );
@@ -77,11 +77,11 @@ export function SectionHeader({
     return (
       <div
         className={cn(
-          "flex min-w-0 items-start justify-between gap-3",
+          "flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2",
           className,
         )}
       >
-        <div className="min-w-0 space-y-0.5">{copy}</div>
+        <div className="min-w-0 flex-1 basis-56 space-y-0.5">{copy}</div>
         <div className="shrink-0">{action}</div>
       </div>
     );
