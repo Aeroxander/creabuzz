@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -16,30 +16,11 @@ import {
   useSenderPicker,
 } from "./SenderPicker";
 import { HashPicker } from "./HashPicker";
+import { useConnectedWallet } from "../use-connected-wallet";
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 // shares() on the DAO — the votes live on its Shares token (cast sig).
 const SELECTOR_SHARES = "0x03314efa";
-
-/** The connected injected-wallet account, or null (never prompts). */
-async function discoverWallet(): Promise<string | null> {
-  const ethereum = (
-    window as unknown as {
-      ethereum?: {
-        request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-      };
-    }
-  ).ethereum;
-  if (!ethereum) return null;
-  try {
-    const accounts = (await ethereum.request({
-      method: "eth_accounts",
-    })) as string[];
-    return accounts?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export interface DelegateOption {
   /** EVM address (delegate targets are addresses, not npubs). */
@@ -71,21 +52,11 @@ export function DelegationCard({
 }) {
   const picker = useSenderPicker();
   const mirror = usePublishMirror();
-  const [walletAccount, setWalletAccount] = useState<string | null>(null);
+  const { address: walletAccount } = useConnectedWallet();
   const [delegatee, setDelegatee] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    discoverWallet().then((address) => {
-      if (alive && address) setWalletAccount((current) => current ?? address);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   const holder =
     picker.kind === "passkey" ? picker.passkeyAccount : walletAccount;

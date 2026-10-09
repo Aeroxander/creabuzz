@@ -23,7 +23,7 @@
  * The UX stance (docs/paperclip-ux-reference.md:21-22): every state answers
  * what is happening / does it need me / what do I do about it.
  */
-import { useEffect, useReducer, useState } from "react";
+import { useReducer, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/shared/ui/button";
@@ -61,6 +61,7 @@ import {
   senderErrorMessage,
   useSenderPicker,
 } from "./SenderPicker";
+import { useConnectedWallet } from "../use-connected-wallet";
 
 const SELECTOR_CURRENCY = "0xe5a6b10f"; // currency() — cast sig golden (fund-flow.ts)
 
@@ -69,25 +70,6 @@ export interface RagequitPanelProps {
   chainId: number;
   /** When null the panel renders the honest "no DAO bound" state. */
   daoBinding: DaoBinding | null;
-}
-
-async function discoverWallet(): Promise<string | null> {
-  const ethereum = (
-    window as unknown as {
-      ethereum?: {
-        request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-      };
-    }
-  ).ethereum;
-  if (!ethereum) return null;
-  try {
-    const accounts = (await ethereum.request({
-      method: "eth_accounts",
-    })) as string[];
-    return accounts?.[0] ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function formatAmount(value: bigint): string {
@@ -126,18 +108,8 @@ export function RagequitPanel({
   daoBinding,
 }: RagequitPanelProps) {
   const picker = useSenderPicker();
-  const [walletAccount, setWalletAccount] = useState<string | null>(null);
+  const { address: walletAccount } = useConnectedWallet();
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    discoverWallet().then((address) => {
-      if (alive) setWalletAccount(address);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // The exit runs from whichever account the picker is on: the injected
   // wallet or the passkey's smart account (tokens settle there).

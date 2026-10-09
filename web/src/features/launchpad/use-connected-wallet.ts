@@ -31,6 +31,20 @@ function parseChainId(value: unknown): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/** The injected wallet's already-granted account (never prompts), or null. */
+export async function grantedWalletAccount(): Promise<string | null> {
+  const provider = injectedProvider();
+  if (!provider) return null;
+  try {
+    const accounts = (await provider.request({
+      method: "eth_accounts",
+    })) as string[];
+    return accounts?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ConnectedWalletState {
   /** The provider and account, or null until an account is connected. */
   wallet: ConnectedWallet | null;
@@ -39,6 +53,8 @@ export interface ConnectedWalletState {
   chainId: number | null;
   /** False when the browser has no injected wallet at all. */
   hasProvider: boolean;
+  /** True once the first look at the already-granted accounts has finished. */
+  accountsChecked: boolean;
   connecting: boolean;
   error: string | null;
   connect: () => Promise<void>;
@@ -48,6 +64,9 @@ export function useConnectedWallet(): ConnectedWalletState {
   const provider = useMemo(() => injectedProvider(), []);
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
+  const [accountsChecked, setAccountsChecked] = useState(
+    provider === undefined,
+  );
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped by every read, so a slow earlier answer cannot overwrite a newer one.
@@ -81,6 +100,7 @@ export function useConnectedWallet(): ConnectedWalletState {
       } catch {
         // Not granted yet: the user connects explicitly.
       }
+      if (alive) setAccountsChecked(true);
       if (alive) await readChain();
     })();
 
@@ -131,6 +151,7 @@ export function useConnectedWallet(): ConnectedWalletState {
     address,
     chainId,
     hasProvider: provider !== undefined,
+    accountsChecked,
     connecting,
     error,
     connect,

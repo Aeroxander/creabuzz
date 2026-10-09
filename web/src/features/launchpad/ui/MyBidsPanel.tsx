@@ -43,6 +43,7 @@ import {
   senderErrorMessage,
   useSenderPicker,
 } from "./SenderPicker";
+import { grantedWalletAccount } from "../use-connected-wallet";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "In play",
@@ -80,25 +81,9 @@ type Action =
 
 /** Derive the two candidate owners without prompting the wallet. */
 async function discoverOwners(): Promise<OwnerGroup[]> {
-  const owners: OwnerGroup[] = [];
-  const ethereum = (
-    window as unknown as {
-      ethereum?: {
-        request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-      };
-    }
-  ).ethereum;
-  if (ethereum) {
-    try {
-      const accounts = (await ethereum.request({
-        method: "eth_accounts",
-      })) as string[];
-      if (accounts?.[0]) owners.push({ kind: "wallet", address: accounts[0] });
-    } catch {
-      // No connected account is a normal state — the passkey group still lists.
-    }
-  }
-  return owners;
+  const account = await grantedWalletAccount();
+  // No connected account is a normal state — the passkey group still lists.
+  return account ? [{ kind: "wallet", address: account }] : [];
 }
 
 export function MyBidsPanel({

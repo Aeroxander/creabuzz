@@ -16,7 +16,7 @@
  * Schedule ids arrive as a prop: the ABI has no per-contributor enumeration.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -53,6 +53,7 @@ import {
   senderErrorMessage,
   useSenderPicker,
 } from "./SenderPicker";
+import { useConnectedWallet } from "../use-connected-wallet";
 
 /** One schedule row: the minted schedule plus its attested provenance. */
 export interface RoyaltyScheduleRow {
@@ -161,26 +162,6 @@ async function fetchRoyaltyStatement(
   };
 }
 
-/** The connected injected-wallet account, or null (never prompts). */
-async function discoverWallet(): Promise<string | null> {
-  const ethereum = (
-    window as unknown as {
-      ethereum?: {
-        request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-      };
-    }
-  ).ethereum;
-  if (!ethereum) return null;
-  try {
-    const accounts = (await ethereum.request({
-      method: "eth_accounts",
-    })) as string[];
-    return accounts?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -209,23 +190,11 @@ export function RoyaltyStatementCard({
   tokenSymbol?: string;
 }) {
   const picker = useSenderPicker();
-  const [walletAccount, setWalletAccount] = useState<string | null>(null);
-  const [walletChecked, setWalletChecked] = useState(false);
+  const { address: walletAccount, accountsChecked: walletChecked } =
+    useConnectedWallet();
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimTx, setClaimTx] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    discoverWallet().then((address) => {
-      if (!alive) return;
-      setWalletAccount(address);
-      setWalletChecked(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // The statement is the SELECTED account's: switching wallet ↔ passkey
   // re-reads whose royalties these are (the RagequitPanel stance).
