@@ -240,6 +240,14 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   });
   await shot(founder, "1-decisions-empty");
 
+  // A DAO with nothing set up is offered its first step, and the button goes where it is taken.
+  await founder.getByRole("tab", { name: "Overview" }).click();
+  await expect(founder.getByTestId("dao-start-work")).toBeVisible({
+    timeout: 30_000,
+  });
+  await founder.getByTestId("dao-start-work").getByRole("button").click();
+  await expect(founder.getByTestId("decisions-tab")).toBeVisible();
+
   // ── 1. the founder puts a work budget to a vote, in a form ─────────────────────────────
   await founder.getByTestId("decision-new").click();
   await founder.getByTestId("decision-kind-budget").click();

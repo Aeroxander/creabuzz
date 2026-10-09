@@ -127,6 +127,30 @@ export function DaoOverview({
         </p>
       </Card>
 
+      {!loading &&
+      work.data &&
+      counts.workBudgets === 0 &&
+      counts.openDecisions === 0 ? (
+        <Card className="p-4" data-testid="dao-start-work">
+          <h3 className="text-sm font-semibold">
+            Set up the first work budget
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A work budget sets aside Shares (and money, if you want) for people
+            to earn by doing work. Holders vote on it, then anyone can file a
+            claim for what they did and reviewers check it.
+          </p>
+          <Button
+            className="mt-2"
+            onClick={() => onOpen("decisions")}
+            size="sm"
+            type="button"
+          >
+            Put a work budget to a vote
+          </Button>
+        </Card>
+      ) : null}
+
       <Card className="p-4" data-testid="dao-needs-you">
         <h3 className="text-sm font-semibold">Needs you</h3>
         {wallet === null ? (
