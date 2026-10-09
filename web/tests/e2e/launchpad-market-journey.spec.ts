@@ -200,10 +200,21 @@ test("a market is voted in, traded on the launch page, and its fees collected, a
     "The DAO holds only",
   );
   await founder.getByTestId("market-shares").fill("100000000");
+  if (process.env.E2E_SHOTS) {
+    await founder
+      .getByTestId("decision-composer")
+      .screenshot({ path: `${process.env.E2E_SHOTS}/composer.png` });
+  }
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
+  if (process.env.E2E_SHOTS) {
+    await founder
+      .getByTestId("decision-card")
+      .first()
+      .screenshot({ path: `${process.env.E2E_SHOTS}/decision.png` });
+  }
   await carryOut(founder, 175_000, 90_000);
   expect(await balanceOf(SHARES, AMM)).toBeGreaterThan(99_999_000n * WAD);
 
@@ -213,13 +224,16 @@ test("a market is voted in, traded on the launch page, and its fees collected, a
   const trade = buyer.getByTestId("trade-card");
   await expect(trade).toBeVisible({ timeout: 30_000 });
   await expect(buyer.getByTestId("trade-price")).toContainText(
-    /Price 0\.0\d+ per NEB/,
+    /Price 0\.0\d+ USDC per NEB/,
   );
   await buyer.getByTestId("trade-amount").fill("1000");
   await expect(buyer.getByTestId("trade-estimate")).toContainText(
     /You get about [\d,]+/,
     { timeout: 15_000 },
   );
+  if (process.env.E2E_SHOTS) {
+    await trade.screenshot({ path: `${process.env.E2E_SHOTS}/trade.png` });
+  }
   const before = await balanceOf(SHARES, BUYER);
   await buyer.getByTestId("trade-submit").click();
   await expect(buyer.getByTestId("trade-done")).toHaveText("Bought.", {

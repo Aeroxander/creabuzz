@@ -180,14 +180,19 @@ export function votingRuleWatch(
   rules: VotingRules,
   support: VotingSupport,
   now: bigint,
+  /** How Shares are written in the sentence; the default shows them exactly, a screen may group the digits. */
+  format: (wei: bigint) => string = formatVotingShares,
 ): {
   status: "leading" | "holding" | "needs-votes" | "at-risk" | "expired";
   detail: string;
+  /** What is still missing or what happens next, without the counts, for a screen that shows them already. */
+  next: string;
 } {
   if (now >= rules.expiresAt)
     return {
       status: "expired",
       detail: "Expired; allocations are available for other proposals.",
+      next: "Expired; allocations are available for other proposals.",
     };
   const cast = support.yes + support.no + support.abstain;
   const moreQuorum = rules.quorum > cast ? rules.quorum - cast : 0n;
@@ -213,7 +218,7 @@ export function votingRuleWatch(
         ? "at-risk"
         : "needs-votes";
   const next = !barsHold
-    ? `${formatVotingShares(missing)} more Shares needed to meet the bars`
+    ? `${format(missing)} more Shares needed to meet the bars`
     : now < rules.reviewEndsAt &&
         earliest !== 0n &&
         earliest <= rules.reviewEndsAt
@@ -223,7 +228,8 @@ export function votingRuleWatch(
         : "Approval bars met; execution needs the full wait";
   return {
     status,
-    detail: `In favour ${formatVotingShares(support.yes)} · Against ${formatVotingShares(support.no)} · Abstain ${formatVotingShares(support.abstain)} · ${next}. Support remains movable until execution.`,
+    detail: `In favour ${format(support.yes)} · Against ${format(support.no)} · Abstain ${format(support.abstain)} · ${next}. Support remains movable until execution.`,
+    next: `${next}. Support stays movable until it runs.`,
   };
 }
 /** The word a person reads for a watch status. */

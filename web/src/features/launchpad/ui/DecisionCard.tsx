@@ -138,7 +138,12 @@ export function DecisionCard({
   const rules = decision.rules;
   const watch =
     rules && decision.state === "Active"
-      ? votingRuleWatch(rules, decision.support, BigInt(snapshot.chainTime))
+      ? votingRuleWatch(
+          rules,
+          decision.support,
+          BigInt(snapshot.chainTime),
+          shares,
+        )
       : null;
   const open = ["Active", "Succeeded", "Queued"].includes(decision.state);
   const key = `step-${decision.id}`;
@@ -220,7 +225,7 @@ export function DecisionCard({
           <span className="font-medium">
             {votingStatusLabel(watch.status)}.
           </span>{" "}
-          {watch.detail}
+          {watch.next}
         </p>
       ) : null}
       <p

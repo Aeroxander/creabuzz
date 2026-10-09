@@ -126,6 +126,16 @@ test("the bars are quorum and approval, and support has to hold", () => {
   assert.equal(watch.status, "needs-votes");
   assert.match(watch.detail, /^In favour 0\.000000000000000062/);
   assert.match(watch.detail, /more Shares needed to meet the bars/);
+  // The "next" part is the missing piece without the counts (a screen that shows them already uses it), and the Shares in
+  // it are written the way the caller asks.
+  assert.match(
+    watch.next,
+    /^.*more Shares needed to meet the bars\. Support stays movable until it runs\.$/,
+  );
+  assert.doesNotMatch(watch.next, /In favour/);
+  const grouped = votingRuleWatch(rules, short, 1000n, (wei) => `<${wei}>`);
+  assert.match(grouped.next, /^<\d+> more Shares needed/);
+  assert.match(grouped.detail, /In favour <62>/);
   assert.equal(
     votingRuleWatch(rules, short, 1500n).status,
     "needs-votes",

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
-import { getRpcEndpoint } from "../chain";
+import { getRpcEndpoint, recordSaleCurrency } from "../chain";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
 import { encodeSwap } from "../lib/market-actions";
 import { estimateTrade, minimumOut, type TradeSide } from "../lib/market-read";
@@ -31,6 +31,8 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
   if (!market.usable || !pool.data || !exchange) return null;
 
   const symbol = launch.record.tokenPlan?.symbol ?? "Shares";
+  const sale = recordSaleCurrency(launch.record);
+  const moneySymbol = sale.kind === "custom" ? "USDC" : sale.symbol;
   const tokenIn =
     side === "buy"
       ? (launch.record.currency as string)
@@ -39,6 +41,7 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
     side === "buy"
       ? (launch.record.token as string)
       : (launch.record.currency as string);
+  const outSymbol = side === "buy" ? symbol : moneySymbol;
   const inDecimals = side === "buy" ? decimals : 18;
   const outDecimals = side === "buy" ? 18 : decimals;
   const held = holdings.data;
@@ -133,7 +136,7 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
           data-testid="trade-price"
         >
           {price.data
-            ? `Price ${price.data.toPrecision(3)} per ${symbol}`
+            ? `Price ${price.data.toPrecision(3)} ${moneySymbol} per ${symbol}`
             : "Reading the price…"}
         </span>
       </div>
@@ -157,7 +160,7 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
         ))}
       </fieldset>
       <label className="mt-3 block text-sm font-medium" htmlFor="trade-amount">
-        {side === "buy" ? "Pay" : `Sell how many ${symbol}`}
+        {side === "buy" ? `Pay (${moneySymbol})` : `Sell how many ${symbol}`}
       </label>
       <Input
         data-testid="trade-amount"
@@ -187,10 +190,9 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
         </p>
       ) : estimate !== null && estimate > 0n ? (
         <p className="mt-2 text-sm" data-testid="trade-estimate" role="status">
-          You get about {formatUnits(estimate, outDecimals, 4)}{" "}
-          {side === "buy" ? symbol : ""}
-          {side === "sell" ? "of the currency" : ""}, and at least{" "}
-          {formatUnits(minimumOut(estimate, allowed), outDecimals, 4)}.
+          You get about {formatUnits(estimate, outDecimals, 2)} {outSymbol}, and
+          at least {formatUnits(minimumOut(estimate, allowed), outDecimals, 2)}{" "}
+          {outSymbol}.
         </p>
       ) : null}
       <details className="mt-2 text-xs text-muted-foreground">
