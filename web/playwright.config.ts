@@ -48,6 +48,7 @@ export default defineConfig({
         "**/usernames.spec.ts",
         "**/org-chart.spec.ts",
         "**/org-setup.spec.ts",
+        "**/polling-bounds.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",

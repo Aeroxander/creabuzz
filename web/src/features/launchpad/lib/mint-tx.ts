@@ -28,6 +28,7 @@ import {
   DEFAULT_TOKENMASTER_ROUTER,
   encodeDeployToken,
 } from "@creaton/core/launchpad/evmCalls.ts";
+import { addressWordValue } from "@creaton/core/launchpad/auctionPlan.ts";
 import type {
   EvmCall,
   TokenDeployCallsParams,
@@ -192,16 +193,7 @@ export function buildInfraFeeView(
 }
 
 /** Decode an eth_call 32-byte word as an address (left-padded, 20 bytes). */
-export function decodeAddressWord(returnData: string): string {
-  const word = returnData.replace(/^0x/, "").toLowerCase();
-  if (word.length !== 64 || !/^[0-9a-f]*$/.test(word)) {
-    throw new Error("expected a 32-byte return word");
-  }
-  if (!/^0{24}[0-9a-f]{40}$/.test(word)) {
-    throw new Error("expected a 32-byte address word");
-  }
-  return `0x${word.slice(24)}`;
-}
+export const decodeAddressWord = addressWordValue;
 
 // ---------------------------------------------------------------------------
 // Plan inputs → deploy params (mintFlow.ts:74-120) + treasury gate (:401-431)

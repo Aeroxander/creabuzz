@@ -18,6 +18,8 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { useActionTracker } from "@/shared/hooks/use-action-tracker";
+import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
 import { publishEvent } from "@/shared/lib/publish-event";
 import {
   parseModerationReports,
@@ -38,7 +40,6 @@ import {
 const REPORTS_LIMIT = 30;
 const REPORT_EVENTS_LIMIT = 50;
 const POLL_MS = 30_000;
-const POLL_DEADLINE_MS = 15 * 60_000;
 
 export type ModerationAccess = "granted" | "denied" | "unknown";
 
@@ -123,21 +124,15 @@ export function useModerationQueue(): ModerationQueueState {
   const [localResolved, setLocalResolved] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
-  const [errors, setErrors] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
+  const { acting, errors, setActingFor, clearError, failWith } =
+    useActionTracker();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pollPaused, setPollPaused] = useState(false);
   const generationRef = useRef(0);
-  const deadlineRef = useRef(Date.now() + POLL_DEADLINE_MS);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!me || access !== "granted") return;
     const generation = ++generationRef.current;
-    deadlineRef.current = Date.now() + POLL_DEADLINE_MS;
-    setPollPaused(false);
     try {
       const rows = await fetchReports();
       if (generation !== generationRef.current) return;
@@ -173,21 +168,15 @@ export function useModerationQueue(): ModerationQueueState {
     }
   }, [access, me]);
 
+  const { paused: pollPaused, refresh } = useBoundedPoll(
+    load,
+    access === "granted",
+    POLL_MS,
+  );
+
   useEffect(() => {
-    if (access !== "granted") {
-      setLoading(false);
-      return;
-    }
-    void refresh();
-    const id = window.setInterval(() => {
-      if (Date.now() >= deadlineRef.current) {
-        setPollPaused(true);
-        return;
-      }
-      void refresh();
-    }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [access, refresh]);
+    if (access !== "granted") setLoading(false);
+  }, [access]);
 
   const rows = useMemo<ModerationRow[]>(
     () =>
@@ -205,15 +194,6 @@ export function useModerationQueue(): ModerationQueueState {
       })),
     [reports, authors, localResolved],
   );
-
-  const setActingFor = useCallback((key: string, on: boolean) => {
-    setActing((current) => {
-      const next = new Set(current);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
 
   const publishTemplate = useCallback(async (template: EventTemplate) => {
     const event = await signAsUser(template);
@@ -238,12 +218,7 @@ export function useModerationQueue(): ModerationQueueState {
     ) => {
       const key = `${report.id}:${action}`;
       setActingFor(key, true);
-      setErrors((current) => {
-        if (!current.has(key)) return current;
-        const next = new Map(current);
-        next.delete(key);
-        return next;
-      });
+      clearError(key);
       try {
         const author = authors.get(report.reportEventId) ?? null;
         const target = report.targetKind === "pubkey" ? report.target : author;
@@ -284,19 +259,12 @@ export function useModerationQueue(): ModerationQueueState {
         });
         void refresh();
       } catch (error) {
-        setErrors((current) =>
-          new Map(current).set(
-            key,
-            error instanceof Error && error.message
-              ? error.message
-              : "Couldn’t apply the action. Try again.",
-          ),
-        );
+        failWith(key, error, "Couldn’t apply the action. Try again.");
       } finally {
         setActingFor(key, false);
       }
     },
-    [authors, publishTemplate, refresh, setActingFor],
+    [authors, clearError, failWith, publishTemplate, refresh, setActingFor],
   );
 
   return {

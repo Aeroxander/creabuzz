@@ -6,12 +6,14 @@
  * the buttons double as the retry, matching the approvals inbox.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { useActionTracker } from "@/shared/hooks/use-action-tracker";
+import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
 import { publishEvent } from "@/shared/lib/publish-event";
 import {
   APPROVALS_LIMIT,
@@ -29,8 +31,6 @@ import { buildApprovalDecision, buildWorkflowTrigger } from "./lib/runActions";
 
 /** Bounded polling: while runs are active, then paused with a manual retry. */
 const POLL_MS = 10_000;
-/** Auto-refresh runs at most this long; after it the panel offers Refresh. */
-const POLL_DEADLINE_MS = 15 * 60_000;
 /** Approval reads per refresh — only runs waiting on approval need them. */
 const APPROVAL_FETCH_LIMIT = 8;
 
@@ -102,19 +102,13 @@ export function useWorkflowRuns(): RunListState {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
-  const [errors, setErrors] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
-  const [pollPaused, setPollPaused] = useState(false);
+  const { acting, errors, setActingFor, clearError, failWith } =
+    useActionTracker();
   // Generation fence: only the newest refresh may write state.
   const generationRef = useRef(0);
-  const deadlineRef = useRef(Date.now() + POLL_DEADLINE_MS);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     const generation = ++generationRef.current;
-    deadlineRef.current = Date.now() + POLL_DEADLINE_MS;
-    setPollPaused(false);
     try {
       const definitionEvents = await queryEvents(relayWsUrl(), {
         kinds: [KIND_WORKFLOW_DEF],
@@ -198,17 +192,7 @@ export function useWorkflowRuns(): RunListState {
     }
   }, [me]);
 
-  useEffect(() => {
-    void refresh();
-    const id = window.setInterval(() => {
-      if (Date.now() >= deadlineRef.current) {
-        setPollPaused(true);
-        return;
-      }
-      void refresh();
-    }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [refresh]);
+  const { paused: pollPaused, refresh } = useBoundedPoll(load, true, POLL_MS);
 
   const items = useMemo<WorkflowRunItem[]>(() => {
     const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]));
@@ -226,24 +210,6 @@ export function useWorkflowRuns(): RunListState {
     }
     return rows.sort((a, b) => b.run.createdAt - a.run.createdAt);
   }, [workflows, runsByWorkflow, approvalsByRun]);
-
-  const setActingFor = useCallback((key: string, on: boolean) => {
-    setActing((current) => {
-      const next = new Set(current);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
-
-  const clearError = useCallback((key: string) => {
-    setErrors((current) => {
-      if (!current.has(key)) return current;
-      const next = new Map(current);
-      next.delete(key);
-      return next;
-    });
-  }, []);
 
   const publish = useCallback(
     async (
@@ -264,19 +230,12 @@ export function useWorkflowRuns(): RunListState {
         onDone();
         void refresh();
       } catch (error) {
-        setErrors((current) =>
-          new Map(current).set(
-            key,
-            error instanceof Error && error.message
-              ? error.message
-              : "Couldn’t send the change. Try again.",
-          ),
-        );
+        failWith(key, error, "Couldn’t send the change. Try again.");
       } finally {
         setActingFor(key, false);
       }
     },
-    [clearError, refresh, setActingFor],
+    [clearError, failWith, refresh, setActingFor],
   );
 
   /** Approve or reject one pending approval (kind:46030/46031, `d` = token). */
