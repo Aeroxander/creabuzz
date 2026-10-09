@@ -88,6 +88,40 @@ const record = {
   sig: "sig",
 };
 
+const PEOPLE = [
+  { name: "Rita Reviewer", pubkey: "a1".repeat(32), wallet: REVIEWER1 },
+  { name: "Rob Reviewer", pubkey: "a2".repeat(32), wallet: REVIEWER2 },
+  { name: "Mia Manager", pubkey: "a3".repeat(32), wallet: MANAGER },
+];
+
+function bindingOf(person: (typeof PEOPLE)[number]) {
+  const address = person.wallet.toLowerCase();
+  return {
+    id: `binding-${person.pubkey.slice(0, 8)}`,
+    pubkey: person.pubkey,
+    created_at: 100,
+    kind: 37017,
+    tags: [
+      ["d", address],
+      ["address", address],
+    ],
+    content: JSON.stringify({ v: 1, address }),
+    sig: "sig",
+  };
+}
+
+function profileOf(person: (typeof PEOPLE)[number]) {
+  return {
+    id: `profile-${person.pubkey.slice(0, 8)}`,
+    pubkey: person.pubkey,
+    created_at: 100,
+    kind: 0,
+    tags: [],
+    content: JSON.stringify({ name: person.name }),
+    sig: "sig",
+  };
+}
+
 /** With `E2E_SHOTS=<dir>`, save the page as it looks now, so a person can read the product off real data. */
 async function shot(page: Page, name: string) {
   const dir = process.env.E2E_SHOTS;
@@ -120,6 +154,17 @@ async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
       ];
       if (filter.kinds?.includes(37001))
         ws.send(JSON.stringify(["EVENT", subId, record]));
+      // The people the forms offer by name: three wallets bound to three profiles.
+      if (filter.kinds?.includes(37017)) {
+        for (const person of PEOPLE) {
+          ws.send(JSON.stringify(["EVENT", subId, bindingOf(person)]));
+        }
+      }
+      if (filter.kinds?.includes(0)) {
+        for (const person of PEOPLE) {
+          ws.send(JSON.stringify(["EVENT", subId, profileOf(person)]));
+        }
+      }
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
@@ -205,9 +250,18 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   );
   await expect(founder.getByTestId("decision-draft-submit")).toHaveCount(0);
   await founder.getByTestId("budget-shares-cap").fill("40");
-  await founder
-    .getByTestId("budget-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  // Reviewers are picked by name, not typed as addresses.
+  const reviewerPicker = founder.getByTestId("budget-reviewers-people");
+  await expect(
+    reviewerPicker.locator("option", { hasText: "Rita Reviewer" }),
+  ).toHaveCount(1, { timeout: 20_000 });
+  await reviewerPicker.selectOption(REVIEWER1.toLowerCase());
+  await reviewerPicker.selectOption(REVIEWER2.toLowerCase());
+  // Picking the same person twice adds nothing.
+  await reviewerPicker.selectOption(REVIEWER2.toLowerCase());
+  await expect(founder.getByTestId("budget-reviewers")).toHaveValue(
+    `${REVIEWER1.toLowerCase()}\n${REVIEWER2.toLowerCase()}`,
+  );
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
     "Set aside a work budget",
   );
@@ -246,7 +300,12 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await founder.getByTestId("decision-kind-project").click();
   await expect(founder.getByTestId("project-no-budget")).toHaveCount(0);
   await founder.getByTestId("project-name").fill("docs");
-  await founder.getByTestId("project-manager").fill(MANAGER);
+  await founder
+    .getByTestId("project-manager-people")
+    .selectOption(MANAGER.toLowerCase());
+  await expect(founder.getByTestId("project-manager")).toHaveValue(
+    MANAGER.toLowerCase(),
+  );
   await founder.getByTestId("project-shares").fill("40");
   await founder.getByTestId("project-check").fill(CHECK);
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(

@@ -133,7 +133,7 @@ export function useSenderPicker(): SenderPickerState {
 export function SenderPickerControls({
   state,
   testIdPrefix,
-  legend = "Send with",
+  legend = "Pay with",
 }: {
   state: SenderPickerState;
   testIdPrefix: string;
@@ -151,10 +151,10 @@ export function SenderPickerControls({
           type="radio"
         />
         <span>
-          Injected wallet (current)
+          Your wallet
           {!state.wallet ? (
             <span className="block text-xs text-black/60 dark:text-white/60">
-              No injected wallet in this browser. Pick the passkey account
+              No wallet was found in this browser. Use your passkey account
               instead.
             </span>
           ) : null}
@@ -169,7 +169,7 @@ export function SenderPickerControls({
           type="radio"
         />
         <span>
-          Passkey account (gas sponsored on Sepolia)
+          Your passkey account (fees are covered on the test network)
           {state.kind === "passkey" ? (
             <span
               className="block text-xs text-black/60 dark:text-white/60"

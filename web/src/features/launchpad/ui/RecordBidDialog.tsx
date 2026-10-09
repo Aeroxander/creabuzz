@@ -370,7 +370,7 @@ export function RecordBidDialog({
         </p>
       ) : null}
       <fieldset className="mt-3 rounded-lg border border-black/10 p-3 dark:border-white/10">
-        <legend className="text-sm font-medium">Send with</legend>
+        <legend className="text-sm font-medium">Pay with</legend>
         <label className="flex items-start gap-2 text-sm text-black/80 dark:text-white/80">
           <input
             checked={senderKind === "wallet"}
@@ -380,10 +380,10 @@ export function RecordBidDialog({
             type="radio"
           />
           <span>
-            Injected wallet (current)
+            Your wallet
             {!wallet ? (
               <span className="block text-xs text-black/60 dark:text-white/60">
-                No injected wallet in this browser. Pick the passkey account
+                No wallet was found in this browser. Use your passkey account
                 instead.
               </span>
             ) : null}
@@ -398,7 +398,7 @@ export function RecordBidDialog({
             type="radio"
           />
           <span>
-            Passkey account (gas sponsored on Sepolia)
+            Your passkey account (fees are covered on the test network)
             {senderKind === "passkey" ? (
               <span
                 className="block text-xs text-black/60 dark:text-white/60"

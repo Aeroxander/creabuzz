@@ -21,7 +21,12 @@ import {
 } from "../lib/market-actions";
 import { decodeWord, idLabel } from "../lib/work";
 import type { WorkSnapshot } from "../lib/work-read";
-import { SelectField, TextAreaField, TextField } from "./decision-fields";
+import {
+  PeoplePicker,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from "./decision-fields";
 
 /** What the forms need to know about the DAO they compose for. */
 export interface FormContext {
@@ -267,6 +272,20 @@ export function WorkBudgetForm({
       />
       <TextAreaField
         hint="People who judge claims. Choose people other than the ones who will claim."
+        after={
+          <PeoplePicker
+            onPick={(address) =>
+              setReviewers((current) =>
+                current.toLowerCase().includes(address.toLowerCase())
+                  ? current
+                  : current.trim()
+                    ? `${current.trimEnd()}\n${address}`
+                    : address,
+              )
+            }
+            testId="budget-reviewers-people"
+          />
+        }
         label="Reviewers"
         onChange={setReviewers}
         placeholder={reviewerExample}
@@ -366,6 +385,9 @@ export function ProjectForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       />
       <TextField
         hint="Leave empty to manage it yourself."
+        after={
+          <PeoplePicker onPick={setManager} testId="project-manager-people" />
+        }
         label="Who manages it (wallet address)"
         onChange={setManager}
         placeholder="0x…"
@@ -801,6 +823,9 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
           : `The treasury holds ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`}
       </p>
       <TextField
+        after={
+          <PeoplePicker onPick={setRecipient} testId="pay-recipient-people" />
+        }
         label="Who to pay (wallet address)"
         onChange={setRecipient}
         placeholder="0x…"
