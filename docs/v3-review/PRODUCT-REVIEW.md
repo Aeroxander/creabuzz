@@ -94,6 +94,76 @@ journey (needs LBAMM cloned outside the repo), desktop and mobile tests.
   in `feed.spec.ts`). They are not caused by anything here; they need their own look.
 - `web/src/features/wiki/ui/WikiView.tsx` is 1,040 lines and the file-size gate allows 1,000.
 
+## The clean-up pass (2026-10-09)
+
+You asked for the cleaning to come from reading the whole code, not from the tests. What was run, over all of `web/`,
+`packages/creaton-core/`, `crates/` and `scripts/` (the desktop for the parts we added):
+
+- a TypeScript-compiler scan that follows imports from the app's entry point (files nothing reaches) and every
+  `export` (declarations nobody imports), cross-checked against everything that mentions the name: tests, scripts,
+  Rust, Solidity and docs, because the golden tests reach code through one-line re-exports;
+- Knip (run with `npx`, not added to the repo), which agreed with the scan on the web app and found nothing it missed;
+- a token-level clone finder (runs of 60 or more identical tokens in different files, ignoring comments and string
+  contents), run over web, core, the Rust crates and the scripts, then again after each round of fixes;
+- rustc's own dead-code warnings for the whole workspace, an identifier count for public Rust items, and an unused
+  Cargo dependency check.
+
+**Removed because nothing used it**
+
+| What | Why it could go |
+|---|---|
+| The proposal vault (contract, tests, panel, library, its browser journey, the "simulate" suite) and the two funding paths that only it served (D18) | Nothing in the product reached it; the Shares are how people join |
+| 50 exported declarations and 4 files in web and core | No importer anywhere, tests included |
+| The Paperclip two-way bridge loop (D19) | Already marked deprecated; `sync`, `apply` and `invite` stay |
+| `quorumWatch` and the agent nudge message beside it | The cards compute the same badge with `votingRuleWatch`; nothing sent the nudge |
+| The web's Inter font package, two unused Cargo dependencies, five Rust helpers, an unused test constant | Never imported |
+| The five `contracts/deployments/*.json` files (D20) | Output of local runs; now ignored |
+| 11 superseded plans and audits moved to `docs/archive/` (D22) | Their decisions are made |
+
+**Written once instead of two to fourteen times** (the first column is how many copies there were)
+
+| Copies | What | Now lives in |
+|---|---|---|
+| 14 | "first value of this tag" | `web/src/shared/lib/event-fields.ts` |
+| 6 | "content as a JSON object" | same file |
+| 12 | sign as the user, send, and refuse on a "no" | `web/src/shared/lib/publish-as-user.ts` |
+| 4 | the read-only `eth_call` helper of the CLI's chain clients | `crates/buzz-cli/src/commands/evm_read.rs` |
+| 4 | the connected-wallet lookup | `useConnectedWallet` |
+| 3 | the step-by-step money-action reducer (exit, ragequit, summon) | `packages/creaton-core/src/launchpad/step-flow.ts` |
+| 3 | "a wallet is connected and on the right chain" | `walletGate` in core |
+| 2 each | the token-deploy builder, the Merkle level builder, the graduation record decoder, the receipt read, the project card, the hashtag row, the task publisher, the passkey base64 helpers, the in-flight/failed bookkeeping of two lists, and six modules that existed in both the web and desktop apps | one copy each |
+
+Net effect on code (docs, lockfiles and archived plans left out): about 9,000 fewer lines in 171 files, 41 files
+deleted, 17 added (the shared helpers and their tests).
+
+**Two real defects the comparison turned up**
+
+- The moderation queue and the workflow run list were meant to stop refreshing themselves after fifteen minutes. A
+  timer tick called the same function the Refresh button calls, and that function restarted the fifteen minutes, so
+  both polled forever and the "paused" message could not appear. They share `useBoundedPoll` now, and
+  `polling-bounds.spec.ts` runs sixteen faked minutes through the run list. I checked that it fails on the old
+  behaviour.
+- `input_order_does_not_change_the_root` in the trust-score composer had no `#[test]` attribute, so it never ran. It
+  does now, and passes.
+
+**Looked at and kept, on purpose**
+
+- Two near-identical project cards used to exist; the Project Board and Discover still both exist (you decided to keep
+  both), they just share the card.
+- `buzz-backend-ax` (a skeleton provider for a third-party sandbox, with a design doc) uses nothing and nothing uses
+  it, but it is a deliberate new provider, not leftover code. Say the word and it goes; it is in git either way.
+- The legacy token and royalty path (`dao-os.md` still documents it), `ShareVesting.sol`, the sandbox launch, the
+  kernel and ZeroDev scripts (they check a live test network, and nothing else runs them).
+- The social feed copies (`NoteCard` / `PostCard`): Home and Social stay separate for now (decided earlier).
+- Upstream's own repeated test setup in the relay: it is upstream's, and rewriting it would only create merge
+  conflicts.
+- The TanStack Query refetch timers in the web app: they pause in a hidden tab and the data is live while you look.
+
+**Checked after the last change:** web typecheck, 1,224 web unit tests, 680 core tests, the web checks (`pnpm check`),
+the desktop typecheck, `cargo fmt`, the whole Rust workspace with `cargo check --all-targets` (no warnings left), 744
+CLI tests, the Paperclip, agwiki and provider tests, and the mocked browser suite: 180 pass, 26 are skipped (they need
+a local chain), and the same 13 fail that failed before this work started.
+
 ## What would help next
 
 In this order: (1) your call on the six items above; (2) a "Set up a work budget" shortcut on the DAO's front page when it

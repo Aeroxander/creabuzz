@@ -156,7 +156,7 @@ node --test scripts/dev-chain.test.mjs scripts/simulate-voting-rules.test.mjs
 ```
 
 Known failures that are not from this work (the 13 browser specs fail identically on the commit before it): in the
-full mocked browser suite (`cd web && pnpm test:e2e:smoke`) 176 pass, 15 skip and 13 fail: `feed.spec.ts` "posts are
+full mocked browser suite (`cd web && pnpm test:e2e:smoke`) 180 pass, 26 skip and 13 fail: `feed.spec.ts` "posts are
 only copied to public relays…", six wiki/multi-user specs and five in `smoke.spec.ts`. Also the web file-size ratchet
 on `WikiView.tsx` and `cargo clippy` findings in other crates.
 

@@ -96,6 +96,21 @@ how it was checked.
 | Sale wizard, token creation, Manage tab and dialogs in plain words; six tabs instead of seven; Home opens on what is yours | `web/src/features/launchpad`, `AppNav.tsx`, `feed/ui/HomeYours.tsx` | `pnpm test` 1,315 passed; `pnpm check` clean apart from the old `WikiView.tsx` size; the mocked browser suite: 179 pass, 26 skip, and the same 13 fail that fail on the commit before this work |
 | `tour.spec.ts`: one screenshot per first-run page and creation step | `web/tests/e2e/tour.spec.ts` | opt-in: `E2E_TOUR=<dir> pnpm exec playwright test --project=smoke tour.spec.ts` |
 
+## Clean-up pass: unused and repeated code (2026-10-09)
+
+You asked for the cleaning to come from scanning the whole code rather than from tests. The method, what was removed
+and what was merged into one copy are in [PRODUCT-REVIEW.md](PRODUCT-REVIEW.md#the-clean-up-pass-2026-10-09); the
+decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
+
+| Piece | Where | How it was checked |
+|---|---|---|
+| Proposal vault, simulation suite and two never-built funding paths retired | `contracts/`, `web/`, `scripts/` | Foundry suite, web typecheck and tests, the real-chain journeys |
+| Paperclip bridge loop, five dead Rust helpers, two Cargo dependencies, an unused test constant | `crates/` | `cargo check --workspace --all-targets` with no warnings left; tests of every crate touched |
+| 11 superseded plans moved to `docs/archive/`, links and code comments updated | `docs/`, `.github/`, `web/` | a script that resolves every relative markdown link (none broken) |
+| Fourteen kinds of copy written once (tags, JSON content, sign-and-publish, the CLI's `eth_call`, wallet lookup, step reducer, wallet gate, Merkle levels, receipt read, graduation decoder, project card, hashtag row, task publisher, passkey base64) | `web/src/shared`, `packages/creaton-core`, `crates/buzz-cli` | each had tests already or got one; the whole web, core, desktop and CLI suites pass |
+| **Bug found by the comparison:** the moderation queue and workflow run list never stopped polling | `web/src/shared/hooks/use-bounded-poll.ts` | `polling-bounds.spec.ts`, checked to fail on the old behaviour |
+| **Bug found by the scan:** a trust-score test with no `#[test]` never ran | `crates/buzz-cli/src/commands/trustgraph.rs` | it runs now and passes |
+
 ## Differences from the plan
 
 - **D2 (token architecture) was partly spiked.** The launch still sells the DAO's own Shares directly on the CCA, and
@@ -146,6 +161,6 @@ how it was checked.
   protection.
 - The sell-rate gate is advisory (F8) and the TokenMaster reserve is not a price floor (see `PLAN.md` §3); both are unchanged.
 - Pre-existing failures, checked by running the same specs on the commit before this work (they fail identically
-  there): 13 of the 204 mocked browser specs (`feed.spec.ts` "posts are only copied to public relays…", six
+  there): 13 of the 219 mocked browser specs (`feed.spec.ts` "posts are only copied to public relays…", six
   wiki/multi-user specs, and five in `smoke.spec.ts` such as "home page loads with Creaton branding"), and the web
-  file-size ratchet on `WikiView.tsx`. The other 176 pass, 15 are skipped (they need a local chain).
+  file-size ratchet on `WikiView.tsx`. The other 180 pass, 26 are skipped (they need a local chain).
