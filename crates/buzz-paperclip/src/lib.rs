@@ -16,7 +16,6 @@
 //!   invents a pubkey for an unresolved assignee.
 
 pub mod apply;
-pub mod bridge;
 pub mod feed;
 pub mod invites;
 pub mod paperclip_write;
@@ -35,7 +34,6 @@ use crate::source::Issue;
 pub use crate::apply::{
     run_apply, ApplyConfig, ApplyReport, BuzzTask, Decision, SkipReason, TaskBatch, TaskFeed,
 };
-pub use crate::bridge::{run_bridge, BridgeConfig, BridgeReport, BridgeRun};
 pub use crate::feed::{JsonFileTaskFeed, RelayTaskFeed};
 pub use crate::invites::{
     invite_member, invite_message, CreatedInvite, InviteIssuer, InviteKind, InviteOutcome,

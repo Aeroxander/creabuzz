@@ -1,27 +1,27 @@
 # Paperclip bridge
 
-> ## Status: deprecated as a two-way bridge
+> ## Status: an on-ramp, not a two-way bridge
 >
-> The Paperclip integration has pivoted to an **on-ramp**: **one-way import**
-> of Paperclip work into Buzz plus a **private desktop sandbox** (a managed
+> The Paperclip integration is an **on-ramp**: a **one-way import** of
+> Paperclip work into Buzz plus a **private desktop sandbox** (a managed
 > loopback Paperclip instance opened in its own window). The relay's org events
 > ([VISION_ORG.md](../VISION_ORG.md), built out per
 > [docs/paperclip-parity-plan.md](paperclip-parity-plan.md)) are the system of
 > record for shared org state.
 >
-> The standing two-way `bridge` loop in `buzz-paperclip` is **DEPRECATED** and
-> scheduled for removal once native org parity covers task sync. The one-shot
-> `sync` (Paperclip → Buzz import) and `apply` (Buzz → Paperclip, private
-> sandbox) subcommands remain supported on that on-ramp basis, and the
-> guarantees below stay accurate for them. Do not build new work on the loop.
+> The standing two-way `bridge` loop that used to be in `buzz-paperclip` has
+> been **removed** (2026-10-09). The one-shot `sync` (Paperclip → Buzz import),
+> `apply` (Buzz → Paperclip, private sandbox) and `invite` subcommands remain,
+> and the guarantees below stay accurate for them. Run them from cron if you
+> want them repeated; nothing in the product depends on a loop.
 
 [Paperclip](https://github.com/paperclipai/paperclip) is a self-hosted "company of AI agents": an org
 chart, issues, approvals and budgets for a team of agents. This document describes how Buzz and Paperclip
-work together, and the two crates that carry it:
+work together, and the two crates that carry it (the name is historical; there is no standing bridge process):
 
 | Crate | Direction |
 |---|---|
-| `crates/buzz-paperclip` | one-way import (deprecated two-way loop pending removal): projects Paperclip issues into the community as `kind:44011` task rows, and applies Buzz-authored work back to Paperclip in the private sandbox |
+| `crates/buzz-paperclip` | one-way import: projects Paperclip issues into the community as `kind:44011` task rows, and applies Buzz-authored work back to Paperclip in the private sandbox |
 | `crates/buzz-community-mcp` | exposes Buzz messages and tasks as MCP tools so an externally hosted agent can take part |
 
 ## Why a bridge instead of one system
@@ -92,13 +92,12 @@ a change:
 - Retry a transport failure, `409`, `429` and `5xx`; give up on `400`, `401`, `403`, `404`, `422`. A failed
   write leaves the task unbound so the next cycle retries it.
 
-**The loop**
+**Running both**
 
-- The two directions are isolated: a failing Paperclip read does not stop Buzz work from being applied, and
-  vice versa.
-- State is saved every cycle, so a crash costs one cycle rather than the session's cursor.
-- Apply runs before projection so an issue created this cycle is projected back in the same cycle.
-- A rehearsal is structurally unable to write, and shutdown finishes the cycle in flight.
+- `sync` and `apply` share one state file. Run `apply` first, then `sync`, so an issue created this run is
+  projected back in the same run.
+- State is saved at the end of each run, so a crash costs one run rather than the cursor.
+- `--dry-run` is structurally unable to write.
 
 **MCP tools**
 
@@ -114,18 +113,20 @@ flags for keys: process listing (`ps`, `/proc`) leaks CLI arguments to every
 local user, while env vars do not.**
 
 ```sh
-# One cycle, cron style. --cycles 0 runs until SIGINT/SIGTERM.
-buzz-paperclip bridge \
+# Buzz → Paperclip: create issues for tasks written in Buzz.
+buzz-paperclip apply \
   --paperclip-url "$PAPERCLIP_BASE_URL" \
   --paperclip-api-key "$PAPERCLIP_API_KEY" \
-  --write-api-key "$PAPERCLIP_WRITE_API_KEY" \
   --company "$PAPERCLIP_COMPANY_ID" \
   --relay-url "$BUZZ_RELAY_URL" --private-key "$BUZZ_PRIVATE_KEY" \
   --channel "$BUZZ_CHANNEL_ID" --assignee-map ./assignees.json \
-  --state /var/lib/buzz-paperclip/state.json --cycles 1
+  --state /var/lib/buzz-paperclip/state.json
 
-# Rehearse the whole loop without writing.
-buzz-paperclip bridge --dry-run --cycles 1 ...
+# Paperclip → Buzz: project issues into the community as task rows.
+buzz-paperclip sync ...
+
+# Rehearse either one without writing.
+buzz-paperclip apply --dry-run ...
 ```
 
 Invite a community member (the link is posted into a channel, because Paperclip invites are copy-link only

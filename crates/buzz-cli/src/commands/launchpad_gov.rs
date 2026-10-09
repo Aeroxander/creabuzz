@@ -63,7 +63,6 @@ const RECEIPT_DEADLINE: Duration = buzz_evm_allowance::DEFAULT_RECEIPT_DEADLINE;
 
 // Selectors computed from canonical signatures at runtime; tests pin them
 // against `cast sig` (the same pins as web `vote-tx.ts`).
-const SIG_OPEN_PROPOSAL: &str = "openProposal(uint256)";
 const SIG_CAST_VOTE: &str = "castVote(uint256,uint8)";
 const SIG_EXECUTE_BY_VOTES: &str = "executeByVotes(uint8,address,uint256,bytes,bytes32)";
 const SIG_PROPOSAL_ID: &str = "proposalId(uint8,address,uint256,bytes,bytes32)";
@@ -158,13 +157,6 @@ pub fn encode_intent_args(
     out.extend_from_slice(&abi::encode_uint256(data_bytes.len() as u128));
     out.extend_from_slice(&data_bytes);
     out.resize(out.len() - data_bytes.len() + padded, 0);
-    Ok(out)
-}
-
-/// `openProposal(uint256)`.
-pub fn encode_open_proposal(id: &str) -> Result<Vec<u8>, CliError> {
-    let mut out = abi::selector(SIG_OPEN_PROPOSAL).to_vec();
-    out.extend_from_slice(&uint256_word(id)?);
     Ok(out)
 }
 
@@ -664,7 +656,6 @@ mod tests {
     /// Selectors pinned against `cast sig`.
     #[test]
     fn selectors_match_cast_sig() {
-        assert_eq!(hex::encode(abi::selector(SIG_OPEN_PROPOSAL)), "31288f40");
         assert_eq!(hex::encode(abi::selector(SIG_CAST_VOTE)), "56781388");
         assert_eq!(hex::encode(abi::selector(SIG_QUEUE)), "ddf0b009");
         assert_eq!(hex::encode(abi::selector(SIG_EXECUTE_BY_VOTES)), "ee5b2895");
@@ -708,11 +699,8 @@ mod tests {
     }
 
     #[test]
-    fn open_and_vote_calldata_shape() {
+    fn vote_calldata_shape() {
         let one = format!("0x{}1", "0".repeat(63));
-        let open = encode_open_proposal(&one).unwrap();
-        assert_eq!(&open[..4], &abi::selector(SIG_OPEN_PROPOSAL));
-        assert_eq!(open.len(), 36);
         let vote = encode_cast_vote(&one, 1).unwrap();
         assert_eq!(&vote[..4], &abi::selector(SIG_CAST_VOTE));
         assert_eq!(vote.len(), 68);

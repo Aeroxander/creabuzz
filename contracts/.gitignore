@@ -5,3 +5,6 @@ broadcast/
 
 # Local dev-chain launch kit (scripts/dev-chain.sh): a fresh address and hash every run, not a fixture
 deployments/dao-launch-kit-*.json
+
+# Written by the deploy scripts and the dev chain on every run: outputs, not sources.
+deployments/*.json

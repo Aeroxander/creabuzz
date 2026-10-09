@@ -75,11 +75,6 @@ pub fn classifier_target_from_provider(
     })
 }
 
-/// Read the LLM target from the process environment (fail-closed).
-pub fn classifier_target_from_env() -> Result<LlmTarget, String> {
-    classifier_target_from_provider(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
-}
-
 /// One HTTP round trip to `{api_url}/chat/completions` with 429 back-off.
 ///
 /// `http` is supplied by the caller so the caller owns client construction

@@ -1107,7 +1107,6 @@ dependencies = [
  "nostr 0.44.7",
  "serde",
  "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -1177,7 +1176,6 @@ dependencies = [
  "buzz-core",
  "buzz-sdk",
  "buzz-ws-client",
- "futures-util",
  "nostr 0.44.7",
  "rmcp 1.8.0",
  "rustls",

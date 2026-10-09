@@ -84,11 +84,6 @@ impl RelayPublisher {
             timeout_secs: timeout_secs.max(1),
         }
     }
-
-    /// The publisher's public key in hex, for diagnostics and run reports.
-    pub fn public_key_hex(&self) -> String {
-        self.keys.public_key().to_hex()
-    }
 }
 
 impl RelayPublisher {

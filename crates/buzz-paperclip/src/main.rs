@@ -12,9 +12,9 @@ use clap::{Args, Parser, Subcommand};
 use buzz_paperclip::relay::{DryRunPublisher, RelayPublisher};
 use buzz_paperclip::source::{JsonFileSource, PaperclipRestSource};
 use buzz_paperclip::{
-    invert_assignee_map, invite_member, run_apply, run_bridge, run_once, ApplyConfig, ApplyReport,
-    BridgeConfig, BridgeError, BridgeRun, InviteRequest, JsonFileTaskFeed, ProjectionConfig,
-    RelayMessagePublisher, RelayTaskFeed, RestInviteIssuer, RestIssueWriter, SyncReport, SyncState,
+    invert_assignee_map, invite_member, run_apply, run_once, ApplyConfig, ApplyReport, BridgeError,
+    InviteRequest, JsonFileTaskFeed, ProjectionConfig, RelayMessagePublisher, RelayTaskFeed,
+    RestInviteIssuer, RestIssueWriter, SyncReport, SyncState,
 };
 
 #[derive(Parser)]
@@ -34,13 +34,6 @@ enum Command {
     Sync(Box<SyncArgs>),
     /// Apply Buzz-authored task rows to Paperclip.
     Apply(Box<ApplyArgs>),
-    /// Deprecated: standing two-way sync loop. See the Status section of
-    /// docs/paperclip-bridge.md.
-    ///
-    /// The Paperclip integration is now an on-ramp — one-way import plus a
-    /// private desktop sandbox (VISION_ORG.md). This loop still works, but it
-    /// is scheduled for removal once native org parity covers task sync.
-    Bridge(Box<BridgeArgs>),
     /// Create a Paperclip invite and announce it in a Buzz channel.
     Invite(Box<InviteArgs>),
 }
@@ -75,81 +68,6 @@ struct InviteArgs {
     #[arg(long)]
     dry_run: bool,
     /// Print the outcome as JSON.
-    #[arg(long)]
-    json: bool,
-}
-
-#[derive(Args)]
-struct BridgeArgs {
-    /// Read Paperclip issues from a JSON file instead of an instance.
-    #[arg(long, value_name = "PATH")]
-    from_json: Option<PathBuf>,
-    /// Read Buzz task rows from a JSON file instead of a relay.
-    #[arg(long, value_name = "PATH")]
-    tasks_from_json: Option<PathBuf>,
-    /// Paperclip base URL.
-    #[arg(long, env = "PAPERCLIP_BASE_URL")]
-    paperclip_url: Option<String>,
-    /// Board API key used for reads; a viewer key is fine.
-    #[arg(long, env = "PAPERCLIP_API_KEY")]
-    paperclip_api_key: Option<String>,
-    /// Board API key used for writes; must NOT be a viewer key. Defaults to the
-    /// read key.
-    #[arg(long, env = "PAPERCLIP_WRITE_API_KEY")]
-    write_api_key: Option<String>,
-    /// Issues path; defaults to `/api/companies/<company>/issues`.
-    #[arg(long)]
-    issues_path: Option<String>,
-    /// Incremental-filter query parameter, once verified against the instance.
-    #[arg(
-        long,
-        env = "PAPERCLIP_INCREMENTAL_PARAM",
-        default_value = "updatedSince"
-    )]
-    incremental_param: String,
-    /// Paperclip company id.
-    #[arg(long, env = "PAPERCLIP_COMPANY_ID")]
-    company: Option<String>,
-    /// Project new issues land in.
-    #[arg(long)]
-    project: Option<String>,
-    /// Buzz channel UUID the task rows are scoped to.
-    #[arg(long, env = "BUZZ_CHANNEL_ID")]
-    channel: Option<String>,
-    /// Relay URL.
-    #[arg(long, env = "BUZZ_RELAY_URL")]
-    relay_url: Option<String>,
-    /// Hex secret key the bridge signs and authenticates with.
-    #[arg(long, env = "BUZZ_PRIVATE_KEY")]
-    private_key: Option<String>,
-    /// JSON map of Paperclip ids to Buzz pubkeys; inverted for the apply side.
-    #[arg(long)]
-    assignee_map: Option<PathBuf>,
-    /// Paperclip dashboard base URL, used for a link-back tag.
-    #[arg(long)]
-    dashboard_url: Option<String>,
-    /// Durable state file.
-    #[arg(long, default_value = ".buzz-paperclip-state.json")]
-    state: PathBuf,
-    /// Seconds between cycles.
-    #[arg(long, default_value_t = 60)]
-    interval_secs: u64,
-    /// Stop after this many cycles; 0 runs until interrupted.
-    #[arg(long, default_value_t = 0)]
-    cycles: u32,
-    /// Seconds subtracted from the stored scan start to form the cursor.
-    #[arg(long, default_value_t = buzz_paperclip::DEFAULT_OVERLAP_SECONDS)]
-    overlap_seconds: u64,
-    /// Page cap for one Paperclip read.
-    #[arg(long, default_value_t = 10)]
-    max_pages: u32,
-    /// Attempts per Paperclip write before giving up.
-    #[arg(long, default_value_t = 3)]
-    max_attempts: u32,
-    /// Rehearse without publishing or writing.
-    #[arg(long)]
-    dry_run: bool,
-    /// Print the run report as JSON when the loop stops.
     #[arg(long)]
     json: bool,
 }
@@ -275,7 +193,6 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Sync(args) => run_sync(*args).await,
         Command::Apply(args) => run_apply_command(*args).await,
-        Command::Bridge(args) => run_bridge_command(*args).await,
         Command::Invite(args) => run_invite_command(*args).await,
     };
     match result {
@@ -605,200 +522,6 @@ fn print_apply_report(report: &ApplyReport, as_json: bool) -> Result<(), BridgeE
         println!("  failed {detail}");
     }
     Ok(())
-}
-
-async fn run_bridge_command(args: BridgeArgs) -> Result<ExitCode, BridgeError> {
-    let company_id = required(&args.company, "--company or PAPERCLIP_COMPANY_ID")?;
-    let assignee_map = match args.assignee_map.as_ref() {
-        Some(path) => ProjectionConfig::load_assignee_map(path)?,
-        None => Default::default(),
-    };
-    let sync_config = ProjectionConfig {
-        company_id: company_id.clone(),
-        channel_id: args.channel.clone(),
-        dashboard_url: args.dashboard_url.clone(),
-        assignee_map: assignee_map.clone(),
-    };
-    let apply_config = ApplyConfig {
-        project_id: args.project.clone(),
-        max_attempts: args.max_attempts.max(1),
-        retry_delay: Duration::from_millis(250),
-        assignee_by_npub: invert_assignee_map(&assignee_map),
-        responsible_by_npub: invert_assignee_map(&assignee_map),
-    };
-
-    let paperclip_url = required(&args.paperclip_url, "--paperclip-url or PAPERCLIP_BASE_URL")?;
-    let read_key = args.paperclip_api_key.clone().unwrap_or_default();
-    let explicit_write_key = args
-        .write_api_key
-        .clone()
-        .filter(|value| !value.trim().is_empty());
-    let write_key = explicit_write_key
-        .clone()
-        .unwrap_or_else(|| read_key.clone());
-    // The silent fallback used to be the read key, so a real run could happily
-    // 403 every write. A rehearsal performs no writes, so it has nothing to warn
-    // about. Print to stderr so it is loud in scripts and CI, not a hidden
-    // tracing line.
-    if explicit_write_key.is_none() && !args.dry_run {
-        eprintln!(
-            "warning: --write-api-key was not set; falling back to the read key              (--paperclip-api-key). Writes will use that key and will likely be              rejected with 403 unless it is a non-viewer key."
-        );
-    }
-    if read_key.trim().is_empty() || write_key.trim().is_empty() {
-        tracing::warn!(
-            "no Paperclip API key supplied; this only works on a local_trusted instance, where \
-             the implicit local-board actor applies when no credential is sent"
-        );
-    }
-    let issues_path = args
-        .issues_path
-        .clone()
-        .unwrap_or_else(|| format!("/api/companies/{company_id}/issues"));
-
-    let mut state = SyncState::load(&args.state)?;
-    state.overlap_seconds = args.overlap_seconds;
-    let config = BridgeConfig {
-        interval: Duration::from_secs(args.interval_secs),
-        // A rehearsal plans the current state and binds nothing, so repeating it
-        // would just report the same plan again with inflated totals. One cycle.
-        cycles: if args.dry_run {
-            Some(1)
-        } else {
-            (args.cycles > 0).then_some(args.cycles)
-        },
-        dry_run: args.dry_run,
-    };
-
-    // Build both directions. The publisher needs the relay and the bridge key;
-    // the responder needs Paperclip read and write access.
-    let read_source = PaperclipRestSource::new(paperclip_url.clone(), issues_path, read_key, 1000)?
-        .with_incremental_param(args.incremental_param.clone())
-        .with_max_pages(args.max_pages);
-    let writer = RestIssueWriter::new(paperclip_url, company_id, write_key)?;
-
-    let report = match bridge_endpoints(&args)? {
-        (Endpoints::Files { issues, tasks }, publisher) => {
-            let source = JsonFileSource::new(issues);
-            let feed = JsonFileTaskFeed::new(tasks);
-            Box::pin(run_bridge(
-                BridgeRun {
-                    source: &source,
-                    publisher: &publisher,
-                    feed: &feed,
-                    writer: &writer,
-                    sync_config: &sync_config,
-                    apply_config: &apply_config,
-                    state: &mut state,
-                },
-                &config,
-                &args.state,
-                shutdown_signal(),
-            ))
-            .await?
-        }
-        (Endpoints::Relay { feed }, publisher) => {
-            Box::pin(run_bridge(
-                BridgeRun {
-                    source: &read_source,
-                    publisher: &publisher,
-                    feed: &feed,
-                    writer: &writer,
-                    sync_config: &sync_config,
-                    apply_config: &apply_config,
-                    state: &mut state,
-                },
-                &config,
-                &args.state,
-                shutdown_signal(),
-            ))
-            .await?
-        }
-    };
-
-    if args.json {
-        let text = serde_json::to_string_pretty(&report)
-            .map_err(|error| BridgeError::Config(format!("cannot serialize report: {error}")))?;
-        println!("{text}");
-    } else {
-        println!(
-            "cycles={} created={} patched={} projected={} publish_failures={} sync_failures={} apply_failures={} shutdown={}",
-            report.cycles,
-            report.created,
-            report.patched,
-            report.projected_created + report.projected_updated,
-            report.publish_failures,
-            report.sync_failures,
-            report.apply_failures,
-            report.shutdown_requested
-        );
-        if let Some(error) = report.last_error.as_deref() {
-            println!("  last error: {error}");
-        }
-    }
-    Ok(if report.sync_failures == 0 && report.apply_failures == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(2)
-    })
-}
-
-/// Where the bridge reads Buzz task rows from.
-enum Endpoints {
-    Files { issues: PathBuf, tasks: PathBuf },
-    Relay { feed: RelayTaskFeed },
-}
-
-fn bridge_endpoints(args: &BridgeArgs) -> Result<(Endpoints, RelayPublisher), BridgeError> {
-    let relay_url = required(&args.relay_url, "--relay-url or BUZZ_RELAY_URL")?;
-    let private_key = required(&args.private_key, "--private-key or BUZZ_PRIVATE_KEY")?;
-    let keys = nostr::Keys::parse(private_key.trim())
-        .map_err(|error| BridgeError::Config(format!("invalid bridge key: {error}")))?;
-    let publisher = RelayPublisher::new(relay_url.clone(), keys.clone(), 15);
-
-    if let (Some(issues), Some(tasks)) = (args.from_json.as_ref(), args.tasks_from_json.as_ref()) {
-        return Ok((
-            Endpoints::Files {
-                issues: issues.clone(),
-                tasks: tasks.clone(),
-            },
-            publisher,
-        ));
-    }
-    Ok((
-        Endpoints::Relay {
-            feed: RelayTaskFeed::new(
-                relay_url,
-                keys,
-                args.channel.clone(),
-                Duration::from_secs(15),
-            ),
-        },
-        publisher,
-    ))
-}
-
-/// Resolve when the process is asked to stop.
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{signal, SignalKind};
-        let mut term = match signal(SignalKind::terminate()) {
-            Ok(term) => term,
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-                return;
-            }
-        };
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = term.recv() => {}
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
-    }
 }
 
 async fn run_invite_command(args: InviteArgs) -> Result<ExitCode, BridgeError> {

@@ -1352,8 +1352,6 @@ mod tests {
         assert!(msg.contains("64-hex"), "got: {msg}");
     }
 
-    const AGENT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
     #[test]
     fn default_budget_subject_is_accepted_but_cannot_be_onchain() {
         let content =

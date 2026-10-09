@@ -28,7 +28,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
-futures-util = { workspace = true }
 # Explicit rustls dep with the ring provider, matching buzz-cli/buzz-dev-mcp:
 # a unified multi-package release build otherwise leaves rustls unable to
 # auto-select a provider and the first TLS connection panics.

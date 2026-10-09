@@ -96,40 +96,6 @@ pub async fn get_evm_identity(
     .map_err(crate::error::DbError::from)
 }
 
-/// List all device-npub bindings for one EVM root account in `community`.
-pub async fn list_identities_for_address(
-    pool: &PgPool,
-    community: CommunityId,
-    evm_address: &[u8; 20],
-) -> Result<Vec<EvmIdentity>> {
-    let rows = sqlx::query(
-        "SELECT pubkey, evm_address, attestation, created_at, updated_at, \
-                revoked_at, revoked_by, revoked_reason \
-         FROM evm_identities WHERE community_id = $1 AND evm_address = $2 \
-         ORDER BY created_at ASC",
-    )
-    .bind(community.as_uuid())
-    .bind(evm_address.as_slice())
-    .fetch_all(pool)
-    .await?;
-
-    rows.into_iter()
-        .map(|r| -> std::result::Result<EvmIdentity, sqlx::Error> {
-            Ok(EvmIdentity {
-                pubkey: r.try_get("pubkey")?,
-                evm_address: r.try_get("evm_address")?,
-                attestation: r.try_get("attestation")?,
-                created_at: r.try_get("created_at")?,
-                updated_at: r.try_get("updated_at")?,
-                revoked_at: r.try_get("revoked_at")?,
-                revoked_by: r.try_get("revoked_by")?,
-                revoked_reason: r.try_get("revoked_reason")?,
-            })
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(crate::error::DbError::from)
-}
-
 /// SIWE variant of `claim_relay_membership`: identical semantics but
 /// `added_by = 'evm_siwe'` so the admission source is auditable.
 /// Returns `true` when the member row was newly inserted.
@@ -206,26 +172,4 @@ pub async fn is_evm_identity_revoked(
             Ok(Some(revoked))
         }
     }
-}
-
-/// Re-activate a previously revoked binding (clears `revoked_at`).
-///
-/// Returns `true` when a row was updated. Used by a future re-register path
-/// to re-bind a fresh device npub under the same EVM account.
-pub async fn unrevoke_evm_identity(
-    pool: &PgPool,
-    community: CommunityId,
-    pubkey: &str,
-) -> Result<bool> {
-    let result = sqlx::query(
-        "UPDATE evm_identities \
-         SET revoked_at = NULL, revoked_by = NULL, revoked_reason = NULL, \
-             updated_at = now() \
-         WHERE community_id = $1 AND pubkey = $2 AND revoked_at IS NOT NULL",
-    )
-    .bind(community.as_uuid())
-    .bind(pubkey)
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected() > 0)
 }

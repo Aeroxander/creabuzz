@@ -597,6 +597,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn input_order_does_not_change_the_root() {
         let a = vec![
             TrustScore {
