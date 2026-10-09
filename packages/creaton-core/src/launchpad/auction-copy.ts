@@ -238,6 +238,45 @@ export type SendGate =
 const sameAddress = (a: string, b: string): boolean =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/** The two wallet checks every send shares. */
+export type WalletGate =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "no-wallet" | "wrong-chain";
+      message: string;
+    };
+
+/**
+ * A wallet is connected, and it is on the launch's chain. `noWalletMessage`
+ * says what the connection is for, since that differs from send to send. An
+ * unknown chain on either side passes: the send itself will fail loudly.
+ */
+export function walletGate(
+  input: {
+    address: string | null;
+    walletChainId: number | null;
+    launchChainId: number | null;
+  },
+  noWalletMessage: string,
+): WalletGate {
+  if (!input.address) {
+    return { ok: false, reason: "no-wallet", message: noWalletMessage };
+  }
+  if (
+    input.launchChainId !== null &&
+    input.walletChainId !== null &&
+    input.walletChainId !== input.launchChainId
+  ) {
+    return {
+      ok: false,
+      reason: "wrong-chain",
+      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
+    };
+  }
+  return { ok: true };
+}
+
 /**
  * Gate for the auction deploy. Checked BEFORE the first transaction because the
  * failures it prevents are expensive: the executor is deployed first, and the
@@ -270,25 +309,16 @@ export function deployGate(input: {
   if (input.planProblem) {
     return { ok: false, reason: "plan", message: input.planProblem };
   }
-  if (!input.address) {
-    return {
-      ok: false,
-      reason: "no-wallet",
-      message: "Connect the treasury wallet to deploy the auction.",
-    };
-  }
+  const wallet = walletGate(
+    input,
+    "Connect the treasury wallet to deploy the auction.",
+  );
+  if (!wallet.ok) return wallet;
   if (
-    input.launchChainId !== null &&
-    input.walletChainId !== null &&
-    input.walletChainId !== input.launchChainId
+    input.treasury &&
+    input.address &&
+    !sameAddress(input.address, input.treasury)
   ) {
-    return {
-      ok: false,
-      reason: "wrong-chain",
-      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
-    };
-  }
-  if (input.treasury && !sameAddress(input.address, input.treasury)) {
     return {
       ok: false,
       reason: "not-treasury",
@@ -308,23 +338,5 @@ export function graduationGate(input: {
   walletChainId: number | null;
   launchChainId: number | null;
 }): SendGate {
-  if (!input.address) {
-    return {
-      ok: false,
-      reason: "no-wallet",
-      message: "Connect a wallet to execute the graduation.",
-    };
-  }
-  if (
-    input.launchChainId !== null &&
-    input.walletChainId !== null &&
-    input.walletChainId !== input.launchChainId
-  ) {
-    return {
-      ok: false,
-      reason: "wrong-chain",
-      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
-    };
-  }
-  return { ok: true };
+  return walletGate(input, "Connect a wallet to execute the graduation.");
 }

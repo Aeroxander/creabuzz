@@ -12,6 +12,7 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
+import { walletGate } from "./auction-copy.ts";
 import {
   type AuctionDeployParams,
   encodeAuctionConfigData,
@@ -639,26 +640,10 @@ export function daoLaunchGate(input: {
   if (input.planProblem) {
     return { ok: false, reason: "plan", message: input.planProblem };
   }
-  if (!input.address) {
-    return {
-      ok: false,
-      reason: "no-wallet",
-      message:
-        "Connect your wallet to launch. It is the wallet that holds your team allocation.",
-    };
-  }
-  if (
-    input.launchChainId !== null &&
-    input.walletChainId !== null &&
-    input.walletChainId !== input.launchChainId
-  ) {
-    return {
-      ok: false,
-      reason: "wrong-chain",
-      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
-    };
-  }
-  return { ok: true };
+  return walletGate(
+    input,
+    "Connect your wallet to launch. It is the wallet that holds your team allocation.",
+  );
 }
 
 /**
