@@ -112,9 +112,6 @@ import {
 export const KERNEL_FACTORY_0_3_3 =
   "0x2577507b78c2008ff367261cb6285d44ba5ef2e9";
 
-/** Kernel account implementation 0.3.3 (["0.3.3"].accountImplementationAddress). */
-export const KERNEL_IMPL_0_3_3 = "0xd6cedde84be40893d153be9d467cd6ad37875b28";
-
 /** WebAuthnValidator V0_0_3_PATCHED (the deployed passkey validator). */
 export const WEB_AUTHN_VALIDATOR_V0_0_3_PATCHED =
   "0x7ab16ff354acb328452f1d445b3ddee9a91e9e69";

@@ -49,7 +49,6 @@ export const ISSUE_STATUS_KIND: Record<string, number> = {
   closed: KIND_GIT_STATUS_CLOSED,
   triage: KIND_GIT_STATUS_DRAFT,
 };
-export const ISSUE_MOVE_TARGETS = ["open", "done", "closed"];
 
 export type WorkItemType = "task" | "issue";
 

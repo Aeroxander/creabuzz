@@ -549,11 +549,6 @@ export function scopeState(
   return { status: "scoped", scope };
 }
 
-/** The `t: team:<id>` tag for a scope value (dropped when the scope is null). */
-export function scopeTag(scope: string | null): string[] | null {
-  return scope ? ["t", `${SCOPE_TAG_PREFIX}${scope}`] : null;
-}
-
 /**
  * Whether one INBOUND live co-edit update may modify the shared document.
  *

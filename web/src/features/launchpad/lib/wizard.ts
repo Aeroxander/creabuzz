@@ -53,7 +53,6 @@ import {
   floorFromRaiseTarget,
   MAX_SALE_SECONDS,
   priceToAtomic,
-  SALE_DURATIONS,
   SALE_PLANS,
   scheduleFor,
   thresholdFromFloor,
@@ -972,6 +971,3 @@ export function planForWizard(
     durationSeconds,
   });
 }
-
-/** The duration presets as the dialog shows them, labels included. */
-export const DURATION_CHOICES = SALE_DURATIONS;

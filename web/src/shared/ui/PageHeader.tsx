@@ -89,27 +89,3 @@ export function SectionHeader({
 
   return <div className={cn("min-w-0 space-y-0.5", className)}>{copy}</div>;
 }
-
-/**
- * Level 3 of the shared header ramp: the smallest grouping label (field-group
- * eyebrows, table headers). Replaces the assorted uppercase/tracking variants
- * with one canonical style.
- */
-export function SubsectionLabel({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <p
-      className={cn(
-        "text-2xs font-semibold uppercase tracking-wide text-muted-foreground",
-        className,
-      )}
-    >
-      {children}
-    </p>
-  );
-}

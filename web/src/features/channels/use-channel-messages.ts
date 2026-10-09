@@ -48,10 +48,6 @@ export function isOverlayKind(kind: number): boolean {
   return OVERLAY_KINDS.includes(kind);
 }
 
-function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
-}
-
 /** Events keyed by id, newest-first list for ordering. */
 export interface ChannelMessages {
   byId: Map<string, NostrEvent>;
@@ -239,30 +235,4 @@ export function useChannelMessages(channelId: string | null) {
     /** `open` once the live socket is up; null before the first attempt. */
     liveStatus,
   };
-}
-
-/** Reply-chain grouping for rendering: parent id → children (non-root events). */
-export function useThreadGroups(
-  messages: ChannelMessages,
-): Map<string, NostrEvent[]> {
-  return useMemo(() => {
-    const groups = new Map<string, NostrEvent[]>();
-    const rootIds = new Set<string>();
-    for (const event of messages.ordered) {
-      const root = getTag(event, "e");
-      if (root) rootIds.add(root);
-    }
-    for (const event of messages.ordered) {
-      const root = getTag(event, "e");
-      if (root && rootIds.has(root)) {
-        const list = groups.get(root) ?? [];
-        list.push(event);
-        groups.set(root, list);
-      } else if (!root) {
-        const list = groups.get(event.id) ?? [];
-        groups.set(event.id, list);
-      }
-    }
-    return groups;
-  }, [messages]);
 }

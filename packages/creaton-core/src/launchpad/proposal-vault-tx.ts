@@ -46,8 +46,7 @@ export const SELECTOR_PROPOSALS = "0x32ed5b12"; // proposals(bytes32)
 export const SELECTOR_TOKENS_AT_RISK = "0x346b109b"; // tokensAtRisk(address)
 export const SELECTOR_BACKING_WEIGHT_AT = "0xa77e5baa"; // backingWeightAt(bytes32,address,uint48)
 export const SELECTOR_ESCROWED_OF = "0xb6ae9517"; // escrowedOf(bytes32,address)
-export const SELECTOR_TAX_BPS = "0x3eacd2f8"; // taxBps()
-export const SELECTOR_MATURATION = "0x25bc6fca"; // maturationBlocks()
+export const SELECTOR_TAX_BPS = "0x3eacd2f8"; // maturationBlocks()
 export const SELECTOR_PRICING = "0x7ce91411"; // pricing()
 export const SELECTOR_JOIN_PRICE = "0xe38b658a"; // joinPrice(address,bytes32)
 
@@ -196,11 +195,6 @@ export function encodeEscrowedOf(
 /** `taxBps()` — the tax on backing, in basis points. */
 export function encodeTaxBps(): string {
   return SELECTOR_TAX_BPS;
-}
-
-/** `maturationBlocks()` — the window a commitment matures over. */
-export function encodeMaturationBlocks(): string {
-  return SELECTOR_MATURATION;
 }
 
 /** `pricing()` — the join-price source behind the vault. */

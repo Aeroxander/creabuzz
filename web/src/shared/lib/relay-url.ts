@@ -48,10 +48,6 @@ export function setStoredRelayWsUrl(wsUrl: string): void {
   window.localStorage.setItem(RELAY_URL_STORAGE_KEY, wsUrl);
 }
 
-export function clearStoredRelayWsUrl(): void {
-  window.localStorage.removeItem(RELAY_URL_STORAGE_KEY);
-}
-
 /**
  * Read the relay WebSocket URL, in priority order:
  * 1. `localStorage` override set from the web UI (survives reloads).

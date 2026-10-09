@@ -332,19 +332,3 @@ export function floorFromRaiseTarget(input: {
   const floorPrice = snapFloorToGrid(raw, tickSpacing);
   return { floorPrice, tickSpacing };
 }
-
-/** The raise target implied by a price (base units), for the conversion line. */
-export function raiseTargetFromPrice(input: {
-  price: string;
-  saleTokens: bigint;
-  thresholdPercent: number;
-  currencyDecimals?: number;
-}): bigint | null {
-  const floor = floorFromPrice(input.price, input.currencyDecimals);
-  if (!floor) return null;
-  return thresholdFromFloor({
-    saleTokens: input.saleTokens,
-    floorPrice: floor.floorPrice,
-    thresholdPercent: input.thresholdPercent,
-  });
-}

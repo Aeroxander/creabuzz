@@ -50,13 +50,6 @@ async function queryBindingAuthors(
   return out;
 }
 
-export async function fetchBindingRecords(
-  pubkeys: readonly string[],
-): Promise<BindingRecord[]> {
-  const key = authorKey(pubkeys);
-  return queryBindingAuthors(key ? key.split(",") : []);
-}
-
 /**
  * Binding records for `pubkeys` (the summon dialog's team), newest-per-npub
  * resolution done later by the composer. While this loads — or after it

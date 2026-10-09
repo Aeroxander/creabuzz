@@ -89,7 +89,6 @@
  *    message (Review-Proven Rule 1 — never swallow the failure).
  */
 import type {
-  BundlerConfig,
   BundlerTransport,
   UserOperationGasEstimate,
   UserOperationReceipt,
@@ -641,6 +640,3 @@ function defaultHashUserOp(
 ): string {
   return getUserOpHash(userOp, entryPoint, chainId);
 }
-
-/** BundlerConfig shim type for callers configuring transports explicitly. */
-export type ZerodevBundlerConfig = BundlerConfig;

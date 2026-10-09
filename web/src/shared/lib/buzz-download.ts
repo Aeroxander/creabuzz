@@ -209,9 +209,3 @@ export async function resolveBuzzDownloadUrlForPlatform(
     return BUZZ_RELEASES_URL;
   }
 }
-
-export async function resolveBuzzDownloadUrl(): Promise<string> {
-  return resolveBuzzDownloadUrlForPlatform(
-    await detectBuzzDownloadPlatform(navigator),
-  );
-}

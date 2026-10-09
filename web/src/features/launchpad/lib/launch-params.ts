@@ -228,11 +228,6 @@ export function hasBlockingIssue(issues: LaunchParamIssue[]): boolean {
   return issues.some((issue) => issue.severity === "error");
 }
 
-/** One line per issue, for a toast or an inline list. */
-export function describeIssues(issues: LaunchParamIssue[]): string[] {
-  return issues.map((issue) => `${issue.field}: ${issue.message}`);
-}
-
 /**
  * A three-step issuance schedule that adds up *exactly*.
  *

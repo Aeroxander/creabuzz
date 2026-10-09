@@ -18,21 +18,10 @@
 
 // Extension included on purpose: this module is driven by `bid-tx.test.mjs`
 // under `node --test`, which does not resolve extensionless specifiers.
-import { Q96, maxBidPrice, MIN_FLOOR_PRICE } from "./launch-params.ts";
+import { maxBidPrice } from "./launch-params.ts";
 
 /** Canonical Permit2 (used by every CCA deployment for currency pulls). */
 export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-
-/**
- * The contract's default previous-tick hint when the caller does not know the
- * auction's floor. `submitBid` without an explicit `_prevTickPriceQ96` uses
- * `FLOOR_PRICE_Q96` — the first initialized tick — which is always a valid
- * (gas-inefficient, never wrong) hint. Callers who know the launch record
- * SHOULD pass `record.floorPrice` instead: any price below the *auction's own*
- * floor is a non-initialized tick and `_initializeTickIfNeeded` would revert
- * (`TickPreviousPrice`). This constant only exists for the record-less path.
- */
-export const DEFAULT_PREV_TICK_PRICE_Q96 = MIN_FLOOR_PRICE;
 
 // Selectors, keccak-256 first 4 bytes of the canonical signature.
 // submitBid(uint256,uint128,address,uint256,bytes)
@@ -371,7 +360,3 @@ export function bidPlanWithDefaultHint(
 ): BidPlan {
   return { ...plan, prevTickPriceQ96: floorPriceQ96 };
 }
-
-// Kept for parity with launch-params' decimal helpers: the auction amounts are
-// currency smallest units; nothing in this module mints or moves value itself.
-export const Q96_REFERENCE = Q96;

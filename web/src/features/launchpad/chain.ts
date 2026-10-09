@@ -295,15 +295,6 @@ export function mainnetEnabled(env: ChainEnv | undefined = viteEnv()): boolean {
   return flag === "1" || flag === "true";
 }
 
-/** The presets a picker may show: mainnets only when [`mainnetEnabled`]. */
-export function selectableChainPresets(
-  env: ChainEnv | undefined = viteEnv(),
-): readonly ChainPreset[] {
-  return mainnetEnabled(env)
-    ? CHAIN_PRESETS
-    : CHAIN_PRESETS.filter((preset) => preset.mainnet !== true);
-}
-
 /** Whether a chain id names a mainnet preset (real money). */
 export function isMainnetChain(
   chainId: number | string | null | undefined,

@@ -216,8 +216,6 @@ export const MINT_STEPS = [
   },
 ] as const;
 
-export type MintStepId = (typeof MINT_STEPS)[number]["id"];
-
 export type MintStepStatus = "pending" | "running" | "done" | "failed";
 
 export interface MintStepState {

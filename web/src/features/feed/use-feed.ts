@@ -81,15 +81,6 @@ export function useLaunchNotes(coord: string | null) {
   });
 }
 
-/** Notes written by one person. */
-export function useAuthorNotes(pubkey: string) {
-  return useQuery({
-    queryKey: ["feed", "author-notes", pubkey],
-    queryFn: () => fetchNotes({ authors: [pubkey] }),
-    staleTime: 20_000,
-  });
-}
-
 /**
  * How much each voter counts: from the community's org graph and reviewed
  * contribution records (`lib/trust-weight.ts`).

@@ -33,8 +33,6 @@ export const SELECTOR_EXECUTE_BY_VOTES = "0xee5b2895";
 export const SELECTOR_PROPOSAL_ID = "0x997506ba";
 // state(uint256)
 export const SELECTOR_STATE = "0x3e4f49e6";
-// tallies(uint256) — (forVotes, againstVotes, abstainVotes) (cast sig)
-export const SELECTOR_TALLIES = "0x1a32b237";
 // delegate(address) on the Shares token — voting-power delegation (A2)
 export const SELECTOR_DELEGATE = "0x5c19a95c";
 // delegates(address) — who casts this account's votes (defaults to self)
@@ -214,11 +212,6 @@ export function encodeProposalIdView(intent: ProposalIntent): string {
 /** `state(id)` as an `eth_call`; decode with `PROPOSAL_STATES[word]`. */
 export function encodeStateView(id: bigint | string): string {
   return SELECTOR_STATE + uintWord(id, "id");
-}
-
-/** `tallies(id)` as an `eth_call` — the A5 quorum watch's raw votes. */
-export function encodeTalliesView(id: bigint | string): string {
-  return SELECTOR_TALLIES + uintWord(id, "id");
 }
 
 /**

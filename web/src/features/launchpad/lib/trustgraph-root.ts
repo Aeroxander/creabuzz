@@ -15,7 +15,7 @@
  * the same map by the bare hex; the member bytes (and the root) are identical.
  */
 
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 
 import { combineNodeBytes, scoreLeafBytes } from "./trust-score.ts";
 
@@ -200,11 +200,4 @@ export function scoreRootEventParts(bundle: {
       ["t", "dao-launchpad"],
     ],
   };
-}
-
-/** Strict hex decode for callers that need the root as bytes. */
-export function rootBytes(root: string): Uint8Array | null {
-  const hex = root.trim().replace(/^0x/i, "");
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null;
-  return hexToBytes(hex.toLowerCase());
 }

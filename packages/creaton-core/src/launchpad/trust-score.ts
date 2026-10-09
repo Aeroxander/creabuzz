@@ -21,19 +21,6 @@ export interface TrustScore {
   score: number;
 }
 
-export interface ScoreRootRecord {
-  /** Keccak-256 of the canonical program id (e.g. "trustgraphs.output.nostr-member.v1"). */
-  program: string;
-  /** The Merkle root, 0x + 64 hex. */
-  root: string;
-  /** Epoch/checkpoint the root covers. */
-  epoch: string;
-  /** Where the full score file + proofs live (indexer). */
-  indexerUrl: string | null;
-  /** Block at which the root is anchored onchain, if known. */
-  anchorBlock: number | null;
-}
-
 /**
  * Verify one member's score against a root, using the exact leaf/path layout
  * of `TrustGatedHook.validate`. Returns true when the path folds to the root.
@@ -79,20 +66,6 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
     if (a[i] !== b[i]) return a[i] - b[i];
   }
   return a.length - b.length;
-}
-
-/** The score "proven" or "unverified", for rendering. */
-export function scoreStatus(
-  proof: readonly string[],
-  root: string | null,
-  member: string,
-  score: number,
-): { status: "unverified" | "proven"; source: string | null } {
-  if (!root) return { status: "unverified", source: null };
-  const ok = verifyScoreProof(root, member, score, proof);
-  return ok
-    ? { status: "proven", source: root }
-    : { status: "unverified", source: null };
 }
 
 /**

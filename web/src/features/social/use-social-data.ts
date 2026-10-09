@@ -132,17 +132,6 @@ export async function fetchEngagement(
   return computeEngagement(ids, [...related, ...quotes], viewer);
 }
 
-/** Likes, reposts, quotes and replies for a handful of notes. */
-export function useEngagement(ids: readonly string[], viewer: string | null) {
-  const key = [...new Set(ids)].sort();
-  return useQuery({
-    queryKey: [...socialKeys.engagement, key, viewer],
-    enabled: key.length > 0,
-    staleTime: 15_000,
-    queryFn: () => fetchEngagement(key, viewer),
-  });
-}
-
 /** Notes by id, in the order asked for (likes, bookmarks, a quoted note). */
 export function useNotesById(ids: readonly string[]) {
   const key = [...new Set(ids)];

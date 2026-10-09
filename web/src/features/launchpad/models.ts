@@ -367,8 +367,6 @@ export const LAUNCH_CATEGORIES = [
   "Other",
 ] as const;
 
-export type LaunchCategory = (typeof LAUNCH_CATEGORIES)[number];
-
 function categoryFromTags(event: NostrEvent): string | null {
   for (const tag of event.tags) {
     if (tag[0] !== "t" || typeof tag[1] !== "string") continue;

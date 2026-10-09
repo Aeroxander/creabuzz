@@ -15,11 +15,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  buildDmHideTags,
   buildDmOpenTags,
   hiddenDmIds,
   KIND_DM_CREATED,
-  KIND_DM_HIDE,
   KIND_DM_OPEN,
   KIND_DM_VISIBILITY,
   parseDmCreated,
@@ -252,34 +250,6 @@ export function useOpenDm() {
         );
       }
       return parseDmOpenAck(result.message).channelId;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: dmConversationsKey(existingUserPubkey()),
-      });
-    },
-  });
-}
-
-/** Hide a DM conversation from the viewer's listing. */
-export function useHideDm() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (channelId: string): Promise<void> => {
-      const tags = buildDmHideTags(channelId);
-      const signed = await signAsUser({
-        kind: KIND_DM_HIDE,
-        tags,
-        content: "",
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(
-          result.message ?? "the server rejected the request, so try again",
-        );
-      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({

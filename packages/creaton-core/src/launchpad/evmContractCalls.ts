@@ -673,31 +673,6 @@ export function buildTokenDeployCalls(
   ];
 }
 
-/** ABI-encode Ownable `transferOwnership(newOwner)` (`cast`: `0xf2fde38b`). */
-export function encodeTransferOwnership(newOwner: string): string {
-  return encodeFunctionData(
-    "transferOwnership(address)",
-    ["address"],
-    [newOwner],
-  );
-}
-
-/**
- * `token.transferOwnership(dao)` — hands a treasury-owned apptoken to the DAO
- * (the holder of the fee/spread levers) once the launch has graduated.
- * Owner-only: the current owner (the treasury wallet) must sign it.
- */
-export function buildTransferTokenOwnershipCall(
-  token: string,
-  newOwner: string,
-): EvmCall {
-  return {
-    to: token,
-    data: encodeTransferOwnership(newOwner),
-    value: valueHex(0n),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Graduation — contracts/src/GraduationExecutor.sol
 // ---------------------------------------------------------------------------
