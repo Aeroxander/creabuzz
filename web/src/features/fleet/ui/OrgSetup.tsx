@@ -347,7 +347,8 @@ export function OrgSetup({
         ) : null}
 
         <div className="flex justify-end gap-2">
-          {index > 0 ? (
+          {/* Once a record is out, the answers are fixed: changing the name now would leave the first team behind. */}
+          {index > 0 && published.size === 0 ? (
             <Button
               data-testid="org-setup-back"
               disabled={busy}

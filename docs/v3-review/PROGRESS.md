@@ -93,7 +93,7 @@ how it was checked.
 | Our three tables in upstream's one-file-per-table schema | `schema/tables/public`, `schema/triggers` | the desired-state vs migrations parity test |
 | **Start an organization** on the web (name, first helper, how much helpers may do alone, review) | `web/src/features/fleet/` | 10 unit tests; `org-setup.spec.ts` (publishes, reads the records back; a refusing server gets a plain message and a retry) |
 | A DAO's front page: where things stand, what needs you, treasury / Shares / yours, latest decisions | `DaoOverview.tsx`, `lib/dao-overview.ts` | 8 unit tests; the real-chain DAO journey asserts it |
-| Sale wizard, token creation, Manage tab and dialogs in plain words; six tabs instead of seven; Home opens on what is yours | `web/src/features/launchpad`, `AppNav.tsx`, `feed/ui/HomeYours.tsx` | `pnpm test` 1,315 passed; `pnpm check` clean apart from the old `WikiView.tsx` size; the mocked browser suite (below) |
+| Sale wizard, token creation, Manage tab and dialogs in plain words; six tabs instead of seven; Home opens on what is yours | `web/src/features/launchpad`, `AppNav.tsx`, `feed/ui/HomeYours.tsx` | `pnpm test` 1,315 passed; `pnpm check` clean apart from the old `WikiView.tsx` size; the mocked browser suite (see `PRODUCT-REVIEW.md`) |
 | `tour.spec.ts`: one screenshot per first-run page and creation step | `web/tests/e2e/tour.spec.ts` | opt-in: `E2E_TOUR=<dir> pnpm exec playwright test --project=smoke tour.spec.ts` |
 
 ## Differences from the plan

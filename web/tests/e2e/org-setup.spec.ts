@@ -156,3 +156,42 @@ test("when the server refuses, the person is told what to do and can try again",
   });
   expect(relay.events.filter((e) => e.kind === 37010)).toHaveLength(1);
 });
+
+test("when only the last record is refused, the first stays, the answers lock, and retrying sends only what is left", async ({
+  page,
+}) => {
+  let refuseLimit = true;
+  const relay = createMockRelay({
+    refuse: (event) =>
+      refuseLimit && event.kind === 37012
+        ? "restricted: only the owner may set the community default"
+        : null,
+  });
+  relay.seed(channel);
+  await open(page, relay);
+
+  await expect(page.getByTestId("org-setup")).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("org-setup-name").fill("Nebula Labs");
+  await page.getByTestId("org-setup-next").click();
+  await page.getByTestId("org-setup-next").click();
+  await page.getByTestId("org-setup-next").click();
+  await page.getByTestId("org-setup-create").click();
+
+  // The team is out and the chart shows it, but the setup stays up with what went wrong.
+  await expect(page.getByTestId("org-setup-problem")).toContainText(
+    "Whatever already went through is kept",
+  );
+  await expect(page.getByTestId("org-setup")).toBeVisible();
+  expect(relay.events.filter((e) => e.kind === 37010)).toHaveLength(1);
+  expect(relay.events.filter((e) => e.kind === 37012)).toHaveLength(0);
+  // Changing the name now would leave the first team behind, so the way back is gone.
+  await expect(page.getByTestId("org-setup-back")).toHaveCount(0);
+
+  refuseLimit = false;
+  await page.getByTestId("org-setup-create").click();
+  await expect(page.getByTestId("org-setup")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  expect(relay.events.filter((e) => e.kind === 37010)).toHaveLength(1);
+  expect(relay.events.filter((e) => e.kind === 37012)).toHaveLength(1);
+});

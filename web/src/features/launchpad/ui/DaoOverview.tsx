@@ -191,7 +191,13 @@ export function DaoOverview({
       <div className="grid gap-3 sm:grid-cols-3">
         <Figure
           label="In the treasury"
-          note={money === null ? "Could not be read" : undefined}
+          note={
+            !launch.record.currency
+              ? "This project did not raise money"
+              : money === null
+                ? "Could not be read"
+                : undefined
+          }
           testId="dao-figure-treasury"
           value={
             money === null || money === undefined || !sale
