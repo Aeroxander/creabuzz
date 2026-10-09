@@ -186,10 +186,10 @@ test("a wiki page is stored by the relay and is still there after a reload", asy
   await page.reload();
   // The URL carries `view=wiki`, so the reload restores the surface by itself:
   // clicking the toggle here would close it again.
-  await expect(page.getByTestId(`wiki-page-${slug}`)).toBeVisible({
+  await expect(page.getByTestId(`knowledge-page-${slug}`)).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByTestId(`wiki-page-${slug}`).click();
+  await page.getByTestId(`knowledge-page-${slug}`).click();
   await expect(
     page
       .getByTestId("wiki-wysiwyg")
@@ -354,7 +354,7 @@ test("two people editing one wiki page converge through the real relay", async (
   await expect(owner.getByText("Page saved")).toBeVisible({ timeout: 20_000 });
 
   // The other client sees the page appear (its list polls the relay).
-  const readerPage = reader.getByTestId(`wiki-page-${slug}`);
+  const readerPage = reader.getByTestId(`knowledge-page-${slug}`);
   await expect(readerPage).toBeVisible({ timeout: 30_000 });
   await readerPage.click();
   const readerEditor = reader

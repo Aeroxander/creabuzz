@@ -402,20 +402,20 @@ test("wiki pages can be created, renamed and deleted", async ({ page }) => {
     "release-notes",
   );
   await page.getByTestId("page-name-confirm").click();
-  await expect(page.getByTestId("wiki-page-release-notes")).toBeVisible();
+  await expect(page.getByTestId("knowledge-page-release-notes")).toBeVisible();
 
   // Rename: the old slug goes away, the new one appears.
   await page.getByTestId("wiki-rename").click();
   await page.getByTestId("page-name-input").fill("changelog");
   await page.getByTestId("page-name-confirm").click();
-  await expect(page.getByTestId("wiki-page-changelog")).toBeVisible();
-  await expect(page.getByTestId("wiki-page-release-notes")).toBeHidden();
+  await expect(page.getByTestId("knowledge-page-changelog")).toBeVisible();
+  await expect(page.getByTestId("knowledge-page-release-notes")).toBeHidden();
 
   // Delete asks first, then hides the page.
   await page.getByTestId("wiki-delete").click();
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-accept").click();
-  await expect(page.getByTestId("wiki-page-changelog")).toBeHidden();
+  await expect(page.getByTestId("knowledge-page-changelog")).toBeHidden();
 });
 
 test("invite landing fits", async ({ page }) => {

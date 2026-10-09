@@ -11,9 +11,8 @@ import {
 
 test("home page loads with Creaton branding", async ({ page }) => {
   await page.goto("/c");
-  await expect(
-    page.getByRole("main").getByRole("img", { name: "Creaton" }),
-  ).toBeVisible();
+  // The brand sits in the top bar on every page, and links home.
+  await expect(page.getByRole("link", { name: "Creaton home" })).toBeVisible();
 });
 
 const directoryFixture = {
@@ -598,7 +597,7 @@ test("wrong relay shows connect form and stores the relay URL", async ({
   // Served from a non-relay origin (vite preview / static host), the app
   // cannot reach a WebSocket endpoint and must surface the connect form
   // instead of silently rendering the empty-community icon screen.
-  await page.goto("/c");
+  await page.goto("/repos");
   // Clear once up front; addInitScript would re-clear on the reload that
   // Connect triggers and race the write.
   await page.evaluate(() => window.localStorage.removeItem("buzz.relayUrl"));
@@ -1676,7 +1675,7 @@ test("two tabs converge on one page without P2P signalling", async ({
   await second.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   await second.getByTestId("content-pane").waitFor();
   await second.getByTestId("wiki-toggle").click();
-  await second.getByTestId(`wiki-page-${SLUG}`).click();
+  await second.getByTestId(`knowledge-page-${SLUG}`).click();
   const secondEditor = second
     .getByTestId("wiki-wysiwyg")
     .locator(".ProseMirror");

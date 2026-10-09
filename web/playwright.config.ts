@@ -49,6 +49,7 @@ export default defineConfig({
         "**/org-chart.spec.ts",
         "**/org-setup.spec.ts",
         "**/polling-bounds.spec.ts",
+        "**/first-run.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",

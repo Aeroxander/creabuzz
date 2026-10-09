@@ -260,16 +260,18 @@ test("a page deleted by one client disappears for the other", async ({
 
   // The reader sees the published page.
   await reader.getByTestId("wiki-toggle").click();
-  await expect(reader.getByTestId("wiki-page-shared-page")).toBeVisible({
+  await expect(reader.getByTestId("knowledge-page-shared-page")).toBeVisible({
     timeout: 20_000,
   });
 
   // The author deletes it; the tombstone must reach the reader.
   await author.getByTestId("wiki-delete").click();
   await author.getByTestId("confirm-accept").click();
-  await expect(author.getByText("Deleted shared-page")).toBeVisible();
+  await expect(
+    author.getByText("Moved shared-page to Recently deleted"),
+  ).toBeVisible();
 
-  await expect(reader.getByTestId("wiki-page-shared-page")).toBeHidden({
+  await expect(reader.getByTestId("knowledge-page-shared-page")).toBeHidden({
     timeout: 20_000,
   });
 
@@ -470,15 +472,21 @@ test("an accept-then-close relay backs off instead of looping once a second", as
   relay.dropConnections();
   await page.waitForTimeout(12_000);
 
-  const offsets = relay.liveSubscriptionReqs();
+  // The page keeps several live subscriptions (messages, notifications,
+  // roster, wiki, presence, ...) and each one reconnects on its own pump, so
+  // the requests of one reconnect round arrive together. Count the rounds.
+  const requests = relay.liveSubscriptionReqs();
+  const rounds = requests.filter(
+    (time, index) => index === 0 || time - requests[index - 1] > 500,
+  );
   expect(
-    offsets.length,
-    "one reconnect per pump, a few times over — not a one-second loop",
-  ).toBeLessThan(12);
+    rounds.length,
+    "a few reconnect rounds, each later than the last — not a one-second loop",
+  ).toBeLessThan(6);
 
-  const gaps = offsets
+  const gaps = rounds
     .slice(1)
-    .map((time, index) => time - offsets[index])
+    .map((time, index) => time - rounds[index])
     .sort((a, b) => b - a);
   // The first retry is ~1s; the next is ~2x, then ~4x. A reset-on-open policy
   // would hold every gap at ~1s and fail this.
@@ -705,7 +713,7 @@ test("a wiki save does not write blind when the relay read fails", async ({
   await relay.install(page);
   await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
-  await page.getByTestId("wiki-page-shared-page").click();
+  await page.getByTestId("knowledge-page-shared-page").click();
   const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
   await expect(editor).toContainText("Original page body", { timeout: 15_000 });
 
@@ -735,9 +743,20 @@ test("a wiki delete the relay cannot confirm is not reported as done", async ({
   // quietly stay live for everyone else.
   const relay = createMockRelay();
   relay.seed(channelEvent());
+  // Delete is offered only to a page's own author, so the page is the viewer's.
+  const meNsec = "ee".repeat(32);
+  const me = getPublicKey(
+    Uint8Array.from(meNsec.match(/.{2}/g) ?? [], (byte) =>
+      Number.parseInt(byte, 16),
+    ),
+  );
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [meNsec],
+  );
   relay.seed({
     id: "wiki-page-delete-1",
-    pubkey: "b".repeat(64),
+    pubkey: me,
     created_at: 100,
     kind: 44001,
     tags: [["d", "doomed-page"]],
@@ -748,7 +767,7 @@ test("a wiki delete the relay cannot confirm is not reported as done", async ({
   await relay.install(page);
   await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
-  await page.getByTestId("wiki-page-doomed-page").click();
+  await page.getByTestId("knowledge-page-doomed-page").click();
   await expect(
     page.getByTestId("wiki-wysiwyg").locator(".ProseMirror"),
   ).toContainText("Page to delete", { timeout: 15_000 });
@@ -770,7 +789,7 @@ test("a wiki delete the relay cannot confirm is not reported as done", async ({
   await expect(page.getByText(/the page was not deleted/)).toBeVisible({
     timeout: 15_000,
   });
-  expect(page.getByText("Deleted doomed-page")).toBeHidden();
+  await expect(page.getByText("Moved doomed-page")).toBeHidden();
   expect(
     pageWrites(),
     "nothing may be published for a delete that was not confirmed",
@@ -1044,7 +1063,7 @@ test("a wiki page has an address that survives a reload", async ({ page }) => {
   await page.goto(`/c/alpha.example.com?view=wiki&page=release-plan`);
 
   // The URL selects the page, not just the wiki surface.
-  await expect(page.getByTestId("wiki-page-release-plan")).toHaveAttribute(
+  await expect(page.getByTestId("knowledge-page-release-plan")).toHaveAttribute(
     "class",
     /bg-black\/10/,
     { timeout: 20_000 },
