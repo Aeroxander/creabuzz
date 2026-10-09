@@ -45,6 +45,7 @@ import {
   restorePayload,
   type Revision,
 } from "./lib/wiki-history";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Tombstone kind (NIP-09) — a deleted team page leaves one of these. */
 export const KIND_DELETE = 5;
@@ -305,18 +306,15 @@ export function useKnowledge(enabled = true): KnowledgeState {
         authorPubkey: author,
         now: Math.floor(Date.now() / 1000),
       });
-      const signed = await signAsUser({
-        kind: payload.kind,
-        tags: payload.tags,
-        content: payload.content,
-        created_at: payload.created_at,
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "Server rejected the suggestion");
-      }
+      await publishAsUser(
+        {
+          kind: payload.kind,
+          tags: payload.tags,
+          content: payload.content,
+          created_at: payload.created_at,
+        },
+        "Server rejected the suggestion",
+      );
       await eventsQuery.refetch();
     },
     [eventsQuery],

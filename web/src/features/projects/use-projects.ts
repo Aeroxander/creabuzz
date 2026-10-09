@@ -30,13 +30,8 @@ import {
   KIND_ORG_NODE,
   KIND_ORG_PITCH,
 } from "@/shared/constants/kinds";
-import {
-  existingUserPubkey,
-  userPubkey,
-  signAsUser,
-} from "@/shared/lib/identity";
+import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
-import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { parseOwnershipGrant, type OwnershipGrant } from "./lib/grant";
 import { parseJoinRequest, type JoinRequest } from "./lib/join-request";
@@ -52,6 +47,7 @@ import {
   type ProjectState,
   type ProjectSummary,
 } from "./lib/state";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** The org-plane kinds the board reads. */
 export const PROJECT_EVENT_KINDS = [
@@ -221,13 +217,10 @@ export interface EventTemplate {
 
 /** Sign a template with the durable identity and publish it over the relay. */
 async function publishTemplate(template: EventTemplate): Promise<NostrEvent> {
-  const signed = await signAsUser(template);
-  const result = await publishEvent(relayWsUrl(), signed, {
-    signAuth: signAsUser,
-  });
-  if (!result.accepted) {
-    throw new Error(result.message ?? "The server rejected this event.");
-  }
+  const signed = await publishAsUser(
+    template,
+    "The server rejected this event.",
+  );
   return signed;
 }
 

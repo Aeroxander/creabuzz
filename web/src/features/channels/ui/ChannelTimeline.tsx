@@ -26,8 +26,7 @@ import {
 } from "../use-channel-messages";
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser, userPubkey } from "@/shared/lib/identity";
+import { userPubkey } from "@/shared/lib/identity";
 import {
   resolveUserName,
   useProfiles,
@@ -39,6 +38,7 @@ import { PresenceStrip } from "@/features/presence/ui/PresenceStrip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Bot } from "lucide-react";
 import { getTag } from "@/shared/lib/event-fields";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -182,20 +182,17 @@ function MessageRow({
 
   const react = async (emoji: string) => {
     try {
-      const signed = await signAsUser({
-        kind: 7,
-        tags: [
-          ["e", event.id],
-          ["p", event.pubkey],
-        ],
-        content: emoji,
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "Server rejected the reaction");
-      }
+      await publishAsUser(
+        {
+          kind: 7,
+          tags: [
+            ["e", event.id],
+            ["p", event.pubkey],
+          ],
+          content: emoji,
+        },
+        "Server rejected the reaction",
+      );
     } catch (error) {
       console.error("[react]", error);
       toast.error("Couldn't add reaction", {
@@ -464,20 +461,17 @@ export function ChannelTimeline({
 
   const deleteMessage = async (eventId: string) => {
     try {
-      const signed = await signAsUser({
-        kind: 5,
-        tags: [
-          ["h", channel.id],
-          ["e", eventId],
-        ],
-        content: "",
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "Server rejected the deletion");
-      }
+      await publishAsUser(
+        {
+          kind: 5,
+          tags: [
+            ["h", channel.id],
+            ["e", eventId],
+          ],
+          content: "",
+        },
+        "Server rejected the deletion",
+      );
     } catch (error) {
       console.error("[delete]", error);
       toast.error("Couldn't delete message", {

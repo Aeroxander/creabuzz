@@ -29,6 +29,7 @@ import {
   type TombstonedPage,
 } from "./lib/page-index";
 import { restorePayload } from "./lib/wiki-history";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 export interface WikiPage {
   slug: string;
@@ -318,18 +319,15 @@ export function useWikiPages(enabled: boolean) {
       },
       { now: Math.floor(Date.now() / 1000), slug: entry.slug },
     );
-    const signed = await signAsUser({
-      kind: payload.kind,
-      tags: payload.tags,
-      content: payload.content,
-      created_at: payload.created_at,
-    });
-    const result = await publishEvent(relayWsUrl(), signed, {
-      signAuth: signAsUser,
-    });
-    if (!result.accepted) {
-      throw new Error(result.message ?? "Server rejected the restore");
-    }
+    await publishAsUser(
+      {
+        kind: payload.kind,
+        tags: payload.tags,
+        content: payload.content,
+        created_at: payload.created_at,
+      },
+      "Server rejected the restore",
+    );
   }, []);
 
   /** Rename by republishing under the new slug, then tombstoning the old one. */

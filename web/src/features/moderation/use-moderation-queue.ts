@@ -17,10 +17,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
-import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { useActionTracker } from "@/shared/hooks/use-action-tracker";
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
-import { publishEvent } from "@/shared/lib/publish-event";
 import {
   parseModerationReports,
   resolvableActions,
@@ -35,6 +34,7 @@ import {
   buildTimeout,
   type EventTemplate,
 } from "./lib/moderationEvents";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Bounded reads and polling (deadline + manual refresh as the recovery). */
 const REPORTS_LIMIT = 30;
@@ -196,13 +196,7 @@ export function useModerationQueue(): ModerationQueueState {
   );
 
   const publishTemplate = useCallback(async (template: EventTemplate) => {
-    const event = await signAsUser(template);
-    const result = await publishEvent(relayWsUrl(), event, {
-      signAuth: signAsUser,
-    });
-    if (!result.accepted) {
-      throw new Error(result.message || "The server rejected the action.");
-    }
+    await publishAsUser(template, "The server rejected the action.");
   }, []);
 
   /**

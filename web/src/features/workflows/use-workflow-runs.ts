@@ -11,10 +11,9 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
-import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { useActionTracker } from "@/shared/hooks/use-action-tracker";
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
-import { publishEvent } from "@/shared/lib/publish-event";
 import {
   APPROVALS_LIMIT,
   KIND_WORKFLOW_DEF,
@@ -28,6 +27,7 @@ import {
   type WorkflowSummary,
 } from "./lib/workflowRuns";
 import { buildApprovalDecision, buildWorkflowTrigger } from "./lib/runActions";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Bounded polling: while runs are active, then paused with a manual retry. */
 const POLL_MS = 10_000;
@@ -220,13 +220,7 @@ export function useWorkflowRuns(): RunListState {
       setActingFor(key, true);
       clearError(key);
       try {
-        const event = await signAsUser(template);
-        const result = await publishEvent(relayWsUrl(), event, {
-          signAuth: signAsUser,
-        });
-        if (!result.accepted) {
-          throw new Error(result.message || "The server rejected the change.");
-        }
+        await publishAsUser(template, "The server rejected the change.");
         onDone();
         void refresh();
       } catch (error) {

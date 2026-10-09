@@ -22,9 +22,8 @@ import {
   KIND_REACTION,
 } from "@/shared/constants/kinds";
 import { queryEventsHttp } from "@/shared/lib/http-query";
-import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents, type NostrFilter } from "@/shared/lib/nostr-client";
-import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import {
@@ -34,6 +33,7 @@ import {
   taskCoordinate,
 } from "./lib/task-planning";
 import type { WorkItem } from "./use-work-board";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Channels whose backing is read — bounded so a huge community stays cheap. */
 const MAX_BACKING_CHANNELS = 20;
@@ -44,13 +44,7 @@ async function publishSigned(template: {
   tags: string[][];
   content: string;
 }): Promise<void> {
-  const signed = await signAsUser(template);
-  const result = await publishEvent(relayWsUrl(), signed, {
-    signAuth: signAsUser,
-  });
-  if (!result.accepted) {
-    throw new Error(result.message ?? "The server refused this change.");
-  }
+  await publishAsUser(template, "The server refused this change.");
 }
 
 export interface TaskPlanning {

@@ -34,6 +34,7 @@ import {
 } from "./lib/mirror";
 import { tallyVotes, type VoteTally } from "./lib/ranking";
 import { orgGraphFromEvents, voteWeights } from "./lib/trust-weight";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** How many recent notes one feed read pulls. */
 const NOTE_LIMIT = 300;
@@ -176,13 +177,7 @@ async function mirrorToOutbox(signed: NostrEvent): Promise<void> {
 export async function publishFeedEvent(
   template: EventTemplate,
 ): Promise<NostrEvent> {
-  const signed = await signAsUser(template);
-  const result = await publishEvent(relayWsUrl(), signed, {
-    signAuth: signAsUser,
-  });
-  if (!result.accepted) {
-    throw new Error(result.message ?? "The server refused this post.");
-  }
+  const signed = await publishAsUser(template, "The server refused this post.");
   if (readMirrorSetting() && isMirrorable(signed)) {
     void mirrorToOutbox(signed);
   }

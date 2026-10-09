@@ -2,15 +2,12 @@
  * Kind-0 profile publishing for the browser identity.
  */
 
-import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
-
 import {
   mergeProfileContent,
   type ProfileContent,
   type ProfilePatch,
 } from "./merge-profile";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 export type { ProfilePatch };
 
@@ -28,15 +25,12 @@ export async function publishProfile(
   current?: ProfileContent | null,
 ): Promise<void> {
   const content = mergeProfileContent(current, patch);
-  const signed = await signAsUser({
-    kind: 0,
-    tags: [],
-    content: JSON.stringify(content),
-  });
-  const result = await publishEvent(relayWsUrl(), signed, {
-    signAuth: signAsUser,
-  });
-  if (!result.accepted) {
-    throw new Error(result.message ?? "profile publish rejected");
-  }
+  await publishAsUser(
+    {
+      kind: 0,
+      tags: [],
+      content: JSON.stringify(content),
+    },
+    "profile publish rejected",
+  );
 }

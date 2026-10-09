@@ -2,9 +2,6 @@ import { ArrowUp, AtSign, Paperclip } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import {
   useMentionCandidates,
@@ -16,6 +13,7 @@ import {
 } from "@/features/presence/use-typing";
 import { TypingIndicator } from "@/features/presence/ui/TypingIndicator";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 export interface EditTarget {
   eventId: string;
@@ -67,17 +65,14 @@ export function Composer({
       if (isEditing) {
         tags.push(["e", editTarget.eventId]);
       }
-      const signed = await signAsUser({
-        kind: isEditing ? 40003 : 9,
-        tags,
-        content,
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "Server rejected the event");
-      }
+      await publishAsUser(
+        {
+          kind: isEditing ? 40003 : 9,
+          tags,
+          content,
+        },
+        "Server rejected the event",
+      );
       setDraft("");
       mentionPubkeys.current = [];
       onPosted();

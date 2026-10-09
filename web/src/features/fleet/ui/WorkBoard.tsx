@@ -17,9 +17,6 @@ import {
 } from "lucide-react";
 
 import { useAgentRoster } from "../use-agent-roster";
-import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser } from "@/shared/lib/identity";
 import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
 import { useTaskPlanning } from "../use-task-planning";
@@ -38,6 +35,7 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Open",
@@ -196,20 +194,17 @@ export function WorkBoard({
     setReplyError(null);
     void (async () => {
       try {
-        const signed = await signAsUser({
-          kind: KIND_STREAM_MESSAGE,
-          tags: [
-            ["h", scope],
-            ["e", parentEventId],
-          ],
-          content: reply.trim(),
-        });
-        const result = await publishEvent(relayWsUrl(), signed, {
-          signAuth: signAsUser,
-        });
-        if (!result.accepted) {
-          throw new Error(result.message ?? "reply rejected");
-        }
+        await publishAsUser(
+          {
+            kind: KIND_STREAM_MESSAGE,
+            tags: [
+              ["h", scope],
+              ["e", parentEventId],
+            ],
+            content: reply.trim(),
+          },
+          "reply rejected",
+        );
         setReply("");
       } catch (error) {
         setReplyError(error instanceof Error ? error.message : "reply failed");

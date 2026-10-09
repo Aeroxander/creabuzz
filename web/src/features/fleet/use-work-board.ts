@@ -22,8 +22,7 @@ import {
   type NostrEvent,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser, userPubkey } from "@/shared/lib/identity";
+import { userPubkey } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK, KIND_GIT_ISSUE } from "@/shared/constants/kinds";
 import {
@@ -42,6 +41,7 @@ import {
   type TaskPriority,
 } from "./use-agent-tasks";
 import { getTag } from "@/shared/lib/event-fields";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 export const KIND_GIT_STATUS_OPEN = 1630;
 export const KIND_GIT_STATUS_MERGED = 1631;
@@ -610,17 +610,14 @@ export function useWorkBoard(channels?: { id: string }[]): {
     async (issue: WorkItem, target: string) => {
       const kind = ISSUE_STATUS_KIND[target];
       if (!kind) return;
-      const signed = await signAsUser({
-        kind,
-        tags: [["e", issue.id]],
-        content: "",
-      });
-      const result = await publishEvent(relayWsUrl(), signed, {
-        signAuth: signAsUser,
-      });
-      if (!result.accepted) {
-        throw new Error(result.message ?? "issue status rejected");
-      }
+      await publishAsUser(
+        {
+          kind,
+          tags: [["e", issue.id]],
+          content: "",
+        },
+        "issue status rejected",
+      );
     },
     [],
   );
