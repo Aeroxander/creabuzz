@@ -6,6 +6,7 @@ import {
   collectFeesDecision,
   DecisionInputError,
   decodeBatch,
+  encodeBatch,
   describeAction,
   formatUnits,
   mandateDecision,
@@ -289,4 +290,86 @@ test("amounts are read and shown in whole units", () => {
   assert.equal(formatUnits(1_234_567_000_000_000_000_000n, 18), "1,234.56");
   assert.equal(formatUnits(5n * WAD, 18), "5");
   assert.equal(formatUnits(12_345_678n, 6, 4), "12.3456");
+});
+
+test("a batch that only looks like a work budget with money is described as the steps it is", () => {
+  const real = mandateDecision(
+    mandate({ budget: 5_000_000_000n, cap: 1_000_000_000n }),
+  );
+  const calls = decodeBatch(real.data);
+  const send = (to, data) => ({ to, value: 0n, data });
+  const tamper = (index, change) =>
+    describeAction({
+      to: DAO,
+      data: encodeBatch(calls.map((c, i) => (i === index ? change(c) : c))),
+    });
+  // The approval goes to someone else.
+  const other = (c) =>
+    send(c.to, c.data.replace(FACTORY.slice(2), R1.slice(2)));
+  assert.equal(tamper(0, other).kind, "batch");
+  // The approval is for more than the budget.
+  const more = (c) =>
+    send(
+      c.to,
+      `${c.data.slice(0, -64)}${(2n ** 200n).toString(16).padStart(64, "0")}`,
+    );
+  assert.equal(tamper(0, more).kind, "batch");
+  // The approval is left standing.
+  const left = (c) =>
+    send(c.to, `${c.data.slice(0, -64)}${1n.toString(16).padStart(64, "0")}`);
+  assert.equal(tamper(2, left).kind, "batch");
+  // The untouched batch is still the budget it says it is.
+  assert.equal(
+    describeAction(real, { currencyDecimals: 6 }).kind,
+    "work-budget",
+  );
+});
+
+test("an action aimed anywhere but where a real one is aimed is never described as that action", () => {
+  const OTHER = "0x00000000000000000000000000000000000000f0";
+  const award = awardDecision({
+    dao: DAO,
+    mandate: MANDATE,
+    claimId: CLAIM,
+    shares: 25n * WAD,
+  });
+  assert.equal(describeAction(award, { dao: DAO }).kind, "award");
+  assert.equal(
+    describeAction({ ...award, to: OTHER }, { dao: DAO }).kind,
+    "unknown",
+  );
+
+  const budget = mandateDecision(mandate());
+  assert.equal(
+    describeAction(budget, { factory: FACTORY }).kind,
+    "work-budget",
+  );
+  assert.equal(
+    describeAction({ ...budget, to: OTHER }, { factory: FACTORY }).kind,
+    "unknown",
+  );
+
+  const project = projectDecision(baseProject());
+  assert.equal(
+    describeAction(project, { mandates: [MANDATE] }).kind,
+    "project",
+  );
+  assert.equal(
+    describeAction({ ...project, to: OTHER }, { mandates: [MANDATE] }).kind,
+    "unknown",
+  );
+
+  const fees = collectFeesDecision({
+    amm: AMM,
+    sharesToken: SHARES,
+    currency: CUR,
+    currencyDecimals: 6,
+    recipient: DAO,
+    amount: 5n,
+  });
+  assert.equal(describeAction(fees, { amm: AMM }).kind, "fees");
+  assert.equal(
+    describeAction({ ...fees, to: OTHER }, { amm: AMM }).kind,
+    "unknown",
+  );
 });

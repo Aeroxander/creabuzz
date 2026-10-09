@@ -406,7 +406,18 @@ export interface ActionDescription {
 export interface DescribeContext {
   /** Decimals of the sale currency, when known; amounts are otherwise shown in base units. */
   currencyDecimals?: number;
+  /**
+   * What the app knows to be this DAO's own: its address, its work budget factory, its work budgets, its exchange. When
+   * given, an action is only described as (say) an award if it is aimed where a real award is aimed; a call with the
+   * same selector sent anywhere else is described as unknown, so the words never claim more than the call does.
+   */
+  dao?: string;
+  factory?: string;
+  mandates?: readonly string[];
+  amm?: string;
 }
+
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 const selectorOfSig = (key: keyof typeof ACTION_SIGNATURES) =>
   selectorOf(ACTION_SIGNATURES[key]).toLowerCase();
@@ -434,6 +445,7 @@ function describeCall(
   const args = `0x${data.slice(10)}`;
   try {
     if (sel === selectorOfSig("createMandate")) {
+      if (ctx.factory && !same(call.to, ctx.factory)) return null;
       const [, budget, cap, shareBudget, shareCap, expires, reviewers, quorum] =
         decodeParameters(
           [
@@ -468,6 +480,8 @@ function describeCall(
       };
     }
     if (sel === selectorOfSig("approveProject")) {
+      if (ctx.mandates && !ctx.mandates.some((m) => same(m, call.to)))
+        return null;
       const [id, manager, amount, projectShares, expires, check] =
         decodeParameters(
           ["bytes32", "address", "uint128", "uint128", "uint64", "bytes32"],
@@ -490,6 +504,7 @@ function describeCall(
       };
     }
     if (sel === selectorOfSig("award")) {
+      if (ctx.dao && !same(call.to, ctx.dao)) return null;
       const [mandate, claim, amount] = decodeParameters(
         ["address", "bytes32", "uint96", "bool"],
         args,
@@ -501,6 +516,7 @@ function describeCall(
       };
     }
     if (sel === selectorOfSig("collectFees")) {
+      if (ctx.amm && !same(call.to, ctx.amm)) return null;
       const [, , recipient, amount] = decodeParameters(
         ["address", "address", "address", "uint256"],
         args,
@@ -517,6 +533,48 @@ function describeCall(
     return null;
   }
   return null;
+}
+
+/** Whether the two approvals around a `create` are exactly the budget's: the factory, for the budget, then for nothing. */
+function isBudgetApprovals(
+  spend: { to: string; data: string },
+  create: { to: string; data: string },
+  clear: { to: string; data: string },
+): boolean {
+  try {
+    const [currency, budget] = decodeParameters(
+      ["address", "uint128"],
+      `0x${create.data.slice(10)}`,
+    ) as [string, bigint];
+    const approval = (call: { to: string; data: string }) => {
+      if (!call.data.toLowerCase().startsWith(selectorOfSig("approve")))
+        return null;
+      const [spender, amount] = decodeParameters(
+        ["address", "uint256"],
+        `0x${call.data.slice(10)}`,
+      ) as [string, bigint];
+      return {
+        token: call.to.toLowerCase(),
+        spender: spender.toLowerCase(),
+        amount,
+      };
+    };
+    const first = approval(spend);
+    const last = approval(clear);
+    const factory = create.to.toLowerCase();
+    return (
+      first !== null &&
+      last !== null &&
+      first.token === currency.toLowerCase() &&
+      last.token === currency.toLowerCase() &&
+      first.spender === factory &&
+      last.spender === factory &&
+      first.amount === budget &&
+      last.amount === 0n
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Decode a `batchCalls` action into its calls, or null when it is not one. */
@@ -552,13 +610,17 @@ export function describeAction(
   if (single) return single;
   const batch = decodeBatch(action.data);
   if (batch) {
-    // A work budget with money: approve the factory, create, clear the approval.
-    const create = batch.find(
-      (c) => describeCall(c, ctx)?.kind === "work-budget",
-    );
-    if (create && batch.length === 3) {
+    // A work budget with money: approve the factory for exactly the budget, create it, clear the approval. Only that
+    // shape is described as a budget; a batch that looks like it but approves anyone or anything else is not.
+    if (batch.length === 3) {
+      const [spend, create, clear] = batch;
       const described = describeCall(create, ctx);
-      if (described) return described;
+      if (
+        described?.kind === "work-budget" &&
+        isBudgetApprovals(spend, create, clear)
+      ) {
+        return described;
+      }
     }
     const steps = batch.map((c) => describeCall(c, ctx));
     return {
