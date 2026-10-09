@@ -223,6 +223,14 @@ body {
   backdrop-filter: blur(24px) saturate(150%);
   border-color: hsl(0 0% 100% / 0.1);
 }
+/*
+ * A dialog sits over a busy page, so it is solid: with a see-through card the page's text shows through the form and
+ * makes both hard to read. Only the card's edge keeps the glass highlight.
+ */
+.glass-dialog {
+  background-color: hsl(var(--card));
+  border-color: hsl(0 0% 100% / 0.1);
+}
 :root:not(.dark) .glass,
 :root:not(.dark) .glass-strong {
   background-color: hsl(0 0% 100% / 0.62);
@@ -237,6 +245,11 @@ body {
  * the card read as a raised pane over the gradient — especially in dark mode,
  * where a soft black shadow reads as nothing.
  */
+:root:not(.dark) .glass-dialog {
+  background-color: hsl(0 0% 100%);
+  border-color: hsl(262 20% 80% / 0.7);
+}
+
 .buzz-content-card {
   background-color: hsl(var(--background));
   border-radius: 1rem;

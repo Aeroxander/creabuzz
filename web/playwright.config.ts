@@ -47,11 +47,13 @@ export default defineConfig({
         "**/screenshots.spec.ts",
         "**/usernames.spec.ts",
         "**/org-chart.spec.ts",
+        "**/org-setup.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",
         "**/task-planning.spec.ts",
         "**/portfolio.spec.ts",
+        "**/tour.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

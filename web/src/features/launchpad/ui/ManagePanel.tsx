@@ -284,7 +284,7 @@ export function ManagePanel({
    */
   const readiness: Array<{ label: string; ok: boolean; hint: string }> = [
     {
-      label: "Sale parameters",
+      label: "Sale terms",
       ok: !hasBlockingIssue(
         validateLaunchParams({
           supply: (toAtomic(record.tokenPlan?.supply) ?? 0n) * 10n ** 18n,
@@ -303,32 +303,32 @@ export function ManagePanel({
             issue.field !== "claimBlock",
         ),
       ),
-      hint: "Floor price on the tick grid, above the contract minimum.",
+      hint: "The price needs adjusting: open Edit terms to see which field.",
     },
     {
-      label: "Token",
+      label: "The token",
       ok: Boolean(record.token || record.tokenPlan),
-      hint: "Mint the token or link a deployed address.",
+      hint: "Create the token your backers will receive, or link one you already made.",
     },
     {
-      label: "Auction contract",
+      label: "The sale itself",
       ok: Boolean(record.auction),
-      hint: "Deploy the auction and link it, so bids have somewhere to go.",
+      hint: "Start the sale so backers have somewhere to put their money.",
     },
     {
-      label: "Treasury",
+      label: "Where the money goes",
       ok: Boolean(record.treasury),
-      hint: "Where the raise and the retained supply are held.",
+      hint: "The account that receives the raise and holds what you keep.",
     },
     {
-      label: "Discussion channel",
+      label: "A place to talk",
       ok: record.channels.length > 0,
-      hint: "Bind the channel where the launch is discussed.",
+      hint: "Pick the chat room where backers and the team talk.",
     },
     {
-      label: "Founder commitments",
+      label: "About the team",
       ok: founderReady,
-      hint: "The long pitch, an update cadence, and a bound channel let investors judge the team, not just the numbers.",
+      hint: "A longer story, how often you will post updates, and a chat room let backers judge the team, not just the numbers.",
     },
   ];
   const open = readiness.filter((item) => !item.ok).length;
@@ -351,11 +351,11 @@ export function ManagePanel({
         </Card>
       ) : null}
       <Card className="p-4" data-testid="launch-readiness">
-        <h2 className="text-base font-semibold">Launch readiness</h2>
+        <h2 className="text-base font-semibold">Before the sale can open</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           {open === 0
-            ? "Everything the chain needs is set."
-            : `${open} step${open === 1 ? "" : "s"} still open before this can deploy.`}
+            ? "Everything is ready."
+            : `${open} step${open === 1 ? "" : "s"} still open.`}
         </p>
         <ul className="mt-2 flex flex-col gap-1.5">
           {readiness.map((item) => (
@@ -379,220 +379,9 @@ export function ManagePanel({
           ))}
         </ul>
       </Card>
-      <Card className="p-4" data-testid="launch-graduation">
-        <h2 className="text-base font-semibold">Graduation</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          At graduation the executor contract (set as the auction's funds and
-          tokens recipient at deploy) sweeps the raise, pays the treasury share,
-          locks the liquidity reserve, and returns unsold tokens.
-        </p>
-        <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-          The reserve releases only to the recorded pool by treasury action; if
-          the pool never lands, the treasury can withdraw the stuck reserve. The
-          chain is the ledger. This panel states the mechanism; the contract
-          moves the money.
-        </p>
-      </Card>
 
-      <details
-        className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
-        data-testid="launch-advanced-milestones"
-      >
-        <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
-          Milestone attestation
-          <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
-            post-graduation: staked claims settled onchain
-          </span>
-        </summary>
-        <div className="mt-3" data-testid="launch-milestones">
-          <h2 className="text-base font-semibold">Milestone attestation</h2>
-          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            A milestone claim is staked and settled onchain by the verifier set;
-            this panel mirrors the claim and your verdict onto the feed
-            (advisory). Every mirror names the tx that settled it. A receipt
-            without one won't go through. The chain is the ledger.
-          </p>
-          <div className="mt-3 flex flex-col gap-2">
-            <HashPicker
-              id="claim-id"
-              label="Claim id"
-              onValueChange={(v) => {
-                setClaimId(v);
-                // One dropdown drives the rest: known evidence + tx follow
-                // the claim; unknown values stay empty (never guessed).
-                const fill = autoFill(milestoneChoicesList, v);
-                if (fill.evidenceHash) setEvidenceHash(fill.evidenceHash);
-                if (fill.txHash) setTxHash(fill.txHash);
-              }}
-              options={milestoneChoicesList.claimOptions}
-              placeholder="milestone-1"
-              testId="claim-id"
-              value={claimId}
-            />
-            <HashPicker
-              id="evidence-hash"
-              label="Evidence hash"
-              onValueChange={setEvidenceHash}
-              options={milestoneChoicesList.evidenceByClaim[claimId] ?? []}
-              placeholder="64 hex chars of the canonical claim"
-              testId="evidence-hash"
-              value={evidenceHash}
-            />
-            <HashPicker
-              id="milestone-tx"
-              label="Settlement tx hash"
-              onValueChange={setTxHash}
-              options={milestoneChoicesList.txByClaim[claimId] ?? []}
-              placeholder="0x + 64 hex chars of the onchain tx"
-              testId="milestone-tx"
-              value={txHash}
-            />
-            <div className="mt-1 flex flex-wrap gap-2">
-              <Button
-                data-testid="record-claim"
-                disabled={
-                  claimId.trim() === "" ||
-                  !EVIDENCE_HASH_RE.test(evidenceHash.trim()) ||
-                  !isTxHash(txHash) ||
-                  mirror.isPending
-                }
-                onClick={() => void recordClaim()}
-                size="sm"
-                type="button"
-              >
-                Record claim
-              </Button>
-              <Button
-                data-testid="verdict-approve"
-                disabled={
-                  claimId.trim() === "" || !isTxHash(txHash) || mirror.isPending
-                }
-                onClick={() => void recordVerdict(true)}
-                size="sm"
-                variant="outline"
-                type="button"
-              >
-                Verdict: approve
-              </Button>
-              <Button
-                data-testid="verdict-reject"
-                disabled={
-                  claimId.trim() === "" || !isTxHash(txHash) || mirror.isPending
-                }
-                onClick={() => void recordVerdict(false)}
-                size="sm"
-                variant="outline"
-                type="button"
-              >
-                Verdict: reject
-              </Button>
-            </div>
-            <div className="mt-1">
-              <SenderPickerControls
-                state={milestoneSender}
-                testIdPrefix="milestone-"
-              />
-            </div>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <Button
-                data-testid="submit-claim-onchain"
-                disabled={
-                  onchainSending ||
-                  claimId.trim() === "" ||
-                  !EVIDENCE_HASH_RE.test(evidenceHash.trim())
-                }
-                onClick={() => void submitOnchain("claim")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Submit claim onchain
-              </Button>
-              <Button
-                data-testid="attest-approve"
-                disabled={onchainSending || claimId.trim() === ""}
-                onClick={() => void submitOnchain("verdict-approve")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Attest approve
-              </Button>
-              <Button
-                data-testid="attest-reject"
-                disabled={onchainSending || claimId.trim() === ""}
-                onClick={() => void submitOnchain("verdict-reject")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Attest reject
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-              After the claim is submitted, the treasury reserves its payout.
-              Once enough verifiers attest, anyone can settle it, and the
-              contributor then collects the payout.
-            </p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <Button
-                data-testid="fund-claim-onchain"
-                disabled={
-                  onchainSending ||
-                  claimId.trim() === "" ||
-                  !EVIDENCE_HASH_RE.test(evidenceHash.trim())
-                }
-                onClick={() => void submitOnchain("fund")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Reserve payout
-              </Button>
-              <Button
-                data-testid="settle-claim-onchain"
-                disabled={onchainSending || claimId.trim() === ""}
-                onClick={() => void submitOnchain("settle")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Settle
-              </Button>
-              <Button
-                data-testid="payout-claim-onchain"
-                disabled={onchainSending || claimId.trim() === ""}
-                onClick={() => void submitOnchain("payout")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Collect payout
-              </Button>
-            </div>
-            {milestoneStatus ? (
-              <p
-                className="mt-1 text-sm text-emerald-700 dark:text-emerald-400"
-                role="status"
-              >
-                <span data-testid="milestone-status">{milestoneStatus}</span>
-              </p>
-            ) : null}
-            {milestoneError ? (
-              <SignRecovery
-                className="mt-1"
-                message={milestoneError}
-                messageTestId="milestone-error"
-                testId="milestone-sign-recovery"
-              />
-            ) : null}
-          </div>
-        </div>
-      </details>
-
-      <TrustGraphCuratorPanel />
       <Card className="p-4">
-        <h2 className="text-base font-semibold">Terms</h2>
+        <h2 className="text-base font-semibold">Terms and status</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           Stage: {record.stage} · {record.admission} track · chain{" "}
           {record.chainId ?? "undeployed"}
@@ -664,6 +453,249 @@ export function ManagePanel({
           )}
         </div>
       </Card>
+      <section aria-labelledby="expert-tools" className="flex flex-col gap-2">
+        <h2 className="mt-2 text-sm font-semibold" id="expert-tools">
+          Expert tools
+        </h2>
+        <p className="text-xs text-black/60 dark:text-white/60">
+          Most projects never need these. They are here for the people who run
+          the sale's contracts and the trust scores.
+        </p>
+        <Card className="p-4" data-testid="launch-graduation">
+          <h2 className="text-base font-semibold">When the sale ends</h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            If the sale reaches its goal, the money moves to your treasury, part
+            of the supply is set aside so people can trade it, and any tokens
+            that did not sell are returned. If it falls short, every bid is
+            refunded.
+          </p>
+          <details className="mt-2 text-xs text-black/60 dark:text-white/60">
+            <summary className="cursor-pointer select-none">
+              How the money moves
+            </summary>
+            <p className="mt-1">
+              A contract set up with the sale does all of this; nobody,
+              including the founder, handles the money in between. The set-aside
+              supply is released only to the trading pool the treasury records.
+              If the pool never appears, the treasury can take it back. The
+              chain is the ledger; this page only describes it.
+            </p>
+          </details>
+        </Card>
+        <details
+          className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+          data-testid="launch-advanced-milestones"
+        >
+          <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+            Milestone attestation
+            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+              for people who settle milestone claims
+            </span>
+          </summary>
+          <div className="mt-3" data-testid="launch-milestones">
+            <h2 className="text-base font-semibold">Milestone attestation</h2>
+            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+              A milestone claim is staked and settled onchain by the verifier
+              set; this panel mirrors the claim and your verdict onto the feed
+              (advisory). Every mirror names the tx that settled it. A receipt
+              without one won't go through. The chain is the ledger.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              <HashPicker
+                id="claim-id"
+                label="Claim id"
+                onValueChange={(v) => {
+                  setClaimId(v);
+                  // One dropdown drives the rest: known evidence + tx follow
+                  // the claim; unknown values stay empty (never guessed).
+                  const fill = autoFill(milestoneChoicesList, v);
+                  if (fill.evidenceHash) setEvidenceHash(fill.evidenceHash);
+                  if (fill.txHash) setTxHash(fill.txHash);
+                }}
+                options={milestoneChoicesList.claimOptions}
+                placeholder="milestone-1"
+                testId="claim-id"
+                value={claimId}
+              />
+              <HashPicker
+                id="evidence-hash"
+                label="Evidence hash"
+                onValueChange={setEvidenceHash}
+                options={milestoneChoicesList.evidenceByClaim[claimId] ?? []}
+                placeholder="64 hex chars of the canonical claim"
+                testId="evidence-hash"
+                value={evidenceHash}
+              />
+              <HashPicker
+                id="milestone-tx"
+                label="Settlement tx hash"
+                onValueChange={setTxHash}
+                options={milestoneChoicesList.txByClaim[claimId] ?? []}
+                placeholder="0x + 64 hex chars of the onchain tx"
+                testId="milestone-tx"
+                value={txHash}
+              />
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Button
+                  data-testid="record-claim"
+                  disabled={
+                    claimId.trim() === "" ||
+                    !EVIDENCE_HASH_RE.test(evidenceHash.trim()) ||
+                    !isTxHash(txHash) ||
+                    mirror.isPending
+                  }
+                  onClick={() => void recordClaim()}
+                  size="sm"
+                  type="button"
+                >
+                  Record claim
+                </Button>
+                <Button
+                  data-testid="verdict-approve"
+                  disabled={
+                    claimId.trim() === "" ||
+                    !isTxHash(txHash) ||
+                    mirror.isPending
+                  }
+                  onClick={() => void recordVerdict(true)}
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                >
+                  Verdict: approve
+                </Button>
+                <Button
+                  data-testid="verdict-reject"
+                  disabled={
+                    claimId.trim() === "" ||
+                    !isTxHash(txHash) ||
+                    mirror.isPending
+                  }
+                  onClick={() => void recordVerdict(false)}
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                >
+                  Verdict: reject
+                </Button>
+              </div>
+              <div className="mt-1">
+                <SenderPickerControls
+                  state={milestoneSender}
+                  testIdPrefix="milestone-"
+                />
+              </div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Button
+                  data-testid="submit-claim-onchain"
+                  disabled={
+                    onchainSending ||
+                    claimId.trim() === "" ||
+                    !EVIDENCE_HASH_RE.test(evidenceHash.trim())
+                  }
+                  onClick={() => void submitOnchain("claim")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Submit claim onchain
+                </Button>
+                <Button
+                  data-testid="attest-approve"
+                  disabled={onchainSending || claimId.trim() === ""}
+                  onClick={() => void submitOnchain("verdict-approve")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Attest approve
+                </Button>
+                <Button
+                  data-testid="attest-reject"
+                  disabled={onchainSending || claimId.trim() === ""}
+                  onClick={() => void submitOnchain("verdict-reject")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Attest reject
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+                After the claim is submitted, the treasury reserves its payout.
+                Once enough verifiers attest, anyone can settle it, and the
+                contributor then collects the payout.
+              </p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Button
+                  data-testid="fund-claim-onchain"
+                  disabled={
+                    onchainSending ||
+                    claimId.trim() === "" ||
+                    !EVIDENCE_HASH_RE.test(evidenceHash.trim())
+                  }
+                  onClick={() => void submitOnchain("fund")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Reserve payout
+                </Button>
+                <Button
+                  data-testid="settle-claim-onchain"
+                  disabled={onchainSending || claimId.trim() === ""}
+                  onClick={() => void submitOnchain("settle")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Settle
+                </Button>
+                <Button
+                  data-testid="payout-claim-onchain"
+                  disabled={onchainSending || claimId.trim() === ""}
+                  onClick={() => void submitOnchain("payout")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Collect payout
+                </Button>
+              </div>
+              {milestoneStatus ? (
+                <p
+                  className="mt-1 text-sm text-emerald-700 dark:text-emerald-400"
+                  role="status"
+                >
+                  <span data-testid="milestone-status">{milestoneStatus}</span>
+                </p>
+              ) : null}
+              {milestoneError ? (
+                <SignRecovery
+                  className="mt-1"
+                  message={milestoneError}
+                  messageTestId="milestone-error"
+                  testId="milestone-sign-recovery"
+                />
+              ) : null}
+            </div>
+          </div>
+        </details>
+        <details
+          className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+          data-testid="launch-advanced-trustgraph"
+        >
+          <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+            Trust scores
+            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+              for the person who publishes this community's scores
+            </span>
+          </summary>
+          <div className="mt-3">
+            <TrustGraphCuratorPanel />
+          </div>
+        </details>
+      </section>
 
       {record.tokenPlan?.mode === "dao" ? (
         <DaoLaunchPanel

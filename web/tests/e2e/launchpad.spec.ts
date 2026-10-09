@@ -341,15 +341,15 @@ test("the founder sees what is still missing before deploying", async ({
   const readiness = page.getByTestId("launch-readiness");
   await expect(readiness).toBeVisible({ timeout: 15_000 });
   await expect(readiness).toContainText("4 steps still open");
-  await expect(readiness).toContainText("Sale parameters");
-  await expect(readiness).toContainText("Auction contract");
+  await expect(readiness).toContainText("Sale terms");
+  await expect(readiness).toContainText("The sale itself");
   await expect(readiness).toContainText(
-    "link it, so bids have somewhere to go",
+    "backers have somewhere to put their money",
   );
 
   // The sale parameters are valid, so that line carries no hint.
-  const parameters = readiness.locator("li", { hasText: "Sale parameters" });
-  await expect(parameters).not.toContainText("Floor price on the tick grid");
+  const parameters = readiness.locator("li", { hasText: "Sale terms" });
+  await expect(parameters).not.toContainText("needs adjusting");
 });
 
 test("the buyer sees what the rest of the supply implies", async ({ page }) => {
@@ -503,9 +503,9 @@ test("founder commitments appear on the readiness list", async ({ page }) => {
   await page.getByRole("tab", { name: /Manage/ }).click();
   const readiness = page.getByTestId("launch-readiness");
   await expect(readiness).toBeVisible({ timeout: 15_000 });
-  await expect(readiness).toContainText("Founder commitments");
+  await expect(readiness).toContainText("About the team");
   const commitments = readiness.locator("li", {
-    hasText: "Founder commitments",
+    hasText: "About the team",
   });
   await expect(commitments).not.toContainText("✓");
 });
