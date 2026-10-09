@@ -9,7 +9,7 @@ import { deliveryScore } from "./trust-score.ts";
 // so the formula cannot drift between the two implementations silently.
 const corpus = JSON.parse(
   readFileSync(
-    new URL("../../../../../scripts/trust-score-corpus.json", import.meta.url),
+    new URL("../../../../scripts/trust-score-corpus.json", import.meta.url),
     "utf8",
   ),
 );

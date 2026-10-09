@@ -12,6 +12,7 @@ import {
   decodeUintWord,
   encodeSetScoreRoot,
   parseBundleEntries,
+  parseScoreRootRecord,
   treeLevels,
   SELECTOR_MIN_SCORE,
   SELECTOR_SCORE_ROOT,
@@ -147,4 +148,40 @@ test("parseBundleEntries drops malformed rows and flags verification", () => {
     `0x${ROOT_2}`,
   );
   assert.equal(wrong[0].verified, false, "a wrong score is shown unverified");
+});
+
+test("parseScoreRootRecord is strict (malformed records refused)", () => {
+  const good = {
+    id: "f".repeat(64),
+    kind: 37006,
+    tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
+    content: JSON.stringify({
+      program: "trustgraphs.output.nostr-member.v1",
+      root: `0x${ROOT_2}`,
+      epoch: "12",
+      indexerUrl: "https://indexer.example/proofs.json",
+      anchorBlock: 424242,
+    }),
+  };
+  const parsed = parseScoreRootRecord(good);
+  assert.ok(parsed);
+  assert.equal(parsed.epoch, "12");
+  assert.equal(parsed.root, `0x${ROOT_2}`);
+  assert.equal(parsed.anchorBlock, 424242);
+  assert.equal(
+    parseScoreRootRecord({
+      ...good,
+      tags: [["d", "wrong:12"]],
+    }),
+    null,
+    "the d tag must bind <program>:<epoch>",
+  );
+  assert.equal(
+    parseScoreRootRecord({
+      ...good,
+      content: JSON.stringify({ program: "p", root: "0x1234", epoch: "1" }),
+    }),
+    null,
+    "malformed roots are refused, never shown as authoritative",
+  );
 });

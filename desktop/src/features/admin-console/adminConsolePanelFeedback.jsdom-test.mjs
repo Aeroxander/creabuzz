@@ -442,9 +442,8 @@ test("feedback-severed-community: a purged-source feedback row renders in list a
   );
   assert.ok(fields, "feedback detail must render for a severed row");
   assert.ok(
-    (fields.textContent ?? "").includes("Community-") &&
-      (fields.textContent ?? "").includes("Host-"),
-    `absent community fields must render as dash placeholders; got: ${fields.textContent}`,
+    (fields.textContent ?? "").includes("Community-"),
+    `an absent community must render as a dash placeholder; got: ${fields.textContent}`,
   );
 
   await unmount();

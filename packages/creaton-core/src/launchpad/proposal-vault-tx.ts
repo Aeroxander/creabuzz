@@ -70,7 +70,9 @@ function addressWord(value: string, name: string): string {
 
 function uintWord(value: bigint | string | number, name: string): string {
   const n =
-    typeof value === "bigint" ? value : BigInt(typeof value === "number" ? Math.trunc(value) : value);
+    typeof value === "bigint"
+      ? value
+      : BigInt(typeof value === "number" ? Math.trunc(value) : value);
   if (n < 0n || n >= 1n << 256n) {
     throw new Error(`${name} must be a uint256: ${value}`);
   }
@@ -138,7 +140,9 @@ export function encodeFail(proposalIdWord: string): string {
 
 /** `refundPosition(bytes32)` -- take back a failed proposal's backing. */
 export function encodeRefundPosition(proposalIdWord: string): string {
-  return SELECTOR_REFUND_POSITION + bytes32Word(proposalIdWord, "proposalIdWord");
+  return (
+    SELECTOR_REFUND_POSITION + bytes32Word(proposalIdWord, "proposalIdWord")
+  );
 }
 
 /** `claimTokens(bytes32)` -- a verified milestone's tokens are the backer's. */
@@ -178,7 +182,10 @@ export function encodeBackingWeightAt(
 }
 
 /** `escrowedOf(bytes32,address)` — tokens escrowed for one backer. */
-export function encodeEscrowedOf(proposalIdWord: string, account: string): string {
+export function encodeEscrowedOf(
+  proposalIdWord: string,
+  account: string,
+): string {
   return (
     SELECTOR_ESCROWED_OF +
     bytes32Word(proposalIdWord, "proposalIdWord") +
@@ -202,7 +209,10 @@ export function encodePricing(): string {
 }
 
 /** `joinPrice(address,bytes32)` — the price now, and the floor it may not fall under. */
-export function encodeJoinPrice(account: string, proposalIdWord: string): string {
+export function encodeJoinPrice(
+  account: string,
+  proposalIdWord: string,
+): string {
   return (
     SELECTOR_JOIN_PRICE +
     addressWord(account, "account") +

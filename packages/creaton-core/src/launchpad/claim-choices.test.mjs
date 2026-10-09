@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { autoFill, milestoneChoices } from "../lib/claim-choices.ts";
+import { autoFill, milestoneChoices } from "./claim-choices.ts";
 
 const EVIDENCE_A = "a".repeat(64);
 const EVIDENCE_B = "b".repeat(64);
