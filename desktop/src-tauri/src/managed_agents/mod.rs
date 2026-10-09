@@ -76,7 +76,6 @@ pub(crate) fn lock_env_mutex() -> std::sync::MutexGuard<'static, ()> {
     PROCESS_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-pub(crate) use agent_description::{effective_agent_description, record_effective_description};
 pub use backend::*;
 pub(crate) use definition_validation::{
     validate_agent_definition_text, validate_agent_description_text,

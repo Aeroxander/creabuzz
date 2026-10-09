@@ -719,29 +719,27 @@ export function StaffingTab({
                 {isConfigBacked && (
                   <Badge variant="outline">{op.effectiveRole}</Badge>
                 )}
-                {/* Remove button — hidden in read-only (disabled-auth) mode */}
-                {canMutate && (
-                  <Button
-                    aria-label={`Remove ${displayName}`}
-                    data-testid={`staffing-remove-btn-${op.pubkey}`}
-                    disabled={isConfigBacked || isWorking}
-                    onClick={() => setPendingRemove(op)}
-                    size="icon-xs"
-                    title={
-                      isConfigBacked
-                        ? "Config-backed. Cannot be removed through the API."
-                        : "Remove operator"
-                    }
-                    type="button"
-                    variant="ghost"
-                  >
-                    {isWorking ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                )}
+                {/* Remove button */}
+                <Button
+                  aria-label={`Remove ${displayName}`}
+                  data-testid={`staffing-remove-btn-${op.pubkey}`}
+                  disabled={isConfigBacked || isWorking}
+                  onClick={() => setPendingRemove(op)}
+                  size="icon-xs"
+                  title={
+                    isConfigBacked
+                      ? "Config-backed. Cannot be removed through the API."
+                      : "Remove operator"
+                  }
+                  type="button"
+                  variant="ghost"
+                >
+                  {isWorking ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </Button>
               </li>
             );
           })}
