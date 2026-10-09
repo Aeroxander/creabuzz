@@ -115,6 +115,27 @@ export function encodeSubmitRecognitionClaim(
   );
 }
 
+/**
+ * A claim that asks to be paid `amount` of the work budget's currency, with an optional `stake` the contributor puts up
+ * (it comes back with the payout, and is lost if the reviewers object). The currency approval for a stake is the
+ * caller's to send first.
+ */
+export function encodeSubmitPaidClaim(
+  claimId: string,
+  amount: bigint,
+  stake: bigint,
+  evidenceHash: string,
+): string {
+  assertWord(claimId, "claim id");
+  assertWord(evidenceHash, "evidence hash");
+  if (amount < 0n || stake < 0n) throw new Error("amounts cannot be negative");
+  return encodeFunctionData(
+    SIGNATURES.submitClaim,
+    ["bytes32", "uint256", "uint256", "bytes32"],
+    [claimId, amount, stake, evidenceHash],
+  );
+}
+
 export function encodeSetCheck(claimId: string, checkHash: string): string {
   assertWord(claimId, "claim id");
   assertWord(checkHash, "check hash");

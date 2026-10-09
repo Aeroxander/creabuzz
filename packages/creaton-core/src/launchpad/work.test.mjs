@@ -16,6 +16,7 @@ import {
   encodeCallId,
   encodeIsReviewer,
   encodeSetCheck,
+  encodeSubmitPaidClaim,
   encodeSubmitRecognitionClaim,
   hashText,
   idLabel,
@@ -226,4 +227,31 @@ test("filing a claim for recognition is cast's calldata, with the words hashed t
     "0x5b66d37a77726974652d646f637300000000000000000000000000000000000000000000e8164af4b3d1186a31c4eecb6012657bf68042eb1ce8130d9d766a096b0418ff",
   );
   assert.throws(() => encodeSetCheck("0x12", check));
+});
+
+test("a claim that asks to be paid carries its amount and stake, as cast encodes", () => {
+  // cast calldata "submitClaim(bytes32,uint256,uint256,bytes32)" 0x7777… 5000000 1000000 0x8888…
+  assert.equal(
+    encodeSubmitPaidClaim(
+      `0x${"77".repeat(32)}`,
+      5_000_000n,
+      1_000_000n,
+      `0x${"88".repeat(32)}`,
+    ),
+    "0x26d3f6d4777777777777777777777777777777777777777777777777777777777777777700000000000000000000000000000000000000000000000000000000004c4b4000000000000000000000000000000000000000000000000000000000000f42408888888888888888888888888888888888888888888888888888888888888888",
+  );
+  assert.throws(
+    () => encodeSubmitPaidClaim("0x12", 1n, 0n, `0x${"88".repeat(32)}`),
+    /claim id/,
+  );
+  assert.throws(
+    () =>
+      encodeSubmitPaidClaim(
+        `0x${"77".repeat(32)}`,
+        -1n,
+        0n,
+        `0x${"88".repeat(32)}`,
+      ),
+    /negative/,
+  );
 });

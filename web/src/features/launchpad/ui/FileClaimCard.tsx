@@ -1,11 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
+import { ethCall, getRpcEndpoint } from "../chain";
+import { formatUnits, parseUnits } from "../lib/dao-actions";
+import { encodeErc20Approve } from "../lib/evmCalls";
 import {
   encodeSetCheck,
-  encodeSubmitRecognitionClaim,
+  encodeSubmitPaidClaim,
   hashText,
   idWord,
   ZERO_WORD,
@@ -20,8 +24,9 @@ const sameAddress = (a: string | null, b: string) =>
  * go to the wallet (file the claim, then state its check), and the second is retried alone if it fails: the claim
  * already exists by then, and pressing the button again only finishes it.
  *
- * Only claims that ask for no money are filed here: a claim with a payment or a stake needs a currency approval, which
- * stays a command-line step.
+ * A claim may also ask to be paid, from a work budget that holds money, and may put up a deposit that comes back with
+ * the payout (and is lost if the reviewers object); a deposit needs the contributor's approval of the currency first,
+ * which is one more step to the wallet.
  */
 export function FileClaimCard({
   mandates,
@@ -42,10 +47,33 @@ export function FileClaimCard({
   const [name, setName] = useState("");
   const [evidence, setEvidence] = useState("");
   const [check, setCheck] = useState("");
+  const [pay, setPay] = useState("");
+  const [deposit, setDeposit] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [filed, setFiled] = useState<string | null>(null);
   const mandate = open[Math.min(which, open.length - 1)];
+  // What the wallet holds of the budget's currency, to check a deposit against before the wallet is asked.
+  const held = useQuery({
+    queryKey: [
+      "launchpad",
+      "work",
+      "claim-balance",
+      wallet,
+      mandate?.created.currency,
+    ],
+    enabled: Boolean(wallet && mandate && mandate.created.budget > 0n),
+    queryFn: async () =>
+      BigInt(
+        await ethCall(
+          getRpcEndpoint(),
+          (mandate as NonNullable<typeof mandate>).created.currency,
+          `0x70a08231${(wallet as string).slice(2).toLowerCase().padStart(64, "0")}`,
+        ),
+      ),
+    staleTime: 5_000,
+  });
   if (!mandate) return null;
+  const holdsMoney = mandate.created.budget > 0n && mandate.currency !== null;
 
   const submit = async () => {
     setProblem(null);
@@ -65,16 +93,55 @@ export function FileClaimCard({
       setProblem("Say where the work is, and how it should be judged.");
       return;
     }
+    // What it asks for, in the budget's currency: nothing unless the person filled it in.
+    const decimals = mandate.currency?.decimals ?? 0;
+    let amount = 0n;
+    let stake = 0n;
+    try {
+      if (pay.trim()) amount = parseUnits(pay, decimals, "pay", "The payment");
+      if (deposit.trim())
+        stake = parseUnits(deposit, decimals, "deposit", "The deposit");
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "Check the amounts.");
+      return;
+    }
+    if ((amount > 0n || stake > 0n) && !holdsMoney) {
+      setProblem(
+        "This work budget has no money, so a claim here can only ask to be recognised.",
+      );
+      return;
+    }
+    if (stake > 0n && held.data !== undefined && stake > held.data) {
+      setProblem(
+        `Your deposit is ${formatUnits(stake, decimals)} ${mandate.currency?.symbol ?? ""}, but your wallet holds ${formatUnits(held.data, decimals)}.`,
+      );
+      return;
+    }
+    if (amount > 0n && amount > mandate.created.perProjectCap) {
+      setProblem(
+        `A single project can hold at most ${formatUnits(mandate.created.perProjectCap, decimals)} of this budget.`,
+      );
+      return;
+    }
     const existing = mandate.claims.find((c) => c.id === id);
     if (existing && !sameAddress(wallet, existing.record.contributor)) {
       setProblem("Someone else already used that name. Choose another.");
       return;
     }
     if (!existing) {
+      if (stake > 0n) {
+        // The deposit is pulled from the contributor's own balance, so the claims ledger must be allowed to take it.
+        const approved = await onSend(
+          `approve-${id}`,
+          mandate.created.currency,
+          encodeErc20Approve(mandate.claimsAddress, stake),
+        );
+        if (!approved) return;
+      }
       const landed = await onSend(
         `file-${id}`,
         mandate.claimsAddress,
-        encodeSubmitRecognitionClaim(id, hashText(evidence)),
+        encodeSubmitPaidClaim(id, amount, stake, hashText(evidence)),
       );
       if (!landed) return;
     }
@@ -90,6 +157,8 @@ export function FileClaimCard({
     setName("");
     setEvidence("");
     setCheck("");
+    setPay("");
+    setDeposit("");
   };
 
   return (
@@ -99,8 +168,8 @@ export function FileClaimCard({
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
         File a claim for what you did. A project manager takes it on, reviewers
-        check it, and the DAO can then vote to award you Shares. Nothing is paid
-        and nothing is staked.
+        check it, and the DAO can then vote to award you Shares
+        {holdsMoney ? " or pay you" : ""}.
       </p>
       {open.length > 1 ? (
         <label className="mt-2 flex flex-col gap-1 text-sm">
@@ -161,6 +230,45 @@ export function FileClaimCard({
           </span>
         </div>
       </div>
+      {holdsMoney ? (
+        <details className="mt-2 text-sm" data-testid="work-claim-pay-section">
+          <summary className="cursor-pointer font-medium">
+            Ask to be paid too
+          </summary>
+          <div className="mt-2 grid gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="font-medium" htmlFor="work-claim-pay-input">
+                Payment you ask for ({mandate.currency?.symbol})
+              </label>
+              <Input
+                data-testid="work-claim-pay"
+                id="work-claim-pay-input"
+                inputMode="decimal"
+                onChange={(e) => setPay(e.target.value)}
+                placeholder="0"
+                value={pay}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="font-medium" htmlFor="work-claim-deposit-input">
+                Deposit you put up ({mandate.currency?.symbol}, optional)
+              </label>
+              <Input
+                data-testid="work-claim-deposit"
+                id="work-claim-deposit-input"
+                inputMode="decimal"
+                onChange={(e) => setDeposit(e.target.value)}
+                placeholder="0"
+                value={deposit}
+              />
+              <span className="text-xs text-muted-foreground">
+                A deposit shows you stand behind the claim. You get it back with
+                your payment; it is lost if the reviewers object.
+              </span>
+            </div>
+          </div>
+        </details>
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
           data-testid="work-claim-submit"
