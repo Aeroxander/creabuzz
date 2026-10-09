@@ -3,7 +3,6 @@ import {
   Briefcase,
   Compass,
   Home,
-  LayoutGrid,
   Feather,
   type LucideIcon,
   MessagesSquare,
@@ -19,14 +18,7 @@ import { useMediaQuery } from "@/shared/hooks/use-media-query";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 
 interface NavItem {
-  to:
-    | "/"
-    | "/social"
-    | "/c"
-    | "/discover"
-    | "/launchpad"
-    | "/projects"
-    | "/portfolio";
+  to: "/" | "/social" | "/c" | "/discover" | "/launchpad" | "/portfolio";
   label: string;
   icon: LucideIcon;
   /** Whether a pathname belongs to this section. */
@@ -64,19 +56,14 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: "/discover",
     label: "Discover",
     icon: Compass,
-    matches: (p) => p.startsWith("/discover"),
+    // The project board is a view of the same directory, so it lives under Discover rather than as a seventh tab.
+    matches: (p) => p.startsWith("/discover") || p.startsWith("/projects"),
   },
   {
     to: "/launchpad",
     label: "Launches",
     icon: Rocket,
     matches: (p) => p.startsWith("/launchpad"),
-  },
-  {
-    to: "/projects",
-    label: "Projects",
-    icon: LayoutGrid,
-    matches: (p) => p.startsWith("/projects"),
   },
   {
     to: "/portfolio",

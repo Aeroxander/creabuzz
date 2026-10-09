@@ -161,10 +161,15 @@ test("the board cards a pitch and flags the founder's pending request", async ({
   await relay.install(page);
   seedBoard(relay);
 
-  await page.goto("/");
-  const entry = page.getByRole("link", { name: "Projects" });
+  // The board is reached from Discover, which is where the whole directory lives.
+  await page.goto("/discover");
+  const entry = page.getByTestId("discover-board");
   await expect(entry).toBeVisible();
   await entry.click();
+  await expect(page.getByRole("link", { name: "Discover" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await expect(page.getByTestId("board-card-title")).toHaveText("Nebula");
   await expect(page.getByTestId("role-chip-open")).toHaveText(

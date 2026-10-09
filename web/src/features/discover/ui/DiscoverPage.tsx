@@ -126,9 +126,16 @@ export function DiscoverPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8">
       <PageHeader
         action={
-          <Button onClick={() => setPitchOpen(true)} size="sm">
-            <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="ghost">
+              <Link data-testid="discover-board" to="/projects">
+                Project board
+              </Link>
+            </Button>
+            <Button onClick={() => setPitchOpen(true)} size="sm">
+              <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
+            </Button>
+          </div>
         }
         description="Everything on this server, in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role. What is happening, whether it needs you, and the one click to join."
         title={

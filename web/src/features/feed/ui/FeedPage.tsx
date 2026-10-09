@@ -17,7 +17,9 @@ import {
   useVoteTallies,
 } from "../use-feed";
 import { Composer } from "./Composer";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { HomeHero } from "./HomeHero";
+import { HomeYours } from "./HomeYours";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ThreadList } from "./ThreadList";
 
@@ -41,6 +43,7 @@ export function FeedPage() {
   const notes = useFeedNotes();
   const lists = useMyLists();
   const launches = useLaunches();
+  const me = existingUserPubkey();
   const { tallies } = useVoteTallies();
 
   const people = followedPeople(lists.data?.contacts ?? null);
@@ -132,6 +135,11 @@ export function FeedPage() {
           <div className="mt-3">
             <HomeHero />
           </div>
+          {me ? (
+            <div className="mt-3 flex flex-col gap-3">
+              <HomeYours me={me} />
+            </div>
+          ) : null}
           <div className="mt-3">
             <Composer />
           </div>

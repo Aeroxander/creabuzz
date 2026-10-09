@@ -243,19 +243,26 @@ export function LaunchDetailPage({
     launch.record.tokenPlan?.mode === "dao"
       ? (launch.record.treasury as string)
       : (daoBinding?.dao ?? null);
+  // What people come back for goes first. A DAO is run from Decisions and Work, so those lead; a raise that has not
+  // become a DAO leads with its money and its bids. "Proposals" are the older, recorded kind: once a DAO's decisions
+  // are read from the chain they are only worth a tab if there are some to look at, so an empty one stays out of the way.
+  const proposalsTab = {
+    id: "proposals" as const,
+    label: `Proposals (${launch.proposals.length})`,
+  };
   const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
     { id: "overview", label: "Overview" },
-    // A simulated launch has no public discussion to join.
-    ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
-    { id: "updates", label: `Updates (${launch.updates.length})` },
-    { id: "proposals", label: `Proposals (${launch.proposals.length})` },
+    ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
+    ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
     { id: "treasury", label: "Treasury" },
     // Onchain bids only exist when the launch has an auction linked.
     ...(launch.record.auction
       ? [{ id: "mybids" as const, label: "My bids" }]
       : []),
-    ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
-    ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
+    // A simulated launch has no public discussion to join.
+    ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
+    { id: "updates", label: `Updates (${launch.updates.length})` },
+    ...(workDao && launch.proposals.length === 0 ? [] : [proposalsTab]),
     { id: "manage", label: "Manage", founderOnly: true },
   ];
   // An idea has no money, proposals or treasury yet; showing those tabs empty
