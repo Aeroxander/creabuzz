@@ -10,9 +10,6 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
-import { ProposalFundingPanel } from "./ProposalFundingPanel";
-import { useProposalVault } from "../use-proposal-vault";
-import { useConnectedWallet } from "../use-connected-wallet";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
@@ -129,12 +126,6 @@ export function LaunchDetailPage({
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
   // The chain head is what tells a declared stance apart from a live sale.
   const blockHeight = useChainBlockHeight();
-  // The backer-directed vault, read live once the launch has one deployed.
-  const wallet = useConnectedWallet();
-  const vault = useProposalVault(
-    launch?.record.proposalVault ?? null,
-    wallet.address ?? null,
-  );
   // A founder who opens their launch has seen its supporters.
   const seenCount = supporterCoord
     ? (supporterCounts.data?.get(supporterCoord) ?? null)
@@ -276,27 +267,6 @@ export function LaunchDetailPage({
 
   const raiseOverview = (
     <>
-      {/* The backer-directed vault: shown to a project that chose proposal
-              funding. The controls only appear once the vault is deployed and
-              reachable — a control that cannot act is a dead end. A project
-              that launched with its own DAO has one voice for backers (its
-              Shares), so the vault's vouchers are not offered beside it. */}
-      {(launch.record.funding?.path === "proposals" ||
-        launch.record.proposalVault) &&
-      launch.record.tokenPlan?.mode !== "dao" ? (
-        <ProposalFundingPanel
-          actions={vault.actions}
-          atRisk={vault.data?.atRisk ?? "0"}
-          currentBlock={blockHeight === null ? null : Number(blockHeight)}
-          floorPerToken={vault.data?.floorPerToken ?? "0"}
-          own={vault.data?.own ?? {}}
-          pricePerToken={vault.data?.pricePerToken ?? "0"}
-          proposals={vault.data?.proposals ?? []}
-          taxBps={vault.data?.taxBps ?? 0}
-          vault={launch.record.proposalVault}
-          vouchers={vault.data?.vouchers ?? "0"}
-        />
-      ) : null}
       {/* The TrustGraph surface: gate state, published roots, the graph. */}
       <PriceChartCard launch={launch} />
       {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}

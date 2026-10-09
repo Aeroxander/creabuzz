@@ -17,7 +17,6 @@
     "test:e2e": "pnpm build && playwright test",
     "test:e2e:smoke": "pnpm build && playwright test --project=smoke",
     "test": "node --experimental-strip-types --test \"src/**/*.test.mjs\" \"tests/**/*.test.mjs\"",
-    "simulate": "playwright test --config=playwright.simulate.config.ts",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "check:px-text": "node ./scripts/check-px-text.mjs",
     "check:copy": "node ./scripts/check-copy.mjs",

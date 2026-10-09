@@ -50,14 +50,14 @@ test("parseFunding reads a full declaration", () => {
   const parsed = parseFunding({
     stance: "planning",
     seeking: ["backers", "contributors"],
-    path: "proposals",
+    path: "auction",
     opensAt: "2026-11-01",
     note: "  Aiming for late autumn.  ",
   });
   assert.deepEqual(parsed, {
     stance: "planning",
     seeking: ["backers", "contributors"],
-    path: "proposals",
+    path: "auction",
     opensAt: "2026-11-01",
     note: "Aiming for late autumn.",
   });
@@ -101,7 +101,7 @@ test("a declaration round-trips through fundingContent", () => {
       status({
         stance: "rolling",
         seeking: ["advisors"],
-        path: "open-sale",
+        path: "contributors",
         opensAt: "2026-01-01",
         note: "Always open.",
       }),
@@ -110,7 +110,7 @@ test("a declaration round-trips through fundingContent", () => {
   assert.deepEqual(parsed, {
     stance: "rolling",
     seeking: ["advisors"],
-    path: "open-sale",
+    path: "contributors",
     opensAt: "2026-01-01",
     note: "Always open.",
   });
@@ -413,4 +413,11 @@ test("the summary reads as one plain sentence", () => {
     ),
     "Planning a raise · looking for backers, advisors",
   );
+});
+
+test("a path that was planned but never built reads as no declaration", () => {
+  for (const path of ["open-sale", "proposals"]) {
+    const parsed = parseFunding({ stance: "planning", seeking: [], path });
+    assert.equal(parsed?.path, null, path);
+  }
 });

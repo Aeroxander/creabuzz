@@ -60,9 +60,7 @@ export {
 };
 export type { TokenDeployCallsParams };
 
-import {
-  functionSelector,
-} from "../../identity/lib/userop-abi.ts";
+import { functionSelector } from "../../identity/lib/userop-abi.ts";
 
 /** `infrastructureFeeBPS() -> uint16` on the TokenMaster router. */
 export const SIGNATURE_INFRA_FEE_BPS = "infrastructureFeeBPS()";

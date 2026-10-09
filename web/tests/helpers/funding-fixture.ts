@@ -43,7 +43,7 @@ export const FIXTURES: Fixture[] = [
     funding: {
       stance: "planning",
       seeking: ["backers"],
-      path: "proposals",
+      path: "auction",
       opensAt: "2026-11-01",
       note: "Aiming for late autumn.",
     },
@@ -71,7 +71,7 @@ export const FIXTURES: Fixture[] = [
   },
 ];
 
-export function launchEvent(fixture: Fixture, vault?: string) {
+export function launchEvent(fixture: Fixture) {
   return {
     id: `event-${fixture.id}`,
     pubkey: FOUNDER,
@@ -82,9 +82,6 @@ export function launchEvent(fixture: Fixture, vault?: string) {
       ["name", fixture.name],
       ["t", "dao-launchpad"],
       ["admission", "curated"],
-      ...(vault && fixture.funding?.path === "proposals"
-        ? [["proposal-vault", vault]]
-        : []),
     ],
     content: JSON.stringify({
       pitch: `${fixture.name} is going to the stars.`,
@@ -96,10 +93,7 @@ export function launchEvent(fixture: Fixture, vault?: string) {
 }
 
 /** Serve these launches to the app over its relay WebSocket. */
-export async function mockLaunchRelay(
-  page: Page,
-  options: { vault?: string } = {},
-) {
+export async function mockLaunchRelay(page: Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
@@ -123,13 +117,7 @@ export async function mockLaunchRelay(
       const kinds: number[] = filter.kinds ?? [];
       if (kinds.includes(37001)) {
         for (const fixture of FIXTURES) {
-          ws.send(
-            JSON.stringify([
-              "EVENT",
-              subId,
-              launchEvent(fixture, options.vault),
-            ]),
-          );
+          ws.send(JSON.stringify(["EVENT", subId, launchEvent(fixture)]));
         }
       }
       ws.send(JSON.stringify(["EOSE", subId]));

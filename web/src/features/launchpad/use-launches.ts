@@ -334,8 +334,6 @@ export interface CreateLaunchInput {
   distributor?: string;
   claimStake?: string;
   verifierSet?: string;
-  /** The backer-directed funding vault (plan §4), once deployed. */
-  proposalVault?: string;
   admission: "curated" | "community";
   channels: string[];
   /** The launch's chat rooms; their ids are published as bound channels too. */
@@ -390,8 +388,6 @@ export function useCreateLaunch() {
       if (input.distributor) tags.push(["distributor", input.distributor]);
       if (input.claimStake) tags.push(["claim-stake", input.claimStake]);
       if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
-      if (input.proposalVault)
-        tags.push(["proposal-vault", input.proposalVault]);
       for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
       const content: Record<string, unknown> = {

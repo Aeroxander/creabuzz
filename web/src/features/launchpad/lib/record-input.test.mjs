@@ -57,7 +57,6 @@ function record(overrides = {}) {
     distributor: null,
     claimStake: null,
     verifierSet: null,
-    proposalVault: null,
     admission: "curated",
     allocation: STANDARD_ALLOCATION,
     vesting: null,

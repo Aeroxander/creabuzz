@@ -126,11 +126,6 @@ export interface LaunchRecord {
   claimStake: string | null;
   /** The launch's VerifierSet (the attest target for verdicts). */
   verifierSet: string | null;
-  /**
-   * The backer-directed funding vault (plan §4): backers pledge here and
-   * choose which proposals their money funds. Absent until it is deployed.
-   */
-  proposalVault: string | null;
   admission: "curated" | "community";
   /** How the supply is split. Absent on older records: the standard split. */
   allocation: SupplyAllocation;
@@ -439,7 +434,6 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     distributor: tagValue(event, "distributor"),
     claimStake: tagValue(event, "claim-stake"),
     verifierSet: tagValue(event, "verifier-set"),
-    proposalVault: tagValue(event, "proposal-vault"),
     admission:
       tagValue(event, "admission") === "community" ? "community" : "curated",
     allocation: parseAllocation(contentObject(event).allocation),

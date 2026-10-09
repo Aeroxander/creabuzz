@@ -83,7 +83,6 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     distributor: null,
     claimStake: null,
     verifierSet: null,
-    proposalVault: null,
     admission: "curated",
     allocation: {
       sale: 20,

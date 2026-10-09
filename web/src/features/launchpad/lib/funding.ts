@@ -60,21 +60,16 @@ export function isFundingSeeking(value: unknown): value is FundingSeeking {
 }
 
 /**
- * How the project wants to fund itself (plan §3): the four paths, each turning
- * on as its contract and simulation scene land. Null on a record written
- * before this existed.
+ * How the project wants to fund itself: the two ways that exist (a sale, or no sale
+ * and Shares earned by work). Null on a record that names neither, including records
+ * written when two more were planned ("open-sale", "proposals"), which were never
+ * built and are read as no declaration rather than offered.
  */
-export type FundingPath =
-  | "auction"
-  | "open-sale"
-  | "contributors"
-  | "proposals";
+export type FundingPath = "auction" | "contributors";
 
 export const FUNDING_PATHS: readonly FundingPath[] = [
   "auction",
-  "open-sale",
   "contributors",
-  "proposals",
 ];
 
 export function isFundingPath(value: unknown): value is FundingPath {
@@ -85,16 +80,12 @@ export function isFundingPath(value: unknown): value is FundingPath {
 
 export const FUNDING_PATH_LABELS: Record<FundingPath, string> = {
   auction: "Auction",
-  "open-sale": "Open sale",
   contributors: "Contributors only",
-  proposals: "Proposal funding",
 };
 
 export const FUNDING_PATH_HINTS: Record<FundingPath, string> = {
   auction: "Sell a fixed tranche to the highest bidders over a set window.",
-  "open-sale": "Keep selling at a set price, or along a curve, until you stop.",
   contributors: "Nothing is sold. Shares are earned by work.",
-  proposals: "Backers put money in a vault and choose what it funds.",
 };
 
 /** The declared half: `content.funding` on the launch record (kind 37001). */

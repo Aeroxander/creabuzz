@@ -448,20 +448,6 @@ desktop-e2e-pre-push: _ensure-migrations
 # Run all checks suitable for CI / pre-push (no infra needed)
 ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build mobile-test
 
-# The whole-project simulation: scripted scenes played in the web app, one
-# timeline report with a screenshot per step (web/tests/simulate/README.md).
-# Needs the client built (`pnpm -C web build`); the Playwright server is
-# started for you.
-simulate: web-build
-	cd web && pnpm simulate
-
-# The same story's money-moving scenes, on a REAL chain: boots Anvil, deploys
-# ProposalVault, and plays the entry-voice flow (pledge -> back a proposal ->
-# what that buys -> take the unspent back). Report at
-# web/test-results/simulate/timeline-chain.md. Needs foundry.
-simulate-anvil:
-	scripts/web-vault-e2e.sh
-
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
 # Run all tests (unit + integration)
