@@ -155,9 +155,8 @@ cargo test -p buzz-cli --lib -p buzz-evm-allowance   # includes the lock command
 node --test scripts/dev-chain.test.mjs scripts/simulate-voting-rules.test.mjs
 ```
 
-Known failures that are not from this work (the 13 browser specs fail identically on the commit before it): in the
-full mocked browser suite (`cd web && pnpm test:e2e:smoke`) 180 pass, 26 skip and 13 fail: `feed.spec.ts` "posts are
-only copied to public relays…", six wiki/multi-user specs and five in `smoke.spec.ts`. Also the web file-size ratchet
-on `WikiView.tsx` and `cargo clippy` findings in other crates.
+Expected results: the full mocked browser suite (`cd web && pnpm test:e2e:smoke`) is 194 pass, 26 skip (they need a
+local chain) and 0 fail, including `first-run.spec.ts`; `just file-size-check` passes. `cargo clippy` still reports
+older findings in other crates.
 
 When you are satisfied, adding the `buzz-review-completed` marker to a pull request description is yours to do.

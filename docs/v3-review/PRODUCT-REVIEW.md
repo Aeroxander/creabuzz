@@ -90,9 +90,8 @@ journey (needs LBAMM cloned outside the repo), desktop and mobile tests.
 
 ## Things that were already broken, found on the way
 
-- 13 browser tests fail on the commit before this work too (nine wiki and multi-user tests, three in `smoke.spec.ts`, one
-  in `feed.spec.ts`). They are not caused by anything here; they need their own look.
-- `web/src/features/wiki/ui/WikiView.tsx` is 1,040 lines and the file-size gate allows 1,000.
+Both items below were fixed afterwards, in the hardening pass (see the end of this document): the 13 failing browser
+tests turned out to hide a real bug in the account menu, and `WikiView.tsx` is now under the file-size limit.
 
 ## The clean-up pass (2026-10-09)
 
@@ -162,11 +161,41 @@ deleted, 17 added (the shared helpers and their tests).
 **Checked after the last change:** web typecheck, 1,224 web unit tests, 680 core tests, the web checks (`pnpm check`),
 the desktop typecheck and its 8,119 unit tests, seven real-chain browser journeys (work, paid work, DAO launch, DAO,
 decisions, milestone, auction), `cargo fmt`, the whole Rust workspace with `cargo check --all-targets` (no warnings left), 744
-CLI tests, the Paperclip, agwiki and provider tests, and the mocked browser suite: 180 pass, 26 are skipped (they need
-a local chain), and the same 13 fail that failed before this work started.
+CLI tests, the Paperclip, agwiki and provider tests, and the mocked browser suite: 194 pass and 26 are skipped (they
+need a local chain); the 13 that failed before this work were fixed afterwards (see the next section).
 
 ## What would help next
 
 In this order: (1) your call on the six items above; (2) a "Set up a work budget" shortcut on the DAO's front page when it
 has none, so the first thing a new DAO shows is one button, not an empty list; (3) the audit-log page, since every
 change to an org is already signed and chained; (4) forms for the rarer DAO powers still on the command line.
+
+## Hardening the front door (2026-10-10)
+
+You asked for the product to be made production-ready. The first piece was the 13 mocked browser tests that had been
+failing since before this work and were taken for old noise. Looking at each one:
+
+| What was wrong | Real or out of date |
+|---|---|
+| **The account menu closed under the mouse.** Edit profile, Appearance, Back up key, Unbind wallet and Sign out did nothing for a person with a mouse. The menu had been moved out of the top bar so its blur would not trap it, but the click-outside check still only knew the old place. One line; three of the failing tests. | **Real** |
+| The wiki's page list never refreshed and ignored deletions, so another person's delete or new page only showed after a reload | **Real** |
+| A server that hung up without answering left a post waiting about twelve seconds, and held up the optional copy to the second public relay | **Real** |
+| Seven tests that still looked for things that had moved: the logo (now in the top bar), the connect-to-a-relay form (now on the repositories page), the wiki list items, the delete message ("Moved … to Recently deleted"), who may delete a page (its author), and a reconnect test that counted requests though the page keeps six live subscriptions (it counts reconnect rounds now, and still fails on a one-second loop) | Out of date |
+
+Also found and fixed on the way:
+
+- **A deployed site would have read the chain from each visitor's own computer.** With no chain endpoint configured,
+  chain reads defaulted to a local test chain (`127.0.0.1:8545`). That default now applies only to a page served from
+  this machine; elsewhere the page says it is not connected to a chain yet until the build sets `VITE_CHAIN_RPC_URL`.
+  **For hosting: set `VITE_CHAIN_RPC_URL` (and the chain id) in the production build.**
+- `WikiView.tsx` was over the repo's file-size limit and would have blocked a push; its delete, permanent delete and
+  restore flow is now its own hook (893 lines, no behaviour change).
+
+New: `web/tests/e2e/first-run.spec.ts` is a newcomer's first visit (sign up with a name, use the account menu, start an
+organization, reload and find it) and fails on any uncaught error or console error. It was checked to fail without the
+menu fix. The mocked browser suite is now 194 pass, 26 skipped (they need a local chain), 0 fail.
+
+What the first screens say to the people you named (musicians, filmmakers, programmers, web2 teams) is the next piece:
+Home still reads as a launchpad feed ("Trending launches", "Also share on public Nostr", "Closing soon / Graduated"), and
+sign-up talks about identities, keys and wallets.
+
