@@ -2301,7 +2301,13 @@ mod tests {
         let (s, rev) = (pk('a'), pk('r'));
         let auth = authorized(&[&rev]);
         let events = vec![
-            raw_event(1, &s, 1_010, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                1,
+                &s,
+                1_010,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12}),
+            ),
             raw_event(
                 2,
                 &rev,
@@ -2373,9 +2379,27 @@ mod tests {
         // claimant's newest record AT OR BEFORE the review's timestamp —
         // the post-review edit must not be paid its edited amount.
         let events = vec![
-            raw_event(4, &s, start + 10, Some("t1"), json!({"amount": 250, "monthsActive": 6})),
-            raw_event(5, &rev, start + 20, Some("t1"), json!({"reviewStatus": "accepted"})),
-            raw_event(6, &s, start + 30, Some("t1"), json!({"amount": 300, "monthsActive": 12})),
+            raw_event(
+                4,
+                &s,
+                start + 10,
+                Some("t1"),
+                json!({"amount": 250, "monthsActive": 6}),
+            ),
+            raw_event(
+                5,
+                &rev,
+                start + 20,
+                Some("t1"),
+                json!({"reviewStatus": "accepted"}),
+            ),
+            raw_event(
+                6,
+                &s,
+                start + 30,
+                Some("t1"),
+                json!({"amount": 300, "monthsActive": 12}),
+            ),
         ];
         let folded = fold_settlement_actions(&events, start, end, end).expect("fold");
         let weights = compute_weights(&folded.actions, &auth).expect("weights");
@@ -2393,7 +2417,13 @@ mod tests {
         let (start, end) = (1_000u64, 2_000u64);
         let auth = authorized(&[&rev]);
         let events = vec![
-            raw_event(1, &s, start + 10, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                1,
+                &s,
+                start + 10,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12}),
+            ),
             raw_event(
                 2,
                 &rev,
@@ -2402,7 +2432,13 @@ mod tests {
                 json!({"amount": 100, "monthsActive": 12, "reviewStatus": "accepted"}),
             ),
             // Filed in-epoch, but the verdict lands after the first cutoff.
-            raw_event(3, &s, start + 30, Some("t2"), json!({"amount": 50, "monthsActive": 12})),
+            raw_event(
+                3,
+                &s,
+                start + 30,
+                Some("t2"),
+                json!({"amount": 50, "monthsActive": 12}),
+            ),
             raw_event(
                 4,
                 &rev,
@@ -2435,7 +2471,13 @@ mod tests {
         let (start, end) = (1_000u64, 2_000u64);
         let auth = authorized(&[&rev]);
         let events = vec![
-            raw_event(1, &s, start + 10, Some("t1"), json!({"amount": 100, "monthsActive": 12})),
+            raw_event(
+                1,
+                &s,
+                start + 10,
+                Some("t1"),
+                json!({"amount": 100, "monthsActive": 12}),
+            ),
             raw_event(
                 2,
                 &rev,
@@ -2443,7 +2485,13 @@ mod tests {
                 Some("t1"),
                 json!({"amount": 100, "monthsActive": 12, "reviewStatus": "accepted"}),
             ),
-            raw_event(3, &s, start + 30, Some("t2"), json!({"amount": 50, "monthsActive": 12})),
+            raw_event(
+                3,
+                &s,
+                start + 30,
+                Some("t2"),
+                json!({"amount": 50, "monthsActive": 12}),
+            ),
             raw_event(
                 4,
                 &rev,
@@ -2480,9 +2528,7 @@ mod tests {
         let added: BTreeSet<&String> = ids2.difference(&ids1).collect();
         assert_eq!(
             added,
-            [&settlement_ids("0xd1", &s, "t2").0]
-                .into_iter()
-                .collect(),
+            [&settlement_ids("0xd1", &s, "t2").0].into_iter().collect(),
             "the wider-cutoff run adds exactly the late action's claim id — \
              never an id that also covers the already-published t1"
         );

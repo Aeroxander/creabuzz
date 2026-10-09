@@ -127,6 +127,8 @@ export type MockManagedAgentSeed = {
   personaId?: string | null;
   /** Harness/runtime id pin; `null` = inherit from persona (native default). */
   runtime?: string | null;
+  /** Model pinned on the instance record. */
+  model?: string | null;
   status?: RawManagedAgent["status"];
   channelNames?: string[];
   channelIds?: string[];
@@ -262,6 +264,11 @@ type E2eConfig = {
       normalized_host?: string;
       archived_at?: string | null;
     }>;
+    builderlabQuota?: {
+      quota_used?: number;
+      quota_limit?: number;
+      can_create?: boolean;
+    };
     /** Override the community returned after hosted creation. */
     builderlabCreatedCommunity?: {
       id?: string;
@@ -520,6 +527,8 @@ type E2eConfig = {
     oaOwnerIsMe?: boolean;
     /** Whether the mock relay advertises NIP-43 membership support. Defaults to false. */
     relayRequiresMembership?: boolean;
+    /** Reject the membership probe, as an unreachable relay's `/info` does. */
+    relayRequiresMembershipError?: string;
     /** Delay EOSE for membership snapshots after delivering the event. */
     relayMembershipEoseDelayMs?: number;
     relayRole?: "owner" | "admin" | "member" | null;
@@ -689,6 +698,10 @@ type E2eConfig = {
      * returning a catalog.
      */
     discoverAgentModelsError?: string;
+    /** Delay (ms) before `discover_agent_models` settles. */
+    discoverAgentModelsDelayMs?: number;
+    /** Config surface returned for every agent instead of the per-runtime mocks. */
+    agentConfigSurface?: Record<string, unknown>;
     /** ACP commands returned by the discovery IPC in mock mode. */
     acpCommands?: Array<{ command: string; binaryPath: string }>;
     // Backend provider mocks for the create-agent "Run on" section. See
@@ -1271,6 +1284,8 @@ declare global {
       command: string;
       payload: unknown;
     }>;
+    /** Community ids still saved when `remove_community_relay` ran. */
+    __BUZZ_E2E_SAVED_COMMUNITIES_AT_RELAY_REMOVAL__?: string[];
     /** Release a mock media proxy held at port 0 and return its ready port. */
     __BUZZ_E2E_RELEASE_MEDIA_PROXY__?: () => number;
     /** Release mock send events that were stored but withheld from live subscribers. */
@@ -2549,7 +2564,7 @@ function buildSeededManagedAgent(seed: MockManagedAgentSeed): MockManagedAgent {
     parallelism: 1,
     system_prompt: null,
     avatar_url: seed.avatarUrl ?? null,
-    model: null,
+    model: seed.model ?? null,
     env_vars: { ...(seed.envVars ?? {}) },
     status,
     pid: status === "running" ? 42000 + mockManagedAgents.length : null,
@@ -7259,7 +7274,11 @@ async function handleGetPresence(
 
 async function handleEnsureStarterChannels(
   config: E2eConfig | undefined,
-): Promise<RawChannelWithMembership[]> {
+): Promise<{
+  channels: RawChannelWithMembership[];
+  changed_channel_ids: string[];
+  error: null;
+}> {
   const starterChannelError =
     config?.mock?.ensureStarterChannelsErrors?.shift();
   if (starterChannelError) {
@@ -7267,6 +7286,7 @@ async function handleEnsureStarterChannels(
   }
 
   const currentPubkey = getMockMemberPubkey(config);
+  const changedChannelIds: string[] = [];
   const ensureMember = (channel: MockChannel) => {
     if (
       channel.members.some(
@@ -7280,6 +7300,7 @@ async function handleEnsureStarterChannels(
     channel.members.push(createCurrentMember(config, "member"));
     syncMockChannel(channel);
     touchMockChannel(channel);
+    changedChannelIds.push(channel.id);
   };
 
   for (const channelName of [
@@ -7299,7 +7320,11 @@ async function handleEnsureStarterChannels(
     ensureMember(channel);
   }
 
-  return listMockChannels(config);
+  return {
+    channels: listMockChannels(config),
+    changed_channel_ids: changedChannelIds,
+    error: null,
+  };
 }
 
 async function handleCreateChannel(
@@ -7370,7 +7395,7 @@ async function handleCreateChannel(
   // Fetch the created channel via pure Nostr query.
   // The relay emits kind:39000 as a side effect of kind:9007.
   const metaEvents = await relayQuery(config, [
-    { kinds: [39000], "#d": [channelId], limit: 1 },
+    { kinds: [39000], "#d": [channelId], limit: 1, consistency: "strong" },
   ]);
   const ev = metaEvents[0];
   if (!ev) {
@@ -7478,7 +7503,7 @@ async function handleOpenDm(
 
   // Fetch channel metadata
   const metaEvents = await relayQuery(config, [
-    { kinds: [39000], "#d": [channelId], limit: 1 },
+    { kinds: [39000], "#d": [channelId], limit: 1, consistency: "strong" },
   ]);
   const ev = metaEvents[0];
   const evTags = (ev?.tags ?? []) as string[][];
@@ -7574,7 +7599,7 @@ async function handleGetChannelDetails(
 }
 
 async function handleGetChannelMembers(
-  args: { channelId: string },
+  args: { channelId: string; readYourWrites?: boolean },
   config: E2eConfig | undefined,
 ): Promise<RawChannelMembersResponse> {
   const delayMs = config?.mock?.channelMembersReadDelayMs ?? 0;
@@ -7592,7 +7617,12 @@ async function handleGetChannelMembers(
   }
 
   const memberEvents = await relayQuery(config, [
-    { kinds: [39002], "#d": [args.channelId], limit: 1 },
+    {
+      kinds: [39002],
+      "#d": [args.channelId],
+      limit: 1,
+      ...(args.readYourWrites ? { consistency: "strong" } : {}),
+    },
   ]);
   const memberTags = ((memberEvents[0]?.tags ?? []) as string[][]).filter(
     (t) => t[0] === "p",
@@ -7668,7 +7698,7 @@ async function handleUpdateChannel(
 
   // Re-fetch updated metadata
   const metaEvents = await relayQuery(config, [
-    { kinds: [39000], "#d": [args.channelId], limit: 1 },
+    { kinds: [39000], "#d": [args.channelId], limit: 1, consistency: "strong" },
   ]);
   const ev = metaEvents[0];
   const evTags = (ev?.tags ?? []) as string[][];
@@ -12361,7 +12391,12 @@ export function maybeInstallE2eTauriMocks() {
           (request.channelId !== mockHuddle.state.parent_channel_id &&
             request.channelId !== mockHuddle.state.ephemeral_channel_id)
         ) {
-          return { matched_active_huddle: false, added: [] };
+          return {
+            matched_active_huddle: false,
+            added: [],
+            changed_channel_ids: [],
+            error: null,
+          };
         }
 
         const existingAgents = new Set(
@@ -12381,7 +12416,13 @@ export function maybeInstallE2eTauriMocks() {
         if (added.length > 0) {
           await emitMockHuddleState();
         }
-        return { matched_active_huddle: true, added };
+        return {
+          matched_active_huddle: true,
+          added,
+          changed_channel_ids:
+            added.length > 0 ? [mockHuddle.state.ephemeral_channel_id] : [],
+          error: null,
+        };
       }
       case "add_agent_to_huddle": {
         const error = activeConfig?.mock?.addAgentToHuddleError;
@@ -12682,6 +12723,7 @@ export function maybeInstallE2eTauriMocks() {
       case "list_builderlab_communities":
         return {
           communities: activeConfig?.mock?.builderlabCommunities ?? [],
+          ...activeConfig?.mock?.builderlabQuota,
         };
       case "check_builderlab_community_name":
         return {
@@ -13177,6 +13219,15 @@ export function maybeInstallE2eTauriMocks() {
         }
         return;
       }
+      case "readd_community_relay":
+        return undefined;
+      case "remove_community_relay":
+        window.__BUZZ_E2E_SAVED_COMMUNITIES_AT_RELAY_REMOVAL__ = (
+          JSON.parse(
+            window.localStorage.getItem("buzz-communities") ?? "[]",
+          ) as Array<{ id: string }>
+        ).map((community) => community.id);
+        return undefined;
       case "update_tray_agent_activity":
       case "clear_tray_agent_activity":
       case "requeue_tray_actions":
@@ -13861,6 +13912,9 @@ export function maybeInstallE2eTauriMocks() {
       case "get_relay_http_url":
         return getRelayHttpUrl(activeConfig);
       case "relay_requires_membership":
+        if (activeConfig?.mock?.relayRequiresMembershipError) {
+          throw new Error(activeConfig.mock.relayRequiresMembershipError);
+        }
         return activeConfig?.mock?.relayRequiresMembership ?? false;
       case "discover_acp_providers":
         return handleDiscoverAcpRuntimes(activeConfig);
@@ -14430,6 +14484,10 @@ export function maybeInstallE2eTauriMocks() {
           supportsSwitching: false,
         };
       case "discover_agent_models": {
+        const discoverDelayMs = activeConfig?.mock?.discoverAgentModelsDelayMs;
+        if (discoverDelayMs) {
+          await new Promise((resolve) => setTimeout(resolve, discoverDelayMs));
+        }
         const discoverError = activeConfig?.mock?.discoverAgentModelsError;
         if (discoverError) {
           throw new Error(discoverError);
@@ -14535,6 +14593,8 @@ export function maybeInstallE2eTauriMocks() {
       }
       case "get_agent_config_surface": {
         const configArgs = payload as { pubkey: string };
+        const surfaceOverride = activeConfig?.mock?.agentConfigSurface;
+        if (surfaceOverride) return surfaceOverride;
         return buildMockConfigSurface(configArgs.pubkey);
       }
       case "get_runtime_file_config": {

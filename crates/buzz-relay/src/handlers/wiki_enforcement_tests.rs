@@ -604,9 +604,8 @@ async fn purge_requires_explicit_tag_and_admin_role() {
     seed_member(&pool, community, &admin, "admin").await;
     let author_hex = author.public_key().to_hex();
 
-    let seed = |slug: &'static str, content: &'static str| {
-        wiki_revision(&author, slug, content, None)
-    };
+    let seed =
+        |slug: &'static str, content: &'static str| wiki_revision(&author, slug, content, None);
 
     // (1) author + no purge = restorable tombstone, content intact.
     ingest(&state, &tenant, seed("keep-me", "leaked secret one"))
@@ -800,10 +799,27 @@ async fn stale_node_copy_grants_no_seats_but_canonical_version_does() {
     // Root (admin-authored) holds `holder`; both `eng` versions below are
     // therefore ANCHORED — the stale copy is a real competitor, excluded
     // only by the canonical (admin-first) rule.
-    seed_node_version(&pool, community, "root", &admin_hex, &[], &[&holder_hex], None, now).await;
+    seed_node_version(
+        &pool,
+        community,
+        "root",
+        &admin_hex,
+        &[],
+        &[&holder_hex],
+        None,
+        now,
+    )
+    .await;
     // Canonical `eng` (admin-authored): seats `seated_agent`.
     seed_node_version(
-        &pool, community, "eng", &admin_hex, &[&seated_hex], &[], None, now,
+        &pool,
+        community,
+        "eng",
+        &admin_hex,
+        &[&seated_hex],
+        &[],
+        None,
+        now,
     )
     .await;
     // Stale holder-authored copy (anchored through `root`) still lists
@@ -929,7 +945,12 @@ async fn admin_may_rescope_and_unscope_team_pages() {
         .await
         .expect("admin scopes the page");
 
-    let rejected = ingest(&state, &tenant, wiki_revision(&member, d, "v2", Some("eng"))).await;
+    let rejected = ingest(
+        &state,
+        &tenant,
+        wiki_revision(&member, d, "v2", Some("eng")),
+    )
+    .await;
     expect_rejection(
         rejected,
         "requires a seat in team eng or community admin/owner",
@@ -937,19 +958,32 @@ async fn admin_may_rescope_and_unscope_team_pages() {
     );
 
     // Admin RE-SCOPES eng -> sales, overriding stickiness.
-    ingest(&state, &tenant, wiki_revision(&admin, d, "v2", Some("sales")))
-        .await
-        .expect("admin re-scopes the page");
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&admin, d, "v2", Some("sales")),
+    )
+    .await
+    .expect("admin re-scopes the page");
 
-    let rejected = ingest(&state, &tenant, wiki_revision(&eng_seat, d, "v3", Some("sales"))).await;
+    let rejected = ingest(
+        &state,
+        &tenant,
+        wiki_revision(&eng_seat, d, "v3", Some("sales")),
+    )
+    .await;
     expect_rejection(
         rejected,
         "requires a seat in team sales or community admin/owner",
         "old team's seat after a re-scope",
     );
-    ingest(&state, &tenant, wiki_revision(&sales_seat, d, "v3", Some("sales")))
-        .await
-        .expect("the new team's seat edits");
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&sales_seat, d, "v3", Some("sales")),
+    )
+    .await
+    .expect("the new team's seat edits");
 
     // Admin UNSCOPES the page (drops the tag); it becomes open again.
     ingest(&state, &tenant, wiki_revision(&admin, d, "v4", None))
@@ -1000,13 +1034,26 @@ async fn conflicting_scope_history_settles_with_admin_revision() {
     );
 
     // The admin settles the conflict on `sales`.
-    ingest(&state, &tenant, wiki_revision(&admin, d, "settled", Some("sales")))
-        .await
-        .expect("admin settles the scope");
-    ingest(&state, &tenant, wiki_revision(&sales_seat, d, "v2", Some("sales")))
-        .await
-        .expect("the settled team's seat edits");
-    let rejected = ingest(&state, &tenant, wiki_revision(&eng_seat, d, "v3", Some("eng"))).await;
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&admin, d, "settled", Some("sales")),
+    )
+    .await
+    .expect("admin settles the scope");
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&sales_seat, d, "v2", Some("sales")),
+    )
+    .await
+    .expect("the settled team's seat edits");
+    let rejected = ingest(
+        &state,
+        &tenant,
+        wiki_revision(&eng_seat, d, "v3", Some("eng")),
+    )
+    .await;
     expect_rejection(
         rejected,
         "may not change its `t: team:<node-id>` team",
@@ -1042,18 +1089,31 @@ async fn unresolvable_team_page_falls_back_to_open_editing() {
     seed_team_node(&pool, community, "eng", &[&eng_hex], &[]).await;
 
     let d = "ghosted";
-    ingest(&state, &tenant, wiki_revision(&admin, d, "v1", Some("ghost")))
-        .await
-        .expect("admin scopes to a team node");
-    ingest(&state, &tenant, wiki_revision(&member, d, "v2", Some("ghost")))
-        .await
-        .expect("no resolvable team: any member edits (stale tag kept)");
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&admin, d, "v1", Some("ghost")),
+    )
+    .await
+    .expect("admin scopes to a team node");
+    ingest(
+        &state,
+        &tenant,
+        wiki_revision(&member, d, "v2", Some("ghost")),
+    )
+    .await
+    .expect("no resolvable team: any member edits (stale tag kept)");
     ingest(&state, &tenant, wiki_revision(&member, d, "v3", None))
         .await
         .expect("no resolvable team: any member edits (tag dropped)");
 
     // Naming a DIFFERENT team is still a governance act for that team.
-    let rejected = ingest(&state, &tenant, wiki_revision(&member, d, "v4", Some("eng"))).await;
+    let rejected = ingest(
+        &state,
+        &tenant,
+        wiki_revision(&member, d, "v4", Some("eng")),
+    )
+    .await;
     expect_rejection(
         rejected,
         "requires a seat in team eng or community admin/owner",
@@ -1150,9 +1210,8 @@ async fn include_deleted_query_lists_tombstoned_wiki_rows() {
         .expect("tombstone");
 
     let db = buzz_db::Db::from_pool(pool.clone());
-    let mut query = buzz_db::EventQuery::for_community(buzz_core::CommunityId::from_uuid(
-        community,
-    ));
+    let mut query =
+        buzz_db::EventQuery::for_community(buzz_core::CommunityId::from_uuid(community));
     query.kinds = Some(vec![KIND_WIKI_PAGE as i32]);
     query.d_tag = Some("recently".to_string());
 

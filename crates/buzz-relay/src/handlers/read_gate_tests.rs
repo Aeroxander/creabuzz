@@ -103,6 +103,7 @@ async fn world() -> World {
 fn connection(world: &World, keys: &Keys) -> (Arc<ConnectionState>, mpsc::Receiver<Message>) {
     let (send_tx, rx) = mpsc::channel(256);
     let (ctrl_tx, _ctrl_rx) = mpsc::channel(4);
+    let cancel = CancellationToken::new();
     let conn = ConnectionState {
         conn_id: Uuid::new_v4(),
         tenant: world.tenant.clone(),
@@ -118,12 +119,13 @@ fn connection(world: &World, keys: &Keys) -> (Arc<ConnectionState>, mpsc::Receiv
         send_tx,
         ctrl_tx,
         terminal_ctrl_tx: tokio::sync::mpsc::channel(1).0,
-        cancel: CancellationToken::new(),
+        cancel: cancel.clone(),
         backpressure_count: Arc::new(AtomicU8::new(0)),
         grace_limit: 3,
         nip_fi_assertion: None,
         session_deadline: None,
         nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(CancellationToken::new()),
+        community_control: crate::state::CommunityConnectionControl::new(cancel.clone()),
     };
     (Arc::new(conn), rx)
 }
@@ -279,16 +281,19 @@ async fn live_fanout_of_audit_entries_reaches_only_owner_and_admin_connections()
         let conn_id = Uuid::new_v4();
         let (tx, rx) = mpsc::channel(16);
         let (ctrl_tx, _ctrl_rx) = mpsc::channel(4);
+        let cancel = CancellationToken::new();
         state.conn_manager.register(
             conn_id,
             tx,
             ctrl_tx,
+            tokio::sync::mpsc::channel(1).0,
             None,
-            CancellationToken::new(),
+            cancel.clone(),
             w.community,
             Arc::new(AtomicU8::new(0)),
             Arc::new(Mutex::new(HashMap::new())),
             3,
+            crate::state::CommunityConnectionControl::new(cancel),
         );
         state
             .conn_manager

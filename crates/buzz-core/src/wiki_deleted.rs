@@ -64,8 +64,14 @@ mod tests {
 
     #[test]
     fn wiki_page_kinds_opt_in() {
-        assert_eq!(parse(&json!({"kinds": [44001], "include_deleted": true})), Ok(true));
-        assert_eq!(parse(&json!({"kinds": [44002], "include_deleted": true})), Ok(true));
+        assert_eq!(
+            parse(&json!({"kinds": [44001], "include_deleted": true})),
+            Ok(true)
+        );
+        assert_eq!(
+            parse(&json!({"kinds": [44002], "include_deleted": true})),
+            Ok(true)
+        );
         assert_eq!(
             parse(&json!({"kinds": [44001, 44002], "include_deleted": true})),
             Ok(true)
@@ -76,19 +82,27 @@ mod tests {
     fn non_wiki_or_mixed_kinds_fail_closed() {
         assert_eq!(
             parse(&json!({"kinds": [9], "include_deleted": true})),
-            Err("include_deleted is only supported on wiki page queries (kinds 44001/44002)".into())
+            Err(
+                "include_deleted is only supported on wiki page queries (kinds 44001/44002)".into()
+            )
         );
         assert_eq!(
             parse(&json!({"kinds": [44001, 9], "include_deleted": true})),
-            Err("include_deleted is only supported on wiki page queries (kinds 44001/44002)".into())
+            Err(
+                "include_deleted is only supported on wiki page queries (kinds 44001/44002)".into()
+            )
         );
         assert_eq!(
             parse(&json!({"kinds": [], "include_deleted": true})),
-            Err("include_deleted is only supported on wiki page queries (kinds 44001/44002)".into())
+            Err(
+                "include_deleted is only supported on wiki page queries (kinds 44001/44002)".into()
+            )
         );
         assert_eq!(
             parse(&json!({"include_deleted": true})),
-            Err("include_deleted is only supported on wiki page queries (kinds 44001/44002)".into())
+            Err(
+                "include_deleted is only supported on wiki page queries (kinds 44001/44002)".into()
+            )
         );
     }
 

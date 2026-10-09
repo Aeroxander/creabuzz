@@ -843,14 +843,21 @@ fn fold_corrections(
         {
             continue;
         }
-        let note: String = event.content.chars().take(CORRECTION_NOTE_MAX_CHARS).collect();
+        let note: String = event
+            .content
+            .chars()
+            .take(CORRECTION_NOTE_MAX_CHARS)
+            .collect();
         per_author.insert(
             author,
             (created, buzz_agwiki::CorrectionNote { coordinate, note }),
         );
     }
     let mut notes: Vec<(u64, buzz_agwiki::CorrectionNote)> = per_author.into_values().collect();
-    notes.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.coordinate.cmp(&b.1.coordinate)));
+    notes.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| a.1.coordinate.cmp(&b.1.coordinate))
+    });
     notes
         .into_iter()
         .take(buzz_agwiki::AGWIKI_CORRECTIONS_MAX)
@@ -1136,17 +1143,14 @@ mod tests {
     fn correction_fixture(author: &Keys, note: &str, ts: u64, slug: &str) -> Event {
         let d_tag = format!("correction-for-{slug}");
         let t_tag = format!("correction-for:{slug}");
-        EventBuilder::new(
-            Kind::Custom(KIND_WIKI_PAGE as u16),
-            note.to_string(),
-        )
-        .tags(vec![
-            Tag::parse(["d", d_tag.as_str()]).expect("tag"),
-            Tag::parse(["t", t_tag.as_str()]).expect("tag"),
-        ])
-        .custom_created_at(nostr::Timestamp::from(ts))
-        .sign_with_keys(author)
-        .expect("signs")
+        EventBuilder::new(Kind::Custom(KIND_WIKI_PAGE as u16), note.to_string())
+            .tags(vec![
+                Tag::parse(["d", d_tag.as_str()]).expect("tag"),
+                Tag::parse(["t", t_tag.as_str()]).expect("tag"),
+            ])
+            .custom_created_at(nostr::Timestamp::from(ts))
+            .sign_with_keys(author)
+            .expect("signs")
     }
 
     // ── Command-level mock round trips (bind run_distill_inner end to end) ─
@@ -1243,7 +1247,12 @@ mod tests {
         let slug = "default/standup";
         let fixtures: Vec<Event> = (0..25u64)
             .map(|i| {
-                correction_fixture(&Keys::generate(), &format!("note number {i}"), 1000 + i, slug)
+                correction_fixture(
+                    &Keys::generate(),
+                    &format!("note number {i}"),
+                    1000 + i,
+                    slug,
+                )
             })
             .collect();
         let coordinate_of =
@@ -1283,12 +1292,24 @@ mod tests {
 
         let chats = state.chat_calls.lock().unwrap();
         let user = chats[1]["messages"][1]["content"].as_str().unwrap();
-        assert!(!user.contains("note number 24"), "head-consumed correction dropped");
-        assert!(user.contains("note number 23"), "older revisions never consume");
+        assert!(
+            !user.contains("note number 24"),
+            "head-consumed correction dropped"
+        );
+        assert!(
+            user.contains("note number 23"),
+            "older revisions never consume"
+        );
         // 24 open corrections fold to the newest 20 (4..=23).
         assert!(user.contains("note number 4"), "oldest kept note present");
-        assert!(!user.contains("note number 3"), "bound drops the oldest notes");
-        assert!(!user.contains("note number 0"), "bound drops the oldest notes");
+        assert!(
+            !user.contains("note number 3"),
+            "bound drops the oldest notes"
+        );
+        assert!(
+            !user.contains("note number 0"),
+            "bound drops the oldest notes"
+        );
     }
 
     #[tokio::test]
@@ -1732,9 +1753,8 @@ mod tests {
         let open_id = uuid::Uuid::new_v4();
         let closed_id = uuid::Uuid::new_v4();
         let open: std::collections::HashSet<uuid::Uuid> = [open_id].into_iter().collect();
-        let hit = |channel: &uuid::Uuid| {
-            serde_json::json!({ "tags": [["h", channel.to_string()]] })
-        };
+        let hit =
+            |channel: &uuid::Uuid| serde_json::json!({ "tags": [["h", channel.to_string()]] });
         assert!(search_hit_admissible(&hit(&open_id), &open));
         assert!(!search_hit_admissible(&hit(&closed_id), &open));
         assert!(!search_hit_admissible(

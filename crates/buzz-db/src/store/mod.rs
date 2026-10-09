@@ -34,6 +34,8 @@ pub mod operator_listener;
 pub mod org_graph;
 /// Monthly table partition management.
 pub mod partition;
+/// Private signer-owned accessory read progress.
+pub mod personal_read;
 /// Buzz product-feedback sidecar persistence.
 pub mod product_feedback;
 /// Community-scoped push lease and durable wake-outbox persistence.

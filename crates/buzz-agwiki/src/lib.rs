@@ -961,8 +961,7 @@ pub fn build_agent_wiki_builder(
     applied.dedup();
     for coordinate in &applied {
         tags.push(
-            Tag::parse(["a", coordinate.as_str()])
-                .map_err(|e| format!("invalid a tag: {e}"))?,
+            Tag::parse(["a", coordinate.as_str()]).map_err(|e| format!("invalid a tag: {e}"))?,
         );
     }
 

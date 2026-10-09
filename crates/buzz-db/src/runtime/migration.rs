@@ -190,19 +190,24 @@ async fn reject_legacy_nip_rs_cardinality_ambiguity(conn: &mut PgConnection) -> 
     Ok(())
 }
 
-/// One-time startup repair for databases migrated by the `feat/org-graph`
-/// fork while its five migrations were numbered 0045-0049. The merge
-/// renumbered those files to 0054-0058 (0045-0049 now name different
-/// upstream migrations), so the fork's `_sqlx_migrations` rows pair the
-/// wrong versions with their checksums and sqlx checksum validation rejects
-/// the database at startup. The five fork files are byte-identical to their
-/// as-applied content and sqlx checksums hash only the SQL bytes, so
-/// renumbering the rows (`version + 9`) restores the version/checksum
-/// pairing without touching checksum columns. Runs in one transaction,
-/// before the migrator validates anything. Idempotent: after one run no row
-/// matches the fork descriptions and this is a no-op. The version guard plus
-/// the exact-description match never touches upstream's own 0045-0049 rows.
+/// One-time startup repair for databases that recorded the fork's five
+/// migrations under an earlier numbering. The same five files were first
+/// numbered 0045-0049 (the `feat/org-graph` fork), then 0054-0058 (the first
+/// merge with upstream); upstream has since taken 0054-0057, so they now sit at
+/// 0058-0062. A database from either earlier era holds `_sqlx_migrations` rows
+/// that pair the wrong versions with their checksums, and sqlx checksum
+/// validation rejects it at startup.
+///
+/// The five files are byte-identical to their as-applied content and sqlx
+/// checksums hash only the SQL bytes, so renumbering the rows restores the
+/// version/checksum pairing without touching checksum columns. Each row is
+/// matched on its exact old version *and* description, so upstream's own rows
+/// are never touched, and a row already at its current version matches nothing:
+/// the repair is idempotent. Rows move highest first, so no target version is
+/// still occupied by a row that has not moved yet. Runs in one transaction,
+/// before the migrator validates anything.
 async fn renumber_fork_era_migration_rows(conn: &mut PgConnection) -> Result<()> {
+    /// In file order; entry `i` was 0045+i, then 0054+i, and is now 0058+i.
     const FORK_DESCRIPTIONS: [&str; 5] = [
         "evm identities",
         "evm revocation",
@@ -210,6 +215,9 @@ async fn renumber_fork_era_migration_rows(conn: &mut PgConnection) -> Result<()>
         "community write fence fork tables",
         "backfill wiki d tag",
     ];
+    const FIRST_ERA_START: i64 = 45;
+    const MERGED_ERA_START: i64 = 54;
+    const CURRENT_START: i64 = 58;
     let migrations_table: Option<String> =
         sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations')::text")
             .fetch_one(&mut *conn)
@@ -218,19 +226,26 @@ async fn renumber_fork_era_migration_rows(conn: &mut PgConnection) -> Result<()>
         return Ok(());
     }
     let mut txn = conn.begin().await?;
-    let renumbered: Vec<i64> = sqlx::query_scalar(
-        "UPDATE _sqlx_migrations SET version = version + 9 \
-         WHERE version BETWEEN 45 AND 49 AND description = ANY($1) \
-         RETURNING version - 9",
-    )
-    .bind(&FORK_DESCRIPTIONS[..])
-    .fetch_all(&mut *txn)
-    .await?;
+    let mut renumbered: Vec<i64> = Vec::new();
+    for (index, description) in FORK_DESCRIPTIONS.iter().enumerate().rev() {
+        let offset = index as i64;
+        let moved: Vec<i64> = sqlx::query_scalar(
+            "UPDATE _sqlx_migrations SET version = $1 \
+             WHERE description = $2 AND version = ANY($3) \
+             RETURNING version",
+        )
+        .bind(CURRENT_START + offset)
+        .bind(*description)
+        .bind([FIRST_ERA_START + offset, MERGED_ERA_START + offset].as_slice())
+        .fetch_all(&mut *txn)
+        .await?;
+        renumbered.extend(moved);
+    }
     txn.commit().await?;
     if !renumbered.is_empty() {
         tracing::info!(
-            renumbered_from = ?renumbered,
-            "renumbered feat/org-graph fork-era _sqlx_migrations rows to their merged 0054-0058 versions"
+            moved_files = renumbered.len(),
+            "renumbered the fork's _sqlx_migrations rows to their current 0058-0062 versions"
         );
     }
     Ok(())
@@ -756,7 +771,17 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 58);
+        assert_eq!(migrations.len(), 62);
+        assert_eq!(migrations[55].version, 56);
+        assert!(migrations[55]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE personal_read_accounts"));
+        assert_eq!(migrations[56].version, 57);
+        assert!(migrations[56]
+            .sql
+            .as_str()
+            .contains("ALTER TABLE personal_read_accounts ADD COLUMN started_at"));
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
@@ -764,9 +789,9 @@ mod postgres_tests {
         assert_eq!(migrations[52].version, 53);
         assert_eq!(migrations[53].version, 54);
         assert_eq!(migrations[54].version, 55);
-        assert_eq!(migrations[55].version, 56);
-        assert_eq!(migrations[56].version, 57);
-        assert_eq!(migrations[57].version, 58);
+        for (index, version) in (58_i64..=62).enumerate() {
+            assert_eq!(migrations[57 + index].version, version);
+        }
         assert!(migrations[48]
             .sql
             .as_str()
@@ -780,6 +805,14 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("community_deletion_requests_owner_preparable"));
+        assert!(migrations[53]
+            .sql
+            .as_str()
+            .contains("community_deletion_requests_owner_quota_reservations"));
+        assert!(migrations[54]
+            .sql
+            .as_str()
+            .contains("idx_relay_admin_actions_direct_request"));
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -833,7 +866,7 @@ mod postgres_tests {
         assert!(!migrations[0].sql.as_str().contains("idx_events_tags_gin"));
         // schema.sql (CI / isolated relay bootstrap) must carry the same index,
         // or e-tag reads there run on plans prod never sees.
-        assert!(include_str!("../../../../schema/schema.sql").contains(
+        assert!(crate::test_support::desired_state_schema_sql().contains(
             "CREATE INDEX idx_events_tags_gin ON events USING GIN (tags jsonb_path_ops)"
         ));
 
@@ -992,7 +1025,7 @@ mod postgres_tests {
         assert!(migrations[32].sql.as_str().contains("kind = 30179"));
         assert!(migrations[32].sql.as_str().contains("search_tsv"));
         assert!(!migrations[0].sql.as_str().contains("30179"));
-        assert!(include_str!("../../../../schema/schema.sql")
+        assert!(crate::test_support::desired_state_schema_sql()
             .contains("kind IN (1059, 30179, 30300, 30350, 30622, 44100, 44101, 44200)"));
 
         // Public push-gateway authority is intentionally deployment-global and
@@ -1135,7 +1168,7 @@ mod postgres_tests {
             .contains("CREATE INDEX relay_invites_expires_at_idx ON relay_invites (expires_at)"));
         assert!(!relay_invites.contains("_operator_global_tables"));
 
-        let desired_schema = include_str!("../../../../schema/schema.sql");
+        let desired_schema = crate::test_support::desired_state_schema_sql();
         assert!(
             desired_schema.contains("CREATE TABLE join_policy_acceptances"),
             "desired-state schema must include join-policy evidence used by invite claims",
@@ -1226,17 +1259,28 @@ mod postgres_tests {
         // Fresh desired-state bootstrap must install the identical executable
         // fence as migration 0032. CI and isolated relay startup use schema.sql
         // without running migrations, so drift reopens rolling-deploy races.
-        fn extract_roster_fence(sql: &str) -> &str {
-            let fence_start = "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()";
-            let fence_end = "    FOR EACH ROW EXECUTE FUNCTION guard_channel_roster_snapshot();";
-            let start = sql.find(fence_start).expect("roster fence function");
-            let relative_end = sql[start..].find(fence_end).expect("roster fence trigger");
-            &sql[start..start + relative_end + fence_end.len()]
+        // The desired state keeps the function and its trigger in separate
+        // files, so compare each statement rather than one contiguous span.
+        fn extract_span<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {
+            let begin = sql.find(start).expect("span start");
+            let relative_end = sql[begin..].find(end).expect("span end");
+            &sql[begin..begin + relative_end + end.len()]
         }
-        assert_eq!(
-            extract_roster_fence(roster_fence),
-            extract_roster_fence(desired_schema)
-        );
+        for (start, end) in [
+            (
+                "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()",
+                "$$ LANGUAGE plpgsql;",
+            ),
+            (
+                "CREATE TRIGGER trg_events_guard_channel_roster_snapshot",
+                "    FOR EACH ROW EXECUTE FUNCTION guard_channel_roster_snapshot();",
+            ),
+        ] {
+            assert_eq!(
+                extract_span(roster_fence, start, end),
+                extract_span(&desired_schema, start, end)
+            );
+        }
 
         // The single-row heartbeat table is updated continuously. Prevent
         // autovacuum from truncating its heap so standby queries are not
@@ -1433,13 +1477,13 @@ mod postgres_tests {
             .as_str()
             .contains("CREATE TABLE artifact_heads"));
 
-        // NIP-ORG budget enforcement (0056): windowed consumption counters and
+        // NIP-ORG budget enforcement (0060): windowed consumption counters and
         // durable require-approval rows, written before the best-effort
         // kind:46010 notification.
         assert_eq!(migrations[53].version, 54);
         assert_eq!(migrations[54].version, 55);
-        assert_eq!(migrations[55].version, 56);
-        let budget_enforcement = migrations[55].sql.as_str();
+        assert_eq!(migrations[59].version, 60);
+        let budget_enforcement = migrations[59].sql.as_str();
         assert!(budget_enforcement.contains("CREATE TABLE budget_consumption"));
         assert!(budget_enforcement.contains("CREATE TABLE budget_approvals"));
         assert!(budget_enforcement.contains("idx_budget_approvals_one_pending"));
@@ -1447,12 +1491,12 @@ mod postgres_tests {
         // The fork's tenant tables must carry the community write fence and be
         // declared in the desired-state schema, or every whole-community
         // deletion fails closed with "catalog drift".
-        assert_eq!(migrations[56].version, 57);
-        let fork_fences = migrations[56].sql.as_str();
+        assert_eq!(migrations[60].version, 61);
+        let fork_fences = migrations[60].sql.as_str();
         for table in ["evm_identities", "budget_consumption", "budget_approvals"] {
             assert!(
                 fork_fences.contains(&format!("attach_community_write_fence('{table}')")),
-                "migration 0057 must fence {table}"
+                "migration 0061 must fence {table}"
             );
             assert!(
                 desired_schema.contains(&format!("attach_community_write_fence('{table}')")),
@@ -1467,30 +1511,30 @@ mod postgres_tests {
 
         // Wiki/fleet/team slugs are materialized into events.d_tag; the
         // backfill must cover the kinds the ingest-side extractor
-        // materialized when 0058 shipped. The file is checksum-FROZEN: every
-        // database that ran the original 0058 validates its exact bytes, so
+        // materialized when 0062 shipped. The file is checksum-FROZEN: every
+        // database that ran the original file validates its exact bytes, so
         // kinds added LATER (wiki corrections, 44003) must never be added
         // here — their rows get `d_tag` on insert and need no backfill. If a
         // backfill is ever needed it ships as a NEW migration.
-        assert_eq!(migrations[57].version, 58);
-        let d_tag_backfill = migrations[57].sql.as_str();
+        assert_eq!(migrations[61].version, 62);
+        let d_tag_backfill = migrations[61].sql.as_str();
         for kind in buzz_core::kind::D_TAG_ADDRESSED_KINDS {
             if kind == buzz_core::kind::KIND_WIKI_CORRECTION {
                 assert!(
                     !d_tag_backfill.contains(&kind.to_string()),
-                    "migration 0058 is checksum-frozen and must not be edited to backfill kind {kind}"
+                    "migration 0062 is checksum-frozen and must not be edited to backfill kind {kind}"
                 );
                 continue;
             }
             assert!(
                 d_tag_backfill.contains(&kind.to_string()),
-                "migration 0058 must backfill kind {kind}"
+                "migration 0062 must backfill kind {kind}"
             );
         }
         assert!(d_tag_backfill.contains("community_write_allowed"));
         assert!(
             !d_tag_backfill.contains("BETWEEN 30000"),
-            "0058 is about the non-NIP-33 kinds; NIP-33 rows are already populated"
+            "0062 is about the non-NIP-33 kinds; NIP-33 rows are already populated"
         );
     }
 
@@ -1570,7 +1614,162 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("error_code"));
-        assert!(include_str!("../../../../schema/schema.sql").contains("error_code          TEXT"));
+        assert!(
+            crate::test_support::desired_state_schema_sql().contains("error_code          TEXT")
+        );
+    }
+
+    /// `schema/schema.sql` includes every desired-state file exactly once, and
+    /// `schema/tables/public/` (the SchemaBot schema directory's `public`
+    /// namespace) holds only one table per file: its CREATE TABLE plus the
+    /// CREATE INDEX statements on it. Types, functions, partitions, triggers
+    /// and seed rows belong in the sibling directories SchemaBot never reads.
+    #[test]
+    fn desired_state_schema_layout_is_complete_and_schemabot_shaped() {
+        use std::collections::BTreeSet;
+
+        fn sql_files(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).expect("read schema directory") {
+                let path = entry.expect("schema directory entry").path();
+                if path.is_dir() {
+                    sql_files(&path, root, out);
+                } else if path.extension().is_some_and(|ext| ext == "sql") {
+                    let relative = path.strip_prefix(root).expect("schema-relative path");
+                    out.push(relative.to_str().expect("utf-8 path").replace('\\', "/"));
+                }
+            }
+        }
+
+        let schema_dir = crate::test_support::desired_state_schema_dir();
+        let manifest =
+            std::fs::read_to_string(schema_dir.join("schema.sql")).expect("read schema/schema.sql");
+        let mut included = Vec::new();
+        for line in manifest.lines() {
+            if let Some(include) = line.strip_prefix("\\i ") {
+                included.push(include.trim().to_owned());
+            }
+        }
+        let included_set: BTreeSet<_> = included.iter().cloned().collect();
+        assert_eq!(
+            included.len(),
+            included_set.len(),
+            "schema.sql includes a file twice"
+        );
+
+        let mut on_disk = Vec::new();
+        sql_files(&schema_dir, &schema_dir, &mut on_disk);
+        let on_disk: BTreeSet<_> = on_disk.into_iter().filter(|f| f != "schema.sql").collect();
+        assert_eq!(
+            on_disk, included_set,
+            "every schema/ file must be included by schema/schema.sql exactly once"
+        );
+
+        fn strip_comments(text: &str) -> String {
+            text.lines()
+                .map(|line| line.split_once("--").map_or(line, |(code, _)| code))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+
+        // Table and index DDL must live in its table file, where SchemaBot
+        // reads it. A merge conflict resolved by pasting DDL into the manifest,
+        // or DDL in a sibling directory, would still build and pass CI.
+        for line in strip_comments(&manifest).lines().map(str::trim) {
+            assert!(
+                line.is_empty()
+                    || line.starts_with("\\i ")
+                    || line.to_ascii_uppercase().starts_with("CREATE EXTENSION "),
+                "schema/schema.sql may only hold \\i includes and CREATE EXTENSION; \
+                 put table DDL in tables/public/<table>.sql: {line:.80}"
+            );
+        }
+        let non_table_files = std::iter::once("schema.sql").chain(
+            included
+                .iter()
+                .map(String::as_str)
+                .filter(|f| !f.starts_with("tables/public/")),
+        );
+        for file in non_table_files {
+            let text = std::fs::read_to_string(schema_dir.join(file)).expect("read schema file");
+            for statement in strip_comments(&text).to_ascii_uppercase().split(';') {
+                let tokens: Vec<_> = statement.split_whitespace().collect();
+                assert!(
+                    !tokens.windows(2).any(|pair| matches!(
+                        pair,
+                        ["CREATE" | "UNIQUE", "INDEX"] | ["DROP" | "ALTER", "TABLE" | "INDEX"]
+                    )),
+                    "{file} may not create, alter or drop tables or indexes; \
+                     change tables/public/<table>.sql instead"
+                );
+                let creates_table = tokens.iter().enumerate().any(|(i, token)| {
+                    *token == "CREATE"
+                        && tokens[i + 1..].iter().find(|t| {
+                            !matches!(**t, "UNLOGGED" | "TEMP" | "TEMPORARY" | "GLOBAL" | "LOCAL")
+                        }) == Some(&"TABLE")
+                });
+                assert!(
+                    !creates_table
+                        || (file.starts_with("partitions/")
+                            && tokens.windows(2).any(|pair| pair == ["PARTITION", "OF"])),
+                    "{file} may not CREATE TABLE; only partitions/ may, and only PARTITION OF. \
+                     Declare tables in tables/public/<table>.sql"
+                );
+            }
+        }
+
+        let tables_dir = schema_dir.join("tables");
+        for entry in std::fs::read_dir(&tables_dir).expect("read schema/tables") {
+            let path = entry.expect("schema/tables entry").path();
+            assert!(
+                path.is_dir() && path.file_name().is_some_and(|name| name == "public"),
+                "schema/tables may contain only the `public` namespace: {}",
+                path.display()
+            );
+        }
+        let mut tables = 0;
+        for file in included.iter().filter(|f| f.starts_with("tables/public/")) {
+            let table = file
+                .strip_prefix("tables/public/")
+                .and_then(|name| name.strip_suffix(".sql"))
+                .expect("table file name");
+            let text = std::fs::read_to_string(schema_dir.join(file)).expect("read table file");
+            let code = strip_comments(&text);
+            let mut creates = 0;
+            for statement in code
+                .split(';')
+                .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+            {
+                if statement.is_empty() {
+                    continue;
+                }
+                if let Some(rest) = statement.strip_prefix("CREATE TABLE ") {
+                    assert!(
+                        rest.starts_with(&format!("{table} (")) && !rest.contains(" PARTITION OF "),
+                        "{file} may only create table {table}: {statement:.80}"
+                    );
+                    creates += 1;
+                } else {
+                    let index = statement
+                        .strip_prefix("CREATE INDEX ")
+                        .or_else(|| statement.strip_prefix("CREATE UNIQUE INDEX "))
+                        .unwrap_or_else(|| {
+                            panic!("{file} may only hold CREATE TABLE/INDEX: {statement:.80}")
+                        });
+                    assert!(
+                        !index.starts_with("IF NOT EXISTS ")
+                            && !index.starts_with("CONCURRENTLY "),
+                        "{file} must use a plain CREATE INDEX (SchemaBot refuses IF NOT EXISTS and CONCURRENTLY): {statement:.80}"
+                    );
+                    assert!(
+                        index.contains(&format!(" ON {table} ")),
+                        "{file} may only index {table}: {statement:.80}"
+                    );
+                }
+            }
+            assert_eq!(creates, 1, "{file} must create exactly one table");
+            tables += 1;
+        }
+        assert!(tables > 0, "schema/tables/public declares no tables");
     }
 
     #[test]
@@ -1584,7 +1783,7 @@ mod postgres_tests {
         assert!(sql.contains("NEW.kind IN (9, 40002, 45001, 45003)"));
         assert!(!sql.contains("NEW.kind IN (7, 9, 1059, 40007, 46010)"));
 
-        let desired_schema = include_str!("../../../../schema/schema.sql");
+        let desired_schema = crate::test_support::desired_state_schema_sql();
         assert!(desired_schema.contains("NEW.kind IN (9, 40002, 45001, 45003)"));
         assert!(!desired_schema.contains("NEW.kind IN (7, 9, 1059, 40007, 46010)"));
     }
@@ -1855,13 +2054,7 @@ mod postgres_tests {
             .sql
             .as_ref()
             .to_ascii_lowercase();
-        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("workspace root");
-        let schema = std::fs::read_to_string(workspace_root.join("schema/schema.sql"))
-            .expect("read schema/schema.sql")
-            .to_ascii_lowercase();
+        let schema = crate::test_support::desired_state_schema_sql().to_ascii_lowercase();
 
         for sql in [&migration, &schema] {
             assert!(sql.contains("approval_origin text not null default 'operator'"));
@@ -1870,6 +2063,26 @@ mod postgres_tests {
             assert!(sql.contains("community_deletion_requests_owner_preparable"));
             assert!(sql.contains("request_origin = 'owner'"));
             assert!(sql.contains("stage = 'submitted'"));
+        }
+        assert!(migration.contains("set local lock_timeout = '5s'"));
+    }
+
+    #[test]
+    fn owner_deletion_quota_reservation_index_matches_desired_schema() {
+        let migration = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == 54)
+            .expect("embedded migration 0054")
+            .sql
+            .as_ref()
+            .to_ascii_lowercase();
+        let schema = crate::test_support::desired_state_schema_sql().to_ascii_lowercase();
+
+        for sql in [&migration, &schema] {
+            assert!(sql.contains("community_deletion_requests_owner_quota_reservations"));
+            assert!(sql.contains("request_origin = 'owner'"));
+            assert!(sql.contains("stage <> 'aborted'"));
+            assert!(sql.contains("include (community_id, completed_at)"));
         }
         assert!(migration.contains("set local lock_timeout = '5s'"));
     }
@@ -1993,12 +2206,7 @@ mod postgres_tests {
             .expect("embedded migration 0051")
             .sql
             .as_ref();
-        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("workspace root");
-        let schema_sql = std::fs::read_to_string(workspace_root.join("schema/schema.sql"))
-            .expect("read schema/schema.sql");
+        let schema_sql = crate::test_support::desired_state_schema_sql();
 
         let migration = surface(migration_0029);
         let owner_admission_migration = surface(migration_0051);
@@ -2128,21 +2336,58 @@ mod postgres_tests {
         let mut expected_fences = migration.fence_attachments.clone();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
+        let personal = surface(
+            MIGRATOR
+                .iter()
+                .find(|m| m.version == 56)
+                .expect("personal read migration")
+                .sql
+                .as_ref(),
+        );
+        // 0057 adds personal_read_accounts.started_at after 0056's CREATE TABLE.
+        let started_at_column = "started_at timestamptz, ";
+        assert!(MIGRATOR
+            .iter()
+            .find(|m| m.version == 57)
+            .expect("personal read start migration")
+            .sql
+            .as_str()
+            .contains("ADD COLUMN started_at TIMESTAMPTZ"));
+        assert!(schema
+            .tables
+            .get("personal_read_accounts")
+            .expect("schema.sql personal read accounts")
+            .contains(started_at_column));
+        for (table, definition) in personal.tables {
+            let in_schema = schema.tables.get(&table).map(|schema_definition| {
+                if table == "personal_read_accounts" {
+                    schema_definition.replacen(started_at_column, "", 1)
+                } else {
+                    schema_definition.clone()
+                }
+            });
+            assert_eq!(
+                in_schema.as_ref(),
+                Some(&definition),
+                "personal read table {table} differs"
+            );
+        }
+        expected_fences.extend(personal.fence_attachments);
         expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
         // Tenant tables added after 0029 attach their own fence in migration
-        // 0057 (`evm_identities`, `budget_consumption`, `budget_approvals`);
+        // 0061 (`evm_identities`, `budget_consumption`, `budget_approvals`);
         // the desired-state schema must declare the same attachments.
-        let migration_0057: &str = MIGRATOR
+        let migration_0061: &str = MIGRATOR
             .iter()
-            .find(|migration| migration.version == 57)
-            .expect("embedded migration 0057")
+            .find(|migration| migration.version == 61)
+            .expect("embedded migration 0061")
             .sql
             .as_ref();
-        let fork_fences = surface(migration_0057).fence_attachments;
+        let fork_fences = surface(migration_0061).fence_attachments;
         assert_eq!(
             fork_fences.len(),
             3,
-            "0057 fences exactly the three fork tenant tables: {fork_fences:?}"
+            "0061 fences exactly the three fork tenant tables: {fork_fences:?}"
         );
         expected_fences.extend(fork_fences);
         assert_eq!(
@@ -2576,18 +2821,18 @@ mod postgres_tests {
             .await
             .expect("connect migrated probe database");
         MIGRATOR
-            // 57 is the last migration touching any compared table: upstream's
-            // admin tables finalize at 0047, the fork tenant tables at 0057
+            // 61 is the last migration touching any compared table: upstream's
+            // admin tables finalize at 0055, the fork tenant tables at 0061
             // (community write fence attachment).
-            .run_to(57, &migrated)
+            .run_to(61, &migrated)
             .await
-            .expect("apply migrations 1-57");
+            .expect("apply migrations 1-61");
 
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
-            // Fork tenant tables (0054-0056): schema.sql must describe exactly
+            // Fork tenant tables (0058-0060): schema.sql must describe exactly
             // what the migrations build, or fresh pgschema bootstraps diverge.
             "evm_identities",
             "budget_consumption",
@@ -3122,7 +3367,7 @@ mod postgres_tests {
 
         // Complete later additive migrations before comparing to the current
         // binary's complete tenant-table inventory. The manifest also lists the
-        // fork tenant tables created by 0054/0056 and fenced by 0057, so bring
+        // fork tenant tables created by 0058/0060 and fenced by 0061, so bring
         // the schema fully up to date before validating: exact equality means
         // NIP-FI leftovers (unknown) and missing fork tables (missing) would
         // both fail here.
@@ -3170,17 +3415,18 @@ mod postgres_tests {
         admin.close().await;
     }
 
-    /// Replay the `feat/org-graph` fork's as-applied state for its five
-    /// migrations: their SQL (byte-identical to the merged 0054-0058 files)
-    /// applied directly, plus `_sqlx_migrations` rows at 0045-0049 carrying
-    /// the checksums the fork recorded — the merged migrator computes the
-    /// same ones from the same SQL bytes.
-    async fn seed_fork_era_migration_state(pool: &PgPool) {
-        for version in 54_i64..=58 {
+    /// Replay a fork-era database's as-applied state for the fork's five
+    /// migrations: their SQL (byte-identical to the current 0058-0062 files)
+    /// applied directly, plus `_sqlx_migrations` rows numbered the way that era
+    /// numbered them, carrying the checksums the fork recorded -- the current
+    /// migrator computes the same ones from the same SQL bytes. `era_start` is
+    /// the version the first of the five carried then.
+    async fn seed_fork_era_migration_state(pool: &PgPool, era_start: i64) {
+        for version in 58_i64..=62 {
             let migration = MIGRATOR
                 .iter()
                 .find(|migration| migration.version == version)
-                .expect("embedded fork migration 0054-0058");
+                .expect("embedded fork migration 0058-0062");
             sqlx::raw_sql(migration.sql.as_ref())
                 .execute(pool)
                 .await
@@ -3188,9 +3434,9 @@ mod postgres_tests {
             sqlx::query(
                 "INSERT INTO _sqlx_migrations \
                  (version, description, installed_on, success, checksum, execution_time) \
-                 VALUES ($1 - 9, $2, now(), true, $3, 0)",
+                 VALUES ($1, $2, now(), true, $3, 0)",
             )
-            .bind(version)
+            .bind(version - 58 + era_start)
             .bind(migration.description.as_ref())
             .bind(migration.checksum.as_ref())
             .execute(pool)
@@ -3199,21 +3445,19 @@ mod postgres_tests {
         }
     }
 
-    /// The release-blocking brownfield case: a database the `feat/org-graph`
-    /// fork migrated while its five migrations were numbered 0045-0049 fails
-    /// sqlx checksum validation after the merge renumbered those files to
-    /// 0054-0058. The startup repair must renumber the fork's rows before
-    /// validation so the migrator accepts them and completes the now-pending
-    /// upstream 0045-0053.
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn fork_era_rows_are_renumbered_before_checksum_validation() {
-        let (admin, pool, probe_db) = create_probe_database("buzz_fork_repair").await;
+    /// The release-blocking brownfield case, once per earlier numbering: a
+    /// database that recorded the fork's five migrations as 0045-0049 (the
+    /// `feat/org-graph` fork) or as 0054-0058 (the first merge) fails sqlx
+    /// checksum validation now that the files are 0058-0062. The startup repair
+    /// must renumber the fork's rows before validation so the migrator accepts
+    /// them and completes the pending upstream migrations.
+    async fn assert_era_is_renumbered(prefix: &str, shared_base: i64, era_start: i64) {
+        let (admin, pool, probe_db) = create_probe_database(prefix).await;
         MIGRATOR
-            .run_to(44, &pool)
+            .run_to(shared_base, &pool)
             .await
-            .expect("apply the shared 0001-0044 base");
-        seed_fork_era_migration_state(&pool).await;
+            .expect("apply the migrations the two sides share");
+        seed_fork_era_migration_state(&pool, era_start).await;
 
         run_migrations(&pool)
             .await
@@ -3221,17 +3465,17 @@ mod postgres_tests {
 
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=58).collect::<Vec<i64>>(),
-            "every migration through 0058 is applied exactly once"
+            (1_i64..=62).collect::<Vec<i64>>(),
+            "every migration through 0062 is applied exactly once"
         );
         let renumbered: Vec<(i64, String)> = sqlx::query_as(
             "SELECT version, description FROM _sqlx_migrations \
-             WHERE version BETWEEN 54 AND 58 ORDER BY version",
+             WHERE version BETWEEN 58 AND 62 ORDER BY version",
         )
         .fetch_all(&pool)
         .await
         .expect("read renumbered rows");
-        let expected: Vec<(i64, String)> = (54_i64..=58)
+        let expected: Vec<(i64, String)> = (58_i64..=62)
             .map(|version| {
                 let migration = MIGRATOR
                     .iter()
@@ -3242,13 +3486,25 @@ mod postgres_tests {
             .collect();
         assert_eq!(
             renumbered, expected,
-            "the fork's rows land at 0054-0058 under their original descriptions"
+            "the fork's rows land at 0058-0062 under their original descriptions"
         );
         drop_probe_database(&admin, &probe_db).await;
     }
 
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn fork_era_rows_are_renumbered_before_checksum_validation() {
+        assert_era_is_renumbered("buzz_fork_repair", 44, 45).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn first_merge_rows_are_renumbered_before_checksum_validation() {
+        assert_era_is_renumbered("buzz_fork_merged", 53, 54).await;
+    }
+
     /// A database that never ran the fork must be untouched by the repair: a
-    /// fresh migrate applies 0001-0058 in order and succeeds.
+    /// fresh migrate applies 0001-0062 in order and succeeds.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn fresh_database_is_unaffected_by_fork_row_repair() {
@@ -3256,23 +3512,23 @@ mod postgres_tests {
         run_migrations(&pool).await.expect("fresh migrate succeeds");
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=58).collect::<Vec<i64>>(),
+            (1_i64..=62).collect::<Vec<i64>>(),
             "a fresh database applies every migration in order"
         );
         drop_probe_database(&admin, &probe_db).await;
     }
 
-    /// The repair must be a no-op once the rows are renumbered — a second
+    /// The repair must be a no-op once the rows are renumbered -- a second
     /// startup must not move them again or alter the table.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn fork_row_repair_is_idempotent() {
         let (admin, pool, probe_db) = create_probe_database("buzz_fork_idempotent").await;
         MIGRATOR
-            .run_to(44, &pool)
+            .run_to(53, &pool)
             .await
-            .expect("apply the shared 0001-0044 base");
-        seed_fork_era_migration_state(&pool).await;
+            .expect("apply the migrations the two sides share");
+        seed_fork_era_migration_state(&pool, 54).await;
 
         let mut conn = pool.acquire().await.expect("acquire repair connection");
         renumber_fork_era_migration_rows(&mut conn)
@@ -3280,8 +3536,8 @@ mod postgres_tests {
             .expect("first repair run renumbers the fork rows");
         let after_first = applied_versions(&pool).await;
         assert!(
-            after_first.contains(&54) && !after_first.contains(&45),
-            "the first repair run moved 0045-0049 to 0054-0058: {after_first:?}"
+            after_first.contains(&62) && !after_first.contains(&54),
+            "the first repair run moved 0054-0058 to 0058-0062: {after_first:?}"
         );
         renumber_fork_era_migration_rows(&mut conn)
             .await
@@ -3292,5 +3548,37 @@ mod postgres_tests {
             "a second repair run leaves _sqlx_migrations untouched"
         );
         drop_probe_database(&admin, &probe_db).await;
+    }
+
+    /// Migration 0055's `relay_admin_actions_direct_shape` rejects a direct
+    /// timeout carrying only one of duration and expiry on the migrated
+    /// schema. The desired-state (pgschema + reconcile) path is covered by
+    /// `direct_timeout_shape_check_holds_on_desired_state_schema` in buzz-relay.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn migration_0055_rejects_half_filled_direct_timeout() {
+        let pool = connect_test_pool().await;
+        reset_public_schema(&pool).await;
+        MIGRATOR
+            .run_to(55, &pool)
+            .await
+            .expect("apply migrations 1-55");
+        for (secs, until) in [(Some(60i64), None), (None, Some(chrono::Utc::now()))] {
+            let err = sqlx::query(
+                "INSERT INTO relay_admin_actions (report_community_id, request_id, actor_pubkey, \
+                 actor_role, action, timeout_secs, timeout_until, enforcement_target_pubkey) \
+                 VALUES (gen_random_uuid(), gen_random_uuid(), $1, 'operator', 'timeout', $2, $3, $1)",
+            )
+            .bind([9u8; 32].as_slice())
+            .bind(secs)
+            .bind(until)
+            .execute(&pool)
+            .await
+            .expect_err("half-filled timeout must violate the CHECK");
+            assert!(
+                err.to_string().contains("relay_admin_actions_direct_shape"),
+                "{err}"
+            );
+        }
     }
 }

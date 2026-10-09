@@ -44,7 +44,7 @@
 //! still rejected — approval is granted through a human decision, never by
 //! re-submitting the same event. Granting and denying those rows is wired:
 //! see `command_executor::resolve_budget_approval_command` (kinds 46030/46031).
-//! (`migrations/0056_budget_consumption.sql` still says grant/deny wiring is a
+//! (`migrations/0060_budget_consumption.sql` still says grant/deny wiring is a
 //! follow-up; that comment predates the wiring and applied migrations are
 //! never edited.)
 

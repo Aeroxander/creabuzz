@@ -133,13 +133,16 @@ class IdentityNames {
           _ownerPubkeys,
         );
 
-  /// Owner keys of the context whose profile is not cached yet. Callers load
-  /// them so readable owner prefixes can appear; none are invented meanwhile.
-  Set<String> missingOwnerProfiles() => _candidates
-      .map((key) => _factFor(key)?.ownerPubkey)
-      .nonNulls
-      .where((owner) => !_sources.profiles.containsKey(owner))
-      .toSet();
+  /// Owner keys of the context (or of [keys] only) whose profile is not
+  /// cached yet. Callers load them so readable owner prefixes can appear;
+  /// none are invented meanwhile.
+  Set<String> missingOwnerProfiles([Iterable<String>? keys]) =>
+      (keys?.map((key) => key.toLowerCase()) ?? _candidates)
+          .map(_factFor)
+          .map((fact) => fact?.ownerPubkey)
+          .nonNulls
+          .where((owner) => !_sources.profiles.containsKey(owner))
+          .toSet();
 
   NamingIdentity? _factFor(String key) => _sources.factFor(
     key,
@@ -158,8 +161,9 @@ class IdentityNames {
     });
   }
 
-  /// The display label for [pubkey]. A malformed key is outside the naming
-  /// contract: it keeps its plain known name and is never disambiguated.
+  /// The unambiguous display label for [pubkey], including any qualifier
+  /// needed to distinguish identities with the same name and owner.
+  /// A malformed key keeps its plain known name and is never disambiguated.
   String labelFor(String pubkey) =>
       resolve(pubkey)?.name ?? _plainName(pubkey.toLowerCase());
 
