@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { describeAction, formatUnits } from "../lib/dao-actions";
+import { type DescribeContext, formatUnits } from "../lib/dao-actions";
+import { describeDecision } from "../lib/decision-describe";
 import type { Decision, DecisionsSnapshot } from "../lib/decisions";
 import { encodeExecuteByVotes, encodeQueue } from "../lib/vote-tx";
 import { votingRuleWatch, votingStatusLabel } from "../lib/voting-allocation";
@@ -110,6 +111,7 @@ export function DecisionCard({
   decision,
   snapshot,
   currencyDecimals,
+  describeContext,
   account,
   busy,
   gate,
@@ -118,6 +120,8 @@ export function DecisionCard({
   decision: Decision;
   snapshot: DecisionsSnapshot;
   currencyDecimals: number | undefined;
+  /** What the app knows to be this DAO's own, so a call aimed elsewhere is never described as one of its actions. */
+  describeContext: Omit<DescribeContext, "currencyDecimals">;
   account: string | null;
   busy: string | null;
   gate: string | null;
@@ -126,7 +130,10 @@ export function DecisionCard({
   const [showDetails, setShowDetails] = useState(false);
   const stage = decisionStage(decision, snapshot.chainTime);
   const described = decision.action
-    ? describeAction(decision.action, { currencyDecimals })
+    ? describeDecision(decision.action, {
+        ...describeContext,
+        currencyDecimals,
+      })
     : null;
   const rules = decision.rules;
   const watch =

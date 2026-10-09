@@ -8,12 +8,14 @@ import type { DecisionsSnapshot } from "../lib/decisions";
 import { encodeOpenProposalWithAction } from "../lib/vote-tx";
 import {
   AwardForm,
+  CollectFeesForm,
   type FormContext,
+  MarketForm,
   ProjectForm,
   WorkBudgetForm,
 } from "./decision-forms";
 
-type Kind = "budget" | "project" | "award";
+type Kind = "budget" | "project" | "award" | "market" | "fees";
 
 const KINDS: { id: Kind; label: string; about: string }[] = [
   {
@@ -31,6 +33,17 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "award",
     label: "Award Shares for a claim",
     about: "Pay out Shares for work the reviewers approved.",
+  },
+  {
+    id: "market",
+    label: "Put Shares on the market",
+    about:
+      "Let people buy and sell the Shares, with a fee to the DAO on every trade.",
+  },
+  {
+    id: "fees",
+    label: "Collect the trading fees",
+    about: "Move the fees the market has collected into the treasury.",
   },
 ];
 
@@ -119,7 +132,9 @@ export function DecisionComposer({
         <div className="mt-3">
           <fieldset className="grid gap-2 sm:grid-cols-3">
             <legend className="sr-only">What kind of decision</legend>
-            {KINDS.map((k) => (
+            {KINDS.filter(
+              (k) => ctx.exchange || (k.id !== "market" && k.id !== "fees"),
+            ).map((k) => (
               <button
                 aria-pressed={kind === k.id}
                 className={`rounded-lg border p-3 text-left text-sm ${kind === k.id ? "border-primary bg-primary/5" : "border-black/10 dark:border-white/10"}`}
@@ -153,13 +168,31 @@ export function DecisionComposer({
               key={`p${formKey}`}
               onSubmit={submit}
             />
-          ) : (
+          ) : kind === "award" ? (
             <AwardForm
               blocked={blocked}
               busy={busy}
               ctx={ctx}
               gate={gate}
               key={`a${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "market" ? (
+            <MarketForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`m${formKey}`}
+              onSubmit={submit}
+            />
+          ) : (
+            <CollectFeesForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`f${formKey}`}
               onSubmit={submit}
             />
           )}

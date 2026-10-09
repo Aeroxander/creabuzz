@@ -119,6 +119,19 @@ export interface ChainEnv {
    * sale's floor, as they always did.
    */
   VITE_PRICE_INDEXER_URL?: string;
+  /**
+   * The exchange's contracts per chain, as JSON: `{"31337":{"amm":"0x…","hook":"0x…","registry":"0x…","poolType":"0x…"}}`.
+   * A chain with no entry has no market to put Shares on or trade them in. The exchange is evaluation-only software, so
+   * this is only ever set for a local test chain.
+   */
+  VITE_LBAMM_ADDRESSES?: string;
+}
+
+export interface ExchangeAddresses {
+  amm: string;
+  hook: string;
+  registry: string;
+  poolType: string;
 }
 
 function viteEnv(): ChainEnv | undefined {
@@ -168,6 +181,34 @@ export function priceIndexerUrl(
     return url.protocol === "http:" || url.protocol === "https:"
       ? url.origin + url.pathname.replace(/\/+$/, "")
       : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The exchange's contracts on `chainId`, or null when the build names none (never guessed). Strict about every address. */
+export function exchangeAddresses(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): ExchangeAddresses | null {
+  const raw = env?.VITE_LBAMM_ADDRESSES?.trim();
+  if (!raw || chainId === null) return null;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map))
+      return null;
+    const entry = (map as Record<string, unknown>)[String(chainId)];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
+      return null;
+    const fields = entry as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const key of ["amm", "hook", "registry", "poolType"]) {
+      const value = fields[key];
+      if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value))
+        return null;
+      out[key] = value.toLowerCase();
+    }
+    return out as unknown as ExchangeAddresses;
   } catch {
     return null;
   }

@@ -1,6 +1,6 @@
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
-import { recordSaleCurrency } from "../chain";
+import { exchangeAddresses, recordSaleCurrency } from "../chain";
 import type { Launch } from "../models";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
@@ -17,9 +17,11 @@ import { DecisionComposer } from "./DecisionComposer";
 export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const decisions = useDecisions(dao, wallet.address);
-  const currencyDecimals = launch.record.currency
-    ? recordSaleCurrency(launch.record).decimals
-    : undefined;
+  const sale = launch.record.currency
+    ? recordSaleCurrency(launch.record)
+    : null;
+  const currencyDecimals = sale?.decimals;
+  const exchange = exchangeAddresses(launch.record.chainId);
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);
@@ -56,10 +58,13 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
             factory: context.data.factory,
             // A work budget needs a currency that exists; a project that sold for none uses its own Shares.
             currency: launch.record.currency ?? context.data.shares,
-            currencyDecimals: launch.record.currency
-              ? (currencyDecimals ?? null)
-              : null,
+            currencyDecimals: currencyDecimals ?? null,
+            currencySymbol:
+              sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "units"),
             work: work.data,
+            policy: context.data.policy,
+            sharesToken: context.data.shares,
+            exchange,
           }}
           gate={gate}
           onSend={send}
@@ -107,6 +112,12 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
                   busy={busy}
                   currencyDecimals={currencyDecimals}
                   decision={decision}
+                  describeContext={{
+                    dao,
+                    factory: context.data?.factory,
+                    mandates: work.data?.mandates.map((m) => m.address),
+                    amm: exchange?.amm,
+                  }}
                   gate={gate}
                   onSend={send}
                   snapshot={snapshot}

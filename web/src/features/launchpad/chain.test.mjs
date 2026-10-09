@@ -14,6 +14,7 @@ import {
   decodeQuantity,
   decodeU256,
   defaultChainPreset,
+  exchangeAddresses,
   getRpcEndpoint,
   isDevBuild,
   priceIndexerUrl,
@@ -345,4 +346,36 @@ test("the price service is only ever a plain http(s) address the build names", (
     null,
   );
   assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "nonsense" }), null);
+});
+
+test("the exchange's contracts are only ever the ones the build names, every address checked", () => {
+  const good = {
+    amm: "0x00000000000000000000000000000000000000A1",
+    hook: "0x00000000000000000000000000000000000000b2",
+    registry: "0x00000000000000000000000000000000000000c3",
+    poolType: "0x00000000000000000000000000000000000000d4",
+  };
+  const env = (value) => ({ VITE_LBAMM_ADDRESSES: JSON.stringify(value) });
+  assert.deepEqual(exchangeAddresses(31337, env({ 31337: good })), {
+    amm: good.amm.toLowerCase(),
+    hook: good.hook,
+    registry: good.registry,
+    poolType: good.poolType,
+  });
+  assert.equal(exchangeAddresses(1, env({ 31337: good })), null);
+  assert.equal(exchangeAddresses(31337, {}), null);
+  assert.equal(exchangeAddresses(null, env({ 31337: good })), null);
+  assert.equal(
+    exchangeAddresses(31337, env({ 31337: { ...good, hook: "nope" } })),
+    null,
+  );
+  assert.equal(
+    exchangeAddresses(31337, env({ 31337: { amm: good.amm } })),
+    null,
+  );
+  assert.equal(
+    exchangeAddresses(31337, { VITE_LBAMM_ADDRESSES: "{not json" }),
+    null,
+  );
+  assert.equal(exchangeAddresses(31337, env([good])), null);
 });

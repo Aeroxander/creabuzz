@@ -29,6 +29,7 @@ export default defineConfig({
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-journey.spec.ts",
+        "**/launchpad-market-journey.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page

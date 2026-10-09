@@ -14,6 +14,7 @@ import { ProposalFundingPanel } from "./ProposalFundingPanel";
 import { useProposalVault } from "../use-proposal-vault";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { PriceChartCard } from "./PriceChartCard";
+import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
@@ -377,6 +378,7 @@ export function LaunchDetailPage({
           ) : null}
           {/* The TrustGraph surface: gate state, published roots, the graph. */}
           <PriceChartCard launch={launch} />
+          {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}
           <TrustGateCard launch={launch} />
           <OverviewTab launch={launch} />
         </>

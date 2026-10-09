@@ -1,8 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { type ExchangeAddresses, ethCall, getRpcEndpoint } from "../chain";
 import {
   awardDecision,
+  collectFeesDecision,
   type DecisionDraft,
   DecisionInputError,
   formatUnits,
@@ -10,7 +13,12 @@ import {
   parseUnits,
   projectDecision,
 } from "../lib/dao-actions";
-import { idLabel } from "../lib/work";
+import {
+  computePoolIdCall,
+  marketDecision,
+  marketTerms,
+} from "../lib/market-actions";
+import { decodeWord, idLabel } from "../lib/work";
 import type { WorkSnapshot } from "../lib/work-read";
 import { SelectField, TextAreaField, TextField } from "./decision-fields";
 
@@ -26,7 +34,13 @@ export interface FormContext {
   currency: string;
   /** Decimals of the sale currency, or null when the project has none (then no form offers money). */
   currencyDecimals: number | null;
+  currencySymbol: string;
   work: WorkSnapshot | undefined;
+  /** The DAO's voting policy and its Shares. */
+  policy: string;
+  sharesToken: string;
+  /** The exchange's contracts on this chain, or null when there is no market here. */
+  exchange: ExchangeAddresses | null;
 }
 
 export type DraftResult = { draft: DecisionDraft } | { problem: string };
@@ -481,6 +495,251 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         blocked={blocked}
         busy={busy}
         dirty={shares !== ""}
+        gate={gate}
+        onSubmit={onSubmit}
+        result={result}
+      />
+    </div>
+  );
+}
+
+const percentToBps = (text: string): number => Math.round(Number(text) * 100);
+
+export function MarketForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
+  const exchange = ctx.exchange;
+  const [shares, setShares] = useState("");
+  const [price, setPrice] = useState("");
+  const [tradeFee, setTradeFee] = useState("1");
+  const [poolFee, setPoolFee] = useState("0.3");
+  const [step, setStep] = useState("200");
+  const dirty = shares !== "" || price !== "";
+
+  const balance = useQuery({
+    queryKey: ["launchpad", "work", ctx.dao, "dao-shares"],
+    queryFn: async () =>
+      decodeWord(
+        await ethCall(
+          getRpcEndpoint(),
+          ctx.sharesToken,
+          `0x70a08231${ctx.dao.slice(2).toLowerCase().padStart(64, "0")}`,
+        ),
+      ),
+    staleTime: 10_000,
+  });
+
+  const input = useMemo(
+    () =>
+      exchange && ctx.currencyDecimals !== null
+        ? {
+            dao: ctx.dao,
+            policy: ctx.policy,
+            sharesToken: ctx.sharesToken,
+            currency: ctx.currency,
+            currencyDecimals: ctx.currencyDecimals,
+            amm: exchange.amm,
+            hook: exchange.hook,
+            registry: exchange.registry,
+            poolType: exchange.poolType,
+            shares,
+            price,
+            poolFeeBps: percentToBps(poolFee),
+            taxBps: percentToBps(tradeFee),
+            tickSpacing: Number(step),
+          }
+        : null,
+    [ctx, exchange, shares, price, poolFee, tradeFee, step],
+  );
+  const terms = useMemo(() => {
+    if (!input) return null;
+    try {
+      return { terms: marketTerms(input), problem: null };
+    } catch (error) {
+      if (error instanceof DecisionInputError)
+        return { terms: null, problem: error.message };
+      throw error;
+    }
+  }, [input]);
+  // The exchange's pool type is the authority on what a pool is called; the decision needs the name before it exists.
+  const poolId = useQuery({
+    queryKey: [
+      "launchpad",
+      "work",
+      ctx.dao,
+      "pool-id",
+      terms?.terms ? computePoolIdCall(terms.terms) : null,
+    ],
+    enabled: Boolean(terms?.terms && exchange),
+    queryFn: async () =>
+      `0x${decodeWord(
+        await ethCall(
+          getRpcEndpoint(),
+          (exchange as ExchangeAddresses).poolType,
+          computePoolIdCall(
+            terms?.terms as NonNullable<typeof terms>["terms"] & object,
+          ),
+        ),
+      )
+        .toString(16)
+        .padStart(64, "0")}`,
+    staleTime: 60_000,
+  });
+
+  const result = useMemo<DraftResult>(() => {
+    if (!exchange || ctx.currencyDecimals === null || !input)
+      return { problem: "There is no market on this network yet." };
+    if (terms?.problem) return { problem: terms.problem };
+    if (
+      terms?.terms &&
+      balance.data !== undefined &&
+      terms.terms.sharesAmount > balance.data
+    )
+      return {
+        problem: `The DAO holds only ${formatUnits(balance.data, 18)} Shares of its own to put on a market.`,
+      };
+    if (!poolId.data)
+      return {
+        problem: poolId.isError
+          ? "The exchange could not name the pool. Check the connection."
+          : "Asking the exchange to name the pool…",
+      };
+    return attempt(() => marketDecision(input, poolId.data as string));
+  }, [
+    exchange,
+    ctx.currencyDecimals,
+    input,
+    terms,
+    balance.data,
+    poolId.data,
+    poolId.isError,
+  ]);
+
+  return (
+    <div className="mt-3 grid gap-3" data-testid="form-market">
+      <p className="text-sm text-muted-foreground">
+        Let people buy and sell the Shares. The DAO puts some of its own Shares
+        into a pool; the price starts where you say and rises as people buy. The
+        DAO needs no money to start, and a small fee on every trade goes to the
+        DAO.
+      </p>
+      <TextField
+        hint={
+          balance.data !== undefined
+            ? `The DAO holds ${formatUnits(balance.data, 18)} Shares of its own.`
+            : undefined
+        }
+        inputMode="decimal"
+        label="Shares to put on the market"
+        onChange={setShares}
+        placeholder="1000000"
+        testId="market-shares"
+        value={shares}
+      />
+      <TextField
+        hint={`Per Share, in ${ctx.currencySymbol}. The pool rounds it to the nearest price step.`}
+        inputMode="decimal"
+        label="Starting price"
+        onChange={setPrice}
+        placeholder="0.01"
+        testId="market-price"
+        value={price}
+      />
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted-foreground">
+          Fees and price steps
+        </summary>
+        <div className="mt-2 grid gap-3">
+          <TextField
+            hint="Paid to the DAO on every buy and sell. Up to 10%."
+            inputMode="decimal"
+            label="Fee on every trade (%)"
+            onChange={setTradeFee}
+            testId="market-trade-fee"
+            value={tradeFee}
+          />
+          <TextField
+            hint="Paid to whoever provides the Shares to the pool (here, the DAO)."
+            inputMode="decimal"
+            label="Pool fee (%)"
+            onChange={setPoolFee}
+            testId="market-pool-fee"
+            value={poolFee}
+          />
+          <TextField
+            hint="Each step is a 0.01% price move; liquidity sits on these steps."
+            inputMode="numeric"
+            label="Price step (in 0.01% moves)"
+            onChange={setStep}
+            testId="market-step"
+            value={step}
+          />
+        </div>
+      </details>
+      <DraftPanel
+        blocked={blocked}
+        busy={busy}
+        dirty={dirty}
+        gate={gate}
+        onSubmit={onSubmit}
+        result={result}
+      />
+    </div>
+  );
+}
+
+export function CollectFeesForm({
+  ctx,
+  blocked,
+  busy,
+  gate,
+  onSubmit,
+}: FormProps) {
+  const exchange = ctx.exchange;
+  const owed = useQuery({
+    queryKey: ["launchpad", "work", ctx.dao, "fees-owed", exchange?.amm],
+    enabled: Boolean(exchange),
+    queryFn: async () =>
+      decodeWord(
+        await ethCall(
+          getRpcEndpoint(),
+          (exchange as ExchangeAddresses).amm,
+          `0x271e88f9${ctx.sharesToken.slice(2).toLowerCase().padStart(64, "0")}${ctx.currency.slice(2).toLowerCase().padStart(64, "0")}`,
+        ),
+      ),
+    staleTime: 5_000,
+  });
+  const decimals = ctx.currencyDecimals ?? 0;
+  const result = useMemo<DraftResult>(() => {
+    if (!exchange)
+      return { problem: "There is no market on this network yet." };
+    if (owed.data === undefined)
+      return { problem: "Reading the fees collected so far…" };
+    return attempt(() =>
+      collectFeesDecision({
+        amm: exchange.amm,
+        sharesToken: ctx.sharesToken,
+        currency: ctx.currency,
+        currencyDecimals: decimals,
+        recipient: ctx.dao,
+        amount: owed.data as bigint,
+      }),
+    );
+  }, [exchange, owed.data, ctx, decimals]);
+
+  return (
+    <div className="mt-3 grid gap-3" data-testid="form-fees">
+      <p className="text-sm text-muted-foreground">
+        Every trade pays a small fee to the DAO. Collecting it moves what has
+        built up into the treasury.
+      </p>
+      <p className="text-sm" data-testid="fees-owed">
+        {owed.data === undefined
+          ? "Reading the fees collected so far…"
+          : `Collected so far: ${formatUnits(owed.data, decimals, 4)} ${ctx.currencySymbol}`}
+      </p>
+      <DraftPanel
+        blocked={blocked}
+        busy={busy}
+        dirty={owed.data !== undefined}
         gate={gate}
         onSubmit={onSubmit}
         result={result}
