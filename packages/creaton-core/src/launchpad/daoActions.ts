@@ -30,6 +30,7 @@ export const ACTION_SIGNATURES = {
     "approveProject(bytes32,address,uint128,uint128,uint64,bytes32)",
   award: "awardContribution(address,bytes32,uint96,bool)",
   collectFees: "collectHookFeesByToken(address,address,address,uint256)",
+  transfer: "transfer(address,uint256)",
 } as const;
 
 const CALL_TYPE: AbiType = { tuple: ["address", "uint256", "bytes"] };
@@ -387,6 +388,35 @@ export function collectFeesDecision(input: CollectFeesInput): DecisionDraft {
   };
 }
 
+export interface PayInput {
+  /** The currency the treasury pays in. */
+  currency: string;
+  currencyDecimals: number;
+  currencySymbol: string;
+  recipient: string;
+  amount: bigint;
+}
+
+/** The vote that pays someone from the treasury, in the sale currency. */
+export function payDecision(input: PayInput): DecisionDraft {
+  const currency = address(input.currency, "currency", "The currency");
+  const recipient = address(input.recipient, "recipient", "The person to pay");
+  if (recipient === ZERO_ADDRESS)
+    fail("recipient", "That is the empty address; nobody could receive it.");
+  if (input.amount === 0n) fail("amount", "Pay more than nothing.");
+  return {
+    to: currency,
+    data: encodeFunctionData(
+      ACTION_SIGNATURES.transfer,
+      ["address", "uint256"],
+      [recipient, input.amount],
+    ),
+    lane: "unrestricted",
+    title: `Pay ${formatUnits(input.amount, input.currencyDecimals, 4)} ${input.currencySymbol} from the treasury`,
+    lines: [`To ${recipient}`],
+  };
+}
+
 // ---- describing ------------------------------------------------------------------------------
 
 /** What an action is, in words. `kind` is `unknown` for anything this module did not write. */
@@ -396,6 +426,7 @@ export interface ActionDescription {
     | "project"
     | "award"
     | "fees"
+    | "payment"
     | "market"
     | "batch"
     | "unknown";
@@ -415,6 +446,9 @@ export interface DescribeContext {
   factory?: string;
   mandates?: readonly string[];
   amm?: string;
+  /** The currency the treasury holds, so a payment out of it can be recognised. */
+  currency?: string;
+  currencySymbol?: string;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -513,6 +547,19 @@ function describeCall(
         kind: "award",
         title: `Award ${shares(amount)} Shares for the claim “${idLabel(claim)}”`,
         lines: [`In the work budget ${mandate}`],
+      };
+    }
+    if (sel === selectorOfSig("transfer")) {
+      // Only a payment in the DAO's own currency is described as a payment; any other token's transfer is unknown.
+      if (!ctx.currency || !same(call.to, ctx.currency)) return null;
+      const [recipient, amount] = decodeParameters(
+        ["address", "uint256"],
+        args,
+      ) as [string, bigint];
+      return {
+        kind: "payment",
+        title: `Pay ${money(amount, ctx)}${ctx.currencySymbol ? ` ${ctx.currencySymbol}` : ""} from the treasury`,
+        lines: [`To ${recipient}`],
       };
     }
     if (sel === selectorOfSig("collectFees")) {

@@ -11,6 +11,7 @@ import {
   formatUnits,
   mandateDecision,
   parseUnits,
+  payDecision,
   projectDecision,
 } from "../lib/dao-actions";
 import {
@@ -740,6 +741,84 @@ export function CollectFeesForm({
         blocked={blocked}
         busy={busy}
         dirty={owed.data !== undefined}
+        gate={gate}
+        onSubmit={onSubmit}
+        result={result}
+      />
+    </div>
+  );
+}
+
+export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const dirty = recipient !== "" || amount !== "";
+  const decimals = ctx.currencyDecimals ?? 0;
+  const balance = useQuery({
+    queryKey: ["launchpad", "work", ctx.dao, "treasury-balance", ctx.currency],
+    enabled: ctx.currencyDecimals !== null,
+    queryFn: async () =>
+      decodeWord(
+        await ethCall(
+          getRpcEndpoint(),
+          ctx.currency,
+          `0x70a08231${ctx.dao.slice(2).toLowerCase().padStart(64, "0")}`,
+        ),
+      ),
+    staleTime: 5_000,
+  });
+  const result = useMemo<DraftResult>(() => {
+    if (ctx.currencyDecimals === null)
+      return { problem: "This project has no currency to pay in." };
+    return attempt(() => {
+      const wei = amount.trim()
+        ? parseUnits(amount, decimals, "amount", "The amount")
+        : 0n;
+      if (balance.data !== undefined && wei > balance.data)
+        throw new DecisionInputError(
+          "amount",
+          `The treasury holds only ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`,
+        );
+      return payDecision({
+        currency: ctx.currency,
+        currencyDecimals: decimals,
+        currencySymbol: ctx.currencySymbol,
+        recipient,
+        amount: wei,
+      });
+    });
+  }, [ctx, recipient, amount, decimals, balance.data]);
+
+  return (
+    <div className="mt-3 grid gap-3" data-testid="form-pay">
+      <p className="text-sm text-muted-foreground">
+        Pay someone from the treasury. Nothing moves until holders back this and
+        it runs.
+      </p>
+      <p className="text-sm" data-testid="pay-balance">
+        {balance.data === undefined
+          ? "Reading the treasury…"
+          : `The treasury holds ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`}
+      </p>
+      <TextField
+        label="Who to pay (wallet address)"
+        onChange={setRecipient}
+        placeholder="0x…"
+        testId="pay-recipient"
+        value={recipient}
+      />
+      <TextField
+        inputMode="decimal"
+        label={`Amount (${ctx.currencySymbol})`}
+        onChange={setAmount}
+        placeholder="0"
+        testId="pay-amount"
+        value={amount}
+      />
+      <DraftPanel
+        blocked={blocked}
+        busy={busy}
+        dirty={dirty}
         gate={gate}
         onSubmit={onSubmit}
         result={result}

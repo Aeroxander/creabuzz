@@ -117,6 +117,9 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
                     factory: context.data?.factory,
                     mandates: work.data?.mandates.map((m) => m.address),
                     amm: exchange?.amm,
+                    currency: launch.record.currency ?? undefined,
+                    currencySymbol:
+                      sale?.kind === "custom" ? "USDC" : sale?.symbol,
                   }}
                   gate={gate}
                   onSend={send}

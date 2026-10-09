@@ -11,6 +11,7 @@ import {
   formatUnits,
   mandateDecision,
   parseUnits,
+  payDecision,
   projectDecision,
 } from "./daoActions.ts";
 
@@ -371,5 +372,42 @@ test("an action aimed anywhere but where a real one is aimed is never described 
   assert.equal(
     describeAction({ ...fees, to: OTHER }, { amm: AMM }).kind,
     "unknown",
+  );
+});
+
+test("paying from the treasury is a transfer of the sale currency, as cast encodes, and is described only as such", () => {
+  const input = {
+    currency: CUR,
+    currencyDecimals: 6,
+    currencySymbol: "USDC",
+    recipient: "0x00000000000000000000000000000000000000ab",
+    amount: 1_500_000n,
+  };
+  const d = payDecision(input);
+  assert.equal(d.to, CUR);
+  assert.equal(
+    d.data,
+    "0xa9059cbb00000000000000000000000000000000000000000000000000000000000000ab000000000000000000000000000000000000000000000000000000000016e360",
+  );
+  assert.equal(d.title, "Pay 1.5 USDC from the treasury");
+  const ctx = { currency: CUR, currencyDecimals: 6, currencySymbol: "USDC" };
+  const described = describeAction(d, ctx);
+  assert.equal(described.kind, "payment");
+  assert.equal(described.title, "Pay 1.5 USDC from the treasury");
+  assert.deepEqual(described.lines, [
+    "To 0x00000000000000000000000000000000000000ab",
+  ]);
+  // A transfer of some other token, or with no currency known, is not described as a payment.
+  assert.equal(describeAction({ ...d, to: AMM }, ctx).kind, "unknown");
+  assert.equal(describeAction(d, {}).kind, "unknown");
+  refused(() => payDecision({ ...input, amount: 0n }), "amount");
+  refused(() => payDecision({ ...input, recipient: "nope" }), "recipient");
+  refused(
+    () =>
+      payDecision({
+        ...input,
+        recipient: "0x0000000000000000000000000000000000000000",
+      }),
+    "recipient",
   );
 });

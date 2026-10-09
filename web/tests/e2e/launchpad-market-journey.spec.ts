@@ -275,5 +275,33 @@ test("a market is voted in, traded on the launch page, and its fees collected, a
     timeout: 60_000,
   });
   await carryOut(founder, 175_000, 90_000);
-  expect((await balanceOf(CURRENCY, DAO)) - treasuryBefore).toBeGreaterThan(0n);
+  const collected = (await balanceOf(CURRENCY, DAO)) - treasuryBefore;
+  expect(collected).toBeGreaterThan(0n);
+
+  // ── 4. the treasury pays someone out of what it collected, by vote ─────────────────────────
+  const payee = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"; // an Anvil account that has none yet
+  const payeeBefore = await balanceOf(CURRENCY, payee);
+  await refreshDecisions(founder);
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-pay").click();
+  await expect(founder.getByTestId("pay-balance")).toContainText(
+    "The treasury holds",
+    { timeout: 20_000 },
+  );
+  await founder.getByTestId("pay-recipient").fill(payee);
+  await founder.getByTestId("pay-amount").fill("100");
+  // More than the treasury holds is refused before anything is sent.
+  await expect(founder.getByTestId("decision-draft-problem")).toContainText(
+    "The treasury holds only",
+  );
+  await founder.getByTestId("pay-amount").fill("0.5");
+  await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+    "Pay 0.5 USDC from the treasury",
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 175_000, 90_000);
+  expect((await balanceOf(CURRENCY, payee)) - payeeBefore).toBe(500_000n);
 });

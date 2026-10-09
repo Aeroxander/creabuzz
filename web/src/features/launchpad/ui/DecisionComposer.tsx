@@ -11,11 +11,12 @@ import {
   CollectFeesForm,
   type FormContext,
   MarketForm,
+  PayForm,
   ProjectForm,
   WorkBudgetForm,
 } from "./decision-forms";
 
-type Kind = "budget" | "project" | "award" | "market" | "fees";
+type Kind = "budget" | "project" | "award" | "market" | "fees" | "pay";
 
 const KINDS: { id: Kind; label: string; about: string }[] = [
   {
@@ -44,6 +45,11 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "fees",
     label: "Collect the trading fees",
     about: "Move the fees the market has collected into the treasury.",
+  },
+  {
+    id: "pay",
+    label: "Pay from the treasury",
+    about: "Send some of the treasury's money to someone.",
   },
 ];
 
@@ -184,6 +190,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`m${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "pay" ? (
+            <PayForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`y${formKey}`}
               onSubmit={submit}
             />
           ) : (
