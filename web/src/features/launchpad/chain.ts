@@ -336,14 +336,33 @@ export function isDevBuild(): boolean {
   return Boolean(import.meta.env?.DEV);
 }
 
+/** Hosts that mean "this machine": a page served from one is local development. */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+function pageHostname(): string | null {
+  try {
+    return window.location.hostname;
+  } catch {
+    return null; // not in a browser (unit tests)
+  }
+}
+
 /**
  * The endpoint chain reads go to.
  *
  * Saved choice first (one action = one durable persist), then the build-time
- * `VITE_CHAIN_RPC_URL`, then the configured default (local Anvil —
- * `just dev-chain` boots what it points at).
+ * `VITE_CHAIN_RPC_URL`, then the local development default (a local Anvil,
+ * which `just dev-chain` boots).
+ *
+ * That last default only makes sense on a page served from the same machine.
+ * On a deployed site it would send every visitor's chain reads to the
+ * visitor's own computer, so there it is no endpoint at all (an empty string,
+ * which `rpc` refuses) until the build sets `VITE_CHAIN_RPC_URL`.
  */
-export function getRpcEndpoint(env: ChainEnv | undefined = viteEnv()): string {
+export function getRpcEndpoint(
+  env: ChainEnv | undefined = viteEnv(),
+  pageHost: string | null = pageHostname(),
+): string {
   try {
     const saved = window.localStorage.getItem(ENDPOINT_KEY);
     if (saved) return saved;
@@ -351,7 +370,9 @@ export function getRpcEndpoint(env: ChainEnv | undefined = viteEnv()): string {
     // Storage unavailable — the configured default below still applies.
   }
   const fromEnv = env?.VITE_CHAIN_RPC_URL?.trim();
-  return fromEnv ? fromEnv : DEFAULT_RPC_ENDPOINT;
+  if (fromEnv) return fromEnv;
+  const local = pageHost === null || LOCAL_HOSTS.has(pageHost.toLowerCase());
+  return local ? DEFAULT_RPC_ENDPOINT : "";
 }
 
 export function setRpcEndpoint(endpoint: string): void {
@@ -423,6 +444,9 @@ async function rpc(
   params: unknown[],
   timeoutMs = 6000,
 ): Promise<unknown> {
+  if (!endpoint) {
+    throw new Error("This site is not connected to a chain yet.");
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

@@ -329,6 +329,27 @@ test("getRpcEndpoint: saved choice, then VITE_CHAIN_RPC_URL, then default", () =
   assert.equal(getRpcEndpoint(), DEFAULT_RPC_ENDPOINT);
 });
 
+test("getRpcEndpoint: a deployed site never defaults to the visitor's own machine", () => {
+  // Served from this machine (development): the local chain is the default.
+  for (const host of ["localhost", "127.0.0.1", "[::1]", "LOCALHOST"]) {
+    assert.equal(getRpcEndpoint({}, host), DEFAULT_RPC_ENDPOINT, host);
+  }
+  // Served from anywhere else with no endpoint configured: no endpoint.
+  assert.equal(getRpcEndpoint({}, "app.example.com"), "");
+  assert.equal(
+    getRpcEndpoint({ VITE_CHAIN_RPC_URL: " " }, "app.example.com"),
+    "",
+  );
+  // A configured endpoint is used wherever the page is served from.
+  assert.equal(
+    getRpcEndpoint(
+      { VITE_CHAIN_RPC_URL: "https://rpc.example.org" },
+      "app.example.com",
+    ),
+    "https://rpc.example.org",
+  );
+});
+
 test("the price service is only ever a plain http(s) address the build names", () => {
   assert.equal(priceIndexerUrl({}), null);
   assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "  " }), null);
