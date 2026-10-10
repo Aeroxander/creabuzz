@@ -18,6 +18,17 @@ channels:
     name: standup
     purpose: "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
     seed: seeds/standup.md
+  - id: supporters
+    name: supporters
+    purpose: "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters."
+    type: board
+    seed: seeds/supporters.md
+  - id: founders
+    name: founders
+    purpose: "Planning and decisions for the people making this. Only people you add can read it."
+    type: board
+    visibility: private
+    seed: seeds/founders.md
 personas:
   - id: writer
     name: "The Writer"

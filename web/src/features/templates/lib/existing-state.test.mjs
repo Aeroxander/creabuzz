@@ -136,3 +136,26 @@ test("when a record was written twice, the newest one is kept, and a skill remem
   assert.equal(skill.createdAt, 9);
   assert.equal(skill.source, "skills/b.md");
 });
+
+test("a board's first post counts as its seed, so applying again does not post it twice", () => {
+  const state = buildExistingState({
+    templateId: "demo",
+    channelRecords: [],
+    markerRecords: [
+      {
+        id: "post-1",
+        kind: 45001,
+        created_at: 7,
+        tags: [
+          ["h", "board-1"],
+          ["t", "demo", "seed:founders"],
+        ],
+      },
+    ],
+    orgRecords: [],
+  });
+  assert.equal(
+    state.items.get(itemKey("seed", "seed:founders"))?.eventId,
+    "post-1",
+  );
+});

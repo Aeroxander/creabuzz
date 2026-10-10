@@ -244,6 +244,130 @@ test("a channel is an open stream channel with its purpose, and the first messag
   ]);
 });
 
+/** The demo with a private board added, as the bundled templates now have. */
+function withBoard() {
+  const entry = demo();
+  entry.template.channels.push({
+    id: "founders",
+    name: "founders",
+    purpose: "Planning.",
+    seed: "seeds/founders.md",
+    type: "board",
+    visibility: "private",
+  });
+  entry.files["seeds/founders.md"] = "# Founders\n\nPlan here.";
+  return entry;
+}
+
+test("a private board is created as one, and its first item is a post", () => {
+  const entry = withBoard();
+  const board = buildStepEvent(
+    { kind: "channel", item: "founders", action: "create" },
+    ctx(entry),
+  );
+  assert.deepEqual(board.tags, [
+    ["h", "uuid-1"],
+    ["name", "founders"],
+    ["visibility", "private"],
+    ["channel_type", "forum"],
+    ["about", "Planning."],
+  ]);
+  // A chat in the same template is still an open stream channel.
+  const chat = buildStepEvent(
+    { kind: "channel", item: "desk", action: "create" },
+    ctx(entry),
+  );
+  assert.deepEqual(chat.tags.slice(2, 4), [
+    ["visibility", "open"],
+    ["channel_type", "stream"],
+  ]);
+
+  const seed = buildStepEvent(
+    { kind: "seed", item: "seed:founders", action: "create" },
+    ctx(entry, { channelIds: { founders: "board-uuid" } }),
+  );
+  assert.equal(seed.kind, 45001);
+  assert.equal(seed.content, "# Founders\n\nPlan here.");
+  assert.deepEqual(seed.tags, [
+    ["h", "board-uuid"],
+    ["t", "demo", "seed:founders"],
+  ]);
+});
+
+test("a board is described as a board", () => {
+  const entry = withBoard();
+  assert.equal(
+    describeStep(entry, {
+      kind: "channel",
+      item: "founders",
+      action: "create",
+    }),
+    "Create the founders board",
+  );
+  assert.equal(
+    describeStep(entry, {
+      kind: "seed",
+      item: "seed:founders",
+      action: "create",
+    }),
+    "First post on the founders board",
+  );
+  assert.equal(
+    describeStep(entry, { kind: "channel", item: "desk", action: "create" }),
+    "Create #desk",
+  );
+});
+
+test("a template cannot make its welcome channel or a workflow's channel a board, or use an unknown type", () => {
+  const first = demo();
+  first.template.channels[0].type = "board";
+  assert.match(
+    validateTemplate(first).join("\n"),
+    /must be a chat, not a board/,
+  );
+
+  const workflow = withBoard();
+  workflow.template.workflows[0].channel = "founders";
+  assert.match(
+    validateTemplate(workflow).join("\n"),
+    /channel founders is a board/,
+  );
+
+  const unknown = demo();
+  unknown.template.channels[1].type = "forum";
+  unknown.template.channels[1].visibility = "hidden";
+  const problems = validateTemplate(unknown).join("\n");
+  assert.match(problems, /type must be chat or board/);
+  assert.match(problems, /visibility must be open or private/);
+});
+
+test("the bundled templates each have an open supporters board and a private founders board", () => {
+  for (const [id, entry] of Object.entries(TEMPLATE_CATALOG)) {
+    const byId = Object.fromEntries(
+      entry.template.channels.map((c) => [c.id, c]),
+    );
+    assert.equal(byId.supporters?.type, "board", id);
+    assert.equal(
+      byId.supporters?.visibility,
+      undefined,
+      `${id}: supporters are open`,
+    );
+    assert.equal(byId.founders?.type, "board", id);
+    assert.equal(byId.founders?.visibility, "private", id);
+    // The first channel receives the welcome, so it stays a chat.
+    assert.notEqual(entry.template.channels[0].type, "board", id);
+    const summary = TEMPLATE_INDEX.find((t) => t.id === id);
+    assert.deepEqual(
+      summary.channels.filter((c) => c.board).map((c) => [c.name, c.private]),
+      [
+        ["supporters", false],
+        ["founders", true],
+      ],
+      id,
+    );
+  }
+});
+
 test("the welcome goes to the first channel", () => {
   const welcome = buildStepEvent(
     { kind: "welcome", item: "welcome", action: "create" },

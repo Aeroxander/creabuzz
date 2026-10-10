@@ -47,12 +47,33 @@ export const ORG_ROOT_NODE_ID = "root";
 /** The `d` of the community default budget a template writes. */
 export const ORG_DEFAULT_BUDGET_ID = "default-agents";
 
-/** One channel. `seed` is a template-relative file posted as its first message. */
+/**
+ * One channel. `seed` is a template-relative file posted as its first message,
+ * or, for a board, as its first post (so it starts with a `# Title` heading).
+ */
 export interface TemplateChannel {
   id: string;
   name: string;
   purpose: string;
   seed?: string;
+  /** `chat` (live messages, the default) or `board` (posts and replies). */
+  type?: "chat" | "board";
+  /** `open` (anyone in the community, the default) or `private` (only people added). */
+  visibility?: "open" | "private";
+}
+
+/** A board holds posts and replies; the server calls this channel type `forum`. */
+export function isBoardChannel(
+  channel: Pick<TemplateChannel, "type">,
+): boolean {
+  return channel.type === "board";
+}
+
+/** Only people who are added can read a private channel. */
+export function isPrivateChannel(
+  channel: Pick<TemplateChannel, "visibility">,
+): boolean {
+  return channel.visibility === "private";
 }
 
 /** One helper: a name and the prompt that tells it who it is. */
@@ -143,7 +164,14 @@ export interface TemplateSummary {
   id: string;
   name: string;
   description: string;
-  channels: { name: string; purpose: string }[];
+  channels: {
+    name: string;
+    purpose: string;
+    /** A board of posts and replies rather than a live chat. */
+    board: boolean;
+    /** Only people who are added can read it. */
+    private: boolean;
+  }[];
   /** Helper names. */
   helpers: string[];
   /** Titles of the shared pages. */
@@ -232,7 +260,27 @@ export function validateTemplate(entry: TemplateEntry): string[] {
     if (channel.purpose.length > MAX_PURPOSE) {
       fail(`channel ${channel.id} purpose is over ${MAX_PURPOSE} characters`);
     }
+    if (
+      channel.type !== undefined &&
+      channel.type !== "chat" &&
+      channel.type !== "board"
+    ) {
+      fail(`channel ${channel.id} type must be chat or board`);
+    }
+    if (
+      channel.visibility !== undefined &&
+      channel.visibility !== "open" &&
+      channel.visibility !== "private"
+    ) {
+      fail(`channel ${channel.id} visibility must be open or private`);
+    }
     needFile(`channel ${channel.id} seed`, channel.seed);
+  }
+  // The welcome message is a chat message posted to the first channel.
+  if (t.channels[0] && isBoardChannel(t.channels[0])) {
+    fail(
+      "the first channel receives the welcome message, so it must be a chat, not a board",
+    );
   }
 
   if (t.personas.length > MAX_PERSONAS)
@@ -263,6 +311,12 @@ export function validateTemplate(entry: TemplateEntry): string[] {
     if (workflow.channel !== undefined && !channelIds.has(workflow.channel)) {
       fail(
         `workflow ${workflow.file} names unknown channel ${workflow.channel}`,
+      );
+    }
+    const bound = t.channels.find((c) => c.id === workflow.channel);
+    if (bound && isBoardChannel(bound)) {
+      fail(
+        `workflow ${workflow.file} runs on chat messages, but channel ${bound.id} is a board`,
       );
     }
   }

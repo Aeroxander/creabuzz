@@ -111,13 +111,20 @@ function Preview({ summary }: { summary: TemplateSummary }) {
       <dl className="mt-2 grid gap-3 sm:grid-cols-2">
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Channels
+            Channels and boards
           </dt>
           <dd>
             <ul className="mt-1 space-y-1">
               {summary.channels.map((channel) => (
                 <li key={channel.name}>
-                  <span className="font-medium">#{channel.name}</span>
+                  <span className="font-medium">
+                    {channel.board ? channel.name : `#${channel.name}`}
+                  </span>
+                  {channel.board ? (
+                    <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-2xs font-medium">
+                      {channel.private ? "Private board" : "Board"}
+                    </span>
+                  ) : null}
                   <span className="block text-xs text-muted-foreground">
                     {channel.purpose}
                   </span>

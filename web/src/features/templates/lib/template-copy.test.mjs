@@ -42,6 +42,28 @@ test("counts say what a template makes and leave out what it does not", () => {
     templateCounts({ channels: [1], helpers: [], pages: [] }),
     "1 channel",
   );
+  // Boards are counted apart from channels.
+  assert.equal(
+    templateCounts({
+      channels: [
+        { board: false },
+        { board: false },
+        { board: true },
+        { board: true },
+      ],
+      helpers: [1],
+      pages: [],
+    }),
+    "2 channels · 2 boards · 1 AI helper",
+  );
+  assert.equal(
+    templateCounts({
+      channels: [{ board: false }, { board: true }],
+      helpers: [],
+      pages: [],
+    }),
+    "1 channel · 1 board",
+  );
   assert.equal(
     templateCounts({ channels: [1, 2], helpers: [1], pages: [1] }),
     "2 channels · 1 AI helper · 1 shared page",

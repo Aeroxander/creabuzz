@@ -15,6 +15,12 @@
 //!     name: writers-room
 //!     purpose: ...             # ≤200
 //!     seed: welcome.md         # optional; posted as the channel's first message
+//!     type: board              # optional: `chat` (default) or `board`. A board holds
+//!                               # posts and replies instead of live messages; its seed is
+//!                               # posted as the first post, so start the file with a
+//!                               # `# Title` heading. The first channel (it receives the
+//!                               # welcome message) and any workflow-bound channel must be chats.
+//!     visibility: private      # optional: `open` (default) or `private` (only people added)
 //! personas:                    # 0..6 — published as kind:30175 persona events
 //!   - id: writer
 //!     name: The Writer
@@ -211,6 +217,24 @@ pub struct TemplateChannel {
     pub purpose: String,
     #[serde(default)]
     pub seed: Option<String>,
+    /// `chat` (live messages, the default) or `board` (posts and replies).
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+    /// `open` (anyone in the community, the default) or `private`.
+    #[serde(default)]
+    pub visibility: Option<String>,
+}
+
+impl TemplateChannel {
+    /// A board holds posts and replies; the server calls this channel type `forum`.
+    pub fn is_board(&self) -> bool {
+        self.kind.as_deref() == Some("board")
+    }
+
+    /// Only people who are added can read a private channel.
+    pub fn is_private(&self) -> bool {
+        self.visibility.as_deref() == Some("private")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -449,9 +473,27 @@ pub fn validate_template(
         if ch.purpose.chars().count() > MAX_PURPOSE {
             return Err(format!("{what}: purpose exceeds {MAX_PURPOSE} characters"));
         }
+        if let Some(kind) = &ch.kind {
+            if kind != "chat" && kind != "board" {
+                return Err(format!(
+                    "{what}: type must be 'chat' or 'board' (got '{kind}')"
+                ));
+            }
+        }
+        if let Some(visibility) = &ch.visibility {
+            if visibility != "open" && visibility != "private" {
+                return Err(format!(
+                    "{what}: visibility must be 'open' or 'private' (got '{visibility}')"
+                ));
+            }
+        }
         if let Some(seed) = &ch.seed {
             read_ref(files, &format!("{what}.seed"), seed)?;
         }
+    }
+    // The welcome message is a chat message posted to the first channel.
+    if template.channels[0].is_board() {
+        return Err("channels[0]: the first channel receives the welcome message, so it must be a chat, not a board".into());
     }
 
     // Personas: 0..6.
@@ -520,6 +562,15 @@ pub fn validate_template(
         // Optional channel binding must name a channel declared in THIS file;
         // absent means `channels[0]` (resolved at apply time).
         if let Some(ch) = &w.channel {
+            if template
+                .channels
+                .iter()
+                .any(|c| c.id == *ch && c.is_board())
+            {
+                return Err(format!(
+                    "{what}: workflows run on chat messages, but channel '{ch}' is a board"
+                ));
+            }
             if !seen_channel_ids.contains(ch.as_str()) {
                 let mut declared: Vec<&str> = seen_channel_ids.iter().map(String::as_str).collect();
                 declared.sort_unstable();
@@ -902,6 +953,66 @@ mod tests {
         assert!(check(&two, &base_files())
             .unwrap_err()
             .contains("duplicate channel id"));
+    }
+
+    /// A template whose second channel is a private board with a seed post.
+    fn board_yaml() -> String {
+        base_yaml().replace(
+            "welcome: welcome.md\n",
+            "  - id: founders\n    name: founders\n    purpose: planning\n    type: board\n    visibility: private\n    seed: founders.md\nwelcome: welcome.md\n",
+        )
+    }
+
+    fn board_files() -> TemplateFiles {
+        files(&[
+            ("welcome.md", "# Welcome"),
+            ("founders.md", "# Founders\n\nPlan here."),
+        ])
+    }
+
+    #[test]
+    fn a_channel_can_be_a_private_board() {
+        let template = parse(&board_yaml());
+        assert!(check(&board_yaml(), &board_files()).is_ok());
+        let founders = &template.channels[1];
+        assert!(founders.is_board());
+        assert!(founders.is_private());
+        // The default stays an open chat.
+        assert!(!template.channels[0].is_board());
+        assert!(!template.channels[0].is_private());
+    }
+
+    #[test]
+    fn channel_type_and_visibility_are_a_closed_set() {
+        let bad_type = board_yaml().replace("type: board", "type: forum");
+        let err = check(&bad_type, &board_files()).unwrap_err();
+        assert!(err.contains("type must be 'chat' or 'board'"), "{err}");
+        let bad_visibility = board_yaml().replace("visibility: private", "visibility: hidden");
+        let err = check(&bad_visibility, &board_files()).unwrap_err();
+        assert!(
+            err.contains("visibility must be 'open' or 'private'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_welcome_channel_and_workflow_channels_must_be_chats() {
+        // The welcome message is a chat message posted to the first channel.
+        let first_board =
+            base_yaml().replace("purpose: chat\n", "purpose: chat\n    type: board\n");
+        let err = check(&first_board, &base_files()).unwrap_err();
+        assert!(err.contains("must be a chat, not a board"), "{err}");
+
+        // A workflow runs on chat messages.
+        let mut yaml = board_yaml().replace("workflows: []\n", "");
+        yaml.push_str("workflows:\n  - file: workflows/w.yaml\n    channel: founders\n");
+        let f = files(&[
+            ("welcome.md", "# Welcome"),
+            ("founders.md", "# Founders"),
+            ("workflows/w.yaml", "name: w\ntrigger:\n  on: manual\nsteps:\n  - id: s\n    action: send_message\n    text: hi\n"),
+        ]);
+        let err = check(&yaml, &f).unwrap_err();
+        assert!(err.contains("channel 'founders' is a board"), "{err}");
     }
 
     #[test]

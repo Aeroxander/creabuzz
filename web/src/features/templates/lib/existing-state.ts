@@ -29,6 +29,8 @@ export interface ServerRecord {
 
 const KIND_CHANNEL_METADATA = 39000;
 const KIND_MESSAGE = 9;
+/** A post on a board: the first item of a board channel, in place of a chat message. */
+const KIND_BOARD_POST = 45001;
 const KIND_PERSONA = 30175;
 const KIND_SKILL = 30180;
 const KIND_WORKFLOW_DEF = 30620;
@@ -40,6 +42,7 @@ const KIND_ORG_BUDGET = 37012;
 /** The kinds a template's marker can be on; the query asks for exactly these. */
 export const MARKED_KINDS = [
   KIND_MESSAGE,
+  KIND_BOARD_POST,
   KIND_PERSONA,
   KIND_SKILL,
   KIND_WORKFLOW_DEF,
@@ -76,6 +79,9 @@ function stepKindOf(kind: number, item: string): StepKind | null {
       return "doc";
     case KIND_MESSAGE:
       return item === "welcome" ? "welcome" : "seed";
+    // A board's first post is marked like a chat's first message.
+    case KIND_BOARD_POST:
+      return "seed";
     default:
       return null;
   }

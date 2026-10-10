@@ -582,14 +582,21 @@ pub(crate) fn build_step_event(
                 .iter()
                 .find(|c| c.id == step.item)
                 .ok_or_else(|| CliError::Other("plan step has no channel".into()))?;
-            // New communities default to open stream channels: the schema
-            // contract carries no visibility/type fields, so the engine
-            // default is fixed and documented.
+            // A channel is an open chat unless the template says it is a
+            // board (posts and replies) or private (only people added).
             buzz_sdk::build_create_channel(
                 uuid::Uuid::new_v4(),
                 &ch.name,
-                Some(buzz_sdk::Visibility::Open),
-                Some(buzz_sdk::ChannelKind::Stream),
+                Some(if ch.is_private() {
+                    buzz_sdk::Visibility::Private
+                } else {
+                    buzz_sdk::Visibility::Open
+                }),
+                Some(if ch.is_board() {
+                    buzz_sdk::ChannelKind::Forum
+                } else {
+                    buzz_sdk::ChannelKind::Stream
+                }),
                 Some(&ch.purpose),
                 None,
             )
@@ -608,7 +615,14 @@ pub(crate) fn build_step_event(
                 .and_then(|s| files.get(s))
                 .ok_or_else(|| CliError::Other("seed content missing".into()))?;
             let channel_uuid = parse_channel_uuid(channel_ids, &ch.id)?;
-            Ok(build_message_with_marker(channel_uuid, content, marker)?.custom_created_at(ts))
+            // A board's seed is its first post (the file starts with a `# Title`
+            // heading); a chat's is its first message.
+            let builder = if ch.is_board() {
+                build_post_with_marker(channel_uuid, content, marker)?
+            } else {
+                build_message_with_marker(channel_uuid, content, marker)?
+            };
+            Ok(builder.custom_created_at(ts))
         }
         StepKind::Welcome => {
             let first = template
@@ -932,6 +946,16 @@ fn build_message_with_marker(
     Ok(builder.tag(marker))
 }
 
+fn build_post_with_marker(
+    channel_uuid: uuid::Uuid,
+    content: &str,
+    marker: Tag,
+) -> Result<EventBuilder, CliError> {
+    let builder = buzz_sdk::build_forum_post(channel_uuid, content, &[], &[])
+        .map_err(|e| CliError::Other(format!("build_forum_post failed: {e}")))?;
+    Ok(builder.tag(marker))
+}
+
 /// A skill whose content is resolved (fetched/embedded), validated, and pinned.
 pub struct ResolvedSkill {
     pub content: String,
@@ -1002,6 +1026,8 @@ pub async fn query_existing_state(
         serde_json::json!({ "kinds": [30620], "authors": [me], "#t": [template_id], "limit": 200 }),
         serde_json::json!({ "kinds": [30023], "authors": [me], "#t": [template_id], "limit": 200 }),
         serde_json::json!({ "kinds": [9], "authors": [me], "#t": [template_id], "limit": 200 }),
+        // A board's first item is a post (kind 45001) instead of a message.
+        serde_json::json!({ "kinds": [buzz_core::kind::KIND_FORUM_POST], "authors": [me], "#t": [template_id], "limit": 200 }),
     ];
     // The signer's own org nodes and budgets, by `d` — org steps dedup on
     // these so a hand-built org is never overwritten (NIP-33 replacement is
@@ -1037,6 +1063,7 @@ pub async fn query_existing_state(
             30620 => StepKind::Workflow,
             30023 => StepKind::Doc,
             9 => StepKind::Seed, // narrowed to Seed/Welcome by marker item below
+            k if k == buzz_core::kind::KIND_FORUM_POST as u64 => StepKind::Seed,
             k if k == buzz_core::kind::KIND_SKILL as u64 => StepKind::Skill,
             _ => continue,
         };
@@ -1258,12 +1285,16 @@ mod tests {
                     name: "general".into(),
                     purpose: "chat".into(),
                     seed: Some("seeds/general.md".into()),
+                    kind: None,
+                    visibility: None,
                 },
                 TemplateChannel {
                     id: "random".into(),
                     name: "random".into(),
                     purpose: "off-topic".into(),
                     seed: None,
+                    kind: None,
+                    visibility: None,
                 },
             ],
             personas: vec![TemplatePersona {
@@ -1621,6 +1652,99 @@ mod tests {
         assert!(tags.contains(&format!("sha256|{}", sha256_hex("x"))));
         assert!(tags.contains(&"source|https://example.com/SKILL.md".to_string()));
         assert!(tags.contains(&"applies_to|all".to_string()));
+    }
+
+    #[test]
+    fn a_private_board_is_created_as_one_and_its_seed_is_a_post() {
+        let mut template = template();
+        template.channels.push(TemplateChannel {
+            id: "founders".into(),
+            name: "founders".into(),
+            purpose: "planning".into(),
+            seed: Some("seeds/founders.md".into()),
+            kind: Some("board".into()),
+            visibility: Some("private".into()),
+        });
+        let files = TemplateFiles::from_pairs(
+            [
+                ("seeds/general.md", "seed"),
+                ("seeds/founders.md", "# Founders\n\nPlan here."),
+                ("personas/writer.md", "prompt"),
+                ("workflows/w.yaml", "yaml"),
+                ("docs/story-bible.md", "doc"),
+                ("welcome.md", "welcome"),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string())),
+        );
+        let plan = plan_apply(&template, &ExistingState::default());
+        let keys = nostr::Keys::generate();
+        let sign = |step: &PlanStep, channel_ids: &BTreeMap<String, String>| {
+            build_step_event(
+                "demo-template",
+                &template,
+                &files,
+                step,
+                channel_ids,
+                None,
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap()
+        };
+        let tags_of = |event: &nostr::Event| -> Vec<String> {
+            event
+                .tags
+                .iter()
+                .map(|t| {
+                    t.as_slice()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                        .join("|")
+                })
+                .collect()
+        };
+
+        let create = plan
+            .iter()
+            .find(|s| s.kind == StepKind::Channel && s.item == "founders")
+            .unwrap();
+        let event = sign(create, &BTreeMap::new());
+        let tags = tags_of(&event);
+        assert!(tags.contains(&"channel_type|forum".to_string()), "{tags:?}");
+        assert!(tags.contains(&"visibility|private".to_string()), "{tags:?}");
+
+        // The default channel is still an open chat.
+        let chat = plan
+            .iter()
+            .find(|s| s.kind == StepKind::Channel && s.item == "general")
+            .unwrap();
+        let tags = tags_of(&sign(chat, &BTreeMap::new()));
+        assert!(
+            tags.contains(&"channel_type|stream".to_string()),
+            "{tags:?}"
+        );
+        assert!(tags.contains(&"visibility|open".to_string()), "{tags:?}");
+
+        // The board's seed is its first post (kind 45001), not a chat message.
+        let uuid = uuid::Uuid::new_v4().to_string();
+        let mut ids = BTreeMap::new();
+        ids.insert("founders".to_string(), uuid.clone());
+        let seed = plan
+            .iter()
+            .find(|s| s.kind == StepKind::Seed && s.item == "seed:founders")
+            .unwrap();
+        let event = sign(seed, &ids);
+        assert_eq!(event.kind.as_u16() as u32, buzz_core::kind::KIND_FORUM_POST);
+        assert_eq!(event.content, "# Founders\n\nPlan here.");
+        let tags = tags_of(&event);
+        assert!(tags.contains(&format!("h|{uuid}")), "{tags:?}");
+        assert!(
+            tags.contains(&"t|demo-template|seed:founders".to_string()),
+            "{tags:?}"
+        );
     }
 
     #[test]

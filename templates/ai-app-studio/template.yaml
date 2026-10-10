@@ -22,6 +22,17 @@ channels:
     name: product
     purpose: "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs."
     seed: seeds/product.md
+  - id: supporters
+    name: supporters
+    purpose: "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters."
+    type: board
+    seed: seeds/supporters.md
+  - id: founders
+    name: founders
+    purpose: "Planning and decisions for the people making this. Only people you add can read it."
+    type: board
+    visibility: private
+    seed: seeds/founders.md
 personas:
   - id: ml-engineer
     name: "The ML Engineer"

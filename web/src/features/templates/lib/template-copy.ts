@@ -45,7 +45,11 @@ function count(n: number, one: string, many: string): string {
 export function templateCounts(
   summary: Pick<TemplateSummary, "channels" | "helpers" | "pages">,
 ): string {
-  const parts = [count(summary.channels.length, "channel", "channels")];
+  const boards = summary.channels.filter((channel) => channel.board).length;
+  const parts = [
+    count(summary.channels.length - boards, "channel", "channels"),
+  ];
+  if (boards > 0) parts.push(count(boards, "board", "boards"));
   if (summary.helpers.length > 0) {
     parts.push(count(summary.helpers.length, "AI helper", "AI helpers"));
   }

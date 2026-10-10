@@ -106,12 +106,12 @@ test("a whole template is applied from nothing, in plan order", async () => {
 
 test("a refusal stops the run, keeps what went through, and applying again writes only the rest", async () => {
   const entry = TEMPLATE_CATALOG["ai-media-studio"];
-  const server = fakeServer({ refuseAt: 12 });
+  const server = fakeServer({ refuseAt: 14 });
   const first = await runPlan(options(entry, emptyExisting(), server));
 
   assert.equal(first.status, "partial");
   const failedAt = first.results.findIndex((r) => r.status === "failed");
-  assert.equal(failedAt, 11);
+  assert.equal(failedAt, 13);
   assert.match(
     first.results[failedAt].message,
     /Only this community's owner or an admin|can't create channels|permission/,

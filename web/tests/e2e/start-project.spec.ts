@@ -84,7 +84,7 @@ test("a team is picked, set up step by step, and its first channel opens", async
   );
   await expect(picker).toContainText("Web & App Studio");
   await expect(picker).toContainText(
-    "4 channels · 6 AI helpers · 3 shared pages",
+    "4 channels · 2 boards · 6 AI helpers · 3 shared pages",
   );
 
   // The preview says what will be made, in plain words.
@@ -107,8 +107,9 @@ test("a team is picked, set up step by step, and its first channel opens", async
   expect(await firstSteps(page)).toEqual(["project"]);
 
   // What was written, read back from the server.
-  expect(count(relay, 9007, false)).toBe(4); // the four channels
+  expect(count(relay, 9007, false)).toBe(6); // four channels and two boards
   expect(count(relay, 9)).toBe(5); // four first messages and the welcome
+  expect(count(relay, 45001)).toBe(2); // a first post on each board
   expect(count(relay, 30175)).toBe(6); // helpers
   expect(count(relay, 37010)).toBe(7); // the founder seat and six helper seats
   expect(count(relay, 37012)).toBe(1); // the default limit
@@ -128,6 +129,27 @@ test("a team is picked, set up step by step, and its first channel opens", async
   await expect(page.getByTestId("composer-input")).toBeVisible();
   await expect(page.getByText("Welcome to the writing table")).toBeVisible();
   await expect(page.getByText("writers-room").first()).toBeVisible();
+
+  // The two boards were created as boards (the founders' one private), and each
+  // opens with its first post.
+  const boards = relay.events.filter(
+    (e) =>
+      e.kind === 9007 &&
+      e.tags.some((t) => t[0] === "channel_type" && t[1] === "forum"),
+  );
+  const named = (name: string) =>
+    boards.find((e) => e.tags.some((t) => t[0] === "name" && t[1] === name));
+  expect(boards).toHaveLength(2);
+  expect(named("supporters")?.tags).toContainEqual(["visibility", "open"]);
+  expect(named("founders")?.tags).toContainEqual(["visibility", "private"]);
+  await page.getByTestId("board-nav-supporters").click();
+  await expect(page.getByTestId("board-posts")).toContainText(
+    "Welcome, supporters",
+  );
+  await page.getByTestId("board-nav-founders").click();
+  await expect(page.getByTestId("board-posts")).toContainText(
+    "The founders' board",
+  );
 });
 
 test("a refused step says what to do, keeps what went through, and Try again finishes without repeating anything", async ({
@@ -154,7 +176,7 @@ test("a refused step says what to do, keeps what went through, and Try again fin
     "Whatever already went through is kept",
   );
   // Everything before the team went through; nothing after it was tried.
-  expect(count(relay, 9007, false)).toBe(4);
+  expect(count(relay, 9007, false)).toBe(6);
   expect(count(relay, 30175)).toBe(6);
   expect(count(relay, 37010)).toBe(0);
   expect(count(relay, 44001)).toBe(0);
@@ -168,7 +190,7 @@ test("a refused step says what to do, keeps what went through, and Try again fin
   });
   expect(await firstSteps(page)).toEqual(["project"]);
   // Finished from where it stopped: nothing was written twice.
-  expect(count(relay, 9007, false)).toBe(4);
+  expect(count(relay, 9007, false)).toBe(6);
   expect(count(relay, 9)).toBe(5);
   expect(count(relay, 30175)).toBe(6);
   expect(count(relay, 37010)).toBe(7);

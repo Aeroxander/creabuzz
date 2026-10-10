@@ -67,6 +67,8 @@ function normalize(raw) {
       name: c.name,
       purpose: c.purpose ?? "",
       ...(c.seed ? { seed: c.seed } : {}),
+      ...(c.type ? { type: c.type } : {}),
+      ...(c.visibility ? { visibility: c.visibility } : {}),
     })),
     personas: (raw.personas ?? []).map((p) => ({
       id: p.id,
@@ -159,6 +161,8 @@ function summarize(entry) {
     channels: t.channels.map((c) => ({
       name: c.name,
       purpose: c.purpose,
+      board: c.type === "board",
+      private: c.visibility === "private",
     })),
     helpers: t.personas.map((p) => p.name),
     pages: t.docs.map((d) => d.title),

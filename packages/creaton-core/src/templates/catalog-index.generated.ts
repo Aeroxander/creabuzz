@@ -14,19 +14,39 @@ export const TEMPLATE_INDEX: readonly TemplateSummary[] = [
     "channels": [
       {
         "name": "writers-room",
-        "purpose": "The writing table. Kick around premises, beats, episodes, treatments, and dialogue for any format — mention @The Writer and the story gets better."
+        "purpose": "The writing table. Kick around premises, beats, episodes, treatments, and dialogue for any format — mention @The Writer and the story gets better.",
+        "board": false,
+        "private": false
       },
       {
         "name": "production",
-        "purpose": "The producer's board: schedules, cuts, decisions across every format. Ask @The Producer for a breakdown or a straight answer on where things stand."
+        "purpose": "The producer's board: schedules, cuts, decisions across every format. Ask @The Producer for a breakdown or a straight answer on where things stand.",
+        "board": false,
+        "private": false
       },
       {
         "name": "scene-gen",
-        "purpose": "Post a scene or sound brief, get an approved, ready-to-paste visual or audio prompt. Briefs go through the producer's approval queue."
+        "purpose": "Post a scene or sound brief, get an approved, ready-to-paste visual or audio prompt. Briefs go through the producer's approval queue.",
+        "board": false,
+        "private": false
       },
       {
         "name": "standup",
-        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here.",
+        "board": false,
+        "private": false
+      },
+      {
+        "name": "supporters",
+        "purpose": "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters.",
+        "board": true,
+        "private": false
+      },
+      {
+        "name": "founders",
+        "purpose": "Planning and decisions for the people making this. Only people you add can read it.",
+        "board": true,
+        "private": true
       }
     ],
     "helpers": [
@@ -62,19 +82,39 @@ export const TEMPLATE_INDEX: readonly TemplateSummary[] = [
     "channels": [
       {
         "name": "dev",
-        "purpose": "Where the app gets built: features, architecture, and plumbing. Mention @The App Developer to build the surface or @The ML Engineer when the model is in the way."
+        "purpose": "Where the app gets built: features, architecture, and plumbing. Mention @The App Developer to build the surface or @The ML Engineer when the model is in the way.",
+        "board": false,
+        "private": false
       },
       {
         "name": "evals",
-        "purpose": "The quality loop: model, dataset, and prompt experiments. Post an eval change as a new message — it goes to @The Product Lead's approval queue, and the verdict lands in your thread."
+        "purpose": "The quality loop: model, dataset, and prompt experiments. Post an eval change as a new message — it goes to @The Product Lead's approval queue, and the verdict lands in your thread.",
+        "board": false,
+        "private": false
       },
       {
         "name": "standup",
-        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here.",
+        "board": false,
+        "private": false
       },
       {
         "name": "product",
-        "purpose": "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs."
+        "purpose": "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs.",
+        "board": false,
+        "private": false
+      },
+      {
+        "name": "supporters",
+        "purpose": "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters.",
+        "board": true,
+        "private": false
+      },
+      {
+        "name": "founders",
+        "purpose": "Planning and decisions for the people making this. Only people you add can read it.",
+        "board": true,
+        "private": true
       }
     ],
     "helpers": [
@@ -107,19 +147,39 @@ export const TEMPLATE_INDEX: readonly TemplateSummary[] = [
     "channels": [
       {
         "name": "dev",
-        "purpose": "Engineering: contracts, integrations, tests. Post work here — every change gets an audit pass before it merges."
+        "purpose": "Engineering: contracts, integrations, tests. Post work here — every change gets an audit pass before it merges.",
+        "board": false,
+        "private": false
       },
       {
         "name": "security",
-        "purpose": "The review and audit loop. Findings, approvals, and fixes stay in the thread where the change was raised."
+        "purpose": "The review and audit loop. Findings, approvals, and fixes stay in the thread where the change was raised.",
+        "board": false,
+        "private": false
       },
       {
         "name": "standup",
-        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here.",
+        "board": false,
+        "private": false
       },
       {
         "name": "governance",
-        "purpose": "Proposals and decisions: scope, chain targets, dependencies, release calls. Record the decision, not the debate."
+        "purpose": "Proposals and decisions: scope, chain targets, dependencies, release calls. Record the decision, not the debate.",
+        "board": false,
+        "private": false
+      },
+      {
+        "name": "supporters",
+        "purpose": "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters.",
+        "board": true,
+        "private": false
+      },
+      {
+        "name": "founders",
+        "purpose": "Planning and decisions for the people making this. Only people you add can read it.",
+        "board": true,
+        "private": true
       }
     ],
     "helpers": [
@@ -154,15 +214,33 @@ export const TEMPLATE_INDEX: readonly TemplateSummary[] = [
     "channels": [
       {
         "name": "dev",
-        "purpose": "Where the app gets built: features, bugs, and plumbing. Mention @The App Developer to build, or @The QA Reviewer when a change needs a checklist first."
+        "purpose": "Where the app gets built: features, bugs, and plumbing. Mention @The App Developer to build, or @The QA Reviewer when a change needs a checklist first.",
+        "board": false,
+        "private": false
       },
       {
         "name": "product",
-        "purpose": "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs."
+        "purpose": "Scope and honesty: what to build, for whom, what counts as done. Ask @The Product Lead for a straight answer on trade-offs.",
+        "board": false,
+        "private": false
       },
       {
         "name": "standup",
-        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here."
+        "purpose": "The daily standup home. Every weekday morning the studio writes its standup page in the wiki — talk about it here.",
+        "board": false,
+        "private": false
+      },
+      {
+        "name": "supporters",
+        "purpose": "Questions, ideas and updates for everyone who follows or backs this project. Vote posts up to show what matters.",
+        "board": true,
+        "private": false
+      },
+      {
+        "name": "founders",
+        "purpose": "Planning and decisions for the people making this. Only people you add can read it.",
+        "board": true,
+        "private": true
       }
     ],
     "helpers": [

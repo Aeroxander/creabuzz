@@ -31,6 +31,8 @@ import {
 } from "../kinds.generated.ts";
 import {
   docSlug,
+  isBoardChannel,
+  isPrivateChannel,
   isRemoteSkill,
   ORG_DEFAULT_BUDGET_ID,
   ORG_ROOT_NODE_ID,
@@ -40,6 +42,8 @@ import {
 
 const KIND_CREATE_CHANNEL = 9007;
 const KIND_CHANNEL_MESSAGE = 9;
+/** A post on a board (the server's forum post). */
+const KIND_BOARD_POST = 45001;
 const KIND_ORG_NODE = 37010;
 const KIND_ORG_BUDGET = 37012;
 
@@ -205,12 +209,18 @@ export function describeStep(entry: TemplateEntry, step: PlanStep): string {
   switch (step.kind) {
     case "channel": {
       const channel = t.channels.find((c) => c.id === step.item);
-      return `Create #${canonicalChannelName(channel?.name ?? step.item)}`;
+      const name = canonicalChannelName(channel?.name ?? step.item);
+      return channel && isBoardChannel(channel)
+        ? `Create the ${name} board`
+        : `Create #${name}`;
     }
     case "seed": {
       const id = step.item.replace(/^seed:/, "");
       const channel = t.channels.find((c) => c.id === id);
-      return `First message in #${canonicalChannelName(channel?.name ?? id)}`;
+      const name = canonicalChannelName(channel?.name ?? id);
+      return channel && isBoardChannel(channel)
+        ? `First post on the ${name} board`
+        : `First message in #${name}`;
     }
     case "skill":
       return `Skill: ${step.item}`;
@@ -382,8 +392,8 @@ export function buildStepEvent(step: PlanStep, ctx: BuildContext): EventDraft {
         tags: [
           ["h", ctx.newId()],
           ["name", canonicalChannelName(channel.name)],
-          ["visibility", "open"],
-          ["channel_type", "stream"],
+          ["visibility", isPrivateChannel(channel) ? "private" : "open"],
+          ["channel_type", isBoardChannel(channel) ? "forum" : "stream"],
           ["about", channel.purpose],
         ],
       };
@@ -393,7 +403,8 @@ export function buildStepEvent(step: PlanStep, ctx: BuildContext): EventDraft {
       const channel = t.channels.find((c) => c.id === id);
       if (!channel?.seed) throw new Error(`channel ${id} has no first message`);
       return {
-        kind: KIND_CHANNEL_MESSAGE,
+        // A board's first item is a post; a chat's is a message.
+        kind: isBoardChannel(channel) ? KIND_BOARD_POST : KIND_CHANNEL_MESSAGE,
         created_at: ts,
         content: fileFor(entry, channel.seed, "first message"),
         tags: [["h", channelFor(ctx, id)], mark],
