@@ -11,6 +11,7 @@ import {
 } from "../lib/feed-events";
 import { EMPTY_TALLY, type VoteTally } from "../lib/ranking";
 import { usePublishFeedEvent } from "../use-feed";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 /**
  * The number people see is the plain headcount: people who voted up minus people who voted down. How much
@@ -44,7 +45,7 @@ export function VoteButtons({
 
   const vote = (direction: VoteDirection) => {
     if (!signedIn) {
-      toast.error("Create your identity from the profile menu to vote.");
+      toast.error(needAccountTo("vote"));
       return;
     }
     if (tally.mine === direction) return;

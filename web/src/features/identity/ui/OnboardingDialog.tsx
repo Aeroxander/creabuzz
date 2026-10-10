@@ -11,6 +11,7 @@ import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
 import { Overlay } from "@/shared/ui/portal";
+import { CREATE_ACCOUNT } from "../lib/account-copy";
 
 export function OnboardingDialog({
   onDone,
@@ -33,7 +34,7 @@ export function OnboardingDialog({
       await publishProfile({ name, about: about || undefined });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "couldn't create identity");
+      setError(e instanceof Error ? e.message : "couldn't create your account");
     } finally {
       setSaving(false);
     }
@@ -65,7 +66,7 @@ export function OnboardingDialog({
           data-testid="onboarding-passkey"
         >
           <Fingerprint className="h-4 w-4" />
-          Create with passkey (no key to manage)
+          Continue with a passkey (nothing to remember)
         </button>
         {walletAvailable() ? (
           <button
@@ -93,18 +94,20 @@ export function OnboardingDialog({
         ) : null}
         <div className="mb-3 flex items-center gap-2 text-2xs text-muted-foreground">
           <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
-          or with a backup key
+          or without a passkey
           <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
         </div>
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
           <Sparkles className="h-5 w-5 text-black/60 dark:text-white/60" />
         </div>
         <h1 className="mt-3 text-lg font-semibold tracking-tight text-black dark:text-white">
-          Create your identity
+          {CREATE_ACCOUNT}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your key is generated in this browser and stays here. Messages, tasks
-          and agent delegations are signed by it. Back it up once you're in.
+          Pick a name and you're in. Your account lives in this browser and
+          signs what you do here: messages, tasks, and what you ask your AI
+          helpers to do. Save a recovery key once you're in, so you can get back
+          to it.
         </p>
         <div className="mt-4 space-y-3">
           <input
@@ -141,7 +144,7 @@ export function OnboardingDialog({
             className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
             data-testid="onboarding-create"
           >
-            Create identity
+            Create account
           </button>
         </div>
       </div>

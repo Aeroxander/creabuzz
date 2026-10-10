@@ -14,6 +14,7 @@ import {
 } from "../lib/feed-events";
 import { readMirrorSetting, writeMirrorSetting } from "../lib/mirror";
 import { usePublishFeedEvent } from "../use-feed";
+import { CREATE_ACCOUNT } from "@/features/identity/lib/account-copy";
 
 /**
  * Write a post (optionally about a launch) or a reply in a thread. Without an
@@ -51,7 +52,7 @@ export function Composer({
           onClick={() => setOnboarding(true)}
           type="button"
         >
-          Create your identity
+          {CREATE_ACCOUNT}
         </button>{" "}
         to post, reply and vote.
         {onboarding ? (

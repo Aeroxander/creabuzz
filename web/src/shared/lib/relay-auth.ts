@@ -39,7 +39,7 @@ export async function signForRelay(
     const durable = existingUserPubkey() !== null || hasNip07Provider();
     if (!durable) {
       throw new Error(
-        "Joining needs an identity that survives a reload. Create your identity here, or install a Nostr signer extension.",
+        "Joining needs an account that survives a reload. Create your account here, or sign in with a signer extension.",
       );
     }
   }

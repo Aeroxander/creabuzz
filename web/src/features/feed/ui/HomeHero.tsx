@@ -2,14 +2,15 @@
  * The top of Home: what this place is for people who just arrived, and what to
  * do next for people who just signed up.
  *
- * Signed out: a short pitch, two doors (browse the raises, start one) and the
- * three ideas the product stands on. Signed in: a checklist built only from
+ * Signed out: a short pitch, two doors (make an account, look around) and the
+ * three ideas the product stands on (a ready-made team, helpers that ask first,
+ * and sharing ownership when the time comes). Signed in: a checklist built only from
  * things the app can verify (a profile, a follow, a launch of your own), so a
  * ticked box never lies. It can be dismissed, and goes away on its own when done.
  */
 
 import { Link } from "@tanstack/react-router";
-import { Check, Coins, HandCoins, Vote } from "lucide-react";
+import { Bot, Check, Coins, Users } from "lucide-react";
 import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -17,11 +18,13 @@ import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
+import {
+  CREATE_ACCOUNT,
+  SIGN_UP_EVENT,
+} from "@/features/identity/lib/account-copy";
+
 import { followedLaunches, followedPeople } from "../lib/lists";
 import { useMyLists } from "../use-feed";
-
-/** Asks the profile menu to open its sign-up dialog (it owns that flow). */
-export const SIGN_UP_EVENT = "creaton:sign-up";
 
 const DISMISSED_KEY = "creaton.home.getting-started.dismissed";
 
@@ -35,19 +38,19 @@ function readDismissed(): boolean {
 
 const IDEAS = [
   {
+    icon: Users,
+    title: "Start from a ready-made team",
+    body: "Pick a film crew, an app team or a startup crew. Channels, helpers and a shared wiki are set up for you.",
+  },
+  {
+    icon: Bot,
+    title: "AI helpers that ask first",
+    body: "Helpers do the legwork. When one reaches its limit it asks you before going on, so nothing runs away.",
+  },
+  {
     icon: Coins,
-    title: "Own a piece",
-    body: "Back a project early and hold a real share of what it becomes.",
-  },
-  {
-    icon: Vote,
-    title: "Decide together",
-    body: "Hold shares in a project's own DAO and you vote on how its treasury is spent, and can always exit.",
-  },
-  {
-    icon: HandCoins,
-    title: "Get paid for work",
-    body: "Do the work, have it accepted, and earn credit and royalties.",
+    title: "Share what you build",
+    body: "When you're ready, raise money and share ownership with the people who back and build it.",
   },
 ] as const;
 
@@ -71,28 +74,23 @@ function Welcome() {
         className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl"
         id="welcome-title"
       >
-        Back the projects you believe in,{" "}
-        <span className="text-[var(--brand-violet)]">together</span>
+        Make something with a team of people and{" "}
+        <span className="text-[var(--brand-violet)]">AI helpers</span>
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
-        Creaton is where teams raise money, share ownership and get work done in
-        the open, with people and AI agents at the same table.
+        Creaton is a shared workspace where you plan, make and ship together. AI
+        helpers do the legwork inside a budget you set, and when you're ready
+        you can share ownership with the people who help build it.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
-        <Button asChild size="lg">
-          <Link
-            search={{ action: undefined, author: undefined }}
-            to="/launchpad"
-          >
-            Explore launches
-          </Link>
-        </Button>
         <Button
           onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
           size="lg"
-          variant="outline"
         >
-          Create your account
+          {CREATE_ACCOUNT}
+        </Button>
+        <Button asChild size="lg" variant="outline">
+          <Link to="/discover">Look around</Link>
         </Button>
       </div>
       <ul className="mt-8 grid gap-4 sm:grid-cols-3">

@@ -35,6 +35,7 @@ import {
   useFollowedLaunches,
   useWorkStanding,
 } from "../use-portfolio";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 /** AppToken supply is minted with 18 decimals. */
 const TOKEN_DECIMALS = 18;
@@ -98,12 +99,7 @@ function WorkSection() {
   const work = useWorkStanding();
   let body: ReactNode;
   if (!me) {
-    body = (
-      <Muted>
-        Create your identity from the profile menu to start earning credit for
-        your work.
-      </Muted>
-    );
+    body = <Muted>{needAccountTo("start earning credit for your work")}</Muted>;
   } else if (work.isLoading) {
     body = <Muted>Adding up your work…</Muted>;
   } else if (work.error || !work.data) {

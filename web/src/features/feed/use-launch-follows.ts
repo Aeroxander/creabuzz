@@ -10,6 +10,7 @@ import {
   withMigratedLaunches,
 } from "./lib/lists";
 import { useMyLists, usePublishFeedEvent } from "./use-feed";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 /** Where launch follows lived before they were published (browser only). */
 const LEGACY_KEY = "buzz.launchpad.followed";
@@ -73,7 +74,7 @@ export function useLaunchFollows() {
   /** `onDone` runs once the follow list change is accepted by the server. */
   const toggle = (coord: string, onDone?: () => void) => {
     if (!me) {
-      toast.error("Create your identity from the profile menu to follow.");
+      toast.error(needAccountTo("follow"));
       return;
     }
     if (!lists.isSuccess) return;

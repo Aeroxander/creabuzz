@@ -26,7 +26,7 @@ export function IdentityRecoveryBanner() {
       window.location.reload();
     } catch {
       setImportError(
-        "That backup key couldn't be imported. Check it and try again.",
+        "That recovery key couldn't be imported. Check it and try again.",
       );
     }
   };
@@ -48,14 +48,14 @@ export function IdentityRecoveryBanner() {
         }}
       >
         <label htmlFor="identity-recovery-backup" className="sr-only">
-          Backup key
+          Recovery key
         </label>
         <input
           id="identity-recovery-backup"
           type="password"
           value={backup}
           onChange={(event) => setBackup(event.target.value)}
-          placeholder="Paste your backup key"
+          placeholder="Paste your recovery key"
           autoComplete="off"
           className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-2xs outline-none focus:ring-1 focus:ring-ring"
           data-testid="identity-recovery-backup-input"

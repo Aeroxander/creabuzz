@@ -35,6 +35,7 @@ import { useMyTeamLaunches } from "../use-launch-updates";
 import { usePeople } from "../use-people";
 import { useSocialPublish } from "../use-social-actions";
 import { useFollowing } from "../use-social-data";
+import { CREATE_ACCOUNT } from "@/features/identity/lib/account-copy";
 
 const MENTION_QUERY = /(?:^|\s)@([\p{L}\p{N}_]{0,32})$/u;
 
@@ -107,7 +108,7 @@ export function PostComposer({
           onClick={() => setOnboarding(true)}
           type="button"
         >
-          Create your identity
+          {CREATE_ACCOUNT}
         </button>{" "}
         to post, reply, like and follow. Reading needs no account.
         {onboarding ? (

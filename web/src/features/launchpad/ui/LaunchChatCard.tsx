@@ -30,6 +30,7 @@ import {
   useCreateChatRooms,
   useJoinRoom,
 } from "../use-launch-chat";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 const ROOM_COPY: Record<RoomKey, { title: string; blurb: string }> = {
   supporters: {
@@ -70,7 +71,7 @@ function JoinRoom({ row }: { row: RoomRow }) {
   const join = useJoinRoom(row.id);
   const onJoin = async () => {
     if (!existingUserPubkey()) {
-      toast.error("Create your identity from the profile menu to join.");
+      toast.error(needAccountTo("join"));
       return;
     }
     try {

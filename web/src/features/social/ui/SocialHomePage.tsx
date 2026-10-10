@@ -15,6 +15,7 @@ import { TabStrip } from "./TabStrip";
 import { useLaunchUpdates } from "../use-launch-updates";
 import { useRankedRows } from "../use-ranking";
 import { useFollowing, useNotesById, useTimeline } from "../use-social-data";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 type Tab = "creaton" | "updates" | "following";
 
@@ -75,7 +76,7 @@ export function SocialHomePage() {
         )
       ) : tab === "following" && !me ? (
         <EmptyState title="Sign in to see who you follow">
-          Create your identity to follow people and see their posts here.
+          {needAccountTo("follow people and see their posts here")}
         </EmptyState>
       ) : tab === "following" &&
         following.isSuccess &&

@@ -39,6 +39,7 @@ import {
 import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
+import { CREATE_ACCOUNT, SIGN_UP_EVENT } from "../lib/account-copy";
 import {
   setupPasskey,
   signInPasskeyIdentity,
@@ -140,8 +141,8 @@ export function ProfileMenu({
   // owning a second copy of it.
   useEffect(() => {
     const open = () => setShowOnboarding(true);
-    window.addEventListener("creaton:sign-up", open);
-    return () => window.removeEventListener("creaton:sign-up", open);
+    window.addEventListener(SIGN_UP_EVENT, open);
+    return () => window.removeEventListener(SIGN_UP_EVENT, open);
   }, []);
 
   // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
@@ -253,7 +254,7 @@ export function ProfileMenu({
                 : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
           }
           data-testid="create-identity-cta"
-          title={compact ? "Create your identity" : undefined}
+          title={compact ? CREATE_ACCOUNT : undefined}
         >
           {placement === "header" ? null : (
             <UserPlus aria-hidden className="h-4 w-4" />
@@ -263,7 +264,7 @@ export function ProfileMenu({
               compact && placement !== "header" ? "sr-only" : undefined
             }
           >
-            {placement === "header" ? "Sign up" : "Create your identity"}
+            {placement === "header" ? "Sign up" : CREATE_ACCOUNT}
           </span>
         </button>
         {showOnboarding ? (
@@ -339,7 +340,7 @@ export function ProfileMenu({
             {!hasBackedUp() ? (
               <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
                 <AlertTriangle className="h-3 w-3 shrink-0" />
-                Back up your key. It only exists in this browser.
+                Save a recovery key. Your account only exists in this browser.
               </p>
             ) : null}
 
@@ -412,7 +413,9 @@ export function ProfileMenu({
                 <MenuItem
                   icon={<KeyRound className="h-3.5 w-3.5" />}
                   label={
-                    hasBackedUp() ? "Back up key" : "Back up key (recommended)"
+                    hasBackedUp()
+                      ? "Recovery key"
+                      : "Save a recovery key (recommended)"
                   }
                   onClick={() => setShowBackup(true)}
                 />
@@ -623,11 +626,12 @@ export function ProfileMenu({
         >
           <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
             <h3 className="text-base font-semibold text-black dark:text-white">
-              Back up your key
+              Save your recovery key
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              This secret key signs everything you do here. Store it somewhere
-              safe; your identity can't be recovered without it.
+              This secret key is your account: anyone who has it can act as you.
+              Keep it somewhere private. You need it to sign in on another
+              device, or if this browser is ever cleared.
             </p>
             <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
               {revealKey ? nsec : `${nsec.slice(0, 12)}…${nsec.slice(-8)}`}
@@ -688,11 +692,12 @@ export function ProfileMenu({
         >
           <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
             <h3 className="text-base font-semibold text-black dark:text-white">
-              Sign out with a new key?
+              Sign out and start fresh?
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Your current identity is removed from this browser and a fresh one
-              is created. Back up first if you want to keep this identity.
+              Your account is removed from this browser and a new, empty one is
+              created. Save your recovery key first if you want to get back to
+              this one.
             </p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
@@ -700,7 +705,7 @@ export function ProfileMenu({
                 onClick={() => setConfirmSignOut(false)}
                 className="rounded-md px-3 py-1.5 text-sm text-muted-foreground"
               >
-                Keep identity
+                Keep my account
               </button>
               <button
                 type="button"
