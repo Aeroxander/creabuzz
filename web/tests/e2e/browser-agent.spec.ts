@@ -154,7 +154,9 @@ test("a refused status row is reported instead of claimed as done", async ({
 
   let gatewayCalls = 0;
   await page.route("**/llm/chat/completions", async (route) => {
-    gatewayCalls += 1;
+    // The Agents view asks once, with an empty body, whether the server has an
+    // AI service; only a request carrying a message is an AI call.
+    if (route.request().postData() !== "{}") gatewayCalls += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",

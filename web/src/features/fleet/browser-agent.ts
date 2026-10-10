@@ -31,6 +31,12 @@ import {
   answerWikiEdit,
   createWikiCopilotPolicy,
 } from "@/features/fleet/lib/wiki-copilot";
+import {
+  personaMentionPattern,
+  personaSystemPrompt,
+  personaTaskPrompt,
+  type TabPersona,
+} from "@/features/fleet/lib/persona-mention";
 import { parseTask } from "@/features/fleet/use-agent-tasks";
 import {
   readMemory,
@@ -84,6 +90,31 @@ class BrowserAgent {
 
   setEvents(events: BrowserAgentEvents): void {
     this.events = events;
+  }
+
+  /**
+   * Which project helper this tab runs, or null for the generic assistant
+   * (`@buzz-tab`). A helper answers to its own name and speaks with its own
+   * prompt. Change it while the agent is stopped: the name it announces is
+   * part of how the rest of the community sees it.
+   */
+  setPersona(persona: TabPersona | null): void {
+    this.persona = persona;
+    this.personaMention = persona ? personaMentionPattern(persona.name) : null;
+    // A new name has to be announced even if nothing else changed.
+    this.lastAnnouncement = null;
+  }
+
+  getPersona(): TabPersona | null {
+    return this.persona;
+  }
+
+  private persona: TabPersona | null = null;
+  private personaMention: RegExp | null = null;
+
+  /** What this agent calls itself. */
+  private displayName(): string {
+    return this.persona?.name ?? AGENT_NAME;
   }
 
   getState(): AgentLifecycleState {
@@ -275,7 +306,7 @@ class BrowserAgent {
     // Kind 44010 is stored forever, so republish on a change (status, team,
     // tools) or as a slow keepalive — not on every timer tick.
     const fingerprint = JSON.stringify({
-      name: AGENT_NAME,
+      name: this.displayName(),
       runtype: "browser",
       status,
       tools,
@@ -286,7 +317,7 @@ class BrowserAgent {
       return;
     }
     const capabilities = {
-      name: AGENT_NAME,
+      name: this.displayName(),
       runtype: "browser",
       status,
       tools,
@@ -310,10 +341,11 @@ class BrowserAgent {
 
   private async onMention(event: NostrEvent) {
     if (event.pubkey === getAgentPubkey()) return;
-    if (!MENTION_PATTERN.test(event.content)) return;
+    if (!(this.personaMention ?? MENTION_PATTERN).test(event.content)) return;
     // "@agent: <instruction>" delegates work — capture it as a task; the
-    // task subscription (below) picks it up and processes it.
-    if (TASK_PATTERN.test(event.content)) {
+    // task subscription (below) picks it up and processes it. Only the generic
+    // assistant takes that form; a helper answers its own mentions.
+    if (!this.persona && TASK_PATTERN.test(event.content)) {
       void this.captureTask(event).catch((error) => {
         console.error("[browser-agent] task capture failed:", error);
       });
@@ -336,8 +368,10 @@ class BrowserAgent {
           ? `\n\nPrior turns with you in this channel:\n${priorTurns.join("\n")}`
           : "";
       const answer = await this.askLlm(
-        `You are ${AGENT_NAME}, a browser-hosted fleet agent in a Creaton community channel. ` +
-          "Answer the last message concisely. Use the channel context below.",
+        this.persona
+          ? personaSystemPrompt(this.persona)
+          : `You are ${AGENT_NAME}, a browser-hosted fleet agent in a Creaton community channel. ` +
+              "Answer the last message concisely. Use the channel context below.",
         `${context}${memoryBlock}\n\nSomeone wrote: ${event.content}`,
       );
       appendChannelMemory(channelId, event.content.slice(0, 200), answer);
@@ -418,7 +452,9 @@ class BrowserAgent {
         ? `You already worked on this task earlier (outcome: ${prior.outcome.slice(0, 300)}). Continue from there if relevant.`
         : "This is a new task. Complete it concisely.";
       const answer = await this.askLlm(
-        `You are ${AGENT_NAME}, a browser-hosted fleet agent. ${prompt}`,
+        this.persona
+          ? personaTaskPrompt(this.persona, prompt)
+          : `You are ${AGENT_NAME}, a browser-hosted fleet agent. ${prompt}`,
         `Task: ${task.title}\n\n${task.description}`,
       );
       await this.publishTaskUpdate(

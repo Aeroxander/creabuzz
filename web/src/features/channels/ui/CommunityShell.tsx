@@ -356,7 +356,7 @@ export function CommunityShell({
             data-testid="fleet-toggle"
           >
             <Bot className="h-3.5 w-3.5" />
-            Agents
+            AI helpers
           </button>
           <button
             type="button"

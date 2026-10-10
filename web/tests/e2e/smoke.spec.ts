@@ -1255,6 +1255,7 @@ test("the tab agent's key can be rotated and its storage is disclosed", async ({
     "creates a signing key for it in this browser",
   );
 
+  await page.getByText("Retire this tab helper's key").click();
   await page.getByTestId("reset-agent-key").click();
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-accept").click();

@@ -7,7 +7,7 @@
  * through the relay's LLM gateway.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bot,
   Cpu,
@@ -25,12 +25,16 @@ import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useAgentTasks, type FleetTask } from "../use-agent-tasks";
+import { helperSeats } from "../lib/helper-seats";
+import { useLlmGateway } from "../use-llm-gateway";
+import { useOrgChart } from "../use-org-chart";
+import { useTabHelper } from "../use-tab-helper";
+import { HelpersPanel } from "./HelpersPanel";
 import { usageTotals, resetUsage } from "../agent-usage";
 
 import { useAgentRoster, type AgentCapabilities } from "../use-agent-roster";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import type { Channel } from "@/features/channels/use-channels";
-import { getBrowserAgent, type AgentLifecycleState } from "../browser-agent";
 import {
   peekAgentPubkey,
   resetAgentIdentity,
@@ -201,9 +205,11 @@ export function FleetView({ channels }: { channels: Channel[] }) {
   const [taskAssignee, setTaskAssignee] = useState("");
   const [creating, setCreating] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
-  const [state, setState] = useState<AgentLifecycleState>("stopped");
-  const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
+  const tab = useTabHelper(channels);
+  const { state, error, starting } = tab;
+  const gateway = useLlmGateway();
+  const { byKey: orgNodes } = useOrgChart();
+  const seats = useMemo(() => helperSeats(orgNodes), [orgNodes]);
   const [confirmReset, setConfirmReset] = useState(false);
 
   // The tab agent is a person like any other fleet member: resolve its own
@@ -215,36 +221,10 @@ export function FleetView({ channels }: { channels: Channel[] }) {
   );
   const userName = useUserNames(tabAgentPubkeys);
 
-  useEffect(() => {
-    const agent = getBrowserAgent();
-    agent.setEvents({ onStateChange: setState });
-    setState(agent.getState());
-    return () => agent.setEvents({});
-  }, []);
-
-  const toggle = async () => {
-    const agent = getBrowserAgent();
-    if (agent.isRunning()) {
-      agent.stop();
-      setError(null);
-      return;
-    }
-    setStarting(true);
-    setError(null);
-    try {
-      agent.setChannels(channels.map((c) => c.id));
-      await agent.start();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "failed to start agent");
-    } finally {
-      setStarting(false);
-    }
-  };
-
   if (loadError && agents.length === 0) {
     return (
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
-        <PageHeader title="Agents" />
+        <PageHeader title="AI helpers" />
         <QueryError
           description="The server did not answer the agent roster query, so no agents can be listed."
           message={errorMessage(loadError)}
@@ -258,7 +238,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-4 p-4">
       <PageHeader
-        title="Agents"
+        title="AI helpers"
         action={
           <div className="flex items-center gap-3">
             <span className="text-xs text-black/60 dark:text-white/60">
@@ -267,7 +247,9 @@ export function FleetView({ channels }: { channels: Channel[] }) {
             </span>
             <button
               type="button"
-              onClick={() => void toggle()}
+              onClick={() =>
+                state === "running" ? tab.stop() : void tab.start(null)
+              }
               disabled={starting}
               className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium disabled:opacity-50 ${
                 state === "running"
@@ -282,10 +264,10 @@ export function FleetView({ channels }: { channels: Channel[] }) {
                 <Play className="h-3.5 w-3.5" />
               )}
               {state === "running"
-                ? "Stop tab agent"
+                ? "Stop tab helper"
                 : starting
                   ? "Starting…"
-                  : "Run tab agent"}
+                  : "Run in this tab"}
             </button>
           </div>
         }
@@ -297,41 +279,58 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         </p>
       ) : null}
 
+      <HelpersPanel agents={agents} gateway={gateway} seats={seats} tab={tab} />
+
       {state === "running" ? (
         <p className="rounded-md border border-black/10 bg-white px-3 py-2 text-xs text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
-          This tab's agent is <strong>online</strong> as{" "}
-          <strong>{userName(tabAgentPubkey ?? "")}</strong>. Mention{" "}
-          <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
-            @buzz-tab
-          </code>{" "}
-          in a channel to get a response.
+          {tab.persona ? (
+            <>
+              <strong>{tab.persona.name}</strong> is <strong>online</strong>.
+              Mention{" "}
+              <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
+                @{tab.persona.name}
+              </code>{" "}
+              in a channel to get an answer.
+            </>
+          ) : (
+            <>
+              This tab's helper is <strong>online</strong> as{" "}
+              <strong>{userName(tabAgentPubkey ?? "")}</strong>. Mention{" "}
+              <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
+                @buzz-tab
+              </code>{" "}
+              in a channel to get a response.
+            </>
+          )}
         </p>
       ) : null}
 
       {state === "running" ? <UsageCard /> : null}
 
-      {/* Trust model made explicit: the tab agent's key lives in this browser,
-          unlike a managed agent whose key stays on the relay host. */}
       <p
         className="text-xs text-black/60 dark:text-white/60"
         data-testid="agent-key-disclosure"
       >
         {state === "running"
-          ? "This agent signs with a key stored in this browser's local storage. Reset it while the agent is stopped to retire the identity."
-          : "Running the tab agent creates a signing key for it in this browser. It is not shared with the server."}
+          ? "This helper signs with a key stored in this browser's local storage. Stop it first to retire that identity."
+          : "Running a helper in this tab creates a signing key for it in this browser. It is not shared with the server."}
       </p>
-
       {state !== "running" ? (
-        <div>
-          <button
-            className="rounded-md border border-black/15 px-2.5 py-1.5 text-xs font-medium dark:border-white/15"
-            data-testid="reset-agent-key"
-            onClick={() => setConfirmReset(true)}
-            type="button"
-          >
-            Reset agent key
-          </button>
-        </div>
+        <details className="text-xs text-black/60 dark:text-white/60">
+          <summary className="cursor-pointer font-medium">
+            Retire this tab helper's key
+          </summary>
+          <div className="mt-2">
+            <button
+              className="rounded-md border border-black/15 px-2.5 py-1.5 text-xs font-medium dark:border-white/15"
+              data-testid="reset-agent-key"
+              onClick={() => setConfirmReset(true)}
+              type="button"
+            >
+              Reset agent key
+            </button>
+          </div>
+        </details>
       ) : null}
 
       <ConfirmDialog
@@ -433,8 +432,8 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         ) : agents.length === 0 ? (
           <div className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60">
             <Bot className="mx-auto mb-2 h-8 w-8 text-black/60 dark:text-white/60" />
-            No agents have announced yet. Run the tab agent (or a sandbox agent)
-            to join the fleet.
+            No helpers have announced themselves yet. Start one above and it
+            shows up here.
           </div>
         ) : (
           agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)

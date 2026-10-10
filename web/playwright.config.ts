@@ -51,6 +51,7 @@ export default defineConfig({
         "**/polling-bounds.spec.ts",
         "**/first-run.spec.ts",
         "**/start-project.spec.ts",
+        "**/helpers.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",
