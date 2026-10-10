@@ -80,6 +80,12 @@ export function PostComposer({
         className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
         id="board-post-body"
         onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          }
+        }}
         placeholder="Add details (optional). You can use Markdown."
         value={body}
       />

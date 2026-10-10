@@ -12,20 +12,20 @@ export function VoteButtons({
   score,
   myVote,
   onVote,
-  what,
+  subject,
 }: {
   score: number;
   myVote: 1 | -1 | 0;
   onVote: (direction: "up" | "down") => void;
-  /** "post" or "reply": names what is being voted on, for screen readers. */
-  what: string;
+  /** What is being voted on, for screen readers: `post "Which editor?"`, `reply by Bob`. */
+  subject: string;
 }) {
   const base =
     "grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <div className="flex w-9 shrink-0 flex-col items-center">
       <button
-        aria-label={`Upvote this ${what}`}
+        aria-label={`Upvote ${subject}`}
         aria-pressed={myVote === 1}
         className={cn(base, myVote === 1 && "text-primary-ink")}
         data-testid="board-upvote"
@@ -42,7 +42,7 @@ export function VoteButtons({
         <span className="sr-only"> points</span>
       </span>
       <button
-        aria-label={`Downvote this ${what}`}
+        aria-label={`Downvote ${subject}`}
         aria-pressed={myVote === -1}
         className={cn(base, myVote === -1 && "text-destructive")}
         data-testid="board-downvote"

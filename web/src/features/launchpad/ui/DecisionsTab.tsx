@@ -6,7 +6,10 @@ import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
 import { useWalletSend } from "../use-wallet-send";
 import { Button } from "@/shared/ui/button";
+import { proposalTopic } from "@/features/board/lib/proposal-link";
+import { useDaoThreads } from "@/features/board/use-dao-threads";
 import { DecisionCard } from "./DecisionCard";
+import { DecisionDiscussion } from "./DecisionDiscussion";
 import { DecisionComposer } from "./DecisionComposer";
 
 /**
@@ -25,6 +28,10 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);
+  // The talk about each decision lives on the community's boards.
+  const chainId = Number(launch.record.chainId);
+  const usableChain = Number.isSafeInteger(chainId) && chainId > 0;
+  const discussion = useDaoThreads(usableChain ? chainId : null, dao);
 
   return (
     <div className="flex flex-col gap-4" data-testid="decisions-tab">
@@ -123,6 +130,28 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
                   }}
                   gate={gate}
                   onSend={send}
+                  renderDiscussion={(headline) => {
+                    const ref = {
+                      chainId,
+                      dao: snapshot.dao.toLowerCase(),
+                      id: decision.id.toLowerCase(),
+                    };
+                    // A decision that cannot be named exactly cannot be linked to, so it offers no discussion.
+                    if (!usableChain || proposalTopic(ref) === null)
+                      return null;
+                    return (
+                      <DecisionDiscussion
+                        boards={discussion.boards}
+                        decision={ref}
+                        failed={discussion.error != null}
+                        headline={headline}
+                        loading={discussion.isLoading}
+                        onRetry={discussion.refetch}
+                        onStarted={discussion.refetch}
+                        threads={discussion.threads.get(ref.id) ?? []}
+                      />
+                    );
+                  }}
                   snapshot={snapshot}
                 />
               </li>

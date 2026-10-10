@@ -99,6 +99,7 @@ export function LaunchDetailPage({
   author,
   action,
   sandbox,
+  initialTab,
 }: {
   launchId: string;
   author: string | undefined;
@@ -110,6 +111,8 @@ export function LaunchDetailPage({
   action?: LaunchAction | null;
   /** Render the deterministic sandbox launch instead of a relay launch. */
   sandbox?: boolean;
+  /** The tab to open on (`?tab=`), when the link names one. */
+  initialTab?: Tab;
 }) {
   const { launch: realLaunch, isLoading } = useLaunch(launchId, author);
   const launch = sandbox
@@ -137,7 +140,7 @@ export function LaunchDetailPage({
   }, [isFounder, supporterCoord, seenCount]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "overview");
   const [bidOpen, setBidOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [mybidsAutoAction, setMybidsAutoAction] = useState<

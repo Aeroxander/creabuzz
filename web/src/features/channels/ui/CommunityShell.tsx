@@ -38,6 +38,12 @@ const BoardView = lazy(() =>
     default: m.BoardView,
   })),
 );
+// A thread about a DAO decision reads the chain; only then is that code needed.
+const ProposalExtras = lazy(() =>
+  import("@/features/launchpad/ui/ProposalExtras").then((m) => ({
+    default: m.ProposalExtras,
+  })),
+);
 const StartProject = lazy(() =>
   import("@/features/templates/ui/StartProject").then((m) => ({
     default: m.StartProject,
@@ -613,8 +619,10 @@ export function CommunityShell({
               >
                 <BoardView
                   channel={activeChannel}
+                  key={activeChannel.id}
                   onOpenPost={openPost}
                   postId={openPostId ?? undefined}
+                  proposalExtras={ProposalExtras}
                   suggestPeopleFrom={
                     channels.find(
                       (c) => c.type !== "forum" && c.visibility === "public",

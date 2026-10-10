@@ -39,6 +39,7 @@ export function PostThread({
   needAccount,
   onBack,
   header,
+  badges,
 }: {
   post: BoardPost;
   comments: BoardComment[];
@@ -49,6 +50,8 @@ export function PostThread({
   needAccount: (action: string) => boolean;
   onBack: () => void;
   header?: ReactNode;
+  /** A short fact beside a person's name, by public key. */
+  badges?: Record<string, string>;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -133,7 +136,7 @@ export function PostThread({
           myVote={post.myVote}
           onVote={(direction) => vote(post, direction)}
           score={post.score}
-          what="post"
+          subject={`post "${post.title}"`}
         />
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-bold" data-testid="board-thread-title">
@@ -141,6 +144,7 @@ export function PostThread({
           </h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <AuthorChip
+              badge={badges?.[post.author]}
               profile={profiles?.[post.author]}
               pubkey={post.author}
             />
@@ -184,11 +188,12 @@ export function PostThread({
                   myVote={comment.myVote}
                   onVote={(direction) => vote(comment, direction)}
                   score={comment.score}
-                  what="reply"
+                  subject={`reply by ${nameOf(comment.author)}`}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <AuthorChip
+                      badge={badges?.[comment.author]}
                       profile={profiles?.[comment.author]}
                       pubkey={comment.author}
                     />
@@ -260,6 +265,12 @@ export function PostThread({
           className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           id="board-reply-box"
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault();
+              void sendReply();
+            }
+          }}
           placeholder={
             me === null ? "Create your account to reply." : "Write a reply"
           }

@@ -28,6 +28,7 @@ export default defineConfig({
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
+        "**/launchpad-discussion.spec.ts",
         "**/launchpad-journey.spec.ts",
         "**/launchpad-paid-work.spec.ts",
         "**/launchpad-market-journey.spec.ts",

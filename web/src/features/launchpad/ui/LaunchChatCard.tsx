@@ -11,7 +11,7 @@ import { Lock, MessagesSquare } from "lucide-react";
 import { toast } from "sonner";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { relayWsUrl } from "@/shared/lib/relay-url";
+import { communityHostName } from "@/shared/lib/relay-url";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -44,20 +44,12 @@ const ROOM_COPY: Record<RoomKey, { title: string; blurb: string }> = {
   team: { title: "Team", blurb: "Private to the people building it." },
 };
 
-function communityHost(): string {
-  try {
-    return new URL(relayWsUrl()).host;
-  } catch {
-    return "";
-  }
-}
-
 function OpenRoom({ row }: { row: RoomRow }) {
   return (
     <Button asChild size="sm">
       <Link
         data-testid={`launch-chat-open-${row.room}`}
-        params={{ host: communityHost() }}
+        params={{ host: communityHostName() }}
         search={{ channel: row.id }}
         to="/c/$host"
       >

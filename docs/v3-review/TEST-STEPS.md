@@ -139,6 +139,22 @@ By hand: open **Communities** on a server where you are the owner, then **Org**:
 organization"; answer four short questions and the chart appears. Open a graduated project: it opens on "Where things
 stand" and "Needs you", and the raise is folded under "About the raise this project came from".
 
+## 4f. Boards and decision threads (2026-10-10)
+
+```bash
+cd web && pnpm test && pnpm check
+cd web && pnpm build && pnpm exec playwright test --project=smoke board.spec.ts start-project.spec.ts
+scripts/web-discussion-e2e.sh        # a REAL local chain: a discussion under a decision, its live state and the author's Shares
+cargo test -p buzz-cli --lib templates   # the command line reads the same templates (boards, private channels)
+```
+
+By hand (a local server, `just relay-web`): open a community, press **New board** in the sidebar, post, reply, vote on
+the post, then change the vote and press it again to take it back, and reload: the score must stay at zero. Open
+**Start a project**, pick a team, and check the community now has a supporters board and a private founders board, each
+with a first post. On the founders board press **People** and add someone by pasting their npub. On a project's
+**Decisions** tab press **Start a discussion** under a decision, then open it from the list: the header must show where
+the decision stands, and the board's votes must be labelled as not the DAO's vote.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

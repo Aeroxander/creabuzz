@@ -28,7 +28,7 @@ export function PostRow({
         myVote={post.myVote}
         onVote={onVote}
         score={post.score}
-        what="post"
+        subject={`post "${post.title}"`}
       />
       <div className="min-w-0 flex-1">
         <button

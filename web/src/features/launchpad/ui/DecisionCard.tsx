@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -116,6 +116,7 @@ export function DecisionCard({
   busy,
   gate,
   onSend,
+  renderDiscussion,
 }: {
   decision: Decision;
   snapshot: DecisionsSnapshot;
@@ -126,6 +127,8 @@ export function DecisionCard({
   busy: string | null;
   gate: string | null;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** The talk about this decision, given what it would do in a few words; shown under it. */
+  renderDiscussion?: (headline: string) => ReactNode;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const stage = decisionStage(decision, snapshot.chainTime);
@@ -276,6 +279,8 @@ export function DecisionCard({
           ) : null}
         </div>
       ) : null}
+
+      {renderDiscussion?.(described?.title ?? "this decision")}
 
       <button
         aria-expanded={showDetails}

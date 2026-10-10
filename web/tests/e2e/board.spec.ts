@@ -743,3 +743,140 @@ test("someone without an account is told to make one before boards are added", a
   ).toBeVisible();
   expect(relay.events.filter((e) => e.kind === 9007)).toEqual([]);
 });
+
+const STRANGER_DAO = `0x${"cd".repeat(20)}`;
+const DECISION = `0x${"0f".repeat(32)}`;
+const aboutDecision = [
+  ["t", "proposal"],
+  ["t", `proposal:31337:${STRANGER_DAO}:${DECISION}`],
+];
+
+test("a board with posts about decisions offers a Proposals filter, and marks those posts", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const plain = post(ANN, now() - 300, "Just chatting");
+  const about = {
+    ...post(BOB, now() - 200, "Fund the trailer"),
+    tags: [["h", BOARD], ...aboutDecision],
+  };
+  relay.seed(plain);
+  relay.seed(about);
+  await open(page, relay);
+
+  await expectRows(page, ["Fund the trailer", "Just chatting"]);
+  await expect(page.getByTestId(`board-post-${about.id}`)).toContainText(
+    "Proposal",
+  );
+  await expect(page.getByTestId(`board-post-${plain.id}`)).not.toContainText(
+    "Proposal",
+  );
+  await page.getByTestId("board-filter-proposals").click();
+  await expectRows(page, ["Fund the trailer"]);
+  await page.getByTestId("board-filter-all").click();
+  await expectRows(page, ["Fund the trailer", "Just chatting"]);
+});
+
+test("a board with no posts about decisions has no Proposals filter", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  relay.seed(post(ANN, now() - 300, "Just chatting"));
+  await open(page, relay);
+  await expectRows(page, ["Just chatting"]);
+  await expect(page.getByTestId("board-filter-proposals")).toHaveCount(0);
+});
+
+test("a thread that names a DAO the app does not know says it was not checked, and shows no figures", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const about = {
+    ...post(BOB, now() - 200, "Fund the trailer", "details"),
+    tags: [["h", BOARD], ...aboutDecision],
+  };
+  relay.seed(about);
+  await open(page, relay, { post: about.id });
+
+  await expect(page.getByTestId("board-thread-title")).toHaveText(
+    "Fund the trailer",
+  );
+  await expect(page.getByTestId("proposal-unverified")).toContainText(
+    "doesn't know that DAO",
+  );
+  await expect(page.getByTestId("proposal-header")).toContainText(
+    "not the DAO's vote",
+  );
+  await expect(page.getByTestId("proposal-status")).toHaveCount(0);
+  await expect(page.getByTestId("author-badge")).toHaveCount(0);
+});
+
+const PLANS = "b1a45000-1111-2222-3333-444444444444";
+
+test("switching to another board shows that board's posts at once, with nothing left over from the first", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  relay.seed(meta(PLANS, "plans", "forum"));
+  relay.seed(post(ANN, now() - 300, "An idea"));
+  relay.seed({ ...post(BOB, now() - 200, "A plan"), tags: [["h", PLANS]] });
+  relay.seed({
+    ...post(BOB, now() - 100, "Another plan"),
+    tags: [["h", PLANS]],
+  });
+  await open(page, relay);
+  await expectRows(page, ["An idea"]);
+
+  await page.getByTestId("board-nav-plans").click();
+  await expect(page.getByTestId("board-name")).toHaveText("plans");
+  await expectRows(page, ["Another plan", "A plan"]);
+  await expect(page.getByTestId("board-show-new")).toHaveCount(0);
+
+  await page.getByTestId("board-nav-ideas").click();
+  await expectRows(page, ["An idea"]);
+});
+
+test("votes and replies say what they are for, so a screen reader can tell them apart", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const a = post(ANN, now() - 300, "First topic");
+  const b = post(BOB, now() - 200, "Second topic");
+  relay.seed(a);
+  relay.seed(b);
+  relay.seed(reply(BOB, now() - 100, a.id));
+  await open(page, relay);
+  await expect(
+    page.getByRole("button", { name: 'Upvote post "First topic"' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: 'Upvote post "Second topic"' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: 'Downvote post "Second topic"' }),
+  ).toBeVisible();
+  await page
+    .getByTestId(`board-post-${a.id}`)
+    .getByTestId("board-post-title")
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^Upvote reply by / }),
+  ).toBeVisible();
+});
+
+test("a reply can be sent from the keyboard with Ctrl+Enter", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const p = post(ANN, now() - 300, "Keyboard topic");
+  relay.seed(p);
+  await open(page, relay, { post: p.id });
+  await page.locator("#board-reply-box").fill("Sent without the mouse.");
+  await page.locator("#board-reply-box").press("Control+Enter");
+  await expect(page.getByTestId("board-replies")).toContainText(
+    "Sent without the mouse.",
+  );
+  expect(
+    relay.events.filter((e) => e.kind === 45003 && e.pubkey === OWNER),
+  ).toHaveLength(1);
+});

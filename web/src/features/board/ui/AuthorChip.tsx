@@ -8,9 +8,12 @@ import {
 export function AuthorChip({
   pubkey,
   profile,
+  badge,
 }: {
   pubkey: string;
   profile: Profile | undefined;
+  /** A short fact about the person to show beside their name, such as how much of a DAO they hold. */
+  badge?: string;
 }) {
   const name = resolveUserName(profile, pubkey);
   return (
@@ -21,6 +24,14 @@ export function AuthorChip({
         size="xs"
       />
       <span className="truncate font-medium text-foreground">{name}</span>
+      {badge ? (
+        <span
+          className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
+          data-testid="author-badge"
+        >
+          {badge}
+        </span>
+      ) : null}
     </span>
   );
 }

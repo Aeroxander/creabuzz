@@ -68,3 +68,12 @@ export function relayWsUrl(): string {
 export function relayHttpBaseUrl(): string {
   return relayHttpUrl(relayWsUrl());
 }
+
+/** The host of the community this browser is connected to, as the `/c/<host>` address names it. */
+export function communityHostName(): string {
+  try {
+    return new URL(relayWsUrl()).host;
+  } catch {
+    return "";
+  }
+}

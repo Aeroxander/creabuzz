@@ -11,12 +11,20 @@
  * `../lib/board-model.ts`; this file shows it.
  */
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ComponentType,
+  type LazyExoticComponent,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import type { Channel } from "@/features/channels/use-channels";
-import { useProfiles } from "@/features/profiles/use-profiles";
+import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
@@ -39,6 +47,22 @@ import { PostThread } from "./PostThread";
 
 const SORTS = Object.keys(SORT_LABELS) as BoardSort[];
 
+/** What a thread about something outside the board adds to it. */
+export interface PostExtras {
+  /** Shown under the title: where the thing it is about stands. */
+  header: ReactNode;
+  /** A short fact beside a person's name, by public key. */
+  badges: Record<string, string>;
+}
+
+export interface PostExtrasProps {
+  post: BoardPost;
+  authors: readonly string[];
+  children: (extras: PostExtras) => ReactNode;
+}
+
+const NO_EXTRAS: PostExtras = { header: null, badges: {} };
+
 function needAccount(action: string): boolean {
   if (existingUserPubkey() !== null) return true;
   toast.error(needAccountTo(action));
@@ -53,7 +77,7 @@ export function BoardView({
   channel,
   postId,
   onOpenPost,
-  renderPostHeader,
+  proposalExtras,
   suggestPeopleFrom = null,
 }: {
   channel: Channel;
@@ -62,8 +86,13 @@ export function BoardView({
   /** The post that is open, if any (kept in the address so it can be linked to). */
   postId: string | undefined;
   onOpenPost: (id: string | null) => void;
-  /** A header for a post that says it is about something else, such as a DAO decision. */
-  renderPostHeader?: (post: BoardPost) => ReactNode;
+  /**
+   * For a post that says it is about a DAO decision: a header and a figure beside names. Passed in (and
+   * loaded on demand) so a board that never has such a post does not carry the chain code.
+   */
+  proposalExtras?:
+    | ComponentType<PostExtrasProps>
+    | LazyExoticComponent<ComponentType<PostExtrasProps>>;
 }) {
   const records = useBoardRecords(channel.id);
   const me = existingUserPubkey();
@@ -104,7 +133,7 @@ export function BoardView({
       for (const c of list) set.add(c.author);
     return [...set];
   }, [board]);
-  const profiles = useProfiles(authors).data;
+  const profiles = usePeople(authors);
 
   const hasProposals = board.posts.some((post) => post.proposal !== null);
   const open = postId
@@ -126,37 +155,51 @@ export function BoardView({
   }
 
   if (postId) {
-    return open ? (
+    if (!open) {
+      return (
+        <div className="p-6 text-sm" data-testid="board-missing-post">
+          {records.isLoading ? (
+            <p className="text-muted-foreground" role="status">
+              Loading…
+            </p>
+          ) : (
+            <>
+              <p>This post isn't here. It may have been deleted.</p>
+              <Button
+                className="mt-3"
+                onClick={() => onOpenPost(null)}
+                size="sm"
+                variant="outline"
+              >
+                Back to the board
+              </Button>
+            </>
+          )}
+        </div>
+      );
+    }
+    const thread = (extras: PostExtras) => (
       <PostThread
         actions={actions}
+        badges={extras.badges}
         comments={board.comments.get(open.id) ?? []}
-        header={renderPostHeader?.(open)}
+        header={extras.header}
         me={me}
         needAccount={needAccount}
         onBack={() => onOpenPost(null)}
         post={open}
         profiles={profiles}
       />
+    );
+    const Extras = proposalExtras;
+    return open.proposal && Extras ? (
+      <Suspense fallback={thread(NO_EXTRAS)}>
+        <Extras authors={authors} post={open}>
+          {thread}
+        </Extras>
+      </Suspense>
     ) : (
-      <div className="p-6 text-sm" data-testid="board-missing-post">
-        {records.isLoading ? (
-          <p className="text-muted-foreground" role="status">
-            Loading…
-          </p>
-        ) : (
-          <>
-            <p>This post isn't here. It may have been deleted.</p>
-            <Button
-              className="mt-3"
-              onClick={() => onOpenPost(null)}
-              size="sm"
-              variant="outline"
-            >
-              Back to the board
-            </Button>
-          </>
-        )}
-      </div>
+      thread(NO_EXTRAS)
     );
   }
 
@@ -293,16 +336,22 @@ export function BoardView({
           />
         ) : null}
 
-        {pending ? (
-          <button
-            className="sticky top-2 z-10 self-center rounded-full border bg-card px-4 py-1.5 text-xs font-medium shadow-sm"
-            data-testid="board-show-new"
-            onClick={() => setFrozen(null)}
-            type="button"
-          >
-            {pillText}. Show
-          </button>
-        ) : null}
+        <div
+          aria-live="polite"
+          className="sticky top-2 z-10 self-center"
+          role="status"
+        >
+          {pending ? (
+            <button
+              className="rounded-full border bg-card px-4 py-1.5 text-xs font-medium shadow-sm"
+              data-testid="board-show-new"
+              onClick={() => setFrozen(null)}
+              type="button"
+            >
+              {pillText}. Show
+            </button>
+          ) : null}
+        </div>
 
         {records.isLoading ? (
           <p className="text-sm text-muted-foreground" role="status">
