@@ -1,6 +1,6 @@
 import { signAsUser } from "@/shared/lib/identity";
 import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
-import { publishEvent } from "@/shared/lib/publish-event";
+import { openPublishSession, publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 /**
@@ -19,4 +19,31 @@ export async function publishAsUser(
   });
   if (!result.accepted) throw new Error(result.message || failure);
   return signed;
+}
+
+/** A connection for signing and sending several records as the user in a row. */
+export interface UserPublisher {
+  /** Sign `template` as the user, send it, and throw when the server refuses it. */
+  publish: (
+    template: Parameters<typeof signAsUser>[0],
+    failure: string,
+  ) => Promise<SignedNostrEvent>;
+  close: () => void;
+}
+
+/**
+ * {@link publishAsUser} for a run of records: one connection, one login, each
+ * record sent and answered before the next. Close it when done.
+ */
+export function openUserPublisher(): UserPublisher {
+  const session = openPublishSession(relayWsUrl(), { signAuth: signAsUser });
+  return {
+    publish: async (template, failure) => {
+      const signed = await signAsUser(template);
+      const result = await session.publish(signed);
+      if (!result.accepted) throw new Error(result.message || failure);
+      return signed;
+    },
+    close: session.close,
+  };
 }
