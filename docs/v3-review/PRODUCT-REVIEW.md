@@ -246,3 +246,57 @@ Tests: `start-project`, `helpers` and `home-checklist` specs; the mocked browser
 - A helper only knows a tab is running it when that tab does; "on the server" and "on your computer" are reported from
   what the helper announces, so a worker that is down for under a minute still looks running.
 - A seeded demo organization for people who just want to look around is not built.
+
+## Boards, and talking about decisions (2026-10-10)
+
+The question was how Twitter-style posts, a Reddit-style forum and Slack-style chat should fit together, and where a DAO
+discusses its proposals (most use Discourse). The call: three surfaces with one job each, and the forum is the missing
+one. The server already had it (forum posts, votes and comments, a forum channel type, a desktop view); the web app
+let you create a "forum" channel but showed it as a plain chat. The jobs: microblog posts are for reach and stay
+standard notes any Nostr client can read; a board is for belonging and memory, community by community (the lasting
+discussion, supporters' questions, a DAO's proposal threads); chat is for what only matters this hour. What was built:
+
+- **Boards in the web app.** A forum channel opens as a board: posts with a title and details, replies, one vote per
+  person on each. Sorts are Active (default), New and Top. The page is live but holds still while it is read: counts
+  change in place, a post does not jump because someone replied, other people's new posts wait behind a "show" button,
+  and your own post goes straight to the top. A post links (`?channel=…&post=…`). Records are the existing forum kinds,
+  written exactly as the Rust SDK does, so desktop and mobile read them; a title is the first line as a Markdown heading.
+- **A vote bug found by testing:** changing a vote and then taking it back deleted only the newest vote record, so the
+  earlier one counted again. Changing or taking back a vote now deletes every earlier record of the reader's (unit test,
+  browser test, and checked on the real server: both records end up deleted).
+- **Two boards per project.** Every bundled template now makes an open *supporters* board and a private *founders* board,
+  each with a first post (`type: board` and `visibility: private` in `template.yaml`; the Rust command line and the
+  TypeScript engine changed together and both have tests). A community with no boards gets a one-click "Add supporters
+  and founders boards". A private board shows who can read it ("People") and lets its owner or an admin add someone by
+  pasting an npub or picking someone who has spoken in the community. **Found by a failing test:** applying a template a
+  second time would have posted the board first-posts twice, because the "what is already there" read only looked for
+  chat messages.
+- **Discussion under each decision.** On the Decisions tab every decision lists the threads about it and has "Start a
+  discussion". A thread names its decision with two topic tags; opening one shows the decision's live state from the
+  chain, a link back to the vote, and each person's share of the DAO's Shares beside their name. A post's tag is only a
+  claim, so the header and the figures appear only for a DAO that a launch the app knows has settled into; otherwise it
+  says the post could not be checked. Board votes are labelled as not the DAO's vote and are never weighted.
+
+**Checked on a real server** (the local one, through the app): create a board, post, reply, vote, change the vote and
+take it back (the server soft-deletes the records; a reload stays at zero), two boards created back to back, and a
+template run, which got through all six channels (two of them boards, one private), both board first-posts, the skill
+and all six helpers in about a second. **Checked on a real local chain** (`scripts/web-discussion-e2e.sh`): a discussion
+written under a decision, listed there, and opened with the decision's state and the author's Shares read from the chain,
+and a post naming an unknown DAO getting neither. The mocked browser suite is 224 pass, 28 skipped, 0 fail (plus the new
+board tests added after that run, which pass).
+
+**Not done, or not verified**
+- A template's team, budget, automation, wiki-page and welcome steps still have only run against the mock server: the
+  real server (correctly) refused the team step because my test account was not the community owner, and I did not
+  grant it that. The screen said so in plain words.
+- **The launch's chat rooms overlap with the boards.** A launch already makes a *team* chat (private), a *supporters*
+  chat (open) and a *backers* chat (private, gated). With boards there are now two places for supporters and two for the
+  team. I left the chat rooms alone; the decision is whether those rooms should become boards, or stay as the live
+  counterpart of them.
+- "Start a proposal from a thread" is not built: the decision forms are structured (amounts, addresses) and have no place
+  for a rationale, so there is nothing for a thread to fill in. A thread is started *after* a decision exists.
+- A board reads its newest 200 posts, 1,000 replies and 3,000 votes and says so; no pagination yet. There are no unread
+  markers, notifications, pinning or moderation tools for boards in the web app, and the desktop forum does not show
+  votes (it never had them), so a vote made on the web is not visible there.
+- Pre-existing and not mine: `cargo clippy -D warnings` fails in `crates/buzz-skillopt` (two lints), which will stop
+  `just ci` and the pre-push hook until it is fixed.
