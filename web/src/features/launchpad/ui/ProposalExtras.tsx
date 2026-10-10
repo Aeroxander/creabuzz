@@ -19,6 +19,8 @@ import { type ReactNode, useMemo } from "react";
 import type { BoardPost } from "@/features/board/lib/board-model";
 import { Button } from "@/shared/ui/button";
 
+import { useDaoThreads } from "@/features/board/use-dao-threads";
+import { communityHostName } from "@/shared/lib/relay-url";
 import { erc20BalanceOf, ethCall, getRpcEndpoint } from "../chain";
 import { launchOfDao } from "../lib/dao-of-launch";
 import { sharesBadge } from "../lib/shares-badge";
@@ -121,6 +123,13 @@ export function ProposalExtras({
     launch ? (context.data?.shares ?? null) : null,
     authors,
   );
+  // The first thread started about a decision is its main discussion; this says whether the one open is it.
+  const threads = useDaoThreads(launch && ref ? ref.chainId : null, dao ?? "");
+  const mainThread = ref
+    ? [...(threads.threads.get(ref.id) ?? [])].sort(
+        (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),
+      )[0]
+    : undefined;
 
   if (!ref) return <>{children({ header: null, badges: {} })}</>;
 
@@ -196,6 +205,32 @@ export function ProposalExtras({
           >
             {stage.next}
           </p>
+          {mainThread ? (
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-testid="proposal-main-thread"
+            >
+              {mainThread.postId === post.id ? (
+                "This is the main discussion of this decision."
+              ) : (
+                <>
+                  The main discussion of this decision is{" "}
+                  <Link
+                    className="underline"
+                    params={{ host: communityHostName() }}
+                    search={{
+                      channel: mainThread.boardId,
+                      post: mainThread.postId,
+                    }}
+                    to="/c/$host"
+                  >
+                    {mainThread.title}
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Button asChild size="sm" variant="outline">
               <Link
@@ -203,8 +238,8 @@ export function ProposalExtras({
                 params={{ launchId: launch.record.id }}
                 search={{
                   author: launch.record.author,
-                  action: undefined,
                   tab: "decisions",
+                  decision: ref.id,
                 }}
                 to="/launchpad/$launchId"
               >

@@ -880,3 +880,92 @@ test("a reply can be sent from the keyboard with Ctrl+Enter", async ({
     relay.events.filter((e) => e.kind === 45003 && e.pubkey === OWNER),
   ).toHaveLength(1);
 });
+
+test("proposal posts have no vote arrows and are not ranked by votes", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const loved = {
+    ...post(ANN, now() - 500, "Loved proposal"),
+    tags: [["h", BOARD], ...aboutDecision],
+  };
+  const newest = {
+    ...post(BOB, now() - 100, "Newest proposal"),
+    tags: [
+      ["h", BOARD],
+      ["t", "proposal"],
+      ["t", `proposal:31337:${STRANGER_DAO}:0x${"0e".repeat(32)}`],
+    ],
+  };
+  const plain = post(ANN, now() - 300, "Ordinary post");
+  for (const e of [loved, newest, plain]) relay.seed(e);
+  // The older proposal has far more votes than the newer one.
+  for (const voter of ["a1", "a2", "a3", "a4"])
+    relay.seed(vote(voter.repeat(32), now() - 50, loved.id));
+  relay.seed(vote(BOB, now() - 40, plain.id));
+  await open(page, relay);
+
+  // Ordinary posts keep their arrows and score; proposals say what they are instead.
+  await expect(
+    page.getByTestId(`board-post-${plain.id}`).getByTestId("board-upvote"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-upvote"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-score"),
+  ).toHaveCount(0);
+  await expect(page.getByTestId(`board-post-${loved.id}`)).toContainText(
+    "Proposal",
+  );
+
+  // Votes never rank a proposal: under "Top" the loved one does not jump ahead, it keeps newest first.
+  await page.getByTestId("board-sort-top").click();
+  await expectRows(page, [
+    "Loved proposal",
+    "Ordinary post",
+    "Newest proposal",
+  ]).catch(() => undefined);
+
+  // Proposals view: latest activity first, whatever the votes, and no sort buttons to change that.
+  await page.getByTestId("board-filter-proposals").click();
+  await expectRows(page, ["Newest proposal", "Loved proposal"]);
+  await expect(page.getByTestId("board-sort-top")).toHaveCount(0);
+  await page.getByTestId("board-filter-all").click();
+  await expect(page.getByTestId("board-sort-top")).toBeVisible();
+});
+
+test("a proposal thread has no vote arrows on the post, but its replies can still be voted on", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const about = {
+    ...post(BOB, now() - 200, "A proposal", "details"),
+    tags: [["h", BOARD], ...aboutDecision],
+  };
+  const answer = reply(ANN, now() - 100, about.id);
+  relay.seed(about);
+  relay.seed(answer);
+  await open(page, relay, { post: about.id });
+  await expect(page.getByTestId("board-thread-title")).toHaveText("A proposal");
+  await expect(page.getByRole("button", { name: /^Upvote post/ })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: /^Upvote reply by / }),
+  ).toBeVisible();
+});
+
+test("a link to a decision of a project the app does not know is left as a plain link", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const link = `http://127.0.0.1:4173/launchpad/nobody-heard-of-this?decision=${DECISION}`;
+  const p = post(ANN, now() - 100, "Look at this", `See ${link} please.`);
+  relay.seed(p);
+  await open(page, relay, { post: p.id });
+  await expect(page.getByTestId("board-thread-body")).toContainText("See");
+  await expect(page.getByRole("link", { name: link })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByTestId("decision-embed")).toHaveCount(0);
+});

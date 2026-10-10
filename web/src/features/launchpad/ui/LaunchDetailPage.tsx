@@ -100,6 +100,7 @@ export function LaunchDetailPage({
   action,
   sandbox,
   initialTab,
+  initialDecision,
 }: {
   launchId: string;
   author: string | undefined;
@@ -113,6 +114,8 @@ export function LaunchDetailPage({
   sandbox?: boolean;
   /** The tab to open on (`?tab=`), when the link names one. */
   initialTab?: Tab;
+  /** One decision to highlight on the Decisions tab (`?decision=`). */
+  initialDecision?: string;
 }) {
   const { launch: realLaunch, isLoading } = useLaunch(launchId, author);
   const launch = sandbox
@@ -140,7 +143,9 @@ export function LaunchDetailPage({
   }, [isFounder, supporterCoord, seenCount]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
-  const [tab, setTab] = useState<Tab>(initialTab ?? "overview");
+  const [tab, setTab] = useState<Tab>(
+    initialTab ?? (initialDecision ? "decisions" : "overview"),
+  );
   const [bidOpen, setBidOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
@@ -410,7 +415,11 @@ export function LaunchDetailPage({
         />
       ) : null}
       {tab === "decisions" && workDao ? (
-        <DecisionsTab dao={workDao} launch={launch} />
+        <DecisionsTab
+          dao={workDao}
+          focusDecision={initialDecision}
+          launch={launch}
+        />
       ) : null}
       {tab === "work" && workDao ? (
         <WorkTab

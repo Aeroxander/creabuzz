@@ -234,6 +234,71 @@ describe("sortPosts / filterPosts", () => {
       [c.id, b.id, a.id],
     );
   });
+  it("puts posts with a better priority first, and orders each group by the sort asked for", () => {
+    const a = post(ANN, 10, "settled-newest-activity");
+    const b = post(BOB, 20, "live-old");
+    const c = post(ANN, 30, "live-newer");
+    const posts = buildBoard(
+      [
+        a,
+        b,
+        c,
+        comment(BOB, 99, a.id),
+        vote(ANN, 40, a.id),
+        vote(BOB, 41, a.id),
+      ],
+      null,
+    ).posts;
+    const priority = new Map([
+      [b.id, 0],
+      [c.id, 0],
+    ]);
+    // Without a priority, the most active post leads; with it, the live ones lead whatever their votes or activity.
+    assert.equal(sortPosts(posts, "active")[0].id, a.id);
+    assert.deepEqual(
+      sortPosts(posts, "active", priority).map((p) => p.id),
+      [c.id, b.id, a.id],
+    );
+    // Votes never decide a proposal's place: the best-voted post is still last.
+    assert.deepEqual(
+      sortPosts(posts, "new", priority).map((p) => p.id),
+      [c.id, b.id, a.id],
+    );
+  });
+
+  it("never lets votes rank a proposal post, however many it has", () => {
+    const topic = `proposal:1:${DAO}:${PID}`;
+    const loved = post(ANN, 10, "loved proposal", {
+      tags: [
+        ["t", "proposal"],
+        ["t", topic],
+      ],
+    });
+    const newer = post(BOB, 20, "newer proposal", {
+      tags: [
+        ["t", "proposal"],
+        ["t", topic],
+      ],
+    });
+    const plain = post(ANN, 5, "plain");
+    const events = [
+      loved,
+      newer,
+      plain,
+      vote(ANN, 30, loved.id),
+      vote(BOB, 31, loved.id),
+      vote(ME, 32, loved.id),
+      vote(BOB, 33, plain.id),
+    ];
+    const posts = buildBoard(events, null).posts;
+    assert.equal(posts.find((p) => p.id === loved.id).score, 3);
+    // A plain post with one vote beats a proposal with three, and proposals fall back to newest first.
+    assert.deepEqual(
+      sortPosts(posts, "top").map((p) => p.id),
+      [plain.id, newer.id, loved.id],
+    );
+  });
+
   it("filters to proposal posts", () => {
     const topic = `proposal:1:${DAO}:${PID}`;
     const p = post(ANN, 10, "P", {
@@ -309,6 +374,38 @@ describe("arrange", () => {
       [mine.id, b.id, a.id],
     );
     assert.equal(out.fresh, 1);
+  });
+
+  it("keeps priority in the arrangement, and holds it still like any other order", () => {
+    const { a, b, events } = base();
+    const posts = buildBoard(events, ME).posts;
+    const first = arrange({
+      posts,
+      sort: "active",
+      frozen: null,
+      me: ME,
+      priority: new Map([[a.id, 0]]),
+    });
+    assert.deepEqual(
+      first.rows.map((p) => p.id),
+      [a.id, b.id],
+    );
+    // The decision behind b becomes live later: the list does not move, and says it would.
+    const later = arrange({
+      posts,
+      sort: "active",
+      frozen: first.order,
+      me: ME,
+      priority: new Map([
+        [a.id, 1],
+        [b.id, 0],
+      ]),
+    });
+    assert.deepEqual(
+      later.rows.map((p) => p.id),
+      [a.id, b.id],
+    );
+    assert.equal(later.reordered, true);
   });
 
   it("drops a post that was deleted from a frozen list", () => {

@@ -6,6 +6,7 @@ import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { displayText } from "../../feed/lib/feed-events";
+import { DecisionEmbeds } from "../../launchpad/ui/DecisionEmbeds";
 import { tokenize } from "../lib/content";
 import { q96ToPrice } from "../../launchpad/lib/candles";
 import { saleCurrencyFor } from "../../launchpad/lib/sale-currency";
@@ -250,6 +251,11 @@ export function PostContent({
       {quotes.map((id) => (
         <QuoteCard id={id} key={id} />
       ))}
+      {embed ? (
+        <div className="relative z-10">
+          <DecisionEmbeds text={text} />
+        </div>
+      ) : null}
     </>
   );
 }

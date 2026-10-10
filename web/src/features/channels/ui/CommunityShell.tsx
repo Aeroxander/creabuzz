@@ -44,6 +44,11 @@ const ProposalExtras = lazy(() =>
     default: m.ProposalExtras,
   })),
 );
+const ProposalStates = lazy(() =>
+  import("@/features/launchpad/ui/ProposalStates").then((m) => ({
+    default: m.ProposalStates,
+  })),
+);
 const StartProject = lazy(() =>
   import("@/features/templates/ui/StartProject").then((m) => ({
     default: m.StartProject,
@@ -623,6 +628,7 @@ export function CommunityShell({
                   onOpenPost={openPost}
                   postId={openPostId ?? undefined}
                   proposalExtras={ProposalExtras}
+                  proposalStates={ProposalStates}
                   suggestPeopleFrom={
                     channels.find(
                       (c) => c.type !== "forum" && c.visibility === "public",

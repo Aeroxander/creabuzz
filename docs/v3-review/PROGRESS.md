@@ -171,3 +171,6 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
 - Boards (posts, replies, votes), the supporters and founders boards in every template, adding people to a private board,
   and a discussion under each DAO decision are in PRODUCT-REVIEW.md, "Boards, and talking about decisions". Mocked browser
   suite: 224 pass, 28 skipped, 0 fail; `scripts/web-discussion-e2e.sh` runs the decision threads against a real local chain.
+- Proposal posts without votes (ordered by decision state), one main discussion per decision, decision permalinks and live
+  decision cards under messages, posts and replies: PRODUCT-REVIEW.md, "Proposal threads without votes, and decision links
+  with live cards".

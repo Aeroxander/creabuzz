@@ -13,21 +13,26 @@ export function decisionChain(endpoint: string): DecisionChain {
   };
 }
 
-/**
- * A DAO's decisions read from the chain: every proposal it opened, where it stands, and what the connected wallet may
- * do about it. Keyed under the work query so a step that re-reads the work re-reads this too.
- */
-export function useDecisions(dao: string | null, wallet: string | null) {
-  return useQuery({
+/** How a DAO's decisions are read (one definition, for one DAO or many). */
+export function decisionsQuery(dao: string | null, wallet: string | null) {
+  return {
     queryKey: ["launchpad", "work", dao, "decisions", wallet],
     enabled: dao !== null,
     queryFn: () =>
       readDecisions(decisionChain(getRpcEndpoint()), dao as string, wallet),
     staleTime: 8_000,
-    refetchInterval: (query) =>
-      query.state.status === "error" ? false : 15_000,
+    refetchInterval: (query: { state: { status: string } }) =>
+      query.state.status === "error" ? (false as const) : 15_000,
     refetchOnWindowFocus: false,
-  });
+  };
+}
+
+/**
+ * A DAO's decisions read from the chain: every proposal it opened, where it stands, and what the connected wallet may
+ * do about it. Keyed under the work query so a step that re-reads the work re-reads this too.
+ */
+export function useDecisions(dao: string | null, wallet: string | null) {
+  return useQuery(decisionsQuery(dao, wallet));
 }
 
 /** The contracts a decision's forms need to name: the DAO's voting policy, its work budget factory and its Shares. */

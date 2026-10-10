@@ -1,6 +1,8 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
+
 /** A post or reply's text. Links open in a new tab and never hand over the opener. */
 export function BoardMarkdown({ text }: { text: string }) {
   return (
@@ -17,6 +19,7 @@ export function BoardMarkdown({ text }: { text: string }) {
       >
         {text}
       </ReactMarkdown>
+      <DecisionEmbeds text={text} />
     </div>
   );
 }

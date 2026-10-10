@@ -138,12 +138,12 @@ test("a discussion started under a decision is tied to it, listed there, and sho
       ["t", "proposal"],
       ["t", `proposal:31337:${DAO.toLowerCase()}:${decisionId}`],
     ]);
-  await expect(page.getByTestId("discussion-thread")).toHaveText(
+  await expect(page.getByTestId("discussion-main-thread")).toHaveText(
     "Proposal: Set aside a work budget",
   );
 
   // Opening it: the community's board, with the decision's live state from the chain...
-  await page.getByTestId("discussion-thread").click();
+  await page.getByTestId("discussion-main-thread").click();
   await expect(page).toHaveURL(new RegExp(`channel=${BOARD}&post=`));
   const header = page.getByTestId("proposal-header");
   await expect(header).toBeVisible({ timeout: 30_000 });
@@ -195,4 +195,84 @@ test("a post that names a DAO the app does not know shows no chain figures and s
   );
   await expect(page.getByTestId("proposal-status")).toHaveCount(0);
   await expect(page.getByTestId("author-badge")).toHaveCount(0);
+});
+
+const CHAT = "c4a70000-1111-2222-3333-444444444444";
+
+test("a link to a decision becomes a live card under the message, and a link to an unknown project does not", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const relay = await setUp(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(`/launchpad/nebula-discussion?author=${FOUNDER}`);
+  await page.getByRole("tab", { name: "Decisions" }).click();
+  const card = page.getByTestId("decision-card");
+  await expect(card).toHaveCount(1, { timeout: 20_000 });
+  await card.getByRole("button", { name: "Technical details" }).click();
+  const decisionId =
+    ((await card.innerText()).match(/0x[0-9a-fA-F]{64}/) ??
+      [])[0]?.toLowerCase() ?? "";
+
+  // "Copy link" gives the address the card is found at.
+  await card.getByTestId("decision-copy-link").click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  const origin = new URL(page.url()).origin;
+  expect(copied).toBe(
+    `${origin}/launchpad/nebula-discussion?author=${FOUNDER}&tab=decisions&decision=${decisionId}`,
+  );
+
+  // Two messages in a chat: one links to the decision, one to a project nobody has heard of.
+  relay.seed({
+    id: "meta-chat",
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    kind: 39000,
+    tags: [["d", CHAT], ["name", "general"], ["public"], ["t", "stream"]],
+    content: "",
+    sig: "sig",
+  });
+  const message = (id: string, text: string, at: number) => ({
+    id: id.padEnd(64, "0"),
+    pubkey: FOUNDER,
+    created_at: Math.floor(Date.now() / 1000) - at,
+    kind: 9,
+    tags: [["h", CHAT]],
+    content: text,
+    sig: "sig",
+  });
+  relay.seed(message("known", `Please look at ${copied} before Friday.`, 20));
+  relay.seed(
+    message(
+      "unknown",
+      `Not ours: ${origin}/launchpad/nobody-heard-of-this?decision=${decisionId}`,
+      10,
+    ),
+  );
+  await page.goto(`/c/127.0.0.1:4173?channel=${CHAT}`);
+  await expect(page.getByText("Please look at")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // The known one is a card with the chain's state; the stranger is only a link.
+  const embed = page.getByTestId("decision-embed");
+  await expect(embed).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByTestId("decision-embed-status")).toHaveText(
+    "Collecting support",
+  );
+  await expect(page.getByTestId("decision-embed-title")).toHaveText(
+    "Set aside a work budget",
+  );
+  await expect(embed).toContainText("Nebula DAO");
+  await expect(page.getByText("Not ours:")).toBeVisible();
+
+  // The card opens the decision, highlighted.
+  await page.getByTestId("decision-embed-open").click();
+  await expect(page.getByTestId("decision-card")).toHaveAttribute(
+    "data-focused",
+    "true",
+    {
+      timeout: 20_000,
+    },
+  );
 });

@@ -1,4 +1,5 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -7,92 +8,12 @@ import { describeDecision } from "../lib/decision-describe";
 import type { Decision, DecisionsSnapshot } from "../lib/decisions";
 import { encodeExecuteByVotes, encodeQueue } from "../lib/vote-tx";
 import { votingRuleWatch, votingStatusLabel } from "../lib/voting-allocation";
+import { decisionStage, duration, isLive, when } from "../lib/decision-stage";
 import { DecisionVote } from "./DecisionVote";
 
+export { decisionStage };
+
 const shares = (wei: bigint) => formatUnits(wei, 18, 4);
-
-const when = (seconds: number | bigint) =>
-  new Date(Number(seconds) * 1000).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-function duration(seconds: bigint): string {
-  const s = Number(seconds);
-  if (s % 86_400 === 0) return `${s / 86_400} day${s === 86_400 ? "" : "s"}`;
-  if (s % 3_600 === 0) return `${s / 3_600} hour${s === 3_600 ? "" : "s"}`;
-  if (s % 60 === 0) return `${s / 60} minute${s === 60 ? "" : "s"}`;
-  return `${s} seconds`;
-}
-
-/** Where a decision stands, in words, and the one step (if any) anyone can take to move it along. */
-export function decisionStage(
-  decision: Decision,
-  now: number,
-): {
-  label: string;
-  tone: "open" | "good" | "wait" | "bad" | "done";
-  next: string;
-  step: "start" | "run" | null;
-} {
-  const delay = decision.rules?.delay ?? 0n;
-  switch (decision.state) {
-    case "Executed":
-      return {
-        label: "Done",
-        tone: "done",
-        next: "This decision was carried out.",
-        step: null,
-      };
-    case "Expired":
-      return {
-        label: "Expired",
-        tone: "bad",
-        next: "It did not get enough support in time. Support you gave it is free again.",
-        step: null,
-      };
-    case "Defeated":
-      return {
-        label: "Rejected",
-        tone: "bad",
-        next: "It was voted down.",
-        step: null,
-      };
-    case "Queued":
-      return {
-        label: "Waiting to run",
-        tone: "wait",
-        next: `Approved. It can run at ${when(decision.queuedAt + Number(delay))}. Support must hold until then.`,
-        step: null,
-      };
-    case "Succeeded":
-      return decision.queuedAt === 0
-        ? {
-            label: "Approved",
-            tone: "good",
-            next: `It has enough support. Start the ${duration(delay)} wait, then it can run.`,
-            step: "start",
-          }
-        : {
-            label: "Ready to run",
-            tone: "good",
-            next: "The wait is over and support held. Anyone can run it now.",
-            step: "run",
-          };
-    default:
-      return {
-        label: "Collecting support",
-        tone: "open",
-        next:
-          decision.rules && now < Number(decision.rules.reviewEndsAt)
-            ? `Nothing can run before ${when(decision.rules.reviewEndsAt)}, whatever the vote.`
-            : "It needs enough support, and that support has to hold.",
-        step: null,
-      };
-  }
-}
 
 const TONE: Record<string, string> = {
   open: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
@@ -117,6 +38,8 @@ export function DecisionCard({
   gate,
   onSend,
   renderDiscussion,
+  highlighted = false,
+  link,
 }: {
   decision: Decision;
   snapshot: DecisionsSnapshot;
@@ -129,8 +52,16 @@ export function DecisionCard({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   /** The talk about this decision, given what it would do in a few words; shown under it. */
   renderDiscussion?: (headline: string) => ReactNode;
+  /** A link pointed at this decision: it is outlined and scrolled into view. */
+  highlighted?: boolean;
+  /** This decision's address, for "Copy link". */
+  link?: string;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) cardRef.current?.scrollIntoView({ block: "center" });
+  }, [highlighted]);
   const stage = decisionStage(decision, snapshot.chainTime);
   const described = decision.action
     ? describeDecision(decision.action, {
@@ -148,7 +79,7 @@ export function DecisionCard({
           shares,
         )
       : null;
-  const open = ["Active", "Succeeded", "Queued"].includes(decision.state);
+  const open = isLive(decision);
   const key = `step-${decision.id}`;
 
   const step = async () => {
@@ -164,7 +95,12 @@ export function DecisionCard({
   };
 
   return (
-    <Card className="p-4" data-testid="decision-card">
+    <Card
+      className={`p-4 ${highlighted ? "ring-2 ring-primary" : ""}`}
+      data-focused={highlighted ? "true" : undefined}
+      data-testid="decision-card"
+      ref={cardRef}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[stage.tone]}`}
@@ -281,6 +217,24 @@ export function DecisionCard({
       ) : null}
 
       {renderDiscussion?.(described?.title ?? "this decision")}
+
+      {link ? (
+        <button
+          className="mt-3 mr-4 text-xs text-muted-foreground underline"
+          data-testid="decision-copy-link"
+          onClick={() => {
+            navigator.clipboard
+              .writeText(link)
+              .then(() => toast.success("Link copied"))
+              .catch(() =>
+                toast.error("Couldn't copy the link", { description: link }),
+              );
+          }}
+          type="button"
+        >
+          Copy link
+        </button>
+      ) : null}
 
       <button
         aria-expanded={showDetails}

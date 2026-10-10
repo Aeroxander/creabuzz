@@ -7,8 +7,9 @@
  * behind a "show" button so the one under the cursor never moves. The reader's
  * own post goes straight to the top.
  *
- * What is decided (ordering, scoring, which posts are held back) is in
- * `../lib/board-model.ts`; this file shows it.
+ * This opens the board, finds the post to show if one is open, and hands the
+ * rest to the list (`BoardList`) or the thread (`PostThread`). What is decided
+ * (ordering, scoring, which posts are held back) is in `../lib/board-model.ts`.
  */
 
 import {
@@ -29,23 +30,12 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
-import {
-  arrange,
-  type BoardFilter,
-  type BoardPost,
-  type BoardSort,
-  buildBoard,
-  filterPosts,
-  SORT_LABELS,
-} from "../lib/board-model";
-import { POST_LIMIT, useBoardRecords } from "../use-board";
+import { type BoardPost, buildBoard } from "../lib/board-model";
+import type { PostStatus } from "../lib/post-status";
+import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
-import { BoardPeople } from "./BoardPeople";
-import { PostComposer } from "./PostComposer";
-import { PostRow } from "./PostRow";
+import { BoardList } from "./BoardList";
 import { PostThread } from "./PostThread";
-
-const SORTS = Object.keys(SORT_LABELS) as BoardSort[];
 
 /** What a thread about something outside the board adds to it. */
 export interface PostExtras {
@@ -61,7 +51,19 @@ export interface PostExtrasProps {
   children: (extras: PostExtras) => ReactNode;
 }
 
+/** Where each proposal post's decision stands, found on demand. */
+export interface ProposalStatesProps {
+  posts: readonly BoardPost[];
+  children: (
+    statuses: ReadonlyMap<string, PostStatus>,
+    ready: boolean,
+  ) => ReactNode;
+}
+
+type Loadable<P> = ComponentType<P> | LazyExoticComponent<ComponentType<P>>;
+
 const NO_EXTRAS: PostExtras = { header: null, badges: {} };
+const NO_STATUSES: ReadonlyMap<string, PostStatus> = new Map();
 
 function needAccount(action: string): boolean {
   if (existingUserPubkey() !== null) return true;
@@ -69,15 +71,12 @@ function needAccount(action: string): boolean {
   return false;
 }
 
-function sameOrder(a: readonly string[] | null, b: readonly string[]): boolean {
-  return a !== null && a.length === b.length && a.every((id, i) => id === b[i]);
-}
-
 export function BoardView({
   channel,
   postId,
   onOpenPost,
   proposalExtras,
+  proposalStates,
   suggestPeopleFrom = null,
 }: {
   channel: Channel;
@@ -90,9 +89,9 @@ export function BoardView({
    * For a post that says it is about a DAO decision: a header and a figure beside names. Passed in (and
    * loaded on demand) so a board that never has such a post does not carry the chain code.
    */
-  proposalExtras?:
-    | ComponentType<PostExtrasProps>
-    | LazyExoticComponent<ComponentType<PostExtrasProps>>;
+  proposalExtras?: Loadable<PostExtrasProps>;
+  /** For the list: where each proposal's decision stands, to show and to order by. Loaded the same way. */
+  proposalStates?: Loadable<ProposalStatesProps>;
 }) {
   const records = useBoardRecords(channel.id);
   const me = existingUserPubkey();
@@ -102,31 +101,6 @@ export function BoardView({
     [records.events, me],
   );
 
-  const [sort, setSort] = useState<BoardSort>("active");
-  const [filter, setFilter] = useState<BoardFilter>("all");
-  const [composing, setComposing] = useState(false);
-  const [showingPeople, setShowingPeople] = useState(false);
-  const [frozen, setFrozen] = useState<string[] | null>(null);
-
-  const visible = useMemo(
-    () => filterPosts(board.posts, filter),
-    [board.posts, filter],
-  );
-  const arrangement = useMemo(
-    () => arrange({ posts: visible, sort, frozen, me }),
-    [visible, sort, frozen, me],
-  );
-
-  // Take the order once the posts are in, and again whenever it is asked for
-  // (a different sort or filter, or "show"); after that it only changes by the
-  // reader's own posts arriving or posts being deleted.
-  useEffect(() => {
-    if (records.isLoading) return;
-    setFrozen((previous) =>
-      sameOrder(previous, arrangement.order) ? previous : arrangement.order,
-    );
-  }, [arrangement.order, records.isLoading]);
-
   const authors = useMemo(() => {
     const set = new Set(board.posts.map((p) => p.author));
     for (const list of board.comments.values())
@@ -135,7 +109,17 @@ export function BoardView({
   }, [board]);
   const profiles = usePeople(authors);
 
-  const hasProposals = board.posts.some((post) => post.proposal !== null);
+  const proposalPosts = useMemo(
+    () => board.posts.filter((post) => post.proposal !== null),
+    [board.posts],
+  );
+  // Once a board has had a proposal post, keep the state reader mounted, so the list does not rebuild if the
+  // last one is deleted.
+  const [wantStates, setWantStates] = useState(false);
+  useEffect(() => {
+    if (proposalPosts.length > 0) setWantStates(true);
+  }, [proposalPosts.length]);
+
   const open = postId
     ? board.posts.find((post) => post.id === postId)
     : undefined;
@@ -203,188 +187,29 @@ export function BoardView({
     );
   }
 
-  const pending = arrangement.fresh > 0 || arrangement.reordered;
-  const pillText =
-    arrangement.fresh > 0
-      ? arrangement.fresh === 1
-        ? "1 new post"
-        : `${arrangement.fresh} new posts`
-      : "New activity";
-
-  const vote = (post: BoardPost, direction: "up" | "down") => {
-    if (!needAccount("vote")) return;
-    actions.vote(post.id, direction, post).catch((error) =>
-      toast.error("Couldn't vote", {
-        description: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  };
-
-  return (
-    <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-      data-testid="board"
-    >
-      <header className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-bold" data-testid="board-name">
-            {channel.name}
-          </h2>
-          {channel.description ? (
-            <p className="truncate text-xs text-muted-foreground">
-              {channel.description}
-            </p>
-          ) : null}
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <fieldset className="m-0 flex min-w-0 rounded-md border p-0.5">
-            <legend className="sr-only">Sort posts</legend>
-            {SORTS.map((key) => (
-              <button
-                aria-pressed={sort === key}
-                className={`rounded px-2.5 py-1 text-xs font-medium ${
-                  sort === key
-                    ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/60"
-                }`}
-                data-testid={`board-sort-${key}`}
-                key={key}
-                onClick={() => {
-                  setSort(key);
-                  setFrozen(null);
-                }}
-                type="button"
-              >
-                {SORT_LABELS[key]}
-              </button>
-            ))}
-          </fieldset>
-          {hasProposals ? (
-            <fieldset className="m-0 flex min-w-0 rounded-md border p-0.5">
-              <legend className="sr-only">Show</legend>
-              {(["all", "proposals"] as const).map((key) => (
-                <button
-                  aria-pressed={filter === key}
-                  className={`rounded px-2.5 py-1 text-xs font-medium ${
-                    filter === key
-                      ? "bg-secondary text-foreground"
-                      : "text-muted-foreground hover:bg-secondary/60"
-                  }`}
-                  data-testid={`board-filter-${key}`}
-                  key={key}
-                  onClick={() => {
-                    setFilter(key);
-                    setFrozen(null);
-                  }}
-                  type="button"
-                >
-                  {key === "all" ? "All" : "Proposals"}
-                </button>
-              ))}
-            </fieldset>
-          ) : null}
-          {channel.visibility === "private" ? (
-            <Button
-              aria-expanded={showingPeople}
-              data-testid="board-people-toggle"
-              onClick={() => setShowingPeople((v) => !v)}
-              size="sm"
-              variant="outline"
-            >
-              People
-            </Button>
-          ) : null}
-          <Button
-            data-testid="board-new-post"
-            onClick={() => {
-              if (needAccount("post")) setComposing(true);
-            }}
-            size="sm"
-          >
-            New post
-          </Button>
-        </div>
-      </header>
-
-      {showingPeople && channel.visibility === "private" ? (
-        <BoardPeople
-          boardId={channel.id}
-          suggestFromChannelId={suggestPeopleFrom}
-        />
-      ) : null}
-
-      {records.liveStatus && records.liveStatus !== "open" ? (
-        <p
-          className="px-4 pt-2 text-xs text-amber-700 dark:text-amber-300"
-          data-testid="board-live-status"
-          role="status"
-        >
-          {records.liveStatus === "connecting"
-            ? "Connecting for live updates…"
-            : "Live updates paused. Reconnecting…"}
-        </p>
-      ) : null}
-
-      <div className="flex flex-col gap-3 p-4">
-        {composing ? (
-          <PostComposer
-            onCancel={() => setComposing(false)}
-            onSubmit={async (title, body) => {
-              await actions.createPost({ title, body });
-              setComposing(false);
-            }}
-          />
-        ) : null}
-
-        <div
-          aria-live="polite"
-          className="sticky top-2 z-10 self-center"
-          role="status"
-        >
-          {pending ? (
-            <button
-              className="rounded-full border bg-card px-4 py-1.5 text-xs font-medium shadow-sm"
-              data-testid="board-show-new"
-              onClick={() => setFrozen(null)}
-              type="button"
-            >
-              {pillText}. Show
-            </button>
-          ) : null}
-        </div>
-
-        {records.isLoading ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading posts…
-          </p>
-        ) : arrangement.rows.length === 0 && arrangement.fresh === 0 ? (
-          <p
-            className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
-            data-testid="board-empty"
-          >
-            {filter === "proposals"
-              ? "No decisions are being discussed yet."
-              : "No posts yet. Start the first discussion."}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3" data-testid="board-posts">
-            {arrangement.rows.map((post) => (
-              <PostRow
-                key={post.id}
-                onOpen={() => onOpenPost(post.id)}
-                onVote={(direction) => vote(post, direction)}
-                post={post}
-                profile={profiles?.[post.author]}
-              />
-            ))}
-          </ul>
-        )}
-        {records.truncated ? (
-          <p className="text-xs text-muted-foreground">
-            Showing the newest {POST_LIMIT} posts.
-          </p>
-        ) : null}
-      </div>
-    </div>
+  const list = (
+    statuses: ReadonlyMap<string, PostStatus>,
+    statusesReady: boolean,
+  ) => (
+    <BoardList
+      actions={actions}
+      board={board}
+      channel={channel}
+      me={me}
+      onOpenPost={onOpenPost}
+      profiles={profiles}
+      records={records}
+      statuses={statuses}
+      statusesReady={statusesReady}
+      suggestPeopleFrom={suggestPeopleFrom}
+    />
+  );
+  const States = proposalStates;
+  return States && wantStates ? (
+    <Suspense fallback={list(NO_STATUSES, false)}>
+      <States posts={proposalPosts}>{list}</States>
+    </Suspense>
+  ) : (
+    list(NO_STATUSES, true)
   );
 }

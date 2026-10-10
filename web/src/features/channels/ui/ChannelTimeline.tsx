@@ -38,6 +38,7 @@ import { PresenceStrip } from "@/features/presence/ui/PresenceStrip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Bot } from "lucide-react";
 import { getTag } from "@/shared/lib/event-fields";
+import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
@@ -304,6 +305,7 @@ function MessageRow({
         ) : (
           <div className="mt-0.5 break-words text-message leading-relaxed text-black dark:text-white [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-black/5 [&_pre]:p-2 [&_pre]:dark:bg-white/10">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <DecisionEmbeds text={content} />
           </div>
         )}
         {reactions.length > 0 && <ReactionPills events={reactions} />}

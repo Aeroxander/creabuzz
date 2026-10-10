@@ -32,6 +32,31 @@ export function defaultBoard(boards: readonly Channel[]): Channel | null {
   return open.find((board) => board.name === "supporters") ?? open[0] ?? null;
 }
 
+function ThreadLink({
+  thread,
+  testId,
+}: {
+  thread: ProposalThread;
+  testId: string;
+}) {
+  return (
+    <p className="text-sm">
+      <Link
+        className="font-medium underline"
+        data-testid={testId}
+        params={{ host: communityHostName() }}
+        search={{ channel: thread.boardId, post: thread.postId }}
+        to="/c/$host"
+      >
+        {thread.title}
+      </Link>
+      <span className="ml-2 text-xs text-muted-foreground">
+        on {thread.boardName} · {shortRelativeTime(thread.createdAt)}
+      </span>
+    </p>
+  );
+}
+
 export function DecisionDiscussion({
   decision,
   headline,
@@ -60,6 +85,12 @@ export function DecisionDiscussion({
     ? (open.find((board) => board.id === boardId) ?? defaultBoard(boards))
     : defaultBoard(boards);
   const starter = useStarterBoards(boards.map((board) => board.name));
+  // The first thread started is the decision's main discussion; the rest are alongside it.
+  const oldestFirst = [...threads].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),
+  );
+  const mainThread = oldestFirst[0];
+  const otherThreads = oldestFirst.slice(1);
 
   const begin = () => {
     if (existingUserPubkey() === null) {
@@ -100,27 +131,28 @@ export function DecisionDiscussion({
           </button>
         </p>
       ) : threads.length > 0 ? (
-        <ul
-          className="mt-2 flex flex-col gap-1"
-          data-testid="discussion-threads"
-        >
-          {threads.map((thread) => (
-            <li className="text-sm" key={thread.postId}>
-              <Link
-                className="font-medium underline"
-                data-testid="discussion-thread"
-                params={{ host: communityHostName() }}
-                search={{ channel: thread.boardId, post: thread.postId }}
-                to="/c/$host"
-              >
-                {thread.title}
-              </Link>
-              <span className="ml-2 text-xs text-muted-foreground">
-                on {thread.boardName} · {shortRelativeTime(thread.createdAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2" data-testid="discussion-threads">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Main discussion
+          </p>
+          <ThreadLink thread={mainThread} testId="discussion-main-thread" />
+          {otherThreads.length > 0 ? (
+            <>
+              <p className="mt-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {otherThreads.length === 1
+                  ? "One more thread"
+                  : `${otherThreads.length} more threads`}
+              </p>
+              <ul className="flex flex-col gap-1">
+                {otherThreads.map((thread) => (
+                  <li key={thread.postId}>
+                    <ThreadLink thread={thread} testId="discussion-thread" />
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
       ) : (
         <p
           className="mt-2 text-xs text-muted-foreground"
@@ -178,7 +210,7 @@ export function DecisionDiscussion({
             size="sm"
             variant="outline"
           >
-            Start a discussion
+            {threads.length > 0 ? "Start another thread" : "Start a discussion"}
           </Button>
         ) : (
           <div

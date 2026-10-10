@@ -7,6 +7,7 @@ import { useWork } from "../use-work";
 import { useWalletSend } from "../use-wallet-send";
 import { Button } from "@/shared/ui/button";
 import { proposalTopic } from "@/features/board/lib/proposal-link";
+import { decisionUrl } from "../lib/decision-link";
 import { useDaoThreads } from "@/features/board/use-dao-threads";
 import { DecisionCard } from "./DecisionCard";
 import { DecisionDiscussion } from "./DecisionDiscussion";
@@ -17,7 +18,16 @@ import { DecisionComposer } from "./DecisionComposer";
  * to back it, oppose it, start its wait or run it. Whoever opened a decision (this app, the command line, an agent),
  * it shows up here.
  */
-export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
+export function DecisionsTab({
+  launch,
+  dao,
+  focusDecision,
+}: {
+  launch: Launch;
+  dao: string;
+  /** The decision a link pointed at: highlighted and scrolled to. */
+  focusDecision?: string;
+}) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const decisions = useDecisions(dao, wallet.address);
   const sale = launch.record.currency
@@ -129,6 +139,15 @@ export function DecisionsTab({ launch, dao }: { launch: Launch; dao: string }) {
                       sale?.kind === "custom" ? "USDC" : sale?.symbol,
                   }}
                   gate={gate}
+                  highlighted={decision.id.toLowerCase() === focusDecision}
+                  link={decisionUrl(
+                    {
+                      launchId: launch.record.id,
+                      author: launch.record.author,
+                      decisionId: decision.id.toLowerCase(),
+                    },
+                    window.location.origin,
+                  )}
                   onSend={send}
                   renderDiscussion={(headline) => {
                     const ref = {

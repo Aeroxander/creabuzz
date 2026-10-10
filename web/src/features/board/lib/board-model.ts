@@ -241,21 +241,37 @@ export const SORT_LABELS: Record<BoardSort, string> = {
   top: "Top",
 };
 
+/**
+ * `priority` (lower first) puts some posts ahead of the rest before the sort applies: a proposal board uses it to
+ * show decisions that can still change first. Posts it does not name sort after those it does.
+ */
 export function sortPosts(
   posts: readonly BoardPost[],
   sort: BoardSort,
+  priority?: ReadonlyMap<string, number>,
 ): BoardPost[] {
-  const key = (post: BoardPost): number[] =>
-    sort === "active"
-      ? [post.lastActivity, post.createdAt]
-      : sort === "new"
-        ? [post.createdAt]
-        : [post.score, post.createdAt];
+  const key = (post: BoardPost): number[] => {
+    const rank = priority
+      ? [priority.get(post.id) ?? Number.MAX_SAFE_INTEGER]
+      : [];
+    return [
+      ...rank,
+      ...(sort === "active"
+        ? [post.lastActivity, post.createdAt]
+        : sort === "new"
+          ? [post.createdAt]
+          : // Votes never rank a proposal: it shows none, and a vote here is not the DAO's vote.
+            [post.proposal ? 0 : post.score, post.createdAt]),
+    ];
+  };
   return [...posts].sort((a, b) => {
     const ka = key(a);
     const kb = key(b);
-    for (let i = 0; i < ka.length; i++)
-      if (ka[i] !== kb[i]) return kb[i] - ka[i];
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] === kb[i]) continue;
+      // The priority is the one key where smaller comes first.
+      return priority && i === 0 ? ka[i] - kb[i] : kb[i] - ka[i];
+    }
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 }
@@ -292,8 +308,9 @@ export function arrange(input: {
   sort: BoardSort;
   frozen: readonly string[] | null;
   me: string | null;
+  priority?: ReadonlyMap<string, number>;
 }): Arrangement {
-  const ideal = sortPosts(input.posts, input.sort);
+  const ideal = sortPosts(input.posts, input.sort, input.priority);
   if (input.frozen === null) {
     return {
       rows: ideal,

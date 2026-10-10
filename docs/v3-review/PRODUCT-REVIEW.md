@@ -300,3 +300,33 @@ board tests added after that run, which pass).
   votes (it never had them), so a vote made on the web is not visible there.
 - Pre-existing and not mine: `cargo clippy -D warnings` fails in `crates/buzz-skillopt` (two lints), which will stop
   `just ci` and the pre-push hook until it is fixed.
+
+### Proposal threads without votes, and decision links with live cards (2026-10-10)
+
+Where proposals live: on the chain, in the DAO's voting contract. The app reads them (Decisions tab, the DAO front page,
+and now board threads); no server record is a copy of one, so there was nothing to link or embed. Changes:
+
+- **Proposal posts are not ranked by votes.** A post that names a decision has no vote arrows (a vote on a board is not
+  the DAO's vote and would read as support); in the list it shows a "Proposal" badge and where the decision stands
+  ("Collecting support", "Ready to run", "Done"), read from the chain. The "Proposals" view is ordered like a forum: decisions
+  that can still change first, then latest activity, and its sort buttons are hidden. Under "Top", votes never move a
+  proposal. Replies in a thread stay oldest first and can still be voted on.
+- **One main discussion per decision.** The first thread started about a decision is its main discussion; the Decisions
+  tab lists it first with the others alongside ("Start another thread" once one exists), and a thread says whether it is
+  the main one or links to it.
+- **A decision has an address.** `/launchpad/<launch>?author=…&tab=decisions&decision=<id>` opens the project's
+  Decisions tab with that decision outlined and scrolled into view; every decision has a "Copy link" button. The link
+  names a launch and a decision id and never a DAO address: the DAO comes from the launch record the app already knows,
+  so a link cannot point the app at a contract of its writer's choosing.
+- **A link becomes a live card.** Under any chat message, board post or reply, or social post that contains such a link
+  there is a small card: where the decision stands, what it would do, who backs it, and "Open the decision". Everything is
+  read from the chain. A link to a launch the app does not know, or one with no DAO, is left as a plain link.
+
+Checked: unit tests for the link format (rejects other sites and malformed ids, never reads a DAO), the ordering, the
+status logic; the mocked browser suite; and on a real local chain (`scripts/web-discussion-e2e.sh`, now three tests): the
+state pill in the list, no arrows, "Copy link" giving the exact address, a chat message turning into a card with the
+chain's state and title, an unknown project's link staying a link, and the card opening the highlighted decision.
+
+Not done: wiki pages do not show the cards (the editor needs its own node type); the public page and link preview for
+other platforms, an embeddable card and an announcement note for other Nostr clients (the app is a single-page app, so
+a preview needs the server to answer with page metadata: that is hosting work); a sentiment poll inside a thread.

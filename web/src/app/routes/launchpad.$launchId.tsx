@@ -1,5 +1,6 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
+import { isDecisionId } from "@/features/launchpad/lib/decision-link";
 import {
   type LaunchAction,
   parseLaunchAction,
@@ -10,6 +11,8 @@ interface LaunchSearch {
   author?: string;
   action?: LaunchAction;
   tab?: "decisions";
+  /** One decision to show: its id. Opens the Decisions tab and highlights that card. */
+  decision?: string;
 }
 
 export const Route = createFileRoute("/launchpad/$launchId")({
@@ -23,6 +26,11 @@ export const Route = createFileRoute("/launchpad/$launchId")({
     action: parseLaunchAction(search.action) ?? undefined,
     // `?tab=decisions` opens that tab: a discussion on a board links straight to the vote.
     tab: search.tab === "decisions" ? ("decisions" as const) : undefined,
+    decision:
+      typeof search.decision === "string" &&
+      isDecisionId(search.decision.toLowerCase())
+        ? search.decision.toLowerCase()
+        : undefined,
   }),
   component: LaunchDetailRoute,
 });
@@ -36,12 +44,13 @@ const LaunchDetailPage = lazyRouteComponent(
 
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
-  const { author, action, tab } = Route.useSearch();
+  const { author, action, tab, decision } = Route.useSearch();
   const sandbox = launchId === "nebula-sandbox";
   return (
     <LaunchDetailPage
       action={action}
       author={author}
+      initialDecision={decision}
       initialTab={tab}
       launchId={launchId}
       sandbox={sandbox}

@@ -7,7 +7,7 @@
  * for a post that is about a DAO decision.
  */
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ScrollText } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
@@ -132,12 +132,21 @@ export function PostThread({
         </Button>
       </div>
       <article className="flex gap-2 px-4 pb-4">
-        <VoteButtons
-          myVote={post.myVote}
-          onVote={(direction) => vote(post, direction)}
-          score={post.score}
-          subject={`post "${post.title}"`}
-        />
+        {post.proposal ? (
+          <div
+            aria-hidden
+            className="grid w-9 shrink-0 place-items-start pt-1 text-muted-foreground"
+          >
+            <ScrollText className="h-5 w-5" />
+          </div>
+        ) : (
+          <VoteButtons
+            myVote={post.myVote}
+            onVote={(direction) => vote(post, direction)}
+            score={post.score}
+            subject={`post "${post.title}"`}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-bold" data-testid="board-thread-title">
             {post.title}

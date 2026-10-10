@@ -153,7 +153,10 @@ the post, then change the vote and press it again to take it back, and reload: t
 **Start a project**, pick a team, and check the community now has a supporters board and a private founders board, each
 with a first post. On the founders board press **People** and add someone by pasting their npub. On a project's
 **Decisions** tab press **Start a discussion** under a decision, then open it from the list: the header must show where
-the decision stands, and the board's votes must be labelled as not the DAO's vote.
+the decision stands, and the board's votes must be labelled as not the DAO's vote. The proposal post must have no vote
+arrows and show a state pill in the board's list; **Proposals** orders live decisions first. On the decision press **Copy
+link** and paste it into a chat message or a post: a live card appears under it, and its button opens the Decisions tab
+with that decision outlined.
 
 ## 5. Cashtags
 
