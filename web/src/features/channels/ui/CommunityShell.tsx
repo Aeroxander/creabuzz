@@ -4,6 +4,7 @@ import {
   ListChecks,
   Menu,
   MessageSquare,
+  Rocket,
   Search,
   ShieldCheck,
   Users,
@@ -30,6 +31,11 @@ const WikiView = lazy(() =>
 const FleetView = lazy(() =>
   import("@/features/fleet/ui/FleetView").then((m) => ({
     default: m.FleetView,
+  })),
+);
+const StartProject = lazy(() =>
+  import("@/features/templates/ui/StartProject").then((m) => ({
+    default: m.StartProject,
   })),
 );
 const OrgView = lazy(() =>
@@ -109,6 +115,8 @@ export function CommunityShell({
   const [showingFleet, setShowingFleet] = useState(initialView === "fleet");
   const [showingWork, setShowingWork] = useState(initialView === "work");
   const [showingOrg, setShowingOrg] = useState(initialView === "org");
+  /** Start-a-project picker (local state like DMs: not a linkable view). */
+  const [showingStart, setShowingStart] = useState(false);
   /**
    * Direct messages panel. Local state like search (not a linkable URL view)
    * so the community route stays untouched.
@@ -191,6 +199,7 @@ export function CommunityShell({
     setSidebarOpen(false);
     setShowingDms(false);
     setShowingModeration(false);
+    setShowingStart(false);
     const active =
       view === "wiki"
         ? showingWiki
@@ -296,6 +305,31 @@ export function CommunityShell({
             type="button"
             onClick={() => {
               setSearchTerm("");
+              setSidebarOpen(false);
+              const next = !showingStart;
+              setShowingWiki(false);
+              setShowingFleet(false);
+              setShowingWork(false);
+              setShowingOrg(false);
+              setShowingDms(false);
+              setShowingModeration(false);
+              setShowingStart(next);
+              writeView(undefined);
+            }}
+            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+              showingStart
+                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+            }`}
+            data-testid="start-project-toggle"
+          >
+            <Rocket className="h-3.5 w-3.5" />
+            Start a project
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm("");
               setView("wiki");
             }}
             className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
@@ -367,6 +401,7 @@ export function CommunityShell({
               setShowingWork(false);
               setShowingOrg(false);
               setShowingModeration(false);
+              setShowingStart(false);
               setShowingDms(next);
               writeView(undefined);
             }}
@@ -392,6 +427,7 @@ export function CommunityShell({
                 setShowingWork(false);
                 setShowingOrg(false);
                 setShowingDms(false);
+                setShowingStart(false);
                 setShowingModeration(next);
                 writeView(undefined);
               }}
@@ -427,6 +463,7 @@ export function CommunityShell({
               setShowingOrg(false);
               setShowingDms(false);
               setShowingModeration(false);
+              setShowingStart(false);
               setSidebarOpen(false);
             }}
           />
@@ -453,7 +490,22 @@ export function CommunityShell({
             </span>
           </div>
           <div className="buzz-content-card mb-2 mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col">
-            {showingDms ? (
+            {showingStart ? (
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading templates…" />}
+              >
+                <StartProject
+                  onOpenChannel={(channelId) => {
+                    selectChannel(channelId);
+                    setShowingStart(false);
+                  }}
+                  onOpenView={(view) => {
+                    setShowingStart(false);
+                    setView(view === "agents" ? "fleet" : view);
+                  }}
+                />
+              </Suspense>
+            ) : showingDms ? (
               <Suspense
                 fallback={<ViewLoadingFallback label="Loading messages…" />}
               >

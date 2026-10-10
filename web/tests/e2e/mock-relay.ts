@@ -118,6 +118,12 @@ export interface MockRelayOptions {
    * silently loses every mention.
    */
   enforcePGate?: boolean;
+  /**
+   * Do what Buzz's relay does with a channel-create (kind 9007): derive the
+   * channel's metadata record (kind 39000, `d` = the channel id) from it, so the
+   * channel appears in the list. Off by default: most specs seed channels.
+   */
+  deriveChannels?: boolean;
 }
 
 export function createMockRelay({
@@ -126,6 +132,7 @@ export function createMockRelay({
   requireAuth = false,
   challengeDelayMs = 0,
   enforcePGate = false,
+  deriveChannels = false,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -247,6 +254,23 @@ export function createMockRelay({
             // Fan out after acknowledging, as a relay would.
             ws.send(JSON.stringify(["OK", event.id, true, ""]));
             deliver(event);
+            if (deriveChannels && event.kind === 9007) {
+              const tag = (name: string) =>
+                event.tags.find((t) => t[0] === name)?.[1] ?? "";
+              deliver({
+                id: `meta-${event.id}`,
+                pubkey: event.pubkey,
+                created_at: event.created_at,
+                kind: 39000,
+                tags: [
+                  ["d", tag("h")],
+                  ["name", tag("name")],
+                  ...(tag("about") ? [["about", tag("about")]] : []),
+                ],
+                content: "",
+                sig: "sig",
+              });
+            }
             return;
           }
           ws.send(JSON.stringify(["OK", event.id, true, ""]));
