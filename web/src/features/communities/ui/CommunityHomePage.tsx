@@ -66,10 +66,21 @@ function CommunityLoadState({
   );
 }
 
+/** Do two server addresses point at the same machine and port? */
+function sameServer(a: string, b: string): boolean {
+  try {
+    return new URL(a).host === new URL(b).host;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Public page for one community (`/c/<host>`). Communities with open
  * channels open directly into the app shell (sidebar + search + timeline);
- * empty communities show their public card with join/connect CTAs.
+ * empty communities show their public card with join/connect CTAs, unless this
+ * browser is already connected to it. Then there is nothing to join, and the
+ * shell opens on its own prompt to start a project.
  */
 export function CommunityHomePage() {
   const { host } = useParams({ from: "/c/$host" });
@@ -117,7 +128,7 @@ export function CommunityHomePage() {
     );
   }
 
-  if (channels.channels.length > 0) {
+  if (channels.channels.length > 0 || sameServer(relayWsUrl(), wsUrl)) {
     const initialChannelId =
       typeof search.channel === "string" ? search.channel : undefined;
     const initialMessageId =

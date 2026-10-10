@@ -17,6 +17,7 @@ import {
   type PlanStep,
 } from "@creaton/core/templates/apply.ts";
 import type { TemplateEntry } from "@creaton/core/templates/schema.ts";
+import { markFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { openUserPublisher } from "@/shared/lib/publish-as-user";
@@ -135,6 +136,7 @@ export function useTemplateApply() {
           queryClient.invalidateQueries({ queryKey: ["wiki-pages"] }),
           queryClient.invalidateQueries({ queryKey: ["knowledge-pages"] }),
         ]);
+        if (report.status === "done") markFirstStep(localStorage, "project");
         setState({
           phase: report.status === "done" ? "done" : "stopped",
           entry,

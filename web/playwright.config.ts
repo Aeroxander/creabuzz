@@ -52,6 +52,7 @@ export default defineConfig({
         "**/first-run.spec.ts",
         "**/start-project.spec.ts",
         "**/helpers.spec.ts",
+        "**/home-checklist.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",

@@ -58,6 +58,13 @@ function count(
   ).length;
 }
 
+/** What Home's checklist has been told about, from this browser's storage. */
+function firstSteps(page: import("@playwright/test").Page) {
+  return page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("creaton.first-steps") ?? "[]"),
+  );
+}
+
 test("a team is picked, set up step by step, and its first channel opens", async ({
   page,
 }) => {
@@ -95,6 +102,9 @@ test("a team is picked, set up step by step, and its first channel opens", async
   await expect(page.getByTestId("start-project-done")).toBeVisible({
     timeout: 60_000,
   });
+
+  // Home's "Get started" list can now tick "Start a project".
+  expect(await firstSteps(page)).toEqual(["project"]);
 
   // What was written, read back from the server.
   expect(count(relay, 9007, false)).toBe(4); // the four channels
@@ -148,12 +158,15 @@ test("a refused step says what to do, keeps what went through, and Try again fin
   expect(count(relay, 30175)).toBe(6);
   expect(count(relay, 37010)).toBe(0);
   expect(count(relay, 44001)).toBe(0);
+  // A project that stopped partway is not a finished one.
+  expect(await firstSteps(page)).toEqual([]);
 
   refuseOrg = false;
   await page.getByTestId("start-project-retry").click();
   await expect(page.getByTestId("start-project-done")).toBeVisible({
     timeout: 60_000,
   });
+  expect(await firstSteps(page)).toEqual(["project"]);
   // Finished from where it stopped: nothing was written twice.
   expect(count(relay, 9007, false)).toBe(4);
   expect(count(relay, 9)).toBe(5);
@@ -171,4 +184,41 @@ test("someone without an account is asked to create one first", async ({
   await expect(page.getByTestId("start-project-confirm")).toHaveCount(0);
   await page.getByTestId("start-project-sign-up").click();
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
+});
+
+test("a community with no channels asks to start a project instead of showing a dead end", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+  }, NSEC);
+  // This browser is connected to the server it opens (the page's own address),
+  // so there is nothing to join: the empty community opens in the app.
+  await page.goto("/c/127.0.0.1:4173");
+  await page.getByTestId("content-pane").waitFor();
+
+  await expect(page.getByTestId("empty-community")).toContainText(
+    "Nothing here yet",
+  );
+  await expect(
+    page.getByText("Select a channel to start reading."),
+  ).toHaveCount(0);
+  await page.getByTestId("empty-community-start").click();
+  await expect(page.getByTestId("start-project")).toBeVisible();
+});
+
+test("a community that has channels does not show the empty prompt", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(general);
+  await relay.install(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await expect(
+    page.getByText("Select a channel to start reading."),
+  ).toBeVisible();
+  await expect(page.getByTestId("empty-community")).toHaveCount(0);
 });

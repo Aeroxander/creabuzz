@@ -169,6 +169,20 @@ export function CommunityShell({
   // Tied to this route so a search-only update keeps the type of its schema.
   const navigate = useNavigate({ from: "/c/$host" });
 
+  /** Open (or close) the start-a-project picker, leaving every other view. */
+  const showStart = (open: boolean) => {
+    setSearchTerm("");
+    setSidebarOpen(false);
+    setShowingWiki(false);
+    setShowingFleet(false);
+    setShowingWork(false);
+    setShowingOrg(false);
+    setShowingDms(false);
+    setShowingModeration(false);
+    setShowingStart(open);
+    writeView(undefined);
+  };
+
   const activeChannel = useMemo(
     () => channels.find((c) => c.id === selectedId) ?? null,
     [channels, selectedId],
@@ -303,19 +317,7 @@ export function CommunityShell({
           </div>
           <button
             type="button"
-            onClick={() => {
-              setSearchTerm("");
-              setSidebarOpen(false);
-              const next = !showingStart;
-              setShowingWiki(false);
-              setShowingFleet(false);
-              setShowingWork(false);
-              setShowingOrg(false);
-              setShowingDms(false);
-              setShowingModeration(false);
-              setShowingStart(next);
-              writeView(undefined);
-            }}
+            onClick={() => showStart(!showingStart)}
             className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
               showingStart
                 ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
@@ -542,7 +544,7 @@ export function CommunityShell({
               </Suspense>
             ) : showingFleet ? (
               <Suspense
-                fallback={<ViewLoadingFallback label="Loading agents…" />}
+                fallback={<ViewLoadingFallback label="Loading helpers…" />}
               >
                 <FleetView channels={channels} />
               </Suspense>
@@ -596,8 +598,33 @@ export function CommunityShell({
                 }}
               />
             ) : (
-              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
-                Select a channel to start reading.
+              <div
+                className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-black/60 dark:text-white/60"
+                data-testid={
+                  channels.length === 0 ? "empty-community" : undefined
+                }
+              >
+                {channels.length === 0 ? (
+                  <>
+                    <p className="text-base font-semibold text-foreground">
+                      Nothing here yet
+                    </p>
+                    <p className="max-w-sm">
+                      Start from a ready-made team and this community fills with
+                      channels, AI helpers and shared pages.
+                    </p>
+                    <button
+                      className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+                      data-testid="empty-community-start"
+                      onClick={() => showStart(true)}
+                      type="button"
+                    >
+                      Start a project
+                    </button>
+                  </>
+                ) : (
+                  "Select a channel to start reading."
+                )}
               </div>
             )}
           </div>

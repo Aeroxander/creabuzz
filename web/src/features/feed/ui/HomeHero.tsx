@@ -4,9 +4,11 @@
  *
  * Signed out: a short pitch, two doors (make an account, look around) and the
  * three ideas the product stands on (a ready-made team, helpers that ask first,
- * and sharing ownership when the time comes). Signed in: a checklist built only from
- * things the app can verify (a profile, a follow, a launch of your own), so a
- * ticked box never lies. It can be dismissed, and goes away on its own when done.
+ * and sharing ownership when the time comes). Signed in: a checklist built only
+ * from things the app can verify (a profile, a project finished here, a helper
+ * started here, a follow, a launch of your own), so a ticked box never lies.
+ * The first three are the way in; the last two are for later and never hold the
+ * list open. It can be dismissed, and goes away on its own when done.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -15,6 +17,8 @@ import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
+import { peekAgentPubkey } from "@/shared/lib/agent-identity";
+import { hasFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
@@ -112,6 +116,15 @@ function Welcome() {
   );
 }
 
+interface Step {
+  done: boolean;
+  label: string;
+  hint: string;
+  to: "/c" | "/discover" | "/launchpad" | null;
+  /** For later: shown, but never holds the list open. */
+  optional?: boolean;
+}
+
 function GettingStarted({ me }: { me: string }) {
   const [dismissed, setDismissed] = useState(readDismissed);
   const lists = useMyLists();
@@ -127,13 +140,15 @@ function GettingStarted({ me }: { me: string }) {
       followedLaunches(lists.data?.bookmarks ?? null).size >
     0;
   const started = (launches.data ?? []).some((l) => l.record.author === me);
+  const madeProject = hasFirstStep(localStorage, "project");
+  const ranHelper = peekAgentPubkey() !== null;
 
   // Don't flash a checklist of empty boxes while the answers are still loading.
   if (dismissed || lists.isLoading || launches.isLoading || !profiles) {
     return null;
   }
 
-  const steps = [
+  const steps: Step[] = [
     {
       done: named,
       label: "Add your name and a picture",
@@ -141,19 +156,34 @@ function GettingStarted({ me }: { me: string }) {
       to: null,
     },
     {
+      done: madeProject,
+      label: "Start a project with a ready-made team",
+      hint: "A film crew, an app team or a startup crew. Channels, helpers and pages are set up for you.",
+      to: "/c",
+    },
+    {
+      done: ranHelper,
+      label: "Put an AI helper to work",
+      hint: "In your project, open AI helpers and run one in this tab.",
+      to: "/c",
+    },
+    {
       done: follows,
       label: "Follow a launch or a person",
-      hint: "Their posts will show up in For you.",
-      to: "/discover" as const,
+      hint: "Optional. Their posts will show up in For you.",
+      to: "/discover",
+      optional: true,
     },
     {
       done: started,
-      label: "Start an idea of your own",
-      hint: "A name and a sentence. About a minute, nothing to commit to.",
-      to: "/launchpad" as const,
+      label: "Raise money and share ownership",
+      hint: "Optional, for when you're ready. Not needed to start working.",
+      to: "/launchpad",
+      optional: true,
     },
   ];
-  if (steps.every((step) => step.done)) return null;
+  const required = steps.filter((step) => !step.optional);
+  if (required.every((step) => step.done)) return null;
 
   return (
     <section
@@ -167,7 +197,7 @@ function GettingStarted({ me }: { me: string }) {
             Get started
           </h2>
           <p className="text-sm text-muted-foreground">
-            {steps.filter((s) => s.done).length} of {steps.length} done
+            {required.filter((s) => s.done).length} of {required.length} done
           </p>
         </div>
         <Button
