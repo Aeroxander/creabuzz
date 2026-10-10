@@ -8,6 +8,12 @@ import {
   Users,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { toast } from "sonner";
+
+import { offerStarterBoards } from "@/features/board/lib/starter-boards";
+import { useStarterBoards } from "@/features/board/use-starter-boards";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
+import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { Button } from "@/shared/ui/button";
 import { errorMessage } from "@/shared/ui/query-error";
@@ -132,6 +138,7 @@ export function ChannelSidebar({
   const [creating, setCreating] = useState<"stream" | "forum" | null>(null);
   const boards = channels.filter((channel) => channel.type === "forum");
   const chats = channels.filter((channel) => channel.type !== "forum");
+  const starter = useStarterBoards(boards.map((board) => board.name));
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col">
       <SectionHeader
@@ -146,9 +153,31 @@ export function ChannelSidebar({
       {!boardsCollapsed && (
         <nav aria-label="Boards" className="px-2 pb-2" data-testid="board-list">
           {boards.length === 0 ? (
-            <p className="px-2 text-xs text-black/60 dark:text-white/60">
-              Posts and replies that stay easy to find.
-            </p>
+            <div className="px-2">
+              <p className="text-xs text-black/60 dark:text-white/60">
+                Posts and replies that stay easy to find.
+              </p>
+              {offerStarterBoards(boards.length) ? (
+                <Button
+                  className="mt-2 h-7 px-2 text-xs"
+                  data-testid="starter-boards"
+                  disabled={starter.state.phase === "working"}
+                  onClick={() => {
+                    if (existingUserPubkey() === null) {
+                      toast.error(needAccountTo("add boards"));
+                      return;
+                    }
+                    void starter.create();
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
+                  {starter.state.phase === "working"
+                    ? "Setting up…"
+                    : "Add supporters and founders boards"}
+                </Button>
+              ) : null}
+            </div>
           ) : (
             boards.map((board) => (
               <ChannelButton
@@ -160,6 +189,22 @@ export function ChannelSidebar({
               />
             ))
           )}
+          {starter.state.phase === "error" ? (
+            <p
+              className="px-2 pt-1 text-xs text-destructive"
+              data-testid="starter-boards-problem"
+              role="alert"
+            >
+              {starter.state.message}{" "}
+              <button
+                className="underline"
+                onClick={() => void starter.create()}
+                type="button"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
         </nav>
       )}
       <SectionHeader

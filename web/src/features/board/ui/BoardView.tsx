@@ -32,6 +32,7 @@ import {
 } from "../lib/board-model";
 import { POST_LIMIT, useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
+import { BoardPeople } from "./BoardPeople";
 import { PostComposer } from "./PostComposer";
 import { PostRow } from "./PostRow";
 import { PostThread } from "./PostThread";
@@ -53,8 +54,11 @@ export function BoardView({
   postId,
   onOpenPost,
   renderPostHeader,
+  suggestPeopleFrom = null,
 }: {
   channel: Channel;
+  /** A channel whose speakers are offered as people to add to a private board. */
+  suggestPeopleFrom?: string | null;
   /** The post that is open, if any (kept in the address so it can be linked to). */
   postId: string | undefined;
   onOpenPost: (id: string | null) => void;
@@ -72,6 +76,7 @@ export function BoardView({
   const [sort, setSort] = useState<BoardSort>("active");
   const [filter, setFilter] = useState<BoardFilter>("all");
   const [composing, setComposing] = useState(false);
+  const [showingPeople, setShowingPeople] = useState(false);
   const [frozen, setFrozen] = useState<string[] | null>(null);
 
   const visible = useMemo(
@@ -235,6 +240,17 @@ export function BoardView({
               ))}
             </fieldset>
           ) : null}
+          {channel.visibility === "private" ? (
+            <Button
+              aria-expanded={showingPeople}
+              data-testid="board-people-toggle"
+              onClick={() => setShowingPeople((v) => !v)}
+              size="sm"
+              variant="outline"
+            >
+              People
+            </Button>
+          ) : null}
           <Button
             data-testid="board-new-post"
             onClick={() => {
@@ -246,6 +262,13 @@ export function BoardView({
           </Button>
         </div>
       </header>
+
+      {showingPeople && channel.visibility === "private" ? (
+        <BoardPeople
+          boardId={channel.id}
+          suggestFromChannelId={suggestPeopleFrom}
+        />
+      ) : null}
 
       {records.liveStatus && records.liveStatus !== "open" ? (
         <p

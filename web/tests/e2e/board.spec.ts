@@ -14,6 +14,7 @@ import { createMockRelay } from "./mock-relay";
 
 const BOARD = "b0a4d000-1111-2222-3333-444444444444";
 const CHAT = "c4a70000-1111-2222-3333-444444444444";
+const SECRET = "5ec12e70-1111-2222-3333-444444444444";
 const OWNER_NSEC = "55".repeat(32);
 const key = (hex: string) =>
   Uint8Array.from(hex.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16));
@@ -109,7 +110,11 @@ function relayWithBoard(options?: Parameters<typeof createMockRelay>[0]) {
 async function open(
   page: Page,
   relay: ReturnType<typeof createMockRelay>,
-  { signedIn = true, post: postId }: { signedIn?: boolean; post?: string } = {},
+  {
+    signedIn = true,
+    post: postId,
+    board = BOARD,
+  }: { signedIn?: boolean; post?: string; board?: string } = {},
 ) {
   await page.route("http://127.0.0.1:8545/**", (route) =>
     route.fulfill({
@@ -124,7 +129,7 @@ async function open(
       window.localStorage.setItem("buzz.identity.nsec", nsec);
     }, OWNER_NSEC);
   }
-  const query = `channel=${BOARD}${postId ? `&post=${postId}` : ""}`;
+  const query = `channel=${board}${postId ? `&post=${postId}` : ""}`;
   await page.goto(`/c/alpha.example.com?${query}`);
   await page.getByTestId("content-pane").waitFor();
 }
@@ -531,4 +536,210 @@ test("boards sit in their own group, and a new board is created as one", async (
     )
     .toBe("forum");
   await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
+});
+
+function privateBoard(role: "owner" | "member") {
+  const relay = relayWithBoard();
+  relay.seed({
+    id: "meta-secret",
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    kind: 39000,
+    tags: [["d", SECRET], ["name", "founders"], ["private"], ["t", "forum"]],
+    content: "",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "members-secret",
+    pubkey: "b".repeat(64),
+    created_at: 101,
+    kind: 39002,
+    tags: [
+      ["d", SECRET],
+      ["p", ANN, "", "owner"],
+      ["p", OWNER, "", role],
+    ],
+    content: "",
+    sig: "sig",
+  });
+  // Someone who has spoken in the open chat, to be offered as a person to add.
+  relay.seed({
+    id: eid(),
+    pubkey: BOB,
+    created_at: now() - 100,
+    kind: 9,
+    tags: [["h", CHAT]],
+    content: "hello from the chat",
+    sig: "sig",
+  });
+  return relay;
+}
+
+test("a private board says who can read it, and an owner can add people by key or from the community", async ({
+  page,
+}) => {
+  const relay = privateBoard("owner");
+  await open(page, relay, { board: SECRET });
+  await expect(page.getByTestId("board-name")).toHaveText("founders");
+  await expect(page.getByTestId("board-people")).toHaveCount(0);
+  await page.getByTestId("board-people-toggle").click();
+  await expect(page.getByTestId("board-members")).toContainText("(owner)");
+
+  // A key that is not a key is said so in plain words, and nothing is written.
+  await page.getByLabel("Add someone by their public key").fill("not a key");
+  await page.getByTestId("board-add-person").click();
+  await expect(page.getByTestId("board-people-problem")).toContainText(
+    "doesn't look like a public key",
+  );
+  expect(relay.events.filter((e) => e.kind === 9000)).toEqual([]);
+
+  // A pasted npub adds that person.
+  const { nip19 } = await import("nostr-tools");
+  const carol = "c3".repeat(32);
+  await page
+    .getByLabel("Add someone by their public key")
+    .fill(nip19.npubEncode(carol));
+  await page.getByTestId("board-add-person").click();
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 9000)?.tags)
+    .toEqual([
+      ["h", SECRET],
+      ["p", carol],
+      ["role", "member"],
+    ]);
+  await expect(page.getByTestId("board-members").locator("li")).toHaveCount(3);
+
+  // Someone who has spoken in the community is offered, and adding them is one click.
+  await page.getByTestId("board-suggest-person").first().click();
+  await expect
+    .poll(() =>
+      relay.events.filter((e) => e.kind === 9000).map((e) => e.tags[1][1]),
+    )
+    .toEqual([carol, BOB]);
+  await expect(page.getByTestId("board-suggest-person")).toHaveCount(0);
+});
+
+test("when the server will not let someone add people, its reason is shown", async ({
+  page,
+}) => {
+  const relay = privateBoard("member");
+  const refusing = createMockRelay({
+    applyDeletions: true,
+    refuse: (e) =>
+      e.kind === 9000 ? "restricted: only an admin can add people" : null,
+  });
+  for (const e of relay.events) refusing.seed(e);
+  await open(page, refusing, { board: SECRET });
+  await page.getByTestId("board-people-toggle").click();
+  await page
+    .getByLabel("Add someone by their public key")
+    .fill("d4".repeat(32));
+  await page.getByTestId("board-add-person").click();
+  await expect(page.getByTestId("board-people-problem")).toContainText(
+    "only an admin can add people",
+  );
+  await expect(page.getByTestId("board-members").locator("li")).toHaveCount(2);
+});
+
+test("a community with no boards can add the supporters and founders boards in one click", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ deriveChannels: true });
+  relay.seed(meta(CHAT, "general", "stream"));
+  await relay.install(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+  }, OWNER_NSEC);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+
+  await page.getByTestId("starter-boards").click();
+  await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
+  await expect(page.getByTestId("board-nav-founders")).toBeVisible();
+  // Made, so the offer is gone.
+  await expect(page.getByTestId("starter-boards")).toHaveCount(0);
+
+  const created = relay.events.filter((e) => e.kind === 9007);
+  const field = (e: { tags: string[][] }, name: string) =>
+    e.tags.find((t) => t[0] === name)?.[1];
+  expect(
+    created.map((e) => [
+      field(e, "name"),
+      field(e, "visibility"),
+      field(e, "channel_type"),
+    ]),
+  ).toEqual([
+    ["supporters", "open", "forum"],
+    ["founders", "private", "forum"],
+  ]);
+  // Each board's first post goes to the board that was just made.
+  const posts = relay.events.filter((e) => e.kind === 45001);
+  expect(posts.map((p) => p.tags[0][1])).toEqual(
+    created.map((e) => field(e, "h")),
+  );
+  expect(posts[1].content.startsWith("# The founders' board")).toBe(true);
+
+  await page.getByTestId("board-nav-founders").click();
+  await expect(page.getByTestId("board-posts")).toContainText(
+    "The founders' board",
+  );
+});
+
+test("if the second starter board is refused, the first stays, the problem is said, and trying again makes only what is missing", async ({
+  page,
+}) => {
+  let refuseFounders = true;
+  const relay = createMockRelay({
+    deriveChannels: true,
+    refuse: (e) =>
+      refuseFounders &&
+      e.kind === 9007 &&
+      e.tags.some((t) => t[0] === "name" && t[1] === "founders")
+        ? "rate-limited: quota exceeded; retry in 20s"
+        : null,
+  });
+  relay.seed(meta(CHAT, "general", "stream"));
+  await relay.install(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+  }, OWNER_NSEC);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+
+  await page.getByTestId("starter-boards").click();
+  await expect(page.getByTestId("starter-boards-problem")).toContainText(
+    "quota exceeded",
+  );
+  await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
+  await expect(page.getByTestId("board-nav-founders")).toHaveCount(0);
+
+  refuseFounders = false;
+  await page
+    .getByTestId("starter-boards-problem")
+    .getByRole("button", { name: "Try again" })
+    .click();
+  await expect(page.getByTestId("board-nav-founders")).toBeVisible();
+  await expect(page.getByTestId("starter-boards-problem")).toHaveCount(0);
+  const named = (name: string) =>
+    relay.events.filter(
+      (e) =>
+        e.kind === 9007 && e.tags.some((t) => t[0] === "name" && t[1] === name),
+    ).length;
+  expect([named("supporters"), named("founders")]).toEqual([1, 1]);
+  expect(relay.events.filter((e) => e.kind === 45001)).toHaveLength(2);
+});
+
+test("someone without an account is told to make one before boards are added", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ deriveChannels: true });
+  relay.seed(meta(CHAT, "general", "stream"));
+  await relay.install(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("starter-boards").click();
+  await expect(
+    page.getByText("Create your account (top right) to add boards."),
+  ).toBeVisible();
+  expect(relay.events.filter((e) => e.kind === 9007)).toEqual([]);
 });

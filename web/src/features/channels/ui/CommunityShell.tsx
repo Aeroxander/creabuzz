@@ -615,6 +615,11 @@ export function CommunityShell({
                   channel={activeChannel}
                   onOpenPost={openPost}
                   postId={openPostId ?? undefined}
+                  suggestPeopleFrom={
+                    channels.find(
+                      (c) => c.type !== "forum" && c.visibility === "public",
+                    )?.id ?? null
+                  }
                 />
               </Suspense>
             ) : activeChannel ? (
