@@ -12,6 +12,12 @@ export interface Channel {
   name: string;
   description: string;
   visibility: "public" | "private";
+  /**
+   * What the channel is for: live chat (`stream`) or a board of posts and
+   * replies (`forum`, the server's name for it). The server tags it `t` on the
+   * channel's metadata record.
+   */
+  type: "stream" | "forum";
   /** Metadata timestamp, used as the cursor when walking older pages. */
   createdAt: number;
 }
@@ -42,6 +48,9 @@ function eventToChannel(event: NostrEvent): Channel {
     name,
     description,
     visibility: isPrivate ? "private" : "public",
+    type: event.tags.some((t) => t[0] === "t" && t[1] === "forum")
+      ? "forum"
+      : "stream",
     createdAt: event.created_at,
   };
 }

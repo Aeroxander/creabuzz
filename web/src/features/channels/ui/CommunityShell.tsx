@@ -33,6 +33,11 @@ const FleetView = lazy(() =>
     default: m.FleetView,
   })),
 );
+const BoardView = lazy(() =>
+  import("@/features/board/ui/BoardView").then((m) => ({
+    default: m.BoardView,
+  })),
+);
 const StartProject = lazy(() =>
   import("@/features/templates/ui/StartProject").then((m) => ({
     default: m.StartProject,
@@ -71,6 +76,7 @@ export function CommunityShell({
   initialView,
   initialPage,
   initialWorkId,
+  initialPostId,
   host,
   hasMoreChannels = false,
   loadingMoreChannels = false,
@@ -87,6 +93,8 @@ export function CommunityShell({
   initialPage?: string;
   /** Work-item id from the URL. */
   initialWorkId?: string;
+  /** A board post from the URL: opens its thread. */
+  initialPostId?: string;
   host: string;
   /** Paging for a community with more channels than one relay page. */
   hasMoreChannels?: boolean;
@@ -96,6 +104,9 @@ export function CommunityShell({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialChannelId ?? null,
+  );
+  const [openPostId, setOpenPostId] = useState<string | null>(
+    () => initialPostId ?? null,
   );
   const [searchTerm, setSearchTerm] = useState("");
   const [highlightedMessage, setHighlightedMessage] = useState<string | null>(
@@ -199,8 +210,22 @@ export function CommunityShell({
    */
   const selectChannel = (channelId: string) => {
     setSelectedId(channelId);
+    setOpenPostId(null);
     void navigate({
-      search: (previous) => ({ ...previous, channel: channelId }),
+      search: (previous) => ({
+        ...previous,
+        channel: channelId,
+        post: undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  /** Open a board post (or go back to the list with null), mirrored into the URL. */
+  const openPost = (postId: string | null) => {
+    setOpenPostId(postId);
+    void navigate({
+      search: (previous) => ({ ...previous, post: postId ?? undefined }),
       replace: true,
     });
   };
@@ -580,6 +605,16 @@ export function CommunityShell({
                     selectChannel(channelId);
                     setSearchTerm("");
                   }}
+                />
+              </Suspense>
+            ) : activeChannel?.type === "forum" ? (
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading the board…" />}
+              >
+                <BoardView
+                  channel={activeChannel}
+                  onOpenPost={openPost}
+                  postId={openPostId ?? undefined}
                 />
               </Suspense>
             ) : activeChannel ? (

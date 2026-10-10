@@ -144,6 +144,7 @@ export function CommunityHomePage() {
           }
           initialPage={search.page}
           initialWorkId={search.work}
+          initialPostId={search.post}
           host={host}
           hasMoreChannels={channels.hasMoreChannels}
           loadingMoreChannels={channels.loadingMore}

@@ -167,6 +167,7 @@ export function DmView() {
                 name: labelOf(selected.participants),
                 description: "",
                 visibility: "private",
+                type: "stream",
                 createdAt: selected.createdAt,
               } satisfies Channel
             }

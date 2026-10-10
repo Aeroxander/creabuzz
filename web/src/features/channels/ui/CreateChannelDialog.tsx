@@ -56,9 +56,16 @@ function toRosterAgents(
 export function CreateChannelDialog({
   open,
   onOpenChange,
+  defaultType = "stream",
+  defaultVisibility = "open",
+  defaultName = "",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** What the dialog starts on: a live chat, or a board of posts and replies. */
+  defaultType?: ChannelTypeChoice;
+  defaultVisibility?: ChannelVisibilityChoice;
+  defaultName?: string;
 }) {
   const roster = useAgentRoster();
   const agents = React.useMemo(
@@ -70,9 +77,9 @@ export function CreateChannelDialog({
   const [name, setName] = React.useState("");
   const [topic, setTopic] = React.useState("");
   const [visibility, setVisibility] =
-    React.useState<ChannelVisibilityChoice>("open");
+    React.useState<ChannelVisibilityChoice>(defaultVisibility);
   const [channelType, setChannelType] =
-    React.useState<ChannelTypeChoice>("stream");
+    React.useState<ChannelTypeChoice>(defaultType);
   const [templateId, setTemplateId] = React.useState("blank");
   const [teamName, setTeamName] = React.useState("");
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(
@@ -96,10 +103,10 @@ export function CreateChannelDialog({
   // Reset the form every time the dialog opens (desktop's `active` behavior).
   React.useEffect(() => {
     if (!open) return;
-    setName("");
+    setName(defaultName);
     setTopic("");
-    setVisibility("open");
-    setChannelType("stream");
+    setVisibility(defaultVisibility);
+    setChannelType(defaultType);
     setTemplateId("blank");
     setTeamName("");
     setSelected(new Set());
@@ -111,7 +118,14 @@ export function CreateChannelDialog({
     topicTouchedRef.current = false;
     createMutation.reset();
     attachMutation.reset();
-  }, [open, createMutation.reset, attachMutation.reset]);
+  }, [
+    open,
+    defaultType,
+    defaultVisibility,
+    defaultName,
+    createMutation.reset,
+    attachMutation.reset,
+  ]);
 
   const applyTemplate = React.useCallback(
     (id: string) => {
@@ -237,10 +251,13 @@ export function CreateChannelDialog({
         data-testid="create-channel-dialog"
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>Create a channel</AlertDialogTitle>
+          <AlertDialogTitle>
+            {channelType === "forum" ? "Create a board" : "Create a channel"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Channels are where your community talks. You can add agents and
-            teams now or later.
+            {channelType === "forum"
+              ? "A board is where people post topics and reply under them. It stays easy to find later. You can add agents and teams now or later."
+              : "Channels are where your community talks. You can add agents and teams now or later."}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -311,8 +328,8 @@ export function CreateChannelDialog({
                   setChannelType(e.target.value as ChannelTypeChoice)
                 }
               >
-                <option value="stream">Conversation</option>
-                <option value="forum">Forum (threaded)</option>
+                <option value="stream">Live chat</option>
+                <option value="forum">Board (posts and replies)</option>
               </select>
             </div>
           </div>
@@ -484,7 +501,11 @@ export function CreateChannelDialog({
             disabled={name.trim().length === 0 || isCreating}
             data-testid="submit-create-channel"
           >
-            {isCreating ? "Creating…" : "Create channel"}
+            {isCreating
+              ? "Creating…"
+              : channelType === "forum"
+                ? "Create board"
+                : "Create channel"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

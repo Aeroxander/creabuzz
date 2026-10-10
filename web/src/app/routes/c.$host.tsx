@@ -17,6 +17,8 @@ interface CommunitySearch {
   page?: string;
   /** Work-item id (`d` tag of its 44011 record). */
   work?: string;
+  /** A post on the board in `channel`: opens its thread. */
+  post?: string;
 }
 
 const VIEWS: CommunityView[] = ["channels", "wiki", "work", "org", "fleet"];
@@ -32,6 +34,7 @@ export const Route = createFileRoute("/c/$host")({
       view: view === "channels" ? undefined : view,
       page: typeof search.page === "string" ? search.page : undefined,
       work: typeof search.work === "string" ? search.work : undefined,
+      post: typeof search.post === "string" ? search.post : undefined,
     };
   },
   component: CommunityHomePage,

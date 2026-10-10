@@ -124,6 +124,13 @@ export interface MockRelayOptions {
    * channel appears in the list. Off by default: most specs seed channels.
    */
   deriveChannels?: boolean;
+  /**
+   * Stop serving what its author deletes (kind 5 naming an event the same
+   * author wrote), as the real server does: the deletion is still delivered
+   * live, but a later read no longer returns the deleted record. Off by default
+   * because the chat specs read the deleted message back.
+   */
+  applyDeletions?: boolean;
 }
 
 export function createMockRelay({
@@ -133,6 +140,7 @@ export function createMockRelay({
   challengeDelayMs = 0,
   enforcePGate = false,
   deriveChannels = false,
+  applyDeletions = false,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -251,6 +259,19 @@ export function createMockRelay({
               return;
             }
             events.push(event);
+            if (applyDeletions && event.kind === 5) {
+              const doomed = new Set(
+                event.tags.filter((t) => t[0] === "e").map((t) => t[1]),
+              );
+              for (let i = events.length - 1; i >= 0; i--) {
+                if (
+                  doomed.has(events[i].id) &&
+                  events[i].pubkey === event.pubkey
+                ) {
+                  events.splice(i, 1);
+                }
+              }
+            }
             // Fan out after acknowledging, as a relay would.
             ws.send(JSON.stringify(["OK", event.id, true, ""]));
             deliver(event);
@@ -266,6 +287,9 @@ export function createMockRelay({
                   ["d", tag("h")],
                   ["name", tag("name")],
                   ...(tag("about") ? [["about", tag("about")]] : []),
+                  // As the server writes them: visibility and the channel type.
+                  [tag("visibility") === "private" ? "private" : "public"],
+                  ["t", tag("channel_type") || "stream"],
                 ],
                 content: "",
                 sig: "sig",
@@ -355,6 +379,11 @@ export function createMockRelay({
     queryAuthRetries: () => authRetries.query,
     /** When live-subscription sockets issued their REQ (the reconnect rhythm). */
     liveSubscriptionReqs: () => [...liveSubscriptionReqs],
+    /** Every live subscription the page currently holds, to wait for one before delivering to it. */
+    subscriptionFilters: () =>
+      [...sockets].flatMap((socket) => [
+        ...(subscriptions.get(socket)?.values() ?? []),
+      ]),
     /** Start hanging up on every socket that speaks (or on matching REQs). */
     setClosingSockets: (
       value: boolean | ((filter: Filter | undefined) => boolean),
