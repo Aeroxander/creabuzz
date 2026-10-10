@@ -160,7 +160,11 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
 - An unopposed holder above quorum can pass an action; review time, hold time, the execution delay and ragequit are the
   protection.
 - The sell-rate gate is advisory (F8) and the TokenMaster reserve is not a price floor (see `PLAN.md` §3); both are unchanged.
-- The mocked browser suite is 194 pass, 26 skipped (they need a local chain) and none failing. The 13 that failed
+- The mocked browser suite is 206 pass, 26 skipped (they need a local chain) and none failing. The 13 that failed
   before this work were looked at one by one on 2026-10-10: three were a real account-menu bug, two real wiki and
   publish problems, the rest out of date (see PRODUCT-REVIEW.md, "Hardening the front door"). The web file-size gate
   passes again.
+
+- Start a project (templates in the browser), the three ways to run a helper, Home's checklist and the empty-community
+  prompt are described in PRODUCT-REVIEW.md, "Making the first hour make sense". Build notes for hosting: set
+  `VITE_CHAIN_RPC_URL`; after editing a template under `templates/` run `node scripts/regen-template-catalog.mjs`.

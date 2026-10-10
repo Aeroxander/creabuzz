@@ -199,3 +199,50 @@ What the first screens say to the people you named (musicians, filmmakers, progr
 Home still reads as a launchpad feed ("Trending launches", "Also share on public Nostr", "Closing soon / Graduated"), and
 sign-up talks about identities, keys and wallets.
 
+
+## Making the first hour make sense (2026-10-10)
+
+The next piece after the front door: what a newcomer sees and can do in the first hour, for the people you named.
+
+**Plain words.** Home, sign-up and the account menu now talk about an account and a recovery key, not an identity, a
+key or a wallet. The wording lives in one file (`web/src/features/identity/lib/account-copy.ts`) so the buttons, the
+nudges ("Create your account (top right) to …") and the dialogs say the same thing. Home's welcome is three ideas:
+start from a ready-made team, AI helpers that ask first, share what you build when you're ready.
+
+**Start a project, in the browser.** The four bundled teams (AI media studio, AI app studio, crypto app studio, web &
+app studio) can be started from the web app: pick one, see in plain words what you get (channels, AI helpers, shared
+pages, a limit for helpers), and it is written to the server as you, step by step with progress. If the server refuses
+a step, it says which and what to do, keeps what went through, and the same button picks up from there without writing
+anything twice. It is the same plan as `buzz templates apply`, ported to TypeScript (`packages/creaton-core/src/templates/`)
+with tests that compare it to the Rust one. The templates under `templates/` are bundled by
+`node scripts/regen-template-catalog.mjs` (`pnpm check` fails when they are stale). Two differences from the command
+line: shared pages are saved as wiki pages (the CLI writes long-form notes), and a skill fetched from a web address
+needs the command line (the screen says so).
+
+**Three ways to run a helper.** A team comes with a seat per helper (The Writer, The Producer, …). The AI helpers page
+lists the seats and describes the three ways to run one, each with what is true on *this* server right now:
+
+| Way | What it does | Status |
+|---|---|---|
+| In this tab | Runs under the helper's own name and prompt while the tab is open. The owner's account signs the record that puts it in its seat. One helper per tab. Needs the server to have an AI service (`/llm/chat/completions`); the page checks and says if not. | Built and tested here |
+| On the server | `buzz-fleet-worker` next to the server keeps helpers working with every laptop closed. The page shows when one is running and the settings it needs. | Existing worker; the page detects and explains it |
+| On your computer | The desktop app / command line / `buzz-community-mcp` for Claude or ChatGPT desktop. | Existing; the page points to it, no new setup flow |
+
+Because the browser community is where we want people to work, the browser and the page do the work for the first two;
+the third is for people who already use a desktop assistant.
+
+**Home's "Get started" list** asks for a name, a project and a helper (the way in); following someone and raising money
+are optional and never hold the list open. Each box is ticked only for something that happened in this browser.
+An empty community you are connected to opens the app with a "Start a project" prompt instead of a "Join in browser"
+card that only reloaded the same page.
+
+Tests: `start-project`, `helpers` and `home-checklist` specs; the mocked browser suite is 206 pass, 26 skipped, 0 fail.
+
+**Not done, and why.**
+- Minting a key and authorization for a helper in the browser so Claude or ChatGPT desktop can connect from a button:
+  I could not verify it without a live server, so the page links to the existing route instead.
+- Only the mocked server has exercised these writes. A run against a real server (org and persona records accepted, a
+  second tab seeing the seat) is yours or the next pass.
+- A helper only knows a tab is running it when that tab does; "on the server" and "on your computer" are reported from
+  what the helper announces, so a worker that is down for under a minute still looks running.
+- A seeded demo organization for people who just want to look around is not built.
