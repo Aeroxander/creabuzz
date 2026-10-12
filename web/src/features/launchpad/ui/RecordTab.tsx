@@ -10,6 +10,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useProfiles } from "@/features/profiles/use-profiles";
+import { pickUserName } from "@/features/profiles/lib/user-label";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
@@ -29,17 +31,21 @@ import {
   workFigures,
 } from "../lib/record";
 import { recordUrl } from "../lib/record-link";
+import {
+  addressesInRecord,
+  personLabeler,
+  pubkeysToName,
+} from "../lib/record-people";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
+import { usePeopleWithWallets } from "../use-people";
 import { useRecordEvents, useWork } from "../use-work";
 import { decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
 
 const PAGE = 15;
 
-const shortAddress = (address: string): string =>
-  `${address.slice(0, 6)}…${address.slice(-4)}`;
 const shares = (atomic: bigint): string =>
   formatAtomic(atomic, 18, { maxFractionDigits: 0 });
 const day = (seconds: number): string =>
@@ -84,6 +90,16 @@ export function RecordTab({
     shares: context.data?.shares ?? null,
     wallet: null,
   });
+  // Names for the wallets the record mentions: people on this server who bound that wallet to their account.
+  const wallets = usePeopleWithWallets();
+  const named = pubkeysToName(
+    wallets.data ?? [],
+    work.data && events.data ? addressesInRecord(work.data, events.data) : [],
+  );
+  const profiles = useProfiles(named);
+  const labelOf = personLabeler(wallets.data ?? [], (pubkey) =>
+    pickUserName(profiles.data?.[pubkey]),
+  );
   const [filter, setFilter] = useState<"all" | LedgerKind>("all");
   const [shown, setShown] = useState(PAGE);
 
@@ -107,7 +123,7 @@ export function RecordTab({
         ? `milestone ${index + 1} (${words})`
         : `milestone ${index + 1}`;
     },
-    person: shortAddress,
+    person: labelOf,
     money: (mandate, atomic) =>
       `${formatAtomic(atomic, mandate.currency?.decimals ?? 18, { maxFractionDigits: 2 })} ${mandate.currency?.symbol ?? ""}`.trim(),
     shares,
@@ -292,7 +308,7 @@ export function RecordTab({
                   key={person.holder}
                 >
                   <p className="text-sm font-medium">
-                    {shortAddress(person.holder)}
+                    {labels.person(person.holder)}
                   </p>
                   <ul className="mt-1 divide-y divide-border/60">
                     {person.tranches.map((t) => (

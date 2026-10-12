@@ -178,6 +178,7 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   filed, paid and turned down; the team's milestones and which were reached; and a dated list of what happened with who
   approved or objected. Everything is read from the chain (`web/src/features/launchpad/lib/record*.ts`, `ui/RecordTab.tsx`),
   and cut-short or undated history says so. Checked with 18 unit tests and two real-chain browser journeys
-  (`scripts/web-milestone-e2e.sh`, `scripts/web-record-e2e.sh`). Not done: names for the team (it shows wallet addresses),
-  a machine-readable export, and reading reviewers' history across DAOs.
+  (`scripts/web-milestone-e2e.sh`, `scripts/web-record-e2e.sh`). A wallet that exactly one person on this server has bound
+  is shown as `Name (0xabcd…1234)`; unbound or doubly-claimed wallets stay addresses. Not done: a machine-readable export,
+  and reading reviewers' history across DAOs.
 

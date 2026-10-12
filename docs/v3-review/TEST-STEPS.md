@@ -171,7 +171,8 @@ By hand (a local server and chain): open a project that became a DAO, press **Tr
 the front page). With **no wallet connected** you must see: the treasury balance, what the DAO set aside for work, what
 was paid and what is waiting, the team's milestones (reached ones with a date), and a list of what happened with the
 newest first. Press **Payments**: only the payments stay. Press **Copy link**, open it in a private window: same page.
-Compare any figure with the contracts under **Technical details**: they must match.
+Compare any figure with the contracts under **Technical details**: they must match. A team member who bound their wallet
+on this server shows as `Name (0xabcd…1234)`; one who did not shows only the address.
 
 ## 5. Cashtags
 

@@ -97,7 +97,30 @@ const record = {
   sig: "sig",
 };
 
-/** A tiny relay: serves the launch record and nothing else. */
+// The founder bound the first Anvil wallet to their account and gave themselves a name.
+const bindingRecord = {
+  id: "binding-founder",
+  pubkey: FOUNDER,
+  created_at: 90,
+  kind: 37017,
+  tags: [
+    ["d", FOUNDER_WALLET.toLowerCase()],
+    ["address", FOUNDER_WALLET.toLowerCase()],
+  ],
+  content: JSON.stringify({ v: 1, address: FOUNDER_WALLET.toLowerCase() }),
+  sig: "sig",
+};
+const profileRecord = {
+  id: "profile-founder",
+  pubkey: FOUNDER,
+  created_at: 80,
+  kind: 0,
+  tags: [],
+  content: JSON.stringify({ display_name: "Fiona Founder" }),
+  sig: "sig",
+};
+
+/** A tiny relay: serves the launch record, the founder's wallet binding and name, and nothing else. */
 async function serveRecord(page: Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
@@ -122,6 +145,12 @@ async function serveRecord(page: Page) {
       ];
       if (filter.kinds?.includes(37001)) {
         ws.send(JSON.stringify(["EVENT", subId, record]));
+      }
+      if (filter.kinds?.includes(37017)) {
+        ws.send(JSON.stringify(["EVENT", subId, bindingRecord]));
+      }
+      if (filter.kinds?.includes(0)) {
+        ws.send(JSON.stringify(["EVENT", subId, profileRecord]));
       }
       ws.send(JSON.stringify(["EOSE", subId]));
     });
@@ -212,6 +241,10 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   await expect(reader.getByTestId("record-promise-summary")).toContainText(
     "1 of 2 milestones reached",
     { timeout: 30_000 },
+  );
+  // The team member is shown by name, with the address beside it so the name is never the only thing to go on.
+  await expect(reader.getByTestId("record-person").first()).toContainText(
+    "Fiona Founder (0xf39f…2266)",
   );
   const tranches = reader.getByTestId("record-tranche");
   await expect(tranches).toHaveCount(2);
