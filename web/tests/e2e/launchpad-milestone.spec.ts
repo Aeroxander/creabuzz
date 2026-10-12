@@ -144,6 +144,16 @@ async function openWork(page: Page, account: string) {
   await expect(page.getByTestId("work-tab")).toBeVisible({ timeout: 20_000 });
 }
 
+/** Open the track record with no wallet at all: it is the same page for everyone. */
+async function openRecord(page: Page) {
+  await serveRecord(page);
+  await page.addInitScript((rpcUrl) => {
+    window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+  }, ANVIL_URL);
+  await page.goto(`/launchpad/nebula-milestone?author=${FOUNDER}&tab=record`);
+  await expect(page.getByTestId("record-tab")).toBeVisible({ timeout: 20_000 });
+}
+
 test("the founder sees what is locked, unlocks the first milestone with one click, and a stranger sees nothing of it", async ({
   page,
   browser,
@@ -194,4 +204,40 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   await openWork(stranger, STRANGER);
   await expect(stranger.getByTestId("locked-shares")).toHaveCount(0);
   await stranger.close();
+
+  // The track record is public: someone with no wallet sees the milestone that was reached, the one that was not, and
+  // the work behind it with who approved it.
+  const reader = await browser.newPage();
+  await openRecord(reader);
+  await expect(reader.getByTestId("record-promise-summary")).toContainText(
+    "1 of 2 milestones reached",
+    { timeout: 30_000 },
+  );
+  const tranches = reader.getByTestId("record-tranche");
+  await expect(tranches).toHaveCount(2);
+  await expect(tranches.nth(0)).toContainText("alpha shipped");
+  await expect(tranches.nth(0)).toContainText("Reached");
+  await expect(tranches.nth(1)).toContainText("mainnet live");
+  await expect(tranches.nth(1)).toContainText("Not reached yet");
+  const entries = reader.getByTestId("record-entry");
+  await expect(entries.filter({ hasText: "filed a claim" })).toHaveCount(1);
+  await expect(
+    entries.filter({ hasText: "The reviewers approved the claim" }),
+  ).toContainText("Approved by");
+  await expect(
+    entries.filter({ hasText: "reached milestone 1 (alpha shipped)" }),
+  ).toHaveCount(1);
+  await expect(reader.getByTestId("record-figure-work")).toContainText("1");
+  // Shares were set aside for the project, but none were awarded: the page must not call one the other.
+  await expect(reader.getByTestId("record-figure-awarded")).toHaveText(
+    /awarded for work0\s*10 set aside for projects/,
+  );
+  if (process.env.E2E_SHOTS) {
+    await reader.setViewportSize({ width: 1100, height: 1500 });
+    await reader.screenshot({
+      path: `${process.env.E2E_SHOTS}/record.png`,
+      fullPage: true,
+    });
+  }
+  await reader.close();
 });

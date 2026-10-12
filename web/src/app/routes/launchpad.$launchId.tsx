@@ -10,7 +10,7 @@ import {
 interface LaunchSearch {
   author?: string;
   action?: LaunchAction;
-  tab?: "decisions";
+  tab?: "decisions" | "record";
   /** One decision to show: its id. Opens the Decisions tab and highlights that card. */
   decision?: string;
 }
@@ -24,8 +24,12 @@ export const Route = createFileRoute("/launchpad/$launchId")({
     // Desktop handoff: `?action=bid|exit|claim` opens the matching flow.
     // Unknown values are ignored (forward-compat).
     action: parseLaunchAction(search.action) ?? undefined,
-    // `?tab=decisions` opens that tab: a discussion on a board links straight to the vote.
-    tab: search.tab === "decisions" ? ("decisions" as const) : undefined,
+    // `?tab=decisions` opens that tab (a discussion on a board links straight to the vote), and `?tab=record` opens the
+    // DAO's track record, which is what people share.
+    tab:
+      search.tab === "decisions" || search.tab === "record"
+        ? search.tab
+        : undefined,
     decision:
       typeof search.decision === "string" &&
       isDecisionId(search.decision.toLowerCase())

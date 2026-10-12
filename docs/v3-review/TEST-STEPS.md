@@ -158,6 +158,21 @@ arrows and show a state pill in the board's list; **Proposals** orders live deci
 link** and paste it into a chat message or a post: a live card appears under it, and its button opens the Decisions tab
 with that decision outlined.
 
+## 4g. The track record (2026-10-12)
+
+```bash
+cd web && pnpm test && pnpm check
+cd web && pnpm build && pnpm exec playwright test --project=smoke   # the DAO front page now uses the shared Figure
+scripts/web-milestone-e2e.sh   # a REAL local chain: the team's milestones, who approved the claim, dates (no wallet)
+scripts/web-record-e2e.sh      # a REAL local chain that moved MONEY: set aside, paid, waiting, a claim turned down
+```
+
+By hand (a local server and chain): open a project that became a DAO, press **Track record** (or **Open the track record** on
+the front page). With **no wallet connected** you must see: the treasury balance, what the DAO set aside for work, what
+was paid and what is waiting, the team's milestones (reached ones with a date), and a list of what happened with the
+newest first. Press **Payments**: only the payments stay. Press **Copy link**, open it in a private window: same page.
+Compare any figure with the contracts under **Technical details**: they must match.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

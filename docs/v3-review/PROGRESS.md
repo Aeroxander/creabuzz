@@ -174,3 +174,10 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
 - Proposal posts without votes (ordered by decision state), one main discussion per decision, decision permalinks and live
   decision cards under messages, posts and replies: PRODUCT-REVIEW.md, "Proposal threads without votes, and decision links
   with live cards".
+- A DAO's **track record** tab (public, no wallet needed): money in the treasury, set aside for work, paid and waiting; work
+  filed, paid and turned down; the team's milestones and which were reached; and a dated list of what happened with who
+  approved or objected. Everything is read from the chain (`web/src/features/launchpad/lib/record*.ts`, `ui/RecordTab.tsx`),
+  and cut-short or undated history says so. Checked with 18 unit tests and two real-chain browser journeys
+  (`scripts/web-milestone-e2e.sh`, `scripts/web-record-e2e.sh`). Not done: names for the team (it shows wallet addresses),
+  a machine-readable export, and reading reviewers' history across DAOs.
+

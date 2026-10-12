@@ -17,40 +17,17 @@ import {
   overviewCounts,
   summaryLine,
 } from "../lib/dao-overview";
-import { describeDecision } from "../lib/decision-describe";
 import { formatUnits } from "../lib/dao-actions";
-import type { Decision } from "../lib/decisions";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
+import { decisionTitler } from "./decision-title";
+import { Figure } from "./Figure";
 
-export type OverviewTarget = "decisions" | "work";
-
-function Figure({
-  label,
-  value,
-  note,
-  testId,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-  testId: string;
-}) {
-  return (
-    <div
-      className="rounded-xl border border-border/60 p-3"
-      data-testid={testId}
-    >
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-lg font-bold tabular-nums">{value}</p>
-      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
-    </div>
-  );
-}
+export type OverviewTarget = "decisions" | "work" | "record";
 
 export function DaoOverview({
   launch,
@@ -77,19 +54,12 @@ export function DaoOverview({
     shares: context.data?.shares ?? null,
     wallet,
   });
-  const exchangeLess = {
+  const titleOf = decisionTitler({
+    launch,
     dao,
     factory: context.data?.factory,
     mandates: work.data?.mandates.map((m) => m.address),
-    currency: launch.record.currency ?? undefined,
-    currencySymbol: sale?.kind === "custom" ? "USDC" : sale?.symbol,
-    currencyDecimals: sale?.decimals,
-  };
-  const titleOf = (decision: Decision): string =>
-    (decision.action
-      ? describeDecision(decision.action, exchangeLess).title
-      : "a decision that did not say what it would do"
-    ).replace(/\.$/, "");
+  });
 
   const items = attentionItems({
     decisions: decisions.data,
@@ -221,6 +191,27 @@ export function DaoOverview({
           }
         />
       </div>
+
+      <Card
+        className="flex flex-wrap items-center justify-between gap-3 p-4"
+        data-testid="dao-record-link"
+      >
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Track record</h3>
+          <p className="text-sm text-muted-foreground">
+            What this DAO has paid and to whom, and what its team has earned so
+            far. Anyone can check it.
+          </p>
+        </div>
+        <Button
+          onClick={() => onOpen("record")}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Open the track record
+        </Button>
+      </Card>
 
       {latest.length > 0 ? (
         <Card className="p-4" data-testid="dao-latest">

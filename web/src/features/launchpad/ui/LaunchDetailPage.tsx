@@ -71,6 +71,7 @@ import {
 } from "../lib/amounts";
 import { ManagePanel } from "./ManagePanel";
 import { DecisionsTab } from "./DecisionsTab";
+import { RecordTab } from "./RecordTab";
 import { WorkTab } from "./WorkTab";
 import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
@@ -92,6 +93,7 @@ type Tab =
   | "mybids"
   | "decisions"
   | "work"
+  | "record"
   | "manage";
 
 export function LaunchDetailPage({
@@ -254,6 +256,7 @@ export function LaunchDetailPage({
     { id: "overview", label: "Overview" },
     ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
     ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
+    ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
     { id: "treasury", label: "Treasury" },
     // Onchain bids only exist when the launch has an auction linked.
     ...(launch.record.auction
@@ -427,6 +430,9 @@ export function LaunchDetailPage({
           launch={launch}
           onOpenDecisions={() => setTab("decisions")}
         />
+      ) : null}
+      {tab === "record" && workDao ? (
+        <RecordTab dao={workDao} launch={launch} onOpen={(t) => setTab(t)} />
       ) : null}
       {tab === "manage" && isFounder ? (
         <ManagePanel

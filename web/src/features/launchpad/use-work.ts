@@ -13,6 +13,7 @@ import {
   type MilestoneLockView,
   type UnlockOffer,
 } from "./lib/milestone-lock";
+import { readRecordEvents, type RecordChain } from "./lib/record-read";
 import { readWork, type WorkChain, type WorkSnapshot } from "./lib/work-read";
 
 /** The configured RPC endpoint as the reader's chain: whole-history log reads for one address and topic filter. */
@@ -77,6 +78,38 @@ export function useMilestoneLock(
       return { view, offers };
     },
     staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** The record's chain: the work reader's, plus the time of any block (a record without dates would be half a record). */
+function recordChain(endpoint: string): RecordChain {
+  return {
+    ...endpointChain(endpoint),
+    blockTimes: async (blocks) =>
+      new Map(
+        (await ethBlockTimestamps(endpoint, blocks)).map((s) => [
+          s.block,
+          s.timestampSeconds,
+        ]),
+      ),
+  };
+}
+
+/**
+ * What the track record adds to the work and decision reads: when claims were filed and paid, who reviewed them, and
+ * the team's milestones. Read without a wallet: the record is the same for everyone.
+ */
+export function useRecordEvents(
+  dao: string | null,
+  work: WorkSnapshot | undefined,
+) {
+  return useQuery({
+    queryKey: ["launchpad", "work", dao, "record", work?.chainTime ?? 0],
+    enabled: dao !== null && work !== undefined,
+    queryFn: () =>
+      readRecordEvents(recordChain(getRpcEndpoint()), work as WorkSnapshot),
+    staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
 }

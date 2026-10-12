@@ -55,7 +55,8 @@ export const TOPIC_CLAIM_SUBMITTED = topicOf(
   "ClaimSubmitted(bytes32,address,uint256,uint256,bytes32)",
 );
 
-function topicOf(signature: string): string {
+/** The topic0 of an event: keccak256 of its canonical signature. */
+export function topicOf(signature: string): string {
   return `0x${bytesToHex(keccak_256(utf8ToBytes(signature)))}`;
 }
 

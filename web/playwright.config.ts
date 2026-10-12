@@ -26,6 +26,7 @@ export default defineConfig({
         "**/launchpad-dao-launch.spec.ts",
         "**/launchpad-work.spec.ts",
         "**/launchpad-milestone.spec.ts",
+        "**/launchpad-record.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-discussion.spec.ts",
