@@ -6,16 +6,21 @@
 
 import { Button } from "@/shared/ui/button";
 
+import type { RaisePreset } from "../../lib/raise-presets";
 import { SALE_DURATIONS } from "../../lib/sale-plans";
+import { PresetPicker } from "./PresetPicker";
 import type { DurationKey } from "../../lib/wizard";
 
 export interface QuickSaleProps {
   launchName: string;
   currencySymbol: string;
+  /** `eth` or a dollar-like token: the presets' targets are in that scale. */
+  currencyKind: string;
   raiseTarget: string;
   onRaiseTarget(value: string): void;
   durationKey: DurationKey;
   onDuration(key: DurationKey): void;
+  onPreset(preset: RaisePreset): void;
   /** What the founder is not asked about, in plain words. */
   defaults: ReadonlyArray<{ label: string; value: string }>;
   /** Why the sale cannot be published yet; empty when it can. */
@@ -26,10 +31,12 @@ export interface QuickSaleProps {
 export function QuickSale({
   launchName,
   currencySymbol,
+  currencyKind,
   raiseTarget,
   onRaiseTarget,
   durationKey,
   onDuration,
+  onPreset,
   defaults,
   issues,
   onCustomize,
@@ -39,10 +46,17 @@ export function QuickSale({
       <div>
         <h3 className="text-sm font-bold">Open a sale for {launchName}</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Two choices. We set the rest the standard way, and you can change any
-          of it.
+          Pick a size, or set your own target and length. We set the rest the
+          standard way, and you can change any of it.
         </p>
       </div>
+      <PresetPicker
+        currencyKind={currencyKind}
+        currencySymbol={currencySymbol}
+        durationKey={durationKey}
+        onPick={onPreset}
+        raiseTarget={raiseTarget}
+      />
       <div>
         <label className="text-sm font-medium" htmlFor="quick-raise">
           How much do you want to raise? ({currencySymbol})

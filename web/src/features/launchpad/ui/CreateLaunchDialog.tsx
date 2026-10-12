@@ -84,6 +84,7 @@ import {
 } from "../lib/quick-sale";
 import { Modal } from "./Modal";
 import { ParamIssueList } from "./create-wizard/ParamIssueList";
+import { presetTarget } from "../lib/raise-presets";
 import { QuickSale } from "./create-wizard/QuickSale";
 import { WizardFooter } from "./create-wizard/WizardFooter";
 import { WizardHeader } from "./create-wizard/WizardHeader";
@@ -932,6 +933,7 @@ export function CreateLaunchDialog({
           </>
         ) : quick ? (
           <QuickSale
+            currencyKind={saleCurrency.kind}
             currencySymbol={saleCurrency.symbol}
             defaults={quickDefaults}
             durationKey={wizard.durationKey}
@@ -939,6 +941,10 @@ export function CreateLaunchDialog({
             launchName={name}
             onCustomize={() => setQuick(false)}
             onDuration={(durationKey) => patch({ durationKey })}
+            onPreset={(preset) => {
+              patch({ durationKey: preset.duration });
+              onRaiseTarget(presetTarget(preset, saleCurrency.kind));
+            }}
             onRaiseTarget={onRaiseTarget}
             raiseTarget={wizard.raiseTarget}
           />

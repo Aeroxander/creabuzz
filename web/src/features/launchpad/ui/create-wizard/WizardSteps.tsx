@@ -34,7 +34,9 @@ import {
   type WizardStep,
 } from "../../lib/wizard";
 import type { SaleCurrency } from "../../lib/sale-currency";
+import { presetTarget } from "../../lib/raise-presets";
 import { CurrencyChoice } from "./CurrencyChoice";
+import { PresetPicker } from "./PresetPicker";
 import type { SupplyAllocation } from "../../lib/allocation";
 import { CoverImageField } from "./CoverImageField";
 import { LaunchCardPreview } from "./LaunchCardPreview";
@@ -298,6 +300,19 @@ function SaleStep({ controller }: { controller: WizardController }) {
         onChange={sale.onCurrency}
         selected={sale.currency}
       />
+      {editing ? null : (
+        <PresetPicker
+          currencyKind={sale.currency.kind}
+          currencySymbol={sale.currency.symbol}
+          durationKey={wizard.durationKey}
+          onPick={(preset) => {
+            patch({ durationKey: preset.duration });
+            sale.onPricingMode("raise");
+            sale.onRaiseTarget(presetTarget(preset, sale.currency.kind));
+          }}
+          raiseTarget={wizard.pricingMode === "raise" ? wizard.raiseTarget : ""}
+        />
+      )}
       {sale.currency.kind === "eth" ? (
         <p
           className="text-xs text-black/60 dark:text-white/60"

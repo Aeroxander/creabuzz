@@ -27,6 +27,7 @@ export default defineConfig({
         "**/launchpad-work.spec.ts",
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-record.spec.ts",
+        "**/launchpad-presets.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-discussion.spec.ts",
