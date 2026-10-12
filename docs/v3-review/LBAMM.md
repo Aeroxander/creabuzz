@@ -11,7 +11,10 @@ Every statement below was checked against that source. Where a statement is a de
 
 ## Constraints that shape everything
 
-- **Evaluation only.** The core README says: "You must not deploy this code to mainnet or production systems", and that
+- **Production uses Limit Break's live protocol (you, 2026-10-13).** We never deploy LBAMM ourselves, so the licence below only
+  limits dev testing and keeping its source out of this repository. I have not verified that it is live or on which
+  chains, or Limit Break's terms for using their deployment commercially: check both before launch.
+- **Evaluation only (the code we run locally).** The core README says: "You must not deploy this code to mainnet or production systems", and that
   building proof-of-concept integrations in local environments is permitted while launching public markets is not.
   Eighteen source files carry `LicenseRef-PolyForm-Strict-1.0.0` and seven carry MIT. So: a local PoC is fine, and
   nothing from LBAMM goes into this (public) repository or onto a live network. We are not going live yet, so this
