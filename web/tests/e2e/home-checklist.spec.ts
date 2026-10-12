@@ -105,3 +105,84 @@ test("with only the project done, the list says what is left", async ({
   const list = page.getByTestId("home-getting-started");
   await expect(list).toContainText("2 of 3 done", { timeout: 20_000 });
 });
+
+test.describe("the one door for starting something", () => {
+  test("the Start button opens the steps in order, with the first one next", async ({
+    page,
+  }) => {
+    await openHome(page);
+    await page.getByTestId("app-nav-start").click();
+    await expect(page).toHaveURL(/\/start$/);
+    const steps = page.getByTestId("start-steps").getByRole("listitem");
+    await expect(steps).toHaveCount(4);
+    const titles = await steps.locator("h2").allTextContents();
+    expect(titles).toEqual([
+      "Set up a place to work",
+      "Share your idea",
+      "Raise money",
+      "Run it together",
+    ]);
+    // Nothing has been done yet, so the first step is the next one and nothing is ticked.
+    await expect(page.getByTestId("start-next")).toHaveCount(1);
+    await expect(page.getByTestId("start-step-workspace")).toContainText(
+      "Next",
+    );
+    await expect(page.getByTestId("start-steps")).not.toContainText("Done");
+  });
+
+  test("the idea and raise steps open their own dialogs, and a reload does not open them again", async ({
+    page,
+  }) => {
+    await openHome(page);
+    await page.goto("/start");
+    await page.getByTestId("start-go-idea").click();
+    await expect(page.getByLabel("What is it called?")).toBeVisible({
+      timeout: 20_000,
+    });
+    // The link's parameter is spent as soon as the dialog opens.
+    await expect(page).toHaveURL(/\/launchpad$/);
+    await page.reload();
+    await expect(page.getByTestId("start-idea")).toBeVisible();
+    await expect(page.getByLabel("What is it called?")).toHaveCount(0);
+
+    await page.goto("/start");
+    await page.getByTestId("start-go-raise").click();
+    await expect(
+      page.locator('div[data-testid="wizard-step-token"]'),
+    ).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("an idea that was published ticks its step and moves the next one to raising money", async ({
+    page,
+  }) => {
+    // A project was already made in this browser, so the idea is the only thing left before the sale.
+    await openHome(page, {
+      "creaton.first-steps": JSON.stringify(["project"]),
+    });
+    await page.goto("/start");
+    await expect(page.getByTestId("start-step-workspace")).toContainText(
+      "Done",
+    );
+    await expect(page.getByTestId("start-step-idea")).toContainText("Next");
+    await page.getByTestId("start-go-idea").click();
+    await page.getByLabel("What is it called?").fill("Nebula");
+    await page
+      .getByLabel("Say it in one sentence")
+      .fill("An open-source tool that maps the night sky for everyone.");
+    await page.getByRole("button", { name: "Put it out there" }).click();
+    await page.waitForURL(/\/launchpad\/.+/, { timeout: 20_000 });
+
+    await page.getByTestId("app-nav-start").click();
+    await expect(page.getByTestId("start-step-idea")).toContainText("Done", {
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("start-step-raise")).toContainText("Next");
+    await expect(page.getByTestId("start-next")).toHaveCount(1);
+  });
+
+  test("Home's checklist links to it", async ({ page }) => {
+    await openHome(page);
+    await page.getByTestId("home-start-link").click();
+    await expect(page).toHaveURL(/\/start$/);
+  });
+});

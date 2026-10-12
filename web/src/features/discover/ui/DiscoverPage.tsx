@@ -232,10 +232,7 @@ export function DiscoverPage() {
                       testId="discover-launches-empty"
                     >
                       <Button asChild size="sm">
-                        <Link
-                          search={{ action: undefined, author: undefined }}
-                          to="/launchpad"
-                        >
+                        <Link to="/launchpad">
                           <Plus className="mr-1 h-4 w-4" aria-hidden /> New
                           launch
                         </Link>
@@ -299,12 +296,7 @@ export function DiscoverPage() {
                       testId="discover-daos-empty"
                     >
                       <Button asChild size="sm" variant="outline">
-                        <Link
-                          search={{ action: undefined, author: undefined }}
-                          to="/launchpad"
-                        >
-                          Open the launchpad
-                        </Link>
+                        <Link to="/launchpad">Open the launchpad</Link>
                       </Button>
                     </EmptyState>
                   ) : (

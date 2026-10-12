@@ -22,6 +22,7 @@ test.skip(!DIR, "set E2E_TOUR=<dir> to save the screenshots there");
 
 const PAGES: [string, string][] = [
   ["home", "/"],
+  ["start", "/start"],
   ["social", "/social"],
   ["communities", "/c"],
   ["discover", "/discover"],

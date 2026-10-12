@@ -181,4 +181,11 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   (`scripts/web-milestone-e2e.sh`, `scripts/web-record-e2e.sh`). A wallet that exactly one person on this server has bound
   is shown as `Name (0xabcd…1234)`; unbound or doubly-claimed wallets stay addresses. Not done: a machine-readable export,
   and reading reviewers' history across DAOs.
+- A **Start** page (`/start`, the green button in the top bar, and a link at the top of Home's checklist): the four steps in
+  the order most projects take them (place to work, idea, raise, run it together), ticked only for what this person has
+  done and pointing at the next. Each step opens the same screens as before; the Launchpad opens the idea or sale dialog
+  from `?start=idea|sale`. **Three sizes for a raise** (Small, Standard, Large: a target and a sale length) on the quick
+  sale an idea starts on and on the full wizard's Raise step; Standard is the app's own default. Checked with unit tests
+  and `home-checklist.spec.ts` / `launchpad-presets.spec.ts`. Still two doors: Discover's **Pitch a project** (the pitch
+  dialog is being reworked separately), and phones have no Start tab (they reach it from Home).
 

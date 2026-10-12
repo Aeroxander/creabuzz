@@ -200,20 +200,27 @@ function GettingStarted({ me }: { me: string }) {
             {required.filter((s) => s.done).length} of {required.length} done
           </p>
         </div>
-        <Button
-          onClick={() => {
-            try {
-              localStorage.setItem(DISMISSED_KEY, "1");
-            } catch {
-              // Not remembered; it simply shows again next visit.
-            }
-            setDismissed(true);
-          }}
-          size="sm"
-          variant="ghost"
-        >
-          Dismiss
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button asChild size="sm" variant="outline">
+            <Link data-testid="home-start-link" to="/start">
+              All the ways to start
+            </Link>
+          </Button>
+          <Button
+            onClick={() => {
+              try {
+                localStorage.setItem(DISMISSED_KEY, "1");
+              } catch {
+                // Not remembered; it simply shows again next visit.
+              }
+              setDismissed(true);
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            Dismiss
+          </Button>
+        </div>
       </div>
       <ol className="mt-3 flex flex-col gap-2">
         {steps.map((step) => (

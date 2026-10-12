@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SANDBOX_ID } from "../lib/sandbox";
 import {
   launchCoord,
@@ -17,7 +17,7 @@ import {
 } from "@/features/feed/lib/launch-filters";
 import { useChainBlockHeight, useVoteTallies } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowRight, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
@@ -116,8 +116,15 @@ export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
   const [filter, setFilter] = useState<Filter>("all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [ideaOpen, setIdeaOpen] = useState(false);
+  // The Start page links here with `?start=idea` or `?start=sale`: open that dialog once, then drop the parameter so a
+  // reload does not open it again.
+  const { start } = useSearch({ from: "/launchpad" });
+  const navigate = useNavigate();
+  const [createOpen, setCreateOpen] = useState(start === "sale");
+  const [ideaOpen, setIdeaOpen] = useState(start === "idea");
+  useEffect(() => {
+    if (start) void navigate({ to: "/launchpad", search: {}, replace: true });
+  }, [start, navigate]);
   const [sort, setSort] = useState<SortMode>("hot");
   /** The funding chips; null is the chip row's own "everything" chip. */
   const [stanceFilter, setStanceFilter] = useState<FundingStance | null>(null);

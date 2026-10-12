@@ -329,7 +329,6 @@ function LaunchpadBridge({
           <Link
             className={linkClass}
             data-testid="dao-bridge-link"
-            search={{ action: undefined, author: undefined }}
             to="/launchpad"
           >
             Open the launchpad

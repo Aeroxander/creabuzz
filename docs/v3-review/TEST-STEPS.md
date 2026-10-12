@@ -174,6 +174,20 @@ newest first. Press **Payments**: only the payments stay. Press **Copy link**, o
 Compare any figure with the contracts under **Technical details**: they must match. A team member who bound their wallet
 on this server shows as `Name (0xabcd…1234)`; one who did not shows only the address.
 
+## 4h. One door to start, and three sizes for a raise (2026-10-12)
+
+```bash
+cd web && pnpm test && pnpm check
+cd web && pnpm build && pnpm exec playwright test --project=smoke home-checklist.spec.ts launchpad-presets.spec.ts
+```
+
+By hand: press **Start** in the top bar (on a phone, **All the ways to start** at the top of Home). The four steps must
+appear in order with the first one marked **Next**. Press **Share an idea**: the idea dialog opens, and reloading the page
+must not open it again. Publish an idea, come back to Start: the idea step says **Done** and **Raise money** is next. On
+an idea press **Prepare the sale**: three sizes (**Small**, **Standard**, **Large**) appear above the target; pick one and
+the target and sale length change, type your own target and no size stays highlighted. Open **Set up a sale** from the
+Launchpad: the same three sizes are on the Raise step, and switching to ETH shows them in ETH.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

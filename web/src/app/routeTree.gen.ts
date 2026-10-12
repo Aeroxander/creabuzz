@@ -5,6 +5,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/root";
+import { Route as startRouteImport } from "./routes/start";
 import { Route as socialRouteImport } from "./routes/social";
 import { Route as reposRouteImport } from "./routes/repos";
 import { Route as projectsRouteImport } from "./routes/projects";
@@ -31,6 +32,11 @@ import { Route as socialDotpostDotidRouteImport } from "./routes/social.post.$id
 import { Route as socialDotmessagesDotpeerRouteImport } from "./routes/social.messages.$peer";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
 
+const startRoute = startRouteImport.update({
+  id: "/start",
+  path: "/start",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const socialRoute = socialRouteImport.update({
   id: "/social",
   path: "/social",
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
+  "/start": typeof startRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
+  "/start": typeof startRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -225,6 +233,7 @@ export interface FileRoutesById {
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
+  "/start": typeof startRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -254,6 +263,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/repos"
     | "/social"
+    | "/start"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -281,6 +291,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/repos"
     | "/social"
+    | "/start"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -308,6 +319,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/repos"
     | "/social"
+    | "/start"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -336,6 +348,7 @@ export interface RootRouteChildren {
   projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
   socialRoute: typeof socialRoute;
+  startRoute: typeof startRoute;
   cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
   launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
@@ -355,6 +368,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/start": {
+      id: "/start";
+      path: "/start";
+      fullPath: "/start";
+      preLoaderRoute: typeof startRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/social": {
       id: "/social";
       path: "/social";
@@ -544,6 +564,7 @@ const rootRouteChildren: RootRouteChildren = {
   projectsRoute: projectsRoute,
   reposRoute: reposRoute,
   socialRoute: socialRoute,
+  startRoute: startRoute,
   cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
   launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,

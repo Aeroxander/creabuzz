@@ -15,6 +15,7 @@ import { useState } from "react";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
+import { Button } from "@/shared/ui/button";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 
 interface NavItem {
@@ -116,6 +117,11 @@ export function AppNav() {
             />
           ))}
         </div>
+        <Button asChild size="sm">
+          <Link data-testid="app-nav-start" to="/start">
+            Start
+          </Link>
+        </Button>
         <ProfileMenu placement="header" />
       </nav>
     );
