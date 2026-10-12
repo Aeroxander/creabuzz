@@ -231,14 +231,21 @@ async fn check_operator_replay(
     state: &AppState,
     event_id_bytes: [u8; 32],
 ) -> Result<(), (StatusCode, Json<Value>)> {
+    check_replay_in_scope(state, OPERATOR_REPLAY_SCOPE, event_id_bytes).await
+}
+
+/// Record a NIP-98 event id in a deployment-global replay scope, failing closed if the guard cannot say. Shared with the
+/// other pre-tenant HTTP surfaces (`api::self_serve`), each with its own scope so one surface's ids never count against
+/// another's.
+pub(super) async fn check_replay_in_scope(
+    state: &AppState,
+    scope: &str,
+    event_id_bytes: [u8; 32],
+) -> Result<(), (StatusCode, Json<Value>)> {
     let event_id = nostr::EventId::from_byte_array(event_id_bytes);
     match state
         .nip98_replay
-        .try_mark_in_scope(
-            OPERATOR_REPLAY_SCOPE,
-            &event_id,
-            buzz_auth::DEFAULT_REPLAY_TTL_SECS,
-        )
+        .try_mark_in_scope(scope, &event_id, buzz_auth::DEFAULT_REPLAY_TTL_SECS)
         .await
     {
         Ok(true) => Ok(()),
@@ -248,9 +255,9 @@ async fn check_operator_replay(
         )),
         Err(error) => {
             tracing::warn!(
-                scope = OPERATOR_REPLAY_SCOPE,
+                scope,
                 error = %error,
-                "operator NIP-98 replay guard failed; rejecting request fail-closed"
+                "NIP-98 replay guard failed; rejecting request fail-closed"
             );
             Err(api_error(
                 StatusCode::UNAUTHORIZED,

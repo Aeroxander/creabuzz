@@ -1316,6 +1316,9 @@ pub struct AppState {
     /// generate fresh Nostr keys.
     pub invite_claim_rate_limiter:
         Arc<moka::sync::Cache<ScopedPubkeyKey, Arc<std::sync::atomic::AtomicU32>>>,
+    /// Caps on self-serve community creation (`POST /self-serve/communities`): attempts per signing key and creations per
+    /// hour across the deployment.
+    pub self_serve_limiter: Arc<crate::api::self_serve::SelfServeLimiter>,
     /// Current in-flight media uploads per (community, uploader pubkey).
     pub media_uploads_in_flight: Arc<DashMap<ScopedPubkeyKey, u32>>,
     /// Cache for observer agent-owner authorization (kind 24200).
@@ -1540,6 +1543,7 @@ impl AppState {
                     .time_to_live(crate::api::invites::CLAIM_RATE_WINDOW)
                     .build(),
             ),
+            self_serve_limiter: Arc::new(crate::api::self_serve::SelfServeLimiter::new()),
             media_uploads_in_flight: Arc::new(DashMap::new()),
             observer_owner_cache: Arc::new(
                 moka::sync::Cache::builder()

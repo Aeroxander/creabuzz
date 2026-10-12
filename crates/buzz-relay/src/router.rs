@@ -128,6 +128,8 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/_mesh/",
     // Operator admin plane — keypair-in-config auth; subtree
     "/operator/",
+    // Self-serve community creation — NIP-98 by someone who has no community (so no tenant, and no assertion) yet; subtree
+    "/self-serve/",
     // Admin SPA backend — operator-credential gated; subtree
     "/api/admin/",
     // NIP-FI admin disconnect — authenticated by its own command JWT
@@ -360,6 +362,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/operator/communities",
             get(api::operator::list_owned_communities).post(api::operator::provision_community),
+        )
+        // Self-serve communities: off unless BUZZ_SELF_SERVE_COMMUNITY_DOMAIN is set. No tenant is resolved: the caller
+        // has none yet.
+        .route(
+            "/self-serve/communities",
+            get(api::self_serve::status).post(api::self_serve::create),
         )
         .route(
             "/operator/listener/pubkeys",
@@ -3404,6 +3412,7 @@ mod tests {
 
         // Operator / admin subtrees
         assert!(is_exempt("/operator/communities"));
+        assert!(is_exempt("/self-serve/communities"));
         assert!(is_exempt("/api/admin/v1/something"));
 
         // SPA / assets

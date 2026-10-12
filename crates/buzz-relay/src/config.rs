@@ -417,6 +417,20 @@ pub struct Config {
     /// path, query, or fragment.
     pub relay_operator_api_origin: Option<String>,
 
+    /// The domain people's own communities are created under, e.g. `creaton.example`: someone who picks the name `acme`
+    /// gets `acme.creaton.example`. Set via `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN` as a bare authority (`localhost:3000` for
+    /// a local run).
+    ///
+    /// Unset (the default) turns self-serve creation off entirely: `POST /self-serve/communities` answers 404. Needs
+    /// `RELAY_OPERATOR_API_ORIGIN`, which is the origin the signed request is checked against; setting one without the
+    /// other is a startup error rather than an endpoint that silently refuses everyone.
+    pub self_serve_community_domain: Option<String>,
+
+    /// The most communities self-serve creation makes across the whole deployment in an hour
+    /// (`BUZZ_SELF_SERVE_MAX_PER_HOUR`, default 30). A signing key costs nothing to make, so a per-person limit alone
+    /// would not stop a script; this one does.
+    pub self_serve_max_per_hour: u32,
+
     /// Deployment-level relay operator pubkeys allowed to use the
     /// `/operator/communities` management endpoints.
     ///
@@ -1084,6 +1098,31 @@ impl Config {
             .map(|raw| parse_operator_api_origin(&raw))
             .transpose()?;
 
+        let self_serve_community_domain = std::env::var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN")
+            .ok()
+            .filter(|raw| !raw.trim().is_empty())
+            .map(|raw| {
+                crate::handlers::community_provisioning::normalize_self_serve_domain(&raw).map_err(
+                    |e| ConfigError::InvalidValue(format!("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN: {e}")),
+                )
+            })
+            .transpose()?;
+        if self_serve_community_domain.is_some() && relay_operator_api_origin.is_none() {
+            return Err(ConfigError::InvalidValue(
+                "BUZZ_SELF_SERVE_COMMUNITY_DOMAIN needs RELAY_OPERATOR_API_ORIGIN: the signed create request is checked \
+                 against that origin"
+                    .to_string(),
+            ));
+        }
+        let self_serve_max_per_hour = match std::env::var("BUZZ_SELF_SERVE_MAX_PER_HOUR") {
+            Ok(raw) if !raw.trim().is_empty() => raw.trim().parse::<u32>().map_err(|_| {
+                ConfigError::InvalidValue(format!(
+                    "BUZZ_SELF_SERVE_MAX_PER_HOUR must be a whole number, got {raw:?}"
+                ))
+            })?,
+            _ => 30,
+        };
+
         let relay_operator_pubkeys = match std::env::var("RELAY_OPERATOR_PUBKEYS") {
             Ok(raw) => {
                 let mut pubkeys = Vec::new();
@@ -1657,6 +1696,8 @@ impl Config {
             mesh_demo_echo,
             relay_owner_pubkey,
             relay_operator_api_origin,
+            self_serve_community_domain,
+            self_serve_max_per_hour,
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
             allow_nip_oa_auth,
@@ -2967,6 +3008,70 @@ mod tests {
             config.relay_operator_api_origin.is_none(),
             "origin stays unset — only the provisioning path requires it, at request time"
         );
+    }
+
+    #[test]
+    fn self_serve_is_off_by_default_with_a_hourly_cap_of_thirty() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
+        std::env::remove_var("BUZZ_SELF_SERVE_MAX_PER_HOUR");
+        let config = Config::from_env().expect("default config");
+        assert_eq!(config.self_serve_community_domain, None);
+        assert_eq!(config.self_serve_max_per_hour, 30);
+    }
+
+    #[test]
+    fn self_serve_domain_is_normalized_and_needs_the_management_origin() {
+        let _guards = env_guards();
+        std::env::set_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN", " Creaton.Example ");
+        std::env::set_var("RELAY_OPERATOR_API_ORIGIN", "https://creaton.example");
+        let ok = Config::from_env();
+        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
+        let without_origin = Config::from_env();
+        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
+
+        assert_eq!(
+            ok.expect("config").self_serve_community_domain.as_deref(),
+            Some("creaton.example")
+        );
+        assert!(matches!(
+            without_origin,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("needs RELAY_OPERATOR_API_ORIGIN")
+        ));
+    }
+
+    #[test]
+    fn self_serve_domain_that_is_not_a_host_is_a_startup_error() {
+        let _guards = env_guards();
+        std::env::set_var("RELAY_OPERATOR_API_ORIGIN", "https://creaton.example");
+        std::env::set_var(
+            "BUZZ_SELF_SERVE_COMMUNITY_DOMAIN",
+            "https://creaton.example/x",
+        );
+        let result = Config::from_env();
+        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
+        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
+
+        assert!(matches!(
+            result,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN")
+        ));
+    }
+
+    #[test]
+    fn self_serve_hourly_cap_must_be_a_whole_number() {
+        let _guards = env_guards();
+        std::env::set_var("BUZZ_SELF_SERVE_MAX_PER_HOUR", "lots");
+        let bad = Config::from_env();
+        std::env::set_var("BUZZ_SELF_SERVE_MAX_PER_HOUR", "5");
+        let good = Config::from_env();
+        std::env::remove_var("BUZZ_SELF_SERVE_MAX_PER_HOUR");
+
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_SELF_SERVE_MAX_PER_HOUR")
+        ));
+        assert_eq!(good.expect("config").self_serve_max_per_hour, 5);
     }
 
     #[test]
