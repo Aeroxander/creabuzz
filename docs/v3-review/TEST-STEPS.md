@@ -188,6 +188,20 @@ an idea press **Prepare the sale**: three sizes (**Small**, **Standard**, **Larg
 the target and sale length change, type your own target and no size stays highlighted. Open **Set up a sale** from the
 Launchpad: the same three sizes are on the Raise step, and switching to ETH shows them in ETH.
 
+## 4i. Starting a community of your own (2026-10-12)
+
+```bash
+cargo test -p buzz-relay --lib self_serve -- --include-ignored     # the server's rules (needs Postgres)
+cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke community-create.spec.ts
+scripts/web-self-serve-e2e.sh      # REAL server on a scratch database + a real browser, nothing mocked
+```
+
+By hand: start the server with `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN=localhost:3000` and `RELAY_OPERATOR_API_ORIGIN=http://localhost:3000`
+(see `docs/self-serve-communities.md`), open `/c`, press **Create a community**, type `My Film`: the address must read
+`my-film.localhost:3000`. Create it: you land in an empty community that says **Nothing here yet**. Press **Set up
+community**, keep the team, press the setup button: **33 of 33 done** under **What was set up**. Try `login` (refused as
+kept for the service), a 2-letter name (refused), and the same name from another browser (taken).
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

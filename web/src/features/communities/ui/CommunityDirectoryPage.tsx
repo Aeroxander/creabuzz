@@ -1,4 +1,4 @@
-import { BookMarked, Compass, Globe, Users } from "lucide-react";
+import { BookMarked, Compass, Globe, Plus, Users } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import {
 } from "../use-communities";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
+import { useSelfServe } from "../use-self-serve";
+import { CreateCommunityDialog } from "./CreateCommunityDialog";
 
 type CardEntry = Omit<CommunityDirectoryEntry, "member_count"> & {
   member_count: number | null;
@@ -130,6 +132,8 @@ function AddCommunityForm() {
 
 export function CommunityDirectoryPage() {
   const { data, isLoading, isError, error, refetch } = useCommunities();
+  const selfServe = useSelfServe();
+  const [createOpen, setCreateOpen] = useState(false);
   const host = new URL(relayWsUrl()).host;
   const connected = data?.communities.find((entry) => entry.host === host);
   const otherCommunities = data?.communities.filter(
@@ -142,6 +146,15 @@ export function CommunityDirectoryPage() {
         <h1 className="flex items-center gap-2 text-xl font-semibold text-black dark:text-white">
           <Compass className="h-5 w-5" /> Communities
         </h1>
+        {selfServe.data?.enabled ? (
+          <Button
+            data-testid="create-community"
+            onClick={() => setCreateOpen(true)}
+            size="sm"
+          >
+            <Plus /> Create a community
+          </Button>
+        ) : null}
         <AddCommunityForm />
         <Link to="/repos">
           <Button variant="outline" size="sm" className="dark:border-white/15">
@@ -203,6 +216,12 @@ export function CommunityDirectoryPage() {
           ))}
         </div>
       )}
+      {createOpen && selfServe.data?.enabled ? (
+        <CreateCommunityDialog
+          onClose={() => setCreateOpen(false)}
+          status={selfServe.data}
+        />
+      ) : null}
     </div>
   );
 }

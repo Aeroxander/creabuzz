@@ -28,6 +28,7 @@ export default defineConfig({
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-record.spec.ts",
         "**/launchpad-presets.spec.ts",
+        "**/community-create.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-discussion.spec.ts",

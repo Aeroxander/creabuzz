@@ -188,4 +188,12 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   sale an idea starts on and on the full wizard's Raise step; Standard is the app's own default. Checked with unit tests
   and `home-checklist.spec.ts` / `launchpad-presets.spec.ts`. Still two doors: Discover's **Pitch a project** (the pitch
   dialog is being reworked separately), and phones have no Start tab (they reach it from Home).
+- **Self-serve communities** (`docs/self-serve-communities.md`): `POST /self-serve/communities` makes `<name>.<domain>` with the
+  signer as owner; off unless `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN` is set; bounded by name rules, reserved words, an attempt cap per
+  key, an hourly cap for the deployment and the per-owner limit. The app has **Create a community** on the Communities page and in
+  the Start page's first step. Checked: 24 server tests (12 against Postgres), 6 mocked browser tests, and
+  `scripts/web-self-serve-e2e.sh` (real server, real browser: create, own, set up a team with **33 of 33** steps, name taken).
+  Found and fixed on the way: a creator was not recognised as their community's owner (no member list was published unless
+  membership was required), which refused every owner-only action; this also confirms the template's owner-only steps (team,
+  helper seats, limits, automations, pages) on a real server. Not done: invite-only communities, renaming, custom domains.
 

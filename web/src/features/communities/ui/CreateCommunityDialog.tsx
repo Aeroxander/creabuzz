@@ -1,0 +1,140 @@
+/**
+ * Start a community of your own: pick a name, get an address, and land in it as its owner.
+ *
+ * The community is empty on arrival and opens on its own prompt to start a project, so this dialog does not ask for
+ * anything else. The server has the last word on a name (taken, or kept for the service itself) and says so in words.
+ */
+
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { Modal } from "@/features/launchpad/ui/Modal";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { setStoredRelayWsUrl } from "@/shared/lib/relay-url";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+
+import {
+  finishName,
+  nameProblem,
+  previewHost,
+  tidyName,
+} from "../lib/community-name";
+import { createCommunity, type SelfServeStatus } from "../use-self-serve";
+
+export function CreateCommunityDialog({
+  status,
+  onClose,
+}: {
+  status: SelfServeStatus;
+  onClose: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const signedIn = existingUserPubkey() !== null;
+
+  const name = finishName(typed);
+  const problem = typed === "" ? null : nameProblem(name, status.limits);
+  const canSubmit = signedIn && !busy && name !== "" && problem === null;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createCommunity(name);
+      // Point this browser at the new community, then open it. A full load, like joining one, so nothing from the
+      // community this browser was in carries over.
+      setStoredRelayWsUrl(created.url);
+      toast.success("Your community is ready.");
+      window.location.assign(`/c/${encodeURIComponent(created.host)}`);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "That did not go through.",
+      );
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal label="Create a community" onClose={onClose}>
+      <h2 className="text-lg font-bold">Create a community</h2>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        A place for your team, your supporters and your work. You will own it,
+        and you can start a project in it straight away.
+      </p>
+      <form
+        className="mt-4 flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div>
+          <label className="text-sm font-medium" htmlFor="community-name">
+            What is it called?
+          </label>
+          <Input
+            autoFocus
+            className="mt-1"
+            data-testid="community-name"
+            id="community-name"
+            maxLength={status.limits.max + 8}
+            onChange={(event) => {
+              setTyped(tidyName(event.target.value));
+              setError(null);
+            }}
+            placeholder="my-film"
+            value={typed}
+          />
+          <p
+            className="mt-1 text-xs text-muted-foreground"
+            data-testid="community-address"
+          >
+            {name === ""
+              ? `Its address will be a name followed by ${status.domain}.`
+              : `Its address will be ${previewHost(name, status.domain ?? "")}`}
+          </p>
+        </div>
+        {problem ? (
+          <p
+            className="text-sm text-red-600 dark:text-red-400"
+            data-testid="community-name-problem"
+            role="alert"
+          >
+            {problem}
+          </p>
+        ) : null}
+        {!signedIn ? (
+          <p className="text-sm" data-testid="community-needs-account">
+            {needAccountTo("create a community")}
+          </p>
+        ) : null}
+        {error ? (
+          <p
+            className="text-sm text-red-600 dark:text-red-400"
+            data-testid="community-create-error"
+            role="alert"
+          >
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-1 flex justify-end gap-2">
+          <Button onClick={onClose} size="sm" type="button" variant="ghost">
+            Cancel
+          </Button>
+          <Button
+            data-testid="community-create-submit"
+            disabled={!canSubmit}
+            size="sm"
+            type="submit"
+          >
+            {busy ? "Creating…" : "Create community"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

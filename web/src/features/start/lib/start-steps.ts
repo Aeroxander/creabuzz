@@ -33,8 +33,8 @@ export const START_STEPS: readonly StartStep[] = [
     key: "workspace",
     title: "Set up a place to work",
     body: "Pick a ready-made team, such as a film crew, an app team or a startup crew. Channels, AI helpers and pages are set up for you.",
-    action: "Open your community",
-    note: "Then press Start a project in its sidebar.",
+    action: "Set up your community",
+    note: "Create one of your own, or open one you are in. Then press Start a project in its sidebar.",
     target: { to: "/c" },
   },
   {
