@@ -255,3 +255,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   to do it. It reuses each DAO's own "needs you" logic, so Home and the DAO's page cannot disagree; at most six DAOs, newest first; a DAO that could not be read
   is left out rather than shown as "nothing". Checked on a real chain: with a decision open, the founder's Home lists it ("Open for your vote") and the button
   opens the decision (`scripts/web-decisions-e2e.sh`), and the mocked Home, feed, portfolio and first-run specs still pass.
+- **Joining from an invite with no account** (the first users will not have one): the invite page, for someone with no account, asks for a name and offers **Create an account and join**:
+  it makes an account in this browser, claims the invite signed by it, points the browser at the community, and only then publishes the name (a private community would refuse a
+  stranger's profile; a refused name never undoes the join). Someone who already has an account sees the usual button. Checked: 5 mocked browser tests and a fourth real-server journey
+  (no extension, no passkey, only the link; the owner sees them listed by name). The journey's helper used to return before the join had finished (the invite page's own address matched its
+  "arrived" pattern), so the earlier real-server journeys quietly depended on timing; they now wait for the join and still pass.

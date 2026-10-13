@@ -6,7 +6,8 @@ import {
   detectBuzzDownloadPlatform,
   resolveBuzzDownloadUrlForPlatform,
 } from "@/shared/lib/buzz-download";
-import { hasStoredIdentity } from "@/shared/lib/identity";
+import { getOrCreateIdentity, hasStoredIdentity } from "@/shared/lib/identity";
+import { publishProfile } from "@/features/identity/lib/profile";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 
 import { hasPasskeyIdentity } from "@/features/identity/lib/passkey-identity";
@@ -54,6 +55,7 @@ export function InvitePage({ code }: { code: string }) {
   const [agreementConfirmed, setAgreementConfirmed] = React.useState(false);
   const [opening, setOpening] = React.useState(false);
   const [joiningBrowser, setJoiningBrowser] = React.useState(false);
+  const [newName, setNewName] = React.useState("");
   const [browserJoinError, setBrowserJoinError] = React.useState<string | null>(
     null,
   );
@@ -130,6 +132,37 @@ export function InvitePage({ code }: { code: string }) {
       await claimInviteInBrowser(code, relay, receipt);
       // From now on this browser is in the community the invite was for.
       setStoredRelayWsUrl(relay);
+      window.location.assign("/");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not claim this invite.";
+      setBrowserJoinError(inviteClaimErrorMessage(message));
+    } finally {
+      setJoiningBrowser(false);
+    }
+  };
+
+  /**
+   * For someone with no account yet: make one in this browser, join with it, and then say who they are. The name is
+   * published only once they are a member (a private community would refuse a profile from a stranger), and a refused
+   * name never undoes the join.
+   */
+  const createAccountAndJoin = async () => {
+    setBrowserJoinError(null);
+    setJoiningBrowser(true);
+    try {
+      getOrCreateIdentity();
+      const receipt = await acceptPolicy();
+      await claimInviteInBrowser(code, relay, receipt);
+      setStoredRelayWsUrl(relay);
+      const name = newName.trim();
+      if (name) {
+        try {
+          await publishProfile({ name });
+        } catch {
+          // They are in; they can name themselves later.
+        }
+      }
       window.location.assign("/");
     } catch (error) {
       const message =
@@ -246,15 +279,42 @@ export function InvitePage({ code }: { code: string }) {
               >
                 {joiningBrowser ? "Joining…" : "Join in browser"}
               </Button>
-            ) : null}
+            ) : (
+              <div
+                className="space-y-2 text-left"
+                data-testid="invite-new-account"
+              >
+                <label
+                  className="text-sm font-medium text-black"
+                  htmlFor="invite-name"
+                >
+                  No account yet? Pick a name and we will make one in this
+                  browser.
+                </label>
+                <input
+                  autoComplete="nickname"
+                  className="h-10 w-full rounded-md border border-black/20 bg-white px-3 text-sm text-black"
+                  data-testid="invite-name"
+                  id="invite-name"
+                  maxLength={60}
+                  onChange={(event) => setNewName(event.target.value)}
+                  placeholder="Your name"
+                  value={newName}
+                />
+                <Button
+                  className="h-10 w-full bg-black text-white hover:bg-black/90 focus-visible:ring-black disabled:cursor-not-allowed disabled:bg-black/30 disabled:text-white/70"
+                  data-testid="invite-create-and-join"
+                  disabled={disabled}
+                  onClick={createAccountAndJoin}
+                >
+                  {joiningBrowser ? "Joining…" : "Create an account and join"}
+                </Button>
+              </div>
+            )}
             {policy === null ? (
               <Button
                 asChild
-                className={`h-10 w-full ${
-                  browserSigningAvailable
-                    ? "border border-black bg-white text-black hover:bg-black/5"
-                    : "bg-black text-white hover:bg-black/90 focus-visible:ring-black"
-                }`}
+                className="h-10 w-full border border-black bg-white text-black hover:bg-black/5"
               >
                 <a href={desktopJoinDeepLink({ relay, code })}>
                   Accept invite in Creaton
@@ -262,11 +322,7 @@ export function InvitePage({ code }: { code: string }) {
               </Button>
             ) : (
               <Button
-                className={`h-10 w-full disabled:cursor-not-allowed disabled:bg-black/30 disabled:text-white/70 ${
-                  browserSigningAvailable
-                    ? "border border-black bg-white text-black hover:bg-black/5"
-                    : "bg-black text-white hover:bg-black/90 focus-visible:ring-black"
-                }`}
+                className="h-10 w-full border border-black bg-white text-black hover:bg-black/5 disabled:cursor-not-allowed disabled:bg-black/30 disabled:text-white/70"
                 disabled={disabled}
                 onClick={openInvite}
               >

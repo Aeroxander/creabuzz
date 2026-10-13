@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import {
   PORT,
+  createCommunity,
+  joinAsNewcomer,
+  makeInviteLink,
   newPerson,
   openPeople,
   setAccess,
@@ -75,7 +78,7 @@ test("a private community turns strangers away, an invite lets one person in, an
   // The invite lets them in.
   await stranger.goto(inviteUrl);
   await stranger.getByRole("button", { name: "Join in browser" }).click();
-  await stranger.waitForURL(`http://${host}/**`, { timeout: 30_000 });
+  await stranger.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   await stranger.goto(`http://${host}/c/${host}`);
   await expect(stranger.getByTestId("content-pane")).toBeVisible({
     timeout: 30_000,
@@ -157,7 +160,7 @@ test("an invited person is not offered the owner's controls", async ({
   const member = await newPerson(browser);
   await member.goto(inviteUrl);
   await member.getByRole("button", { name: "Join in browser" }).click();
-  await member.waitForURL(`http://${host}/**`, { timeout: 30_000 });
+  await member.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   await member.goto(`http://${host}/c/${host}`);
   await openPeople(member);
 
@@ -224,7 +227,7 @@ test("an owner can end an invite that is still out there, and remove a person wh
   const joiner = await newPerson(browser);
   await joiner.goto(freshUrl);
   await joiner.getByRole("button", { name: "Join in browser" }).click();
-  await joiner.waitForURL(`http://${host}/**`, { timeout: 30_000 });
+  await joiner.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   await joiner.goto(`http://${host}/c/${host}`);
   await expect(joiner.getByTestId("content-pane")).toBeVisible({
     timeout: 30_000,
@@ -245,4 +248,40 @@ test("an owner can end an invite that is still out there, and remove a person wh
   await expect(joiner.getByTestId("community-invite-only")).toBeVisible({
     timeout: 30_000,
   });
+});
+
+test("someone with no account at all can make one from the invite link, join, and be named in the list", async ({
+  page: owner,
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const name = unique();
+  const host = `${name}.localhost:${PORT}`;
+  await signInAsNewAccount(owner);
+  await createCommunity(owner, name);
+  await openPeople(owner);
+  const inviteUrl = await makeInviteLink(owner);
+
+  // No account, no extension, no passkey: just the link.
+  const newcomer = await joinAsNewcomer(
+    browser,
+    inviteUrl,
+    host,
+    "Robin Reyes",
+  );
+  await newcomer.goto(`http://${host}/c/${host}`);
+  await expect(newcomer.getByTestId("content-pane")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(newcomer.getByTestId("community-invite-only")).toHaveCount(0);
+
+  // The owner sees them in the list, by the name they gave.
+  await owner.goto(`/c/${host}`);
+  await openPeople(owner);
+  await expect(owner.getByTestId("person")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  await expect(
+    owner.getByTestId("person").filter({ hasText: "Robin Reyes" }),
+  ).toBeVisible({ timeout: 30_000 });
 });

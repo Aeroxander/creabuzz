@@ -31,6 +31,7 @@ export default defineConfig({
         "**/community-create.spec.ts",
         "**/community-access.spec.ts",
         "**/report.spec.ts",
+        "**/invite-join.spec.ts",
         "**/markets.spec.ts",
         "**/markets-prices.spec.ts",
         "**/error-report.spec.ts",

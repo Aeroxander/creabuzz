@@ -77,6 +77,27 @@ export async function joinWithInvite(
   const person = await newPerson(browser);
   await person.goto(inviteUrl);
   await person.getByRole("button", { name: "Join in browser" }).click();
-  await person.waitForURL(`http://${host}/**`, { timeout: 30_000 });
+  await person.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   return person;
+}
+
+/**
+ * A person with NO account opens `inviteUrl`, picks `name`, and lets the page make an account and join. Returns their page,
+ * inside the community at `host`.
+ */
+export async function joinAsNewcomer(
+  browser: Browser,
+  inviteUrl: string,
+  host: string,
+  name: string,
+): Promise<Page> {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  const page = await context.newPage();
+  await page.goto(inviteUrl);
+  await page.getByTestId("invite-name").fill(name);
+  await page.getByTestId("invite-create-and-join").click();
+  await page.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
+  return page;
 }
