@@ -18,7 +18,7 @@ import { MODAL_BACKDROP_BLUR_CLASS } from "@/shared/ui/modalBackdrop";
 import { MODAL_CONTENT_MOTION_CLASS } from "@/shared/ui/modalMotion";
 
 import type { Revision } from "../lib/wiki-history";
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 
 function RestoreConfirm({
   revision,
@@ -100,6 +100,7 @@ export function VersionHistory({
   onRestore: (revision: Revision) => void;
 }) {
   const [pending, setPending] = useState<Revision | null>(null);
+  const nameOf = useUserNames(revisions.map((r) => r.authorPubkey));
 
   if (revisions.length === 0) {
     return (
@@ -135,7 +136,7 @@ export function VersionHistory({
                 className="shrink-0 text-2xs text-black/50 dark:text-white/50"
                 title={revision.authorPubkey}
               >
-                {truncatePubkey(revision.authorPubkey)}
+                {nameOf(revision.authorPubkey)}
               </span>
             </div>
             <p className="mt-0.5 line-clamp-2 text-2xs text-black/60 dark:text-white/60">

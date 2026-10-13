@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { Ban, Clock, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import {
   reportStatusLabel,
@@ -50,6 +50,7 @@ function Row({
     options?: { expiresAt?: number },
   ) => void;
 }) {
+  const nameOf = useUserNames([row.report.reporterPubkey]);
   const [pickingTimeout, setPickingTimeout] = useState(false);
   const [confirmingBan, setConfirmingBan] = useState(false);
   const { report, actions, locallyResolved } = row;
@@ -71,7 +72,7 @@ function Row({
         </span>
       </div>
       <p className="text-2xs text-black/60 dark:text-white/60">
-        Reported by {truncatePubkey(report.reporterPubkey)}
+        Reported by {nameOf(report.reporterPubkey)}
         {report.createdAt
           ? ` · ${new Date(report.createdAt).toLocaleString()}`
           : ""}

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { communityHostName } from "@/shared/lib/relay-url";
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -115,6 +115,7 @@ function RoomAction({ row }: { row: RoomRow }) {
 
 function AdmitBackers({ launch }: { launch: Launch }) {
   const { waiting, admit } = useAdmitBackers(launch);
+  const nameOf = useUserNames(waiting);
   if (waiting.length === 0) return null;
   const onAdmit = async () => {
     try {
@@ -139,7 +140,7 @@ function AdmitBackers({ launch }: { launch: Launch }) {
     >
       <p className="text-sm">
         {waiting.length === 1
-          ? `${truncatePubkey(waiting[0])} backed this launch and is waiting to join.`
+          ? `${nameOf(waiting[0])} backed this launch and is waiting to join.`
           : `${waiting.length} backers are waiting to join.`}
       </p>
       <Button

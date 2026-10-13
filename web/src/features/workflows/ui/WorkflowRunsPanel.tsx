@@ -8,7 +8,7 @@
 
 import { RefreshCw, RotateCcw, Check, X } from "lucide-react";
 
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import {
   failureText,
   runApprovalRows,
@@ -45,6 +45,9 @@ function RunRow({
   retryError: string | null;
 }) {
   const { run, workflow, approvals } = item;
+  const nameOf = useUserNames(
+    approvals.flatMap((a) => (a.approverPubkey ? [a.approverPubkey] : [])),
+  );
   const steps = runStepRows(run);
   const failed = run.status === "failed";
   const approvalRows = runApprovalRows(
@@ -165,7 +168,7 @@ function RunRow({
               <p className="text-2xs text-black/60 dark:text-white/60">
                 {APPROVAL_STATUS_TEXT[approval.status] ?? "Closed"}
                 {approval.approverPubkey
-                  ? ` by ${truncatePubkey(approval.approverPubkey)}`
+                  ? ` by ${nameOf(approval.approverPubkey)}`
                   : ""}
                 .
               </p>

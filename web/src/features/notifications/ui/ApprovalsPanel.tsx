@@ -7,7 +7,7 @@
 
 import { Check, X } from "lucide-react";
 
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import {
   approvalDetailRows,
   approvalHeadline,
@@ -25,6 +25,9 @@ const STATUS_TEXT: Record<ApprovalItem["status"], string | null> = {
 export function ApprovalsPanel() {
   const { items, resolving, errors, resolve, clearError } = useApprovals();
   const visible = items.slice(0, 10);
+  const nameOf = useUserNames(
+    visible.flatMap((item) => (item.subjectPubkey ? [item.subjectPubkey] : [])),
+  );
   if (visible.length === 0) return null;
 
   return (
@@ -40,9 +43,7 @@ export function ApprovalsPanel() {
           resolving.has(item.tokenHash) || item.status === "resolving";
         const decided = item.status === "granted" || item.status === "denied";
         const error = errors.get(item.tokenHash);
-        const detailRows = approvalDetailRows(item, (pubkey) =>
-          truncatePubkey(pubkey),
-        );
+        const detailRows = approvalDetailRows(item, nameOf);
         return (
           <div
             className="rounded-lg px-2 py-2"
@@ -74,9 +75,7 @@ export function ApprovalsPanel() {
             ) : null}
             <p className="mt-0.5 text-2xs text-black/60 dark:text-white/60">
               Requested for{" "}
-              {item.subjectPubkey
-                ? truncatePubkey(item.subjectPubkey)
-                : "an agent"}
+              {item.subjectPubkey ? nameOf(item.subjectPubkey) : "an agent"}
             </p>
             {error ? (
               <p

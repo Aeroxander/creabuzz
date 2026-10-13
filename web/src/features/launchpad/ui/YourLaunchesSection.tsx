@@ -7,7 +7,7 @@
 import { Link } from "@tanstack/react-router";
 import { Rocket } from "lucide-react";
 
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 
 import { useFounderActivity } from "../use-founder-activity";
 import { useAdmitBackers } from "../use-launch-chat";
@@ -36,11 +36,12 @@ function LaunchLink({
 
 function WaitingBackers({ launch }: { launch: Launch }) {
   const { waiting } = useAdmitBackers(launch);
+  const nameOf = useUserNames(waiting);
   if (!launch.record.chat.backers || waiting.length === 0) return null;
   return (
     <li data-testid="your-launches-waiting">
       {waiting.length === 1
-        ? `${truncatePubkey(waiting[0])} is waiting to join the backers room of `
+        ? `${nameOf(waiting[0])} is waiting to join the backers room of `
         : `${waiting.length} backers are waiting to join the backers room of `}
       <LaunchLink author={launch.record.author} id={launch.record.id}>
         {launch.record.name}

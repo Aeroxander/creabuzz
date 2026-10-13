@@ -215,6 +215,44 @@ test("every signed read carries its own nonce, so the moderator check and the qu
   expect(new Set(nonces).size).toBe(nonces.length);
 });
 
+test("the moderation queue names the person who reported, not their key", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  relay.seed({
+    id: "alice-profile",
+    pubkey: ALICE,
+    kind: 0,
+    created_at: now() - 3600,
+    tags: [],
+    content: JSON.stringify({ name: "Alice Reyes" }),
+    sig: "sig",
+  });
+  await page.route("**/moderation/reports*", async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "r1",
+          report_event_id: "f".repeat(64),
+          reporter_pubkey: ALICE,
+          target_kind: "event",
+          target: THEIR_MESSAGE,
+          report_type: "spam",
+          status: "open",
+          created_at: "2026-10-13T10:00:00Z",
+        },
+      ],
+    });
+  });
+  await relay.install(page);
+  await signIn(page);
+  await page.goto("/c/alpha.example.com");
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+  const row = page.getByTestId("moderation-report-row");
+  await expect(row).toContainText("Reported by Alice Reyes");
+  await expect(row).not.toContainText(ALICE.slice(0, 8));
+});
+
 test("the report dialog is accessible, with an error showing", async ({
   page,
 }) => {

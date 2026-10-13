@@ -299,6 +299,18 @@ By hand (a local chain with a project launched through the kit and a decision op
 **Waiting on you** lists the DAO's name and "Open for your vote: …" with a **Vote** link that opens the decision. Back it until it is no longer
 open for votes: the line goes away. With no wallet connected, or no DAO, the section is not there at all.
 
+## 4q. Names instead of keys (2026-10-13)
+
+```bash
+cd web && pnpm build && npx playwright test --project=smoke tests/e2e/passkey.spec.ts tests/e2e/report.spec.ts
+```
+
+The passkey spec uses a virtual authenticator, so no real passkey is needed. By hand: on a fresh browser, **Create account**, type a name, then choose
+**Continue with a passkey**. After the page reloads, open the account menu and **Edit profile**: the name you typed is already there, and a post you
+make shows that name, not a string of letters and numbers. (Before this, the passkey and wallet routes kept the name only as the passkey's own label.)
+Signed in as a moderator, **Moderation** shows "Reported by" followed by the reporter's name. A person who never set a name still shows as a short
+key everywhere; the reminder on Home to add a name stays until they do.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

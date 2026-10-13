@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { createMockRelay } from "./mock-relay";
+
 /**
  * Passkey ceremony prototype against a real WebAuthn stack.
  *
@@ -130,4 +132,40 @@ test("removing the passkey clears the stored record", async ({ page }) => {
     ),
   );
   expect(stored).toEqual([]);
+});
+
+test("signing up with a passkey publishes the name that was typed", async ({
+  page,
+}) => {
+  await addVirtualAuthenticator(page);
+  const relay = createMockRelay();
+  await relay.install(page);
+  // Passkeys need the page on `localhost`, but the mock server answers on the
+  // loopback address, so this browser is told to use that one.
+  await page.addInitScript(() =>
+    window.localStorage.setItem("buzz.relayUrl", "ws://127.0.0.1:4173"),
+  );
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+
+  await page.goto("http://localhost:4173/");
+  await page.getByTestId("create-identity-cta").first().click();
+  await page.getByTestId("onboarding-name").fill("Mira Okafor");
+  await page.getByTestId("onboarding-passkey").click();
+
+  // The passkey only carries the name as its own label. The profile that every
+  // screen reads people's names from has to say it too, or this person shows up
+  // as a bare key everywhere.
+  await expect
+    .poll(() =>
+      relay.events
+        .filter((event) => event.kind === 0)
+        .map((event) => JSON.parse(event.content).name),
+    )
+    .toContain("Mira Okafor");
 });

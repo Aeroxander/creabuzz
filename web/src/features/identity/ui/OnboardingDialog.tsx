@@ -10,8 +10,27 @@ import { getOrCreateIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
+import { toast } from "sonner";
 import { Overlay } from "@/shared/ui/portal";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
+
+/**
+ * The passkey and wallet routes make the key without a profile, so a name typed
+ * above them has to be published here or the person shows up as a bare key
+ * everywhere. A failure is said out loud; the Home reminder to add a name
+ * stays until one exists, so it can be added later.
+ */
+async function saveTypedName(name: string, about: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  try {
+    await publishProfile({ name: trimmed, about: about || undefined });
+  } catch {
+    toast.error(
+      "Your account is ready, but we could not save your name. Add it from your profile.",
+    );
+  }
+}
 
 export function OnboardingDialog({
   onDone,
@@ -54,6 +73,7 @@ export function OnboardingDialog({
               setError(null);
               try {
                 await createPasskeyIdentity(name.trim() || "Creaton user");
+                await saveTypedName(name, about);
                 (onPasskeyDone ?? onDone)();
               } catch (e) {
                 setError(e instanceof Error ? e.message : "passkey failed");
@@ -78,6 +98,7 @@ export function OnboardingDialog({
                 setError(null);
                 try {
                   await signInWithWallet();
+                  await saveTypedName(name, about);
                   (onPasskeyDone ?? onDone)();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "wallet failed");

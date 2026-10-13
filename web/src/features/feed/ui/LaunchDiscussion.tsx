@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { LaunchRecord } from "@/features/launchpad/models";
 import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
@@ -124,6 +124,7 @@ export function LaunchDiscussion({
   const [optIn, setOptIn] = useState(() => readSummaryOptIn(coord));
   const { summaries } = useLaunchSummaries(coord);
   const summary = newestSummary(summaries);
+  const nameOf = useUserNames(summary ? [summary.author] : []);
   const [note, setNote] = useState<string | null>(null);
 
   const toggleOptIn = () => {
@@ -202,7 +203,7 @@ export function LaunchDiscussion({
           data-testid="thread-summary-card"
         >
           <p className="text-2xs font-medium text-sky-700 dark:text-sky-300">
-            Summarized by agent {truncatePubkey(summary.author)}
+            Summarized by agent {nameOf(summary.author)}
           </p>
           <p className="mt-1 text-sm whitespace-pre-wrap text-black/80 dark:text-white/80">
             {summary.text}
