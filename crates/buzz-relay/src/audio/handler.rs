@@ -4130,6 +4130,11 @@ mod tests {
         auth_tag: Option<Vec<String>>,
     ) -> (Vec<tokio_tungstenite::tungstenite::Message>, bool) {
         use std::sync::Arc;
+        // These tests run against an unreachable database on purpose, so the community's own "people must be
+        // members" setting cannot be read. Say what the database would: this community has not closed itself.
+        state
+            .membership_policy_cache
+            .insert(tenant.community(), false);
         let relay_url =
             crate::api::bridge::nip42_expected_relay_url(&state.config.relay_url, &tenant);
         let conn_cancel = CancellationToken::new();
@@ -6228,6 +6233,8 @@ mod tests {
         let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
         let tenant =
             buzz_core::tenant::TenantContext::resolved(community, "test.local".to_string());
+        // The database is unreachable on purpose; say what it would: this community has not closed itself.
+        state.membership_policy_cache.insert(community, false);
 
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
         let conn_cancel = CancellationToken::new();
@@ -6441,6 +6448,8 @@ mod tests {
         let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
         let tenant =
             buzz_core::tenant::TenantContext::resolved(community, "test.local".to_string());
+        // The database is unreachable on purpose; say what it would: this community has not closed itself.
+        state.membership_policy_cache.insert(community, false);
 
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
         let conn_cancel = CancellationToken::new();

@@ -577,6 +577,19 @@ impl Db {
         normalized_host: &str,
         owner_pubkey: &str,
     ) -> Result<CreateCommunityWithOwnerResult> {
+        self.create_community_with_owner_and_access(normalized_host, owner_pubkey, false)
+            .await
+    }
+
+    /// [`Self::create_community_with_owner`], choosing at creation whether people must be members to read or write
+    /// (`membership_required`). A retried create that finds the identical community leaves its setting alone.
+    #[datastore_span(name = "create_community_with_owner_and_access", system = "postgresql")]
+    pub async fn create_community_with_owner_and_access(
+        &self,
+        normalized_host: &str,
+        owner_pubkey: &str,
+        membership_required: bool,
+    ) -> Result<CreateCommunityWithOwnerResult> {
         let owner_pubkey = owner_pubkey.to_ascii_lowercase();
         let connection = crate::observability::acquire_writer(
             &self.pool,
@@ -597,13 +610,14 @@ impl Db {
 
         let row = sqlx::query(
             r#"
-            INSERT INTO communities (host)
-            VALUES ($1)
+            INSERT INTO communities (host, membership_required)
+            VALUES ($1, $2)
             ON CONFLICT (lower(host)) DO NOTHING
             RETURNING id, host
             "#,
         )
         .bind(normalized_host)
+        .bind(membership_required)
         .fetch_optional(&mut *tx)
         .await?;
 
@@ -660,6 +674,49 @@ impl Db {
                 host,
             },
         ))
+    }
+
+    /// Whether people must be members of `community` to read or write in it, by the community's own setting (the
+    /// server-wide switch is the caller's to add). Read from the writer: closing a community has to take effect at
+    /// once, so a stale replica row must never say "open". A community with no row answers `false`: it has no
+    /// members to protect and nothing can be written to it (every table references the row), so the setting has
+    /// nothing to say; a failed read is an error, never an answer.
+    #[datastore_span(name = "community_membership_required", system = "postgresql")]
+    pub async fn community_membership_required(&self, community: CommunityId) -> Result<bool> {
+        let mut conn = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
+        let row = sqlx::query("SELECT membership_required FROM communities WHERE id = $1")
+            .bind(community.as_uuid())
+            .fetch_optional(&mut *conn)
+            .await?;
+        match row {
+            Some(row) => Ok(row.try_get("membership_required")?),
+            None => Ok(false),
+        }
+    }
+
+    /// Set whether people must be members of `community` to read or write in it. Returns false when there is no such
+    /// community. The caller has already checked that the sender may do this.
+    #[datastore_span(name = "set_community_membership_required", system = "postgresql")]
+    pub async fn set_community_membership_required(
+        &self,
+        community: CommunityId,
+        required: bool,
+    ) -> Result<bool> {
+        let mut conn = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
+        let done = sqlx::query("UPDATE communities SET membership_required = $2 WHERE id = $1")
+            .bind(community.as_uuid())
+            .bind(required)
+            .execute(&mut *conn)
+            .await?;
+        Ok(done.rows_affected() == 1)
     }
 
     /// Idempotently archives a community when the asserted pubkey is its current owner.

@@ -1144,6 +1144,11 @@ async fn submit_event_authed(
 
     // Enforce relay membership (with NIP-OA fallback via x-auth-tag header).
     let auth_tag = super::relay_members::extract_auth_tag_header(headers);
+    // "Open" is this community's own setting as well as the server's; a failed read counts as closed.
+    let community_is_open = !state
+        .membership_required(tenant.community(), false)
+        .await
+        .unwrap_or(true);
     let nip_oa_owner = match super::relay_members::enforce_relay_membership(
         state,
         tenant.community(),
@@ -1154,7 +1159,7 @@ async fn submit_event_authed(
     .await
     {
         Ok(owner) => owner.or_else(|| {
-            if !state.config.require_relay_membership {
+            if community_is_open {
                 super::relay_members::extract_nip_oa_owner(
                     &pubkey_bytes,
                     auth_tag,
@@ -8432,6 +8437,7 @@ pub(crate) mod postgres_tests {
             let schema = format!("late_owner_{}", uuid::Uuid::new_v4().simple());
             sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
                 "CREATE SCHEMA {schema}; \
+                 CREATE TABLE {schema}.communities (LIKE public.communities INCLUDING ALL); \
                  CREATE TABLE {schema}.users (LIKE public.users INCLUDING ALL); \
                  CREATE TABLE {schema}.community_bans (LIKE public.community_bans INCLUDING ALL); \
                  CREATE TABLE {schema}.relay_members (LIKE public.relay_members INCLUDING ALL);"

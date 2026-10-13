@@ -4,6 +4,7 @@ pub mod admin;
 pub mod bridge;
 pub mod buzz_v1;
 pub mod communities;
+pub mod community_access;
 pub mod dao_json;
 pub mod events;
 pub mod evm_auth;
@@ -184,7 +185,13 @@ pub mod relay_members {
         signed_auth_created_at: Option<u64>,
         writer: bool,
     ) -> Result<MembershipDecision, String> {
-        if !state.config.require_relay_membership {
+        // The server-wide switch, or this community's own: one question, asked here, for every way in (WebSocket,
+        // HTTP, git, audio).
+        if !state
+            .membership_required(community, writer)
+            .await
+            .map_err(|e| format!("community access check failed: {e}"))?
+        {
             return Ok(MembershipDecision::OpenRelay);
         }
 

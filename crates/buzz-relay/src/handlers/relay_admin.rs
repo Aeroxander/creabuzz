@@ -261,7 +261,11 @@ async fn execute_relay_admin_command(
     if kind == RELAY_ADMIN_SET_WORKSPACE_PROFILE {
         // Steward detection only matters on open relays (closed relays gate on
         // the sender's own role either way), so skip the extra query there.
-        let community_has_steward = if state.config.require_relay_membership {
+        let membership_required = state
+            .membership_required(tenant.community(), true)
+            .await
+            .map_err(|e| format!("database error: {e}"))?;
+        let community_has_steward = if membership_required {
             true
         } else {
             state
@@ -270,11 +274,7 @@ async fn execute_relay_admin_command(
                 .await
                 .map_err(|e| format!("database error: {e}"))?
         };
-        if !may_set_workspace_profile(
-            sender_role,
-            state.config.require_relay_membership,
-            community_has_steward,
-        ) {
+        if !may_set_workspace_profile(sender_role, membership_required, community_has_steward) {
             return Err("actor not authorized: must be admin or owner".to_string());
         }
         if sender_role != "admin" && sender_role != "owner" {

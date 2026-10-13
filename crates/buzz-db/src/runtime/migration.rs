@@ -771,7 +771,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 62);
+        assert_eq!(migrations.len(), 63);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -3465,8 +3465,8 @@ mod postgres_tests {
 
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=62).collect::<Vec<i64>>(),
-            "every migration through 0062 is applied exactly once"
+            (1_i64..=63).collect::<Vec<i64>>(),
+            "every migration through 0063 is applied exactly once"
         );
         let renumbered: Vec<(i64, String)> = sqlx::query_as(
             "SELECT version, description FROM _sqlx_migrations \
@@ -3504,7 +3504,7 @@ mod postgres_tests {
     }
 
     /// A database that never ran the fork must be untouched by the repair: a
-    /// fresh migrate applies 0001-0062 in order and succeeds.
+    /// fresh migrate applies 0001-0063 in order and succeeds.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn fresh_database_is_unaffected_by_fork_row_repair() {
@@ -3512,7 +3512,7 @@ mod postgres_tests {
         run_migrations(&pool).await.expect("fresh migrate succeeds");
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=62).collect::<Vec<i64>>(),
+            (1_i64..=63).collect::<Vec<i64>>(),
             "a fresh database applies every migration in order"
         );
         drop_probe_database(&admin, &probe_db).await;

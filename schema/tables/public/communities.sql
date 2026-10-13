@@ -24,6 +24,9 @@ CREATE TABLE communities (
     deletion_state  TEXT NOT NULL DEFAULT 'active' CHECK (deletion_state IN ('active', 'quiescing', 'fenced', 'tombstone')),
     deletion_fence_generation BIGINT NOT NULL DEFAULT 0 CHECK (deletion_fence_generation >= 0),
     deleted_at      TIMESTAMPTZ,
+    -- Whether people must be members to read or write here (migration 0063). The server-wide switch
+    -- (`BUZZ_REQUIRE_RELAY_MEMBERSHIP`) still closes every community when it is on.
+    membership_required BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT chk_communities_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
 

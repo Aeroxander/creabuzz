@@ -37,6 +37,9 @@ use crate::subscription::SubscriptionRegistry;
 
 pub(crate) type ScopedPubkeyKey = (CommunityId, [u8; 32]);
 
+/// How long a community's "people must be members" setting is remembered in this process.
+pub(crate) const MEMBERSHIP_POLICY_TTL: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Why a community-bound socket is being asked to stop.
 ///
 /// Ordinary lifecycle exits keep using cancellation alone and therefore retain
@@ -1316,6 +1319,10 @@ pub struct AppState {
     /// generate fresh Nostr keys.
     pub invite_claim_rate_limiter:
         Arc<moka::sync::Cache<ScopedPubkeyKey, Arc<std::sync::atomic::AtomicU32>>>,
+    /// Each community's own "people must be members" setting, kept for a few seconds so an open community does not cost
+    /// a database read on every request. Closing a community invalidates its entry here at once; another server process
+    /// learns within the cache's lifetime (`MEMBERSHIP_POLICY_TTL`), and the authoritative checks bypass it.
+    pub membership_policy_cache: Arc<moka::sync::Cache<CommunityId, bool>>,
     /// Caps on self-serve community creation (`POST /self-serve/communities`): attempts per signing key and creations per
     /// hour across the deployment.
     pub self_serve_limiter: Arc<crate::api::self_serve::SelfServeLimiter>,
@@ -1397,6 +1404,32 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Whether people must be members of `community` before they may read or write in it: true when the whole server
+    /// requires it, or when this community has chosen to. An `authoritative` check reads the database and skips the
+    /// short-lived cache (the final admission fence, where a stale "open" would grant lasting access).
+    pub async fn membership_required(
+        &self,
+        community: CommunityId,
+        authoritative: bool,
+    ) -> buzz_db::Result<bool> {
+        if self.config.require_relay_membership {
+            return Ok(true);
+        }
+        if !authoritative {
+            if let Some(known) = self.membership_policy_cache.get(&community) {
+                return Ok(known);
+            }
+        }
+        let required = self.db.community_membership_required(community).await?;
+        self.membership_policy_cache.insert(community, required);
+        Ok(required)
+    }
+
+    /// Forget what is remembered about a community's setting, after it changes.
+    pub fn forget_membership_policy(&self, community: CommunityId) {
+        self.membership_policy_cache.invalidate(&community);
+    }
+
     /// Constructs `AppState` from its component services.
     ///
     /// Returns `(state, audit_shutdown)`. The caller should call
@@ -1541,6 +1574,12 @@ impl AppState {
                 moka::sync::Cache::builder()
                     .max_capacity(crate::api::invites::CLAIM_RATE_CACHE_CAPACITY)
                     .time_to_live(crate::api::invites::CLAIM_RATE_WINDOW)
+                    .build(),
+            ),
+            membership_policy_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(MEMBERSHIP_POLICY_TTL)
                     .build(),
             ),
             self_serve_limiter: Arc::new(crate::api::self_serve::SelfServeLimiter::new()),

@@ -4288,7 +4288,11 @@ async fn ingest_event_inner(
 
     // Handled directly — removes the sender from relay_members. NOT stored.
     if kind_u32 == KIND_NIP43_LEAVE_REQUEST {
-        if !state.config.require_relay_membership {
+        if !state
+            .membership_required(tenant.community(), false)
+            .await
+            .unwrap_or(true)
+        {
             return Err(IngestError::Rejected(
                 "invalid: relay membership is not enabled".into(),
             ));

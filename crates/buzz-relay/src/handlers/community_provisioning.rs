@@ -381,7 +381,11 @@ async fn publish_membership_snapshot_if_required(
     community: buzz_core::CommunityId,
     host: &str,
 ) {
-    if !state.config.require_relay_membership {
+    if !state
+        .membership_required(community, true)
+        .await
+        .unwrap_or(true)
+    {
         return;
     }
     publish_membership_snapshot(state, community, host).await;
