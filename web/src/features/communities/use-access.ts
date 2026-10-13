@@ -25,6 +25,7 @@ import {
   parseInvites,
   parseMintedInvite,
   peopleFromEvents,
+  changeRoleRecord,
   removeMemberRecord,
   roleOf,
   setAccessRecord,
@@ -168,5 +169,16 @@ export async function removePerson(pubkey: string): Promise<void> {
   await publishAsUser(
     removeMemberRecord(pubkey),
     "The server did not remove them.",
+  );
+}
+
+/** Make a member an admin, or an admin a member. The server refuses anyone but the owner, in words. */
+export async function changeRole(
+  pubkey: string,
+  role: "admin" | "member",
+): Promise<void> {
+  await publishAsUser(
+    changeRoleRecord(pubkey, role),
+    "The server did not change their role.",
   );
 }

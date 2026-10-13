@@ -50,6 +50,7 @@ is open to strangers.
   never returned: only its hash is stored, so a link made earlier cannot be shown again, only ended. `POST
   /api/invites/revoke` with `{"id": "<invite id>"}` ends one at once; people who already joined with it stay, and the next
   person to present it is told it has expired. An invite can only be ended from the community that made it.
+- **Roles** change with the existing `kind:9032` (owner only): a member can be made an admin and an admin a member. The owner's role never changes from here.
 - **A person can be removed** with the existing `kind:9031`: the owner can remove an admin or a member, an admin only a
   member, and nobody the owner or themselves. They are signed out right away and need a new invite to come back.
 - **The owner can change it later** with a signed `kind:9034` command carrying `["access", "open"]` or

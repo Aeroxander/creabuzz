@@ -260,3 +260,6 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   stranger's profile; a refused name never undoes the join). Someone who already has an account sees the usual button. Checked: 5 mocked browser tests and a fourth real-server journey
   (no extension, no passkey, only the link; the owner sees them listed by name). The journey's helper used to return before the join had finished (the invite page's own address matched its
   "arrived" pattern), so the earlier real-server journeys quietly depended on timing; they now wait for the join and still pass.
+- **Roles from the People list**: the owner can make a member an admin and an admin a member (never themselves or the owner); an admin or member is offered nothing. The server
+  decides again (owner-only, in its words). Checked with unit tests, 3 mocked browser tests, and the real-server journey (an owner makes a newcomer an admin: they can now make
+  invites and still cannot decide who may join). Handing a community to a new owner stays an operator action.

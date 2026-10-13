@@ -15,6 +15,8 @@ export type Access = "open" | "invite_only";
 export const KIND_SET_ACCESS = 9034;
 /** The signed record that removes a person from the community's list. */
 export const KIND_REMOVE_MEMBER = 9031;
+/** The signed record that makes a member an admin, or an admin a member. Only the owner's is accepted. */
+export const KIND_CHANGE_ROLE = 9032;
 /** The server's list of a community's people and their roles. */
 export const KIND_MEMBER_LIST = 13534;
 
@@ -136,6 +138,37 @@ export function removeMemberRecord(pubkey: string): {
   tags: string[][];
 } {
   return { kind: KIND_REMOVE_MEMBER, content: "", tags: [["p", pubkey]] };
+}
+
+/** The record that gives `pubkey` the role `role` (`admin` or `member`). */
+export function changeRoleRecord(
+  pubkey: string,
+  role: "admin" | "member",
+): { kind: number; content: string; tags: string[][] } {
+  return {
+    kind: KIND_CHANGE_ROLE,
+    content: "",
+    tags: [
+      ["p", pubkey],
+      ["role", role],
+    ],
+  };
+}
+
+/**
+ * The role `me` is offered to give `person`, or null for none: only the owner changes roles, an admin can be made a
+ * member and a member an admin, and nobody changes their own role or the owner's. The server decides again.
+ */
+export function roleOfferedFor(
+  myRole: Role | null,
+  me: string | null,
+  person: Person,
+): "admin" | "member" | null {
+  if (myRole !== "owner" || !me) return null;
+  if (person.pubkey === me.trim().toLowerCase() || person.role === "owner") {
+    return null;
+  }
+  return person.role === "admin" ? "member" : "admin";
 }
 
 /**

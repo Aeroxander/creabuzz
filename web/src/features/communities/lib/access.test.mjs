@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   accessSummary,
   describeActiveInvite,
+  changeRoleRecord,
   describeInvite,
   inviteRequestBody,
   KIND_MEMBER_LIST,
@@ -19,6 +20,7 @@ import {
   peopleFromEvents,
   removeMemberRecord,
   roleOf,
+  roleOfferedFor,
   setAccessRecord,
 } from "./access.ts";
 
@@ -284,4 +286,30 @@ test("an invite in the list says how much it has been used and how long it has l
     ),
     "7 used · ends in less than 2 hours",
   );
+});
+
+test("changing a role is one record naming the person and the role", () => {
+  assert.deepEqual(changeRoleRecord(B, "admin"), {
+    kind: 9032,
+    content: "",
+    tags: [
+      ["p", B],
+      ["role", "admin"],
+    ],
+  });
+  assert.deepEqual(changeRoleRecord(B, "member").tags[1], ["role", "member"]);
+});
+
+test("only the owner is offered a role change: members can be made admins, admins members, never themselves or the owner", () => {
+  const owner = { pubkey: A, role: "owner" };
+  const admin = { pubkey: B, role: "admin" };
+  const member = { pubkey: C, role: "member" };
+  assert.equal(roleOfferedFor("owner", A, member), "admin");
+  assert.equal(roleOfferedFor("owner", A, admin), "member");
+  assert.equal(roleOfferedFor("owner", A, owner), null);
+  assert.equal(roleOfferedFor("admin", B, member), null, "an admin cannot");
+  assert.equal(roleOfferedFor("member", C, member), null);
+  assert.equal(roleOfferedFor(null, null, member), null);
+  assert.equal(roleOfferedFor("owner", null, member), null);
+  assert.equal(roleOfferedFor("owner", B, admin), null, "not their own role");
 });

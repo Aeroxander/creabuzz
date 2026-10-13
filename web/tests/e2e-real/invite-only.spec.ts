@@ -281,7 +281,18 @@ test("someone with no account at all can make one from the invite link, join, an
   await expect(owner.getByTestId("person")).toHaveCount(2, {
     timeout: 30_000,
   });
-  await expect(
-    owner.getByTestId("person").filter({ hasText: "Robin Reyes" }),
-  ).toBeVisible({ timeout: 30_000 });
+  const robin = owner.getByTestId("person").filter({ hasText: "Robin Reyes" });
+  await expect(robin).toBeVisible({ timeout: 30_000 });
+
+  // The owner makes them an admin: they can now make invites, but still cannot decide who may join.
+  await robin.getByTestId("person-role").click();
+  await expect(robin).toHaveAttribute("data-role", "admin", {
+    timeout: 30_000,
+  });
+  await newcomer.goto(`http://${host}/c/${host}`);
+  await openPeople(newcomer);
+  await expect(newcomer.getByTestId("invite-maker")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(newcomer.getByTestId("access-control")).toHaveCount(0);
 });

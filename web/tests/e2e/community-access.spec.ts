@@ -55,6 +55,8 @@ async function open(
     refuseRevoke?: { status: number; error: string };
     /** Why the server refuses to remove a person, when it does. */
     refuseRemove?: string;
+    /** Why the server refuses to change a role, when it does. */
+    refuseRole?: string;
     /** A second admin in the community's list. */
     anotherAdmin?: boolean;
     /** On a phone the sidebar is a drawer: open it first. */
@@ -67,6 +69,7 @@ async function open(
     refuseSetAccess,
     inviteAnswer,
     refuseRemove,
+    refuseRole,
     refuseRevoke,
     anotherAdmin = false,
     phone = false,
@@ -75,6 +78,7 @@ async function open(
     refuse: (event) => {
       if (refuseSetAccess && event.kind === 9034) return refuseSetAccess;
       if (refuseRemove && event.kind === 9031) return refuseRemove;
+      if (refuseRole && event.kind === 9032) return refuseRole;
       return undefined;
     },
   });
@@ -438,8 +442,7 @@ test("the owner can remove an admin or a member after a warning, and never thems
   await expect(page.getByTestId("person-remove")).toHaveCount(2);
 
   const member = page
-    .getByTestId("person")
-    .filter({ hasText: "Member" })
+    .locator('[data-testid="person"][data-role="member"]')
     .first();
   await member.getByTestId("person-remove").click();
   await expect(member.getByTestId("person-confirm")).toContainText(
@@ -472,8 +475,7 @@ test("an admin can remove a member but is offered nothing for the owner or anoth
   await expect(page.getByTestId("person-remove")).toHaveCount(1);
   await expect(
     page
-      .getByTestId("person")
-      .filter({ hasText: "Member" })
+      .locator('[data-testid="person"][data-role="member"]')
       .getByTestId("person-remove"),
   ).toHaveCount(1);
 });
@@ -545,4 +547,57 @@ test("the people and access section fits a phone, with the owner's panels open",
   await page.getByTestId("person-remove").first().click();
   await expect(page.getByTestId("person-confirm")).toBeVisible();
   await expectNoSidewaysScroll(page, "people and access on a phone");
+});
+
+test("the owner can make a member an admin and an admin a member, and is offered neither for themselves", async ({
+  page,
+}) => {
+  const { relay } = await open(page, { role: "owner", anotherAdmin: true });
+  // The owner, a member, an admin: two role buttons, none on the owner's own row.
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await expect(page.getByTestId("person-role")).toHaveCount(2);
+  const ownRow = page.getByTestId("person").first();
+  await expect(ownRow.getByTestId("person-role")).toHaveCount(0);
+
+  await page
+    .getByTestId("person-role")
+    .filter({ hasText: "Make admin" })
+    .click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9032).length)
+    .toBe(1);
+  let sent = relay.events.filter((event) => event.kind === 9032).at(-1);
+  expect(sent?.tags).toContainEqual(["p", NEIGHBOUR]);
+  expect(sent?.tags).toContainEqual(["role", "admin"]);
+  expect(sent?.pubkey).toBe(ME);
+
+  await page
+    .getByTestId("person-role")
+    .filter({ hasText: "Make member" })
+    .click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9032).length)
+    .toBe(2);
+  sent = relay.events.filter((event) => event.kind === 9032).at(-1);
+  expect(sent?.tags).toContainEqual(["p", ANOTHER_ADMIN]);
+  expect(sent?.tags).toContainEqual(["role", "member"]);
+});
+
+test("an admin or a member is offered no role changes", async ({ page }) => {
+  await open(page, { role: "admin", anotherAdmin: true });
+  await expect(page.getByTestId("person")).toHaveCount(4);
+  await expect(page.getByTestId("person-role")).toHaveCount(0);
+});
+
+test("when the server will not change a role, its words are shown", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseRole: "actor not authorized: must be owner",
+  });
+  await page.getByTestId("person-role").click();
+  await expect(page.getByTestId("person-error")).toHaveText(
+    "actor not authorized: must be owner",
+  );
 });

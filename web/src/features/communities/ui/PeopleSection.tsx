@@ -32,8 +32,10 @@ import {
   mayChangeAccess,
   mayInvite,
   mayRemove,
+  roleOfferedFor,
 } from "../lib/access";
 import {
+  changeRole,
   mintInvite,
   removePerson,
   revokeInvite,
@@ -356,16 +358,39 @@ function PersonRow({
   person,
   name,
   canRemove,
+  offerRole,
   onRemoved,
+  onRoleChanged,
 }: {
   person: Person;
   name: string;
   canRemove: boolean;
+  /** The role the viewer may give this person, when any. */
+  offerRole: "admin" | "member" | null;
   onRemoved: () => void;
+  onRoleChanged: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const giveRole = async (role: "admin" | "member") => {
+    setBusy(true);
+    setError(null);
+    try {
+      await changeRole(person.pubkey, role);
+      toast.success(
+        role === "admin"
+          ? `${name} is an admin now.`
+          : `${name} is a member now.`,
+      );
+      onRoleChanged();
+    } catch (cause) {
+      setError(errorText(cause, "Could not change their role."));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const remove = async () => {
     setBusy(true);
@@ -383,6 +408,7 @@ function PersonRow({
   return (
     <li
       className="rounded-lg border border-black/10 p-2 dark:border-white/10"
+      data-role={person.role}
       data-testid="person"
     >
       <div className="flex items-center gap-2">
@@ -393,6 +419,18 @@ function PersonRow({
         <Badge className="px-1.5 py-0 text-2xs" variant="outline">
           {ROLE_WORDS[person.role]}
         </Badge>
+        {offerRole && !confirming ? (
+          <Button
+            data-testid="person-role"
+            disabled={busy}
+            onClick={() => void giveRole(offerRole)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {offerRole === "admin" ? "Make admin" : "Make member"}
+          </Button>
+        ) : null}
         {canRemove && !confirming ? (
           <Button
             data-testid="person-remove"
@@ -521,7 +559,9 @@ export function PeopleSection() {
                 canRemove={removalOffered && mayRemove(myRole, me, person)}
                 key={person.pubkey}
                 name={nameOf(person.pubkey)}
+                offerRole={roleOfferedFor(myRole, me, person)}
                 onRemoved={refreshPeople}
+                onRoleChanged={refreshPeople}
                 person={person}
               />
             ))}
