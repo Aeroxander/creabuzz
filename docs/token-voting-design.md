@@ -130,6 +130,28 @@ Ragequit stays available for Shares and Loot. It returns a proportional share of
 excluding funds already committed into a mandate or claim escrow, which is why the review, hold and delay give
 members notice before a commitment. Market price and treasury valuation never enter the vote.
 
+## Holding age
+
+Every mint, transfer and burn of Shares already reports to the voting policy, which keeps one number per holder: the
+weighted-average moment they acquired the Shares they hold (`heldSince`). `holdingAge(holder)` returns what they hold and
+for how long.
+
+- **Receiving** moves the holder's age towards now in proportion to the amount (50 Shares held 10 days, plus 50 just
+  received, is a holding of 5 days).
+- **Sending** changes nothing for the sender, and a holder who sends everything loses the record.
+- **A fresh wallet cannot inherit age:** what a wallet receives counts as new there, whoever held it before.
+- Only Shares count (Loot carries no vote and no reputation), only the DAO's own callback can write it, and the
+  first holders start at the moment the DAO is made.
+- It does not say whether any of the Shares are locked behind milestones; a reader that cares asks the lock too.
+- Cost: one storage write per transfer (about 5,000 gas, 22,000 the first time a wallet receives).
+
+The vote checkpoints are not used for this: they record voting power per delegate by block number, so a holder who
+delegates their votes would look as if they had stopped holding.
+
+It is an objective, unforgeable base signal. What it is *worth* is not decided here: a DAO anyone can launch can be
+held for years by its own founder, so a reader should count hold time only in DAOs something outside them vouches for
+(see `docs/v3-review/DECISIONS.md`, D23).
+
 ## Trust and deployment boundaries
 
 - The initial Shares distribution and the policy implementation are deployment choices. Existing DAOs do not

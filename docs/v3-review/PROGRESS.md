@@ -196,4 +196,10 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   Found and fixed on the way: a creator was not recognised as their community's owner (no member list was published unless
   membership was required), which refused every owner-only action; this also confirms the template's owner-only steps (team,
   helper seats, limits, automations, pages) on a real server. Not done: invite-only communities, renaming, custom domains.
+- **Holding age** (D23, first piece): the voting policy keeps each holder's weighted-average acquisition time of their Shares and
+  `holdingAge(holder)` returns balance and age (`contracts/src/AllocationVoting.sol`, `docs/token-voting-design.md`). Receiving blends the age
+  by amount, sending changes nothing, a fresh wallet cannot inherit age, a holder who sends everything loses the record. Checked: 13 unit and
+  fuzz tests, a real-sale journey (a backer's holding starts at the claim, and passing Shares on hands over no age), the whole suite
+  (325 passed), and three deliberate breakages each caught by a test. New DAOs only. Not built: the kit's list of its DAOs, the second
+  version of the sale hook (a proof for the bidder and one per named DAO), and the screens.
 

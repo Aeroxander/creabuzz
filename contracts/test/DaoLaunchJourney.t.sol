@@ -212,6 +212,32 @@ contract DaoLaunchJourneyTest is Test {
         assertEq(shares.balanceOf(bob), 0);
     }
 
+    /// @dev What a backer holds, and for how long, starts the moment the Shares reach their wallet (the claim), not when
+    /// they bid, and a backer who passes Shares to another wallet does not hand over the time they held them.
+    function test_a_backers_holding_starts_at_the_claim_and_cannot_be_passed_on() public {
+        _launch();
+        _raise();
+        uint256 claimedAt = block.timestamp;
+        assertEq(policy.heldSince(alice), claimedAt);
+        (uint256 balance, uint256 age) = policy.holdingAge(alice);
+        assertEq(balance, 180e18);
+        assertEq(age, 0, "claimed just now");
+
+        vm.warp(claimedAt + 45 days);
+        (, age) = policy.holdingAge(alice);
+        assertEq(age, 45 days);
+
+        address fresh = makeAddr("a second wallet");
+        vm.prank(alice);
+        shares.transfer(fresh, 90e18);
+        (balance, age) = policy.holdingAge(fresh);
+        assertEq(balance, 90e18);
+        assertEq(age, 0, "forty-five days of holding did not travel with the Shares");
+        (balance, age) = policy.holdingAge(alice);
+        assertEq(balance, 90e18);
+        assertEq(age, 45 days, "what Alice kept is as old as it was");
+    }
+
     function test_without_the_vault_a_founder_could_ragequit_the_raise_on_day_one() public {
         // The control: the same raise, but the founder's 60% is simply liquid.
         executor = _deployExecutor(founder);

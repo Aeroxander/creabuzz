@@ -60,6 +60,9 @@ contract AllocationVoting is IVotingWeight {
     uint96 public totalCapacity;
     mapping(address => uint96) public capacity;
     mapping(address => address) public delegateOf;
+    /// @notice The weighted-average moment each holder acquired the Shares they hold now; zero when they hold none.
+    /// See `holdingAge`.
+    mapping(address => uint64) public heldSince;
 
     struct Checkpoint {
         uint48 blockNumber;
@@ -160,6 +163,7 @@ contract AllocationVoting is IVotingWeight {
             }
             capacity[owner] = uint96(balance);
             totalCapacity += uint96(balance);
+            if (balance != 0) heldSince[owner] = uint64(block.timestamp);
             _checkpoint(owner);
         }
         if (totalCapacity != shares.totalSupply()) revert InvalidInitialization();
@@ -379,11 +383,15 @@ contract AllocationVoting is IVotingWeight {
             totalCapacity += uint96(amount);
         }
         if (to != address(0)) {
-            if (uint256(capacity[to]) + amount > type(uint96).max) revert CapacityExceeded();
+            uint256 before = capacity[to];
+            if (before + amount > type(uint96).max) revert CapacityExceeded();
             capacity[to] += uint96(amount);
+            _blendHeldSince(to, before, amount);
         } else {
             totalCapacity -= uint96(amount);
         }
+        // Leaving with everything ends the holding; a later purchase starts a new one.
+        if (from != address(0) && capacity[from] == 0) delete heldSince[from];
         if (
             (from != address(0) && shares.balanceOf(from) != capacity[from])
                 || (to != address(0) && shares.balanceOf(to) != capacity[to]) || shares.totalSupply() != totalCapacity
@@ -393,6 +401,25 @@ contract AllocationVoting is IVotingWeight {
             _checkpoint(from);
         }
         if (to != address(0)) _checkpoint(to);
+    }
+
+    /// @dev Receiving Shares moves the holder's average acquisition time towards now, in proportion to the amount
+    /// received. Sending changes nothing, so age cannot be moved to another wallet: what a wallet receives counts as
+    /// new there, whoever held it before.
+    function _blendHeldSince(address to, uint256 before, uint256 amount) private {
+        heldSince[to] = before == 0
+            ? uint64(block.timestamp)
+            : uint64((before * heldSince[to] + amount * block.timestamp) / (before + amount));
+    }
+
+    /// @notice How much `holder` holds and for how long, as an average weighted by amount: each Share counts from when
+    /// it was acquired, and a purchase of N Shares into a holding of M Shares moves the age to M/(M+N) of what it was.
+    /// Zero for a holder with no Shares. Reads the same balance mirror the votes use, so it covers exactly the Shares
+    /// that carry a vote (Loot is not counted), and says nothing about whether any of them are locked: a caller that
+    /// cares reads the lock too.
+    function holdingAge(address holder) external view returns (uint256 balance, uint256 age) {
+        balance = capacity[holder];
+        if (balance != 0) age = block.timestamp - heldSince[holder];
     }
 
     /// @notice Current FOR, AGAINST and ABSTAIN allocations, and since when quorum and approval have held.
