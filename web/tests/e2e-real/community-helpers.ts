@@ -51,11 +51,24 @@ export async function setAccess(owner: Page, access: "open" | "invite_only") {
   });
 }
 
-/** `owner` (a signed-in page) makes a community called `name`, private by default, and lands in it. */
-export async function createCommunity(owner: Page, name: string) {
+/**
+ * `owner` (a signed-in page) makes a community called `name` and lands in it. It is open unless `access` says
+ * `"invite_only"`, which is one press on the second of the two choices.
+ */
+export async function createCommunity(
+  owner: Page,
+  name: string,
+  access: "open" | "invite_only" = "open",
+) {
   await owner.goto("/c");
   await owner.getByTestId("create-community").click();
   await owner.getByTestId("community-name").fill(name);
+  if (access === "invite_only") {
+    await owner.getByText("Only people I invite").click();
+    await expect(
+      owner.getByTestId("community-access-invite_only"),
+    ).toBeChecked();
+  }
   await owner.getByTestId("community-create-submit").click();
   await owner.waitForURL(new RegExp(`/c/${name}\\.localhost`), {
     timeout: 30_000,

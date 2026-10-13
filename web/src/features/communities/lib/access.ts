@@ -40,16 +40,16 @@ export const ACCESS_CHOICES: readonly {
   detail: string;
 }[] = [
   {
-    value: "invite_only",
-    title: "Only people I invite",
-    detail:
-      "Nobody can come in or read anything without an invite link from you.",
-  },
-  {
     value: "open",
     title: "Anyone with the address",
     detail:
-      "Anyone who has the address can look around and join. Good for a public community.",
+      "Anyone who has the address can look around and join, and it can show up in the list of communities. Good for a public community.",
+  },
+  {
+    value: "invite_only",
+    title: "Only people I invite",
+    detail:
+      "Nobody can come in or read anything without an invite link from you. Good for a team.",
   },
 ];
 

@@ -5,6 +5,7 @@
  * anything else. The server has the last word on a name (taken, or kept for the service itself) and says so in words.
  */
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,8 +33,9 @@ export function CreateCommunityDialog({
   onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
-  // Private until the owner says otherwise: a community made for a team should not be open for a moment.
-  const [access, setAccess] = useState<Access>("invite_only");
+  // Open unless the owner asks for invite-only: a place for supporters is public, and a team's private rooms are
+  // rooms inside it. Either is one press, and the owner can change it later.
+  const [access, setAccess] = useState<Access>("open");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signedIn = existingUserPubkey() !== null;
@@ -101,32 +103,34 @@ export function CreateCommunityDialog({
               : `Its address will be ${previewHost(name, status.domain ?? "")}`}
           </p>
         </div>
-        <fieldset className="space-y-2">
+        <fieldset>
           <legend className="text-sm font-medium">Who can join?</legend>
-          {ACCESS_CHOICES.map((choice) => (
-            <label
-              className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-black/10 p-2.5 has-[:checked]:border-black/40 dark:border-white/10 dark:has-[:checked]:border-white/40"
-              key={choice.value}
-            >
-              <input
-                checked={access === choice.value}
-                className="mt-1"
-                data-testid={`community-access-${choice.value}`}
-                name="new-community-access"
-                onChange={() => setAccess(choice.value)}
-                type="radio"
-                value={choice.value}
-              />
-              <span>
-                <span className="block text-sm font-medium">
-                  {choice.title}
-                </span>
-                <span className="block text-xs text-muted-foreground">
+          <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {ACCESS_CHOICES.map((choice) => (
+              <label
+                className="group relative flex cursor-pointer flex-col gap-0.5 rounded-lg border border-black/10 p-3 pr-8 has-[:checked]:border-black/60 has-[:checked]:bg-black/[0.03] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring dark:border-white/10 dark:has-[:checked]:border-white/60 dark:has-[:checked]:bg-white/[0.06]"
+                key={choice.value}
+              >
+                <input
+                  checked={access === choice.value}
+                  className="sr-only"
+                  data-testid={`community-access-${choice.value}`}
+                  name="new-community-access"
+                  onChange={() => setAccess(choice.value)}
+                  type="radio"
+                  value={choice.value}
+                />
+                <Check
+                  aria-hidden
+                  className="absolute right-2.5 top-2.5 hidden h-4 w-4 group-has-[:checked]:block"
+                />
+                <span className="text-sm font-medium">{choice.title}</span>
+                <span className="text-xs text-muted-foreground">
                   {choice.detail}
                 </span>
-              </span>
-            </label>
-          ))}
+              </label>
+            ))}
+          </div>
         </fieldset>
         {problem ? (
           <p

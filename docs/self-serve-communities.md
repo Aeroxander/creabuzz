@@ -38,9 +38,10 @@ hide **Create a community**); `POST /self-serve/communities` with `{"name": "acm
 ## Who may join
 
 Each community decides for itself whether people must be members to read or write in it. **A new community is
-invite-only unless its creator asks for `open`**: `{"name": "acme", "access": "open"}`. Any other word is refused, and
-nothing is created. Because it is set when the community is made, there is never a moment in which a private community
-is open to strangers.
+open unless its creator asks for `invite_only`**: `{"name": "acme", "access": "invite_only"}`. Any other word is refused,
+and nothing is created. Because it is set when the community is made, an invite-only community is never open to
+strangers, not even for a moment. The app asks with two buttons in the create dialog, open first and already chosen; rooms
+that should be private (a founders' room, a backers' room) are rooms inside an open community.
 
 - **Invite-only** means the same thing it does on a server that sets `BUZZ_REQUIRE_RELAY_MEMBERSHIP`: only people on
   the member list get in, over the live connection, HTTP, git and audio alike. People join with an invite link the
@@ -91,7 +92,7 @@ is open to strangers.
 ## Checking it
 
 ```bash
-scripts/web-invite-only-e2e.sh   # the real server and a real browser: private by default, a stranger turned away, an invite, open, close
+scripts/web-invite-only-e2e.sh   # the real server and a real browser: open by default, private on request, a stranger turned away, an invite, open, close, bans
 cargo test -p buzz-relay --lib self_serve -- --include-ignored   # needs Postgres
 cargo test -p buzz-relay --lib handlers::relay_admin -- --include-ignored --test-threads=1   # who may join (kind 9034)
 scripts/web-self-serve-e2e.sh    # the real server and a real browser: create, own, set up a team, name taken

@@ -224,14 +224,15 @@ cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke c
 scripts/web-invite-only-e2e.sh      # REAL server on a scratch database + a real browser, nothing mocked
 ```
 
-By hand (server started as in 4i, with `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`): create a community and leave **Only people I invite**
-selected. Open **Org**: **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
+By hand (server started as in 4i, with `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`): press **Create community**. The dialog offers two buttons side by
+side, **Anyone with the address** (already chosen) and **Only people I invite**; press the second, then create. Open **Org**: **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
 In a second browser (a different profile, so it is a different person) open `http://<name>.localhost:3000/c/<name>.localhost:3000`: it says **This
 community is invite-only**. Open the invite link there and press **Join in browser**: the community opens, and your **Org** page now
 lists two people. Use the same link in a third browser: it says the invite has reached its use limit. Back as the owner pick
 **Anyone with the address** and confirm: the third browser, reloaded, gets in. Pick **Only people I invite** again: the warning says people who
 are not on the list are signed out right away; confirm, reload the third browser: invite-only again, while the second browser (invited) is
-still in. The Communities page (with `BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`) never lists the community while it is private.
+still in. The Communities page (with `BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`) never lists the community while it is private, and lists it once it is open.
+A community made without touching the choice is open: it is listed, and a stranger can look around and post without an invite.
 
 Open an invite link in a browser with no account at all (a private window): it asks for a name and offers **Create an account and join**. Press it:
 the community opens, and the owner's **People and access** lists the newcomer by that name.

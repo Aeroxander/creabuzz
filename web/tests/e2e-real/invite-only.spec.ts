@@ -17,7 +17,8 @@ import {
  * Private communities and invite links, against a REAL server (`scripts/web-invite-only-e2e.sh` boots it with the
  * server-wide membership switch off, so what is tested is each community's own setting).
  *
- * Nothing is mocked. An owner makes a community and it is private by default; a stranger is turned away with a reason;
+ * Nothing is mocked. An owner makes a community and chooses private (open is what it is when they do not choose); a
+ * stranger is turned away with a reason;
  * a one-person invite link lets exactly one person in and is refused for the next; the owner opens the community and the
  * stranger gets in; the owner closes it again and the stranger is out while the invited person stays. The public
  * directory never lists a community while it is private.
@@ -42,11 +43,13 @@ test("a private community turns strangers away, an invite lets one person in, an
     return body.communities.map((community) => community.host);
   };
 
-  // The owner makes a community and does not choose: it is private.
+  // The owner makes a community. Open is already chosen; they press the other one.
   await signInAsNewAccount(owner);
   await owner.goto("/c");
   await owner.getByTestId("create-community").click();
   await owner.getByTestId("community-name").fill(name);
+  await expect(owner.getByTestId("community-access-open")).toBeChecked();
+  await owner.getByText("Only people I invite").click();
   await expect(owner.getByTestId("community-access-invite_only")).toBeChecked();
   await owner.getByTestId("community-create-submit").click();
   await owner.waitForURL(new RegExp(`/c/${name}\\.localhost`), {
@@ -145,13 +148,7 @@ test("an invited person is not offered the owner's controls", async ({
   const name = unique();
   const host = `${name}.localhost:${PORT}`;
   await signInAsNewAccount(owner);
-  await owner.goto("/c");
-  await owner.getByTestId("create-community").click();
-  await owner.getByTestId("community-name").fill(name);
-  await owner.getByTestId("community-create-submit").click();
-  await owner.waitForURL(new RegExp(`/c/${name}\\.localhost`), {
-    timeout: 30_000,
-  });
+  await createCommunity(owner, name, "invite_only");
   await openPeople(owner);
   await owner.getByTestId("invite-make").click();
   const inviteUrl = await owner.getByTestId("invite-link").inputValue({
@@ -184,13 +181,7 @@ test("an owner can end an invite that is still out there, and remove a person wh
   const name = unique();
   const host = `${name}.localhost:${PORT}`;
   await signInAsNewAccount(owner);
-  await owner.goto("/c");
-  await owner.getByTestId("create-community").click();
-  await owner.getByTestId("community-name").fill(name);
-  await owner.getByTestId("community-create-submit").click();
-  await owner.waitForURL(new RegExp(`/c/${name}\\.localhost`), {
-    timeout: 30_000,
-  });
+  await createCommunity(owner, name, "invite_only");
   await openPeople(owner);
 
   // A link for anyone who has it, listed as still working, then ended.
@@ -259,7 +250,7 @@ test("a banned person is turned away even with the invite link, and a lifted ban
   const name = unique();
   const host = `${name}.localhost:${PORT}`;
   await signInAsNewAccount(owner);
-  await createCommunity(owner, name);
+  await createCommunity(owner, name, "invite_only");
   await openPeople(owner);
   await owner.getByTestId("invite-uses").selectOption("any");
   const inviteUrl = await makeInviteLink(owner);
@@ -329,8 +320,13 @@ test("in an open community a spammer who is not on the list can be banned from t
   const post = `Free tokens, click here ${name}`;
   await signInAsNewAccount(owner);
   await createCommunity(owner, name);
-  await openPeople(owner);
-  await setAccess(owner, "open");
+  // Nobody chose: it is open, so it is in the list of communities and anyone can look around.
+  const listing = (await (
+    await owner.request.get(`http://localhost:${PORT}/communities`)
+  ).json()) as { communities: { host: string }[] };
+  expect(listing.communities.map((community) => community.host)).toContain(
+    host,
+  );
 
   // Anyone with the address can post: nobody asked this person to join, and they are not on the list of people.
   const spammer = await newPerson(browser);
@@ -375,7 +371,7 @@ test("someone with no account at all can make one from the invite link, join, an
   const name = unique();
   const host = `${name}.localhost:${PORT}`;
   await signInAsNewAccount(owner);
-  await createCommunity(owner, name);
+  await createCommunity(owner, name, "invite_only");
   await openPeople(owner);
   const inviteUrl = await makeInviteLink(owner);
 

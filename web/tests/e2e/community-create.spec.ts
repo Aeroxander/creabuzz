@@ -101,17 +101,36 @@ test("a server that offers it shows the button, tidies the name and previews the
   await expect(page.getByTestId("community-create-submit")).toBeEnabled();
 });
 
-test("a new community is private by default, and the creator can choose open", async ({
+test("a new community is open by default, and the creator can choose invite-only with one press", async ({
   page,
 }) => {
   const sent = await open(page, {
     answer: { status: 201, host: "town-hall.example.test" },
   });
   await page.getByTestId("create-community").click();
+  // Two choices side by side, open first and already chosen.
+  await expect(page.getByTestId("community-access-open")).toBeChecked();
+  await expect(
+    page.getByTestId("community-access-invite_only"),
+  ).not.toBeChecked();
+
+  await page.getByText("Only people I invite").click();
   await expect(page.getByTestId("community-access-invite_only")).toBeChecked();
   await expect(page.getByTestId("community-access-open")).not.toBeChecked();
+  await page.getByTestId("community-name").fill("town-hall");
+  await page.getByTestId("community-create-submit").click();
+  await page.waitForURL(/\/c\/town-hall\.example\.test$/, { timeout: 20_000 });
+  expect(JSON.parse(sent[0].body ?? "{}")).toEqual({
+    name: "town-hall",
+    access: "invite_only",
+  });
+});
 
-  await page.getByTestId("community-access-open").check();
+test("leaving the choice alone makes an open community", async ({ page }) => {
+  const sent = await open(page, {
+    answer: { status: 201, host: "town-hall.example.test" },
+  });
+  await page.getByTestId("create-community").click();
   await page.getByTestId("community-name").fill("town-hall");
   await page.getByTestId("community-create-submit").click();
   await page.waitForURL(/\/c\/town-hall\.example\.test$/, { timeout: 20_000 });
@@ -119,6 +138,16 @@ test("a new community is private by default, and the creator can choose open", a
     name: "town-hall",
     access: "open",
   });
+});
+
+test("the two choices sit side by side on a desktop", async ({ page }) => {
+  await open(page, { answer: { status: 201, host: "town-hall.example.test" } });
+  await page.getByTestId("create-community").click();
+  const left = page.getByTestId("community-access-open").locator("..");
+  const right = page.getByTestId("community-access-invite_only").locator("..");
+  const a = await left.boundingBox();
+  const b = await right.boundingBox();
+  expect(a && b && Math.abs(a.y - b.y) < 2 && b.x > a.x).toBe(true);
 });
 
 test("a name that is too short is explained and cannot be sent", async ({
@@ -151,10 +180,10 @@ test("creating signs the request with the account, then opens the new community"
   ).toBe("ws://my-film.example.test");
 
   expect(sent).toHaveLength(1);
-  // Private unless the creator says otherwise.
+  // Open unless the creator says otherwise.
   expect(JSON.parse(sent[0].body ?? "{}")).toEqual({
     name: "my-film",
-    access: "invite_only",
+    access: "open",
   });
   const header = sent[0].authorization ?? "";
   expect(header.startsWith("Nostr ")).toBe(true);
@@ -239,8 +268,18 @@ test("the create dialog fits a phone", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await open(page);
   await page.getByTestId("create-community").click();
-  await expect(page.getByTestId("community-access-invite_only")).toBeVisible();
+  await expect(page.getByText("Only people I invite")).toBeVisible();
   await expectNoSidewaysScroll(page, "the create dialog on a phone");
+  // On a phone the two choices stack: the second is below the first, not beside it.
+  const first = await page
+    .getByTestId("community-access-open")
+    .locator("..")
+    .boundingBox();
+  const second = await page
+    .getByTestId("community-access-invite_only")
+    .locator("..")
+    .boundingBox();
+  expect(first && second && second.y >= first.y + first.height - 1).toBe(true);
   // The submit button is reachable: the dialog scrolls on its own, the page does not.
   await page.getByTestId("community-create-submit").scrollIntoViewIfNeeded();
   await expect(page.getByTestId("community-create-submit")).toBeInViewport();

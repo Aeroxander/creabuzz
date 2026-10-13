@@ -208,8 +208,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   locked; a wallet with no Shares sees none). Not on public profiles yet: that waits for wallet linking.
 - **Private communities and invite links** (`docs/self-serve-communities.md`, "Who may join"): each community decides for itself whether people must
   be members (`communities.membership_required`, migration 0063), asked through one question that the live connection, HTTP, git and audio
-  all share; the server-wide switch still closes everything, and a read that fails counts as closed. **A new community is private unless its
-  creator picks open**, so it is never open to strangers even for a moment. The owner (not an admin) can change it later with a signed
+  all share; the server-wide switch still closes everything, and a read that fails counts as closed. **A new community is open unless its
+  creator picks invite-only (changed from the other way round on 2026-10-13, D33)**, and an invite-only one is never open to strangers even for a moment. The owner (not an admin) can change it later with a signed
   `kind:9034`; closing also cuts off strangers who are already connected, on every server. A community's information document says
   `"access"`, and a private community is left out of the public directory. In the app: **Who can join?** when creating, and a **People and
   access** section on the Org page (who is in; the owner's choice with a plain warning before either change; owners and admins make invite

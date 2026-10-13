@@ -150,8 +150,8 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<Value> {
 #[derive(Debug, Deserialize)]
 struct CreateRequest {
     name: String,
-    /// Who may join: `"invite_only"` (the default, so a community is private until its owner says otherwise) or
-    /// `"open"`.
+    /// Who may join: `"open"` (the default: anyone with the address) or `"invite_only"` (members only, from the first
+    /// moment, so a team's community never has a window in which strangers can read it).
     #[serde(default)]
     access: Option<String>,
 }
@@ -203,8 +203,8 @@ pub async fn create(
         )
     })?;
     let invite_only = match request.access.as_deref() {
-        None | Some("invite_only") => true,
-        Some("open") => false,
+        None | Some("open") => false,
+        Some("invite_only") => true,
         Some(_) => {
             return Err(coded(
                 StatusCode::BAD_REQUEST,
@@ -764,12 +764,13 @@ mod postgres_tests {
         );
     }
 
-    /// What a community's creator gets when they say nothing about who may join: a private one. A stranger is
-    /// refused by the same check every way in shares, the creator is not, and the answer says so.
-    /// Mutation: default `invite_only` to false in the handler → RED.
+    /// What a community's creator gets when they say nothing about who may join: an open one. When they ask for
+    /// invite-only, a stranger is refused by the same check every way in shares, the creator is not, and the answer
+    /// says so.
+    /// Mutation: default `invite_only` to true in the handler → RED.
     #[tokio::test]
     #[ignore = "requires Postgres"]
-    async fn a_new_community_is_private_unless_the_creator_asks_for_open() {
+    async fn a_new_community_is_open_unless_the_creator_asks_for_invite_only() {
         use crate::api::relay_members::{check_relay_membership_authoritative, MembershipDecision};
 
         let state = fresh_state(|c| c.require_relay_membership = false).await;
@@ -796,29 +797,29 @@ mod postgres_tests {
         let silent = create(state.clone(), &owner, &unique_name()).await;
         assert_eq!(silent.status(), StatusCode::CREATED);
         let silent = read_json(silent).await;
-        assert_eq!(silent["access"], "invite_only");
+        assert_eq!(silent["access"], "open");
         assert_eq!(
             decision(community_of(&silent), &stranger).await,
+            MembershipDecision::OpenRelay
+        );
+
+        let private = create_with(
+            state.clone(),
+            &owner,
+            serde_json::json!({ "name": unique_name(), "access": "invite_only" }),
+        )
+        .await;
+        assert_eq!(private.status(), StatusCode::CREATED);
+        let private = read_json(private).await;
+        assert_eq!(private["access"], "invite_only");
+        assert_eq!(
+            decision(community_of(&private), &stranger).await,
             MembershipDecision::Denied
         );
         assert_eq!(
-            decision(community_of(&silent), &owner).await,
+            decision(community_of(&private), &owner).await,
             MembershipDecision::Member,
             "the creator is the owner and always gets in"
-        );
-
-        let open = create_with(
-            state.clone(),
-            &owner,
-            serde_json::json!({ "name": unique_name(), "access": "open" }),
-        )
-        .await;
-        assert_eq!(open.status(), StatusCode::CREATED);
-        let open = read_json(open).await;
-        assert_eq!(open["access"], "open");
-        assert_eq!(
-            decision(community_of(&open), &stranger).await,
-            MembershipDecision::OpenRelay
         );
     }
 
