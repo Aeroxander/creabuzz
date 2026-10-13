@@ -202,4 +202,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   fuzz tests, a real-sale journey (a backer's holding starts at the claim, and passing Shares on hands over no age), the whole suite
   (325 passed), and three deliberate breakages each caught by a test. New DAOs only. Not built: the kit's list of its DAOs, the second
   version of the sale hook (a proof for the bidder and one per named DAO), and the screens.
+- **What you hold** on the Portfolio: the Shares you hold in each DAO (from your connected wallet and passkey account), how long, and how
+  many are still locked behind milestones. Read from the holding-age ledger; a DAO made before the ledger is left out, a read that fails
+  says so. Checked: 8 unit tests and the real-chain milestone journey (the founder sees 200,000,000 held for 8 days with 120,000,000
+  locked; a wallet with no Shares sees none). Not on public profiles yet: that waits for wallet linking.
 

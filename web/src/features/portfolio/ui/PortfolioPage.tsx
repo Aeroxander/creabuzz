@@ -26,13 +26,16 @@ import { Card } from "@/shared/ui/card";
 import { PageHeader, SectionHeader } from "@/shared/ui/PageHeader";
 import { errorMessage, QueryError } from "@/shared/ui/query-error";
 
+import { describeAge } from "../lib/holdings";
 import { formatShare, raiseShare } from "../lib/portfolio";
 import {
   type BackedRaise,
+  type HeldInDao,
   MAX_BIDS_PER_OWNER,
   MAX_RAISES_CHECKED,
   useBacking,
   useFollowedLaunches,
+  useHoldings,
   useWorkStanding,
 } from "../use-portfolio";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
@@ -353,6 +356,136 @@ function BackingSection() {
   );
 }
 
+function HoldingRow({ held }: { held: HeldInDao }) {
+  const { launch } = held;
+  const symbol = launch.record.tokenPlan?.symbol;
+  const free = held.balance - held.locked;
+  return (
+    <li>
+      <Card className="flex flex-col gap-2 p-4" data-testid="portfolio-holding">
+        <div className="flex items-start gap-2">
+          <LaunchLink launch={launch} />
+        </div>
+        <p className="text-sm">
+          <span
+            className="font-semibold tabular-nums"
+            data-testid="portfolio-holding-shares"
+          >
+            {formatAtomic(held.balance, TOKEN_DECIMALS, {
+              symbol,
+              maxFractionDigits: 0,
+            })}
+          </span>{" "}
+          <span className="text-black/60 dark:text-white/60">
+            held for{" "}
+            <span data-testid="portfolio-holding-age">
+              {describeAge(held.age)}
+            </span>
+          </span>
+        </p>
+        {held.locked > 0n ? (
+          <p
+            className="text-xs text-black/60 dark:text-white/60"
+            data-testid="portfolio-holding-locked"
+          >
+            {formatAtomic(held.locked, TOKEN_DECIMALS, {
+              maxFractionDigits: 0,
+            })}{" "}
+            of them are locked until milestones are reached
+            {free > 0n
+              ? `; ${formatAtomic(free, TOKEN_DECIMALS, { maxFractionDigits: 0 })} are free`
+              : ""}
+            .
+          </p>
+        ) : null}
+      </Card>
+    </li>
+  );
+}
+
+function HoldingsSection() {
+  const holdings = useHoldings();
+  const { wallet } = holdings;
+  let body: ReactNode;
+  if (holdings.owners.length === 0) {
+    body = (
+      <Muted testId="portfolio-holdings-no-wallet">
+        Shares are kept in your wallet. Connect it to see what you hold here.
+      </Muted>
+    );
+  } else if (holdings.error) {
+    body = (
+      <Card className="flex flex-col items-start gap-2 p-4">
+        <p
+          className="text-sm text-red-700 dark:text-red-300"
+          data-testid="portfolio-holdings-error"
+          role="alert"
+        >
+          Couldn't check what you hold right now.
+        </p>
+        <Button onClick={holdings.retry} size="sm" variant="outline">
+          Try again
+        </Button>
+      </Card>
+    );
+  } else if (!holdings.data) {
+    body = <Muted>Checking what you hold…</Muted>;
+  } else {
+    const { held, failed, unchecked } = holdings.data;
+    body = (
+      <>
+        {held.length > 0 ? (
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {held.map((h) => (
+              <HoldingRow held={h} key={`${h.dao}-${h.owner}`} />
+            ))}
+          </ul>
+        ) : failed.length === 0 ? (
+          <Muted testId="portfolio-holdings-empty">
+            You don't hold Shares in any DAO from{" "}
+            {holdings.owners.length === 1 ? "this wallet" : "these wallets"}{" "}
+            yet.
+          </Muted>
+        ) : null}
+        {failed.length > 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-300"
+            data-testid="portfolio-holdings-failed"
+            role="status"
+          >
+            <span>
+              Couldn't check what you hold in{" "}
+              {failed.map((l) => l.record.name).join(", ")}.
+            </span>
+            <Button onClick={holdings.retry} size="sm" variant="outline">
+              Try again
+            </Button>
+          </div>
+        ) : null}
+        {unchecked > 0 ? (
+          <p className="text-xs text-black/50 dark:text-white/50">
+            Only the {MAX_RAISES_CHECKED} newest DAOs were checked.
+          </p>
+        ) : null}
+      </>
+    );
+  }
+  return (
+    <Section
+      description="Shares you hold in DAOs, and for how long. The time counts from the day the Shares reached your wallet, and moving them to another wallet does not carry it over."
+      id="portfolio-holdings"
+      title="What you hold"
+    >
+      {body}
+      {wallet.error && holdings.owners.length === 0 ? (
+        <p className="text-xs text-red-700 dark:text-red-300" role="alert">
+          {wallet.error}
+        </p>
+      ) : null}
+    </Section>
+  );
+}
+
 function FollowingSection() {
   const { followed, loading, error } = useFollowedLaunches();
   let body: ReactNode;
@@ -431,6 +564,7 @@ export function PortfolioPage() {
       />
       <WorkSection />
       <BackingSection />
+      <HoldingsSection />
       <FollowingSection />
     </div>
   );

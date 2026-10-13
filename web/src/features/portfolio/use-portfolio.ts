@@ -14,12 +14,14 @@ import { orgGraphFromEvents } from "@/features/feed/lib/trust-weight";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { isAuthorityHolder } from "@/features/fleet/lib/orgAuthority";
 import { getRpcEndpoint } from "@/features/launchpad/chain";
+import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { findOwnedBidIds, readBidView } from "@/features/launchpad/lib/my-bids";
 import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
 import { launchCoordinate, type Launch } from "@/features/launchpad/models";
 import { useSenderPicker } from "@/features/launchpad/ui/SenderPicker";
 import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { endpointChain } from "@/features/launchpad/use-work";
 import {
   KIND_CONTRIBUTION_RECORD,
   KIND_ORG_GRANT,
@@ -29,6 +31,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
+import { type HoldingView, readHoldings } from "./lib/holdings";
 import {
   type BackingSummary,
   type BidLike,
@@ -116,7 +119,7 @@ async function readBacking(
 }
 
 /** The wallets your bids could be in: a connected wallet and your passkey account. */
-function useBidOwners(walletAddress: string | null) {
+export function useBidOwners(walletAddress: string | null) {
   const { sponsoredSender, sponsoredStatus } = useSenderPicker();
   const passkey = useQuery({
     // Keyed by identity: the passkey account belongs to whoever is signed in.
@@ -233,5 +236,76 @@ export function useFollowedLaunches() {
     followed,
     loading: launches.isLoading || !follows.ready,
     error: launches.error,
+  };
+}
+
+/** A holding, with the launch (and so the name) of the DAO it is in. */
+export interface HeldInDao extends HoldingView {
+  launch: Launch;
+}
+
+export interface Holdings {
+  held: HeldInDao[];
+  /** DAOs that could not be read: unknown, not empty. */
+  failed: Launch[];
+  /** DAOs left unchecked because of {@link MAX_RAISES_CHECKED}. */
+  unchecked: number;
+}
+
+/**
+ * The Shares you hold in DAOs, and for how long, from the wallets you might hold in (a connected wallet and your passkey
+ * account). Only DAOs a launch names are looked at, newest first and bounded, so a DAO somebody wrote about on a post is
+ * never read as yours.
+ */
+export function useHoldings() {
+  const launches = useLaunches();
+  const wallet = useConnectedWallet();
+  const { owners, ready } = useBidOwners(wallet.address);
+  const endpoint = getRpcEndpoint();
+  const query = useQuery({
+    queryKey: [
+      "portfolio",
+      "holdings",
+      endpoint,
+      owners.join(","),
+      (launches.data ?? []).map((l) => l.record.eventId).join(","),
+    ],
+    queryFn: async (): Promise<Holdings> => {
+      const named = (launches.data ?? [])
+        .filter((l) => l.record.id !== SANDBOX_ID)
+        .sort((a, b) => b.record.createdAt - a.record.createdAt)
+        .flatMap((launch) => {
+          const dao = daoOfLaunch(launch);
+          return dao ? [{ launch, dao }] : [];
+        });
+      const checked = named.slice(0, MAX_RAISES_CHECKED);
+      const byDao = new Map(checked.map(({ launch, dao }) => [dao, launch]));
+      const read = await readHoldings(
+        endpointChain(endpoint),
+        [...byDao.keys()],
+        owners,
+      );
+      return {
+        held: read.holdings.flatMap((h) => {
+          const launch = byDao.get(h.dao);
+          return launch ? [{ ...h, launch }] : [];
+        }),
+        failed: read.failed.flatMap((dao) => {
+          const launch = byDao.get(dao);
+          return launch ? [launch] : [];
+        }),
+        unchecked: named.length - checked.length,
+      };
+    },
+    enabled: ready && owners.length > 0 && launches.isSuccess,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  return {
+    owners,
+    wallet,
+    data: query.data,
+    error: launches.error ?? query.error,
+    retry: () => void (launches.isError ? launches.refetch() : query.refetch()),
   };
 }

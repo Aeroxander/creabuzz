@@ -173,6 +173,20 @@ async function openWork(page: Page, account: string) {
   await expect(page.getByTestId("work-tab")).toBeVisible({ timeout: 20_000 });
 }
 
+/** Open the portfolio as one person's wallet. */
+async function openPortfolio(page: Page, account: string) {
+  await serveRecord(page);
+  await installAnvilWallet(page, account, { rpcUrl: ANVIL_URL });
+  await page.addInitScript(
+    ([nsec, rpcUrl]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [NSEC, ANVIL_URL],
+  );
+  await page.goto("/portfolio");
+}
+
 /** Open the track record with no wallet at all: it is the same page for everyone. */
 async function openRecord(page: Page) {
   await serveRecord(page);
@@ -273,4 +287,35 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
     });
   }
   await reader.close();
+
+  // What the founder holds, and for how long, is on their portfolio: the Shares, how long the holding has lasted, and
+  // what is still locked. Someone with no Shares sees none.
+  const holder = await browser.newPage();
+  await openPortfolio(holder, FOUNDER_WALLET);
+  const row = holder.getByTestId("portfolio-holding");
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row).toContainText("Nebula DAO");
+  await expect(holder.getByTestId("portfolio-holding-shares")).toContainText(
+    "200,000,000",
+  );
+  await expect(holder.getByTestId("portfolio-holding-age")).toHaveText(
+    /(\d+ days|\d+ months|1 day)/,
+  );
+  await expect(holder.getByTestId("portfolio-holding-locked")).toContainText(
+    "120,000,000 of them are locked",
+  );
+  if (process.env.E2E_SHOTS) {
+    await holder.getByTestId("portfolio-holdings").screenshot({
+      path: `${process.env.E2E_SHOTS}/holdings.png`,
+    });
+  }
+  await holder.close();
+
+  const nobody = await browser.newPage();
+  await openPortfolio(nobody, STRANGER);
+  await expect(nobody.getByTestId("portfolio-holdings-empty")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(nobody.getByTestId("portfolio-holding")).toHaveCount(0);
+  await nobody.close();
 });

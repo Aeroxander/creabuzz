@@ -202,6 +202,19 @@ By hand: start the server with `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN=localhost:3000`
 community**, keep the team, press the setup button: **33 of 33 done** under **What was set up**. Try `login` (refused as
 kept for the service), a 2-letter name (refused), and the same name from another browser (taken).
 
+## 4j. Holding age on the portfolio (2026-10-13)
+
+```bash
+forge test --root contracts --match-contract HoldingAgeTest         # the ledger (the whole suite also runs the sale journey)
+cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke portfolio.spec.ts
+scripts/web-milestone-e2e.sh    # a REAL local chain: the founder's portfolio shows the Shares, how long, and what is locked
+```
+
+By hand (a local chain with a project launched through the kit): connect the founder's wallet and open **Portfolio**. **What
+you hold** must list the DAO with the team's Shares, how long they have been held, and how many are still locked behind
+milestones. Send some Shares to a second wallet: that wallet shows them as held for "less than a day", and the first
+wallet's time does not change.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that
