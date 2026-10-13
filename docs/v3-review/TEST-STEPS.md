@@ -286,6 +286,16 @@ largest holders: the team's wallet shows its share of all Shares, "held for …"
 some Shares to a second wallet: it appears with "held for less than a day", and the first wallet's time does not change. A DAO made before
 holding times were kept shows holdings without times.
 
+## 4p. Waiting on you, on Home (2026-10-13)
+
+```bash
+scripts/web-decisions-e2e.sh      # REAL local chain: Home lists the open decision, its button opens it
+```
+
+By hand (a local chain with a project launched through the kit and a decision opened, as in 4f, and the founder's wallet connected): open **Home**.
+**Waiting on you** lists the DAO's name and "Open for your vote: …" with a **Vote** link that opens the decision. Back it until it is no longer
+open for votes: the line goes away. With no wallet connected, or no DAO, the section is not there at all.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

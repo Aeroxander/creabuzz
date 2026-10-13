@@ -250,3 +250,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   real-chain track-record journey (`scripts/web-record-e2e.sh`: the history adds up to the whole supply, the team's holding shows its age and the part held
   back, shares total 100%). Limits: a DAO with more than 20,000 transfers is not listed; this is D6's "supporters ranked by hold time" in its read-only form
   (nothing ranks or gates anyone by it yet: that is D23's sale gate, not built).
+- **Waiting on you** at the top of Home: across the DAOs you hold Shares in (from the wallets you might hold in, as on the Portfolio) and the ones you started,
+  what is waiting: a decision you can back, a claim to review, a payout to take, a step that moves a decision along, each naming the DAO and opening the place
+  to do it. It reuses each DAO's own "needs you" logic, so Home and the DAO's page cannot disagree; at most six DAOs, newest first; a DAO that could not be read
+  is left out rather than shown as "nothing". Checked on a real chain: with a decision open, the founder's Home lists it ("Open for your vote") and the button
+  opens the decision (`scripts/web-decisions-e2e.sh`), and the mocked Home, feed, portfolio and first-run specs still pass.

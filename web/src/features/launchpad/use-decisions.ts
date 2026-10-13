@@ -35,9 +35,9 @@ export function useDecisions(dao: string | null, wallet: string | null) {
   return useQuery(decisionsQuery(dao, wallet));
 }
 
-/** The contracts a decision's forms need to name: the DAO's voting policy, its work budget factory and its Shares. */
-export function useDecisionContext(dao: string | null) {
-  return useQuery({
+/** How the contracts a decision's forms need to name are read (one definition, for one DAO or many). */
+export function decisionContextQuery(dao: string | null) {
+  return {
     queryKey: ["launchpad", "work", dao, "context"],
     enabled: dao !== null,
     queryFn: async () => {
@@ -57,5 +57,10 @@ export function useDecisionContext(dao: string | null) {
     },
     staleTime: 300_000,
     refetchOnWindowFocus: false,
-  });
+  };
+}
+
+/** The contracts a decision's forms need to name: the DAO's voting policy, its work budget factory and its Shares. */
+export function useDecisionContext(dao: string | null) {
+  return useQuery(decisionContextQuery(dao));
 }

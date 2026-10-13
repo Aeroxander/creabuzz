@@ -69,7 +69,8 @@ const record = {
   sig: "sig",
 };
 
-async function openDecisions(page: Page) {
+/** The relay that serves the launch record, the founder's wallet, and the browser's settings: everything but the page. */
+async function serve(page: Page) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
@@ -104,6 +105,10 @@ async function openDecisions(page: Page) {
     },
     [NSEC, ANVIL_URL],
   );
+}
+
+async function openDecisions(page: Page) {
+  await serve(page);
   await page.goto(`/launchpad/nebula-decisions?author=${FOUNDER}`);
   await page.getByRole("tab", { name: "Decisions" }).click();
   await expect(page.getByTestId("decisions-tab")).toBeVisible({
@@ -117,6 +122,25 @@ const mandateCreated = async () =>
       { address: FACTORY, fromBlock: "0x0", toBlock: "latest" },
     ])) as unknown[]
   ).length;
+
+// Runs first: the decision it finds must still be open, before the next test takes it through to the end.
+test("Home lists the decision waiting on the founder, and its button opens it", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await serve(page);
+  await page.goto("/");
+  const waiting = page.getByTestId("home-waiting");
+  await expect(waiting).toBeVisible({ timeout: 60_000 });
+  const item = waiting.getByTestId("home-waiting-item").first();
+  await expect(item).toContainText("Nebula DAO");
+  await expect(item).toContainText("Open for your vote");
+  await item.getByTestId("home-waiting-open").click();
+  await expect(page).toHaveURL(/tab=decisions/);
+  await expect(page.getByTestId("decisions-tab")).toBeVisible({
+    timeout: 20_000,
+  });
+});
 
 test("a decision opened elsewhere is read from the chain, backed, waited out and run, all in the page", async ({
   page,

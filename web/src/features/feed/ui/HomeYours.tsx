@@ -15,6 +15,8 @@ import { effectiveStage } from "@/features/launchpad/models";
 import { StageBadge } from "@/features/launchpad/ui/widgets";
 import { ApprovalsPanel } from "@/features/notifications/ui/ApprovalsPanel";
 
+import { WaitingOnYou } from "./WaitingOnYou";
+
 export function HomeYours({ me }: { me: string }) {
   const launches = useLaunches();
   const mine = (launches.data ?? []).filter((l) => l.record.author === me);
@@ -24,6 +26,8 @@ export function HomeYours({ me }: { me: string }) {
       <section aria-label="Needs you" data-testid="home-needs-you">
         {/* Renders nothing when no request is waiting. */}
         <ApprovalsPanel />
+        {/* What is waiting on you in your DAOs; renders nothing when nothing is. */}
+        <WaitingOnYou />
       </section>
       {mine.length > 0 ? (
         <section

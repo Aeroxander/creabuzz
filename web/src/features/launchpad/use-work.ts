@@ -48,16 +48,21 @@ export function useDaoHolders(dao: string | null) {
   });
 }
 
-/** A DAO's contributor work (mandates, projects, claims), read from the launch's configured RPC. */
-export function useWork(dao: string | null, wallet: string | null) {
-  return useQuery({
+/** How a DAO's contributor work is read (one definition, for one DAO or many). */
+export function workQuery(dao: string | null, wallet: string | null) {
+  return {
     queryKey: ["launchpad", "work", dao, wallet],
     enabled: dao !== null,
     queryFn: () =>
       readWork(endpointChain(getRpcEndpoint()), dao as string, wallet),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
-  });
+  };
+}
+
+/** A DAO's contributor work (mandates, projects, claims), read from the launch's configured RPC. */
+export function useWork(dao: string | null, wallet: string | null) {
+  return useQuery(workQuery(dao, wallet));
 }
 
 export interface MilestoneLockState {
