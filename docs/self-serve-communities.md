@@ -45,6 +45,13 @@ is open to strangers.
 - **Invite-only** means the same thing it does on a server that sets `BUZZ_REQUIRE_RELAY_MEMBERSHIP`: only people on
   the member list get in, over the live connection, HTTP, git and audio alike. People join with an invite link the
   owner or an admin makes (`POST /api/invites`, claimed at `/invite/<code>`).
+- **Invites can be listed and ended.** `POST /api/invites/list` (owner or admin, signed like the others) returns the invites
+  that can still be used: who made each, when it stops, its limit and how many people have used it. The code itself is
+  never returned: only its hash is stored, so a link made earlier cannot be shown again, only ended. `POST
+  /api/invites/revoke` with `{"id": "<invite id>"}` ends one at once; people who already joined with it stay, and the next
+  person to present it is told it has expired. An invite can only be ended from the community that made it.
+- **A person can be removed** with the existing `kind:9031`: the owner can remove an admin or a member, an admin only a
+  member, and nobody the owner or themselves. They are signed out right away and need a new invite to come back.
 - **The owner can change it later** with a signed `kind:9034` command carrying `["access", "open"]` or
   `["access", "invite_only"]`. Only the owner may; an admin cannot. Closing a community takes effect on the next
   request, and **also cuts off strangers who are already connected** (members, and agents signed in through a member,

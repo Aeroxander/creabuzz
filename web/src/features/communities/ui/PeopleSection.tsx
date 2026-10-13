@@ -15,23 +15,32 @@ import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
+import { existingUserPubkey } from "@/shared/lib/identity";
+
 import {
   ACCESS_CHOICES,
   type Access,
+  type ActiveInvite,
   CLOSING_WARNING,
   INVITE_LIFETIMES,
   INVITE_USES,
   type MintedInvite,
+  type Person,
   accessSummary,
+  describeActiveInvite,
   describeInvite,
   mayChangeAccess,
   mayInvite,
+  mayRemove,
 } from "../lib/access";
 import {
   mintInvite,
+  removePerson,
+  revokeInvite,
   setCommunityAccess,
   useCommunityAccess,
   useCommunityPeople,
+  useInvites,
 } from "../use-access";
 
 const OPENING_WARNING =
@@ -144,7 +153,7 @@ function AccessControl({ current }: { current: Access }) {
 }
 
 /** Make a link to share. The link is shown once, with what it allows. */
-function InviteMaker() {
+function InviteMaker({ onMade }: { onMade: () => void }) {
   const [lifetime, setLifetime] = useState("week");
   const [uses, setUses] = useState("one");
   const [busy, setBusy] = useState(false);
@@ -159,6 +168,7 @@ function InviteMaker() {
     setError(null);
     try {
       setMade(await mintInvite(secs, limit.uses));
+      onMade();
     } catch (cause) {
       setMade(null);
       setError(errorText(cause, "Could not make an invite."));
@@ -266,12 +276,202 @@ const ROLE_WORDS = {
   member: "Member",
 } as const;
 
+/** The invites that can still be used, with a way to end each. A link made earlier cannot be shown again. */
+function ActiveInvites({
+  invites,
+  nameOf,
+  onChanged,
+}: {
+  invites: ActiveInvite[];
+  nameOf: (pubkey: string) => string;
+  onChanged: () => void;
+}) {
+  const [ending, setEnding] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const now = Math.floor(Date.now() / 1000);
+
+  const end = async (id: string) => {
+    setEnding(id);
+    setError(null);
+    try {
+      await revokeInvite(id);
+      toast.success("That invite no longer works.");
+      onChanged();
+    } catch (cause) {
+      setError(errorText(cause, "Could not end that invite."));
+    } finally {
+      setEnding(null);
+    }
+  };
+
+  if (invites.length === 0) return null;
+  return (
+    <div className="space-y-1.5" data-testid="active-invites">
+      <h3 className="text-sm font-medium">
+        Invites that still work ({invites.length})
+      </h3>
+      <ul className="space-y-1.5">
+        {invites.map((invite) => (
+          <li
+            className="flex items-center gap-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
+            data-testid="active-invite"
+            key={invite.id}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">
+                Made by {nameOf(invite.madeBy)}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {describeActiveInvite(invite, now)}
+              </span>
+            </span>
+            <Button
+              data-testid="invite-end"
+              disabled={ending !== null}
+              onClick={() => void end(invite.id)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {ending === invite.id ? "Ending…" : "End invite"}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {error ? (
+        <p
+          className="text-sm text-red-600 dark:text-red-400"
+          data-testid="invite-end-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One person in the list, with Remove when this person may and the community is invite-only. */
+function PersonRow({
+  person,
+  name,
+  canRemove,
+  onRemoved,
+}: {
+  person: Person;
+  name: string;
+  canRemove: boolean;
+  onRemoved: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await removePerson(person.pubkey);
+      toast.success(`${name} was removed.`);
+      onRemoved();
+    } catch (cause) {
+      setError(errorText(cause, "Could not remove them."));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li
+      className="rounded-lg border border-black/10 p-2 dark:border-white/10"
+      data-testid="person"
+    >
+      <div className="flex items-center gap-2">
+        <UserAvatar avatarUrl={null} displayName={name} size="sm" />
+        <span className="min-w-0 flex-1 truncate text-sm" title={person.pubkey}>
+          {name}
+        </span>
+        <Badge className="px-1.5 py-0 text-2xs" variant="outline">
+          {ROLE_WORDS[person.role]}
+        </Badge>
+        {canRemove && !confirming ? (
+          <Button
+            data-testid="person-remove"
+            onClick={() => setConfirming(true)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Remove
+          </Button>
+        ) : null}
+      </div>
+      {confirming ? (
+        <div className="mt-2 space-y-2" data-testid="person-confirm">
+          <p className="text-xs">
+            {name} will be signed out right away and will need a new invite to
+            come back.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              data-testid="person-remove-yes"
+              disabled={busy}
+              onClick={() => void remove()}
+              size="sm"
+              type="button"
+            >
+              {busy ? "Removing…" : `Remove ${name}`}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                setError(null);
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {error ? (
+        <p
+          className="mt-1 text-sm text-red-600 dark:text-red-400"
+          data-testid="person-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 export function PeopleSection() {
+  const client = useQueryClient();
   const access = useCommunityAccess();
   const { people, myRole, isLoading } = useCommunityPeople();
-  const keys = useMemo(() => people.map((person) => person.pubkey), [people]);
-  const nameOf = useUserNames(keys);
+  const keys = useMemo(() => {
+    return people.map((person) => person.pubkey);
+  }, [people]);
+  const invites = useInvites(mayInvite(myRole));
+  const nameOf = useUserNames(
+    useMemo(
+      () => [...keys, ...(invites.data ?? []).map((invite) => invite.madeBy)],
+      [keys, invites.data],
+    ),
+  );
   const known = access.data ?? null;
+  const me = existingUserPubkey();
+  // Removing someone matters where membership is required; in an open community the list does not gate anything.
+  const removalOffered = known === "invite_only";
+
+  const refreshPeople = () =>
+    void client.invalidateQueries({ queryKey: ["community-people"] });
+  const refreshInvites = () =>
+    void client.invalidateQueries({ queryKey: ["community-invites"] });
 
   return (
     <section
@@ -295,7 +495,14 @@ export function PeopleSection() {
       {known && mayChangeAccess(myRole) ? (
         <AccessControl current={known} />
       ) : null}
-      {mayInvite(myRole) ? <InviteMaker /> : null}
+      {mayInvite(myRole) ? <InviteMaker onMade={refreshInvites} /> : null}
+      {mayInvite(myRole) ? (
+        <ActiveInvites
+          invites={invites.data ?? []}
+          nameOf={nameOf}
+          onChanged={refreshInvites}
+        />
+      ) : null}
 
       <div className="space-y-1.5">
         <h3 className="text-sm font-medium">
@@ -310,26 +517,13 @@ export function PeopleSection() {
         ) : (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {people.map((person) => (
-              <li
-                className="flex items-center gap-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
-                data-testid="person"
+              <PersonRow
+                canRemove={removalOffered && mayRemove(myRole, me, person)}
                 key={person.pubkey}
-              >
-                <UserAvatar
-                  avatarUrl={null}
-                  displayName={nameOf(person.pubkey)}
-                  size="sm"
-                />
-                <span
-                  className="min-w-0 flex-1 truncate text-sm"
-                  title={person.pubkey}
-                >
-                  {nameOf(person.pubkey)}
-                </span>
-                <Badge className="px-1.5 py-0 text-2xs" variant="outline">
-                  {ROLE_WORDS[person.role]}
-                </Badge>
-              </li>
+                name={nameOf(person.pubkey)}
+                onRemoved={refreshPeople}
+                person={person}
+              />
             ))}
           </ul>
         )}

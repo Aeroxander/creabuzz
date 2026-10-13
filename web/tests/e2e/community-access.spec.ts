@@ -16,6 +16,7 @@ const ME = getPublicKey(
 );
 const OTHER_OWNER = "a".repeat(64);
 const NEIGHBOUR = "b".repeat(64);
+const ANOTHER_ADMIN = "e".repeat(64);
 
 const channel = {
   id: "chan-1",
@@ -46,6 +47,14 @@ async function open(
     access?: "open" | "invite_only" | null;
     refuseSetAccess?: string;
     inviteAnswer?: { status: number; json: unknown };
+    /** Invites the server lists as still working. */
+    activeInvites?: Record<string, unknown>[];
+    /** Why the server refuses to end an invite, when it does. */
+    refuseRevoke?: { status: number; error: string };
+    /** Why the server refuses to remove a person, when it does. */
+    refuseRemove?: string;
+    /** A second admin in the community's list. */
+    anotherAdmin?: boolean;
   },
 ) {
   const {
@@ -53,11 +62,18 @@ async function open(
     access = "invite_only",
     refuseSetAccess,
     inviteAnswer,
+    refuseRemove,
+    refuseRevoke,
+    anotherAdmin = false,
   } = options;
   const relay = createMockRelay({
-    refuse: (event) =>
-      refuseSetAccess && event.kind === 9034 ? refuseSetAccess : undefined,
+    refuse: (event) => {
+      if (refuseSetAccess && event.kind === 9034) return refuseSetAccess;
+      if (refuseRemove && event.kind === 9031) return refuseRemove;
+      return undefined;
+    },
   });
+  const active = [...(options.activeInvites ?? [])];
   relay.seed(channel);
   const owner = role === "owner" ? ME : OTHER_OWNER;
   relay.seed({
@@ -70,6 +86,7 @@ async function open(
       ...(role === "admin" ? [["member", ME, "admin"]] : []),
       ...(role === "member" ? [["member", ME, "member"]] : []),
       ["member", NEIGHBOUR, "member"],
+      ...(anotherAdmin ? [["member", ANOTHER_ADMIN, "admin"]] : []),
     ],
     content: "",
     sig: "sig",
@@ -111,13 +128,45 @@ async function open(
     await route.fulfill({ status: answer.status, json: answer.json });
   });
 
+  // Invites that still work: listed on request, and an ended one leaves the list.
+  const listRequests: InviteRequest[] = [];
+  const revokeRequests: InviteRequest[] = [];
+  await page.route("**/api/invites/list", async (route) => {
+    const request = route.request();
+    listRequests.push({
+      authorization: request.headers().authorization,
+      body: JSON.parse(request.postData() ?? "{}"),
+      url: request.url(),
+    });
+    await route.fulfill({ json: { invites: active } });
+  });
+  await page.route("**/api/invites/revoke", async (route) => {
+    const request = route.request();
+    const body = JSON.parse(request.postData() ?? "{}");
+    revokeRequests.push({
+      authorization: request.headers().authorization,
+      body,
+      url: request.url(),
+    });
+    if (refuseRevoke) {
+      await route.fulfill({
+        status: refuseRevoke.status,
+        json: { error: refuseRevoke.error },
+      });
+      return;
+    }
+    const at = active.findIndex((invite) => invite.id === body.id);
+    if (at >= 0) active.splice(at, 1);
+    await route.fulfill({ json: { revoked: true } });
+  });
+
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
   await expect(page.getByTestId("org-people-section")).toBeVisible({
     timeout: 20_000,
   });
-  return { relay, invites };
+  return { relay, invites, listRequests, revokeRequests };
 }
 
 test("the owner sees the current setting, and everyone in the community", async ({
@@ -277,4 +326,178 @@ test("a server that does not say who may join gets no setting to change and no g
   await expect(page.getByTestId("access-summary")).toHaveCount(0);
   // Inviting people still works.
   await expect(page.getByTestId("invite-maker")).toBeVisible();
+});
+
+const SOON = Math.floor(Date.now() / 1000) + 3 * 86_400;
+
+test("invites that still work are listed with who made them and how much they were used, and ending one removes it", async ({
+  page,
+}) => {
+  const { revokeRequests } = await open(page, {
+    role: "owner",
+    activeInvites: [
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        created_by: ME,
+        created_at: 1,
+        expires_at: SOON,
+        max_uses: 5,
+        use_count: 2,
+      },
+      {
+        id: "22222222-2222-2222-2222-222222222222",
+        created_by: NEIGHBOUR,
+        created_at: 2,
+        expires_at: SOON,
+        max_uses: null,
+        use_count: 0,
+      },
+    ],
+  });
+  await expect(page.getByTestId("active-invite")).toHaveCount(2);
+  await expect(page.getByTestId("active-invite").first()).toContainText(
+    "2 of 5 used · ends in 3 days",
+  );
+  await expect(page.getByTestId("active-invite").nth(1)).toContainText(
+    "0 used",
+  );
+
+  await page.getByTestId("invite-end").first().click();
+  await expect(page.getByTestId("active-invite")).toHaveCount(1);
+  expect(revokeRequests).toHaveLength(1);
+  expect(revokeRequests[0].body).toEqual({
+    id: "11111111-1111-1111-1111-111111111111",
+  });
+  // Signed by this person, for exactly this request.
+  const header = revokeRequests[0].authorization ?? "";
+  const event = JSON.parse(atob(header.slice("Nostr ".length)));
+  expect(verifyEvent(event)).toBe(true);
+  expect(event.pubkey).toBe(ME);
+  expect(event.tags.find((t: string[]) => t[0] === "u")?.[1]).toBe(
+    revokeRequests[0].url,
+  );
+});
+
+test("when the server will not end an invite, its words are shown and the invite stays listed", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseRevoke: {
+      status: 404,
+      error: "invite not found, or it has already ended",
+    },
+    activeInvites: [
+      {
+        id: "33333333-3333-3333-3333-333333333333",
+        created_by: ME,
+        created_at: 1,
+        expires_at: SOON,
+        max_uses: 1,
+        use_count: 0,
+      },
+    ],
+  });
+  await page.getByTestId("invite-end").click();
+  await expect(page.getByTestId("invite-end-error")).toHaveText(
+    "invite not found, or it has already ended",
+  );
+  await expect(page.getByTestId("active-invite")).toHaveCount(1);
+});
+
+test("making a link refreshes the list of invites that still work", async ({
+  page,
+}) => {
+  const { listRequests } = await open(page, { role: "owner" });
+  await expect.poll(() => listRequests.length).toBe(1);
+  await page.getByTestId("invite-make").click();
+  await expect(page.getByTestId("invite-made")).toBeVisible();
+  await expect.poll(() => listRequests.length).toBe(2);
+});
+
+test("a member never asks for the list of invites", async ({ page }) => {
+  const { listRequests } = await open(page, { role: "member" });
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await page.waitForTimeout(500);
+  expect(listRequests).toHaveLength(0);
+  await expect(page.getByTestId("active-invites")).toHaveCount(0);
+});
+
+test("the owner can remove an admin or a member after a warning, and never themselves", async ({
+  page,
+}) => {
+  const { relay } = await open(page, { role: "owner", anotherAdmin: true });
+  // Three people besides the owner's own row: the admin and the member are removable, the owner is not.
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await expect(page.getByTestId("person-remove")).toHaveCount(2);
+
+  const member = page
+    .getByTestId("person")
+    .filter({ hasText: "Member" })
+    .first();
+  await member.getByTestId("person-remove").click();
+  await expect(member.getByTestId("person-confirm")).toContainText(
+    "signed out right away",
+  );
+  await expect(member.getByTestId("person-confirm")).toContainText(
+    "new invite",
+  );
+  // Nothing is sent until it is confirmed.
+  expect(relay.events.filter((event) => event.kind === 9031)).toHaveLength(0);
+  await member.getByRole("button", { name: "Cancel" }).click();
+  await expect(member.getByTestId("person-confirm")).toHaveCount(0);
+
+  await member.getByTestId("person-remove").click();
+  await member.getByTestId("person-remove-yes").click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9031).length)
+    .toBe(1);
+  const sent = relay.events.find((event) => event.kind === 9031);
+  expect(sent?.tags).toContainEqual(["p", NEIGHBOUR]);
+  expect(sent?.pubkey).toBe(ME);
+});
+
+test("an admin can remove a member but is offered nothing for the owner or another admin", async ({
+  page,
+}) => {
+  await open(page, { role: "admin", anotherAdmin: true });
+  // Owner, themselves, a member, another admin.
+  await expect(page.getByTestId("person")).toHaveCount(4);
+  await expect(page.getByTestId("person-remove")).toHaveCount(1);
+  await expect(
+    page
+      .getByTestId("person")
+      .filter({ hasText: "Member" })
+      .getByTestId("person-remove"),
+  ).toHaveCount(1);
+});
+
+test("a member is offered no way to remove anyone", async ({ page }) => {
+  await open(page, { role: "member" });
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await expect(page.getByTestId("person-remove")).toHaveCount(0);
+});
+
+test("in an open community there is nothing to remove a person from", async ({
+  page,
+}) => {
+  await open(page, { role: "owner", access: "open" });
+  await expect(page.getByTestId("person")).toHaveCount(2);
+  await expect(page.getByTestId("person-remove")).toHaveCount(0);
+});
+
+test("when the server will not remove someone, its words are shown", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseRemove: "actor not authorized: admins can only remove members",
+  });
+  await page.getByTestId("person-remove").click();
+  await page.getByTestId("person-remove-yes").click();
+  await expect(page.getByTestId("person-error")).toHaveText(
+    "actor not authorized: admins can only remove members",
+  );
+  // They are still listed.
+  await expect(page.getByTestId("person")).toHaveCount(2);
 });

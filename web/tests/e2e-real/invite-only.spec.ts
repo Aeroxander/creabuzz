@@ -208,3 +208,78 @@ test("an invited person is not offered the owner's controls", async ({
   await expect(member.getByTestId("access-control")).toHaveCount(0);
   await expect(member.getByTestId("invite-maker")).toHaveCount(0);
 });
+
+test("an owner can end an invite that is still out there, and remove a person who joined", async ({
+  page: owner,
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const name = unique();
+  const host = `${name}.localhost:${PORT}`;
+  await signInAsNewAccount(owner);
+  await owner.goto("/c");
+  await owner.getByTestId("create-community").click();
+  await owner.getByTestId("community-name").fill(name);
+  await owner.getByTestId("community-create-submit").click();
+  await owner.waitForURL(new RegExp(`/c/${name}\\.localhost`), {
+    timeout: 30_000,
+  });
+  await openPeople(owner);
+
+  // A link for anyone who has it, listed as still working, then ended.
+  await owner.getByTestId("invite-uses").selectOption("any");
+  await owner.getByTestId("invite-make").click();
+  const endedUrl = await owner.getByTestId("invite-link").inputValue({
+    timeout: 30_000,
+  });
+  await expect(owner.getByTestId("active-invite")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(owner.getByTestId("active-invite")).toContainText("0 used");
+  await owner.getByTestId("invite-end").click();
+  await expect(owner.getByTestId("active-invite")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // The ended link no longer lets anyone in.
+  const late = await newPerson(browser);
+  await late.goto(endedUrl);
+  await late.getByRole("button", { name: "Join in browser" }).click();
+  await expect(late.getByRole("alert")).toContainText("expired", {
+    timeout: 30_000,
+  });
+
+  // A fresh link lets one person in; the owner then removes them and they are out.
+  await owner.getByTestId("invite-uses").selectOption("one");
+  await owner.getByTestId("invite-make").click();
+  await expect
+    .poll(() => owner.getByTestId("invite-link").inputValue(), {
+      timeout: 30_000,
+    })
+    .not.toBe(endedUrl);
+  const freshUrl = await owner.getByTestId("invite-link").inputValue();
+  const joiner = await newPerson(browser);
+  await joiner.goto(freshUrl);
+  await joiner.getByRole("button", { name: "Join in browser" }).click();
+  await joiner.waitForURL(`http://${host}/**`, { timeout: 30_000 });
+  await joiner.goto(`http://${host}/c/${host}`);
+  await expect(joiner.getByTestId("content-pane")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await owner.goto(`/c/${host}`);
+  await openPeople(owner);
+  await expect(owner.getByTestId("person")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  await owner.getByTestId("person-remove").click();
+  await owner.getByTestId("person-remove-yes").click();
+  await expect(owner.getByTestId("person")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+
+  await joiner.reload();
+  await expect(joiner.getByTestId("community-invite-only")).toBeVisible({
+    timeout: 30_000,
+  });
+});

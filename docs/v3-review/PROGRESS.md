@@ -217,5 +217,7 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   and an invite link now joins the community that served it even if the browser had another saved. Checked: 16 server tests (Postgres), 11 unit
   tests, 10 mocked browser tests, and `scripts/web-invite-only-e2e.sh` (real server, real browser: private by default, a stranger turned
   away, a one-person invite lets exactly one in and is refused for the next, open, close, directory) with seven deliberate breakages each
-  caught by a test. Not done: removing a person from the app, a list of invites already made (and revoking one), naming a community's
-  owner a second admin, and the connected EVM wallet on a profile (waits for wallet linking).
+  caught by a test. Then: **list and end invites that are still out there** (`POST /api/invites/list` and `/revoke`; only a hash of each code is
+  stored, so an old link is counted and ended, never shown again) and **remove a person** from the Org page (owner: admin or member; admin:
+  member; a warning first), 8 more server tests and 9 more mocked browser tests, a third real-server journey, two more breakages caught.
+  Not done: handing a community to a new owner from the app, and the connected EVM wallet on a profile (waits for wallet linking).

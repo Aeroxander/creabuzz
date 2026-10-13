@@ -13,6 +13,8 @@ export type Access = "open" | "invite_only";
 
 /** The signed record that sets who may join. Only the owner's is accepted. */
 export const KIND_SET_ACCESS = 9034;
+/** The signed record that removes a person from the community's list. */
+export const KIND_REMOVE_MEMBER = 9031;
 /** The server's list of a community's people and their roles. */
 export const KIND_MEMBER_LIST = 13534;
 
@@ -127,6 +129,30 @@ export function mayChangeAccess(role: Role | null): boolean {
   return role === "owner";
 }
 
+/** The record that removes `pubkey` from the community. They are signed out at once and need a new invite to return. */
+export function removeMemberRecord(pubkey: string): {
+  kind: number;
+  content: string;
+  tags: string[][];
+} {
+  return { kind: KIND_REMOVE_MEMBER, content: "", tags: [["p", pubkey]] };
+}
+
+/**
+ * Whether `me` is offered "Remove" for `person`. The owner can remove an admin or a member; an admin can remove a
+ * member; nobody removes themselves or the owner. The server decides all of this again, and says so when it refuses.
+ */
+export function mayRemove(
+  myRole: Role | null,
+  me: string | null,
+  person: Person,
+): boolean {
+  if (!me || person.pubkey === me.trim().toLowerCase()) return false;
+  if (person.role === "owner") return false;
+  if (myRole === "owner") return true;
+  return myRole === "admin" && person.role === "member";
+}
+
 export const DAY = 24 * 60 * 60;
 
 export const INVITE_LIFETIMES: readonly {
@@ -188,15 +214,7 @@ export function parseMintedInvite(json: unknown): MintedInvite | null {
 /** What a new link allows, in a sentence. */
 export function describeInvite(invite: MintedInvite, nowSecs: number): string {
   const left = invite.expiresAt - nowSecs;
-  const days = Math.round(left / DAY);
-  const lasts =
-    left < 2 * 60 * 60
-      ? "less than 2 hours"
-      : left < DAY
-        ? `${Math.round(left / 3600)} hours`
-        : days === 1
-          ? "1 day"
-          : `${days} days`;
+  const lasts = timeLeft(left);
   const who =
     invite.maxUses === null
       ? "anyone who has it"
@@ -204,6 +222,62 @@ export function describeInvite(invite: MintedInvite, nowSecs: number): string {
         ? "one person"
         : `up to ${invite.maxUses} people`;
   return `Works for ${lasts}, for ${who}.`;
+}
+
+/** An invite that can still be used, as the server lists it. The link itself is never shown again. */
+export interface ActiveInvite {
+  id: string;
+  /** Who made it. */
+  madeBy: string;
+  /** Unix seconds it stops working. */
+  expiresAt: number;
+  /** How many people can use it, or null for no limit. */
+  maxUses: number | null;
+  /** How many have. */
+  used: number;
+}
+
+/** The server's list of invites, or an empty list for anything that is not one. Entries that are not whole are left out. */
+export function parseInvites(json: unknown): ActiveInvite[] {
+  if (json === null || typeof json !== "object") return [];
+  const list = (json as { invites?: unknown }).invites;
+  if (!Array.isArray(list)) return [];
+  const invites: ActiveInvite[] = [];
+  for (const entry of list) {
+    if (entry === null || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.id !== "string" || e.id === "") continue;
+    if (typeof e.created_by !== "string") continue;
+    if (typeof e.expires_at !== "number") continue;
+    invites.push({
+      id: e.id,
+      madeBy: e.created_by,
+      expiresAt: e.expires_at,
+      maxUses: typeof e.max_uses === "number" ? e.max_uses : null,
+      used: typeof e.use_count === "number" ? e.use_count : 0,
+    });
+  }
+  return invites;
+}
+
+/** How long is left, in the words the page uses everywhere. */
+function timeLeft(secs: number): string {
+  if (secs < 2 * 60 * 60) return "less than 2 hours";
+  if (secs < DAY) return `${Math.round(secs / 3600)} hours`;
+  const days = Math.round(secs / DAY);
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+/** One line about an invite: how much it has been used and how long it has left. */
+export function describeActiveInvite(
+  invite: ActiveInvite,
+  nowSecs: number,
+): string {
+  const used =
+    invite.maxUses === null
+      ? `${invite.used} used`
+      : `${invite.used} of ${invite.maxUses} used`;
+  return `${used} · ends in ${timeLeft(invite.expiresAt - nowSecs)}`;
 }
 
 /** Whether a failed sign-in to a community looks like "you are not on its list" rather than a broken connection. */

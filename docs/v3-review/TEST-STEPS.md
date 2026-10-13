@@ -233,6 +233,11 @@ lists two people. Use the same link in a third browser: it says the invite has r
 are not on the list are signed out right away; confirm, reload the third browser: invite-only again, while the second browser (invited) is
 still in. The Communities page (with `BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`) never lists the community while it is private.
 
+Then: make another link (**Anyone who has it**): it appears under **Invites that still work** as "0 used". Press **End invite** and
+open that link in a fourth browser: it says the invite has expired. Make a fresh one-person link, join with it in a fifth browser,
+then as owner press **Remove** next to that person and confirm: the list drops them, and reloading their browser shows the
+invite-only notice again.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

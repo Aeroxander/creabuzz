@@ -22,8 +22,10 @@ import {
   type MintedInvite,
   inviteRequestBody,
   parseAccess,
+  parseInvites,
   parseMintedInvite,
   peopleFromEvents,
+  removeMemberRecord,
   roleOf,
   setAccessRecord,
 } from "./lib/access";
@@ -85,13 +87,16 @@ export function useCommunityPeople() {
   };
 }
 
-/** Make an invite link. Throws with the server's own words when it refuses. */
-export async function mintInvite(
-  secs: number,
-  uses: number | null,
-): Promise<MintedInvite> {
-  const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}/api/invites`;
-  const body = JSON.stringify(inviteRequestBody(secs, uses));
+/**
+ * A signed request to one of the community's invite routes. Throws with the server's own words when it refuses, and
+ * with a plain sentence when it cannot be reached or answers with something unexpected.
+ */
+async function signedPost(
+  path: string,
+  request: Record<string, unknown>,
+): Promise<unknown> {
+  const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}${path}`;
+  const body = JSON.stringify(request);
   const authorization = await makeNip98AuthHeader(url, "POST", {
     body,
     requireDurable: true,
@@ -118,14 +123,50 @@ export async function mintInvite(
     throw new Error(
       typeof json.error === "string" && json.error !== ""
         ? json.error
-        : "The server did not make an invite. Try again in a moment.",
+        : "The server did not accept that. Try again in a moment.",
     );
   }
-  const invite = parseMintedInvite(json);
+  return json;
+}
+
+/** Make an invite link. Throws with the server's own words when it refuses. */
+export async function mintInvite(
+  secs: number,
+  uses: number | null,
+): Promise<MintedInvite> {
+  const invite = parseMintedInvite(
+    await signedPost("/api/invites", inviteRequestBody(secs, uses)),
+  );
   if (!invite) {
     throw new Error(
       "The server's answer was not what we expected. Try again in a moment.",
     );
   }
   return invite;
+}
+
+/** The invites that can still be used. Only an owner or admin can read them, so it is asked only for one. */
+export function useInvites(enabled: boolean) {
+  return useQuery({
+    queryKey: ["community-invites", relayHttpBaseUrl()],
+    queryFn: async () =>
+      parseInvites(await signedPost("/api/invites/list", {})),
+    enabled,
+    staleTime: 10_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** End an invite now. People who joined with it stay. */
+export async function revokeInvite(id: string): Promise<void> {
+  await signedPost("/api/invites/revoke", { id });
+}
+
+/** Remove a person from the community. The server refuses what the person asking may not do, in words. */
+export async function removePerson(pubkey: string): Promise<void> {
+  await publishAsUser(
+    removeMemberRecord(pubkey),
+    "The server did not remove them.",
+  );
 }

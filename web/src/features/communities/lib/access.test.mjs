@@ -3,16 +3,21 @@ import { test } from "node:test";
 
 import {
   accessSummary,
+  describeActiveInvite,
   describeInvite,
   inviteRequestBody,
   KIND_MEMBER_LIST,
   KIND_SET_ACCESS,
+  KIND_REMOVE_MEMBER,
   looksLikeNotAMember,
   mayChangeAccess,
   mayInvite,
+  mayRemove,
   parseAccess,
+  parseInvites,
   parseMintedInvite,
   peopleFromEvents,
+  removeMemberRecord,
   roleOf,
   setAccessRecord,
 } from "./access.ts";
@@ -193,4 +198,88 @@ test("a refused sign-in is told from a broken connection by what the server said
   assert.equal(looksLikeNotAMember("relay_membership_required"), true);
   assert.equal(looksLikeNotAMember("timed out"), false);
   assert.equal(looksLikeNotAMember("server responded 500"), false);
+});
+
+test("removing a person is one record naming them", () => {
+  assert.deepEqual(removeMemberRecord(B), {
+    kind: KIND_REMOVE_MEMBER,
+    content: "",
+    tags: [["p", B]],
+  });
+  assert.equal(KIND_REMOVE_MEMBER, 9031);
+});
+
+test("Remove is offered by rank: the owner for an admin or a member, an admin for a member, nobody for themselves or the owner", () => {
+  const owner = { pubkey: A, role: "owner" };
+  const admin = { pubkey: B, role: "admin" };
+  const member = { pubkey: C, role: "member" };
+
+  assert.equal(mayRemove("owner", A, admin), true);
+  assert.equal(mayRemove("owner", A, member), true);
+  assert.equal(mayRemove("owner", A, owner), false, "not themselves");
+
+  assert.equal(mayRemove("admin", B, member), true);
+  assert.equal(mayRemove("admin", B, owner), false);
+  assert.equal(
+    mayRemove("admin", B, { pubkey: "d".repeat(64), role: "admin" }),
+    false,
+  );
+  assert.equal(mayRemove("admin", B, admin), false, "not themselves");
+
+  assert.equal(mayRemove("member", C, member), false);
+  assert.equal(mayRemove("member", C, admin), false);
+  assert.equal(mayRemove(null, null, member), false);
+  assert.equal(
+    mayRemove("owner", null, member),
+    false,
+    "without knowing who they are, nothing",
+  );
+  // Compared without regard to case.
+  assert.equal(mayRemove("owner", A.toUpperCase(), owner), false);
+});
+
+test("the list of invites keeps whole entries only and never invents a link", () => {
+  const invites = parseInvites({
+    invites: [
+      { id: "i1", created_by: A, expires_at: 100, max_uses: 5, use_count: 2 },
+      {
+        id: "i2",
+        created_by: B,
+        expires_at: 200,
+        max_uses: null,
+        use_count: 0,
+      },
+      { id: "", created_by: A, expires_at: 1 },
+      { id: "i4", created_by: A },
+      { created_by: A, expires_at: 1 },
+      "nope",
+      null,
+    ],
+  });
+  assert.deepEqual(invites, [
+    { id: "i1", madeBy: A, expiresAt: 100, maxUses: 5, used: 2 },
+    { id: "i2", madeBy: B, expiresAt: 200, maxUses: null, used: 0 },
+  ]);
+  for (const bad of [null, undefined, "x", {}, { invites: "no" }]) {
+    assert.deepEqual(parseInvites(bad), []);
+  }
+});
+
+test("an invite in the list says how much it has been used and how long it has left", () => {
+  const now = 1_000_000;
+  const day = 86_400;
+  assert.equal(
+    describeActiveInvite(
+      { id: "i", madeBy: A, expiresAt: now + 3 * day, maxUses: 5, used: 2 },
+      now,
+    ),
+    "2 of 5 used · ends in 3 days",
+  );
+  assert.equal(
+    describeActiveInvite(
+      { id: "i", madeBy: A, expiresAt: now + 3600, maxUses: null, used: 7 },
+      now,
+    ),
+    "7 used · ends in less than 2 hours",
+  );
 });
