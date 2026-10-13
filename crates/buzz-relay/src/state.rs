@@ -2216,41 +2216,37 @@ impl AppState {
                 principals.push(principal);
             }
         }
+        // One query for everyone, not one per person: a community with thousands connected is checked in a few reads.
+        let keys: Vec<String> = principals
+            .iter()
+            .flat_map(|(pubkey, owner)| {
+                std::iter::once(hex::encode(pubkey)).chain(owner.map(hex::encode))
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        let members = match self.db.relay_members_among_writer(community, &keys).await {
+            Ok(members) => members,
+            Err(error) => {
+                tracing::warn!(%community, %error, "could not check who is connected; leaving everyone connected");
+                return (0, false);
+            }
+        };
         let mut closed = 0;
-        let mut complete = true;
         for (pubkey, owner) in principals {
-            let direct = self
-                .db
-                .is_relay_member_writer(community, &hex::encode(&pubkey))
-                .await;
-            let admitted = match (direct, owner) {
-                (Ok(true), _) => Ok(true),
-                (Ok(false), Some(owner)) => {
-                    self.db
-                        .is_relay_member_writer(community, &hex::encode(owner))
-                        .await
-                }
-                (other, None) => other,
-                (Err(error), Some(_)) => Err(error),
-            };
-            match admitted {
-                Ok(true) => {}
-                Ok(false) => {
-                    closed += self.disconnect_pubkey_local(
-                        community,
-                        &pubkey,
-                        &"0".repeat(64),
-                        "restricted: this community is now invite-only",
-                        false,
-                    );
-                }
-                Err(error) => {
-                    complete = false;
-                    tracing::warn!(%community, %error, "could not check a connected person's membership; leaving them connected");
-                }
+            let admitted = members.contains(&hex::encode(&pubkey))
+                || owner.is_some_and(|owner| members.contains(&hex::encode(owner)));
+            if !admitted {
+                closed += self.disconnect_pubkey_local(
+                    community,
+                    &pubkey,
+                    &"0".repeat(64),
+                    "restricted: this community is now invite-only",
+                    false,
+                );
             }
         }
-        (closed, complete)
+        (closed, true)
     }
 
     /// [`Self::drop_live_non_members`] on this pod now, and on every other pod through the connection-control channel.

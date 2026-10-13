@@ -37,6 +37,35 @@ pub async fn is_relay_member(pool: &PgPool, community: CommunityId, pubkey: &str
     is_relay_member_on(&mut conn, community, pubkey).await
 }
 
+/// The most keys sent to the database in one query by [`relay_members_among`].
+const MEMBERS_AMONG_CHUNK: usize = 1_000;
+
+/// Which of `pubkeys` (hex) are members of `community`, from the writer. One query per
+/// [`MEMBERS_AMONG_CHUNK`] keys, so checking everyone connected to a community that has just become members-only does
+/// not cost a query per person.
+pub async fn relay_members_among(
+    pool: &PgPool,
+    community: CommunityId,
+    pubkeys: &[String],
+) -> Result<std::collections::HashSet<String>> {
+    let mut conn =
+        observability::acquire_writer(pool, observability::WriterOperation::Authorization).await?;
+    let mut members = std::collections::HashSet::new();
+    for chunk in pubkeys.chunks(MEMBERS_AMONG_CHUNK) {
+        let rows = sqlx::query(
+            "SELECT pubkey FROM relay_members WHERE community_id = $1 AND pubkey = ANY($2)",
+        )
+        .bind(community.as_uuid())
+        .bind(chunk)
+        .fetch_all(&mut *conn)
+        .await?;
+        for row in rows {
+            members.insert(row.try_get::<String, _>("pubkey")?);
+        }
+    }
+    Ok(members)
+}
+
 /// [`is_relay_member`] on a specific session — the replica-routing path runs
 /// the lookup on the exact reader connection whose heartbeat observation
 /// proved fence coverage.
@@ -899,6 +928,16 @@ impl Db {
         is_relay_member(&self.pool, community, pubkey).await
     }
 
+    /// Which of `pubkeys` (hex) are members of `community`, from the writer, in one query per thousand keys.
+    #[datastore_span(name = "relay_members_among_writer", system = "postgresql")]
+    pub async fn relay_members_among_writer(
+        &self,
+        community: CommunityId,
+        pubkeys: &[String],
+    ) -> Result<std::collections::HashSet<String>> {
+        relay_members_among(&self.pool, community, pubkeys).await
+    }
+
     /// Returns the relay member record for `pubkey` in `community`, or `None` if not found.
     #[datastore_span(name = "get_relay_member", system = "postgresql")]
     pub async fn get_relay_member(
@@ -1452,6 +1491,49 @@ mod postgres_tests {
             .await
             .expect("bootstrap owner");
         (community, owner)
+    }
+
+    /// The batched lookup returns exactly the members among the keys asked about, in this community only, and works
+    /// across more than one chunk of keys. Mutation: drop the community scope, or only read the first chunk → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn the_batched_membership_lookup_returns_exactly_the_members_among_the_keys() {
+        let pool = setup_pool().await;
+        let (community, owner) = owned_community(&pool).await;
+        let elsewhere = make_test_community(&pool).await;
+        let member = test_pubkey();
+        let member_late = test_pubkey();
+        let elsewhere_member = test_pubkey();
+        for who in [&member, &member_late] {
+            add_relay_member(&pool, community, who, "member", None)
+                .await
+                .expect("add member");
+        }
+        add_relay_member(&pool, elsewhere, &elsewhere_member, "member", None)
+            .await
+            .expect("add member elsewhere");
+
+        // More strangers than fit in one chunk, with a member on each side of the boundary.
+        let mut asked = vec![member.clone()];
+        asked.extend((0..MEMBERS_AMONG_CHUNK + 50).map(|_| test_pubkey()));
+        asked.push(member_late.clone());
+        asked.push(owner.clone());
+        asked.push(elsewhere_member.clone());
+
+        let found = relay_members_among(&pool, community, &asked)
+            .await
+            .expect("lookup");
+        assert_eq!(
+            found,
+            [member, member_late, owner]
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>(),
+            "members of this community only, from every chunk"
+        );
+        assert!(relay_members_among(&pool, community, &[])
+            .await
+            .expect("nothing asked")
+            .is_empty());
     }
 
     #[tokio::test]
