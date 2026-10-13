@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -205,4 +206,17 @@ test("every signed read carries its own nonce, so the moderator check and the qu
   // A server that has seen an authorization refuses it a second time, so two reads must never share one.
   expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
   expect(new Set(nonces).size).toBe(nonces.length);
+});
+
+test("the report dialog is accessible, with an error showing", async ({
+  page,
+}) => {
+  const relay = chatRelay("invalid: report target event not found");
+  await openChat(page, relay);
+  await theirRow(page).hover();
+  await theirRow(page).getByTestId("report-button").click();
+  await page.getByTestId("report-reason-spam").check();
+  await page.getByTestId("report-submit").click();
+  await expect(page.getByTestId("report-error")).toBeVisible();
+  await expectAccessible(page, "report dialog");
 });

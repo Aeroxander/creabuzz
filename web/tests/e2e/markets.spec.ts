@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -100,4 +101,12 @@ test("with nothing graduated, the page says what puts a project here", async ({
   await expect(page.getByTestId("markets-empty")).toContainText(
     "Nothing is on the market yet",
   );
+});
+
+test("the markets page is accessible", async ({ page }) => {
+  await open(page, "/markets");
+  await expect(page.getByTestId("market-row")).toHaveCount(2, {
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "markets");
 });

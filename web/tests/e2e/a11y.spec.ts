@@ -1,5 +1,6 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+
+import { expectAccessible } from "../helpers/a11y";
 
 /**
  * Accessibility gate.
@@ -156,29 +157,6 @@ async function mockRelay(page: Page, options?: { failReads?: boolean }) {
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
-}
-
-async function expectAccessible(page: Page, surface: string) {
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  const blocking = results.violations.filter(
-    (violation) =>
-      violation.impact === "serious" || violation.impact === "critical",
-  );
-  expect(
-    blocking.map((v) => ({
-      id: v.id,
-      impact: v.impact,
-      help: v.help,
-      targets: v.nodes.slice(0, 3).map((n) => n.target.join(" ")),
-      // The element itself and the measured reason: a bare selector sends the
-      // next reader hunting through the DOM for what axe actually objected to.
-      html: v.nodes.slice(0, 2).map((n) => n.html.slice(0, 200)),
-      why: v.nodes[0]?.failureSummary?.replace(/\s+/g, " ").slice(0, 300),
-    })),
-    `${surface}: serious/critical accessibility violations`,
-  ).toEqual([]);
 }
 
 test.use({ viewport: { width: 1280, height: 900 } });

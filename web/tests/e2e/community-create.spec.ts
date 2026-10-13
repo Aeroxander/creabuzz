@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -221,4 +222,14 @@ test("without an account the dialog says to create one and cannot be sent", asyn
   );
   await expect(page.getByTestId("community-create-submit")).toBeDisabled();
   expect(sent).toHaveLength(0);
+});
+
+test("the create dialog is accessible, with a name problem showing", async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByTestId("create-community").click();
+  await page.getByTestId("community-name").fill("ab");
+  await expect(page.getByTestId("community-name-problem")).toBeVisible();
+  await expectAccessible(page, "create a community");
 });

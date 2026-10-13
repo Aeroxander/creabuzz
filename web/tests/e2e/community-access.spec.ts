@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -500,4 +501,30 @@ test("when the server will not remove someone, its words are shown", async ({
   );
   // They are still listed.
   await expect(page.getByTestId("person")).toHaveCount(2);
+});
+
+test("the people and access section is accessible, with the owner's panels open", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    anotherAdmin: true,
+    activeInvites: [
+      {
+        id: "44444444-4444-4444-4444-444444444444",
+        created_by: ME,
+        created_at: 1,
+        expires_at: Math.floor(Date.now() / 1000) + 3 * 86_400,
+        max_uses: 5,
+        use_count: 2,
+      },
+    ],
+  });
+  await page.getByTestId("access-open").check();
+  await expect(page.getByTestId("access-confirm")).toBeVisible();
+  await page.getByTestId("invite-make").click();
+  await expect(page.getByTestId("invite-made")).toBeVisible();
+  await page.getByTestId("person-remove").first().click();
+  await expect(page.getByTestId("person-confirm")).toBeVisible();
+  await expectAccessible(page, "people and access (owner)");
 });
