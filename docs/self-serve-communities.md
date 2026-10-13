@@ -54,6 +54,8 @@ is open to strangers.
 - **Anyone can read the answer.** The community's information document (`GET /info`, or `GET /` asking for
   `application/nostr+json`) carries `"access": "open"` or `"invite_only"`, so an app can say "ask the owner for an
   invite" before someone tries to sign in. An unknown host gets no `access` field rather than a guess.
+- **A private community is not listed** in the public directory (`GET /communities`, when the operator turns it on): its name, icon and
+  size are not for anyone. It is listed again the moment it is opened.
 - The setting is one cached read of a few seconds per server process; changes and the final admission check bypass the
   cache, so a closing community is never reopened by a stale answer. If the setting cannot be read, the community is
   treated as closed.
@@ -69,6 +71,7 @@ is open to strangers.
 ## Checking it
 
 ```bash
+scripts/web-invite-only-e2e.sh   # the real server and a real browser: private by default, a stranger turned away, an invite, open, close
 cargo test -p buzz-relay --lib self_serve -- --include-ignored   # needs Postgres
 cargo test -p buzz-relay --lib handlers::relay_admin -- --include-ignored --test-threads=1   # who may join (kind 9034)
 scripts/web-self-serve-e2e.sh    # the real server and a real browser: create, own, set up a team, name taken

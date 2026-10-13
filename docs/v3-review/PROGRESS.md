@@ -195,7 +195,7 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   `scripts/web-self-serve-e2e.sh` (real server, real browser: create, own, set up a team with **33 of 33** steps, name taken).
   Found and fixed on the way: a creator was not recognised as their community's owner (no member list was published unless
   membership was required), which refused every owner-only action; this also confirms the template's owner-only steps (team,
-  helper seats, limits, automations, pages) on a real server. Not done: invite-only communities, renaming, custom domains.
+  helper seats, limits, automations, pages) on a real server. Not done: renaming, custom domains.
 - **Holding age** (D23, first piece): the voting policy keeps each holder's weighted-average acquisition time of their Shares and
   `holdingAge(holder)` returns balance and age (`contracts/src/AllocationVoting.sol`, `docs/token-voting-design.md`). Receiving blends the age
   by amount, sending changes nothing, a fresh wallet cannot inherit age, a holder who sends everything loses the record. Checked: 13 unit and
@@ -206,4 +206,16 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   many are still locked behind milestones. Read from the holding-age ledger; a DAO made before the ledger is left out, a read that fails
   says so. Checked: 8 unit tests and the real-chain milestone journey (the founder sees 200,000,000 held for 8 days with 120,000,000
   locked; a wallet with no Shares sees none). Not on public profiles yet: that waits for wallet linking.
-
+- **Private communities and invite links** (`docs/self-serve-communities.md`, "Who may join"): each community decides for itself whether people must
+  be members (`communities.membership_required`, migration 0063), asked through one question that the live connection, HTTP, git and audio
+  all share; the server-wide switch still closes everything, and a read that fails counts as closed. **A new community is private unless its
+  creator picks open**, so it is never open to strangers even for a moment. The owner (not an admin) can change it later with a signed
+  `kind:9034`; closing also cuts off strangers who are already connected, on every server. A community's information document says
+  `"access"`, and a private community is left out of the public directory. In the app: **Who can join?** when creating, and a **People and
+  access** section on the Org page (who is in; the owner's choice with a plain warning before either change; owners and admins make invite
+  links of a chosen length and size). A stranger who opens a private community is told it is invite-only instead of seeing a broken page,
+  and an invite link now joins the community that served it even if the browser had another saved. Checked: 16 server tests (Postgres), 11 unit
+  tests, 10 mocked browser tests, and `scripts/web-invite-only-e2e.sh` (real server, real browser: private by default, a stranger turned
+  away, a one-person invite lets exactly one in and is refused for the next, open, close, directory) with seven deliberate breakages each
+  caught by a test. Not done: removing a person from the app, a list of invites already made (and revoking one), naming a community's
+  owner a second admin, and the connected EVM wallet on a profile (waits for wallet linking).

@@ -9,6 +9,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
+import type { Access } from "./lib/access";
 import {
   DEFAULT_LIMITS,
   type NameLimits,
@@ -88,8 +89,11 @@ export interface CreatedCommunity {
   url: string;
 }
 
-/** Make a community called `name` (already tidied) and own it. */
-export async function createCommunity(name: string): Promise<CreatedCommunity> {
+/** Make a community called `name` (already tidied) and own it, open to anyone or only to people it invites. */
+export async function createCommunity(
+  name: string,
+  access: Access,
+): Promise<CreatedCommunity> {
   const origin = apiOrigin();
   if (!origin) {
     throw new CreateCommunityError(
@@ -98,7 +102,7 @@ export async function createCommunity(name: string): Promise<CreatedCommunity> {
     );
   }
   const url = `${origin}${PATH}`;
-  const body = JSON.stringify({ name });
+  const body = JSON.stringify({ name, access });
 
   let auth: string;
   try {

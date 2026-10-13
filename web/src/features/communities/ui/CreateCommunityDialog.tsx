@@ -15,6 +15,7 @@ import { setStoredRelayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
+import { ACCESS_CHOICES, type Access } from "../lib/access";
 import {
   finishName,
   nameProblem,
@@ -31,6 +32,8 @@ export function CreateCommunityDialog({
   onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  // Private until the owner says otherwise: a community made for a team should not be open for a moment.
+  const [access, setAccess] = useState<Access>("invite_only");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signedIn = existingUserPubkey() !== null;
@@ -44,7 +47,7 @@ export function CreateCommunityDialog({
     setBusy(true);
     setError(null);
     try {
-      const created = await createCommunity(name);
+      const created = await createCommunity(name, access);
       // Point this browser at the new community, then open it. A full load, like joining one, so nothing from the
       // community this browser was in carries over.
       setStoredRelayWsUrl(created.url);
@@ -98,6 +101,33 @@ export function CreateCommunityDialog({
               : `Its address will be ${previewHost(name, status.domain ?? "")}`}
           </p>
         </div>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Who can join?</legend>
+          {ACCESS_CHOICES.map((choice) => (
+            <label
+              className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-black/10 p-2.5 has-[:checked]:border-black/40 dark:border-white/10 dark:has-[:checked]:border-white/40"
+              key={choice.value}
+            >
+              <input
+                checked={access === choice.value}
+                className="mt-1"
+                data-testid={`community-access-${choice.value}`}
+                name="new-community-access"
+                onChange={() => setAccess(choice.value)}
+                type="radio"
+                value={choice.value}
+              />
+              <span>
+                <span className="block text-sm font-medium">
+                  {choice.title}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {choice.detail}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         {problem ? (
           <p
             className="text-sm text-red-600 dark:text-red-400"

@@ -215,6 +215,24 @@ you hold** must list the DAO with the team's Shares, how long they have been hel
 milestones. Send some Shares to a second wallet: that wallet shows them as held for "less than a day", and the first
 wallet's time does not change.
 
+## 4k. Private communities and invite links (2026-10-13)
+
+```bash
+cargo test -p buzz-relay --lib -- --include-ignored --test-threads=1 community_access relay_admin self_serve nip11   # the rules (needs Postgres)
+cargo test -p buzz-db --lib -- the_public_directory --test-threads=1
+cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke community-access.spec.ts community-create.spec.ts
+scripts/web-invite-only-e2e.sh      # REAL server on a scratch database + a real browser, nothing mocked
+```
+
+By hand (server started as in 4i, with `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`): create a community and leave **Only people I invite**
+selected. Open **Org**: **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
+In a second browser (a different profile, so it is a different person) open `http://<name>.localhost:3000/c/<name>.localhost:3000`: it says **This
+community is invite-only**. Open the invite link there and press **Join in browser**: the community opens, and your **Org** page now
+lists two people. Use the same link in a third browser: it says the invite has reached its use limit. Back as the owner pick
+**Anyone with the address** and confirm: the third browser, reloaded, gets in. Pick **Only people I invite** again: the warning says people who
+are not on the list are signed out right away; confirm, reload the third browser: invite-only again, while the second browser (invited) is
+still in. The Communities page (with `BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`) never lists the community while it is private.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

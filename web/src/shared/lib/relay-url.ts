@@ -64,6 +64,18 @@ export function relayWsUrl(): string {
   return `${proto}//${window.location.host}`;
 }
 
+/**
+ * The server an invite link is for: the one that served the link. An invite is made on the community's own address, so
+ * an address this browser saved earlier (for another community) must not decide which community a person joins.
+ * A build that bakes in `VITE_RELAY_URL` talks to that server as always.
+ */
+export function inviteRelayWsUrl(): string {
+  const envUrl = import.meta.env.VITE_RELAY_URL;
+  if (envUrl) return envUrl;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
+}
+
 /** HTTP base URL for the relay (derived from the WS URL). */
 export function relayHttpBaseUrl(): string {
   return relayHttpUrl(relayWsUrl());

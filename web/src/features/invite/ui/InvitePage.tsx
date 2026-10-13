@@ -10,7 +10,7 @@ import { hasStoredIdentity } from "@/shared/lib/identity";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 
 import { hasPasskeyIdentity } from "@/features/identity/lib/passkey-identity";
-import { relayWsUrl } from "@/shared/lib/relay-url";
+import { inviteRelayWsUrl, setStoredRelayWsUrl } from "@/shared/lib/relay-url";
 import { desktopJoinDeepLink } from "@/shared/lib/desktop-deep-link";
 import { Button } from "@/shared/ui/button";
 import * as React from "react";
@@ -44,7 +44,7 @@ function inviteClaimErrorMessage(message: string): string {
 
 /** Landing page for a community invite link (`/invite/<code>`). */
 export function InvitePage({ code }: { code: string }) {
-  const relay = relayWsUrl();
+  const relay = inviteRelayWsUrl();
   const host = relay.replace(/^wss?:\/\//, "");
   const [policy, setPolicy] = React.useState<JoinPolicy | null | undefined>(
     undefined,
@@ -127,7 +127,9 @@ export function InvitePage({ code }: { code: string }) {
     setJoiningBrowser(true);
     try {
       const receipt = await acceptPolicy();
-      await claimInviteInBrowser(code, receipt);
+      await claimInviteInBrowser(code, relay, receipt);
+      // From now on this browser is in the community the invite was for.
+      setStoredRelayWsUrl(relay);
       window.location.assign("/");
     } catch (error) {
       const message =

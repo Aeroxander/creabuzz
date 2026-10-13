@@ -99,6 +99,26 @@ test("a server that offers it shows the button, tidies the name and previews the
   await expect(page.getByTestId("community-create-submit")).toBeEnabled();
 });
 
+test("a new community is private by default, and the creator can choose open", async ({
+  page,
+}) => {
+  const sent = await open(page, {
+    answer: { status: 201, host: "town-hall.example.test" },
+  });
+  await page.getByTestId("create-community").click();
+  await expect(page.getByTestId("community-access-invite_only")).toBeChecked();
+  await expect(page.getByTestId("community-access-open")).not.toBeChecked();
+
+  await page.getByTestId("community-access-open").check();
+  await page.getByTestId("community-name").fill("town-hall");
+  await page.getByTestId("community-create-submit").click();
+  await page.waitForURL(/\/c\/town-hall\.example\.test$/, { timeout: 20_000 });
+  expect(JSON.parse(sent[0].body ?? "{}")).toEqual({
+    name: "town-hall",
+    access: "open",
+  });
+});
+
 test("a name that is too short is explained and cannot be sent", async ({
   page,
 }) => {
@@ -129,7 +149,11 @@ test("creating signs the request with the account, then opens the new community"
   ).toBe("ws://my-film.example.test");
 
   expect(sent).toHaveLength(1);
-  expect(JSON.parse(sent[0].body ?? "{}")).toEqual({ name: "my-film" });
+  // Private unless the creator says otherwise.
+  expect(JSON.parse(sent[0].body ?? "{}")).toEqual({
+    name: "my-film",
+    access: "invite_only",
+  });
   const header = sent[0].authorization ?? "";
   expect(header.startsWith("Nostr ")).toBe(true);
   const event = JSON.parse(atob(header.slice("Nostr ".length)));

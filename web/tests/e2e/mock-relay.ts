@@ -181,6 +181,15 @@ export function createMockRelay({
   };
 
   const install = async (page: Page) => {
+    // The server's public information document, which a real server always serves. It says nothing about who may
+    // join, as a server that predates the setting would; a spec that cares answers it itself.
+    await page.route("**/info", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/nostr+json",
+        body: JSON.stringify({ name: "Mock server" }),
+      });
+    });
     await page.route("**/communities", async (route) => {
       await route.fulfill({
         status: 200,

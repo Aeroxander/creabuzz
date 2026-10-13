@@ -1,5 +1,5 @@
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
-import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { relayHttpUrl } from "@/shared/lib/relay-url";
 
 const INVITE_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -10,11 +10,13 @@ export type BrowserInviteClaim = {
   role: string;
 };
 
+/** Claim `code` on the server at `relayWsUrl`: the one the invite link was served from. */
 export async function claimInviteInBrowser(
   code: string,
+  relayWsUrl: string,
   policyReceipt?: string,
 ): Promise<BrowserInviteClaim> {
-  const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}/api/invites/claim`;
+  const url = `${relayHttpUrl(relayWsUrl).replace(/\/+$/, "")}/api/invites/claim`;
   const body = JSON.stringify({
     code,
     policy_receipt: policyReceipt,

@@ -1,4 +1,4 @@
-import { ArrowLeft, Users } from "lucide-react";
+import { ArrowLeft, Lock, Users } from "lucide-react";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 
 import {
@@ -7,7 +7,9 @@ import {
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
+import { looksLikeNotAMember } from "../lib/access";
 import { useCommunities } from "../use-communities";
+import { useCommunityAccess } from "../use-access";
 import { useChannels } from "@/features/channels/use-channels";
 import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
@@ -66,6 +68,37 @@ function CommunityLoadState({
   );
 }
 
+/**
+ * What someone sees when they open a community that is invite-only and they are not in it: that it is private, and
+ * what to do, instead of a page that reads like the server is broken.
+ */
+function InviteOnlyNotice({ host }: { host: string }) {
+  return (
+    <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
+      <div
+        className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 text-center dark:border-white/10 dark:bg-white/5"
+        data-testid="community-invite-only"
+      >
+        <Lock className="mx-auto h-6 w-6 text-black/60 dark:text-white/60" />
+        <h1 className="mt-3 text-lg font-semibold">
+          This community is invite-only
+        </h1>
+        <p className="mt-1 break-all text-xs text-black/60 dark:text-white/60">
+          {host}
+        </p>
+        <p className="mt-3 text-sm text-black/70 dark:text-white/70">
+          Ask someone in it for an invite link, then open the link to join.
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button asChild variant="outline">
+            <Link to="/c">All communities</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Do two server addresses point at the same machine and port? */
 function sameServer(a: string, b: string): boolean {
   try {
@@ -87,6 +120,7 @@ export function CommunityHomePage() {
   const search = useSearch({ from: "/c/$host" });
   const { data } = useCommunities();
   const channels = useChannels();
+  const access = useCommunityAccess();
   const entry = data?.communities.find((c) => c.host === host);
 
   const hostName = entry?.name || host;
@@ -109,6 +143,14 @@ export function CommunityHomePage() {
         </div>
       </div>
     );
+  }
+
+  if (
+    channels.isError &&
+    access.data === "invite_only" &&
+    looksLikeNotAMember(errorMessage(channels.error))
+  ) {
+    return <InviteOnlyNotice host={host} />;
   }
 
   if (channels.isError) {
