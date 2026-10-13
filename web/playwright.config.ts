@@ -33,6 +33,7 @@ export default defineConfig({
         "**/report.spec.ts",
         "**/markets.spec.ts",
         "**/markets-prices.spec.ts",
+        "**/error-report.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-discussion.spec.ts",

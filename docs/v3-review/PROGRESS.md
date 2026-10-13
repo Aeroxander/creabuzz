@@ -236,3 +236,9 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   the spec answers with real-shaped pools and candles, both pool orientations). **Not checked against a real chain**: the LBAMM clone the real-chain
   market script needs is gone and I did not download it. Not built: market cap (needs total Shares per project), a per-person trade history,
   and a trading P&L on the social feed (D6; waits for wallet linking, which says who a wallet is).
+- **Error reporting** (`docs/error-reporting.md`): off unless the build sets `VITE_ERROR_REPORT_URL` to a collector you choose (https, or plain http on this
+  machine). An uncaught error, a failed promise nobody listened to, or a crashed screen is posted as one small note (kind, message, stack, the page's
+  path only, time, build label): keys, ids and wallet addresses are blanked first; no account, messages, cookies or query strings leave the browser;
+  the same error is sent once, at most 5 a minute and 30 a visit, and a collector that is down changes nothing. Checked: 10 unit tests with a stand-in
+  window and collector, and `scripts/web-error-report-e2e.sh` (a real browser: a real error and a real rejection arrive scrubbed; a dead collector
+  leaves the page working). The destination is yours to choose; nothing is sent until you do.

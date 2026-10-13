@@ -85,6 +85,11 @@ cannot derive the relay from `window.location` and will show the
 "Couldn't reach the relay" screen; enter the community relay URL there to
 connect.
 
+## Error reporting
+
+Off unless the build sets `VITE_ERROR_REPORT_URL` to a collector you choose. When on, an uncaught error, a failed promise or a crashed
+screen is sent as a small scrubbed note (path only, no keys, no messages). `docs/error-reporting.md` lists exactly what is sent.
+
 ## Identity
 
 Sign-in options, in precedence order: an active passkey signer (WebAuthn PRF

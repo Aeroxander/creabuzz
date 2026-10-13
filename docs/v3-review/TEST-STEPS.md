@@ -263,6 +263,17 @@ its last price, "+x% today" (or a fall), what was traded today and a small chart
 between **Most traded**, **Biggest move today** and **Newest**. **Track record** under a name opens that project's record. Without the
 price-service address in the build the page says prices are not available and lists the projects without prices.
 
+## 4n. Error reporting (2026-10-13)
+
+```bash
+cd web && node --experimental-strip-types --test src/shared/lib/error-report.test.mjs
+scripts/web-error-report-e2e.sh      # a real browser and a stand-in collector; run `pnpm build` after it
+```
+
+By hand: build with `VITE_ERROR_REPORT_URL=http://localhost:9000/errors`, run any listener on that port (for example `nc -l 9000`), open the
+app, and in the browser console run `setTimeout(() => { throw new Error("test") })`: one small JSON note arrives with the page's path and no
+query string. Without the setting set, nothing is sent.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

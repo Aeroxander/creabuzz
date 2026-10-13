@@ -1,4 +1,7 @@
 import { Link } from "@tanstack/react-router";
+import { useEffect } from "react";
+
+import { reportRenderError } from "@/shared/lib/error-report";
 
 /**
  * Route-level failure and miss views.
@@ -17,6 +20,10 @@ export function RouteErrorView({
 }) {
   const message =
     error instanceof Error ? error.message : String(error ?? "unknown error");
+  // A crash a screen caught never reaches the window's error event, so it is told here (and only when reporting is on).
+  useEffect(() => {
+    reportRenderError(error);
+  }, [error]);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10">
       <div
