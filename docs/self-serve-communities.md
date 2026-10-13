@@ -74,6 +74,10 @@ is open to strangers.
 - **No names after the fact.** A community cannot be renamed or moved to a custom domain.
 - **No per-community quota or billing.** The only limits are the ones above.
 - **Abuse is handled by an operator**, with `buzz-admin communities archive`.
+- **Invite links are made on the community's own address** (`https://acme.<domain>/invite/<code>`), so the server has to serve the web app on
+  every community address (`BUZZ_WEB_DIR` with `BUZZ_WEB_SPA=full`), not only on the management address. A browser saves an account per
+  address, so someone who opens an invite on a community address starts with no account there: the invite page asks for a name and makes
+  one. An account made on the management address is not carried over; a passkey or an exported recovery key is how a person brings one.
 - **Identity lives in the app's own address.** The account that owns a community is saved in the browser at the address
   the app is served from, so the app should be served from one stable address.
 
