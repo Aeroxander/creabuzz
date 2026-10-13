@@ -4,7 +4,8 @@
 #
 # Boots the real relay on a scratch database and a free port with self-serve communities on (and the server-wide
 # membership switch OFF, so what is tested is each community's own setting), then runs
-# web/tests/e2e-real/invite-only.spec.ts: an owner makes a community (private by default), a stranger is turned away, an
+# web/tests/e2e-real/invite-only.spec.ts (and report.spec.ts: a member reports a post and the owner sees it in the moderation
+# queue): an owner makes a community (private by default), a stranger is turned away, an
 # invite link lets exactly one person in, the same link is refused for a second, the owner opens the community and the
 # stranger gets in, and closes it again. Nothing is mocked: real signed requests, real database rows, real WebSocket
 # sign-in.
@@ -69,4 +70,4 @@ curl -fsS -m 2 "http://localhost:$PORT/self-serve/communities" | grep -q '"enabl
 step "running the browser spec"
 cd web
 BUZZ_REAL_RELAY_URL="http://localhost:$PORT" E2E_INVITE_PORT="$PORT" \
-  node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/invite-only.spec.ts --reporter=list "$@"
+  node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/invite-only.spec.ts tests/e2e-real/report.spec.ts --reporter=list "$@"

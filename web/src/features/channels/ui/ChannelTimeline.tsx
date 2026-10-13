@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Copy,
+  Flag,
   Hash,
   Link2,
   MessageSquare,
@@ -40,6 +41,7 @@ import { Bot } from "lucide-react";
 import { getTag } from "@/shared/lib/event-fields";
 import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -176,6 +178,7 @@ function MessageRow({
   agent?: { name: string };
 }) {
   const isOwn = event.pubkey === ownPubkey;
+  const [reporting, setReporting] = useState(false);
   const content = isDeleted
     ? ""
     : (overlayContent ??
@@ -285,6 +288,17 @@ function MessageRow({
                 <Pencil className="h-3 w-3" /> Edit
               </button>
             )}
+            {!isOwn && !isDeleted && (
+              <button
+                type="button"
+                onClick={() => setReporting(true)}
+                className="flex items-center gap-1 hover:text-red-500"
+                aria-label="Report message"
+                data-testid="report-button"
+              >
+                <Flag className="h-3 w-3" /> Report
+              </button>
+            )}
             {isOwn && onDelete && (
               <button
                 type="button"
@@ -324,6 +338,17 @@ function MessageRow({
           ))}
         </div>
       </div>
+      {reporting ? (
+        <ReportDialog
+          onClose={() => setReporting(false)}
+          target={{
+            kind: "message",
+            eventId: event.id,
+            authorPubkey: event.pubkey,
+          }}
+          what="this message"
+        />
+      ) : null}
     </div>
   );
 }

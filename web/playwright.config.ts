@@ -30,6 +30,7 @@ export default defineConfig({
         "**/launchpad-presets.spec.ts",
         "**/community-create.spec.ts",
         "**/community-access.spec.ts",
+        "**/report.spec.ts",
         "**/launchpad-market.spec.ts",
         "**/launchpad-decisions.spec.ts",
         "**/launchpad-discussion.spec.ts",

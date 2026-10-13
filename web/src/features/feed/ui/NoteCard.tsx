@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, MessageSquare, Rocket, Trash2 } from "lucide-react";
+import { Bot, Flag, MessageSquare, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { buildUndo } from "@/features/social/lib/post-events";
 import { useSocialPublish } from "@/features/social/use-social-actions";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -43,6 +44,7 @@ export function NoteCard({
   const publish = useSocialPublish();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const isMine = existingUserPubkey() === note.author;
   const remove = () => {
     setConfirmDelete(false);
@@ -126,6 +128,18 @@ export function NoteCard({
                 : "Reply"}
             </button>
           ) : null}
+          {!isMine ? (
+            <button
+              aria-label="Report post"
+              className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-red-500/10 hover:text-red-600 dark:text-white/60"
+              data-testid="note-report"
+              onClick={() => setReporting(true)}
+              type="button"
+            >
+              <Flag aria-hidden className="h-3.5 w-3.5" />
+              Report
+            </button>
+          ) : null}
           {isMine ? (
             <button
               aria-label="Delete post"
@@ -139,6 +153,17 @@ export function NoteCard({
           ) : null}
         </div>
       </div>
+      {reporting ? (
+        <ReportDialog
+          onClose={() => setReporting(false)}
+          target={{
+            kind: "message",
+            eventId: note.id,
+            authorPubkey: note.author,
+          }}
+          what="this post"
+        />
+      ) : null}
       <ConfirmDialog
         confirmLabel="Delete"
         description="This removes your post for everyone. Replies already written under it stay with the thread."

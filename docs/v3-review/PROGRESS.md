@@ -221,3 +221,10 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   stored, so an old link is counted and ended, never shown again) and **remove a person** from the Org page (owner: admin or member; admin:
   member; a warning first), 8 more server tests and 9 more mocked browser tests, a third real-server journey, two more breakages caught.
   Not done: handing a community to a new owner from the app, and the connected EVM wallet on a profile (waits for wallet linking).
+- **Reporting** (chat messages, Home posts and Social posts): a **Report** action on anything someone else wrote opens a dialog (seven plain-word
+  reasons, an optional note, a promise that only the moderators see it and nothing is removed because of it) and sends the standard report
+  record, which lands in the moderators' queue the web already had but nobody could feed. Not on boards or profiles yet (those files are
+  being changed separately). Checked: 6 unit tests, 6 mocked browser tests, and a real-server journey (a member reports the owner's post,
+  the owner sees it, with the reason and note, in the queue). **Found and fixed on the way:** every signed request without a body had no nonce, so
+  two identical reads in the same second signed the same authorization and the second was turned away as a replay; the moderator check and
+  the queue's first read are exactly that pair, so a moderator could see "Only community moderators can review reports" on their own queue.

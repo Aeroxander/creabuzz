@@ -238,6 +238,17 @@ open that link in a fourth browser: it says the invite has expired. Make a fresh
 then as owner press **Remove** next to that person and confirm: the list drops them, and reloading their browser shows the
 invite-only notice again.
 
+## 4l. Reporting (2026-10-13)
+
+```bash
+cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke report.spec.ts
+scripts/web-invite-only-e2e.sh      # includes report.spec.ts: a member reports a post, the owner sees it in Moderation
+```
+
+By hand (an owner and one invited person, as in 4k): the owner posts on **Social**. The invited person sees **Report** under it (the owner's
+own post has none), picks **Spam or a scam**, adds a note and sends: "Thanks. The moderators have been told." The post is still there. As the
+owner open the community and press **Moderation** in the sidebar: one report shows "Spam", the note, and who sent it.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

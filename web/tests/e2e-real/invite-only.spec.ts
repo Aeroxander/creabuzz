@@ -1,5 +1,13 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { generateSecretKey } from "nostr-tools/pure";
+import { expect, test } from "@playwright/test";
+
+import {
+  PORT,
+  newPerson,
+  openPeople,
+  setAccess,
+  signInAsNewAccount,
+  unique,
+} from "./community-helpers";
 
 /**
  * Private communities and invite links, against a REAL server (`scripts/web-invite-only-e2e.sh` boots it with the
@@ -12,51 +20,6 @@ import { generateSecretKey } from "nostr-tools/pure";
  */
 
 test.use({ viewport: { width: 1280, height: 900 } });
-
-const PORT = process.env.E2E_INVITE_PORT ?? "3199";
-
-const hex = (bytes: Uint8Array) =>
-  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-
-/** A name no earlier run used, short enough for a community name. */
-const unique = () =>
-  `e2e-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
-
-async function signInAsNewAccount(page: Page) {
-  const nsec = hex(generateSecretKey());
-  await page.addInitScript((key) => {
-    // Only the first load of this tab: a later reload must keep whatever relay the app was pointed at.
-    if (!window.localStorage.getItem("buzz.identity.nsec")) {
-      window.localStorage.setItem("buzz.identity.nsec", key);
-    }
-  }, nsec);
-}
-
-/** A person in a browser of their own, with an account no one else has. */
-async function newPerson(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 900 },
-  });
-  const page = await context.newPage();
-  await signInAsNewAccount(page);
-  return page;
-}
-
-async function openPeople(owner: Page) {
-  await owner.getByTestId("content-pane").waitFor({ timeout: 30_000 });
-  await owner.getByTestId("org-toggle").click();
-  await expect(owner.getByTestId("org-people-section")).toBeVisible({
-    timeout: 30_000,
-  });
-}
-
-async function setAccess(owner: Page, access: "open" | "invite_only") {
-  await owner.getByTestId(`access-${access}`).check();
-  await owner.getByTestId("access-confirm-yes").click();
-  await expect(owner.getByTestId("access-confirm")).toHaveCount(0, {
-    timeout: 30_000,
-  });
-}
 
 test("a private community turns strangers away, an invite lets one person in, and the owner can open and close it", async ({
   page: owner,

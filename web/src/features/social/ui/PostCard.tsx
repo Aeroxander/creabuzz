@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Bookmark,
   Bot,
+  Flag,
   Heart,
   Megaphone,
   MessageCircle,
@@ -19,6 +20,7 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
+import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
@@ -39,7 +41,14 @@ function compact(n: number): string {
     : new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
 }
 
-type Tone = "reply" | "repost" | "like" | "bookmark" | "share" | "delete";
+type Tone =
+  | "reply"
+  | "repost"
+  | "like"
+  | "bookmark"
+  | "share"
+  | "delete"
+  | "report";
 
 const HOVER: Record<Tone, string> = {
   reply: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
@@ -48,6 +57,7 @@ const HOVER: Record<Tone, string> = {
   bookmark: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   share: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   delete: "hover:text-red-600 [&:hover>span:first-child]:bg-red-500/10",
+  report: "hover:text-red-600 [&:hover>span:first-child]:bg-red-500/10",
 };
 
 const ACTIVE: Record<Tone, string> = {
@@ -57,6 +67,7 @@ const ACTIVE: Record<Tone, string> = {
   bookmark: "text-sky-600",
   share: "",
   delete: "",
+  report: "",
 };
 
 function ActionButton({
@@ -137,6 +148,7 @@ export function PostCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [liked, setLiked] = useState(false);
 
@@ -402,6 +414,16 @@ export function PostCard({
             >
               <Share aria-hidden />
             </ActionButton>
+            {!isMine && me !== null ? (
+              <ActionButton
+                label="Report post"
+                onClick={() => setReporting(true)}
+                testId="social-report"
+                tone="report"
+              >
+                <Flag aria-hidden />
+              </ActionButton>
+            ) : null}
             {isMine ? (
               <ActionButton
                 label="Delete post"
@@ -415,6 +437,17 @@ export function PostCard({
           </div>
         </div>
       </div>
+      {reporting ? (
+        <ReportDialog
+          onClose={() => setReporting(false)}
+          target={{
+            kind: "message",
+            eventId: note.id,
+            authorPubkey: note.pubkey,
+          }}
+          what="this post"
+        />
+      ) : null}
       <ConfirmDialog
         confirmLabel="Delete"
         description="This removes your post for everyone. Reposts and quotes that already copied it may still show it elsewhere."
