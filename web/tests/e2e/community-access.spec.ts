@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
+import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -56,6 +57,8 @@ async function open(
     refuseRemove?: string;
     /** A second admin in the community's list. */
     anotherAdmin?: boolean;
+    /** On a phone the sidebar is a drawer: open it first. */
+    phone?: boolean;
   },
 ) {
   const {
@@ -66,6 +69,7 @@ async function open(
     refuseRemove,
     refuseRevoke,
     anotherAdmin = false,
+    phone = false,
   } = options;
   const relay = createMockRelay({
     refuse: (event) => {
@@ -163,6 +167,7 @@ async function open(
 
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
+  if (phone) await page.getByTestId("open-channel-list").click();
   await page.getByTestId("org-toggle").click();
   await expect(page.getByTestId("org-people-section")).toBeVisible({
     timeout: 20_000,
@@ -527,4 +532,17 @@ test("the people and access section is accessible, with the owner's panels open"
   await page.getByTestId("person-remove").first().click();
   await expect(page.getByTestId("person-confirm")).toBeVisible();
   await expectAccessible(page, "people and access (owner)");
+});
+
+test("the people and access section fits a phone, with the owner's panels open", async ({
+  page,
+}) => {
+  await page.setViewportSize(PHONE);
+  await open(page, { role: "owner", anotherAdmin: true, phone: true });
+  await page.getByTestId("access-open").check();
+  await page.getByTestId("invite-make").click();
+  await expect(page.getByTestId("invite-made")).toBeVisible();
+  await page.getByTestId("person-remove").first().click();
+  await expect(page.getByTestId("person-confirm")).toBeVisible();
+  await expectNoSidewaysScroll(page, "people and access on a phone");
 });

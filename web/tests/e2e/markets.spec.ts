@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
+import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -109,4 +110,13 @@ test("the markets page is accessible", async ({ page }) => {
     timeout: 20_000,
   });
   await expectAccessible(page, "markets");
+});
+
+test("the markets page fits a phone", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await open(page, "/markets");
+  await expect(page.getByTestId("market-row")).toHaveCount(2, {
+    timeout: 20_000,
+  });
+  await expectNoSidewaysScroll(page, "markets on a phone");
 });

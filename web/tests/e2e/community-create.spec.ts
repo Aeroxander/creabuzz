@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
+import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -232,4 +233,15 @@ test("the create dialog is accessible, with a name problem showing", async ({
   await page.getByTestId("community-name").fill("ab");
   await expect(page.getByTestId("community-name-problem")).toBeVisible();
   await expectAccessible(page, "create a community");
+});
+
+test("the create dialog fits a phone", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await open(page);
+  await page.getByTestId("create-community").click();
+  await expect(page.getByTestId("community-access-invite_only")).toBeVisible();
+  await expectNoSidewaysScroll(page, "the create dialog on a phone");
+  // The submit button is reachable: the dialog scrolls on its own, the page does not.
+  await page.getByTestId("community-create-submit").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("community-create-submit")).toBeInViewport();
 });

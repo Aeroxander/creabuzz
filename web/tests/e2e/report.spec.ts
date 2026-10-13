@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
+import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -61,11 +62,17 @@ function chatRelay(refuse?: string) {
   return relay;
 }
 
-async function openChat(page: Page, relay: ReturnType<typeof chatRelay>) {
+async function openChat(
+  page: Page,
+  relay: ReturnType<typeof chatRelay>,
+  /** On a phone the channel list is a drawer: open it first. */
+  phone = false,
+) {
   await relay.install(page);
   await signIn(page);
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
+  if (phone) await page.getByTestId("open-channel-list").click();
   await page.getByTestId("channel-general").click();
   await expect(page.getByText("Buy my coin at example dot com")).toBeVisible({
     timeout: 20_000,
@@ -236,4 +243,16 @@ test("the message actions are reachable and visible from the keyboard, not only 
   // And it works from the keyboard: Enter opens the dialog.
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("report-form")).toBeVisible();
+});
+
+test("the report dialog fits a phone", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  const relay = chatRelay();
+  await openChat(page, relay, true);
+  await theirRow(page).hover();
+  await theirRow(page).getByTestId("report-button").click();
+  await expect(page.getByTestId("report-form")).toBeVisible();
+  await expectNoSidewaysScroll(page, "the report dialog on a phone");
+  // Both buttons can be reached without scrolling the page sideways.
+  await expect(page.getByTestId("report-submit")).toBeInViewport();
 });
