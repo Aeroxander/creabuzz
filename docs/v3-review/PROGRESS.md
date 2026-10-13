@@ -242,3 +242,11 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   the same error is sent once, at most 5 a minute and 30 a visit, and a collector that is down changes nothing. Checked: 10 unit tests with a stand-in
   window and collector, and `scripts/web-error-report-e2e.sh` (a real browser: a real error and a real rejection arrive scrubbed; a dead collector
   leaves the page working). The destination is yours to choose; nothing is sent until you do.
+- **Who holds the Shares** (a card on each DAO's Track record): the ten largest holders, each one's share of all Shares, how long they have held (the
+  holding-age ledger: the average moment the Shares were acquired; buying more brings it down, passing Shares on does not carry the time along) and how much is
+  still held back behind milestones. Balances are the Shares' own transfer history added up and checked against the total supply: if they do not
+  agree the card says the list may be incomplete, and a read that fails says so instead of showing an empty list. A DAO made before the ledger is
+  listed without times. Names appear only where one person on this server bound that wallet. Checked: 8 unit tests with a fake chain and the
+  real-chain track-record journey (`scripts/web-record-e2e.sh`: the history adds up to the whole supply, the team's holding shows its age and the part held
+  back, shares total 100%). Limits: a DAO with more than 20,000 transfers is not listed; this is D6's "supporters ranked by hold time" in its read-only form
+  (nothing ranks or gates anyone by it yet: that is D23's sale gate, not built).

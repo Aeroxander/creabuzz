@@ -13,6 +13,7 @@ import {
   type MilestoneLockView,
   type UnlockOffer,
 } from "./lib/milestone-lock";
+import { readHolders } from "./lib/holders-read";
 import { readRecordEvents, type RecordChain } from "./lib/record-read";
 import { readWork, type WorkChain, type WorkSnapshot } from "./lib/work-read";
 
@@ -34,6 +35,17 @@ export function endpointChain(endpoint: string): WorkChain {
         toBlock: "latest",
       }),
   };
+}
+
+/** The DAO's largest Shares holders, with how long they have held and what is still locked, read without a wallet. */
+export function useDaoHolders(dao: string | null) {
+  return useQuery({
+    queryKey: ["launchpad", "holders", dao],
+    enabled: dao !== null,
+    queryFn: () => readHolders(endpointChain(getRpcEndpoint()), dao as string),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 }
 
 /** A DAO's contributor work (mandates, projects, claims), read from the launch's configured RPC. */

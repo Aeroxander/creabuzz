@@ -40,9 +40,10 @@ import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePeopleWithWallets } from "../use-people";
-import { useRecordEvents, useWork } from "../use-work";
+import { useDaoHolders, useRecordEvents, useWork } from "../use-work";
 import { decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
+import { HoldersCard } from "./HoldersCard";
 
 const PAGE = 15;
 
@@ -81,6 +82,7 @@ export function RecordTab({
   const decisions = useDecisions(dao, null);
   const context = useDecisionContext(dao);
   const events = useRecordEvents(dao, work.data);
+  const holders = useDaoHolders(dao);
   const sale = launch.record.currency
     ? recordSaleCurrency(launch.record)
     : null;
@@ -92,10 +94,12 @@ export function RecordTab({
   });
   // Names for the wallets the record mentions: people on this server who bound that wallet to their account.
   const wallets = usePeopleWithWallets();
-  const named = pubkeysToName(
-    wallets.data ?? [],
-    work.data && events.data ? addressesInRecord(work.data, events.data) : [],
-  );
+  const named = pubkeysToName(wallets.data ?? [], [
+    ...(work.data && events.data
+      ? addressesInRecord(work.data, events.data)
+      : []),
+    ...(holders.data?.holders.map((h) => h.holder) ?? []),
+  ]);
   const profiles = useProfiles(named);
   const labelOf = personLabeler(wallets.data ?? [], (pubkey) =>
     pickUserName(profiles.data?.[pubkey]),
@@ -353,6 +357,14 @@ export function RecordTab({
           </ul>
         </Card>
       ) : null}
+
+      <HoldersCard
+        dao={dao}
+        failed={holders.isError}
+        labelOf={labels.person}
+        loading={holders.isLoading}
+        read={holders.data}
+      />
 
       <Card className="p-4" data-testid="record-ledger">
         <div className="flex flex-wrap items-center justify-between gap-3">

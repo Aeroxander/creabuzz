@@ -274,6 +274,18 @@ By hand: build with `VITE_ERROR_REPORT_URL=http://localhost:9000/errors`, run an
 app, and in the browser console run `setTimeout(() => { throw new Error("test") })`: one small JSON note arrives with the page's path and no
 query string. Without the setting set, nothing is sent.
 
+## 4o. Who holds the Shares (2026-10-13)
+
+```bash
+cd web && node --experimental-strip-types --test src/features/launchpad/lib/holders-read.test.mjs
+scripts/web-record-e2e.sh      # REAL local chain: the card's figures are checked against the chain (needs forge, anvil, a built buzz CLI)
+```
+
+By hand (a local chain with a project launched through the kit, as in 4g): open the DAO's **Track record**. **Who holds the Shares** lists the
+largest holders: the team's wallet shows its share of all Shares, "held for …", and "x Shares held back until milestones are reached". Send
+some Shares to a second wallet: it appears with "held for less than a day", and the first wallet's time does not change. A DAO made before
+holding times were kept shows holdings without times.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

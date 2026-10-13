@@ -131,6 +131,30 @@ test("someone with no wallet can read what was set aside, paid and turned down",
     new RegExp(whole),
   );
 
+  // Who holds the Shares, added up from the Shares' own history and checked against their total supply: nothing is
+  // missing, the team's holding says how long it has lasted, and the part still tied to milestones is said.
+  const holders = page.getByTestId("record-holders");
+  await expect(holders.getByTestId("record-holder").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(holders.getByTestId("record-holders-incomplete")).toHaveCount(0);
+  await expect(holders.getByTestId("record-holder-age").first()).toContainText(
+    "held for",
+  );
+  await expect(
+    holders.getByTestId("record-holder-locked").first(),
+  ).toContainText("held back until milestones are reached");
+  // Every figure is a share of the whole, so together they never pass 100%.
+  const percents = await holders
+    .getByTestId("record-holder-share")
+    .allTextContents();
+  const total = percents
+    .map((text) => Number.parseFloat(text))
+    .reduce((sum, value) => sum + value, 0);
+  expect(percents.length).toBeGreaterThan(0);
+  expect(total).toBeGreaterThan(99.5);
+  expect(total).toBeLessThanOrEqual(100.5);
+
   // What happened: the payment, who approved it, and the claim that was turned down with who objected.
   const entries = page.getByTestId("record-entry");
   await expect(entries.filter({ hasText: "was paid 200" })).toHaveCount(1);
