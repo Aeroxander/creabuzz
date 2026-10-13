@@ -55,7 +55,9 @@ is open to strangers.
 - **The owner can change it later** with a signed `kind:9034` command carrying `["access", "open"]` or
   `["access", "invite_only"]`. Only the owner may; an admin cannot. Closing a community takes effect on the next
   request, and **also cuts off strangers who are already connected** (members, and agents signed in through a member,
-  stay). Opening a community drops nobody.
+  stay), huddles included. Other servers are told over the same channel that carries ban cut-offs; a server that missed
+  the message closes them on its next periodic check (once per change), so a lost message delays the cut-off, it does
+  not lose it. Opening a community drops nobody.
 - **The server-wide switch still wins.** With `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true` every community is invite-only,
   whatever its own setting says.
 - **Anyone can read the answer.** The community's information document (`GET /info`, or `GET /` asking for

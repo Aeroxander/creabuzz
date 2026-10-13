@@ -1528,4 +1528,79 @@ mod postgres_tests {
         assert_eq!(state.drop_live_non_members(tenant.community()).await, 0);
         assert!(!stranger_socket.is_cancelled());
     }
+
+    /// A server that never heard the closing (a lost cross-server message) still closes its strangers on its next
+    /// periodic revalidation, once per change, audio sockets included. Members stay.
+    /// Mutation: drop the `enforce_members_only` call from the revalidation → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn a_server_that_missed_the_closing_still_closes_its_strangers_on_the_next_revalidation()
+    {
+        use crate::state::CommunityConnectionControl;
+        use tokio_util::sync::CancellationToken;
+
+        let host = format!("access-missed-{}.example", uuid::Uuid::new_v4().simple());
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (owner, member, stranger, audio_stranger, late) = (
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+        );
+        seed(&state, &tenant, &owner, "owner").await;
+        seed(&state, &tenant, &member, "member").await;
+
+        let admitted_root = |keys: &Keys| {
+            let (id, cancel) = register_root_socket(&state, tenant.community(), keys);
+            state.conn_manager.mark_admitted(id);
+            cancel
+        };
+        let member_socket = admitted_root(&member);
+        let stranger_socket = admitted_root(&stranger);
+        let audio_control = CommunityConnectionControl::new(CancellationToken::new());
+        audio_control.bind_pubkey(audio_stranger.public_key().to_bytes());
+        let _guard = state.community_connections.register(
+            uuid::Uuid::new_v4(),
+            tenant.community(),
+            audio_control.clone(),
+        );
+        let audio_socket = audio_control.cancellation_token();
+
+        // Open: a tick closes nobody.
+        assert_eq!(state.revalidate_live_communities().await, 0);
+        assert!(!stranger_socket.is_cancelled() && !audio_socket.is_cancelled());
+
+        // The community becomes members-only in the database; this server was told nothing.
+        state
+            .db
+            .set_community_membership_required(tenant.community(), true)
+            .await
+            .expect("close it");
+        state.revalidate_live_communities().await;
+        assert!(stranger_socket.is_cancelled(), "a connected stranger");
+        assert!(audio_socket.is_cancelled(), "a stranger in a huddle");
+        assert!(!member_socket.is_cancelled(), "a member stays");
+
+        // Once per change: someone who got in afterwards is not swept by the next tick (sign-in is what refuses them).
+        let late_socket = admitted_root(&late);
+        assert_eq!(state.revalidate_live_communities().await, 0);
+        assert!(!late_socket.is_cancelled());
+
+        // Open and closed again is a new change, and is enforced again.
+        state
+            .db
+            .set_community_membership_required(tenant.community(), false)
+            .await
+            .expect("open it");
+        state.revalidate_live_communities().await;
+        state
+            .db
+            .set_community_membership_required(tenant.community(), true)
+            .await
+            .expect("close it again");
+        state.revalidate_live_communities().await;
+        assert!(late_socket.is_cancelled());
+        assert!(!member_socket.is_cancelled());
+    }
 }

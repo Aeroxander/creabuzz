@@ -445,6 +445,23 @@ impl CommunityConnectionRegistry {
         closed
     }
 
+    /// The people with an audio socket in one community on this pod: each signed-in key once, with the owner an agent
+    /// was admitted through, when it has one. (Root sockets track theirs in the [`ConnectionManager`].)
+    pub(crate) fn bound_principals(
+        &self,
+        community_id: CommunityId,
+    ) -> Vec<(Vec<u8>, Option<[u8; 32]>)> {
+        self.connections
+            .iter()
+            .filter(|entry| entry.value().0 == community_id)
+            .filter_map(|entry| {
+                let control = &entry.value().1;
+                let pubkey = control.pubkey.get()?;
+                Some((pubkey.to_vec(), control.owner.get().copied()))
+            })
+            .collect()
+    }
+
     /// Returns the distinct communities with live sockets on this pod.
     pub fn bound_communities(&self) -> HashSet<CommunityId> {
         self.connections
@@ -1341,6 +1358,10 @@ pub struct AppState {
     /// a database read on every request. Closing a community invalidates its entry here at once; another server process
     /// learns within the cache's lifetime (`MEMBERSHIP_POLICY_TTL`), and the authoritative checks bypass it.
     pub membership_policy_cache: Arc<moka::sync::Cache<CommunityId, bool>>,
+    /// Communities whose members-only setting this pod has already enforced on its live sockets, by what the setting
+    /// was when it did. The periodic revalidation closes the sockets of anyone who is not a member of a community that
+    /// became members-only without this pod hearing of it (a lost cross-server message), once per change.
+    pub membership_sweep_seen: Arc<DashMap<CommunityId, bool>>,
     /// Caps on self-serve community creation (`POST /self-serve/communities`): attempts per signing key and creations per
     /// hour across the deployment.
     pub self_serve_limiter: Arc<crate::api::self_serve::SelfServeLimiter>,
@@ -1600,6 +1621,7 @@ impl AppState {
                     .time_to_live(MEMBERSHIP_POLICY_TTL)
                     .build(),
             ),
+            membership_sweep_seen: Arc::new(DashMap::new()),
             self_serve_limiter: Arc::new(crate::api::self_serve::SelfServeLimiter::new()),
             media_uploads_in_flight: Arc::new(DashMap::new()),
             observer_owner_cache: Arc::new(
@@ -2167,22 +2189,36 @@ impl AppState {
     }
 
     /// After a community becomes members-only, close this pod's sockets for everyone who is not a member (an agent
-    /// counts through its owner, as it does when it signs in). Returns how many sockets were closed.
+    /// counts through its owner, as it does when it signs in), audio sockets included. Returns how many sockets were
+    /// closed.
     ///
     /// Reads the setting and each person's membership from the writer, so a command that arrives late cannot close
-    /// sockets of a community that has since been opened again. A failed read leaves that socket alone: it is
-    /// refused anyway the next time it signs in, and the periodic checks catch it.
+    /// sockets of a community that has since been opened again. A failed read leaves that socket alone: it is refused
+    /// anyway the next time it signs in, and [`Self::revalidate_live_communities`] sweeps again.
     pub async fn drop_live_non_members(&self, community: CommunityId) -> usize {
+        self.sweep_live_non_members(community).await.0
+    }
+
+    /// [`Self::drop_live_non_members`], also saying whether every person was checked: `false` when any read failed, so
+    /// the caller knows the sweep has to be tried again.
+    async fn sweep_live_non_members(&self, community: CommunityId) -> (usize, bool) {
         match self.membership_required(community, true).await {
             Ok(true) => {}
-            Ok(false) => return 0,
+            Ok(false) => return (0, true),
             Err(error) => {
                 tracing::warn!(%community, %error, "could not read the community's access setting; not dropping anyone");
-                return 0;
+                return (0, false);
+            }
+        }
+        let mut principals = self.conn_manager.live_principals(community);
+        for principal in self.community_connections.bound_principals(community) {
+            if !principals.contains(&principal) {
+                principals.push(principal);
             }
         }
         let mut closed = 0;
-        for (pubkey, owner) in self.conn_manager.live_principals(community) {
+        let mut complete = true;
+        for (pubkey, owner) in principals {
             let direct = self
                 .db
                 .is_relay_member_writer(community, &hex::encode(&pubkey))
@@ -2209,11 +2245,12 @@ impl AppState {
                     );
                 }
                 Err(error) => {
+                    complete = false;
                     tracing::warn!(%community, %error, "could not check a connected person's membership; leaving them connected");
                 }
             }
         }
-        closed
+        (closed, complete)
     }
 
     /// [`Self::drop_live_non_members`] on this pod now, and on every other pod through the connection-control channel.
@@ -2293,6 +2330,30 @@ impl AppState {
             .await
     }
 
+    /// For an active community with live sockets: when its members-only setting is on and this pod has not yet
+    /// enforced it, close the sockets of everyone who is not a member. Reads the setting from the writer once per
+    /// community per tick and sweeps once per change (and again next tick if a read failed), so a community that
+    /// closed while this pod was not told (a lost cross-server message) is still closed here, without a database read
+    /// per connected person on every tick.
+    async fn enforce_members_only(
+        &self,
+        community: CommunityId,
+    ) -> Result<usize, buzz_db::DbError> {
+        let required = self.membership_required(community, true).await?;
+        if !required {
+            self.membership_sweep_seen.insert(community, false);
+            return Ok(0);
+        }
+        if self.membership_sweep_seen.get(&community).map(|seen| *seen) == Some(true) {
+            return Ok(0);
+        }
+        let (closed, complete) = self.sweep_live_non_members(community).await;
+        if complete {
+            self.membership_sweep_seen.insert(community, true);
+        }
+        Ok(closed)
+    }
+
     /// Revalidate all communities with live sockets and cancel inactive ones.
     ///
     /// This is the durable backstop for Redis pub/sub's lossy offline-subscriber
@@ -2306,7 +2367,7 @@ impl AppState {
                 // the per-tick row lock off them; the fence re-checks under the
                 // lock before closing anything.
                 if self.db.is_community_active(community_id).await? {
-                    return Ok(0);
+                    return self.enforce_members_only(community_id).await;
                 }
                 self.disconnect_if_inactive(community_id)
                     .await
