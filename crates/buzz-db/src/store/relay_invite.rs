@@ -73,6 +73,28 @@ pub struct MintedInvite {
     pub invite_id: uuid::Uuid,
 }
 
+/// An invite that can still be used, as an owner or admin sees it. The code itself is not here: only its hash is
+/// stored, so an invite made earlier cannot be shown again, only counted and ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveInvite {
+    /// The invite's database-generated UUID.
+    pub id: uuid::Uuid,
+    /// Hex pubkey of the owner or admin who made it.
+    pub created_by: String,
+    /// When it was made (UTC).
+    pub created_at: DateTime<Utc>,
+    /// When it stops working (UTC).
+    pub expires_at: DateTime<Utc>,
+    /// `None` means unlimited.
+    pub max_uses: Option<i32>,
+    /// How many people have joined with it.
+    pub use_count: i32,
+}
+
+/// The most invites listed at once. Minting is bounded by what owners and admins do by hand, so this is a guard
+/// against an unbounded response, not a limit anyone should meet.
+pub const MAX_LISTED_INVITES: i64 = 200;
+
 fn validate_mint_inputs(ttl_secs: u64, max_uses: Option<i32>) -> Result<()> {
     if !(MIN_INVITE_TTL_SECS..=MAX_INVITE_TTL_SECS).contains(&ttl_secs) {
         return Err(crate::error::DbError::InvalidData(format!(
@@ -148,6 +170,68 @@ pub async fn mint_relay_invite(
         uses_remaining: max_uses,
         invite_id,
     })
+}
+
+/// The community's invites that can still be used: not expired, not out of uses. Newest first, at most
+/// [`MAX_LISTED_INVITES`]. Read from the writer, so an invite made a moment ago is in the list.
+pub async fn list_active_relay_invites(
+    pool: &PgPool,
+    community: CommunityId,
+) -> Result<Vec<ActiveInvite>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows = sqlx::query(
+        "SELECT id, created_by, created_at, expires_at, max_uses, use_count \
+         FROM relay_invites \
+         WHERE community_id = $1 \
+           AND expires_at > now() \
+           AND (max_uses IS NULL OR use_count < max_uses) \
+         ORDER BY created_at DESC \
+         LIMIT $2",
+    )
+    .bind(community.as_uuid())
+    .bind(MAX_LISTED_INVITES)
+    .fetch_all(&mut *connection)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(ActiveInvite {
+                id: row.try_get("id")?,
+                created_by: row.try_get("created_by")?,
+                created_at: row.try_get("created_at")?,
+                expires_at: row.try_get("expires_at")?,
+                max_uses: row.try_get("max_uses")?,
+                use_count: row.try_get("use_count")?,
+            })
+        })
+        .collect()
+}
+
+/// End an invite now: the next person to present it is told it has expired. Returns false when this community has no
+/// such invite, or it had already ended. The row stays (its use count is a record of who came in through it) until
+/// the retention sweep reaps it. Scoped to the community, so one community can never end another's invite.
+pub async fn revoke_relay_invite(
+    pool: &PgPool,
+    community: CommunityId,
+    invite_id: uuid::Uuid,
+) -> Result<bool> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let done = sqlx::query(
+        "UPDATE relay_invites SET expires_at = now() \
+         WHERE community_id = $1 AND id = $2 AND expires_at > now()",
+    )
+    .bind(community.as_uuid())
+    .bind(invite_id)
+    .execute(&mut *connection)
+    .await?;
+    Ok(done.rows_affected() == 1)
 }
 
 fn log_claim_outcome(
@@ -411,6 +495,25 @@ impl Db {
         max_uses: Option<i32>,
     ) -> Result<MintedInvite> {
         mint_relay_invite(&self.pool, community, created_by, ttl_secs, max_uses).await
+    }
+
+    /// The community's invites that can still be used, newest first.
+    #[datastore_span(name = "list_active_relay_invites", system = "postgresql")]
+    pub async fn list_active_relay_invites(
+        &self,
+        community: CommunityId,
+    ) -> Result<Vec<ActiveInvite>> {
+        list_active_relay_invites(&self.pool, community).await
+    }
+
+    /// End an invite now. False when the community has no such invite or it had already ended.
+    #[datastore_span(name = "revoke_relay_invite", system = "postgresql")]
+    pub async fn revoke_relay_invite(
+        &self,
+        community: CommunityId,
+        invite_id: uuid::Uuid,
+    ) -> Result<bool> {
+        revoke_relay_invite(&self.pool, community, invite_id).await
     }
 
     /// Delete one bounded batch of invites expired before `cutoff`.
@@ -679,6 +782,138 @@ mod postgres_tests {
             .await
             .expect("second membership"));
         delete_test_community(&pool, community).await;
+    }
+
+    /// The list shows only invites that can still be used: not ended, not expired, not out of uses; newest first;
+    /// and only this community's. Mutation: drop any one of the three conditions → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn the_list_has_only_invites_that_can_still_be_used_in_this_community() {
+        let pool = setup_pool().await;
+        let community = make_test_community(&pool).await;
+        let elsewhere = make_test_community(&pool).await;
+
+        let older = mint_relay_invite(&pool, community, "owner", 3600, None)
+            .await
+            .expect("older invite");
+        let newer = mint_relay_invite(&pool, community, "admin", 7200, Some(3))
+            .await
+            .expect("newer invite");
+        let spent = mint_relay_invite(&pool, community, "owner", 3600, Some(1))
+            .await
+            .expect("spent invite");
+        let lapsed = mint_relay_invite(&pool, community, "owner", 3600, None)
+            .await
+            .expect("lapsed invite");
+        let _other = mint_relay_invite(&pool, elsewhere, "owner", 3600, None)
+            .await
+            .expect("another community's invite");
+
+        // One is used up, one has lapsed.
+        assert!(matches!(
+            claim_relay_invite(
+                &pool,
+                community,
+                &hash_v2_code(&spent.code),
+                &test_pubkey(),
+                None
+            )
+            .await
+            .expect("spend"),
+            ClaimOutcome::Joined { .. }
+        ));
+        sqlx::query("UPDATE relay_invites SET expires_at = now() - interval '1 second' WHERE community_id = $1 AND id = $2")
+            .bind(community.as_uuid())
+            .bind(lapsed.invite_id)
+            .execute(&pool)
+            .await
+            .expect("lapse");
+        // Make the order unambiguous even on a coarse clock.
+        sqlx::query("UPDATE relay_invites SET created_at = now() - interval '1 hour' WHERE community_id = $1 AND id = $2")
+            .bind(community.as_uuid())
+            .bind(older.invite_id)
+            .execute(&pool)
+            .await
+            .expect("age the older invite");
+
+        let listed = list_active_relay_invites(&pool, community)
+            .await
+            .expect("list");
+        assert_eq!(
+            listed.iter().map(|i| i.id).collect::<Vec<_>>(),
+            vec![newer.invite_id, older.invite_id]
+        );
+        assert_eq!(listed[0].created_by, "admin");
+        assert_eq!(listed[0].max_uses, Some(3));
+        assert_eq!(listed[0].use_count, 0);
+        assert_eq!(listed[1].max_uses, None);
+
+        delete_test_community(&pool, community).await;
+        delete_test_community(&pool, elsewhere).await;
+    }
+
+    /// Ending an invite stops it working at once, keeps its use count, and cannot be done by another community or
+    /// twice. Mutation: drop the community scope from the UPDATE → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn ending_an_invite_stops_it_and_is_scoped_to_its_community() {
+        let pool = setup_pool().await;
+        let community = make_test_community(&pool).await;
+        let elsewhere = make_test_community(&pool).await;
+        let invite = mint_relay_invite(&pool, community, "owner", 3600, None)
+            .await
+            .expect("invite");
+        let hash = hash_v2_code(&invite.code);
+        assert!(matches!(
+            claim_relay_invite(&pool, community, &hash, &test_pubkey(), None)
+                .await
+                .expect("one person uses it"),
+            ClaimOutcome::Joined { .. }
+        ));
+
+        assert!(
+            !revoke_relay_invite(&pool, elsewhere, invite.invite_id)
+                .await
+                .expect("another community"),
+            "another community cannot end it"
+        );
+        assert_eq!(
+            claim_relay_invite(&pool, community, &hash, &test_pubkey(), None)
+                .await
+                .expect("still works"),
+            ClaimOutcome::Joined {
+                use_count: 2,
+                uses_remaining: None
+            }
+        );
+
+        assert!(revoke_relay_invite(&pool, community, invite.invite_id)
+            .await
+            .expect("end it"));
+        assert!(
+            !revoke_relay_invite(&pool, community, invite.invite_id)
+                .await
+                .expect("again"),
+            "ending it twice says nothing happened the second time"
+        );
+        assert_eq!(
+            claim_relay_invite(&pool, community, &hash, &test_pubkey(), None)
+                .await
+                .expect("after ending"),
+            ClaimOutcome::Expired
+        );
+        assert_eq!(
+            use_count(&pool, community, invite.invite_id).await,
+            2,
+            "who came in through it stays on record"
+        );
+        assert!(list_active_relay_invites(&pool, community)
+            .await
+            .expect("list")
+            .is_empty());
+
+        delete_test_community(&pool, community).await;
+        delete_test_community(&pool, elsewhere).await;
     }
 
     #[tokio::test]

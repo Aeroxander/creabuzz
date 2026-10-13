@@ -396,6 +396,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // Relay invites: mint (owner/admin) + claim (membership-gate exempt)
         .route("/api/invites", post(api::invites::mint_invite))
+        // Invites already made: list (owner/admin) and end one (owner/admin)
+        .route("/api/invites/list", post(api::invites::list_invites))
+        .route("/api/invites/revoke", post(api::invites::revoke_invite))
         .route("/api/join-policy", get(api::invites::join_policy))
         // Policy documents as standalone pages — desktop opens these in the
         // system browser instead of rendering the Markdown in-app.
@@ -3047,6 +3050,12 @@ mod tests {
                 ),
                 ("POST", "/gifs/share".to_owned(), br#"{"id":"x"}"#.to_vec()),
                 ("POST", "/api/invites".to_owned(), b"{}".to_vec()),
+                ("POST", "/api/invites/list".to_owned(), b"{}".to_vec()),
+                (
+                    "POST",
+                    "/api/invites/revoke".to_owned(),
+                    format!(r#"{{"id":"{}"}}"#, uuid::Uuid::nil()).into_bytes(),
+                ),
                 (
                     "GET",
                     format!("/workflows/{}/runs", uuid::Uuid::nil()),
