@@ -220,3 +220,20 @@ test("the report dialog is accessible, with an error showing", async ({
   await expect(page.getByTestId("report-error")).toBeVisible();
   await expectAccessible(page, "report dialog");
 });
+
+test("the message actions are reachable and visible from the keyboard, not only on hover", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  await openChat(page, relay);
+  const button = theirRow(page).getByTestId("report-button");
+  const actions = button.locator("..");
+  // Hidden until the row is hovered or something inside it has focus.
+  await page.mouse.move(0, 0);
+  await expect(actions).toHaveCSS("opacity", "0");
+  await button.focus();
+  await expect(actions).toHaveCSS("opacity", "1");
+  // And it works from the keyboard: Enter opens the dialog.
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("report-form")).toBeVisible();
+});

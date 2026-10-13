@@ -282,7 +282,5 @@ export function describeActiveInvite(
 
 /** Whether a failed sign-in to a community looks like "you are not on its list" rather than a broken connection. */
 export function looksLikeNotAMember(message: string): boolean {
-  return /not a (relay |community )?member|membership|restricted/i.test(
-    message,
-  );
+  return /not a (relay |community )?member|membership/i.test(message);
 }

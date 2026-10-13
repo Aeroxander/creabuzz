@@ -238,7 +238,7 @@ function MessageRow({
               minute: "2-digit",
             })}
           </time>
-          <span className="ml-auto flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/60">
+          <span className="ml-auto flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 dark:text-white/60">
             {!isDeleted && (
               <>
                 <button
@@ -323,7 +323,7 @@ function MessageRow({
           </div>
         )}
         {reactions.length > 0 && <ReactionPills events={reactions} />}
-        <div className="mt-1 flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 dark:text-white/60">
+        <div className="mt-1 flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 dark:text-white/60">
           <Smile className="h-3.5 w-3.5" />
           {QUICK_REACTIONS.map((emoji) => (
             <button

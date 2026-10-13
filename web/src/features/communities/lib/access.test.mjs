@@ -197,6 +197,8 @@ test("a refused sign-in is told from a broken connection by what the server said
   assert.equal(looksLikeNotAMember("restricted: not a relay member"), true);
   assert.equal(looksLikeNotAMember("relay_membership_required"), true);
   assert.equal(looksLikeNotAMember("timed out"), false);
+  // Other refusals are not "you are not on the list": they keep the retry that a plain failure offers.
+  assert.equal(looksLikeNotAMember("restricted: rate limited"), false);
   assert.equal(looksLikeNotAMember("server responded 500"), false);
 });
 

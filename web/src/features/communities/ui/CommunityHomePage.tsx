@@ -72,7 +72,13 @@ function CommunityLoadState({
  * What someone sees when they open a community that is invite-only and they are not in it: that it is private, and
  * what to do, instead of a page that reads like the server is broken.
  */
-function InviteOnlyNotice({ host }: { host: string }) {
+function InviteOnlyNotice({
+  host,
+  onRetry,
+}: {
+  host: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
       <div
@@ -89,7 +95,14 @@ function InviteOnlyNotice({ host }: { host: string }) {
         <p className="mt-3 text-sm text-black/70 dark:text-white/70">
           Ask someone in it for an invite link, then open the link to join.
         </p>
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <Button
+            data-testid="community-invite-only-retry"
+            onClick={onRetry}
+            variant="outline"
+          >
+            Try again
+          </Button>
           <Button asChild variant="outline">
             <Link to="/c">All communities</Link>
           </Button>
@@ -150,7 +163,9 @@ export function CommunityHomePage() {
     access.data === "invite_only" &&
     looksLikeNotAMember(errorMessage(channels.error))
   ) {
-    return <InviteOnlyNotice host={host} />;
+    return (
+      <InviteOnlyNotice host={host} onRetry={() => void channels.refetch()} />
+    );
   }
 
   if (channels.isError) {
