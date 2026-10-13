@@ -228,3 +228,11 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   the owner sees it, with the reason and note, in the queue). **Found and fixed on the way:** every signed request without a body had no nonce, so
   two identical reads in the same second signed the same authorization and the second was turned away as a replay; the moderator check and
   the queue's first read are exactly that pair, so a moderator could see "Only community moderators can review reports" on their own queue.
+- **Markets** (`/markets`, linked from Launches, which stays lit): the board of projects whose raise succeeded, each with the last traded price, the
+  move over the last day, what was traded, a small chart and a link to its track record. Every figure comes from the price service's hourly
+  candles (a price someone actually got); a project that has not traded says "Not traded yet", not zeros; projects without figures always sort
+  last; with no price service in the build the page says so. Sorts: most traded, biggest move, newest. Checked: 10 unit tests for the arithmetic
+  and formatting, 4 mocked browser tests in the standard build, and `scripts/web-markets-e2e.sh` (a build pointed at a stand-in price service that
+  the spec answers with real-shaped pools and candles, both pool orientations). **Not checked against a real chain**: the LBAMM clone the real-chain
+  market script needs is gone and I did not download it. Not built: market cap (needs total Shares per project), a per-person trade history,
+  and a trading P&L on the social feed (D6; waits for wallet linking, which says who a wallet is).

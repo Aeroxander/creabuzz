@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { priceIndexerUrl, recordSaleCurrency } from "./chain";
 import {
@@ -34,6 +34,76 @@ async function getJson(url: string): Promise<unknown> {
 }
 
 /**
+ * The pool that trades `token` (a project's Shares) against `currency`, once it has traded; null before. Asks the price
+ * service at `base`.
+ */
+export async function fetchMarketPool(
+  base: string,
+  token: string,
+  currency: string,
+): Promise<IndexedPool | null> {
+  const url = poolsUrl(base, token);
+  if (!url) return null;
+  const pool = pickPool(parsePools(await getJson(url)), token, currency);
+  return pool && pool.swaps > 0 ? pool : null;
+}
+
+/** The traded prices of a launch's Shares in `pool`, one width of candle, oldest first. */
+export async function fetchMarketCandles(
+  base: string,
+  launch: MarketLaunch,
+  pool: IndexedPool,
+  interval: number,
+  limit: number,
+): Promise<MarketCandle[]> {
+  const token = launch.record.token;
+  const url = candlesUrl(base, pool.id, interval, limit);
+  if (!url || token === null) return [];
+  return marketCandles(
+    parseCandles(await getJson(url)),
+    sharesAreToken0(pool, token),
+    recordSaleCurrency(launch.record).decimals,
+  );
+}
+
+/**
+ * The last two days of hourly traded prices for each launch, in the order given: an empty list for a launch that has
+ * not traded, and `undefined` data while it loads or when the price service could not be reached. Used by the market
+ * board, which needs every project's figures at once so it can sort them.
+ */
+export function useMarketBoard(launches: readonly MarketLaunch[]) {
+  const base = priceIndexerUrl();
+  return useQueries({
+    queries: launches.map((launch) => {
+      const { token, currency } = launch.record;
+      const usable =
+        base !== null &&
+        token !== null &&
+        currency !== null &&
+        ADDRESS.test(token) &&
+        ADDRESS.test(currency);
+      return {
+        queryKey: ["launchpad", "market-board", base, token, currency],
+        enabled: usable,
+        queryFn: async (): Promise<MarketCandle[]> => {
+          const pool = await fetchMarketPool(
+            base as string,
+            token as string,
+            currency as string,
+          );
+          return pool
+            ? fetchMarketCandles(base as string, launch, pool, 3600, 48)
+            : [];
+        },
+        staleTime: 30_000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      };
+    }),
+  });
+}
+
+/**
  * The pool that trades this launch's Shares against its sale currency, once it has traded. Null when no price service
  * is configured, the launch has no Shares or currency address, or nothing has traded: callers then show what they
  * showed before (recorded bids, or the sale's floor), labelled as that.
@@ -50,16 +120,8 @@ export function useMarketPool(launch: MarketLaunch) {
   return useQuery({
     queryKey: ["launchpad", "market-pool", base, token, currency],
     enabled: usable,
-    queryFn: async (): Promise<IndexedPool | null> => {
-      const url = poolsUrl(base as string, token as string);
-      if (!url) return null;
-      const pool = pickPool(
-        parsePools(await getJson(url)),
-        token as string,
-        currency as string,
-      );
-      return pool && pool.swaps > 0 ? pool : null;
-    },
+    queryFn: () =>
+      fetchMarketPool(base as string, token as string, currency as string),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: 1,
@@ -82,21 +144,14 @@ export function useMarketCandles(
   return useQuery({
     queryKey: ["launchpad", "market-candles", base, pool?.id, interval, limit],
     enabled: base !== null && pool !== null && token !== null,
-    queryFn: async (): Promise<MarketCandle[]> => {
-      const url = candlesUrl(
+    queryFn: () =>
+      fetchMarketCandles(
         base as string,
-        (pool as IndexedPool).id,
+        launch,
+        pool as IndexedPool,
         interval,
         limit,
-      );
-      if (!url) return [];
-      const decimals = recordSaleCurrency(launch.record).decimals;
-      return marketCandles(
-        parseCandles(await getJson(url)),
-        sharesAreToken0(pool as IndexedPool, token as string),
-        decimals,
-      );
-    },
+      ),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     retry: 1,

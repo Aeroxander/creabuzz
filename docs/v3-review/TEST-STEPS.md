@@ -249,6 +249,20 @@ By hand (an owner and one invited person, as in 4k): the owner posts on **Social
 own post has none), picks **Spam or a scam**, adds a note and sends: "Thanks. The moderators have been told." The post is still there. As the
 owner open the community and press **Moderation** in the sidebar: one report shows "Spam", the note, and who sent it.
 
+## 4m. Markets (2026-10-13)
+
+```bash
+cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke markets.spec.ts   # the standard build: no price service
+scripts/web-markets-e2e.sh      # a build pointed at a stand-in price service; run `pnpm build` after it
+scripts/web-market-e2e.sh       # the REAL chain and price indexer (needs LBAMM_DIR); also visit /markets afterwards
+```
+
+By hand (a local chain with a project launched through the kit and its Shares put on the AMM, the indexer running and the app built with
+`VITE_PRICE_INDEXER_URL`, as in 4h): open **Launches**, press **Markets**. Each project that graduated is a row; the one that traded shows
+its last price, "+x% today" (or a fall), what was traded today and a small chart; one with no trades says "Not traded yet". Switch **Sort by**
+between **Most traded**, **Biggest move today** and **Newest**. **Track record** under a name opens that project's record. Without the
+price-service address in the build the page says prices are not available and lists the projects without prices.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

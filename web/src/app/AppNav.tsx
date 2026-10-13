@@ -64,7 +64,8 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: "/launchpad",
     label: "Launches",
     icon: Rocket,
-    matches: (p) => p.startsWith("/launchpad"),
+    // The market board is the other side of the same section: raising money, and what the Shares trade at.
+    matches: (p) => p.startsWith("/launchpad") || p === "/markets",
   },
   {
     to: "/portfolio",
