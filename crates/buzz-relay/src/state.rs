@@ -796,6 +796,24 @@ impl ConnectionManager {
         })
     }
 
+    /// The people with an admitted connection in one community on this pod: each signed-in key once, with the owner an
+    /// agent was admitted through, when it has one.
+    pub fn live_principals(&self, community_id: CommunityId) -> Vec<(Vec<u8>, Option<[u8; 32]>)> {
+        let mut seen = std::collections::HashSet::new();
+        self.connections
+            .iter()
+            .filter(|entry| {
+                entry.community_id == community_id && entry.admitted.load(Ordering::Acquire)
+            })
+            .filter_map(|entry| {
+                let pubkey = entry.authenticated_pubkey.read().ok()?.clone()?;
+                let owner = entry.admitted_owner.get().copied();
+                seen.insert((pubkey.clone(), owner))
+                    .then_some((pubkey, owner))
+            })
+            .collect()
+    }
+
     /// Return live connection IDs authenticated as `pubkey_bytes` in one community.
     ///
     /// The same Nostr key may be connected to multiple communities at once.
@@ -2114,6 +2132,13 @@ impl AppState {
                             }
                         });
                     }
+                    ConnControl::DropNonMembers => {
+                        let state = Arc::clone(&self);
+                        let community_id = scoped.community_id;
+                        tokio::spawn(async move {
+                            state.drop_live_non_members(community_id).await;
+                        });
+                    }
                     ConnControl::DisconnectPubkey {
                         pubkey,
                         event_id,
@@ -2139,6 +2164,69 @@ impl AppState {
                 }
             }
         }
+    }
+
+    /// After a community becomes members-only, close this pod's sockets for everyone who is not a member (an agent
+    /// counts through its owner, as it does when it signs in). Returns how many sockets were closed.
+    ///
+    /// Reads the setting and each person's membership from the writer, so a command that arrives late cannot close
+    /// sockets of a community that has since been opened again. A failed read leaves that socket alone: it is
+    /// refused anyway the next time it signs in, and the periodic checks catch it.
+    pub async fn drop_live_non_members(&self, community: CommunityId) -> usize {
+        match self.membership_required(community, true).await {
+            Ok(true) => {}
+            Ok(false) => return 0,
+            Err(error) => {
+                tracing::warn!(%community, %error, "could not read the community's access setting; not dropping anyone");
+                return 0;
+            }
+        }
+        let mut closed = 0;
+        for (pubkey, owner) in self.conn_manager.live_principals(community) {
+            let direct = self
+                .db
+                .is_relay_member_writer(community, &hex::encode(&pubkey))
+                .await;
+            let admitted = match (direct, owner) {
+                (Ok(true), _) => Ok(true),
+                (Ok(false), Some(owner)) => {
+                    self.db
+                        .is_relay_member_writer(community, &hex::encode(owner))
+                        .await
+                }
+                (other, None) => other,
+                (Err(error), Some(_)) => Err(error),
+            };
+            match admitted {
+                Ok(true) => {}
+                Ok(false) => {
+                    closed += self.disconnect_pubkey_local(
+                        community,
+                        &pubkey,
+                        &"0".repeat(64),
+                        "restricted: this community is now invite-only",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%community, %error, "could not check a connected person's membership; leaving them connected");
+                }
+            }
+        }
+        closed
+    }
+
+    /// [`Self::drop_live_non_members`] on this pod now, and on every other pod through the connection-control channel.
+    pub async fn drop_non_members_clusterwide(&self, tenant: &TenantContext) -> usize {
+        let closed = self.drop_live_non_members(tenant.community()).await;
+        if let Err(error) = self
+            .pubsub
+            .publish_conn_control(tenant, &ConnControl::DropNonMembers)
+            .await
+        {
+            tracing::warn!(%error, "could not tell other servers to drop non-members; they catch up when those people next sign in");
+        }
+        closed
     }
 
     /// Applies a cross-pod `DisconnectCommunity` command to local sockets.

@@ -138,6 +138,9 @@ pub enum ConnControl {
         #[serde(default)]
         unowned_only: bool,
     },
+    /// The carrying community now requires its people to be members. Each pod closes the live sockets of anyone who is
+    /// not one, so closing a community also reaches people who are already connected.
+    DropNonMembers,
 }
 
 /// A connection-control command received from a community-scoped Redis channel.

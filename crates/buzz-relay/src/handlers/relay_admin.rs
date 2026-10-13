@@ -11,6 +11,7 @@
 //! | 9031 | Remove member   | admin or owner       |
 //! | 9032 | Change role     | owner only           |
 //! | 9033 | Set workspace profile (icon) | admin or owner; on an open relay whose community has no admin/owner row at all, any authenticated sender (see [`may_set_workspace_profile`]) |
+//! | 9034 | Set who may join (`access`: `open` or `invite_only`) | owner only |
 
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use tracing::{info, warn};
 
 use buzz_core::kind::{
     RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    RELAY_ADMIN_SET_ACCESS, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::relay_members::RemoveResult;
@@ -255,6 +256,43 @@ async fn execute_relay_admin_command(
         .as_ref()
         .map(|m| m.role.as_str())
         .unwrap_or("");
+
+    // kind:9034 — Set who may join. Targets the community itself, not a member, and only its owner may change it:
+    // opening a private community to everyone, or closing a public one on its members, is not an admin's call.
+    if kind == RELAY_ADMIN_SET_ACCESS {
+        if sender_role != "owner" {
+            return Err("actor not authorized: must be owner".to_string());
+        }
+        let required = match extract_tag_value(event, "access").as_deref() {
+            Some("invite_only") => true,
+            Some("open") => false,
+            Some(other) => return Err(format!("invalid access: {other}")),
+            None => return Err("missing access tag".to_string()),
+        };
+        let found = state
+            .db
+            .set_community_membership_required(tenant.community(), required)
+            .await
+            .map_err(|e| format!("failed to store access setting: {e}"))?;
+        if !found {
+            return Err("community not found".to_string());
+        }
+        // Takes effect at once on this server; others learn within the cache's lifetime, and the sweep below reads the
+        // setting from the database.
+        state.forget_membership_policy(tenant.community());
+        let dropped = if required {
+            state.drop_non_members_clusterwide(tenant).await
+        } else {
+            0
+        };
+        info!(
+            sender = %sender_hex,
+            invite_only = required,
+            dropped,
+            "community access updated"
+        );
+        return Ok(());
+    }
 
     // kind:9033 — Set workspace profile (icon). Handled before p-tag
     // extraction: it targets the relay itself, not a member pubkey.
@@ -969,6 +1007,15 @@ mod postgres_tests {
         community: buzz_core::tenant::CommunityId,
         keys: &Keys,
     ) -> tokio_util::sync::CancellationToken {
+        register_root_socket(state, community, keys).1
+    }
+
+    /// [`bound_root_socket`], also returning the connection id so a test can finish admitting it.
+    fn register_root_socket(
+        state: &crate::state::AppState,
+        community: buzz_core::tenant::CommunityId,
+        keys: &Keys,
+    ) -> (uuid::Uuid, tokio_util::sync::CancellationToken) {
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
         let (ctrl, _ctrl_rx) = tokio::sync::mpsc::channel(4);
         let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
@@ -990,7 +1037,7 @@ mod postgres_tests {
         state
             .conn_manager
             .set_authenticated_pubkey(conn_id, keys.public_key().to_bytes().to_vec());
-        cancel
+        (conn_id, cancel)
     }
 
     /// Live sockets around a NIP-43 self-leave: the member's root and audio
@@ -1227,5 +1274,258 @@ mod postgres_tests {
         );
         assert!(target_socket.is_cancelled(), "the banned socket closes");
         assert!(!bystander_socket.is_cancelled(), "the bystander stays");
+    }
+
+    // ─── Who may join (kind:9034) ──────────────────────────────────────────
+    //
+    // The owner of a community decides whether people must be members to read or write in it. These drive the real
+    // command path and the same membership check every way in shares, against Postgres.
+
+    async fn submit_9034(
+        state: &Arc<AppState>,
+        tenant: &TenantContext,
+        keys: &Keys,
+        access: Option<&str>,
+    ) -> Result<(), RelayAdminError> {
+        let tags: Vec<Tag> = access
+            .map(|value| Tag::parse(["access", value]).expect("access tag"))
+            .into_iter()
+            .collect();
+        let event = EventBuilder::new(Kind::Custom(RELAY_ADMIN_SET_ACCESS as u16), "")
+            .tags(tags)
+            .sign_with_keys(keys)
+            .expect("sign 9034");
+        handle_relay_admin_event(tenant, state, &event).await
+    }
+
+    async fn seed(state: &Arc<AppState>, tenant: &TenantContext, keys: &Keys, role: &str) {
+        state
+            .db
+            .add_relay_member(tenant.community(), &keys.public_key().to_hex(), role, None)
+            .await
+            .expect("seed member");
+    }
+
+    async fn may_come_in(state: &Arc<AppState>, tenant: &TenantContext, keys: &Keys) -> bool {
+        use crate::api::relay_members::{check_relay_membership_authoritative, MembershipDecision};
+        !matches!(
+            check_relay_membership_authoritative(
+                state,
+                tenant.community(),
+                &keys.public_key().to_bytes(),
+                None,
+                None,
+            )
+            .await
+            .expect("membership check"),
+            MembershipDecision::Denied
+        )
+    }
+
+    /// Only the owner may change who can join: an admin, a member and a stranger are all refused, and the setting
+    /// does not move. Mutation: relax the owner check to admin-or-owner, or drop it → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn only_the_owner_can_change_who_may_join() {
+        let host = format!("access-owner-{}.example", uuid::Uuid::new_v4().simple());
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (owner, admin, member, stranger) = (
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+        );
+        seed(&state, &tenant, &owner, "owner").await;
+        seed(&state, &tenant, &admin, "admin").await;
+        seed(&state, &tenant, &member, "member").await;
+
+        for (keys, who) in [
+            (&admin, "an admin"),
+            (&member, "a member"),
+            (&stranger, "a stranger"),
+        ] {
+            assert_eq!(
+                submit_9034(&state, &tenant, keys, Some("invite_only")).await,
+                Err(RelayAdminError::Rejected(
+                    "actor not authorized: must be owner".to_string()
+                )),
+                "{who} must not be able to close the community"
+            );
+        }
+        assert!(
+            may_come_in(&state, &tenant, &stranger).await,
+            "refused attempts must leave the community open"
+        );
+
+        submit_9034(&state, &tenant, &owner, Some("invite_only"))
+            .await
+            .expect("the owner closes the community");
+        assert!(!may_come_in(&state, &tenant, &stranger).await);
+
+        for (keys, who) in [(&admin, "an admin"), (&stranger, "a stranger")] {
+            assert!(
+                submit_9034(&state, &tenant, keys, Some("open"))
+                    .await
+                    .is_err(),
+                "{who} must not be able to open the community"
+            );
+        }
+        assert!(
+            !may_come_in(&state, &tenant, &stranger).await,
+            "refused attempts must leave the community closed"
+        );
+    }
+
+    /// The command says exactly one of two things; anything else is refused and changes nothing.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn an_unclear_access_setting_is_refused_and_changes_nothing() {
+        let host = format!("access-bad-{}.example", uuid::Uuid::new_v4().simple());
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (owner, stranger) = (Keys::generate(), Keys::generate());
+        seed(&state, &tenant, &owner, "owner").await;
+
+        for access in [None, Some(""), Some("closed"), Some("INVITE_ONLY")] {
+            assert!(
+                submit_9034(&state, &tenant, &owner, access).await.is_err(),
+                "{access:?} must be refused"
+            );
+        }
+        assert!(may_come_in(&state, &tenant, &stranger).await);
+    }
+
+    /// Closing takes effect at once for the next person to come in, opening lets them back, and the other community
+    /// on the same server is never touched. Mutation: skip `forget_membership_policy` → RED (the cached answer lingers).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn closing_and_opening_take_effect_at_once_and_only_here() {
+        use crate::api::relay_members::{check_relay_membership, MembershipDecision};
+
+        let host = format!("access-flip-{}.example", uuid::Uuid::new_v4().simple());
+        let other_host = format!(
+            "access-flip-other-{}.example",
+            uuid::Uuid::new_v4().simple()
+        );
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (_, other) = workspace_profile_test_state(&other_host, false).await;
+        let (owner, member, stranger) = (Keys::generate(), Keys::generate(), Keys::generate());
+        seed(&state, &tenant, &owner, "owner").await;
+        seed(&state, &tenant, &member, "member").await;
+
+        // The cheap, cached check, as a request would make it: prime it while open.
+        let cached = |keys: &Keys, community| {
+            let state = state.clone();
+            let pubkey = keys.public_key().to_bytes();
+            async move {
+                check_relay_membership(&state, community, &pubkey, None, None)
+                    .await
+                    .expect("membership check")
+            }
+        };
+        assert_eq!(
+            cached(&stranger, tenant.community()).await,
+            MembershipDecision::OpenRelay
+        );
+
+        submit_9034(&state, &tenant, &owner, Some("invite_only"))
+            .await
+            .expect("close");
+        assert_eq!(
+            cached(&stranger, tenant.community()).await,
+            MembershipDecision::Denied,
+            "the next request after closing must be refused, not answered from a stale cache"
+        );
+        assert_eq!(
+            cached(&member, tenant.community()).await,
+            MembershipDecision::Member
+        );
+        assert_eq!(
+            cached(&stranger, other.community()).await,
+            MembershipDecision::OpenRelay,
+            "another community on the same server stays open"
+        );
+
+        submit_9034(&state, &tenant, &owner, Some("open"))
+            .await
+            .expect("open");
+        assert_eq!(
+            cached(&stranger, tenant.community()).await,
+            MembershipDecision::OpenRelay
+        );
+    }
+
+    /// Closing a community also reaches people who are already connected: strangers are cut off; members, an agent
+    /// signed in through a member, and connections to other communities are not.
+    /// Mutation: drop the `drop_non_members_clusterwide` call from the 9034 arm → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn closing_cuts_off_connected_strangers_and_nobody_else() {
+        let host = format!("access-drop-{}.example", uuid::Uuid::new_v4().simple());
+        let other_host = format!(
+            "access-drop-other-{}.example",
+            uuid::Uuid::new_v4().simple()
+        );
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (_, other) = workspace_profile_test_state(&other_host, false).await;
+        let (owner, member, agent, stranger, stranger_elsewhere) = (
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+        );
+        seed(&state, &tenant, &owner, "owner").await;
+        seed(&state, &tenant, &member, "member").await;
+
+        let admitted = |community, keys: &Keys, via: Option<&Keys>| {
+            let (id, cancel) = register_root_socket(&state, community, keys);
+            if let Some(via) = via {
+                state
+                    .conn_manager
+                    .set_admitted_owner(id, via.public_key().to_bytes());
+            }
+            state.conn_manager.mark_admitted(id);
+            cancel
+        };
+        let owner_socket = admitted(tenant.community(), &owner, None);
+        let member_socket = admitted(tenant.community(), &member, None);
+        let agent_socket = admitted(tenant.community(), &agent, Some(&member));
+        let stranger_socket = admitted(tenant.community(), &stranger, None);
+        let elsewhere_socket = admitted(other.community(), &stranger_elsewhere, None);
+
+        submit_9034(&state, &tenant, &owner, Some("invite_only"))
+            .await
+            .expect("close");
+
+        assert!(
+            stranger_socket.is_cancelled(),
+            "a connected stranger is cut off"
+        );
+        for (socket, who) in [
+            (&owner_socket, "the owner"),
+            (&member_socket, "a member"),
+            (&agent_socket, "an agent signed in through a member"),
+            (&elsewhere_socket, "someone in another community"),
+        ] {
+            assert!(!socket.is_cancelled(), "{who} stays connected");
+        }
+    }
+
+    /// Opening a community drops nobody, and a sweep that arrives after the community was opened again closes nothing.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn opening_drops_nobody_and_a_late_sweep_on_an_open_community_closes_nothing() {
+        let host = format!("access-late-{}.example", uuid::Uuid::new_v4().simple());
+        let (state, tenant) = workspace_profile_test_state(&host, false).await;
+        let (owner, stranger) = (Keys::generate(), Keys::generate());
+        seed(&state, &tenant, &owner, "owner").await;
+        let (id, stranger_socket) = register_root_socket(&state, tenant.community(), &stranger);
+        state.conn_manager.mark_admitted(id);
+
+        submit_9034(&state, &tenant, &owner, Some("open"))
+            .await
+            .expect("open");
+        assert_eq!(state.drop_live_non_members(tenant.community()).await, 0);
+        assert!(!stranger_socket.is_cancelled());
     }
 }

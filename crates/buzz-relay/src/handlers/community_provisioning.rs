@@ -420,14 +420,18 @@ async fn publish_membership_snapshot(
 /// This is the one create path both the operator endpoint (`create_only`) and the self-serve endpoint use: the host row,
 /// the owner row and the per-owner limit are one database transaction, so a create race can never rotate an existing
 /// owner. The caller is responsible for authorizing the request and for validating `host` and `owner_hex`.
+///
+/// `invite_only` makes the community members-only from its first moment, so there is no window in which strangers can
+/// walk into a community that was meant to be private.
 pub(crate) async fn create_community_for_owner(
     state: &Arc<AppState>,
     host: &str,
     owner_hex: &str,
+    invite_only: bool,
 ) -> Result<ProvisionCommunityResponse, String> {
     let record = match state
         .db
-        .create_community_with_owner(host, owner_hex)
+        .create_community_with_owner_and_access(host, owner_hex, invite_only)
         .await
         .map_err(|e| format!("failed to create community: {e}"))?
     {
@@ -444,6 +448,7 @@ pub(crate) async fn create_community_for_owner(
         community = %record.id,
         host = %record.host,
         owner = %owner_hex,
+        invite_only,
         "community created"
     );
     // Always: the owner's role must be readable by their own client (see `publish_membership_snapshot`).
@@ -504,7 +509,7 @@ pub async fn provision_community(
             "initial_owner_pubkey is required when create_only is true".to_string()
         })?;
         info!(operator = %operator_hex, "creating community via operator endpoint");
-        return create_community_for_owner(state, &request.host, owner_hex).await;
+        return create_community_for_owner(state, &request.host, owner_hex, false).await;
     }
 
     // Legacy convergence mode remains available to deployment operators and

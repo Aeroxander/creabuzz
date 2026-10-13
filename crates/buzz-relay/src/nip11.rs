@@ -33,6 +33,11 @@ pub struct RelayInfo {
     /// admins/owners via the kind:9033 command. Omitted when no icon is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Who may join this community: `"open"`, or `"invite_only"` when people must be members to read or write.
+    /// Per-community, so it is filled in for a resolved host only and left out for an unknown one (and when the setting
+    /// could not be read), never guessed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access: Option<&'static str>,
     /// Host-bound atomic read-state snapshot capability; absent on unresolved hosts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_state_snapshot: Option<serde_json::Value>,
@@ -282,6 +287,7 @@ impl RelayInfo {
             name: "Buzz Relay".to_string(),
             description: "Buzz — private team communication relay".to_string(),
             icon: icon.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+            access: None,
             read_state_snapshot: None,
             buzz_v1: None,
             artifacts: serde_json::json!({
@@ -394,6 +400,11 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
+        info.access = state
+            .membership_required(tenant.community(), false)
+            .await
+            .ok()
+            .map(|required| if required { "invite_only" } else { "open" });
         if state.config.buzz_v1_enabled {
             use buzz_db::personal_read::{
                 ELIGIBLE_KINDS, MAX_CHANNELS, MAX_CONTEXTS, MAX_CONTEXT_MESSAGES, MAX_INTENTS,
@@ -696,6 +707,52 @@ mod tests {
             .supported_extensions
             .expect("extensions")
             .contains(&"buzz-gif".to_string()));
+    }
+
+    /// The information document says who may join this community, so a person (or a client) can tell "invite only"
+    /// before trying to sign in. It follows the setting, and an unknown host gets no claim either way.
+    /// Mutation: always answer "open" → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn the_document_says_who_may_join_and_stays_silent_for_an_unknown_host() {
+        let state = crate::test_support::test_state_with(|config| {
+            config.require_relay_membership = false;
+        })
+        .await;
+        let owner = nostr::Keys::generate().public_key().to_hex();
+        let host = format!("nip11-access-{}.example", uuid::Uuid::new_v4().simple());
+        let community = match state
+            .db
+            .create_community_with_owner_and_access(&host, &owner, true)
+            .await
+            .expect("create community")
+        {
+            buzz_db::CreateCommunityWithOwnerResult::Created(record) => record.id,
+            other => panic!("expected a created community, got {other:?}"),
+        };
+
+        let served = |state: &crate::state::AppState, host: String| {
+            let state = state.clone();
+            async move {
+                serde_json::to_value(super::nip11_document(&state, &host).await)
+                    .expect("document is JSON")
+            }
+        };
+        assert_eq!(served(&state, host.clone()).await["access"], "invite_only");
+
+        state
+            .db
+            .set_community_membership_required(community, false)
+            .await
+            .expect("open it");
+        state.forget_membership_policy(community);
+        assert_eq!(served(&state, host.clone()).await["access"], "open");
+
+        let unknown = format!("nobody-{}.example", uuid::Uuid::new_v4().simple());
+        assert!(
+            served(&state, unknown).await.get("access").is_none(),
+            "an unknown host gets no claim about who may join"
+        );
     }
 
     /// NIP-WP → NIP-11 mirror: a set workspace icon is served in the standard

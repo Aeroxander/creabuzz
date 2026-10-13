@@ -150,6 +150,10 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<Value> {
 #[derive(Debug, Deserialize)]
 struct CreateRequest {
     name: String,
+    /// Who may join: `"invite_only"` (the default, so a community is private until its owner says otherwise) or
+    /// `"open"`.
+    #[serde(default)]
+    access: Option<String>,
 }
 
 /// `POST /self-serve/communities`: make a community of the signer's own.
@@ -198,6 +202,17 @@ pub async fn create(
             "Send the name as {\"name\": \"...\"}.",
         )
     })?;
+    let invite_only = match request.access.as_deref() {
+        None | Some("invite_only") => true,
+        Some("open") => false,
+        Some(_) => {
+            return Err(coded(
+                StatusCode::BAD_REQUEST,
+                "access_unknown",
+                "Choose \"open\" or \"invite_only\" for who can join.",
+            ))
+        }
+    };
     let name = normalize_slug(&request.name);
     validate_slug(&name)
         .map_err(|problem| coded(StatusCode::BAD_REQUEST, problem.code(), problem.message()))?;
@@ -220,7 +235,7 @@ pub async fn create(
         ));
     }
 
-    match create_community_for_owner(&state, &host, &pubkey.to_hex()).await {
+    match create_community_for_owner(&state, &host, &pubkey.to_hex(), invite_only).await {
         Ok(created) => Ok((
             StatusCode::CREATED,
             Json(serde_json::json!({
@@ -228,6 +243,7 @@ pub async fn create(
                 "host": created.host,
                 "url": websocket_url(origin, &created.host),
                 "owner_pubkey": created.owner_pubkey,
+                "access": if invite_only { "invite_only" } else { "open" },
             })),
         )),
         Err(message) => {
@@ -506,7 +522,15 @@ mod postgres_tests {
     }
 
     async fn create(state: Arc<AppState>, keys: &Keys, name: &str) -> axum::response::Response {
-        let body = serde_json::json!({ "name": name }).to_string();
+        create_with(state, keys, serde_json::json!({ "name": name })).await
+    }
+
+    async fn create_with(
+        state: Arc<AppState>,
+        keys: &Keys,
+        request: Value,
+    ) -> axum::response::Response {
+        let body = request.to_string();
         let url = format!("http://{INGRESS_HOST}/self-serve/communities");
         let auth = nip98_auth_header(keys, &url, "POST", Some(body.as_bytes()));
         send(state, "POST", Some(auth), Some(body)).await
@@ -738,6 +762,82 @@ mod postgres_tests {
             }),
             "the list must name the creator as owner"
         );
+    }
+
+    /// What a community's creator gets when they say nothing about who may join: a private one. A stranger is
+    /// refused by the same check every way in shares, the creator is not, and the answer says so.
+    /// Mutation: default `invite_only` to false in the handler → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn a_new_community_is_private_unless_the_creator_asks_for_open() {
+        use crate::api::relay_members::{check_relay_membership_authoritative, MembershipDecision};
+
+        let state = fresh_state(|c| c.require_relay_membership = false).await;
+        let owner = Keys::generate();
+        let stranger = Keys::generate();
+        let community_of = |json: &Value| {
+            buzz_core::CommunityId::from_uuid(
+                json["community_id"]
+                    .as_str()
+                    .and_then(|id| id.parse().ok())
+                    .expect("community id"),
+            )
+        };
+        let decision = |community, keys: &Keys| {
+            let state = state.clone();
+            let pubkey = keys.public_key().to_bytes();
+            async move {
+                check_relay_membership_authoritative(&state, community, &pubkey, None, None)
+                    .await
+                    .expect("membership check")
+            }
+        };
+
+        let silent = create(state.clone(), &owner, &unique_name()).await;
+        assert_eq!(silent.status(), StatusCode::CREATED);
+        let silent = read_json(silent).await;
+        assert_eq!(silent["access"], "invite_only");
+        assert_eq!(
+            decision(community_of(&silent), &stranger).await,
+            MembershipDecision::Denied
+        );
+        assert_eq!(
+            decision(community_of(&silent), &owner).await,
+            MembershipDecision::Member,
+            "the creator is the owner and always gets in"
+        );
+
+        let open = create_with(
+            state.clone(),
+            &owner,
+            serde_json::json!({ "name": unique_name(), "access": "open" }),
+        )
+        .await;
+        assert_eq!(open.status(), StatusCode::CREATED);
+        let open = read_json(open).await;
+        assert_eq!(open["access"], "open");
+        assert_eq!(
+            decision(community_of(&open), &stranger).await,
+            MembershipDecision::OpenRelay
+        );
+    }
+
+    /// An unknown word for who may join is refused, and creates nothing. Guessing "closed" must never silently make a
+    /// community that is open.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn an_unknown_access_choice_is_refused_and_creates_nothing() {
+        let state = fresh_state(|_| {}).await;
+        let name = unique_name();
+        let response = create_with(
+            state.clone(),
+            &Keys::generate(),
+            serde_json::json!({ "name": name, "access": "closed" }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(read_json(response).await["code"], "access_unknown");
+        assert!(!exists(&state, &format!("{name}.{DOMAIN}")).await);
     }
 
     #[tokio::test]
