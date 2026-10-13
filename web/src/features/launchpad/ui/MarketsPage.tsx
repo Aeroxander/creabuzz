@@ -25,12 +25,13 @@ import {
   formatBoardPrice,
   formatChange,
   formatVolume,
+  marketValue,
   sortBoard,
 } from "../lib/market-board";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import type { Launch } from "../models";
 import { useLaunches } from "../use-launches";
-import { useMarketBoard } from "../use-market";
+import { useMarketBoard, useSharesSupply } from "../use-market";
 import { UnauditedNotice } from "./UnauditedNotice";
 
 /** A line through the closing prices, drawn at whatever width the cell gives it. */
@@ -81,15 +82,24 @@ export function MarketsPage() {
 
   const graduated = useMemo(() => graduatedLaunches(data ?? []), [data]);
   const board = useMarketBoard(graduated);
+  // Only a project that has traded needs a market value, so only those are read from the chain.
+  const supplies = useSharesSupply(
+    graduated,
+    board.map((result) => (result.data?.length ?? 0) > 0),
+  );
   const now = Math.floor(Date.now() / 1000);
 
   const rows = graduated.map((launch, index) => {
     const result = board[index];
+    const stats = result?.data ? boardStats(result.data, now) : null;
+    const supply = supplies[index]?.data;
     return {
       launch,
       loading: result?.isLoading ?? false,
       failed: result?.isError ?? false,
-      stats: result?.data ? boardStats(result.data, now) : null,
+      stats,
+      value:
+        stats && supply !== undefined ? marketValue(stats.price, supply) : null,
       createdAt: launch.record.createdAt,
     };
   });
@@ -171,7 +181,7 @@ export function MarketsPage() {
           </div>
           <ul className="divide-y divide-black/10 rounded-xl border border-black/10 dark:divide-white/10 dark:border-white/10">
             {sorted.map((row) => {
-              const { launch, stats } = row;
+              const { launch, stats, value } = row;
               const symbol = symbolOf(launch);
               const up = (stats?.change24h ?? 0) >= 0;
               return (
@@ -235,10 +245,19 @@ export function MarketsPage() {
                         </p>
                       </div>
                       <p
-                        className="w-28 text-right text-xs text-black/60 tabular-nums dark:text-white/60"
+                        className="w-32 text-right text-xs text-black/60 tabular-nums dark:text-white/60"
                         data-testid="market-volume"
                       >
                         {formatVolume(stats.volume24h)} {symbol} traded today
+                        {value !== null ? (
+                          <span
+                            className="block"
+                            data-testid="market-value"
+                            title="The last price times every Share there is. Not what they could all be sold for."
+                          >
+                            all Shares worth {formatVolume(value)} {symbol}
+                          </span>
+                        ) : null}
                       </p>
                     </>
                   ) : (

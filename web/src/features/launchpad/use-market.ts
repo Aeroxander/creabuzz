@@ -1,6 +1,12 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 
-import { priceIndexerUrl, recordSaleCurrency } from "./chain";
+import {
+  ethCall,
+  getRpcEndpoint,
+  priceIndexerUrl,
+  recordSaleCurrency,
+} from "./chain";
+import { decodeWord, encodeCall0 } from "./lib/work";
 import {
   candlesUrl,
   type IndexedPool,
@@ -96,6 +102,39 @@ export function useMarketBoard(launches: readonly MarketLaunch[]) {
             : [];
         },
         staleTime: 30_000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      };
+    }),
+  });
+}
+
+/**
+ * How many Shares there are in each launch's DAO (the Shares' own total supply), in the order given. `undefined` data
+ * while it loads or when the chain could not be read: the board then shows no market value, never a guess.
+ */
+export function useSharesSupply(
+  launches: readonly MarketLaunch[],
+  /** Which launches to read, by position: only projects that have traded need a market value. */
+  wanted: readonly boolean[],
+) {
+  const rpc = getRpcEndpoint();
+  return useQueries({
+    queries: launches.map((launch, index) => {
+      const token = launch.record.token;
+      const usable =
+        wanted[index] === true &&
+        rpc !== "" &&
+        token !== null &&
+        ADDRESS.test(token);
+      return {
+        queryKey: ["launchpad", "shares-supply", rpc, token],
+        enabled: usable,
+        queryFn: async (): Promise<bigint> =>
+          decodeWord(
+            await ethCall(rpc, token as string, encodeCall0("totalSupply()")),
+          ),
+        staleTime: 300_000,
         refetchOnWindowFocus: false,
         retry: 1,
       };

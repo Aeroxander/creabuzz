@@ -91,7 +91,40 @@ function currencyFirst(
   };
 }
 
+const RPC = "http://127.0.0.1:18545";
+/** How many Shares each project has: Aurora 1,000,000, Beacon 2,000,000. */
+const SUPPLY: Record<string, bigint> = {
+  [AURORA]: 1_000_000n * 10n ** 18n,
+  [BEACON]: 2_000_000n * 10n ** 18n,
+};
+
 test.beforeEach(async ({ page }) => {
+  // The chain, answering only what the board asks it: each project's total supply.
+  await page.addInitScript((rpc) => {
+    window.localStorage.setItem("buzz.launchpad.rpc", rpc);
+  }, RPC);
+  await page.route(RPC, async (route) => {
+    const call = JSON.parse(route.request().postData() ?? "{}") as {
+      id: number;
+      method: string;
+      params: [{ to: string }];
+    };
+    const supply = SUPPLY[call.params?.[0]?.to?.toLowerCase() ?? ""];
+    await route.fulfill({
+      json:
+        call.method === "eth_call" && supply !== undefined
+          ? {
+              jsonrpc: "2.0",
+              id: call.id,
+              result: `0x${supply.toString(16).padStart(64, "0")}`,
+            }
+          : {
+              jsonrpc: "2.0",
+              id: call.id,
+              error: { code: -32000, message: "unexpected" },
+            },
+    });
+  });
   const relay = createMockRelay();
   relay.seed(launch("aurora", "Aurora", AURORA, 300));
   relay.seed(launch("beacon", "Beacon", BEACON, 200));
@@ -157,11 +190,19 @@ test("each project shows its last price, its move over the day and what was trad
   // From 1.00 (the last price before the day began) to 3.00.
   await expect(aurora.getByTestId("market-change")).toHaveText("+200.0% today");
   await expect(aurora.getByTestId("market-volume")).toContainText("10 ");
+  // Last price times every Share there is: 3.00 x 1,000,000.
+  await expect(aurora.getByTestId("market-value")).toContainText("3.0M");
 
   const beacon = rowOf(page, "Beacon");
   await expect(beacon.getByTestId("market-price")).toContainText("0.500");
   await expect(beacon.getByTestId("market-change")).toHaveText("0.0% today");
   await expect(beacon.getByTestId("market-volume")).toContainText("3.0");
+  // 0.50 x 2,000,000.
+  await expect(beacon.getByTestId("market-value")).toContainText("1.0M");
+  // No trades, no value.
+  await expect(rowOf(page, "Cygnus").getByTestId("market-value")).toHaveCount(
+    0,
+  );
 
   // Nothing was ever traded: no figures, said in words.
   await expect(rowOf(page, "Cygnus").getByTestId("market-untraded")).toHaveText(
@@ -179,6 +220,12 @@ test("the board is sorted by what was traded, and projects with no figures are a
     "Cygnus",
   ]);
   await page.getByTestId("markets-sort").selectOption("change");
+  await expect(page.getByTestId("market-name")).toHaveText([
+    "Aurora",
+    "Beacon",
+    "Cygnus",
+  ]);
+  await page.getByTestId("markets-sort").selectOption("value");
   await expect(page.getByTestId("market-name")).toHaveText([
     "Aurora",
     "Beacon",

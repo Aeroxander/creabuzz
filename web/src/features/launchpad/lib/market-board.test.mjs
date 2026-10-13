@@ -6,6 +6,7 @@ import {
   formatBoardPrice,
   formatChange,
   formatVolume,
+  marketValue,
   sortBoard,
   SPARKLINE_POINTS,
 } from "./market-board.ts";
@@ -152,4 +153,26 @@ test("moves, prices and volumes are written plainly", () => {
   assert.equal(formatVolume(250), "250");
   assert.equal(formatVolume(1234), "1.2k");
   assert.equal(formatVolume(3_400_000), "3.4M");
+});
+
+test("what all the Shares are worth is the last price times the supply, and nothing when either is unknown", () => {
+  assert.equal(marketValue(2, 1_000_000n * 10n ** 18n), 2_000_000);
+  assert.equal(marketValue(0.5, 3n * 10n ** 18n), 1.5);
+  assert.equal(marketValue(0, 10n ** 18n), null);
+  assert.equal(marketValue(-1, 10n ** 18n), null);
+  assert.equal(marketValue(1, 0n), null);
+  assert.equal(marketValue(Number.NaN, 10n ** 18n), null);
+});
+
+test("the board can be sorted by what all the Shares are worth, with unknown values last", () => {
+  const rows = [
+    { name: "none", stats: figures(5, 0), createdAt: 1 },
+    { name: "big", stats: figures(1, 0), createdAt: 2, value: 900 },
+    { name: "small", stats: figures(1, 0), createdAt: 3, value: 10 },
+    { name: "untraded", stats: null, createdAt: 4 },
+  ];
+  assert.deepEqual(
+    sortBoard(rows, "value").map((r) => r.name),
+    ["big", "small", "none", "untraded"],
+  );
 });

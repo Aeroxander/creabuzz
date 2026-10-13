@@ -234,7 +234,7 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   last; with no price service in the build the page says so. Sorts: most traded, biggest move, newest. Checked: 10 unit tests for the arithmetic
   and formatting, 4 mocked browser tests in the standard build, and `scripts/web-markets-e2e.sh` (a build pointed at a stand-in price service that
   the spec answers with real-shaped pools and candles, both pool orientations). **Not checked against a real chain**: the LBAMM clone the real-chain
-  market script needs is gone and I did not download it. Not built: market cap (needs total Shares per project), a per-person trade history,
+  market script needs is gone and I did not download it. Each traded project also shows what all its Shares are worth at the last price (price times the Shares' total supply, read from the chain; labelled as not what they could all be sold for), with a sort for it. Not built: a per-person trade history,
   and a trading P&L on the social feed (D6; waits for wallet linking, which says who a wallet is).
 - **Error reporting** (`docs/error-reporting.md`): off unless the build sets `VITE_ERROR_REPORT_URL` to a collector you choose (https, or plain http on this
   machine). An uncaught error, a failed promise nobody listened to, or a crashed screen is posted as one small note (kind, message, stack, the page's

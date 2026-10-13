@@ -70,16 +70,19 @@ export function boardStats(
   };
 }
 
-export type BoardSort = "volume" | "change" | "newest";
+export type BoardSort = "volume" | "value" | "change" | "newest";
 
 export const BOARD_SORTS: readonly { id: BoardSort; label: string }[] = [
   { id: "volume", label: "Most traded" },
+  { id: "value", label: "Worth the most" },
   { id: "change", label: "Biggest move today" },
   { id: "newest", label: "Newest" },
 ];
 
 export interface BoardRow {
   stats: BoardStats | null;
+  /** What all the Shares are worth at the last price, in whole currency; null when the supply is not known. */
+  value?: number | null;
   /** When the project was published, unix seconds. */
   createdAt: number;
 }
@@ -97,6 +100,7 @@ export function sortBoard<T extends BoardRow>(
   const key = (row: T): number => {
     const stats = row.stats as BoardStats;
     if (sort === "volume") return stats.volume24h;
+    if (sort === "value") return row.value ?? Number.NEGATIVE_INFINITY;
     if (sort === "change") return Math.abs(stats.change24h ?? 0);
     return row.createdAt;
   };
@@ -108,6 +112,17 @@ export function sortBoard<T extends BoardRow>(
     ...withFigures.sort(byKey),
     ...without.sort((a, b) => b.createdAt - a.createdAt),
   ];
+}
+
+/**
+ * What all of a project's Shares are worth at the last traded price, in whole currency: the price times the number of
+ * Shares there are (18 decimals). Null when either is not usable. It is the last price applied to every Share, not what
+ * the Shares could be sold for: nobody could sell them all at that price.
+ */
+export function marketValue(price: number, supply: bigint): number | null {
+  if (!Number.isFinite(price) || price <= 0 || supply <= 0n) return null;
+  const value = price * (Number(supply) / 1e18);
+  return Number.isFinite(value) ? value : null;
 }
 
 /** "+12.3%", "−4.0%" or "0.0%"; a missing figure is a dash. */
