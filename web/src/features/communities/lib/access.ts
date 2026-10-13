@@ -317,3 +317,8 @@ export function describeActiveInvite(
 export function looksLikeNotAMember(message: string): boolean {
   return /not a (relay |community )?member|membership/i.test(message);
 }
+
+/** Whether a failed sign-in to a community looks like "you were banned from it" rather than a broken connection. */
+export function looksLikeBanned(message: string): boolean {
+  return /\bbanned\b/i.test(message);
+}

@@ -29,10 +29,25 @@ async function signIn(page: Page) {
   }, NSEC);
 }
 
-function chatRelay(refuse?: string) {
+function chatRelay(
+  refuse?: string,
+  /** The community's list of people, as [key, role]; absent for a community that has none. */
+  members?: [string, string][],
+) {
   const relay = createMockRelay({
     refuse: (event) => (refuse && event.kind === 1984 ? refuse : undefined),
   });
+  if (members) {
+    relay.seed({
+      id: "member-list",
+      pubkey: "d".repeat(64),
+      created_at: 200,
+      kind: 13534,
+      tags: members.map(([key, role]) => ["member", key, role]),
+      content: "",
+      sig: "sig",
+    });
+  }
   relay.seed({
     id: "meta",
     pubkey: "9".repeat(64),
@@ -293,4 +308,199 @@ test("the report dialog fits a phone", async ({ page }) => {
   await expectNoSidewaysScroll(page, "the report dialog on a phone");
   // Both buttons can be reached without scrolling the page sideways.
   await expect(page.getByTestId("report-submit")).toBeInViewport();
+});
+
+test("the owner can ban the person who wrote a message, even a visitor who is not on the list", async ({
+  page,
+}) => {
+  // ALICE wrote it and is not on the community's list, as a visitor to an open community would not be.
+  const relay = chatRelay(undefined, [[ME, "owner"]]);
+  await openChat(page, relay);
+
+  await expect(
+    page
+      .getByTestId("message-row")
+      .filter({ hasText: "A message of mine" })
+      .getByTestId("ban-author-button"),
+  ).toHaveCount(0);
+
+  await theirRow(page).hover();
+  await theirRow(page).getByTestId("ban-author-button").click();
+  await expect(page.getByTestId("ban-form")).toContainText(
+    "even with an invite link",
+  );
+  await page.getByTestId("ban-length").selectOption({ label: "1 day" });
+  await page.getByTestId("ban-reason").fill("Scam links");
+  const before = Math.floor(Date.now() / 1000);
+  await page.getByTestId("ban-yes").click();
+  await expect(page.getByTestId("ban-form")).toHaveCount(0);
+
+  const sent = relay.events.filter((event) => event.kind === 9040);
+  expect(sent).toHaveLength(1);
+  expect(sent[0].pubkey).toBe(ME);
+  expect(sent[0].tags).toContainEqual(["p", ALICE]);
+  expect(sent[0].tags).toContainEqual(["reason", "Scam links"]);
+  const until = Number(
+    sent[0].tags.find((tag) => tag[0] === "expiration")?.[1],
+  );
+  expect(until).toBeGreaterThanOrEqual(before + 86_400);
+  expect(until).toBeLessThan(before + 86_400 + 120);
+});
+
+test("an admin can ban a member or a visitor from a message but not the owner or another admin", async ({
+  page,
+}) => {
+  const BOB = "1".repeat(64);
+  const relay = chatRelay(undefined, [
+    [ALICE, "owner"],
+    [ME, "admin"],
+    [BOB, "admin"],
+  ]);
+  relay.seed({
+    id: "f".repeat(64),
+    pubkey: BOB,
+    kind: 9,
+    created_at: now() - 50,
+    tags: [["h", CHANNEL_ID]],
+    content: "Another admin speaking",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "9".repeat(64),
+    pubkey: "2".repeat(64),
+    kind: 9,
+    created_at: now() - 40,
+    tags: [["h", CHANNEL_ID]],
+    content: "A visitor speaking",
+    sig: "sig",
+  });
+  await openChat(page, relay);
+  await expect(page.getByText("A visitor speaking")).toBeVisible();
+
+  // The visitor: Ban. That only appears once the community's list of people has loaded, so it is checked first, and
+  // the rest are not passing just because nothing has loaded yet.
+  await expect(
+    page
+      .getByTestId("message-row")
+      .filter({ hasText: "A visitor speaking" })
+      .getByTestId("ban-author-button"),
+  ).toHaveCount(1);
+  // The owner wrote "Buy my coin": no Ban. Another admin wrote the next: no Ban.
+  await expect(theirRow(page).getByTestId("ban-author-button")).toHaveCount(0);
+  await expect(
+    page
+      .getByTestId("message-row")
+      .filter({ hasText: "Another admin speaking" })
+      .getByTestId("ban-author-button"),
+  ).toHaveCount(0);
+});
+
+test("a member is offered no Ban on anyone's message", async ({ page }) => {
+  const relay = chatRelay(undefined, [
+    [ALICE, "owner"],
+    [ME, "member"],
+  ]);
+  // Someone an owner or admin could ban, so that a Ban offered by mistake would show.
+  relay.seed({
+    id: "8".repeat(64),
+    pubkey: "3".repeat(64),
+    kind: 9,
+    created_at: now() - 30,
+    tags: [["h", CHANNEL_ID]],
+    content: "A visitor speaking",
+    sig: "sig",
+  });
+  await openChat(page, relay);
+  await expect(page.getByText("A visitor speaking")).toBeVisible();
+  // Nothing to see until the list of people has been read; wait for that, then for the page to act on it.
+  await expect.poll(() => relay.requestsFor(13534)).toBeGreaterThan(0);
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("ban-author-button")).toHaveCount(0);
+});
+
+test("when the server will not ban someone, its words are shown in the dialog", async ({
+  page,
+}) => {
+  const relay = createMockRelay({
+    refuse: (event) =>
+      event.kind === 9040
+        ? "actor not authorized: moderator access required"
+        : undefined,
+  });
+  relay.seed({
+    id: "meta",
+    pubkey: "9".repeat(64),
+    kind: 39000,
+    created_at: 100,
+    tags: [
+      ["d", CHANNEL_ID],
+      ["name", "general"],
+    ],
+    content: "",
+    sig: "sig",
+  });
+  relay.seed({
+    id: "member-list",
+    pubkey: "d".repeat(64),
+    created_at: 200,
+    kind: 13534,
+    tags: [["member", ME, "owner"]],
+    content: "",
+    sig: "sig",
+  });
+  relay.seed({
+    id: THEIR_MESSAGE,
+    pubkey: ALICE,
+    kind: 9,
+    created_at: now() - 60,
+    tags: [["h", CHANNEL_ID]],
+    content: "Buy my coin at example dot com",
+    sig: "sig",
+  });
+  await openChat(page, relay);
+  await theirRow(page).getByTestId("ban-author-button").click();
+  await page.getByTestId("ban-yes").click();
+  await expect(page.getByTestId("ban-error")).toHaveText(
+    "actor not authorized: moderator access required",
+  );
+  await expect(page.getByTestId("ban-form")).toBeVisible();
+});
+
+test("a post by someone else on Home can be banned for, by the owner, and the dialog is accessible", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed({
+    id: "member-list",
+    pubkey: "d".repeat(64),
+    created_at: 200,
+    kind: 13534,
+    tags: [["member", ME, "owner"]],
+    content: "",
+    sig: "sig",
+  });
+  relay.seed({
+    id: THEIR_POST,
+    pubkey: ALICE,
+    kind: 1,
+    created_at: now() - 60,
+    tags: [],
+    content: "Send me your seed phrase",
+    sig: "sig",
+  });
+  await relay.install(page);
+  await signIn(page);
+  await page.goto("/");
+  const theirs = page
+    .getByTestId("note-card")
+    .filter({ hasText: "Send me your seed phrase" });
+  await theirs.getByTestId("note-ban").click();
+  await expect(page.getByTestId("ban-form")).toBeVisible();
+  await expectAccessible(page, "the ban dialog on a post");
+  await page.getByTestId("ban-yes").click();
+  await expect(page.getByTestId("ban-form")).toHaveCount(0);
+  const sent = relay.events.filter((event) => event.kind === 9040);
+  expect(sent).toHaveLength(1);
+  expect(sent[0].tags).toContainEqual(["p", ALICE]);
+  expect(sent[0].tags.some((tag) => tag[0] === "expiration")).toBe(false);
 });

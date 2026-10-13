@@ -311,6 +311,20 @@ make shows that name, not a string of letters and numbers. (Before this, the pas
 Signed in as a moderator, **Moderation** shows "Reported by" followed by the reporter's name. A person who never set a name still shows as a short
 key everywhere; the reminder on Home to add a name stays until they do.
 
+## 4r. Banning people (2026-10-13)
+
+```bash
+cd web && pnpm build && npx playwright test --project=smoke tests/e2e/community-access.spec.ts tests/e2e/report.spec.ts
+scripts/web-invite-only-e2e.sh -g "banned person"   # REAL server and browser; needs Postgres and Redis
+```
+
+By hand, as the owner of a community with two people in it: **Org**, **People and access**. Each other person has **Ban** next to Remove. Press it:
+the form says they are signed out right away, cannot get back in even with an invite link, and are told your reason. Choose **7 days**, type a reason,
+**Ban**. **Banned (1)** appears under the list with the time left and your reason. In the other person's browser, reload: the page says "You are
+banned from this community" and offers nothing to retry; opening the invite link again does not help. Press **Lift ban**: they can use the community
+again. An admin is offered Ban only for members, never for the owner or another admin; a member is offered none. In an open community, a message and
+a post by someone who is not on the list have **Ban** too (owner and admins only).
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

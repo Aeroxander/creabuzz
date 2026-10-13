@@ -155,6 +155,8 @@ export function createMockRelay({
     closeImmediately;
   /** When each live-subscription socket asked for its subscription. */
   const liveSubscriptionReqs: number[] = [];
+  /** Every kind the page has asked for, once per request, so a test can wait until a read has been served. */
+  const requestedKinds: number[] = [];
   /**
    * Subscriptions refused before the handshake and then re-issued on the same
    * socket once it authenticated — the client recovering from the race, which
@@ -312,6 +314,7 @@ export function createMockRelay({
         if (type === "REQ") {
           const [, subId] = parsed as [string, string, Filter];
           const filter = parsed[2] as Filter;
+          requestedKinds.push(...(filter.kinds ?? []));
           /** Newest first, capped, the way a relay replays a filter. */
           const replay = (candidate: Filter) =>
             events
@@ -388,6 +391,9 @@ export function createMockRelay({
     queryAuthRetries: () => authRetries.query,
     /** When live-subscription sockets issued their REQ (the reconnect rhythm). */
     liveSubscriptionReqs: () => [...liveSubscriptionReqs],
+    /** How many times the page has asked for records of this kind. */
+    requestsFor: (kind: number) =>
+      requestedKinds.filter((asked) => asked === kind).length,
     /** Every live subscription the page currently holds, to wait for one before delivering to it. */
     subscriptionFilters: () =>
       [...sockets].flatMap((socket) => [

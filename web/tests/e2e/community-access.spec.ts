@@ -57,6 +57,11 @@ async function open(
     refuseRemove?: string;
     /** Why the server refuses to change a role, when it does. */
     refuseRole?: string;
+    /** Why the server refuses to ban a person, or to lift a ban, when it does. */
+    refuseBan?: string;
+    refuseUnban?: string;
+    /** People the server already lists as banned. */
+    bans?: Record<string, unknown>[];
     /** A second admin in the community's list. */
     anotherAdmin?: boolean;
     /** On a phone the sidebar is a drawer: open it first. */
@@ -70,6 +75,8 @@ async function open(
     inviteAnswer,
     refuseRemove,
     refuseRole,
+    refuseBan,
+    refuseUnban,
     refuseRevoke,
     anotherAdmin = false,
     phone = false,
@@ -79,6 +86,8 @@ async function open(
       if (refuseSetAccess && event.kind === 9034) return refuseSetAccess;
       if (refuseRemove && event.kind === 9031) return refuseRemove;
       if (refuseRole && event.kind === 9032) return refuseRole;
+      if (refuseBan && event.kind === 9040) return refuseBan;
+      if (refuseUnban && event.kind === 9041) return refuseUnban;
       return undefined;
     },
   });
@@ -169,6 +178,42 @@ async function open(
     await route.fulfill({ json: { revoked: true } });
   });
 
+  // The people the server holds out, as it would list them: the ones it started with, then every ban and lifted ban
+  // that was accepted since. An owner or admin may read it; anyone else is refused.
+  const banListRequests: string[] = [];
+  await page.route("**/moderation/restricted", async (route) => {
+    banListRequests.push(route.request().headers().authorization ?? "");
+    if (role === "member") {
+      await route.fulfill({
+        status: 403,
+        json: { error: "moderator access required" },
+      });
+      return;
+    }
+    const rows = new Map<string, Record<string, unknown>>(
+      (options.bans ?? []).map((row) => [row.pubkey as string, row]),
+    );
+    for (const event of relay.events) {
+      const target = event.tags.find((tag) => tag[0] === "p")?.[1];
+      if (!target) continue;
+      if (event.kind === 9040) {
+        const until = event.tags.find((tag) => tag[0] === "expiration")?.[1];
+        rows.set(target, {
+          pubkey: target,
+          banned: true,
+          ban_expires_at: until
+            ? new Date(Number(until) * 1000).toISOString()
+            : null,
+          ban_reason:
+            event.tags.find((tag) => tag[0] === "reason")?.[1] ?? null,
+          actor_pubkey: event.pubkey,
+        });
+      }
+      if (event.kind === 9041) rows.delete(target);
+    }
+    await route.fulfill({ json: [...rows.values()] });
+  });
+
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
   if (phone) await page.getByTestId("open-channel-list").click();
@@ -176,7 +221,7 @@ async function open(
   await expect(page.getByTestId("org-people-section")).toBeVisible({
     timeout: 20_000,
   });
-  return { relay, invites, listRequests, revokeRequests };
+  return { relay, invites, listRequests, revokeRequests, banListRequests };
 }
 
 test("the owner sees the current setting, and everyone in the community", async ({
@@ -600,4 +645,206 @@ test("when the server will not change a role, its words are shown", async ({
   await expect(page.getByTestId("person-error")).toHaveText(
     "actor not authorized: must be owner",
   );
+});
+
+test("the owner can ban a person for a week with a reason, after being told what it means, and the ban is listed", async ({
+  page,
+}) => {
+  const { relay } = await open(page, { role: "owner", anotherAdmin: true });
+  // The admin and the member can be banned; the owner's own row cannot.
+  await expect(page.getByTestId("person-ban")).toHaveCount(2);
+
+  const member = page
+    .locator('[data-testid="person"][data-role="member"]')
+    .first();
+  await member.getByTestId("person-ban").click();
+  await expect(member.getByTestId("ban-form")).toContainText(
+    "signed out right away",
+  );
+  await expect(member.getByTestId("ban-form")).toContainText(
+    "even with an invite link",
+  );
+  await expect(member.getByTestId("ban-form")).toContainText("told the reason");
+  // Nothing is sent until it is confirmed.
+  expect(relay.events.filter((event) => event.kind === 9040)).toHaveLength(0);
+  await member.getByRole("button", { name: "Cancel" }).click();
+  await expect(member.getByTestId("ban-form")).toHaveCount(0);
+
+  await member.getByTestId("person-ban").click();
+  await member.getByTestId("ban-length").selectOption({ label: "7 days" });
+  await member.getByTestId("ban-reason").fill("Selling coins in chat");
+  const before = Math.floor(Date.now() / 1000);
+  await member.getByTestId("ban-yes").click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9040).length)
+    .toBe(1);
+  const sent = relay.events.find((event) => event.kind === 9040);
+  expect(sent?.pubkey).toBe(ME);
+  expect(sent?.tags).toContainEqual(["p", NEIGHBOUR]);
+  expect(sent?.tags).toContainEqual(["reason", "Selling coins in chat"]);
+  const until = Number(sent?.tags.find((tag) => tag[0] === "expiration")?.[1]);
+  expect(until).toBeGreaterThanOrEqual(before + 7 * 86_400);
+  expect(until).toBeLessThan(before + 7 * 86_400 + 120);
+
+  // The server's list now has them, with the reason and the time left.
+  const banned = page.getByTestId("banned-person");
+  await expect(banned).toHaveCount(1);
+  await expect(banned).toContainText("Banned for 7 more days");
+  await expect(banned).toContainText("Selling coins in chat");
+});
+
+test("a ban that is for good sends no end time, and can be lifted, which sends the lift and clears the list", async ({
+  page,
+}) => {
+  const { relay } = await open(page, { role: "owner" });
+  await page.getByTestId("person-ban").click();
+  await page.getByTestId("ban-yes").click();
+  await expect(page.getByTestId("banned-person")).toHaveCount(1);
+  const ban = relay.events.find((event) => event.kind === 9040);
+  expect(ban?.tags.some((tag) => tag[0] === "expiration")).toBe(false);
+  expect(ban?.tags.some((tag) => tag[0] === "reason")).toBe(false);
+  await expect(page.getByTestId("banned-person")).toContainText(
+    "Banned for good",
+  );
+
+  await page.getByTestId("ban-lift").click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9041).length)
+    .toBe(1);
+  expect(
+    relay.events.find((event) => event.kind === 9041)?.tags,
+  ).toContainEqual(["p", NEIGHBOUR]);
+  await expect(page.getByTestId("banned-list")).toHaveCount(0);
+});
+
+test("people the server already holds out are listed when the page opens, from a signed read", async ({
+  page,
+}) => {
+  const { banListRequests } = await open(page, {
+    role: "owner",
+    bans: [
+      {
+        pubkey: "f".repeat(64),
+        banned: true,
+        ban_expires_at: null,
+        ban_reason: "Impersonating the founder",
+        actor_pubkey: ME,
+      },
+      // A time-out is in the same list; it is not a ban.
+      {
+        pubkey: "9".repeat(64),
+        banned: false,
+        muted_until: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+    ],
+  });
+  await expect(page.getByTestId("banned-person")).toHaveCount(1);
+  await expect(page.getByTestId("banned-person")).toContainText(
+    "Impersonating the founder",
+  );
+  expect(banListRequests.length).toBeGreaterThan(0);
+  for (const header of banListRequests) {
+    expect(header.startsWith("Nostr ")).toBe(true);
+  }
+});
+
+test("an admin can ban a member but is offered nothing for the owner or another admin", async ({
+  page,
+}) => {
+  await open(page, { role: "admin", anotherAdmin: true });
+  await expect(page.getByTestId("person")).toHaveCount(4);
+  await expect(page.getByTestId("person-ban")).toHaveCount(1);
+  await expect(
+    page
+      .locator('[data-testid="person"][data-role="member"]')
+      .getByTestId("person-ban"),
+  ).toHaveCount(1);
+});
+
+test("a member is offered no ban and never asks for the list of who is banned", async ({
+  page,
+}) => {
+  const { banListRequests } = await open(page, { role: "member" });
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await expect(page.getByTestId("person-ban")).toHaveCount(0);
+  await expect(page.getByTestId("banned-list")).toHaveCount(0);
+  expect(banListRequests).toHaveLength(0);
+});
+
+test("in an open community a person can still be banned, though there is nothing to remove them from", async ({
+  page,
+}) => {
+  await open(page, { role: "owner", access: "open" });
+  await expect(page.getByTestId("person-remove")).toHaveCount(0);
+  await expect(page.getByTestId("person-ban")).toHaveCount(1);
+});
+
+test("when the server will not ban someone, its words are shown and nobody is listed as banned", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseBan: "actor not authorized: an admin cannot ban a fellow admin",
+  });
+  await page.getByTestId("person-ban").click();
+  await page.getByTestId("ban-yes").click();
+  await expect(page.getByTestId("ban-error")).toHaveText(
+    "actor not authorized: an admin cannot ban a fellow admin",
+  );
+  await expect(page.getByTestId("banned-list")).toHaveCount(0);
+});
+
+test("when the server will not lift a ban, its words are shown and the ban stays listed", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseUnban: "actor not authorized: only the owner can lift this ban",
+    bans: [
+      {
+        pubkey: NEIGHBOUR,
+        banned: true,
+        ban_expires_at: null,
+        ban_reason: null,
+        actor_pubkey: ME,
+      },
+    ],
+  });
+  await page.getByTestId("ban-lift").click();
+  await expect(page.getByTestId("ban-lift-error")).toHaveText(
+    "actor not authorized: only the owner can lift this ban",
+  );
+  await expect(page.getByTestId("banned-person")).toHaveCount(1);
+});
+
+test("the ban form and the list of banned people are accessible", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    bans: [
+      {
+        pubkey: "f".repeat(64),
+        banned: true,
+        ban_expires_at: null,
+        ban_reason: "Spam",
+        actor_pubkey: ME,
+      },
+    ],
+  });
+  await page
+    .locator('[data-testid="person"][data-role="member"]')
+    .getByTestId("person-ban")
+    .click();
+  await expect(page.getByTestId("ban-form")).toBeVisible();
+  await expectAccessible(page, "the ban form and the list of banned people");
+});
+
+test("the ban form fits a phone", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await open(page, { role: "owner", phone: true });
+  await page.getByTestId("person-ban").click();
+  await expect(page.getByTestId("ban-form")).toBeVisible();
+  await expectNoSidewaysScroll(page, "the ban form on a phone");
+  await expect(page.getByTestId("ban-yes")).toBeInViewport();
 });

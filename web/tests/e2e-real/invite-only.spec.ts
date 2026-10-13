@@ -4,6 +4,7 @@ import {
   PORT,
   createCommunity,
   joinAsNewcomer,
+  joinWithInvite,
   makeInviteLink,
   newPerson,
   openPeople,
@@ -248,6 +249,122 @@ test("an owner can end an invite that is still out there, and remove a person wh
   await expect(joiner.getByTestId("community-invite-only")).toBeVisible({
     timeout: 30_000,
   });
+});
+
+test("a banned person is turned away even with the invite link, and a lifted ban lets them back in", async ({
+  page: owner,
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const name = unique();
+  const host = `${name}.localhost:${PORT}`;
+  await signInAsNewAccount(owner);
+  await createCommunity(owner, name);
+  await openPeople(owner);
+  await owner.getByTestId("invite-uses").selectOption("any");
+  const inviteUrl = await makeInviteLink(owner);
+
+  const troll = await joinWithInvite(browser, inviteUrl, host);
+  await troll.goto(`http://${host}/c/${host}`);
+  await expect(troll.getByTestId("content-pane")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // The owner bans them, for good, with a reason.
+  await owner.goto(`/c/${host}`);
+  await openPeople(owner);
+  await expect(owner.getByTestId("person")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  await owner
+    .locator('[data-testid="person"][data-role="member"]')
+    .getByTestId("person-ban")
+    .click();
+  await owner.getByTestId("ban-reason").fill("Selling coins in chat");
+  await owner.getByTestId("ban-yes").click();
+  await expect(owner.getByTestId("banned-person")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(owner.getByTestId("banned-person")).toContainText(
+    "Selling coins in chat",
+  );
+
+  // Signed out at once: the next load says why, and offers nothing to retry.
+  await troll.reload();
+  await expect(troll.getByTestId("community-banned")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(troll.getByTestId("community-banned")).toContainText(
+    "You are banned from this community",
+  );
+
+  // The invite link does not get them back in.
+  await troll.goto(inviteUrl);
+  await troll.getByRole("button", { name: "Join in browser" }).click();
+  await troll.waitForTimeout(2_000);
+  await troll.goto(`http://${host}/c/${host}`);
+  await expect(troll.getByTestId("community-banned")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Lifting the ban lets them back, as the member they were.
+  await owner.getByTestId("ban-lift").click();
+  await expect(owner.getByTestId("banned-list")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await troll.goto(`http://${host}/c/${host}`);
+  await expect(troll.getByTestId("content-pane")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(troll.getByTestId("community-banned")).toHaveCount(0);
+});
+
+test("in an open community a spammer who is not on the list can be banned from their post, and is turned away", async ({
+  page: owner,
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const name = unique();
+  const host = `${name}.localhost:${PORT}`;
+  const post = `Free tokens, click here ${name}`;
+  await signInAsNewAccount(owner);
+  await createCommunity(owner, name);
+  await openPeople(owner);
+  await setAccess(owner, "open");
+
+  // Anyone with the address can post: nobody asked this person to join, and they are not on the list of people.
+  const spammer = await newPerson(browser);
+  await spammer.goto(`http://${host}/social`);
+  await spammer.getByTestId("social-composer-input").fill(post);
+  await spammer.getByTestId("social-composer-submit").click();
+  await expect(
+    spammer.getByTestId("social-post").filter({ hasText: post }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // The owner sees the post and bans the person who wrote it.
+  await owner.goto("/social");
+  const theirs = owner.getByTestId("social-post").filter({ hasText: post });
+  await expect(theirs).toBeVisible({ timeout: 30_000 });
+  await theirs.getByTestId("social-ban").click();
+  await owner.getByTestId("ban-reason").fill("Scam links");
+  await owner.getByTestId("ban-yes").click();
+  await expect(owner.getByTestId("ban-form")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // They are out, and the community says why.
+  await spammer.goto(`http://${host}/c/${host}`);
+  await expect(spammer.getByTestId("community-banned")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // The owner finds them in the list of banned people.
+  await owner.goto(`/c/${host}`);
+  await openPeople(owner);
+  await expect(owner.getByTestId("banned-person")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(owner.getByTestId("banned-person")).toContainText("Scam links");
 });
 
 test("someone with no account at all can make one from the invite link, join, and be named in the list", async ({

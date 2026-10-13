@@ -1,4 +1,4 @@
-import { ArrowLeft, Lock, Users } from "lucide-react";
+import { ArrowLeft, Ban, Lock, Users } from "lucide-react";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 
 import {
@@ -7,7 +7,7 @@ import {
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
-import { looksLikeNotAMember } from "../lib/access";
+import { looksLikeBanned, looksLikeNotAMember } from "../lib/access";
 import { useCommunities } from "../use-communities";
 import { useCommunityAccess } from "../use-access";
 import { useChannels } from "@/features/channels/use-channels";
@@ -112,6 +112,38 @@ function InviteOnlyNotice({
   );
 }
 
+/**
+ * What a banned person sees instead of a page that reads like the server is broken. There is nothing for them to retry,
+ * so there is no retry button.
+ */
+function BannedNotice({ host }: { host: string }) {
+  return (
+    <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
+      <div
+        className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 text-center dark:border-white/10 dark:bg-white/5"
+        data-testid="community-banned"
+      >
+        <Ban className="mx-auto h-6 w-6 text-black/60 dark:text-white/60" />
+        <h1 className="mt-3 text-lg font-semibold">
+          You are banned from this community
+        </h1>
+        <p className="mt-1 break-all text-xs text-black/60 dark:text-white/60">
+          {host}
+        </p>
+        <p className="mt-3 text-sm text-black/70 dark:text-white/70">
+          The people who run it have turned you away. If you think that is a
+          mistake, ask one of them.
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button asChild variant="outline">
+            <Link to="/c">All communities</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Do two server addresses point at the same machine and port? */
 function sameServer(a: string, b: string): boolean {
   try {
@@ -156,6 +188,10 @@ export function CommunityHomePage() {
         </div>
       </div>
     );
+  }
+
+  if (channels.isError && looksLikeBanned(errorMessage(channels.error))) {
+    return <BannedNotice host={host} />;
   }
 
   if (

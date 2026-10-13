@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Ban,
   Copy,
   Flag,
   Hash,
@@ -41,6 +42,7 @@ import { Bot } from "lucide-react";
 import { getTag } from "@/shared/lib/event-fields";
 import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
@@ -179,6 +181,10 @@ function MessageRow({
 }) {
   const isOwn = event.pubkey === ownPubkey;
   const [reporting, setReporting] = useState(false);
+  const ban = useBanAuthor(
+    event.pubkey,
+    resolveUserName(profile, event.pubkey),
+  );
   const content = isDeleted
     ? ""
     : (overlayContent ??
@@ -299,6 +305,17 @@ function MessageRow({
                 <Flag className="h-3 w-3" /> Report
               </button>
             )}
+            {!isOwn && !isDeleted && ban.allowed && (
+              <button
+                type="button"
+                onClick={ban.start}
+                className="flex items-center gap-1 hover:text-red-500"
+                aria-label="Ban the person who wrote this"
+                data-testid="ban-author-button"
+              >
+                <Ban className="h-3 w-3" /> Ban
+              </button>
+            )}
             {isOwn && onDelete && (
               <button
                 type="button"
@@ -349,6 +366,7 @@ function MessageRow({
           what="this message"
         />
       ) : null}
+      {ban.dialog}
     </div>
   );
 }

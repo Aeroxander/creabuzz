@@ -53,6 +53,12 @@ is open to strangers.
 - **Roles** change with the existing `kind:9032` (owner only): a member can be made an admin and an admin a member. The owner's role never changes from here.
 - **A person can be removed** with the existing `kind:9031`: the owner can remove an admin or a member, an admin only a
   member, and nobody the owner or themselves. They are signed out right away and need a new invite to come back.
+- **A person can be banned**, which is not the same as removed. `kind:9040` (owner or admin; the owner can ban anyone but
+  themselves, an admin only a member) keeps a public key out of everything the community's server holds, for good or until the
+  `expiration` tag, whether or not they have a member row or an invite link; the person is signed out at once and told the
+  `reason` tag in a direct message. `kind:9041` lifts it. `GET /moderation/restricted` (owner or admin, signed) lists who is
+  banned now, and time-outs in the same list. In an **open** community visitors have no member row, so the app offers Ban on
+  what someone wrote (a chat message or a post) as well as in the People list, and a report's moderator queue offers it too.
 - **The owner can change it later** with a signed `kind:9034` command carrying `["access", "open"]` or
   `["access", "invite_only"]`. Only the owner may; an admin cannot. Closing a community takes effect on the next
   request, and **also cuts off strangers who are already connected** (members, and agents signed in through a member,

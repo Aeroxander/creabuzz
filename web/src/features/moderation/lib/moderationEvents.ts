@@ -12,6 +12,7 @@ import {
   KIND_MODERATION_BAN,
   KIND_MODERATION_RESOLVE_REPORT,
   KIND_MODERATION_TIMEOUT,
+  KIND_MODERATION_UNBAN,
   KIND_NIP29_DELETE_EVENT,
 } from "@creaton/core/kinds.ts";
 
@@ -73,6 +74,15 @@ export function buildBan(input: {
   }
   if (input.reason?.trim()) tags.push(["reason", input.reason.trim()]);
   return { kind: KIND_MODERATION_BAN, content: "", tags };
+}
+
+/** Lift-a-ban command (kind:9041). */
+export function buildUnban(input: { pubkey: string }): EventTemplate {
+  return {
+    kind: KIND_MODERATION_UNBAN,
+    content: "",
+    tags: [["p", requireHex64(input.pubkey, "member id")]],
+  };
 }
 
 /** Timeout (write-block) command (kind:9042). `expiresAt` is required. */

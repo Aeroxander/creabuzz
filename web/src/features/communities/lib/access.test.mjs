@@ -10,6 +10,7 @@ import {
   KIND_MEMBER_LIST,
   KIND_SET_ACCESS,
   KIND_REMOVE_MEMBER,
+  looksLikeBanned,
   looksLikeNotAMember,
   mayChangeAccess,
   mayInvite,
@@ -312,4 +313,16 @@ test("only the owner is offered a role change: members can be made admins, admin
   assert.equal(roleOfferedFor(null, null, member), null);
   assert.equal(roleOfferedFor("owner", null, member), null);
   assert.equal(roleOfferedFor("owner", B, admin), null, "not their own role");
+});
+
+test("a refusal that says the person was banned is told from a broken connection", () => {
+  assert.equal(looksLikeBanned("blocked: you are banned"), true);
+  assert.equal(
+    looksLikeBanned("blocked: you are banned from this community"),
+    true,
+  );
+  assert.equal(looksLikeBanned("timed out"), false);
+  assert.equal(looksLikeBanned("restricted: not a relay member"), false);
+  assert.equal(looksLikeBanned("server responded 500"), false);
+  assert.equal(looksLikeBanned("urbanned"), false, "a whole word only");
 });

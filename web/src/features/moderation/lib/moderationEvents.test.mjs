@@ -11,6 +11,7 @@ import {
   buildDeleteContent,
   buildResolveReport,
   buildTimeout,
+  buildUnban,
 } from "./moderationEvents.ts";
 import {
   enforcementTarget,
@@ -192,5 +193,19 @@ describe("queue rows", () => {
       rawRow({ target_kind: "pubkey", target: MEMBER }),
     ]);
     assert.equal(enforcementTarget(pubkeyRow, new Map()), MEMBER);
+  });
+});
+
+describe("buildUnban", () => {
+  it("lifts a ban with one record naming the person", () => {
+    assert.deepEqual(buildUnban({ pubkey: MEMBER.toUpperCase() }), {
+      kind: 9041,
+      content: "",
+      tags: [["p", MEMBER]],
+    });
+  });
+
+  it("refuses anything that is not a 64-character key", () => {
+    assert.throws(() => buildUnban({ pubkey: "alice" }));
   });
 });

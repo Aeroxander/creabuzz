@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, Flag, MessageSquare, Rocket, Trash2 } from "lucide-react";
+import { Ban, Bot, Flag, MessageSquare, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { buildUndo } from "@/features/social/lib/post-events";
 import { useSocialPublish } from "@/features/social/use-social-actions";
@@ -45,6 +46,7 @@ export function NoteCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const ban = useBanAuthor(note.author, author);
   const isMine = existingUserPubkey() === note.author;
   const remove = () => {
     setConfirmDelete(false);
@@ -140,6 +142,18 @@ export function NoteCard({
               Report
             </button>
           ) : null}
+          {!isMine && ban.allowed ? (
+            <button
+              aria-label={`Ban ${author}`}
+              className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-red-500/10 hover:text-red-600 dark:text-white/60"
+              data-testid="note-ban"
+              onClick={ban.start}
+              type="button"
+            >
+              <Ban aria-hidden className="h-3.5 w-3.5" />
+              Ban
+            </button>
+          ) : null}
           {isMine ? (
             <button
               aria-label="Delete post"
@@ -164,6 +178,7 @@ export function NoteCard({
           what="this post"
         />
       ) : null}
+      {ban.dialog}
       <ConfirmDialog
         confirmLabel="Delete"
         description="This removes your post for everyone. Replies already written under it stay with the thread."

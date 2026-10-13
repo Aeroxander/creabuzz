@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  Ban,
   Bookmark,
   Bot,
   Flag,
@@ -20,6 +21,7 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
+import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -153,6 +155,7 @@ export function PostCard({
   const [liked, setLiked] = useState(false);
 
   const name = resolveUserName(author, note.pubkey);
+  const ban = useBanAuthor(note.pubkey, name);
   const handle = resolveUserSecondaryName(author, note.pubkey);
   const isLiked = engagement.likedByViewer || liked;
   const isReposted = engagement.viewerRepostId !== null;
@@ -424,6 +427,16 @@ export function PostCard({
                 <Flag aria-hidden />
               </ActionButton>
             ) : null}
+            {!isMine && me !== null && ban.allowed ? (
+              <ActionButton
+                label={`Ban ${name}`}
+                onClick={ban.start}
+                testId="social-ban"
+                tone="report"
+              >
+                <Ban aria-hidden />
+              </ActionButton>
+            ) : null}
             {isMine ? (
               <ActionButton
                 label="Delete post"
@@ -448,6 +461,7 @@ export function PostCard({
           what="this post"
         />
       ) : null}
+      {ban.dialog}
       <ConfirmDialog
         confirmLabel="Delete"
         description="This removes your post for everyone. Reposts and quotes that already copied it may still show it elsewhere."

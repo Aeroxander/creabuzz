@@ -34,6 +34,8 @@ import {
   mayRemove,
   roleOfferedFor,
 } from "../lib/access";
+import { useBans } from "../use-bans";
+import { BanForm, BannedList } from "./BanPanel";
 import {
   changeRole,
   mintInvite,
@@ -358,19 +360,24 @@ function PersonRow({
   person,
   name,
   canRemove,
+  canBan,
   offerRole,
   onRemoved,
+  onBanned,
   onRoleChanged,
 }: {
   person: Person;
   name: string;
   canRemove: boolean;
+  canBan: boolean;
   /** The role the viewer may give this person, when any. */
   offerRole: "admin" | "member" | null;
   onRemoved: () => void;
+  onBanned: () => void;
   onRoleChanged: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [banning, setBanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -419,7 +426,7 @@ function PersonRow({
         <Badge className="px-1.5 py-0 text-2xs" variant="outline">
           {ROLE_WORDS[person.role]}
         </Badge>
-        {offerRole && !confirming ? (
+        {offerRole && !confirming && !banning ? (
           <Button
             data-testid="person-role"
             disabled={busy}
@@ -431,7 +438,7 @@ function PersonRow({
             {offerRole === "admin" ? "Make admin" : "Make member"}
           </Button>
         ) : null}
-        {canRemove && !confirming ? (
+        {canRemove && !confirming && !banning ? (
           <Button
             data-testid="person-remove"
             onClick={() => setConfirming(true)}
@@ -440,6 +447,17 @@ function PersonRow({
             variant="ghost"
           >
             Remove
+          </Button>
+        ) : null}
+        {canBan && !confirming && !banning ? (
+          <Button
+            data-testid="person-ban"
+            onClick={() => setBanning(true)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Ban
           </Button>
         ) : null}
       </div>
@@ -474,6 +492,17 @@ function PersonRow({
           </div>
         </div>
       ) : null}
+      {banning ? (
+        <BanForm
+          name={name}
+          onCancel={() => setBanning(false)}
+          onDone={() => {
+            setBanning(false);
+            onBanned();
+          }}
+          pubkey={person.pubkey}
+        />
+      ) : null}
       {error ? (
         <p
           className="mt-1 text-sm text-red-600 dark:text-red-400"
@@ -495,10 +524,15 @@ export function PeopleSection() {
     return people.map((person) => person.pubkey);
   }, [people]);
   const invites = useInvites(mayInvite(myRole));
+  const bans = useBans(mayInvite(myRole));
   const nameOf = useUserNames(
     useMemo(
-      () => [...keys, ...(invites.data ?? []).map((invite) => invite.madeBy)],
-      [keys, invites.data],
+      () => [
+        ...keys,
+        ...(invites.data ?? []).map((invite) => invite.madeBy),
+        ...(bans.data ?? []).flatMap((ban) => [ban.pubkey, ban.by]),
+      ],
+      [keys, invites.data, bans.data],
     ),
   );
   const known = access.data ?? null;
@@ -510,6 +544,8 @@ export function PeopleSection() {
     void client.invalidateQueries({ queryKey: ["community-people"] });
   const refreshInvites = () =>
     void client.invalidateQueries({ queryKey: ["community-invites"] });
+  const refreshBans = () =>
+    void client.invalidateQueries({ queryKey: ["community-bans"] });
 
   return (
     <section
@@ -556,10 +592,12 @@ export function PeopleSection() {
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {people.map((person) => (
               <PersonRow
+                canBan={mayRemove(myRole, me, person)}
                 canRemove={removalOffered && mayRemove(myRole, me, person)}
                 key={person.pubkey}
                 name={nameOf(person.pubkey)}
                 offerRole={roleOfferedFor(myRole, me, person)}
+                onBanned={refreshBans}
                 onRemoved={refreshPeople}
                 onRoleChanged={refreshPeople}
                 person={person}
@@ -568,6 +606,13 @@ export function PeopleSection() {
           </ul>
         )}
       </div>
+      {mayInvite(myRole) ? (
+        <BannedList
+          bans={bans.data ?? []}
+          nameOf={nameOf}
+          onChanged={refreshBans}
+        />
+      ) : null}
     </section>
   );
 }
