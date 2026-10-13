@@ -405,6 +405,15 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
             .await
             .ok()
             .map(|required| if required { "invite_only" } else { "open" });
+        // An invite-only community has a member list and invites whether or not the whole server requires membership,
+        // so it advertises NIP-43 as a server that requires it would (it needs the stable key those events are signed
+        // with, as everywhere else).
+        if info.access == Some("invite_only")
+            && info.relay_self.is_some()
+            && !info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP)
+        {
+            info.supported_nips.push(NIP_RELAY_MEMBERSHIP);
+        }
         if state.config.buzz_v1_enabled {
             use buzz_db::personal_read::{
                 ELIGIBLE_KINDS, MAX_CHANNELS, MAX_CONTEXTS, MAX_CONTEXT_MESSAGES, MAX_INTENTS,
@@ -717,6 +726,8 @@ mod tests {
     async fn the_document_says_who_may_join_and_stays_silent_for_an_unknown_host() {
         let state = crate::test_support::test_state_with(|config| {
             config.require_relay_membership = false;
+            // A stable signing key, so NIP-43 can be advertised at all.
+            config.relay_private_key = Some("11".repeat(32));
         })
         .await;
         let owner = nostr::Keys::generate().public_key().to_hex();
@@ -738,7 +749,15 @@ mod tests {
                     .expect("document is JSON")
             }
         };
-        assert_eq!(served(&state, host.clone()).await["access"], "invite_only");
+        let closed = served(&state, host.clone()).await;
+        assert_eq!(closed["access"], "invite_only");
+        assert!(
+            closed["supported_nips"]
+                .as_array()
+                .expect("supported_nips")
+                .contains(&serde_json::json!(NIP_RELAY_MEMBERSHIP)),
+            "an invite-only community advertises its member list (NIP-43)"
+        );
 
         state
             .db
@@ -746,7 +765,15 @@ mod tests {
             .await
             .expect("open it");
         state.forget_membership_policy(community);
-        assert_eq!(served(&state, host.clone()).await["access"], "open");
+        let opened = served(&state, host.clone()).await;
+        assert_eq!(opened["access"], "open");
+        assert!(
+            !opened["supported_nips"]
+                .as_array()
+                .expect("supported_nips")
+                .contains(&serde_json::json!(NIP_RELAY_MEMBERSHIP)),
+            "an open community on a server that does not require membership does not"
+        );
 
         let unknown = format!("nobody-{}.example", uuid::Uuid::new_v4().simple());
         assert!(

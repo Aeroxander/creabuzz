@@ -58,6 +58,8 @@ When a workspace becomes invite-only the relay MUST end the live sessions, on ev
 
 The relay's NIP-11 document carries `access`: `"open"` or `"invite_only"`, for the workspace the request's host resolves to. A host that resolves to no workspace, or a setting that cannot be read, gets no `access` field; clients MUST NOT treat a missing field as `open`. A client SHOULD read it before signing in, so that a person who is not a member is told the workspace is invite-only and to ask for an invite, instead of seeing a failed connection.
 
+An invite-only workspace SHOULD list NIP-43 in `supported_nips` (it has a member list and invites, whether or not the whole relay requires membership), when the relay has the stable signing key those events are verified against.
+
 An invite-only workspace MUST NOT appear in any unauthenticated directory of workspaces the relay publishes.
 
 ## Security Considerations
