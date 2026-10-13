@@ -167,6 +167,9 @@ impl Db {
     /// List active communities with public directory data and live member
     /// counts. Used by the unauthenticated `GET /communities` discovery
     /// endpoint; never exposes signing keys, tokens, or operator state.
+    ///
+    /// A community whose owner made it invite-only is not listed: the directory is open to anyone, and a private
+    /// community's name, icon and size are not for anyone.
     #[datastore_span(name = "list_directory_communities", system = "postgresql")]
     pub async fn list_directory_communities(&self) -> Result<Vec<DirectoryCommunityRecord>> {
         let mut connection = crate::observability::acquire_writer(
@@ -185,6 +188,7 @@ impl Db {
                     AS member_count
             FROM communities c
             WHERE c.deletion_state = 'active'
+              AND NOT c.membership_required
             ORDER BY c.created_at
             "#,
         )
@@ -981,6 +985,49 @@ mod postgres_tests {
         .execute(pool)
         .await
         .expect("insert channel");
+    }
+
+    /// An invite-only community is not in the public directory, and is again once it is opened. An open one on the
+    /// same server stays listed. Mutation: drop the filter from the query → RED.
+    #[tokio::test]
+    async fn the_public_directory_leaves_out_invite_only_communities() {
+        let db = setup_db().await;
+        let owner = "ab".repeat(32);
+        let listed = |host: String| {
+            let db = db.clone();
+            async move {
+                db.list_directory_communities()
+                    .await
+                    .expect("directory query")
+                    .into_iter()
+                    .any(|c| c.host == host)
+            }
+        };
+        let make = |closed: bool| {
+            let db = db.clone();
+            let owner = owner.clone();
+            async move {
+                let host = format!("dir-{}.example", Uuid::new_v4().simple());
+                match db
+                    .create_community_with_owner_and_access(&host, &owner, closed)
+                    .await
+                    .expect("create community")
+                {
+                    crate::CreateCommunityWithOwnerResult::Created(record) => (host, record.id),
+                    other => panic!("expected a created community, got {other:?}"),
+                }
+            }
+        };
+
+        let (private_host, private_id) = make(true).await;
+        let (open_host, _) = make(false).await;
+        assert!(!listed(private_host.clone()).await, "private stays out");
+        assert!(listed(open_host).await, "open is listed");
+
+        db.set_community_membership_required(private_id, false)
+            .await
+            .expect("open it");
+        assert!(listed(private_host).await, "listed once it is opened");
     }
 
     #[tokio::test]
