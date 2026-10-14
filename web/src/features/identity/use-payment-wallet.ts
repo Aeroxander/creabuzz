@@ -5,9 +5,18 @@ import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { resolvePaymentWallet } from "./lib/wallet-proof";
+import { walletChainChecker } from "./lib/wallet-chain";
+import {
+  confirmPaymentWallet,
+  resolvePaymentWallet,
+  type PaymentWalletResult,
+} from "./lib/wallet-proof";
 
-/** Public payment identity, checked locally against both Nostr and EVM signatures. */
+/**
+ * Public payment identity, checked locally against both Nostr and EVM signatures. An ordinary wallet's proof is
+ * checked right here; a smart account's (a passkey account) is checked by asking the account on chain, so it waits
+ * for that answer before it is ever shown as verified.
+ */
 export function usePaymentWallet(pubkey: string) {
   const relay = relayWsUrl();
   const [tick, setTick] = useState(0);
@@ -24,13 +33,29 @@ export function usePaymentWallet(pubkey: string) {
     refetchInterval: 30_000,
     retry: 1,
   });
-  const data = useMemo(() => {
+  const local = useMemo<PaymentWalletResult | undefined>(() => {
     // The expiry timer invalidates the local result even if the relay is offline.
     void tick;
     return query.data
       ? resolvePaymentWallet(query.data, pubkey, Math.floor(Date.now() / 1000))
       : undefined;
   }, [query.data, pubkey, tick]);
+  const owed = local?.state === "unchecked" ? local : null;
+  const chain = useQuery({
+    queryKey: [
+      "identity",
+      "payment-wallet-chain",
+      relay,
+      pubkey,
+      owed?.wallet.event.id ?? null,
+    ],
+    enabled: owed !== null,
+    queryFn: () =>
+      confirmPaymentWallet(owed as PaymentWalletResult, walletChainChecker()),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const data = owed ? chain.data : local;
   useEffect(() => {
     if (data?.state !== "verified") return;
     const delay = Math.min(
@@ -40,5 +65,9 @@ export function usePaymentWallet(pubkey: string) {
     const timer = window.setTimeout(() => setTick((n) => n + 1), delay);
     return () => window.clearTimeout(timer);
   }, [data]);
-  return { ...query, data };
+  return {
+    ...query,
+    data,
+    isLoading: query.isLoading || (owed !== null && chain.isLoading),
+  };
 }

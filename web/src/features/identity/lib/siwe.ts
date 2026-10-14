@@ -83,7 +83,7 @@ export async function revokeWalletBinding(): Promise<void> {
   );
   // Withdraw discovery while membership still permits publishing. If either
   // operation fails it propagates, and the original private record is retained.
-  if (publicBinding.state === "verified")
+  if (publicBinding.state === "verified" || publicBinding.state === "unchecked")
     await removePublicWallet(publicBinding.wallet);
   const proof = await signAsUser(revokeProofTemplate(binding.address));
   const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/revoke`, {

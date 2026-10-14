@@ -146,12 +146,13 @@ fn push_word(out: &mut Vec<u8>, value: u32) {
 }
 
 /// Append a dynamic bytes field in ABI form: `[len word(32)][data padded to 32]`.
+///
+/// The padding is measured on the data, not on `out`: a call's buffer starts with a 4-byte selector, so padding the
+/// whole buffer to a multiple of 32 leaves the last word four bytes short.
 fn push_bytes(out: &mut Vec<u8>, data: &[u8]) {
     push_word(out, data.len() as u32);
     out.extend_from_slice(data);
-    while !out.len().is_multiple_of(32) {
-        out.push(0);
-    }
+    out.resize(out.len() + (32 - data.len() % 32) % 32, 0);
 }
 
 /// Decode a dynamic bytes field at `offset` within an ABI payload, returning
@@ -215,8 +216,10 @@ mod tests {
         let hash = [7u8; 32];
         let sig: Vec<u8> = (0u8..65).collect();
         let call = encode_is_valid_signature(&hash, &sig);
-        // selector(4) + head(64) + len(32) + data(65 padded to 96) = 192 (selector 4 + head 64 + len 32 + 96 padded data)
-        assert_eq!(call.len(), 192);
+        // selector(4) + head(64) + len(32) + data(65 padded to 96) = 196. The data is padded to a whole word on its own;
+        // it used to be padded counting the selector, which left the last word four bytes short (192).
+        assert_eq!(call.len(), 196);
+        assert_eq!((call.len() - 4) % 32, 0, "the arguments are whole words");
         assert_eq!(&call[..4], &erc1271_selector());
         assert_eq!(&call[4..36], &hash);
         // Offset word is 0x40 = 64 (bytes field starts after the 64-byte head).
@@ -231,8 +234,9 @@ mod tests {
         let hash = [9u8; 32];
         let sig: Vec<u8> = (0u8..65).collect();
         let call = encode_is_valid_sig(&addr, &hash, &sig);
-        // selector(4) + head(96) + len(32) + data(65 padded to 96) = 224 (selector 4 + head 96 + len 32 + 96 padded data)
-        assert_eq!(call.len(), 224);
+        // selector(4) + head(96) + len(32) + data(65 padded to 96) = 228.
+        assert_eq!(call.len(), 228);
+        assert_eq!((call.len() - 4) % 32, 0, "the arguments are whole words");
         assert_eq!(&call[..4], &is_valid_sig_selector());
         assert_eq!(&call[16..36], addr.as_bytes());
     }

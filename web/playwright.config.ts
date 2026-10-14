@@ -96,6 +96,15 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      // Needs a build with a chain configured (VITE_ZERODEV_CHAIN_ID, VITE_CHAIN_RPC_URL), so it cannot share the default
+      // smoke build: run it with scripts/web-passkey-wallet-e2e.sh.
+      name: "passkey-wallet",
+      testMatch: ["**/passkey-wallet.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+      },
+    },
   ],
   webServer: {
     command: "pnpm exec vite preview --port 4173 --strictPort --host 127.0.0.1",

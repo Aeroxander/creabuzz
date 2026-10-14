@@ -326,6 +326,21 @@ banned from this community" and offers nothing to retry; opening the invite link
 again. An admin is offered Ban only for members, never for the owner or another admin; a member is offered none. In an open community, a message and
 a post by someone who is not on the list have **Ban** too (owner and admins only).
 
+## 4s. Linking a passkey account as a payment wallet (2026-10-14)
+
+```bash
+node scripts/kernel-1271-live-check.mjs      # a REAL deployed Kernel 0.3.3 account on Sepolia judges the proof (read-only, public RPC)
+scripts/web-passkey-wallet-e2e.sh            # real browser, virtual passkey, a stand-in chain that judges like the validator
+cargo test -p buzz-evm-auth --features rpc --lib
+cargo test -p buzz-relay --lib -- evm_binding smart_account the_account_decides a_revocation_by_a_smart
+```
+
+By hand (a build with `VITE_ZERODEV_CHAIN_ID` and a chain RPC set, a server with `BUZZ_EVM_AUTH=1`, `BUZZ_EVM_RPC_URL` and `BUZZ_EVM_CHAIN_ID`): sign up
+with a passkey, open your profile, **Link payment wallet**, tick the box. A second button, **Sign with my passkey account**, is there next to the
+browser-wallet one. Press it: one passkey prompt, then the card shows your account's address with "Both signatures verified". On a first-time account
+the app creates it first, with one sponsored empty operation. Turn the network off and reload: the card says the check could not be made just now and
+shows no address and no Copy button. **Remove public wallet** withdraws it without any chain call.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that

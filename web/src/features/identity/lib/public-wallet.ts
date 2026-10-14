@@ -21,7 +21,10 @@ export function readPendingWalletProof(pubkey: string): Event | null {
       pubkey,
       Math.floor(Date.now() / 1000),
     );
-    return result.state === "verified" || result.state === "revoked"
+    // A smart account's proof is "unchecked" here: only the chain can say it is good, and the server asks it.
+    return result.state === "verified" ||
+      result.state === "unchecked" ||
+      result.state === "revoked"
       ? event
       : null;
   } catch {

@@ -12,8 +12,10 @@ import {
   publishPendingWalletProof,
   removePublicWallet,
 } from "../lib/public-wallet";
+import { linkPasskeyAccount, passkeyAccountSetup } from "../lib/passkey-wallet";
 import { signInWithWallet } from "../lib/siwe";
-import { resolvePaymentWallet } from "../lib/wallet-proof";
+import { walletChainChecker } from "../lib/wallet-chain";
+import { resolvePaymentWalletChecked } from "../lib/wallet-proof";
 import { usePaymentWallet } from "../use-payment-wallet";
 import { SignRecovery } from "./SignRecovery";
 
@@ -63,6 +65,13 @@ export function PaymentWalletCard({
       setBusy(false);
     }
   };
+  const passkeySetup = passkeyAccountSetup();
+  // The newest record this account has already published, so a new link replaces it.
+  const newerThan = Math.max(
+    pending?.created_at ?? 0,
+    wallet?.event.created_at ??
+      (result && "event" in result ? (result.event?.created_at ?? 0) : 0),
+  );
   const link = () => {
     setConsent(false);
     setError(null);
@@ -74,10 +83,11 @@ export function PaymentWalletCard({
     setBusy(true);
     try {
       const fresh = await query.refetch({ throwOnError: true });
-      const checked = resolvePaymentWallet(
+      const checked = await resolvePaymentWalletChecked(
         fresh.data ?? [],
         pubkey,
         Math.floor(Date.now() / 1000),
+        walletChainChecker(),
       );
       if (checked.state !== "verified")
         throw new Error(
@@ -190,9 +200,11 @@ export function PaymentWalletCard({
             ? "The wallet proof expired. A new signature is needed before paying."
             : result?.state === "invalid"
               ? "This account's latest wallet proof could not be verified. Ask them to link it again before paying."
-              : result?.state === "revoked"
-                ? "This account removed its public payment wallet."
-                : "No verified payment wallet has been shared."}
+              : result?.state === "unreachable"
+                ? "This account linked a smart account, which has to be checked on the network, and that check could not be made just now. Try again in a moment."
+                : result?.state === "revoked"
+                  ? "This account removed its public payment wallet."
+                  : "No verified payment wallet has been shared."}
         </p>
       )}
       {isSelf ? (
@@ -275,9 +287,11 @@ export function PaymentWalletCard({
                 </span>
               </label>
               <p className="mt-2 text-xs text-muted-foreground">
-                Use a browser wallet on the community's network. Ordinary EVM
-                wallets are supported; smart-account proofs are not supported
-                here yet.
+                Use a browser wallet on the community's network
+                {passkeySetup.ok ? ", or sign with your passkey account" : ""}.
+                {passkeySetup.ok
+                  ? " Your passkey account is checked on the network, so it has to exist there: the first time, it is created for you at no cost."
+                  : ""}
               </p>
             </>
           ) : (
@@ -299,6 +313,20 @@ export function PaymentWalletCard({
             <Button disabled={busy} onClick={close} variant="outline">
               Cancel
             </Button>
+            {dialog === "link" && passkeySetup.ok ? (
+              <Button
+                data-testid="link-passkey-account"
+                disabled={busy || !consent}
+                onClick={() =>
+                  void run(() => linkPasskeyAccount({ newerThan }))
+                }
+                variant="outline"
+              >
+                {busy
+                  ? "Waiting for signatures…"
+                  : "Sign with my passkey account"}
+              </Button>
+            ) : null}
             <Button
               disabled={busy || (dialog === "link" && !consent)}
               onClick={() =>
@@ -308,13 +336,7 @@ export function PaymentWalletCard({
                   else
                     await signInWithWallet({
                       publicProof: true,
-                      newerThan: Math.max(
-                        pending?.created_at ?? 0,
-                        wallet?.event.created_at ??
-                          (result && "event" in result
-                            ? (result.event?.created_at ?? 0)
-                            : 0),
-                      ),
+                      newerThan,
                     });
                 })
               }

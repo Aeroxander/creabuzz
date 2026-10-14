@@ -853,7 +853,8 @@ export const KIND_ORG_JOIN_REQUEST = 37016;
 /// **Authorship**: the event MUST be signed by the bound npub itself — the
 /// record claims *the author* holds `d`, never a third party.
 ///
-/// **Ingest enforcement (anti-spoof, fully offline — no RPC)**: for a live
+/// **Ingest enforcement (anti-spoof; offline for an ordinary wallet, one RPC call
+/// for a smart account)**: for a live
 /// (non-revoked) record the `attestation` is REQUIRED and verified with
 /// `AttestationEnvelope::verify_for_npub(author, now)` — EIP-712 signature
 /// over the domain-separated digest, `attestation.npub` == event signer,
@@ -862,6 +863,18 @@ export const KIND_ORG_JOIN_REQUEST = 37016;
 /// (`siweMessageHash`) CANNOT be re-verified at ingest: the record carries
 /// only a hash, not the EIP-4361 message + `personal_sign` signature, so
 /// ingest does not pretend to check it — the attestation is the proof.
+///
+/// **Smart accounts** (a passkey account, say) have no key to `ecrecover`: their
+/// `attestation.signature` is not a 65-byte `r‖s‖v` but whatever the account
+/// contract accepts. For such a live record ingest does the cheap checks above
+/// (npub, account, expiry), then asks the account itself, over the configured
+/// chain RPC (`BUZZ_EVM_AUTH`, `BUZZ_EVM_RPC_URL`, `BUZZ_EVM_CHAIN_ID`),
+/// `isValidSignature(digest, signature)` (EIP-1271, or EIP-6492 while the account
+/// is not deployed and a validator is configured). A server with no such
+/// connection refuses the record rather than store an unverifiable claim. A
+/// record whose chain id is not the server's is refused. A passkey account has no
+/// SIWE message, so its `siweMessageHash` is `0x` + 64 zeros. A revocation
+/// needs no chain check, smart account or not: withdrawing needs only the npub.
 ///
 /// **Revocation**: same `(author, d)` republished with `content.revoked:
 /// true` (NIP-ORG kind:37011 §Revocation — "republication of the same

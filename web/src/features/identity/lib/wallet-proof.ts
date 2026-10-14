@@ -169,14 +169,52 @@ export interface PaymentWallet {
   expires: number;
 }
 
+/**
+ * What a smart account's proof still needs asked of the chain: its signature is not an `ecrecover`-able 65 bytes but
+ * whatever the account contract accepts (a passkey account's is a few hundred bytes), so only the account itself can
+ * say whether it is valid.
+ */
+export interface ContractCheck {
+  account: string;
+  chain: number;
+  /** The EIP-712 digest that was signed. */
+  digest: string;
+  signature: string;
+}
+
+/** Asks the chain whether `account` accepts `signature` over `digest`. Throws when the chain cannot be asked. */
+export type ChainChecker = (check: ContractCheck) => Promise<boolean>;
+
+/**
+ * Whether a proof's signature is a smart account's rather than an ordinary wallet's: valid hex that is not exactly 65
+ * bytes. Anything else is left for the ordinary check to refuse.
+ */
+export function isContractSignature(signature: unknown): boolean {
+  return (
+    typeof signature === "string" &&
+    /^0x([0-9a-f]{2})+$/i.test(signature) &&
+    signature.length !== 132
+  );
+}
+
+export type PaymentWalletResult =
+  | { state: "verified"; wallet: PaymentWallet }
+  /**
+   * Sound as far as this device can tell (the Nostr signature, the fields, the expiry), but signed by a smart
+   * account: it is not verified until the chain says so, and a reader that does not ask treats it as not verified.
+   */
+  | { state: "unchecked"; wallet: PaymentWallet; check: ContractCheck }
+  | {
+      state: "absent" | "revoked" | "expired" | "invalid" | "unreachable";
+      event?: Event;
+    };
+
 /** Latest authenticated statement wins, including revocation and expired proofs. */
 export function resolvePaymentWallet(
   events: readonly Event[],
   pubkey: string,
   now: number,
-):
-  | { state: "verified"; wallet: PaymentWallet }
-  | { state: "absent" | "revoked" | "expired" | "invalid"; event?: Event } {
+): PaymentWalletResult {
   const latest = events
     .filter((e) => {
       try {
@@ -231,7 +269,31 @@ export function resolvePaymentWallet(
     if (
       proof.domain.chain_id !== chain ||
       proof.attestation.account !== address ||
-      bytesToHex(Uint8Array.from(proof.attestation.npub)) !== pubkey ||
+      bytesToHex(Uint8Array.from(proof.attestation.npub)) !== pubkey
+    ) {
+      throw new Error("Wallet signature does not match this account");
+    }
+    if (isContractSignature(proof.signature)) {
+      if (proof.attestation.expires < now)
+        return { state: "expired", event: latest };
+      const wallet: PaymentWallet = {
+        event: latest,
+        address: checksumAddress(address),
+        chain,
+        expires: proof.attestation.expires,
+      };
+      return {
+        state: "unchecked",
+        wallet,
+        check: {
+          account: address,
+          chain,
+          digest: `0x${bytesToHex(walletAttestationDigest(proof))}`,
+          signature: proof.signature,
+        },
+      };
+    }
+    if (
       recoverWallet(walletAttestationDigest(proof), proof.signature) !== address
     ) {
       throw new Error("Wallet signature does not match this account");
@@ -250,4 +312,38 @@ export function resolvePaymentWallet(
   } catch {
     return { state: "invalid", event: latest };
   }
+}
+
+/**
+ * Settle a proof that needs the chain. A smart account's proof is verified exactly when the account says its signature
+ * is valid; if it says no, the proof is invalid; if the chain cannot be asked (no connection to that network, a node
+ * that does not answer), it is `unreachable`, which is neither a yes nor a claim that the proof is false. Without a
+ * `checker` nothing is ever upgraded, so a reader that cannot ask never shows a smart account's address as verified.
+ */
+export async function confirmPaymentWallet(
+  result: PaymentWalletResult,
+  checker: ChainChecker | undefined,
+): Promise<PaymentWalletResult> {
+  if (result.state !== "unchecked") return result;
+  if (!checker) return { state: "unreachable", event: result.wallet.event };
+  try {
+    return (await checker(result.check))
+      ? { state: "verified", wallet: result.wallet }
+      : { state: "invalid", event: result.wallet.event };
+  } catch {
+    return { state: "unreachable", event: result.wallet.event };
+  }
+}
+
+/** [`resolvePaymentWallet`], then the chain's word for a smart account's proof. */
+export async function resolvePaymentWalletChecked(
+  events: readonly Event[],
+  pubkey: string,
+  now: number,
+  checker: ChainChecker | undefined,
+): Promise<PaymentWalletResult> {
+  return confirmPaymentWallet(
+    resolvePaymentWallet(events, pubkey, now),
+    checker,
+  );
 }

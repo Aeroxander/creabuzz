@@ -6,7 +6,8 @@ import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { resolvePaymentWallet } from "../lib/wallet-proof";
+import { mapLimit, walletChainChecker } from "../lib/wallet-chain";
+import { resolvePaymentWalletChecked } from "../lib/wallet-proof";
 
 /** Named payment recipients, verified again on selection and scoped to the project's network. */
 export function PaymentRecipientPicker({
@@ -29,16 +30,21 @@ export function PaymentRecipientPicker({
         limit: 200,
       });
       const authors = [...new Set(events.map((e) => e.pubkey))];
-      return authors.flatMap((author) => {
-        const result = resolvePaymentWallet(
+      const checker = walletChainChecker();
+      // A smart account's proof is settled by asking the chain, a few at a time.
+      const results = await mapLimit(authors, 6, (author) =>
+        resolvePaymentWalletChecked(
           events,
           author,
           Math.floor(Date.now() / 1000),
-        );
-        return result.state === "verified" && result.wallet.chain === chainId
+          checker,
+        ),
+      );
+      return results.flatMap((result) =>
+        result.state === "verified" && result.wallet.chain === chainId
           ? [result.wallet]
-          : [];
-      });
+          : [],
+      );
     },
     staleTime: 15_000,
     retry: 1,

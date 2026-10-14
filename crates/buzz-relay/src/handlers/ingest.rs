@@ -2074,13 +2074,17 @@ fn is_canonical_decimal(value: &str) -> bool {
 /// attestation may revoke but may never activate (a live record always goes
 /// through [`AttestationEnvelope::verify_for_npub`] — expiry, npub, and
 /// signature — exactly as `POST /auth/siwe/register` does).
+///
+/// Returns `true` when a live binding's signature belongs to a **contract account** (a smart account such as a
+/// passkey account, whose signature is not a 65-byte `r‖s‖v`): `ecrecover` cannot check it, so the cheap checks here
+/// pass and the account's own answer is still owed (see [`PendingContractCheck`]).
 fn verify_binding_attestation(
     label: &str,
     envelope: &AttestationEnvelope,
     author: &nostr::PublicKey,
     address: &EvmAddress,
     require_fresh: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     if envelope.attestation.npub != author.to_bytes() {
         return Err(format!(
             "{label} attestation authorizes a different npub than the event signer"
@@ -2091,17 +2095,109 @@ fn verify_binding_attestation(
             "{label} attestation account must equal the bound `address`"
         ));
     }
+    let now = Utc::now().timestamp() as u64;
+    if is_contract_signature(&envelope.signature) {
+        // Withdrawing a link needs only control of the Nostr key, as it does for an ordinary wallet, so a
+        // revocation owes the chain nothing: it must not depend on this server's connection to a node being up.
+        if !require_fresh {
+            return Ok(false);
+        }
+        // Expiry is cheap and needs no chain, so a stale proof is refused before any network call.
+        if envelope.attestation.is_expired(now) {
+            return Err(format!(
+                "{label} attestation rejected: {}",
+                buzz_evm_auth::EvmAuthError::Expired
+            ));
+        }
+        return Ok(true);
+    }
     if require_fresh {
-        let now = Utc::now().timestamp() as u64;
         envelope
             .verify_for_npub(&author.to_hex(), now)
             .map_err(|e| format!("{label} attestation rejected: {e}"))?;
-        return Ok(());
+        return Ok(false);
     }
     envelope
         .attestation
         .verify(&envelope.domain, &envelope.signature)
-        .map_err(|e| format!("{label} attestation rejected: {e}"))
+        .map_err(|e| format!("{label} attestation rejected: {e}"))?;
+    Ok(false)
+}
+
+/// Whether an attestation signature is a contract account's rather than an EOA's: valid hex that is not exactly
+/// 65 bytes. Anything that is not hex goes down the offline path and is refused there.
+fn is_contract_signature(signature: &str) -> bool {
+    let hex_part = signature.strip_prefix("0x").unwrap_or(signature);
+    hex::decode(hex_part).is_ok_and(|bytes| bytes.len() != 65)
+}
+
+/// A binding record that passed every offline check and whose attestation is signed by a contract account: the
+/// account itself is asked, over RPC, whether the signature is valid (EIP-1271, or EIP-6492 before it is deployed).
+#[derive(Debug)]
+pub(crate) struct PendingContractCheck {
+    envelope: AttestationEnvelope,
+}
+
+/// Ask the chain whether a contract account accepts a pending binding's attestation. `configured_chain` is the chain
+/// this server verifies (`BUZZ_EVM_CHAIN_ID`); an attestation for another chain is refused rather than answered
+/// from the wrong network.
+async fn verify_pending_contract_check(
+    verifier: &buzz_evm_auth::RpcSignatureVerifier,
+    configured_chain: Option<u64>,
+    pending: &PendingContractCheck,
+    author_hex: &str,
+    now: u64,
+) -> Result<(), String> {
+    const LABEL: &str = "EVM binding event";
+    let envelope = &pending.envelope;
+    if let Some(chain) = configured_chain {
+        if envelope.domain.chain_id != chain {
+            return Err(format!(
+                "{LABEL} attestation is for chain {}, but this server verifies smart accounts on chain {chain}",
+                envelope.domain.chain_id
+            ));
+        }
+    }
+    envelope
+        .verify_for_npub_contract(verifier, author_hex, now)
+        .await
+        .map(drop)
+        .map_err(|e| format!("{LABEL} attestation rejected: {e}"))
+}
+
+/// [`validate_evm_binding_envelope`], plus the chain check a smart account's attestation needs. This is the one the
+/// ingest path calls: an EOA binding costs nothing extra, and a contract account's costs one bounded RPC call.
+pub(crate) async fn validate_evm_binding(state: &AppState, event: &Event) -> Result<(), String> {
+    let Some(pending) = check_evm_binding(event)? else {
+        return Ok(());
+    };
+    let config = state
+        .config
+        .evm_auth
+        .as_ref()
+        .filter(|config| config.rpc_url.is_some())
+        .ok_or_else(|| {
+            "EVM binding event is signed by a smart account, but this server has no connection to a chain to check it              with (BUZZ_EVM_AUTH and BUZZ_EVM_RPC_URL)"
+                .to_string()
+        })?;
+    let Some(rpc_url) = config.rpc_url.as_deref() else {
+        return Err("EVM binding event cannot be checked: no chain connection".into());
+    };
+    let mut verifier = buzz_evm_auth::RpcSignatureVerifier::new(rpc_url);
+    if let Some(validator) = &config.erc6492_validator {
+        let validator = EvmAddress::parse(validator).map_err(|e| {
+            format!("this server's BUZZ_EVM_ERC6492_VALIDATOR is not an address: {e}")
+        })?;
+        verifier = verifier.with_erc6492_validator(validator);
+    }
+    verify_pending_contract_check(
+        &verifier,
+        config.chain_id,
+        &pending,
+        &event.pubkey.to_hex(),
+        Utc::now().timestamp() as u64,
+    )
+    .await
 }
 
 /// Validate the envelope of a kind:37017 EVM binding record **and enforce its
@@ -2132,7 +2228,21 @@ fn verify_binding_attestation(
 ///
 /// Readers resolve per `(author, d)` (NIP-33 is author-keyed): a foreign
 /// author's record for the same address never suppresses an author's own head.
+#[cfg(test)]
 pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String> {
+    match check_evm_binding(event)? {
+        None => Ok(()),
+        Some(_) => Err(
+            "EVM binding event is signed by a smart account, which only the chain can check, not this offline \
+             validator"
+                .into(),
+        ),
+    }
+}
+
+/// Every offline check of a kind:37017 record. `Some` means it is otherwise sound and its attestation is signed by
+/// a contract account, so the account's own answer is still owed.
+fn check_evm_binding(event: &Event) -> Result<Option<PendingContractCheck>, String> {
     const LABEL: &str = "EVM binding event";
     let d = single_bounded_d_tag(event, LABEL)?;
     if !is_lower_0x_address(d) {
@@ -2224,6 +2334,7 @@ pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String>
             })?,
         ),
     };
+    let mut pending = None;
     match &envelope {
         None if !revoked => {
             return Err(format!(
@@ -2235,7 +2346,18 @@ pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String>
         // Npub-only revocation: control of the event signer is the proof.
         None => {}
         Some(envelope) => {
-            verify_binding_attestation(LABEL, envelope, &event.pubkey, &content_address, !revoked)?;
+            let owes_chain_check = verify_binding_attestation(
+                LABEL,
+                envelope,
+                &event.pubkey,
+                &content_address,
+                !revoked,
+            )?;
+            if owes_chain_check {
+                pending = Some(PendingContractCheck {
+                    envelope: envelope.clone(),
+                });
+            }
         }
     }
     // A `chain` tag may not contradict the signed attestation domain.
@@ -2247,7 +2369,7 @@ pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String>
             ));
         }
     }
-    Ok(())
+    Ok(pending)
 }
 
 /// Validate the envelope of a kind:37018 deployment record.
@@ -4654,7 +4776,8 @@ async fn ingest_event_inner(
     // uses the shared org envelope above — its `role` tag shape
     // (name/description/equity) describes neither record.
     if kind_u32 == KIND_EVM_BINDING {
-        validate_evm_binding_envelope(&event)
+        validate_evm_binding(state, &event)
+            .await
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -9456,6 +9579,177 @@ mod postgres_tests {
             validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
             "lowercase-only spelling and a missing chain tag must store"
         );
+    }
+
+    // ---- Smart accounts: a binding signed through EIP-1271 ----
+
+    /// A smart account's signature: valid hex that is not a 65-byte `r‖s‖v` (a passkey account's is a few hundred
+    /// bytes of ABI-encoded WebAuthn data behind a one-byte validator prefix).
+    fn contract_signature() -> String {
+        format!("0x00{}", "ab".repeat(300))
+    }
+
+    fn contract_envelope(
+        npub: &nostr::PublicKey,
+        expires: u64,
+        chain_id: u64,
+    ) -> AttestationEnvelope {
+        let mut envelope =
+            binding_attestation(&binding_evm_key(), npub, BINDING_ADDRESS, expires, chain_id);
+        envelope.signature = contract_signature();
+        envelope
+    }
+
+    /// A chain node that says one fixed thing about every `isValidSignature` call, and has code at every address.
+    struct FakeNode {
+        answer: [u8; 4],
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl buzz_evm_auth::JsonRpc for FakeNode {
+        async fn eth_get_code(
+            &self,
+            _address: &EvmAddress,
+        ) -> Result<Vec<u8>, buzz_evm_auth::EvmAuthError> {
+            Ok(vec![0x60, 0x80])
+        }
+        async fn eth_call(
+            &self,
+            _to: &EvmAddress,
+            _data: &[u8],
+        ) -> Result<Vec<u8>, buzz_evm_auth::EvmAuthError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.answer.to_vec())
+        }
+    }
+
+    fn node(answer: [u8; 4]) -> (buzz_evm_auth::RpcSignatureVerifier, Arc<FakeNode>) {
+        let node = Arc::new(FakeNode {
+            answer,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        (
+            buzz_evm_auth::RpcSignatureVerifier::from_transport(node.clone()),
+            node,
+        )
+    }
+
+    const ERC1271_YES: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
+
+    fn pending_for(keys: &nostr::Keys, expires: u64, chain: u64) -> PendingContractCheck {
+        let envelope = contract_envelope(&keys.public_key(), expires, chain);
+        let content = binding_content(BINDING_ADDRESS, Some(&envelope), false);
+        let tags = binding_tags(
+            BINDING_ADDRESS_LOWER,
+            BINDING_ADDRESS,
+            Some(&chain.to_string()),
+        );
+        check_evm_binding(&binding_event(keys, &content, tags))
+            .expect("the offline checks pass")
+            .expect("a contract signature leaves the chain check owed")
+    }
+
+    #[test]
+    fn a_smart_account_binding_passes_the_offline_checks_and_waits_for_the_chain() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = contract_envelope(&keys.public_key(), now + 3600, 8453);
+        let event = live_binding(&keys, &envelope);
+        assert!(
+            check_evm_binding(&event).expect("sound").is_some(),
+            "a contract signature owes a chain check"
+        );
+        // The offline-only validator never accepts it on its own.
+        let err = validate_evm_binding_envelope(&event).expect_err("offline cannot accept it");
+        assert!(err.contains("smart account"), "{err}");
+        // An EOA binding owes nothing.
+        let eoa = binding_attestation(
+            &binding_evm_key(),
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        assert!(check_evm_binding(&live_binding(&keys, &eoa))
+            .expect("sound")
+            .is_none());
+    }
+
+    #[test]
+    fn a_smart_account_binding_still_has_the_cheap_checks() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        // Expired and live: refused without any chain call.
+        let expired = contract_envelope(&keys.public_key(), now - 10, 8453);
+        let err = check_evm_binding(&live_binding(&keys, &expired)).expect_err("expired");
+        assert!(err.contains("expired"), "{err}");
+        // Another npub than the event signer.
+        let elsewhere = contract_envelope(&nostr::Keys::generate().public_key(), now + 3600, 8453);
+        assert!(check_evm_binding(&live_binding(&keys, &elsewhere)).is_err());
+        // A different account than the bound address.
+        let mut other_account = contract_envelope(&keys.public_key(), now + 3600, 8453);
+        other_account.attestation.account = EvmAddress::parse(OTHER_ADDRESS).expect("address");
+        assert!(check_evm_binding(&live_binding(&keys, &other_account)).is_err());
+    }
+
+    #[tokio::test]
+    async fn the_account_decides_and_nothing_else_does() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        let pending = pending_for(&keys, now + 3600, 8453);
+        let author = keys.public_key().to_hex();
+
+        let (yes, node_yes) = node(ERC1271_YES);
+        verify_pending_contract_check(&yes, Some(8453), &pending, &author, now)
+            .await
+            .expect("an account that says yes is accepted");
+        assert_eq!(node_yes.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let (no, _) = node([0xff; 4]);
+        let err = verify_pending_contract_check(&no, Some(8453), &pending, &author, now)
+            .await
+            .expect_err("an account that says no is refused");
+        assert!(err.contains("did not accept"), "{err}");
+
+        // Without a configured chain there is nothing to compare; with one, another chain is refused up front.
+        let (yes_again, node_again) = node(ERC1271_YES);
+        assert!(
+            verify_pending_contract_check(&yes_again, None, &pending, &author, now)
+                .await
+                .is_ok()
+        );
+        let wrong_chain =
+            verify_pending_contract_check(&yes_again, Some(1), &pending, &author, now)
+                .await
+                .expect_err("a proof for another chain is not answered from this one");
+        assert!(wrong_chain.contains("chain 8453"), "{wrong_chain}");
+        assert_eq!(
+            node_again.calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the wrong-chain proof never reached the node"
+        );
+    }
+
+    #[test]
+    fn a_revocation_by_a_smart_account_owes_the_chain_nothing() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        // Even with a stale proof attached, withdrawing a link needs only control of the Nostr key, so it never
+        // waits on this server's connection to a node.
+        let stale = contract_envelope(&keys.public_key(), now - 10, 8453);
+        let content = binding_content(BINDING_ADDRESS, Some(&stale), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        let event = binding_event(&keys, &content, tags);
+        assert!(check_evm_binding(&event)
+            .expect("a revocation is sound")
+            .is_none());
+        assert!(validate_evm_binding_envelope(&event).is_ok());
+        // It still has to be about the author's own key and address.
+        let elsewhere = contract_envelope(&nostr::Keys::generate().public_key(), now + 3600, 8453);
+        let content = binding_content(BINDING_ADDRESS, Some(&elsewhere), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(check_evm_binding(&binding_event(&keys, &content, tags)).is_err());
     }
 
     #[test]

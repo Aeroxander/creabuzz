@@ -26,8 +26,22 @@ publishes a revocation without removing community membership; old public
 records remain in history. The account menu's **Unbind wallet** also withdraws
 an active public proof before revoking SIWE membership. A failed public update
 is retained in this browser, scoped to its relay and Nostr author, for retry.
-Ordinary EVM signatures are supported; EIP-1271 smart-account proofs are not
-supported by this profile flow yet.
+Two kinds of wallet can be linked:
+
+- **A browser wallet** signs the link with an ordinary EVM signature, which anyone can check offline.
+- **A passkey account**, the smart account made for people who sign in with a passkey, signs through its
+  passkey (**Sign with my passkey account**). A smart account has no key to check offline, so its signature is
+  one only the account contract can judge (ERC-1271). The app asks the account before it publishes anything,
+  the server asks it again when the record arrives, and every reader asks it before showing the address as
+  verified. If the network cannot be reached, the address is not shown as verified and the card says why; it
+  never falls back to trusting the record. The account has to exist on chain to answer: the first time, the
+  app creates it with one sponsored, empty operation. The passkey account has no SIWE message, so linking it
+  creates no server-side wallet membership. It is the Kernel 0.3.3 account the rest of the app uses.
+
+A server accepts passkey-account links only when it is set up to ask a chain (`BUZZ_EVM_AUTH`,
+`BUZZ_EVM_RPC_URL`, `BUZZ_EVM_CHAIN_ID`); without that it refuses them rather than store a claim it cannot
+check. Each such record costs the server one bounded RPC call (timeouts and a response cap apply); records
+signed by an ordinary wallet cost nothing extra, and removing a link never needs the chain.
 
 ## Manual payment
 

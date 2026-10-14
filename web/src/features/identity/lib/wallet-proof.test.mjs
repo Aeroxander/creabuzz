@@ -6,9 +6,12 @@ import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 import {
   checksumAddress,
+  confirmPaymentWallet,
+  isContractSignature,
   newWalletAttestation,
   recoverWallet,
   resolvePaymentWallet,
+  resolvePaymentWalletChecked,
   siweMessageHash,
   walletAttestationDigest,
 } from "./wallet-proof.ts";
@@ -163,4 +166,129 @@ test("ambiguous tags, zero recipients and malformed events fail closed", () => {
     "invalid",
   );
   assert.equal(resolve([{}, null]).state, "absent");
+});
+
+// ---- Smart accounts: a passkey account signs through ERC-1271, so only the chain can say the proof is good ----
+
+const SMART_SIGNATURE = `0x00${"ab".repeat(300)}`;
+const smartAddress = "0xd6b93cedda0d95145b822f44108ef13e41e9aa39";
+
+function smartRecord(patch = {}, time = now, change = () => {}) {
+  const attestation = newWalletAttestation(smartAddress, pubkey, 8453, now, 9);
+  attestation.signature = SMART_SIGNATURE;
+  const body = {
+    v: 1,
+    address: smartAddress,
+    siweMessageHash: `0x${"00".repeat(32)}`,
+    attestation,
+    ...patch,
+  };
+  change(body);
+  return signBody(body, time, [
+    ["d", smartAddress],
+    ["address", smartAddress],
+    ["chain", "8453"],
+  ]);
+}
+
+test("a signature that is not an ordinary wallet's 65 bytes is a smart account's", () => {
+  assert.equal(isContractSignature(SMART_SIGNATURE), true);
+  assert.equal(isContractSignature(`0x${"00".repeat(65)}`), false);
+  for (const not of [
+    "",
+    "0x",
+    "0xabc",
+    "nope",
+    undefined,
+    5,
+    `0x${"zz".repeat(80)}`,
+  ]) {
+    assert.equal(isContractSignature(not), false, String(not));
+  }
+});
+
+test("a smart account's proof is not verified by this device: it waits for the chain", () => {
+  const result = resolve([smartRecord()]);
+  assert.equal(result.state, "unchecked");
+  assert.notEqual(result.state, "verified");
+  assert.equal(result.check.account, smartAddress);
+  assert.equal(result.check.chain, 8453);
+  assert.equal(result.check.signature, SMART_SIGNATURE);
+  // What the chain is asked about is the digest of exactly this attestation.
+  const body = JSON.parse(smartRecord().content);
+  assert.equal(
+    result.check.digest,
+    `0x${bytesToHex(walletAttestationDigest(body.attestation))}`,
+  );
+  assert.equal(result.wallet.address, checksumAddress(smartAddress));
+});
+
+test("the chain's answer settles it: yes verifies, no is invalid, silence is neither", async () => {
+  const unchecked = resolve([smartRecord()]);
+  const seen = [];
+  const answer = (value) => (check) => {
+    seen.push(check);
+    return value instanceof Error
+      ? Promise.reject(value)
+      : Promise.resolve(value);
+  };
+  const yes = await confirmPaymentWallet(unchecked, answer(true));
+  assert.equal(yes.state, "verified");
+  assert.equal(yes.wallet.address, checksumAddress(smartAddress));
+  assert.equal(
+    (await confirmPaymentWallet(unchecked, answer(false))).state,
+    "invalid",
+  );
+  assert.equal(
+    (await confirmPaymentWallet(unchecked, answer(new Error("offline")))).state,
+    "unreachable",
+  );
+  // A reader that cannot ask never upgrades it.
+  assert.equal(
+    (await confirmPaymentWallet(unchecked, undefined)).state,
+    "unreachable",
+  );
+  assert.equal(seen.length, 3);
+  // Other results pass through untouched, and the checker is not asked about them.
+  const ordinary = resolve([proofRecord()]);
+  assert.equal(await confirmPaymentWallet(ordinary, answer(false)), ordinary);
+  assert.equal(seen.length, 3);
+});
+
+test("expired, revoked and tampered smart-account proofs never reach the chain", async () => {
+  let asked = 0;
+  const checker = () => {
+    asked += 1;
+    return Promise.resolve(true);
+  };
+  const check = (events, time = now) =>
+    resolvePaymentWalletChecked(events, pubkey, time, checker);
+
+  assert.equal(
+    (await check([smartRecord()], now + 366 * 86400)).state,
+    "expired",
+  );
+  const revoked = smartRecord(
+    { revoked: true, attestation: undefined },
+    now + 1,
+  );
+  assert.equal((await check([smartRecord(), revoked])).state, "revoked");
+  for (const change of [
+    (body) => {
+      body.attestation.attestation.npub[0] ^= 1;
+    },
+    (body) => {
+      body.attestation.attestation.account = `0x${"11".repeat(20)}`;
+    },
+    (body) => {
+      body.attestation.domain.chain_id = 1;
+    },
+  ]) {
+    const tampered = smartRecord({}, now, change);
+    assert.equal((await check([tampered])).state, "invalid");
+  }
+  assert.equal(asked, 0);
+  // And an untouched one does ask, once.
+  assert.equal((await check([smartRecord()])).state, "verified");
+  assert.equal(asked, 1);
 });

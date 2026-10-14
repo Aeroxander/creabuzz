@@ -39,6 +39,18 @@ pub trait JsonRpc: Send + Sync {
     async fn eth_call(&self, to: &EvmAddress, data: &[u8]) -> Result<Vec<u8>, EvmAuthError>;
 }
 
+/// An error and everything under it ("error sending request" alone says nothing about why).
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
+}
+
 /// JSON-RPC transport over an HTTP endpoint (`http(s)://…`).
 pub struct HttpJsonRpc {
     client: reqwest::Client,
@@ -84,7 +96,7 @@ impl HttpJsonRpc {
             .timeout(RPC_REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(|e| EvmAuthError::Rpc(format!("transport: {e}")))?;
+            .map_err(|e| EvmAuthError::Rpc(format!("transport: {}", error_chain(&e))))?;
         let mut resp = resp;
         if resp
             .content_length()
@@ -215,11 +227,14 @@ impl RpcSignatureVerifier {
         let sig = hex::decode(hex_str)
             .map_err(|e| EvmAuthError::InvalidSignature(format!("not hex: {e}")))?;
         let digest = personal_sign_digest(message);
-        self.verify_digest(address, &digest, &sig).await
+        self.verify_hash(address, &digest, &sig).await
     }
 
-    /// Core: verify `digest` is genuinely signed for `address` by `sig`.
-    async fn verify_digest(
+    /// Verify that `sig` is a valid signature by `address` over the 32-byte `digest`, with no further wrapping: an
+    /// EIP-712 digest, say, rather than a `personal_sign` message. A deployed account answers through EIP-1271, so a
+    /// smart account (a passkey account, say) is accepted exactly when the account itself says so; a counterfactual
+    /// one goes through the EIP-6492 validator when one is configured; an address with no code must be an EOA.
+    pub async fn verify_hash(
         &self,
         address: &EvmAddress,
         digest: &[u8; 32],
