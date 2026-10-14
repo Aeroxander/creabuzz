@@ -341,6 +341,25 @@ browser-wallet one. Press it: one passkey prompt, then the card shows your accou
 the app creates it first, with one sponsored empty operation. Turn the network off and reload: the card says the check could not be made just now and
 shows no address and no Copy button. **Remove public wallet** withdraws it without any chain call.
 
+## 4t. A small economy, run by several people at once (2026-10-14)
+
+```bash
+scripts/web-economy-e2e.sh            # REAL server + REAL chain + three browsers at once; needs Postgres, Redis and foundry
+node --experimental-strip-types --test web/tests/helpers/key-wallet.test.mjs web/tests/helpers/key-wallet-anvil.test.mjs
+```
+
+The script boots a throwaway dev chain, a scratch database with the real relay in front of it (its own community at its address, self-serve
+communities on, wallet sign-in on the chain's id) and the web app built against both, then plays a founder, a labor contributor and a capital
+contributor, each in a browser of their own with a brand-new account made in the app and a brand-new private-key wallet that signs for
+itself. They make a community, link their wallets, launch a project into its own DAO from the wizard, bid and graduate the sale, vote a work
+budget and a project, file and review a claim, and the labor contributor is paid from the treasury. It takes about 30 seconds.
+`E2E_SHOTS=<dir>` saves screenshots of the steps. The passkey path is not in it (a dev chain has no Kernel or bundler): see 4s.
+
+By hand, the same story: open the app on a fresh server, **Sign up** with a name before any community exists (it works: the name is kept), make a
+community, and in two other browsers open its address and **Join in browser**: each person's name shows in the community (a profile follows
+the person into a community that has none for them). In the wizard, leave the track alone: a project that will be a DAO is on the open sale, so
+**Launch project** works without hunting for the setting.
+
 ## 5. Cashtags
 
 Post `Backing $NEB today` on a community that has a launch whose token symbol is `NEB`: the `$NEB` becomes a chip that
