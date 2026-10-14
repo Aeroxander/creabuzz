@@ -18,6 +18,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK } from "@/shared/constants/kinds";
 import { readMilestone, readReward } from "./lib/task-planning";
+import { readSource, type TaskSource } from "./lib/task-source";
 import { type NewTaskInput, publishNewTask } from "./lib/task-publish";
 
 export type TaskStatus =
@@ -49,6 +50,8 @@ export interface FleetTask {
   milestone: string | null;
   /** Points the task earns once its contribution is accepted, or null. */
   reward: number | null;
+  /** The board post this task was made from, or null. */
+  source: TaskSource | null;
   updatedAt: number;
 }
 
@@ -64,6 +67,7 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     labels?: string[];
     milestone?: unknown;
     reward?: unknown;
+    source?: unknown;
   } = {};
   try {
     body = JSON.parse(event.content) as typeof body;
@@ -100,6 +104,7 @@ export function parseTask(event: NostrEvent): FleetTask | null {
     labels: Array.isArray(body.labels) ? body.labels : [],
     milestone: readMilestone(body.milestone),
     reward: readReward(body.reward),
+    source: readSource(body.source),
     updatedAt: event.created_at * 1000,
   };
 }

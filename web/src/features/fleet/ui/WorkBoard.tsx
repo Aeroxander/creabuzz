@@ -21,6 +21,7 @@ import { ArrowUp } from "lucide-react";
 import { useWorkBoard, type WorkItem } from "../use-work-board";
 import { useTaskPlanning } from "../use-task-planning";
 import { NextUpList } from "./NextUpList";
+import { BoardIdeas } from "./BoardIdeas";
 import { TaskPlanningPanel } from "./TaskPlanningPanel";
 import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import { RecentThread, TaskHistory } from "./WorkBoardThread";
@@ -447,6 +448,8 @@ export function WorkBoard({
           Create
         </button>
       </div>
+
+      <BoardIdeas channels={channels} items={items} planning={planning} />
 
       <div className="flex items-center gap-1.5">
         {(["board", "list", "next"] as const).map((v) => (

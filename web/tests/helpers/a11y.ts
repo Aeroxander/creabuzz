@@ -7,6 +7,17 @@ import { expect, type Page } from "@playwright/test";
  * rather than noise.
  */
 export async function expectAccessible(page: Page, surface: string) {
+  // A colour that is still fading in is measured half way, and fails a contrast
+  // check it would pass a moment later. Let every running animation and
+  // transition finish before looking.
+  await page.evaluate(() =>
+    Promise.all(
+      // A cancelled animation rejects; that is also "finished" for this purpose.
+      document
+        .getAnimations()
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();

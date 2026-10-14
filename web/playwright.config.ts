@@ -69,6 +69,7 @@ export default defineConfig({
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",
         "**/task-planning.spec.ts",
+        "**/board-ideas.spec.ts",
         "**/portfolio.spec.ts",
         "**/tour.spec.ts",
       ],

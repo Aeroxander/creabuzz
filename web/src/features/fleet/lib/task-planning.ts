@@ -4,7 +4,7 @@
  *
  * - **Rows merge field by field.** A task is many kind:44011 rows sharing a
  *   `d` tag. Status comes from the newest row, but a planning field (title,
- *   description, priority, due, labels, milestone, reward) comes from the
+ *   description, priority, due, labels, milestone, reward, source) comes from the
  *   newest row that WROTE it. A writer that omits a field — the fleet worker
  *   republishing `{title, status}` when an agent picks a task up, an older
  *   client — can no longer erase it. Clearing a field is an explicit `null`.
@@ -36,6 +36,7 @@ export const TASK_STICKY_FIELDS = [
   "labels",
   "milestone",
   "reward",
+  "source",
 ] as const;
 
 /** Rows kept per task — enough history to merge, bounded against floods. */

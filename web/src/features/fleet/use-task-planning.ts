@@ -10,6 +10,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
+import { KIND_FORUM_POST } from "@/features/board/lib/board-events";
 import {
   EMPTY_TALLY,
   tallyVotes,
@@ -32,6 +33,11 @@ import {
   KIND_TASK,
   taskCoordinate,
 } from "./lib/task-planning";
+import {
+  buildFinderContribution,
+  canClaimFinderCredit,
+  finderCreditKey,
+} from "./lib/task-source";
 import type { WorkItem } from "./use-work-board";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
@@ -54,6 +60,8 @@ export interface TaskPlanning {
   unback: (item: WorkItem) => Promise<void>;
   /** File the finished task as your pending contribution. */
   claim: (item: WorkItem) => Promise<void>;
+  /** File the finder's credit for a finished task that began as your own board post. */
+  claimFinderCredit: (item: WorkItem) => Promise<void>;
   loading: boolean;
   /** Set when backing could not be read; Next up then orders by priority. */
   error: unknown;
@@ -167,11 +175,52 @@ export function useTaskPlanning(items: readonly WorkItem[]): TaskPlanning {
     );
   }, []);
 
+  const claimFinderCredit = useCallback(
+    async (item: WorkItem) => {
+      const { source, doneRowId } = item;
+      if (!source || !doneRowId || !canClaimFinderCredit(item, viewer)) {
+        throw new Error(
+          "Only the person who wrote the post can claim this, once the task is done.",
+        );
+      }
+      // The task row only says who wrote the post; the post itself is the proof.
+      const posts = await queryEvents(relayWsUrl(), {
+        kinds: [KIND_FORUM_POST],
+        "#h": [source.board],
+        ids: [source.post],
+        limit: 1,
+      });
+      if (posts[0]?.pubkey.toLowerCase() !== viewer?.toLowerCase()) {
+        throw new Error(
+          "We couldn't find your post on that board, so the credit can't be filed.",
+        );
+      }
+      const existing = await queryEvents(relayWsUrl(), {
+        kinds: [KIND_CONTRIBUTION_RECORD],
+        "#d": [finderCreditKey(doneRowId)],
+        limit: 1,
+      });
+      if (existing.length > 0) {
+        throw new Error("This credit has already been claimed.");
+      }
+      await publishSigned(
+        buildFinderContribution({
+          doneRowId,
+          source,
+          title: item.title,
+          milestone: item.milestone,
+        }),
+      );
+    },
+    [viewer],
+  );
+
   return {
     supportOf,
     back,
     unback,
     claim,
+    claimFinderCredit,
     loading: reactions.isLoading,
     error: reactions.error,
   };

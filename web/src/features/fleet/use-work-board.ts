@@ -35,6 +35,7 @@ import {
   publishNewTask,
   publishTaskEvent,
 } from "./lib/task-publish";
+import type { TaskSource } from "./lib/task-source";
 import {
   parseTask,
   type FleetTask,
@@ -80,6 +81,8 @@ export interface WorkItem {
   milestone: string | null;
   /** Points the task earns once its contribution is accepted, or null. */
   reward: number | null;
+  /** The board post a task was made from (tasks only), or null. */
+  source: TaskSource | null;
   /** Who created the item: the task's first row signer, the issue author. */
   creator: string;
   /** Newest task row id — what a backing reaction points at (tasks only). */
@@ -255,6 +258,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       labels: task.labels,
       milestone: task.milestone,
       reward: task.reward,
+      source: task.source,
       creator: merged.creator,
       latestRowId: merged.latestRowId,
       doneRowId: merged.doneRowId,
@@ -356,6 +360,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
               labels: [],
               milestone: null,
               reward: null,
+              source: null,
               creator: event.pubkey,
               latestRowId: null,
               doneRowId: null,
@@ -457,6 +462,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
             labels: [],
             milestone: null,
             reward: null,
+            source: null,
             creator: issue.pubkey,
             latestRowId: null,
             doneRowId: null,

@@ -58,6 +58,11 @@ function pGateRefuses(filter: Filter, authedPubkey: string | null): boolean {
 /** NIP-01 filter match, limited to what the client actually sends. */
 export function matches(filter: Filter, event: StoredEvent): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  // Ids: a lookup by id must not be answered with some other event.
+  if (Array.isArray(filter.ids)) {
+    const wanted = filter.ids as string[];
+    if (wanted.length > 0 && !wanted.includes(event.id)) return false;
+  }
   // Authors: profile reads ask for kind-0 events by author. Ignoring the field
   // lets a one-author query be answered from another author's event — or, since
   // `replay` slices to `limit`, from nothing at all — so a username test would

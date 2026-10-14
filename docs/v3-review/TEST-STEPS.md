@@ -381,3 +381,22 @@ local chain) and 0 fail, including `first-run.spec.ts`; `just file-size-check` p
 older findings in other crates.
 
 When you are satisfied, adding the `buzz-review-completed` marker to a pull request description is yours to do.
+
+## 4u. Ideas from the boards (2026-10-14)
+
+```bash
+scripts/web-invite-only-e2e.sh        # REAL server; its last spec is board-ideas.spec.ts. Needs Postgres and Redis.
+cd web && pnpm build && npx playwright test --project=smoke board-ideas.spec.ts   # the mocked specs (5)
+node --experimental-strip-types --test web/src/features/fleet/lib/task-source.test.mjs
+```
+
+The real-server spec makes a community and its two starter boards, has a member post an idea on **supporters**, and has the owner open **Work**,
+open **Ideas from the boards**, press **Make a task** (reward 20, so the credit for the author defaults to 2) and move the task to Done. The member
+sees the note under their post ("1 reply"), their own page lists the task as done with **Claim 2 points**, the claim is taken, and after a reload a
+second claim is refused ("This credit has already been claimed."). About 9 seconds.
+
+By hand: as one person, post an idea on a board; as another (the owner or a team member), open **Work**, **Ideas from the boards**, find it, **Make a task**.
+You are not offered your own posts. As the first person, open **Work**: **Your suggestions** shows the task; when it is done, **Claim N points** appears.
+Someone else never sees that button. The claim shows up in the contribution review like any other. Move the task to Done at least a second after making it
+(task rows are stamped to the second, and a tie goes to the lower id).
+

@@ -263,3 +263,9 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
 - **Roles from the People list**: the owner can make a member an admin and an admin a member (never themselves or the owner); an admin or member is offered nothing. The server
   decides again (owner-only, in its words). Checked with unit tests, 3 mocked browser tests, and the real-server journey (an owner makes a newcomer an admin: they can now make
   invites and still cannot decide who may join). Handing a community to a new owner stays an operator action.
+- **Ideas from the boards** (D37): on Work, the team turns a board post into a task (a reward, and a credit for whoever wrote it), a note is left under the post, and when the
+  task is done the author claims the credit from their own Work page as a pending contribution a reviewer decides on. You cannot turn your own post into a task, the claim looks the
+  post up so a task row cannot name someone else's, and a second claim is refused. Checked: 12 unit tests, 5 mocked browser tests (two guards mutation-checked: the authorship lookup and the own-post filter),
+  and a real-server journey (`scripts/web-invite-only-e2e.sh`). Found on the way: the record builders cap a contribution id at 64 bytes (a longer id would have been refused by a reviewer's tools),
+  and task rows made and changed within the same second tie, the lower id winning, which the journey paces around.
+
