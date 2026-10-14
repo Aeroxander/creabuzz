@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 
-import { publishProfile } from "../lib/profile";
+import { saveNewProfile } from "../lib/profile";
 import { getOrCreateIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
@@ -15,19 +15,20 @@ import { Overlay } from "@/shared/ui/portal";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
 
 /**
- * The passkey and wallet routes make the key without a profile, so a name typed
- * above them has to be published here or the person shows up as a bare key
- * everywhere. A failure is said out loud; the Home reminder to add a name
- * stays until one exists, so it can be added later.
+ * Save the name typed above. The passkey and wallet routes make the key without a profile, and any route can find no
+ * community to write to yet (a first-time visitor has none, and making one needs an account), so the name is kept and
+ * saved the first time a community answers. The account is ready either way.
  */
 async function saveTypedName(name: string, about: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
-  try {
-    await publishProfile({ name: trimmed, about: about || undefined });
-  } catch {
-    toast.error(
-      "Your account is ready, but we could not save your name. Add it from your profile.",
+  const saved = await saveNewProfile({
+    name: trimmed,
+    about: about || undefined,
+  });
+  if (!saved) {
+    toast.message(
+      "Your account is ready. Your name will be saved as soon as you join a community.",
     );
   }
 }
@@ -50,7 +51,7 @@ export function OnboardingDialog({
     setError(null);
     try {
       getOrCreateIdentity(); // materialize the key now, visibly
-      await publishProfile({ name, about: about || undefined });
+      await saveTypedName(name, about);
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : "couldn't create your account");

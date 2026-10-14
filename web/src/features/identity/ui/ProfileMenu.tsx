@@ -29,7 +29,12 @@ import {
 } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import { publishProfile } from "../lib/profile";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  publishProfile,
+  publishRememberedProfile,
+  rememberOwnProfile,
+} from "../lib/profile";
 import { passkeyModeCopy } from "../lib/mode-copy";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import {
@@ -154,6 +159,19 @@ export function ProfileMenu({
       });
     }
   }, []);
+
+  // A profile follows the person: remembered when a community shows it, and given to a community that has none for them.
+  const queryClient = useQueryClient();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `pubkey` is the trigger: a new sign-in may have a profile to carry.
+  useEffect(() => {
+    void publishRememberedProfile().then((published) => {
+      if (published)
+        void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    });
+  }, [pubkey, queryClient]);
+  useEffect(() => {
+    if (profile) rememberOwnProfile(profile as Record<string, unknown>);
+  }, [profile]);
 
   // close on outside click
   useEffect(() => {

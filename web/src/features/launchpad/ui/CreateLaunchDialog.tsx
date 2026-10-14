@@ -52,6 +52,7 @@ import {
   wizardStepIssues,
   wizardToCreateInput,
   WIZARD_STEPS,
+  initialAdmission,
   initialTokenMode,
   type FormState,
   type MilestoneRow,
@@ -179,7 +180,7 @@ export function CreateLaunchDialog({
   const [auction, setAuction] = useState(initial?.auction ?? "");
   const [treasury, setTreasury] = useState(initial?.treasury ?? "");
   const [admission, setAdmission] = useState<"curated" | "community">(
-    initial?.admission ?? LAUNCH_DEFAULTS.admission,
+    initialAdmission(initial, Boolean(daoLaunchKit(chainId))),
   );
   const [allocation, setAllocation] = useState<SupplyAllocation>(
     () => initial?.allocation ?? { ...STANDARD_ALLOCATION },
@@ -548,7 +549,7 @@ export function CreateLaunchDialog({
     setTickSpacing(LAUNCH_DEFAULTS.tickSpacing);
     setRequiredRaised(LAUNCH_DEFAULTS.requiredRaised);
     setBudget("");
-    setAdmission(LAUNCH_DEFAULTS.admission);
+    setAdmission(initialAdmission(null, tokenMode === "dao"));
     setAsAgent(false);
     setBoundChannels(initial?.channels ?? []);
     if (name.trim() !== "") {

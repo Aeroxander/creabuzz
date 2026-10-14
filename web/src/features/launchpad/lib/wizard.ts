@@ -185,6 +185,20 @@ export function initialTokenMode(
   return hasKit ? "dao" : "mint";
 }
 
+/**
+ * Who can bid, for a launch that has none chosen yet. A project with its own DAO opens its sale to everyone (the launch
+ * page refuses a curated one), and the first sale a person sets up is that kind wherever this build can launch one, so
+ * the default has to be the open sale whenever the project is going to be a DAO (`ownDao`): otherwise pressing through
+ * the wizard ends in a launch that cannot be turned into its DAO until the founder finds the setting that fixes it.
+ */
+export function initialAdmission(
+  initial: { admission?: "curated" | "community" } | null | undefined,
+  ownDao: boolean,
+): "curated" | "community" {
+  if (initial?.admission) return initial.admission;
+  return ownDao ? "community" : "curated";
+}
+
 export interface FormState {
   id: string;
   name: string;

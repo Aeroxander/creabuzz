@@ -109,3 +109,130 @@ test("a newcomer can sign up, start an organization, and find it again", async (
     "nothing may throw or log an error on a first visit",
   ).toEqual([]);
 });
+
+test("an account made before any community answers keeps its name, and saves it once one does", async ({
+  page,
+}) => {
+  // The first person on a fresh deployment has no community to write to, and cannot make one without an account.
+  let answering = false;
+  const relay = createMockRelay({
+    refuse: (event) =>
+      !answering && event.kind === 0
+        ? "error: no community is configured for this host"
+        : undefined,
+  });
+  relay.seed(channel);
+  await relay.install(page);
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").first().click();
+  await page.getByTestId("onboarding-name").fill("Frida Founder");
+  await page.getByTestId("onboarding-create").click();
+
+  // The account is made, and signed in, though nothing could be saved.
+  await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 20_000 });
+  expect(relay.events.filter((event) => event.kind === 0)).toHaveLength(0);
+
+  // A community answers: the name typed at sign-up is saved, once.
+  answering = true;
+  await page.reload();
+  await expect
+    .poll(() =>
+      relay.events
+        .filter((event) => event.kind === 0)
+        .map((event) => JSON.parse(event.content).name),
+    )
+    .toEqual(["Frida Founder"]);
+
+  // And it is not saved again on the next load.
+  await page.reload();
+  await page.getByTestId("user-chip").waitFor();
+  await page.waitForTimeout(1_000);
+  expect(relay.events.filter((event) => event.kind === 0)).toHaveLength(1);
+});
+
+test("a person who joins another community is given their profile there, once, and a profile it already has is left alone", async ({
+  page,
+}) => {
+  const first = createMockRelay();
+  first.seed(channel);
+  await first.install(page);
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").first().click();
+  await page.getByTestId("onboarding-name").fill("Frida Founder");
+  await page.getByTestId("onboarding-create").click();
+  await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() => first.events.filter((event) => event.kind === 0).length)
+    .toBe(1);
+  const pubkey = first.events.find((event) => event.kind === 0)?.pubkey ?? "";
+
+  // A second community knows nothing about this person: they are given their profile there, and only once.
+  await page.unrouteAll({ behavior: "wait" });
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+  const second = createMockRelay();
+  second.seed(channel);
+  await second.install(page);
+  await page.reload();
+  await expect
+    .poll(() =>
+      second.events
+        .filter((event) => event.kind === 0)
+        .map((event) => JSON.parse(event.content).name),
+    )
+    .toEqual(["Frida Founder"]);
+  await page.reload();
+  await page.getByTestId("user-chip").waitFor();
+  await page.waitForTimeout(1_000);
+  expect(second.events.filter((event) => event.kind === 0)).toHaveLength(1);
+
+  // A third community that already has a profile for them keeps it: theirs there is not replaced by the remembered one.
+  await page.unrouteAll({ behavior: "wait" });
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+  const third = createMockRelay();
+  third.seed(channel);
+  third.seed({
+    id: "their-profile",
+    pubkey,
+    kind: 0,
+    created_at: 50,
+    tags: [],
+    content: JSON.stringify({ name: "Frida the Founder" }),
+    sig: "sig",
+  });
+  await third.install(page);
+  await page.reload();
+  await page.getByTestId("user-chip").waitFor();
+  await page.waitForTimeout(1_500);
+  expect(
+    third.events
+      .filter((event) => event.kind === 0)
+      .map((event) => JSON.parse(event.content).name),
+  ).toEqual(["Frida the Founder"]);
+});
