@@ -70,6 +70,7 @@ export function DecisionsTab({
           busy={busy}
           ctx={{
             dao,
+            chainId,
             chainTime: snapshot.chainTime,
             wallet: wallet.address,
             factory: context.data.factory,

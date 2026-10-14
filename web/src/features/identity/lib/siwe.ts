@@ -11,8 +11,22 @@
  * so the binding rules stay unit-testable.
  */
 
-import { signAsUser } from "@/shared/lib/identity";
-import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
+import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import { queryEvents } from "@/shared/lib/nostr-client";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
+import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
+import {
+  savePendingWalletProof,
+  publishPendingWalletProof,
+  removePublicWallet,
+} from "./public-wallet";
+import {
+  newWalletAttestation,
+  walletTypedData,
+  resolvePaymentWallet,
+  siweMessageHash,
+} from "./wallet-proof";
 
 import {
   buildSiweLogin,
@@ -29,7 +43,10 @@ const BINDING_KEY = "buzz.siwe.binding";
 /** The wallet bound to this browser's npub, or null when none is recorded. */
 export function readWalletBinding(): WalletBinding | null {
   try {
-    return parseWalletBinding(window.localStorage.getItem(BINDING_KEY));
+    const binding = parseWalletBinding(
+      window.localStorage.getItem(BINDING_KEY),
+    );
+    return binding?.pubkey === existingUserPubkey() ? binding : null;
   } catch {
     return null;
   }
@@ -55,6 +72,19 @@ export async function revokeWalletBinding(): Promise<void> {
   const binding = readWalletBinding();
   if (!binding)
     throw new Error("No wallet binding is recorded in this browser");
+  const publicBinding = resolvePaymentWallet(
+    await queryEvents(relayWsUrl(), {
+      kinds: [KIND_EVM_BINDING],
+      authors: [binding.pubkey],
+      limit: 50,
+    }),
+    binding.pubkey,
+    Math.floor(Date.now() / 1000),
+  );
+  // Withdraw discovery while membership still permits publishing. If either
+  // operation fails it propagates, and the original private record is retained.
+  if (publicBinding.state === "verified")
+    await removePublicWallet(publicBinding.wallet);
   const proof = await signAsUser(revokeProofTemplate(binding.address));
   const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/revoke`, {
     method: "POST",
@@ -110,16 +140,41 @@ async function getAccount(): Promise<string> {
     method: "eth_requestAccounts",
   })) as string[];
   const account = accounts?.[0];
-  if (!account) throw new Error("no account");
+  if (
+    typeof account !== "string" ||
+    !/^0x[0-9a-f]{40}$/i.test(account) ||
+    /^0x0{40}$/i.test(account)
+  )
+    throw new Error("Wallet returned an invalid account");
   return account.toLowerCase();
 }
 
-export async function signInWithWallet(): Promise<{
+export async function signInWithWallet(
+  options: { publicProof?: boolean; newerThan?: number } = {},
+): Promise<{
   address: string;
   pubkey: string;
 }> {
+  const relay = relayWsUrl();
+  const registrationUrl = `${relayHttpBaseUrl()}/auth/siwe/register`;
   const address = await getAccount();
   const challenge = await getChallenge();
+  if (options.publicProof) {
+    const chain = challenge.chainId ?? 1;
+    const connectedChain = await window.ethereum?.request({
+      method: "eth_chainId",
+    });
+    if (
+      !Number.isSafeInteger(chain) ||
+      chain <= 0 ||
+      typeof connectedChain !== "string" ||
+      Number.parseInt(connectedChain, 16) !== chain
+    ) {
+      throw new Error(
+        `Switch your wallet to chain ${chain}, then link it again.`,
+      );
+    }
+  }
 
   const login = await buildSiweLogin(challenge, {
     address,
@@ -140,13 +195,72 @@ export async function signInWithWallet(): Promise<{
     personalSign,
   });
 
-  const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/register`, {
+  let attestation: ReturnType<typeof newWalletAttestation> | undefined;
+  let publicEvent: SignedNostrEvent | undefined;
+  if (options.publicProof) {
+    const chain = challenge.chainId ?? 1;
+    const nonce = crypto.getRandomValues(new Uint32Array(1))[0];
+    attestation = newWalletAttestation(
+      address,
+      login.pubkey,
+      chain,
+      Math.floor(Date.now() / 1000),
+      nonce,
+    );
+    const signature = await window.ethereum?.request({
+      method: "eth_signTypedData_v4",
+      params: [address, JSON.stringify(walletTypedData(attestation))],
+    });
+    if (typeof signature !== "string")
+      throw new Error("Wallet returned no proof signature");
+    attestation.signature = signature;
+    publicEvent = await signAsUser({
+      kind: KIND_EVM_BINDING,
+      created_at: Math.max(
+        Math.floor(Date.now() / 1000),
+        (options.newerThan ?? 0) + 1,
+      ),
+      tags: [
+        ["d", address],
+        ["address", address],
+        ["chain", String(chain)],
+      ],
+      content: JSON.stringify({
+        v: 1,
+        address,
+        siweMessageHash: siweMessageHash(login.message),
+        attestation,
+      }),
+    });
+    if (
+      publicEvent.pubkey !== login.pubkey ||
+      resolvePaymentWallet(
+        [publicEvent],
+        login.pubkey,
+        Math.floor(Date.now() / 1000),
+      ).state !== "verified"
+    ) {
+      throw new Error(
+        "Wallet proof did not match your Nostr account. Ordinary EVM wallet signatures are required.",
+      );
+    }
+    if (existingUserPubkey() !== login.pubkey || relayWsUrl() !== relay)
+      throw new Error(
+        "Your account or community changed while signing. Try again.",
+      );
+    // The public proof is valid independently of SIWE membership. Retain it
+    // even if registration or publication fails, so the owner can retry it.
+    savePendingWalletProof(publicEvent);
+  }
+
+  const res = await fetch(registrationUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message: login.message,
       signature: login.signature,
       nostr_proof: login.proof,
+      ...(attestation ? { attestation } : {}),
     }),
   });
   const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -159,6 +273,13 @@ export async function signInWithWallet(): Promise<{
     pubkey: login.pubkey,
     boundAt: Date.now(),
   });
+  if (publicEvent) {
+    if (relayWsUrl() !== relay)
+      throw new Error(
+        "Your community changed. Return to the original community to retry the saved wallet update.",
+      );
+    await publishPendingWalletProof(login.pubkey);
+  }
   return { address: login.address, pubkey: login.pubkey };
 }
 

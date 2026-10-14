@@ -168,9 +168,20 @@ export function FileClaimCard({
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
         File a claim for what you did. A project manager takes it on, reviewers
-        check it, and the DAO can then vote to award you Shares
-        {holdsMoney ? " or pay you" : ""}.
+        check it, and the DAO can vote to award you Shares.
+        {holdsMoney
+          ? " For money, approval is followed by finalizing review, a challenge window, and claiming payment to the wallet that filed this claim."
+          : ""}
       </p>
+      {holdsMoney && wallet ? (
+        <p
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="work-filing-wallet"
+        >
+          Payment will go to <code className="break-all">{wallet}</code>. File
+          from the wallet you want to receive the funds.
+        </p>
+      ) : null}
       {open.length > 1 ? (
         <label className="mt-2 flex flex-col gap-1 text-sm">
           <span className="font-medium">Work budget</span>

@@ -56,10 +56,22 @@ export function WorkTab({
         <h2 className="text-base font-bold">Work</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           The DAO can set aside money, Shares or both for work. People file a
-          claim for what they did, reviewers check it, and only then is anything
-          paid or any Shares awarded.
+          claim for what they did. A manager accepts it into a project and the
+          required reviewers approve it. Review is then finalized; after the
+          challenge window, the contributor claims payment. Shares require a
+          separate DAO decision.
         </p>
         <WalletStrip testIdPrefix="work" wallet={wallet} />
+        <Button
+          className="mt-2"
+          disabled={work.isFetching}
+          onClick={() => void work.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {work.isFetching ? "Refreshing…" : "Refresh work status"}
+        </Button>
         {gate && wallet.address ? (
           <p
             className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -299,6 +311,19 @@ function MandateCard({
                 <p className="mt-1" data-testid="work-claim-next">
                   {step.text}
                 </p>
+                {claim.record.amount > 0n ? (
+                  <p
+                    className="mt-2 text-xs text-muted-foreground"
+                    data-testid="work-payment-recipient"
+                  >
+                    Payment recipient:{" "}
+                    <code className="break-all">
+                      {claim.record.contributor}
+                    </code>
+                    . This is the wallet that filed the claim; changing a
+                    profile wallet cannot redirect it.
+                  </p>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {step.kind === "bind" && myProjects.length > 0
                     ? myProjects.map((project) => (
@@ -373,7 +398,7 @@ function MandateCard({
                       size="sm"
                       type="button"
                     >
-                      Finish it
+                      Finalize review
                     </Button>
                   ) : null}
                   {step.kind === "payout" && mine ? (
@@ -390,7 +415,7 @@ function MandateCard({
                       size="sm"
                       type="button"
                     >
-                      Take it
+                      Claim payment
                     </Button>
                   ) : null}
                 </div>

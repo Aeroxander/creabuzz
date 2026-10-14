@@ -1,5 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { getPublicKey } from "nostr-tools/pure";
+import { finalizeEvent, getPublicKey, type Event } from "nostr-tools/pure";
+import { hexToBytes } from "@noble/hashes/utils.js";
+import {
+  newWalletAttestation,
+  resolvePaymentWallet,
+  siweMessageHash,
+  walletTypedData,
+} from "../../src/features/identity/lib/wallet-proof";
+import { paymentRecord } from "../helpers/payment-wallet";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 
 /**
@@ -25,6 +33,7 @@ const FOUNDER = getPublicKey(
   Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
 );
 const CHECK = "docs merged and reviewed";
+let publicWallets: Event[] = [];
 
 test.skip(
   !ANVIL_URL || !DAO || !SHARES,
@@ -111,6 +120,10 @@ async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
       ];
       if (filter.kinds?.includes(37001))
         ws.send(JSON.stringify(["EVENT", subId, record]));
+      if (filter.kinds?.includes(37017)) {
+        for (const event of publicWallets)
+          ws.send(JSON.stringify(["EVENT", subId, event]));
+      }
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
@@ -228,6 +241,9 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   // ── 3. the contributor asks to be paid, with a deposit ─────────────────────────────────────
   const contributor = await context.newPage();
   await openAs(contributor, CONTRIBUTOR, "Work");
+  await expect(contributor.getByTestId("work-filing-wallet")).toContainText(
+    new RegExp(CONTRIBUTOR, "i"),
+  );
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
@@ -288,11 +304,99 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
 
   // ── 5. after the waiting period the contributor takes the payment, and the deposit comes back ─────
   await pass(260_000);
-  await refresh(contributor, "Work");
+  await contributor
+    .getByRole("button", { name: "Refresh work status" })
+    .click();
+  await expect(contributor.getByTestId("work-payment-recipient")).toContainText(
+    new RegExp(CONTRIBUTOR, "i"),
+  );
   await contributor.getByTestId("work-payout").click();
   await expect(contributor.getByTestId("work-claim-status")).toContainText(
     "Paid",
     { timeout: 60_000 },
   );
   expect((await moneyOf(CONTRIBUTOR)) - before).toBe(400n * 10n ** 6n);
+  await expect(contributor.getByTestId("work-payout")).toHaveCount(0);
+});
+
+test("a manual treasury payment selects a verified Nostr recipient on the right chain and pays the exact USDC amount", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const key = hexToBytes("44".repeat(32));
+  const pubkey = getPublicKey(key);
+  const address = CONTRIBUTOR.toLowerCase();
+  const now = Math.floor(Date.now() / 1000);
+  const proof = newWalletAttestation(address, pubkey, 31337, now, 123);
+  proof.signature = String(
+    await rpc("eth_signTypedData_v4", [CONTRIBUTOR, walletTypedData(proof)]),
+  );
+  const template = {
+    kind: 37017,
+    created_at: now - 10,
+    tags: [
+      ["d", address],
+      ["address", address],
+      ["chain", "31337"],
+    ],
+    content: JSON.stringify({
+      v: 1,
+      address,
+      siweMessageHash: siweMessageHash("local test fixture"),
+      attestation: proof,
+    }),
+  };
+  const valid = finalizeEvent({ ...template }, key);
+  const forged = finalizeEvent({ ...template }, hexToBytes("55".repeat(32)));
+  expect(resolvePaymentWallet([valid], pubkey, now).state).toBe("verified");
+  publicWallets = [valid, forged, paymentRecord()]; // The last proof belongs to chain 8453.
+  await openAs(page, FOUNDER_WALLET, "Decisions");
+  await page.getByTestId("decision-new").click();
+  await page.getByTestId("decision-kind-pay").click();
+  const picker = page.getByTestId("pay-recipient-people");
+  await expect(picker.locator("option")).toHaveCount(2); // Placeholder and the one valid recipient.
+  await expect(picker.locator(`option[value="${pubkey}"]`)).toBeAttached();
+
+  // Revocation between loading the form and selecting a person is caught by the fresh read.
+  const revoked = finalizeEvent(
+    {
+      ...template,
+      created_at: now - 1,
+      content: JSON.stringify({
+        ...JSON.parse(template.content),
+        revoked: true,
+      }),
+    },
+    key,
+  );
+  publicWallets.push(revoked);
+  await picker.selectOption(pubkey);
+  await expect(page.getByRole("alert")).toContainText("proof changed");
+  await expect(page.getByTestId("pay-recipient")).toHaveValue("");
+  publicWallets = [valid, forged, paymentRecord()];
+  await refresh(page, "Decisions");
+  await page.getByTestId("decision-new").click();
+  await page.getByTestId("decision-kind-pay").click();
+  await page.getByTestId("pay-recipient-people").selectOption(pubkey);
+  await expect(page.getByTestId("pay-recipient")).toHaveValue(
+    /0x[0-9a-fA-F]{40}/,
+  );
+  expect(
+    (await page.getByTestId("pay-recipient").inputValue()).toLowerCase(),
+  ).toBe(address);
+  await page.getByTestId("pay-amount").fill("12.34");
+  await expect(page.getByTestId("decision-draft-title")).toHaveText(
+    "Pay 12.34 USDC from the treasury",
+  );
+  await expect(page.getByTestId("decision-draft")).toContainText(address);
+  const before = await moneyOf(CONTRIBUTOR);
+  const treasury = await moneyOf(DAO);
+  await page.getByTestId("decision-draft-submit").click();
+  await expect(page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  expect(await moneyOf(CONTRIBUTOR)).toBe(before); // Opening the proposal sends no money.
+  await carryOut(page, 175_000, 90_000);
+  expect((await moneyOf(CONTRIBUTOR)) - before).toBe(12_340_000n);
+  expect(treasury - (await moneyOf(DAO))).toBe(12_340_000n);
 });

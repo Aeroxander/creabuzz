@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { PaymentWalletCard } from "@/features/identity/ui/PaymentWalletCard";
 import {
   resolveUserName,
   resolveUserSecondaryName,
@@ -323,6 +324,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             {profile.website.replace(/^https?:\/\//, "")}
           </a>
         ) : null}
+        <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
         <div className="mt-3 flex gap-5">
           <Count
             label="Following"

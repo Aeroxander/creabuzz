@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { PaymentRecipientPicker } from "@/features/identity/ui/PaymentRecipientPicker";
 
 import { Button } from "@/shared/ui/button";
 import { type ExchangeAddresses, ethCall, getRpcEndpoint } from "../chain";
@@ -31,6 +32,8 @@ import {
 /** What the forms need to know about the DAO they compose for. */
 export interface FormContext {
   dao: string;
+  /** Network of this project's treasury, used to scope verified payment identities. */
+  chainId?: number;
   /** The chain's own clock: expiry dates are counted from it, not from the browser's. */
   chainTime: number;
   wallet: string | null;
@@ -817,6 +820,13 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         Pay someone from the treasury. Nothing moves until holders back this and
         it runs.
       </p>
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="pay-network-token"
+      >
+        Network: chain {ctx.chainId ?? "unknown"}. Token: {ctx.currencySymbol}{" "}
+        <code className="break-all">{ctx.currency}</code>.
+      </p>
       <p className="text-sm" data-testid="pay-balance">
         {balance.data === undefined
           ? "Reading the treasury…"
@@ -824,7 +834,7 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       </p>
       <TextField
         after={
-          <PeoplePicker onPick={setRecipient} testId="pay-recipient-people" />
+          <PaymentRecipientPicker chainId={ctx.chainId} onPick={setRecipient} />
         }
         label="Who to pay (wallet address)"
         onChange={setRecipient}
