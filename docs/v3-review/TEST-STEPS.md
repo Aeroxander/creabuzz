@@ -400,3 +400,18 @@ You are not offered your own posts. As the first person, open **Work**: **Your s
 Someone else never sees that button. The claim shows up in the contribution review like any other. Move the task to Done at least a second after making it
 (task rows are stamped to the second, and a tie goes to the lower id).
 
+## 4v. Who holds the IP (2026-10-14)
+
+```bash
+cd web && pnpm build && npx playwright test --project=smoke launchpad-ip-record.spec.ts   # 6 mocked browser tests
+node --experimental-strip-types --test web/src/features/launchpad/lib/ip-record.test.mjs web/src/features/launchpad/lib/record-input.test.mjs
+```
+
+By hand: open a launch you made (**Launchpad**, your project). Under the raise terms, **Who holds the IP** says the project has not said who holds its IP.
+**Edit**: it starts on *No entity yet: the founders hold it*. Fill in a title, an https link and a fingerprint (or choose the file and the fingerprint
+fills itself) and **Save**: the card now says the founders have committed to assign it, and shows the document with its fingerprint. Choose *A legal entity
+holds it*, name it and its place, and link an assignment: it says the IP is to be assigned when the raise completes, and *assigned* only once the sale has
+graduated. It never says holders own anything except when the entity's operating agreement is linked, and then it says that is the project's statement.
+A half-filled document is refused. Someone who is not the author sees the card and no **Edit**. Check that saving kept the rest of the launch: the Manage tab's
+legal wrapper and the sale's contract links are unchanged.
+

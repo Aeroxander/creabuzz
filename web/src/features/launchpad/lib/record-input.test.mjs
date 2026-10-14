@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { recordToInput } from "./record-input.ts";
@@ -54,15 +55,24 @@ function record(overrides = {}) {
     token: `0x${"2".repeat(40)}`,
     treasury: `0x${"3".repeat(40)}`,
     hooks: [],
-    distributor: null,
-    claimStake: null,
-    verifierSet: null,
+    distributor: `0x${"4".repeat(40)}`,
+    claimStake: `0x${"5".repeat(40)}`,
+    verifierSet: `0x${"6".repeat(40)}`,
     admission: "curated",
     allocation: STANDARD_ALLOCATION,
     vesting: null,
     unlocks: null,
     daoAtGraduation: true,
-    legalWrapper: "none",
+    legalWrapper: "dao-llc",
+    ipRecord: {
+      v: 1,
+      holder: "founders",
+      licence: null,
+      entity: null,
+      assignment: null,
+      operating: null,
+      contributorTerms: null,
+    },
     tokenPlan: {
       mode: "mint",
       name: "Nebula",
@@ -134,4 +144,42 @@ test("an override replaces the funding declaration instead of adding a second on
 test("a record that never declared funding does not grow one on save", () => {
   const input = recordToInput(record({ funding: null }));
   assert.equal(input.funding, undefined);
+});
+
+test("the legal wrapper, the IP record and the deploy tags survive a save", () => {
+  const source = record();
+  const input = recordToInput(source);
+  assert.equal(input.legalWrapper, "dao-llc");
+  assert.deepEqual(input.ipRecord, source.ipRecord);
+  assert.equal(input.distributor, `0x${"4".repeat(40)}`);
+  assert.equal(input.claimStake, `0x${"5".repeat(40)}`);
+  assert.equal(input.verifierSet, `0x${"6".repeat(40)}`);
+});
+
+test("every field a launch can be created with is carried by a save", () => {
+  // The whole interface, read from the source: a field added to
+  // `CreateLaunchInput` and not carried by `recordToInput` is erased by the next
+  // save, which is how the legal wrapper and the deploy tags were lost.
+  const source = readFileSync(
+    new URL("../use-launches.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("export interface CreateLaunchInput");
+  const end = source.indexOf("/** Every channel the record binds");
+  const fields = [
+    ...source.slice(start, end).matchAll(/^ {2}([a-zA-Z]+)\??:/gm),
+  ].map((match) => match[1]);
+  assert.ok(fields.length > 25, "found the interface's fields");
+  // Not a property of the record: how the save is signed.
+  // A record that holds every optional part, so none is skipped for being empty.
+  const full = record({
+    funding: { stance: "rolling", seeking: [], opensAt: null, note: null },
+    vesting: { tranches: [{ multiple: 2, fraction: 1 }] },
+    unlocks: { kind: "none" },
+  });
+  const carried = Object.keys(recordToInput(full));
+  const missing = fields.filter(
+    (field) => field !== "asAgent" && !carried.includes(field),
+  );
+  assert.deepEqual(missing, []);
 });

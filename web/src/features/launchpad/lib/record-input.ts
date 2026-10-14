@@ -45,6 +45,12 @@ export function recordToInput(
     startBlock: record.startBlock ?? undefined,
     endBlock: record.endBlock ?? undefined,
     claimBlock: record.claimBlock ?? undefined,
+    // Tags the deploy flows write and a later save must not erase.
+    ...(record.distributor ? { distributor: record.distributor } : {}),
+    ...(record.claimStake ? { claimStake: record.claimStake } : {}),
+    ...(record.verifierSet ? { verifierSet: record.verifierSet } : {}),
+    ...(record.legalWrapper ? { legalWrapper: record.legalWrapper } : {}),
+    ...(record.ipRecord ? { ipRecord: record.ipRecord } : {}),
     ...(record.unlocks ? { unlocks: record.unlocks } : {}),
     ...(record.daoAtGraduation !== null
       ? { daoAtGraduation: record.daoAtGraduation }

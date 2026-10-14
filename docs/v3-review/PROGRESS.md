@@ -268,4 +268,10 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   post up so a task row cannot name someone else's, and a second claim is refused. Checked: 12 unit tests, 5 mocked browser tests (two guards mutation-checked: the authorship lookup and the own-post filter),
   and a real-server journey (`scripts/web-invite-only-e2e.sh`). Found on the way: the record builders cap a contribution id at 64 bytes (a longer id would have been refused by a reviewer's tools),
   and task rows made and changed within the same second tie, the lower id winning, which the journey paces around.
+- **Who holds the IP** (D38, `docs/project-ip.md`): each launch records whether the IP is open-licensed, held by the founders for now (with an optional signed commitment to assign it to an entity later) or held by a named entity
+  (through a signed assignment, optionally taking effect when the sale completes), with the documents linked and pinned by a fingerprint. The page says only what the documents support and
+  whose statement it is; "holders direct the entity" appears only with the operating agreement linked. Checked: 14 unit tests, 6 mocked browser tests (the edit guard and the save's carry-through mutation-checked),
+  and the real-chain economy, DAO-launch and paid-work journeys, which republish launch records. Found on the way: saving from the Manage panel erased the legal wrapper and the sale's
+  distributor, claim-stake and verifier-set tags; fixed with a test that fails if any launch field is not carried by a save. Not built: the holder vote naming the entity, forming the entity,
+  contributors accepting terms on a claim. Needs a lawyer before anyone relies on it.
 

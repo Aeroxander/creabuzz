@@ -6,6 +6,7 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
 import { parseWikiTag } from "./lib/draft-proposal.ts";
 import { parseFunding, type FundingStatus } from "./lib/funding.ts";
+import { type IpRecord, parseIpRecord } from "./lib/ip-record.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
   KIND_LAUNCH_BID,
@@ -152,6 +153,11 @@ export interface LaunchRecord {
    * or "own-entity". Null when never stated — NOT the same as "none".
    */
   legalWrapper: string | null;
+  /**
+   * Who holds the project's IP, and the documents that say so (`lib/ip-record.ts`).
+   * Null when the record never said, which is not the same as "open".
+   */
+  ipRecord: IpRecord | null;
   tokenPlan: {
     /**
      * "mint": a reserve-backed apptoken minted before the sale. "dao": the project's own Shares, created
@@ -437,6 +443,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
       typeof body.daoAtGraduation === "boolean" ? body.daoAtGraduation : null,
     legalWrapper:
       typeof body.legalWrapper === "string" ? body.legalWrapper : null,
+    ipRecord: parseIpRecord(body.ipRecord),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }

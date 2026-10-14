@@ -25,6 +25,7 @@ import {
 } from "@/shared/constants/kinds";
 import { hasChat } from "./lib/launch-chat";
 import { fundingContent, type FundingStatus } from "./lib/funding";
+import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
 import {
@@ -355,6 +356,8 @@ export interface CreateLaunchInput {
   daoAtGraduation?: boolean;
   /** Legal wrapper decision (OAv2 §4.8): "none" | "dao-llc" | "own-entity". */
   legalWrapper?: string;
+  /** Who holds the project's IP and the documents that say so. */
+  ipRecord?: IpRecord;
 }
 
 /** Every channel the record binds: the picked ones plus the chat rooms, once each. */
@@ -421,6 +424,7 @@ export function useCreateLaunch() {
       if (input.daoAtGraduation !== undefined)
         content.daoAtGraduation = input.daoAtGraduation;
       if (input.legalWrapper) content.legalWrapper = input.legalWrapper;
+      if (input.ipRecord) content.ipRecord = ipRecordContent(input.ipRecord);
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

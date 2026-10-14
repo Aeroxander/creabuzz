@@ -70,6 +70,7 @@ export default defineConfig({
         "**/signing-recovery.spec.ts",
         "**/task-planning.spec.ts",
         "**/board-ideas.spec.ts",
+        "**/launchpad-ip-record.spec.ts",
         "**/portfolio.spec.ts",
         "**/tour.spec.ts",
       ],

@@ -10,6 +10,7 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
+import { IpRecordCard } from "./IpRecordCard";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
@@ -708,6 +709,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
       </Card>
       <LaunchContractsCard record={record} />
       <ProvenCommitmentsCard launch={launch} />
+      <IpRecordCard launch={launch} />
       {/* The outcome half of the trust surface: verdicts, claims, receipts and
           contribution reviews, each figure shown with its derivation
           (`lib/trust-signals.ts`). */}
