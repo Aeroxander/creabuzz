@@ -443,3 +443,31 @@ Without a fork URL the Forge fork tests skip rather than fail. By hand, once you
 (see `docs/sepolia-testnet.md`): `scripts/sepolia-deploy.sh --broadcast`, build the web app with the settings it prints, host it with the server, and walk the story once:
 make a community, launch a project, back it from a second browser (Circle's faucet gives test USDC), open **My bids**, exit and claim. The market card should say the
 exchange could not be verified and offer nothing.
+
+## 4y. The bond can be paid in any token the vote names (2026-10-15)
+
+```bash
+cd contracts && forge test --match-contract ReviewerBondTest        # 13 tests: bond in another token, a slash pays in that token, a bond and its token come together
+cd packages/creaton-core && node --experimental-strip-types --test src/launchpad/daoActions.test.mjs src/launchpad/workRead.test.mjs
+scripts/web-economy-e2e.sh                                          # the reviewer posts a bond in the project's own Shares, from the page
+```
+
+By hand: on **Decisions** choose **Work budget**, fill **Bond each reviewer must post**, and open **Bond paid in**. The sale currency is marked recommended;
+**The project's own token** and **Another token** each show a plain warning, and the summary beside the vote says which token ("a bond of 100 of the project's own
+token"). Paste a token address under **Another token**: the form reads its decimals, and says so if the address is not a token on this network.
+
+## 4z. The milestone panel is named in the launch, and the lock cannot be voted away (2026-10-15)
+
+```bash
+cd contracts && REQUIRE_CONTRACT_ARTIFACTS=true forge test         # whole suite (the kit tests need every artifact): 347 pass
+scripts/web-dao-launch-e2e.sh                                       # REAL chain: the launch is refused until reviewers are named, a team member is refused, the panel is on chain
+scripts/web-economy-e2e.sh                                          # REAL server + chain: the Work tab lists the milestone panel with its bond
+scripts/cli-milestone-e2e.sh && scripts/web-milestone-e2e.sh        # REAL chain: a milestone is judged by the launch's panel and unlocks the founder's Shares
+```
+
+By hand: open **Manage** on a launch whose team Shares are locked behind milestones. **Who judges your milestones** appears above the Launch button and the button
+stays off until you name reviewers outside your team (picked by name, or pasted). Reload before launching: what you typed is still there. After launching, the **Work**
+tab lists **Milestone panel**, with its reviewers and bond. To approve a milestone project, **Decisions** ▸ **Approve a project** ▸ choose the milestone panel: it asks
+which milestone, not for Shares or words. Try the three things a vote cannot do (they are contract rules, tested in Forge): set the lock guard again, name a second
+panel, or unlock a milestone through any other budget.
+

@@ -153,8 +153,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
 - The wizard's unlock step now says what happens for a launch into its own DAO (the reviewers of a work budget judge a
   milestone by its words, not the founder), and a "short vesting by time" plan is refused there with a plain reason.
   The unlock step of the old token-mint flow is unchanged.
-- The DAO cannot burn or move a locked founder's Shares (a governance removal) until it calls `forfeit` for them first;
-  that is deliberate, and `forfeit` is a DAO-only call.
+- The DAO cannot burn or move a locked founder's Shares (a governance removal). `forfeit` (DAO-only) burns a departed
+  founder's unearned tranches on the spot (D42); nothing else frees them.
 - `ShareVesting.sol` is no longer used by the launch kit. It is kept as a standalone schedule; remove it if nobody
   wants plain time vesting.
 - An unopposed holder above quorum can pass an action; review time, hold time, the execution delay and ragequit are the
@@ -286,3 +286,12 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   That last run found a real bug: every event read began at block 0, which a real node refuses past about 50,000 blocks, so **My bids** could not list a bid on Sepolia; reads now fall back to pages and start at the block the kit
   was deployed (`VITE_HISTORY_FROM_BLOCKS`; 10 unit tests plus 5 on `ethGetLogs`, each guard broken once to see a test fail). The market is off on Sepolia on purpose (D40). Not done: the real deploy and hosting (need you), page-splitting in
   the CLI and desktop app.
+- **The bond can be paid in any token the vote names** (D41): the work budget vote names the bond's token (the sale currency by default, the project's own token, or any other), with plain warnings for the weaker two; the factory,
+  the shared encoder, the CLI (`--reviewer-bond-token`), the forms and the Work tab follow. Checked: 2 new Forge tests (each guard broken once), cast-pinned goldens, and the browser economy journey with a bond in the project's own Shares.
+- **The team's lock is real whatever a vote does, and the milestone panel is named in the launch** (D42): the Shares' lock guard is set once; `forfeit` burns instead of freeing; the launch kit names the panel (reviewers, how many must
+  agree, an optional bond) in the DAO's own initialization and the lock accepts no other; the panel holds nothing and its projects hold nothing; a team member cannot be on it. The launch panel (Manage tab) asks for it before the
+  Launch button works and keeps what was typed across a reload; the Work tab lists the milestone panel; the project form offers the milestones. I did not build "count only unlocked Shares when naming a panel": a governor can wrap
+  any call, so the only sound version reverses D13; the contract rules above make the commitments hold without it (see D42). Checked: 6 mutations of the new rules, each caught by a test; the whole Forge suite (347); cast-pinned
+  launch calldata; and the real-chain launch, economy and milestone journeys. Found on the way: my own bond-token commit left `decision-forms.tsx` over the file-size limit (fixed by moving the work budget form into its own file).
+  Not built: an exchange on the Sepolia fork (needs a clone of Limit Break's examples, outside this repo), page-splitting in the CLI and desktop app, screens for asking a bond back or slashing one.
+

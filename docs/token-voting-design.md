@@ -184,7 +184,8 @@ costs the governor nothing: its size headroom is unchanged.
 - **Lock guard.** The DAO may name a guard contract that says how many of a holder's Shares are locked
   (`lockedOf`). Locked Shares vote (they count in the holder's capacity and delegation) but cannot be transferred or
   burned, so they cannot be sold and cannot be ragequit; only the unlocked part can. The DAO's own Shares are never
-  locked, and the DAO can remove the guard. A governance burn of locked Shares is held by the same wall.
+  locked. The guard can be set once and never changed: a lock a vote could remove or swap for a friendlier one would bind
+  the team only for as long as it kept a majority. A governance burn of locked Shares is held by the same wall.
 - **Verified** with the real validator on a local chain (`scripts/shares-erc20c-e2e.sh`): the DAO votes the
   validator and the Soulbound ruleset, a transfer is refused and ragequit still works, Vanilla restores transfers, and a
   lock guard holds exactly the locked part.
@@ -196,18 +197,22 @@ predicts where the Shares will be, and fails closed if it guessed wrong). The te
 the team, who vote with them from the first block; the part tied to a milestone cannot move or be burned until that
 milestone is reached.
 
-- **A milestone is judged like any other work.** The team member files a claim in a work budget their DAO voted, against
-  a project whose acceptance check is the milestone's exact words; that budget's independent reviewers approve it;
-  after the challenge window it is paid. Anyone may then send `unlock`, which frees that milestone's part and mints
-  the team member a soulbound `MilestoneBadge`. No further vote is needed: the DAO agreed to the schedule at launch.
-- **What stops it being gamed.** The lock accepts only a budget this DAO created (anyone can make a budget for themselves
-  with friendly reviewers), only the beneficiary's own claim, only against the milestone's words, and a claim
-  unlocks one milestone once.
+- **A milestone is judged like any other work, by a panel named in the launch.** The launch itself names the reviewers
+  (none may be a team member), how many must agree and, if wanted, a bond each posts. The DAO is born with that panel as a
+  mandate of its own (`TreasuryMandateFactory.createMilestonePanel`, called from the DAO's own initialization), which holds
+  no money and awards no Shares. The team member files a claim there against a project whose acceptance check is the
+  milestone's exact words (the DAO votes the project in; it holds nothing); the panel's reviewers approve it; after the
+  challenge window it is paid. Anyone may then send `unlock`, which frees that milestone's part and mints the team member
+  a soulbound `MilestoneBadge`. No further vote is needed: the DAO agreed to the schedule at launch.
+- **What stops it being gamed.** The lock accepts only the panel the DAO named at launch (a later vote cannot swap in a
+  friendlier one; a DAO with no named panel still accepts any mandate it made), only the beneficiary's own claim, only
+  against the milestone's words, and a claim unlocks one milestone once. None of this depends on how a vote goes: the
+  rules are in contracts the DAO cannot change, so a team that holds a majority of the votes still cannot release itself.
 - **The badge is a receipt, not the key.** What is released is decided by the lock reading the claim; the badge cannot be
   sold or lost to undo it, and an NFT-gated perk (a hook that reads the badge) can be added later without being
   load-bearing for safety.
-- **Leaving.** The DAO can `forfeit` a departed founder's remaining milestones, which is what lets a later vote burn or
-  move those Shares. Nothing else can.
+- **Leaving.** The DAO can `forfeit` a departed founder's remaining milestones. The lock burns those Shares on the spot, so
+  they are never free to sell or take out on the way: a vote can remove what the team has not earned, never release it.
 - **Time is not part of it.** Time vesting was replaced for DAO launches by this; `ShareVesting` stays as a standalone
   schedule.
 
