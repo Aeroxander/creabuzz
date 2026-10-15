@@ -87,8 +87,15 @@ bring (a browser wallet or a key made in the app); passkey accounts will not sen
 - **Sepolia ETH** for gas, from any faucet, unless a paymaster covers gas for passkey accounts.
 - **Circle test USDC** from Circle's faucet (faucet.circle.com, pick Ethereum Sepolia). Circle's USDC has no open mint, which is
   why the local tests write balances into a fork instead.
-- A short note saying what to try: start a community, launch a project from a template, back one, hold a vote, claim a task,
-  review a claim. `docs/v3-review/TEST-STEPS.md` has the steps.
+- A short note saying what to try: start a community, launch a project from a template (name the people who judge its
+  milestones: the launch will not go without them), back one, hold a vote, claim a task, review a claim. `docs/v3-review/TEST-STEPS.md` has the steps.
+
+### One thing to check with passkey accounts: the launch is one big transaction
+
+The launch (DAO, sale, milestone lock and panel) uses about 12.6 million gas, under Ethereum's cap of 16.8 million for one
+transaction (a test checks it). A bundler may set a lower limit on what one account operation can spend, so a launch sent
+from a passkey account could be refused where a launch sent from an ordinary wallet is not. Try one launch from a passkey
+account on your ZeroDev project before inviting testers, and tell me if it is refused.
 
 ## 5. Check it before inviting anyone
 
