@@ -3,6 +3,11 @@ import {
   EXCHANGE_CONTRACTS,
   parseCodeHash,
 } from "./lib/exchange-verify.ts";
+import {
+  isRangeLimitError,
+  rangeLimitFrom,
+  readInPages,
+} from "./lib/log-pages.ts";
 import { saleCurrencyFor, type SaleCurrency } from "./lib/sale-currency.ts";
 import type { LaunchRecord } from "./models";
 import {
@@ -120,6 +125,12 @@ export interface ChainEnv {
    */
   VITE_DAO_LAUNCH_KITS?: string;
   /**
+   * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
+   * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
+   * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
+   */
+  VITE_HISTORY_FROM_BLOCKS?: string;
+  /**
    * The price service's base URL (`services/price-indexer`). Without one, prices come only from recorded bids and the
    * sale's floor, as they always did.
    */
@@ -174,6 +185,27 @@ export function daoLaunchKit(
       : null;
   } catch {
     return null;
+  }
+}
+
+/** The block `chainId`'s history starts at, or 0 when the build names none (strict: a JSON object of chain id to block). */
+export function historyFromBlock(
+  chainId: string | number,
+  env: ChainEnv | undefined = viteEnv(),
+): bigint {
+  const raw = env?.VITE_HISTORY_FROM_BLOCKS?.trim();
+  if (!raw) return 0n;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map)) {
+      return 0n;
+    }
+    const block = (map as Record<string, unknown>)[String(chainId)];
+    return typeof block === "number" && Number.isSafeInteger(block) && block > 0
+      ? BigInt(block)
+      : 0n;
+  } catch {
+    return 0n;
   }
 }
 
@@ -682,7 +714,11 @@ export interface RpcLog {
   logIndex: string;
 }
 
-/** `eth_getLogs` over a bounded block range (address + topic filtered). */
+/**
+ * `eth_getLogs` (address + topic filtered). Asked once for the whole range; when the node says that is too wide (a real
+ * node usually caps the block range of one request) it is read again in pages, from the block the build names as the
+ * start of this chain's history (`VITE_HISTORY_FROM_BLOCKS`) instead of block 0. See `lib/log-pages.ts`.
+ */
 export async function ethGetLogs(
   endpoint: string,
   filter: {
@@ -691,10 +727,38 @@ export async function ethGetLogs(
     fromBlock: string;
     toBlock: string;
   },
+  env: ChainEnv | undefined = viteEnv(),
 ): Promise<RpcLog[]> {
-  const result = await rpc(endpoint, "eth_getLogs", [filter]);
-  if (!Array.isArray(result)) throw new Error("bad eth_getLogs return");
-  return result as RpcLog[];
+  const read = async (query: typeof filter): Promise<RpcLog[]> => {
+    const result = await rpc(endpoint, "eth_getLogs", [query]);
+    if (!Array.isArray(result)) throw new Error("bad eth_getLogs return");
+    return result as RpcLog[];
+  };
+  try {
+    return await read(filter);
+  } catch (error) {
+    if (!isRangeLimitError(error)) throw error;
+    const [chainId, head] = await Promise.all([
+      ethChainId(endpoint),
+      ethBlockNumber(endpoint),
+    ]);
+    const floor = historyFromBlock(chainId.toString(), env);
+    const asked =
+      filter.fromBlock === "latest" ? head : decodeQuantity(filter.fromBlock);
+    const until =
+      filter.toBlock === "latest" ? head : decodeQuantity(filter.toBlock);
+    return readInPages({
+      from: asked > floor ? asked : floor,
+      to: until < head ? until : head,
+      pageSize: rangeLimitFrom(error) ?? undefined,
+      fetchPage: (from, to) =>
+        read({
+          ...filter,
+          fromBlock: `0x${from.toString(16)}`,
+          toBlock: `0x${to.toString(16)}`,
+        }),
+    });
+  }
 }
 
 /** Live reads. Throws on any failure so callers fall back to preview. */
@@ -724,16 +788,14 @@ export async function liveProgress(
     record.claimBlock !== null ? BigInt(record.claimBlock) : null;
   let bidCount: number | null = null;
   try {
-    const logs = (await rpc(endpoint, "eth_getLogs", [
-      {
-        address: record.auction,
-        topics: [TOPIC_BID_SUBMITTED],
-        fromBlock: "0x0",
-        toBlock: "latest",
-      },
-    ])) as unknown[];
+    const logs = await ethGetLogs(endpoint, {
+      address: record.auction,
+      topics: [TOPIC_BID_SUBMITTED],
+      fromBlock: "0x0",
+      toBlock: "latest",
+    });
     // An answer from the chain: zero bids is a fact here, not a guess.
-    if (Array.isArray(logs)) bidCount = logs.length;
+    bidCount = logs.length;
   } catch {
     // Leave it unknown; the rest of the read succeeded, so the caller still
     // gets live figures for everything the chain did answer.

@@ -16,7 +16,9 @@ import {
   defaultChainPreset,
   exchangeAddresses,
   exchangeCodehashes,
+  ethGetLogs,
   getRpcEndpoint,
+  historyFromBlock,
   isDevBuild,
   priceIndexerUrl,
 } from "./chain.ts";
@@ -458,4 +460,172 @@ test("an exchange on any chain but the local one needs pinned code, or it is ref
     exchangeAddresses(11155111, env({ ...addresses, codehashes: [pins] })),
     null,
   );
+});
+
+/** A JSON-RPC node that refuses `eth_getLogs` over more than `limit` blocks, as real ones do, and has one log per 1000 blocks. */
+function limitedNode({ head, chainId, limit }) {
+  const original = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (_url, init) => {
+    const { method, params } = JSON.parse(init.body);
+    const reply = (result) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result }),
+    });
+    if (method === "eth_chainId") return reply(`0x${chainId.toString(16)}`);
+    if (method === "eth_blockNumber") return reply(`0x${head.toString(16)}`);
+    assert.equal(method, "eth_getLogs");
+    const from = BigInt(params[0].fromBlock);
+    const to = BigInt(
+      params[0].toBlock === "latest" ? head : params[0].toBlock,
+    );
+    asked.push([from, to]);
+    if (to - from + 1n > limit) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { message: `exceed maximum block range: ${limit}` },
+        }),
+      };
+    }
+    const logs = [];
+    for (
+      let block = from - (from % 1000n) + (from % 1000n === 0n ? 0n : 1000n);
+      block <= to;
+      block += 1000n
+    ) {
+      logs.push({
+        address: params[0].address,
+        topics: params[0].topics,
+        data: "0x",
+        blockNumber: `0x${block.toString(16)}`,
+        transactionHash: `0x${block.toString(16).padStart(64, "0")}`,
+        logIndex: "0x0",
+      });
+    }
+    return reply(logs);
+  };
+  return {
+    asked,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+const FILTER = {
+  address: "0x1111111111111111111111111111111111111111",
+  topics: [`0x${"ab".repeat(32)}`],
+  fromBlock: "0x0",
+  toBlock: "latest",
+};
+
+test("the block a chain's history starts at is only what the build names, as a whole number", () => {
+  assert.equal(historyFromBlock(11155111, {}), 0n);
+  assert.equal(
+    historyFromBlock(11155111, { VITE_HISTORY_FROM_BLOCKS: "" }),
+    0n,
+  );
+  assert.equal(
+    historyFromBlock(11155111, {
+      VITE_HISTORY_FROM_BLOCKS: '{"11155111":7654321}',
+    }),
+    7654321n,
+  );
+  assert.equal(
+    historyFromBlock(1, { VITE_HISTORY_FROM_BLOCKS: '{"11155111":7654321}' }),
+    0n,
+    "another chain's entry is not this chain's",
+  );
+  for (const bad of [
+    '{"11155111":"7654321"}',
+    '{"11155111":-5}',
+    '{"11155111":1.5}',
+    "[1]",
+    "nonsense",
+  ]) {
+    assert.equal(
+      historyFromBlock(11155111, { VITE_HISTORY_FROM_BLOCKS: bad }),
+      0n,
+      bad,
+    );
+  }
+});
+
+test("a node that answers the whole history is asked once", async () => {
+  const node = limitedNode({
+    head: 500_000n,
+    chainId: 31337,
+    limit: 10_000_000n,
+  });
+  try {
+    const logs = await ethGetLogs("http://node.test", FILTER, {});
+    assert.equal(node.asked.length, 1);
+    assert.equal(logs.length, 501);
+  } finally {
+    node.restore();
+  }
+});
+
+test("a node that caps the range is read in pages from the block the build names, and nothing is missed", async () => {
+  const node = limitedNode({
+    head: 11_960_000n,
+    chainId: 11155111,
+    limit: 50_000n,
+  });
+  try {
+    const logs = await ethGetLogs("http://node.test", FILTER, {
+      VITE_HISTORY_FROM_BLOCKS: '{"11155111":11900000}',
+    });
+    const blocks = logs.map((log) => BigInt(log.blockNumber));
+    const want = [];
+    for (let block = 11_900_000n; block <= 11_960_000n; block += 1000n)
+      want.push(block);
+    assert.deepEqual(blocks, want);
+    assert.ok(
+      node.asked.slice(1).every(([from]) => from >= 11_900_000n),
+      "no page asks for history before the block the build names",
+    );
+  } finally {
+    node.restore();
+  }
+});
+
+test("a capped node with no start named is refused with what to set, not read for minutes", async () => {
+  const node = limitedNode({
+    head: 11_960_000n,
+    chainId: 11155111,
+    limit: 50_000n,
+  });
+  try {
+    await assert.rejects(
+      ethGetLogs("http://node.test", FILTER, {}),
+      /VITE_HISTORY_FROM_BLOCKS/,
+    );
+    assert.ok(node.asked.length < 200, `${node.asked.length} requests`);
+  } finally {
+    node.restore();
+  }
+});
+
+test("a node that fails for another reason is not paged around", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: false, status: 503, json: async () => ({}) };
+  };
+  try {
+    await assert.rejects(
+      ethGetLogs("http://node.test", FILTER, {}),
+      /rpc http 503/,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
