@@ -243,7 +243,7 @@ function MandateCard({
     <Card className="p-4" data-testid="work-mandate">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold">
-          Work budget{" "}
+          {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}{" "}
           <span className="font-mono text-xs font-normal text-muted-foreground">
             {truncatePubkey(mandate.address)}
           </span>
@@ -252,6 +252,15 @@ function MandateCard({
           {mandate.closed ? "Closed" : `Open until ${date(mandate.expiresAt)}`}
         </span>
       </div>
+      {mandate.isMilestonePanel ? (
+        <p
+          className="mt-1 text-sm text-muted-foreground"
+          data-testid="work-milestone-panel"
+        >
+          Named when the project launched, and the only one that can unlock the
+          team's Shares. It holds no money, and nobody can swap its reviewers.
+        </p>
+      ) : null}
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         {created.shareBudget > 0n ? (
           <>

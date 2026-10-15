@@ -231,3 +231,14 @@ test("the counts and the sentence say what is going on, or that nothing is", () 
     /Nothing is going on yet/,
   );
 });
+
+test("the milestone panel is not a work budget: a DAO with only that is still offered its first one", () => {
+  const work = {
+    chainTime: 1,
+    mandates: [mandate([claim("1", "Open")], { isMilestonePanel: true })],
+  };
+  const counts = overviewCounts(snap([]), work);
+  assert.equal(counts.workBudgets, 0);
+  // Its claims are still work in progress: a founder's milestone claim is real work to judge.
+  assert.equal(counts.openClaims, 1);
+});

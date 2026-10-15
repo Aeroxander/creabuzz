@@ -42,7 +42,11 @@ export function FileClaimCard({
   /** Sends one transaction; resolves true once it landed. */
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
-  const open = mandates.filter((m) => !m.closed);
+  // Ordinary work budgets first: the milestone panel is for the team's milestones, and is listed last.
+  const open = [
+    ...mandates.filter((m) => !m.closed && !m.isMilestonePanel),
+    ...mandates.filter((m) => !m.closed && m.isMilestonePanel),
+  ];
   const [which, setWhich] = useState(0);
   const [name, setName] = useState("");
   const [evidence, setEvidence] = useState("");
@@ -192,7 +196,9 @@ export function FileClaimCard({
           >
             {open.map((m, i) => (
               <option key={m.address} value={i}>
-                {m.address.slice(0, 10)}…
+                {m.isMilestonePanel
+                  ? "The milestone panel (for your team's milestones)"
+                  : `${m.address.slice(0, 10)}…`}
               </option>
             ))}
           </select>

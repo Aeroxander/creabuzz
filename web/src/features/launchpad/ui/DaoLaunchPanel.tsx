@@ -1,8 +1,17 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
 import { stepMarker } from "../lib/auction-copy";
+import { daoLaunchInputsFromRecord } from "../lib/dao-launch";
+import {
+  EMPTY_PANEL_DRAFT,
+  loadPanelDraft,
+  type PanelDraft,
+  panelFromDraft,
+  savePanelDraft,
+} from "../lib/launch-panel";
 import type { Launch } from "../models";
 import { useDaoLaunch } from "../use-dao-launch";
 import { useConnectedWallet } from "../use-connected-wallet";
@@ -14,7 +23,11 @@ import {
   StepRow,
   WalletStrip,
 } from "./auction-widgets";
+import { LaunchPanelFields } from "./LaunchPanelFields";
 import { UnauditedNotice } from "./UnauditedNotice";
+import { useTokenDecimals } from "./WorkBudgetForm";
+
+const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 0 });
 
@@ -48,7 +61,67 @@ export function DaoLaunchPanel({
 }) {
   const { record } = launch;
   const wallet = useConnectedWallet();
-  const { view, state, start } = useDaoLaunch({ launch, wallet, onLink });
+
+  // Milestones need someone to judge them, named here. Whether this launch has any is read off the same inputs the
+  // plan is made from (a record that cannot be planned at all shows its problem through the gate, not here).
+  const needsPanel = useMemo(() => {
+    try {
+      return (
+        daoLaunchInputsFromRecord(record, wallet.address ?? ZERO_ADDRESS)
+          .milestones.length > 0
+      );
+    } catch {
+      return false;
+    }
+  }, [record, wallet.address]);
+  // Kept across a reload: a launch that was sent but not yet saved is finished from the same terms.
+  const draftKey = `${record.author}:${record.id}`;
+  const [panelDraft, setPanelDraftState] = useState<PanelDraft>(() =>
+    loadPanelDraft(draftKey),
+  );
+  const setPanelDraft = (next: PanelDraft) => {
+    setPanelDraftState(next);
+    savePanelDraft(draftKey, next);
+  };
+  const saleCurrency = recordSaleCurrency(record);
+  const otherToken = useTokenDecimals(
+    panelDraft.bondIn === "other" ? panelDraft.bondOther.trim() : "",
+  );
+  const panelResult = useMemo(
+    () =>
+      needsPanel
+        ? panelFromDraft(
+            panelDraft,
+            {
+              currencyDecimals: saleCurrency.decimals,
+              other: otherToken.isError
+                ? "unreadable"
+                : otherToken.data === undefined
+                  ? "loading"
+                  : { decimals: otherToken.data },
+            },
+            Math.floor(Date.now() / 1000),
+          )
+        : null,
+    [
+      needsPanel,
+      panelDraft,
+      saleCurrency.decimals,
+      otherToken.data,
+      otherToken.isError,
+    ],
+  );
+  const panel =
+    panelResult && "panel" in panelResult ? panelResult.panel : null;
+  const panelStarted =
+    JSON.stringify(panelDraft) !== JSON.stringify(EMPTY_PANEL_DRAFT);
+
+  const { view, state, start } = useDaoLaunch({
+    launch,
+    wallet,
+    onLink,
+    panel,
+  });
   const { plan, summary, gate } = view;
   const { progress, failure, running, resumable, done } = state;
 
@@ -165,6 +238,18 @@ export function DaoLaunchPanel({
               : ""}
           </dd>
         </dl>
+      ) : null}
+      {needsPanel && !running && !done ? (
+        <LaunchPanelFields
+          currencySymbol={saleCurrency.symbol}
+          draft={panelDraft}
+          onChange={setPanelDraft}
+          problem={
+            panelStarted && panelResult && "problem" in panelResult
+              ? panelResult.problem
+              : null
+          }
+        />
       ) : null}
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="dao-launch" wallet={wallet} />

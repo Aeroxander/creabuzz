@@ -22,6 +22,7 @@ import {
   daoLaunchInputsFromRecord,
   daoLaunchReceiptContent,
   DaoLaunchPlanError,
+  type DaoLaunchPanelInput,
   describeDaoLaunch,
   planDaoLaunch,
   TOPIC_KIT_LAUNCHED,
@@ -83,8 +84,10 @@ export function useDaoLaunch(input: {
     auction: string;
     treasury: string;
   }) => Promise<unknown>;
+  /** Who judges the team's milestones, as the founder named them (null until they have). */
+  panel?: DaoLaunchPanelInput | null;
 }): { view: DaoLaunchView; state: DaoLaunchState; start: () => void } {
-  const { launch, wallet, onLink } = input;
+  const { launch, wallet, onLink, panel = null } = input;
   const { record } = launch;
   const chainId = chainNumber(record.chainId);
   const kit = daoLaunchKit(record.chainId);
@@ -97,7 +100,9 @@ export function useDaoLaunch(input: {
       // The team seat is the connected wallet; a zero address stands in until one is connected, so the terms can be
       // judged before the founder has connected anything (the gate asks for the wallet before it lets them send).
       const founder = wallet.address ?? ZERO_ADDRESS;
-      const planned = planDaoLaunch(daoLaunchInputsFromRecord(record, founder));
+      const planned = planDaoLaunch(
+        daoLaunchInputsFromRecord(record, founder, { panel }),
+      );
       if (record.admission === "curated") {
         return {
           plan: null,
@@ -112,7 +117,7 @@ export function useDaoLaunch(input: {
       }
       throw error;
     }
-  }, [record, wallet.address]);
+  }, [record, wallet.address, panel]);
 
   const gate = daoLaunchGate({
     mainnetBlocked: isMainnetChain(record.chainId) && !mainnetEnabled(),

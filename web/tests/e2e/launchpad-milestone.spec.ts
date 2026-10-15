@@ -275,9 +275,10 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
     entries.filter({ hasText: "reached milestone 1 (alpha shipped)" }),
   ).toHaveCount(1);
   await expect(reader.getByTestId("record-figure-work")).toContainText("1");
-  // Shares were set aside for the project, but none were awarded: the page must not call one the other.
+  // The milestone panel sets nothing aside and awards nothing: the page says zero of each (the track record's own tests
+  // keep "set aside" and "awarded" apart when a project does hold Shares).
   await expect(reader.getByTestId("record-figure-awarded")).toHaveText(
-    /awarded for work0\s*10 set aside for projects/,
+    /awarded for work0\s*0 set aside for projects/,
   );
   if (process.env.E2E_SHOTS) {
     await reader.setViewportSize({ width: 1100, height: 1500 });

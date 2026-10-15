@@ -335,6 +335,14 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   // ── The founder launches the DAO with one button; the others watch the launch page and see it go live ──
   await founder.page.getByText("Nebula").first().click();
   await founder.page.getByRole("tab", { name: /Manage/ }).click();
+  // The team's Shares are held behind milestones, so the launch names who judges them: an outsider, the backer, with
+  // a bond. Nobody can swap them for friendlier reviewers afterwards.
+  const launchPicker = founder.page.getByTestId("launch-panel-people");
+  await expect(
+    launchPicker.locator("option", { hasText: capital.name }),
+  ).toHaveCount(1, { timeout: 30_000 });
+  await launchPicker.selectOption(capital.wallet.address.toLowerCase());
+  await founder.page.getByTestId("launch-panel-bond").fill("25");
   await founder.page.getByTestId("dao-launch-start").click();
   await expect(founder.page.getByTestId("dao-launch-status")).toContainText(
     "Your project is live",
@@ -343,6 +351,18 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await shot(founder.page, "1-live");
 
   say("the DAO is live");
+  // The panel was part of the launch: it is listed on the Work tab as the milestone panel, with its bond.
+  await founder.page.reload();
+  await founder.page.getByRole("tab", { name: "Work" }).click();
+  await expect(founder.page.getByTestId("work-milestone-panel")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(founder.page.getByTestId("work-bond")).toContainText("25");
+  await expect(founder.page.getByTestId("work-reviewers")).toContainText(
+    "bond not posted yet",
+  );
+  // Back to where the sale is run from.
+  await founder.page.getByRole("tab", { name: /Manage/ }).click();
   const [launched] = await readRecords(host, { kinds: [37001] });
   const shares = tag(launched, "token");
   const auction = tag(launched, "auction");
@@ -593,16 +613,22 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     { timeout: 60_000 },
   );
   await open(capital, "Work");
-  await expect(capital.page.getByTestId("work-bond")).toContainText("100");
-  await expect(capital.page.getByTestId("work-bond")).not.toContainText("USDC");
+  // The reviewer is on two panels: the milestone panel the launch named (a 25 USDC bond) and this budget's (100 Shares).
+  const budgetCard = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" });
+  await expect(budgetCard.getByTestId("work-bond")).toContainText("100", {
+    timeout: 30_000,
+  });
+  await expect(budgetCard.getByTestId("work-bond")).not.toContainText("USDC");
   // Nothing to judge with until the bond is in; posting it is an approval and then the bond, from their own wallet.
-  await expect(capital.page.getByTestId("work-approve")).toHaveCount(0);
+  await expect(budgetCard.getByTestId("work-approve")).toHaveCount(0);
   const capitalBefore = await dollarsOf(capital.wallet.address);
   const sharesOf = async (who: string) =>
     callWord(shares, `0x70a08231${word(who)}`);
   const sharesBefore = await sharesOf(capital.wallet.address);
-  await capital.page.getByTestId("work-post-bond").click();
-  await expect(capital.page.getByTestId("work-bond-owed")).toHaveCount(0, {
+  await budgetCard.getByTestId("work-post-bond").click();
+  await expect(budgetCard.getByTestId("work-bond-owed")).toHaveCount(0, {
     timeout: 90_000,
   });
   // The bond left in Shares, not in dollars.
@@ -611,8 +637,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   expect(await dollarsOf(capital.wallet.address)).toBe(capitalBefore);
   say("the reviewer posted their bond of 100 Shares");
-  await capital.page.getByTestId("work-approve").click();
-  await expect(capital.page.getByTestId("work-claim-next")).not.toContainText(
+  await budgetCard.getByTestId("work-approve").click();
+  await expect(budgetCard.getByTestId("work-claim-next")).not.toContainText(
     "0 of 1 approvals",
     { timeout: 60_000 },
   );

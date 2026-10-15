@@ -84,6 +84,9 @@ export function DecisionsTab({
             policy: context.data.policy,
             sharesToken: context.data.shares,
             exchange,
+            milestoneWords: (launch.record.unlocks?.milestones ?? []).map(
+              (m) => m.label,
+            ),
           }}
           gate={gate}
           onSend={send}

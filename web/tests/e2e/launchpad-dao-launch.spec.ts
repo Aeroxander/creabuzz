@@ -229,6 +229,17 @@ async function openManage(page: Page) {
   await page.getByRole("tab", { name: /Manage/ }).click();
 }
 
+// Anvil's third and fourth dev accounts: outsiders who judge the team's milestones.
+const JUDGES = [
+  "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "0x90F79bf6EB2c4f870365E785982E1f101E9b4226",
+];
+
+/** The launch names who judges the team's milestones; without them the button stays off. */
+async function namePanel(page: Page, reviewers: string[] = JUDGES) {
+  await page.getByTestId("launch-panel-reviewers").fill(reviewers.join("\n"));
+}
+
 const tag = (event: StoredEvent, name: string) =>
   event.tags.find(([k]) => k === name)?.[1] ?? "";
 
@@ -245,6 +256,18 @@ test("the founder launches a project into its own DAO with one button, and the p
   await expect(panel).toBeVisible({ timeout: 15_000 });
   // The old two-step path is not offered for this launch.
   await expect(page.getByTestId("auction-deploy-panel")).toHaveCount(0);
+  // The team's Shares are held behind milestones, so the launch cannot go until it says who judges them.
+  await expect(page.getByTestId("dao-launch-gate")).toContainText(
+    "Name who judges the milestones.",
+  );
+  await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
+  // A team member cannot judge the team's milestones: said before anything is sent.
+  await namePanel(page, [FOUNDER_WALLET, JUDGES[0]]);
+  await expect(page.getByTestId("dao-launch-gate")).toContainText(
+    "A team member cannot judge the team's milestones",
+  );
+  await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
+  await namePanel(page);
   await expect(page.getByTestId("dao-launch-gate")).toHaveCount(0);
   // The founder is told, in plain words, where each part of the supply goes.
   const summary = page.getByTestId("dao-launch-summary");
@@ -291,6 +314,18 @@ test("the founder launches a project into its own DAO with one button, and the p
   const lock = payload.lock as string;
   expect(lock).toMatch(/^0x[0-9a-f]{40}$/);
   expect(payload.milestones).toHaveLength(2);
+  // The receipt says who judges them, and the chain agrees: the DAO's own factory names the launch's panel.
+  expect(payload.panel.reviewers).toEqual(JUDGES.map((j) => j.toLowerCase()));
+  expect(payload.panel.quorum).toBe(2);
+  const addressOf = (value: bigint) =>
+    `0x${value.toString(16).padStart(40, "0")}`;
+  const policy = await callWord(dao, "0x6f533638"); // votingWeight()
+  const factory = await callWord(addressOf(policy), "0xb04b7bdb"); // mandateFactory()
+  const panelMandate = await callWord(
+    addressOf(factory),
+    `0x17362283${word(dao)}`, // milestoneMandate(dao)
+  );
+  expect(panelMandate).not.toBe(0n);
 
   // The chain agrees. The sale holds the sale tranche, the founder holds the whole
   // team allocation (and so votes with it), the DAO holds its own part.
@@ -333,6 +368,7 @@ test("a server that refuses the record after the DAO exists is retried without s
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
   await openManage(page);
 
+  await namePanel(page);
   await page.getByTestId("dao-launch-start").click();
   const failure = page.getByTestId("dao-launch-failure");
   await expect(failure).toBeVisible({ timeout: 120_000 });
@@ -364,6 +400,7 @@ test("a reload between the DAO and the record offers to finish saving, never a s
   });
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
   await openManage(page);
+  await namePanel(page);
   await page.getByTestId("dao-launch-start").click();
   await expect(page.getByTestId("dao-launch-failure")).toBeVisible({
     timeout: 120_000,
@@ -400,6 +437,7 @@ test("a browser that forgot the launch finds its DAO on the chain instead of mak
   });
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
   await openManage(page);
+  await namePanel(page);
   await page.getByTestId("dao-launch-start").click();
   await expect(page.getByTestId("dao-launch-failure")).toBeVisible({
     timeout: 120_000,
@@ -419,6 +457,7 @@ test("a browser that forgot the launch finds its DAO on the chain instead of mak
   await page.getByText("Nebula DAO").click();
   await page.getByRole("tab", { name: /Manage/ }).click();
   await expect(page.getByTestId("dao-launch-resume-note")).toHaveCount(0);
+  await namePanel(page);
   await page.getByTestId("dao-launch-start").click();
   await expect(page.getByTestId("dao-launch-status")).toContainText(
     "Your project is live",
@@ -496,6 +535,7 @@ test("a launch made in the wizard, as published, launches into its DAO", async (
   await expect(page.getByTestId("dao-launch-panel")).toBeVisible({
     timeout: 15_000,
   });
+  await namePanel(page);
   await expect(page.getByTestId("dao-launch-gate")).toHaveCount(0);
   await page.getByTestId("dao-launch-start").click();
   await expect(page.getByTestId("dao-launch-status")).toContainText(
@@ -553,6 +593,7 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
   await openManage(page);
 
+  await namePanel(page);
   await page.getByTestId("dao-launch-start").click();
   await expect(page.getByTestId("dao-launch-status")).toContainText(
     "Your project is live",

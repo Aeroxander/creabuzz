@@ -13,8 +13,8 @@ import {
   MarketForm,
   PayForm,
   ProjectForm,
-  WorkBudgetForm,
 } from "./decision-forms";
+import { WorkBudgetForm } from "./WorkBudgetForm";
 
 type Kind = "budget" | "project" | "award" | "market" | "fees" | "pay";
 

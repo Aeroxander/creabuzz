@@ -176,7 +176,10 @@ export function overviewCounts(
       (sum, mandate) => sum + mandate.claims.filter(isOpenClaim).length,
       0,
     ),
-    workBudgets: mandates.filter((mandate) => !mandate.closed).length,
+    // The milestone panel judges the team's milestones and holds no budget: it is not "a work budget" to start with.
+    workBudgets: mandates.filter(
+      (mandate) => !mandate.closed && !mandate.isMilestonePanel,
+    ).length,
   };
 }
 
