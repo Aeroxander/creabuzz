@@ -115,3 +115,38 @@ them, until a milestone unlocks a given part.
   (`scripts/shares-erc20c-e2e.sh`).
 - The milestone lock refuses transfers and ragequit of locked Shares, frees exactly a milestone's part when its reviewed
   claim exists, and mints a soulbound badge (`scripts/cli-milestone-e2e.sh`, `scripts/web-milestone-e2e.sh`).
+
+## Checked against Limit Break's published docs (2026-10-15)
+
+Read from [apptokens.com](https://apptokens.com/docs/integration-guide/overview): the overview, the
+[LBAMM contract registry](https://apptokens.com/docs/integration-guide/limit-break-amm/reference/contract-registry), the
+[LBAMM security model](https://apptokens.com/docs/integration-guide/limit-break-amm/security-model), the
+[validator deployments](https://apptokens.com/docs/integration-guide/creator-token-standards/v2/contract-deployments) and both cookbooks.
+
+**LBAMM has no production deployment to switch to yet.** The registry lists every LBAMM contract (core, the four pool
+types, the transfer handlers, the hook registry and the standard hook) as `NOT_DEPLOYED`, with no chains. It says all
+contracts "are deployed to the same address across supported chains", which is the plan and not yet a fact we can pin. The
+docs call LBAMM pre-release and say to "verify the exact repository commit before building production integrations". The
+security model says independent audits were done, but the audit entries are unfilled placeholders (no auditor, date or
+scope), and it does not say who can upgrade or pause anything. Treat "audited, deployed, same hash everywhere" as something
+to confirm with Limit Break, not something the docs show. These pages may be stale.
+
+**The AppToken side is live.** The validator page lists one address on Ethereum, Base, Optimism, Arbitrum One, Polygon,
+Polygon zkEVM, Avalanche C-Chain, BSC and Sepolia: `0x721C00182a990771244d7A71B9FA2ea789A3b433` (titled V2). The
+overview lists a "v4" validator at `0x721C002B0059009a671D00aD1700c9748146cd1B` and a TokenMaster router at
+`0x0E00009d00d1000069ed00A908e00081F5006008`, without naming chains. Our local tests use validator V5, so which version
+the Shares target, and its address per chain, has to be pinned and checked.
+
+**What this means for the plan**
+- Build to a per-chain registry whose LBAMM entries stay empty until Limit Break publishes them. The app offers a market vote
+  only when the address has code and its codehash matches the pinned one; otherwise it says "unverified".
+- Until then a launch works without a market: the raise graduates into the treasury and ragequit is the exit. Nothing about the
+  milestone lock, the claims or the treasury depends on LBAMM.
+- Test against a fork of a chain where it is deployed once it is, not against a local clone; the source stays out of this repo.
+
+**Cookbook ideas worth using later** (hook-level, so they need a hook and no new core contract): hold-time fee decay
+(AMM recipe 2: 5% under a day, 2% under a week, 0.5% after), fee tiers by who the trader is (recipe 5), perks gated on
+holding a badge, such as our `MilestoneBadge` (recipe 14), a DAO-curated list of who may create pools (recipe 23), and LP fee
+sharing with the hook's builder (recipe 24: 0.4% to LPs, 0.1% to the developer in the example). The AppToken cookbook has
+token-layer vesting (recipe 12), task-gated use (recipe 2) and backed tokens redeemable for ETH (recipe 20). Nothing in
+either cookbook covers reviewer stakes or bonds, sell-rate caps, or a "pair token".
