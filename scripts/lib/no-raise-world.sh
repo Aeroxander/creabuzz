@@ -92,7 +92,8 @@ world_mandate() { # a Shares-only mandate with three reviewers (the contributor 
   local intent
   intent=$(as $KEY_FOUNDER work mandate --dao "$DAO" --factory "$FACTORY" --currency "$CURRENCY" \
     --share-budget 100 --share-cap 40 --expires-in-days 90 \
-    --reviewer "$REVIEWER1" --reviewer "$REVIEWER2" --reviewer "$CONTRIBUTOR" --quorum 2)
+    --reviewer "$REVIEWER1" --reviewer "$REVIEWER2" --reviewer "$CONTRIBUTOR" --quorum 2 \
+    ${REVIEWER_BOND:+--decimals 6 --reviewer-bond "$REVIEWER_BOND"})
   [[ "$(echo "$intent" | jget lane)" == "unrestricted" ]] || fail "a mandate should take the full vote"
   decide "$intent" 175000
   MANDATE=$(cast logs --json --rpc-url "$RPC" --from-block 0 --address "$FACTORY" \

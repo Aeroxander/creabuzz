@@ -6,6 +6,18 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ClaimStake} from "./ClaimStake.sol";
 import {VerifierSet} from "./VerifierSet.sol";
 
+interface IMandateDao {
+    function shares() external view returns (address);
+}
+
+interface IMandateShares {
+    function lockGuard() external view returns (address);
+}
+
+interface IMandateLock {
+    function trancheCount(address beneficiary) external view returns (uint256);
+}
+
 /// @notice A DAO-approved, finite mandate over two budgets: currency to pay for work, and Shares to recognise it.
 /// Team managers reserve milestone payments and bind claims; independent reviewers and a challenge window release
 /// them. Returned funds never silently replenish the mandate's allocation authority.
@@ -13,6 +25,10 @@ import {VerifierSet} from "./VerifierSet.sol";
 /// Either budget may be zero, but not both. A mandate with no currency is how a project with no treasury (one that
 /// never raised) rewards contributors: the work is verified exactly as paid work is, and the DAO then awards Shares
 /// out of the project's share budget, which the broad vote that created the mandate capped.
+///
+/// The reviewers are fixed when the mandate is made. None may be someone whose own Shares a milestone lock holds
+/// (a team member cannot judge the team's milestones), and each can be made to post a real bond in the mandate's
+/// currency before they may attest; the DAO can slash a bond after a disputed approval.
 contract TreasuryMandate {
     using SafeERC20 for IERC20;
 
@@ -23,6 +39,8 @@ contract TreasuryMandate {
     /// @notice Most Shares this mandate can ever cause to be awarded, in total and per project.
     uint128 public immutable shareBudget;
     uint128 public immutable perProjectShareCap;
+    /// @notice The bond, in `currency`, each reviewer must hold to attest (zero: reviewers need no bond).
+    uint128 public immutable reviewerBond;
     uint64 public immutable expiresAt;
     VerifierSet public immutable verifiers;
     ClaimStake public immutable claims;
@@ -64,6 +82,7 @@ contract TreasuryMandate {
     event ContributionConsumed(bytes32 indexed claimId, address indexed contributor, uint128 shares);
     event UnusedReturned(uint256 amount);
     event MandateClosed();
+    event ReviewerSlashed(address indexed reviewer, uint256 amount);
 
     modifier onlyDAO() {
         if (msg.sender != dao) revert Unauthorized();
@@ -86,7 +105,8 @@ contract TreasuryMandate {
         uint128 shareCap_,
         uint64 expires_,
         address[] memory reviewers,
-        uint256 quorum
+        uint256 quorum,
+        uint128 reviewerBond_
     ) {
         // Each budget is all-or-nothing: a cap with no budget (or a budget with no cap) cannot be spent sensibly.
         if (
@@ -102,13 +122,36 @@ contract TreasuryMandate {
         shareBudget = shareBudget_;
         perProjectShareCap = shareCap_;
         expiresAt = expires_;
+        reviewerBond = reviewerBond_;
         VerifierSet panel = new VerifierSet(address(this), quorum);
         verifiers = panel;
         claims = new ClaimStake(panel, address(this), currency_);
         panel.setClaimStake(address(claims));
+        if (reviewerBond_ != 0) panel.setBond(currency_, reviewerBond_);
         for (uint256 i; i < reviewers.length; ++i) {
-            if (reviewers[i] == address(0)) revert InvalidMandate();
+            // A team member whose Shares a milestone lock holds cannot sit on the panel that judges the milestones.
+            if (reviewers[i] == address(0) || _isLockedTeamMember(dao_, reviewers[i])) revert InvalidMandate();
             panel.acceptVerifier(reviewers[i]);
+        }
+    }
+
+    /// @dev Whether the DAO's Shares name `who` as a beneficiary of their lock guard. A DAO without a guard, or a
+    /// caller that is not a DAO at all, locks nobody; a mandate made by a stranger carries no authority over a real DAO
+    /// (the lock only honours mandates the DAO's own factory made for it), so being lenient here is harmless.
+    function _isLockedTeamMember(address dao_, address who) private view returns (bool) {
+        try IMandateDao(dao_).shares() returns (address shares_) {
+            try IMandateShares(shares_).lockGuard() returns (address guard) {
+                if (guard == address(0)) return false;
+                try IMandateLock(guard).trancheCount(who) returns (uint256 n) {
+                    return n != 0;
+                } catch {
+                    return false;
+                }
+            } catch {
+                return false;
+            }
+        } catch {
+            return false;
         }
     }
 
@@ -187,6 +230,14 @@ contract TreasuryMandate {
         claims.freeze(claimId);
     }
 
+    /// @notice Take `amount` of a reviewer's bond after a disputed approval, and pay it to the DAO. The DAO votes this
+    /// like any treasury-scale action; nobody else can.
+    function slashReviewer(address reviewer, uint256 amount) external onlyDAO nonReentrant {
+        uint256 taken = verifiers.slash(reviewer, amount);
+        if (taken != 0 && reviewerBond != 0) currency.safeTransfer(dao, taken);
+        emit ReviewerSlashed(reviewer, taken);
+    }
+
     /// @notice Unwind a frozen claim without taking money already paid.
     function resolveFrozenClaim(bytes32 claimId) external onlyDAO {
         claims.resolveFrozen(claimId);
@@ -242,10 +293,11 @@ contract TreasuryMandateFactory {
         uint128 shareCap,
         uint64 expires,
         address[] calldata reviewers,
-        uint256 quorum
+        uint256 quorum,
+        uint128 reviewerBond
     ) external returns (TreasuryMandate mandate) {
         mandate = new TreasuryMandate(
-            msg.sender, currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum
+            msg.sender, currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum, reviewerBond
         );
         if (budget != 0) {
             IERC20(currency).safeTransferFrom(msg.sender, address(mandate), budget);

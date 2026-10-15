@@ -3,9 +3,12 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { formatAtomic } from "../lib/amounts";
 import {
+  bondShortfall,
   encodeAttest,
   encodeBind,
+  encodeBond,
   encodeCallId,
+  encodeCurrencyApprove,
   idLabel,
   nextStep,
   SIGNATURES,
@@ -212,6 +215,24 @@ function MandateCard({
   const myProjects = mandate.projects.filter((p) =>
     sameAddress(wallet, p.record.manager),
   );
+  // A reviewer on a bonded panel cannot judge a claim until they hold the bond.
+  const owes = mandate.walletIsReviewer
+    ? bondShortfall(mandate.bond, mandate.walletStake)
+    : 0n;
+  const postBond = async () => {
+    // The approval first; the bond only if it went through.
+    const approved = await onSend(
+      `bond-approve-${mandate.address}`,
+      mandate.created.currency,
+      encodeCurrencyApprove(mandate.verifiersAddress, owes),
+    );
+    if (!approved) return;
+    await onSend(
+      `bond-${mandate.address}`,
+      mandate.verifiersAddress,
+      encodeBond(owes),
+    );
+  };
   return (
     <Card className="p-4" data-testid="work-mandate">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -242,8 +263,61 @@ function MandateCard({
           </>
         ) : null}
         <dt className="text-muted-foreground">Reviewers</dt>
-        <dd>{mandate.quorum} must agree on a claim</dd>
+        <dd>
+          {mandate.reviewers.length > 0
+            ? `${mandate.quorum} of ${mandate.reviewers.length} must agree on a claim`
+            : `${mandate.quorum} must agree on a claim`}
+        </dd>
+        <dt className="text-muted-foreground">Reviewer bond</dt>
+        <dd data-testid="work-bond">
+          {mandate.bond
+            ? `${money(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
+            : "None: a reviewer risks nothing by approving carelessly"}
+        </dd>
       </dl>
+      {mandate.reviewers.length > 0 ? (
+        <ul
+          className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground"
+          data-testid="work-reviewers"
+        >
+          {mandate.reviewers.map((reviewer) => (
+            <li data-testid="work-reviewer" key={reviewer.address}>
+              <span className="font-mono">
+                {truncatePubkey(reviewer.address)}
+              </span>
+              {mandate.bond
+                ? reviewer.stake === null
+                  ? " · bond could not be read"
+                  : reviewer.stake >= mandate.bond.minBond
+                    ? " · bond posted"
+                    : " · bond not posted yet"
+                : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {owes > 0n ? (
+        <div
+          className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="work-bond-owed"
+        >
+          <p>
+            You are a reviewer here. Post a bond of {money(owes)} before you
+            judge a claim. You can ask for it back later; it stays at risk for
+            14 days after you do.
+          </p>
+          <Button
+            className="mt-2"
+            data-testid="work-post-bond"
+            disabled={busy !== null || gate !== null}
+            onClick={() => void postBond()}
+            size="sm"
+            type="button"
+          >
+            Post my bond
+          </Button>
+        </div>
+      ) : null}
 
       <h4 className="mt-3 text-sm font-semibold">Projects</h4>
       {mandate.projects.length === 0 ? (
@@ -286,6 +360,7 @@ function MandateCard({
             const canReview =
               step.kind === "review" &&
               mandate.walletIsReviewer &&
+              owes === 0n &&
               !mandate.walletAttested.includes(claim.id) &&
               !mine;
             const label = idLabel(claim.id);

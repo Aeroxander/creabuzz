@@ -274,4 +274,10 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   and the real-chain economy, DAO-launch and paid-work journeys, which republish launch records. Found on the way: saving from the Manage panel erased the legal wrapper and the sale's
   distributor, claim-stake and verifier-set tags; fixed with a test that fails if any launch field is not carried by a save. Not built: the holder vote naming the entity, forming the entity,
   contributors accepting terms on a claim. Needs a lawyer before anyone relies on it.
+- **Reviewers are independent and put a real bond behind their verdicts** (D39): a work budget refuses a reviewer whose Shares a milestone lock holds back, and can ask each reviewer for a bond in the
+  claim's currency (posted before they may attest, back after a 14-day wait, slashable by the DAO in that time). The vote's summary and the Work tab show the panel, the bond and who has posted it, and a reviewer
+  is offered no verdict until theirs is in. Checked: 11 new Forge tests (every guard broken one at a time to see a test fail) and the whole Forge suite (337 pass); cast-pinned encoders in the shared package and the CLI;
+  mocked suite 352 pass; real-chain journeys: milestone (CLI and web), no-raise, work (now bonded), paid work, decisions, DAO journey, and the economy run, which first failed because its panel named the founder (a locked team
+  member), which is the rule working on a wizard-launched DAO; its panel is now the outside backer alone, posting a 100 bond. Not built: the panel named in the launch, a vote that counts only unlocked Shares when naming the panel,
+  reviewer pay, and screens for asking a bond back or slashing one.
 

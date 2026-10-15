@@ -115,6 +115,38 @@ async function openWork(page: Page, account: string) {
 
 const claimNext = (page: Page) => page.getByTestId("work-claim-next");
 
+/** Set by the script when the panel asks reviewers for a bond (whole units of the dev currency). */
+const REVIEWER_BOND = process.env.E2E_REVIEWER_BOND ?? "";
+
+/**
+ * On a bonded panel a reviewer is offered no verdict until they hold the bond: the page says what is owed, they post it
+ * from their own wallet (an approval, then the bond), and only then is Approve offered. On an unbonded panel there is
+ * nothing to do and the page says so.
+ */
+async function postBondIfAsked(page: Page) {
+  if (REVIEWER_BOND === "") {
+    await expect(page.getByTestId("work-bond")).toContainText("None");
+    await expect(page.getByTestId("work-post-bond")).toHaveCount(0);
+    return;
+  }
+  await expect(page.getByTestId("work-bond")).toContainText(`${REVIEWER_BOND}`);
+  await expect(page.getByTestId("work-bond-owed")).toBeVisible();
+  // The panel is listed with who has not posted yet, and there is nothing to judge with until the bond is in.
+  await expect(
+    page
+      .getByTestId("work-reviewer")
+      .filter({ hasText: "bond not posted yet" }),
+  ).not.toHaveCount(0);
+  await expect(page.getByTestId("work-approve")).toHaveCount(0);
+  await page.getByTestId("work-post-bond").click();
+  await expect(page.getByTestId("work-bond-owed")).toHaveCount(0, {
+    timeout: 90_000,
+  });
+  await expect(
+    page.getByTestId("work-reviewer").filter({ hasText: "bond posted" }),
+  ).not.toHaveCount(0, { timeout: 30_000 });
+}
+
 test("a claim goes from filed to taken, one person at a time, each from their own wallet", async ({
   context,
 }) => {
@@ -177,6 +209,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   // ── two reviewers approve ──────────────────────────────────────────────────
   const first = await context.newPage();
   await openWork(first, REVIEWER1);
+  await postBondIfAsked(first);
   await first.getByTestId("work-approve").click();
   await expect(claimNext(first)).toContainText("1 of 2 approvals", {
     timeout: 60_000,
@@ -186,6 +219,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
 
   const second = await context.newPage();
   await openWork(second, REVIEWER2);
+  await postBondIfAsked(second);
   await second.getByTestId("work-approve").click();
   await expect(claimNext(second)).toContainText(
     "Enough reviewers approved it",

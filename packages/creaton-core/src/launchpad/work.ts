@@ -43,6 +43,10 @@ export const SIGNATURES = {
   bind: "fundMilestone(bytes32,bytes32,address)",
   policy: "votingWeight()",
   factory: "mandateFactory()",
+  bondToken: "bondToken()",
+  minBond: "minBond()",
+  bond: "bond(uint256)",
+  currencyApprove: "approve(address,uint256)",
 } as const;
 
 export const TOPIC_MANDATE_CREATED = topicOf(
@@ -53,6 +57,9 @@ export const TOPIC_PROJECT_APPROVED = topicOf(
 );
 export const TOPIC_CLAIM_SUBMITTED = topicOf(
   "ClaimSubmitted(bytes32,address,uint256,uint256,bytes32)",
+);
+export const TOPIC_VERIFIER_ACCEPTED = topicOf(
+  "VerifierAccepted(address,uint256)",
 );
 
 /** The topic0 of an event: keccak256 of its canonical signature. */
@@ -153,6 +160,41 @@ export function hashText(text: string): string {
 }
 
 export const ZERO_WORD = `0x${"0".repeat(64)}`;
+
+/** `bond(uint256)` on the VerifierSet: a reviewer posts `amount` of the claim currency (approve it to the set first). */
+export function encodeBond(amount: bigint): string {
+  if (amount <= 0n) throw new Error("a bond must be more than zero");
+  return encodeFunctionData(SIGNATURES.bond, ["uint256"], [amount]);
+}
+
+/** The ERC-20 `approve` a reviewer sends before posting a bond. */
+export function encodeCurrencyApprove(spender: string, amount: bigint): string {
+  if (!ADDRESS_RE.test(spender)) throw new Error(`not an address: ${spender}`);
+  if (amount < 0n) throw new Error("amounts cannot be negative");
+  return encodeFunctionData(
+    SIGNATURES.currencyApprove,
+    ["address", "uint256"],
+    [spender, amount],
+  );
+}
+
+/** What `verifiers(address)` says about one reviewer: whether they are on the panel, and the bond they hold. */
+export function decodeVerifier(hex: string): {
+  active: boolean;
+  stake: bigint;
+} {
+  const w = wordsOf(hex);
+  return { active: (w[0] ?? 0n) !== 0n, stake: w[1] ?? 0n };
+}
+
+/** How much more bond a reviewer must post to judge claims: zero when no bond is asked or theirs is enough. */
+export function bondShortfall(
+  bond: { minBond: bigint } | null,
+  stake: bigint,
+): bigint {
+  if (!bond || stake >= bond.minBond) return 0n;
+  return bond.minBond - stake;
+}
 
 export function encodeIsReviewer(address: string): string {
   if (!ADDRESS_RE.test(address)) throw new Error(`not an address: ${address}`);

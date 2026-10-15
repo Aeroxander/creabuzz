@@ -415,3 +415,18 @@ graduated. It never says holders own anything except when the entity's operating
 A half-filled document is refused. Someone who is not the author sees the card and no **Edit**. Check that saving kept the rest of the launch: the Manage tab's
 legal wrapper and the sale's contract links are unchanged.
 
+## 4w. Reviewer independence and the reviewer bond (2026-10-15)
+
+```bash
+cd contracts && forge test --match-path 'test/ReviewerBond.t.sol'     # 11 tests, each guard mutation-checked
+scripts/web-work-e2e.sh                                               # REAL chain: reviewers post a 25 bond in the page, then approve
+scripts/web-economy-e2e.sh                                            # REAL server + chain: a wizard-launched DAO, a one-reviewer panel that posts a 100 bond
+cd packages/creaton-core && node --experimental-strip-types --test src/launchpad/work.test.mjs src/launchpad/workRead.test.mjs src/launchpad/daoActions.test.mjs
+```
+
+By hand: on a launched DAO's **Decisions** tab choose **Work budget**, name a reviewer and fill **Bond each reviewer must post**: the summary beside the
+vote says "Each reviewer posts a bond of N" (or "Reviewers post no bond"). Name the founder as a reviewer on a DAO with milestone-locked team Shares and the
+vote cannot run: the contract refuses a team member on the panel. Once the budget exists, the **Work** tab lists the panel ("bond not posted yet"), and
+the reviewer sees "Post my bond" and no Approve until they have posted it (an approval, then the bond: two wallet confirmations). Asking the bond back
+(`requestUnbond`, then `withdraw` after 14 days) and the DAO slashing it (`slashReviewer`) are contract functions with no screen yet.
+

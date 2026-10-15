@@ -13,6 +13,9 @@
 # Env:    ANVIL_PORT, BUZZ_BIN (default: build target/debug/buzz), SKIP_BUILD=1 (reuse web/dist)
 
 WORLD_NAME=web-work
+# The panel asks each reviewer for a real bond (in whole units of the 6-decimal dev currency) before they may judge a
+# claim: the journey has them post it in the page first. REVIEWER_BOND= (empty) runs the unbonded panel instead.
+REVIEWER_BOND="${REVIEWER_BOND-25}"
 # shellcheck source=lib/no-raise-world.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib/no-raise-world.sh"
 world_up
@@ -28,6 +31,6 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   VITE_LAUNCHPAD_CHAIN_ID=31337 node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
-E2E_ANVIL_URL="$RPC" E2E_DAO="$DAO" E2E_MANDATE="$MANDATE" \
+E2E_REVIEWER_BOND="$REVIEWER_BOND" E2E_ANVIL_URL="$RPC" E2E_DAO="$DAO" E2E_MANDATE="$MANDATE" \
   E2E_MANAGER="$MANAGER" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" E2E_CONTRIBUTOR="$CONTRIBUTOR" \
   node_modules/.bin/playwright test tests/e2e/launchpad-work.spec.ts --project=smoke --reporter=list "$@"

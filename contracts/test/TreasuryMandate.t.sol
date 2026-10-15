@@ -44,7 +44,7 @@ contract TreasuryMandateTest is VotingFixture {
         currency.approve(address(factory), 1000e18);
         vm.prank(address(dao));
         mandate = factory.create(
-            address(currency), 1000e18, 300e18, 100e18, 50e18, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 2
+            address(currency), 1000e18, 300e18, 100e18, 50e18, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 2, 0
         );
     }
 
@@ -99,7 +99,7 @@ contract TreasuryMandateTest is VotingFixture {
         currency.mint(address(this), 1000e18);
         currency.approve(address(ledger.mandateFactory()), 1000e18);
         TreasuryMandate foreign = ledger.mandateFactory()
-            .create(address(currency), 1000e18, 300e18, 0, 0, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1);
+            .create(address(currency), 1000e18, 300e18, 0, 0, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1, 0);
         assertFalse(ledger.boundedAction(0, address(foreign), 0, data));
     }
 

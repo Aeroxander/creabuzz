@@ -16,6 +16,7 @@ import {
   TOPIC_CLAIM_SUBMITTED,
   TOPIC_MANDATE_CREATED,
   TOPIC_PROJECT_APPROVED,
+  TOPIC_VERIFIER_ACCEPTED,
   addressTopic,
   decodeAddress,
   decodeBool,
@@ -24,6 +25,7 @@ import {
   decodeMandateCreated,
   decodeProject,
   decodeProjectApproved,
+  decodeVerifier,
   decodeWord,
   encodeCall0,
   encodeCallId,
@@ -34,6 +36,7 @@ import { encodeFunctionData } from "./evmAbi.ts";
 export const MAX_MANDATES = 8;
 export const MAX_PROJECTS = 50;
 export const MAX_CLAIMS = 100;
+export const MAX_REVIEWERS = 32;
 
 export interface WorkChain {
   /** An `eth_call`'s raw hex answer. */
@@ -53,6 +56,12 @@ export interface ProjectView {
   record: ProjectRecord;
 }
 
+/** One person on a mandate's reviewer panel, and the bond they hold (null when it could not be read). */
+export interface ReviewerView {
+  address: string;
+  stake: bigint | null;
+}
+
 export interface MandateView {
   address: string;
   created: MandateCreated;
@@ -69,6 +78,12 @@ export interface MandateView {
   walletIsReviewer: boolean;
   /** Claim ids the connected wallet already gave a verdict on. */
   walletAttested: string[];
+  /** The bond each reviewer must hold to judge claims, or null when none is asked. */
+  bond: { token: string; minBond: bigint } | null;
+  /** The reviewer panel, as accepted when the mandate was made. */
+  reviewers: ReviewerView[];
+  /** The bond the connected wallet holds as a reviewer (0 when none, or no wallet). */
+  walletStake: bigint;
   /** The currency's symbol and decimals, read once; null when the mandate moves no currency. */
   currency: { symbol: string; decimals: number } | null;
   truncated: boolean;
@@ -111,6 +126,63 @@ async function readCurrency(
     // Keep the neutral word.
   }
   return { symbol, decimals };
+}
+
+/** The bond a panel asks of its reviewers; a panel made before bonds existed has no such functions and asks none. */
+async function readBond(
+  chain: WorkChain,
+  verifiers: string,
+): Promise<{ token: string; minBond: bigint } | null> {
+  try {
+    const token = decodeAddress(
+      await chain.call(verifiers, encodeCall0(SIGNATURES.bondToken)),
+    );
+    if (/^0x0+$/.test(token)) return null; // bonding is off
+    const minBond = decodeWord(
+      await chain.call(verifiers, encodeCall0(SIGNATURES.minBond)),
+    );
+    return { token, minBond };
+  } catch {
+    return null;
+  }
+}
+
+/** The panel and each member's bond, bounded; a bond that cannot be read is reported as unknown, never as zero. */
+async function readReviewers(
+  chain: WorkChain,
+  verifiers: string,
+): Promise<ReviewerView[]> {
+  let logs: readonly unknown[] = [];
+  try {
+    logs = await chain.logs({
+      address: verifiers,
+      topics: [TOPIC_VERIFIER_ACCEPTED],
+    });
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const addresses: string[] = [];
+  for (const log of logs as { topics?: string[] }[]) {
+    const topic = log.topics?.[1];
+    if (!topic) continue;
+    const address = decodeAddress(topic);
+    if (seen.has(address.toLowerCase())) continue;
+    seen.add(address.toLowerCase());
+    addresses.push(address);
+  }
+  return Promise.all(
+    addresses.slice(0, MAX_REVIEWERS).map(async (address) => {
+      try {
+        const { stake } = decodeVerifier(
+          await chain.call(verifiers, encodeIsReviewer(address)),
+        );
+        return { address, stake };
+      } catch {
+        return { address, stake: null };
+      }
+    }),
+  );
 }
 
 async function readMandate(
@@ -226,7 +298,16 @@ async function readMandate(
   const walletIsReviewer = wallet
     ? decodeBool(await chain.call(verifiersAddress, encodeIsReviewer(wallet)))
     : false;
+  const [bond, reviewers] = await Promise.all([
+    readBond(chain, verifiersAddress),
+    readReviewers(chain, verifiersAddress),
+  ]);
+  const walletStake =
+    reviewers.find(
+      (r) => wallet && r.address.toLowerCase() === wallet.toLowerCase(),
+    )?.stake ?? 0n;
   const moves =
+    bond !== null ||
     created.budget > 0n ||
     claims.some((c) => c.record.amount > 0n || c.record.stake > 0n);
   return {
@@ -243,6 +324,9 @@ async function readMandate(
     claims,
     walletIsReviewer,
     walletAttested,
+    bond,
+    reviewers,
+    walletStake,
     currency: moves ? await readCurrency(chain, created.currency) : null,
     truncated,
   };

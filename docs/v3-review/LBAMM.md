@@ -150,3 +150,13 @@ holding a badge, such as our `MilestoneBadge` (recipe 14), a DAO-curated list of
 sharing with the hook's builder (recipe 24: 0.4% to LPs, 0.1% to the developer in the example). The AppToken cookbook has
 token-layer vesting (recipe 12), task-gated use (recipe 2) and backed tokens redeemable for ETH (recipe 20). Nothing in
 either cookbook covers reviewer stakes or bonds, sell-rate caps, or a "pair token".
+
+**What is on Sepolia (read-only check of the public node, 2026-10-15).** Present: Uniswap's CCA factory
+(`0x000000001F26a0044BaA66024e7b6599c61963F8`), Permit2, the Majeur Summoner and SafeSummoner at their canonical addresses (not Tribute or
+ShareSale), Circle's USDC (`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`), Limit Break's validator (both the address on the V2 page and the one
+in the overview) and TokenMaster router, and our own passkey-account factory. Not there, and ours to deploy: our patched Majeur summoner and
+Shares implementation (the lock guard is ours) and the launch kit. Not there and not ours to deploy: LBAMM, which the registry lists as
+not deployed and whose README rules out live-network use. So a hosted Sepolia test can run a whole launch, sale, milestone and paid-work story without
+a market, and LBAMM stays on a local fork (allowed) until Limit Break publishes or permits a deployment. Forge's fork test already reads
+`SEPOLIA_RPC_URL` (`contracts/foundry.toml`): keep the URL in `.env`, never in the repo.
+

@@ -6,6 +6,7 @@ import {
   TOPIC_CLAIM_SUBMITTED,
   TOPIC_MANDATE_CREATED,
   TOPIC_PROJECT_APPROVED,
+  TOPIC_VERIFIER_ACCEPTED,
   addressTopic,
   encodeCall0,
   encodeCallId,
@@ -26,12 +27,13 @@ const CURRENCY = "0x00000000000000000000000000000000000000cc";
 const DAVE = "0x00000000000000000000000000000000000000da";
 const BOB = "0x0000000000000000000000000000000000000b0b";
 const ALICE = "0x000000000000000000000000000000000000a11c";
+const ERIN = "0x00000000000000000000000000000000000000ee";
 const PROJECT = idWord("docs");
 
 const key = (to, data) => `${to.toLowerCase()}:${data.toLowerCase()}`;
 
 /** A chain with one mandate, one project and `claims` claims, each described by `{ id, status, project, approvals }`. */
-function chain(claims, over = {}) {
+function chain(claims, over = {}, bond = null) {
   const answers = new Map();
   const set = (to, data, value) => answers.set(key(to, data), value);
   set(DAO, encodeCall0(SIGNATURES.policy), words(POLICY));
@@ -119,6 +121,27 @@ function chain(claims, over = {}) {
       })),
     ],
   ]);
+  // A panel that asks for a bond: the currency and least stake, and each reviewer's stake.
+  if (bond) {
+    set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(CURRENCY));
+    set(VERIFIERS, encodeCall0(SIGNATURES.minBond), words(bond.min));
+    set(
+      CURRENCY,
+      encodeCall0("symbol()"),
+      `0x${word(32)}${word(4)}${"55534443".padEnd(64, "0")}`,
+    );
+    logs.set(
+      key(VERIFIERS, TOPIC_VERIFIER_ACCEPTED),
+      bond.reviewers.map((r) => ({
+        topics: [TOPIC_VERIFIER_ACCEPTED, addressTopic(r.address)],
+        data: words(0),
+      })),
+    );
+    for (const r of bond.reviewers) {
+      if (r.unreadable) continue;
+      set(VERIFIERS, encodeIsReviewer(r.address), words(1, r.stake, 0, 0));
+    }
+  }
   const calls = [];
   return {
     calls,
@@ -253,4 +276,54 @@ test("a read that fails fails loudly: nothing is shown as empty when it could no
     ),
     /rpc down/,
   );
+});
+
+test("a panel that asks for a bond reads as the bond, the reviewers and what each holds", async () => {
+  const read = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        reviewers: [
+          { address: ALICE, stake: 50_000_000 },
+          { address: DAVE, stake: 20_000_000 },
+          { address: ERIN, stake: 0, unreadable: true },
+        ],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  const [mandate] = read.mandates;
+  assert.deepEqual(mandate.bond, { token: CURRENCY, minBond: 50_000_000n });
+  assert.deepEqual(
+    mandate.reviewers.map((r) => [r.address, r.stake]),
+    [
+      [ALICE, 50_000_000n],
+      [DAVE, 20_000_000n],
+      // A bond that could not be read is unknown, never zero.
+      [ERIN, null],
+    ],
+  );
+  assert.equal(mandate.walletStake, 50_000_000n);
+  // A bonded panel moves currency, so its currency is read for the amounts.
+  assert.deepEqual(mandate.currency, { symbol: "USDC", decimals: 6 });
+});
+
+test("a panel with no bond, or made before bonds existed, asks for none and still lists nobody wrongly", async () => {
+  const read = await readWork(chain([]), DAO, ALICE);
+  const [mandate] = read.mandates;
+  assert.equal(mandate.bond, null);
+  assert.deepEqual(mandate.reviewers, []);
+  assert.equal(mandate.walletStake, 0n);
+});
+
+test("a wallet that is not on the panel holds no bond", async () => {
+  const read = await readWork(
+    chain([], {}, { min: 50, reviewers: [{ address: DAVE, stake: 70 }] }),
+    DAO,
+    BOB,
+  );
+  assert.equal(read.mandates[0].walletStake, 0n);
 });

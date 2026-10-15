@@ -31,9 +31,11 @@ import { checksumAddress } from "../../src/features/identity/lib/wallet-proof";
  *   - the founder sets up a sale in the wizard and launches it into its own DAO with one button;
  *   - the capital contributor bids through the bid dialog, the sale ends and graduates, the raise goes to the DAO's
  *     treasury, the founder lets the backer into the backers room, and the backer claims the Shares their money bought;
- *   - the DAO, whose people are the founder and the capital contributor, votes a work budget and a project;
- *   - the labor contributor files a claim for money, the manager takes it on, the two reviewers approve it, and after the
- *     challenge window the labor contributor is paid from the treasury, with their deposit back.
+ *   - the DAO, whose people are the founder and the capital contributor, votes a work budget and a project; the panel is
+ *     the capital contributor alone (the founder holds locked team Shares, so the contract refuses them as a reviewer),
+ *     and the panel asks a bond;
+ *   - the labor contributor files a claim for money, the manager takes it on, the reviewer posts the bond and approves it,
+ *     and after the challenge window the labor contributor is paid from the treasury, with their deposit back.
  *
  * What is real: the server and its database, every signed request and WebSocket, the chain and its contracts, every
  * transaction. What is not: the passkey (a passkey account needs a Kernel and a bundler on the chain, which a dev chain
@@ -476,15 +478,19 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await founder.page.getByTestId("decision-kind-budget").click();
   await founder.page.getByTestId("budget-money").fill("20000");
   await founder.page.getByTestId("budget-money-cap").fill("10000");
+  // The founder holds team Shares a milestone lock holds back, so the contract would refuse them on the panel: the
+  // outside backer is the reviewer, and the panel asks them for a real bond.
   const reviewerPicker = founder.page.getByTestId("budget-reviewers-people");
-  for (const person of [capital, founder]) {
-    await expect(
-      reviewerPicker.locator("option", { hasText: person.name }),
-    ).toHaveCount(1, { timeout: 30_000 });
-    await reviewerPicker.selectOption(person.wallet.address.toLowerCase());
-  }
+  await expect(
+    reviewerPicker.locator("option", { hasText: capital.name }),
+  ).toHaveCount(1, { timeout: 30_000 });
+  await reviewerPicker.selectOption(capital.wallet.address.toLowerCase());
+  await founder.page.getByTestId("budget-bond").fill("100");
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
-    "2 reviewers, 2 must agree on each claim",
+    "1 reviewer, 1 must agree on each claim",
+  );
+  await expect(founder.page.getByTestId("decision-draft")).toContainText(
+    "Each reviewer posts a bond of 100",
   );
   await founder.page.getByTestId("decision-draft-submit").click();
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
@@ -542,20 +548,31 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   say("the labor contributor filed a claim for 4,000");
 
-  // ── The manager takes it on; the reviewers, the founder and the capital contributor, each approve ────────
+  // ── The manager takes it on; the reviewer, the capital contributor, posts their bond and approves ────────
   await open(founder, "Work");
   await founder.page.getByTestId("work-bind").click();
   await expect(founder.page.getByTestId("work-claim-next")).toContainText(
-    "0 of 2 approvals",
+    "0 of 1 approvals",
     { timeout: 60_000 },
   );
-  for (const reviewer of [founder, capital]) {
-    await open(reviewer, "Work");
-    await reviewer.page.getByTestId("work-approve").click();
-    await expect(
-      reviewer.page.getByTestId("work-claim-next"),
-    ).not.toContainText("0 of 2 approvals", { timeout: 60_000 });
-  }
+  await open(capital, "Work");
+  await expect(capital.page.getByTestId("work-bond")).toContainText("100");
+  // Nothing to judge with until the bond is in; posting it is an approval and then the bond, from their own wallet.
+  await expect(capital.page.getByTestId("work-approve")).toHaveCount(0);
+  const capitalBefore = await dollarsOf(capital.wallet.address);
+  await capital.page.getByTestId("work-post-bond").click();
+  await expect(capital.page.getByTestId("work-bond-owed")).toHaveCount(0, {
+    timeout: 90_000,
+  });
+  expect(capitalBefore - (await dollarsOf(capital.wallet.address))).toBe(
+    dollars(100),
+  );
+  say("the reviewer posted their bond of 100");
+  await capital.page.getByTestId("work-approve").click();
+  await expect(capital.page.getByTestId("work-claim-next")).not.toContainText(
+    "0 of 1 approvals",
+    { timeout: 60_000 },
+  );
   await open(founder, "Work");
   await founder.page.getByTestId("work-settle").click();
   await expect(founder.page.getByTestId("work-claim-status")).toContainText(

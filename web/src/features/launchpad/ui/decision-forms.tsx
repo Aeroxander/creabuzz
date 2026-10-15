@@ -176,6 +176,7 @@ export function WorkBudgetForm({
   const [open, setOpen] = useState("90");
   const [reviewers, setReviewers] = useState("");
   const [quorum, setQuorum] = useState("");
+  const [bond, setBond] = useState("");
   const dirty = [
     shareBudget,
     shareCap,
@@ -183,6 +184,7 @@ export function WorkBudgetForm({
     moneyCap,
     reviewers,
     quorum,
+    bond,
   ].some((v) => v !== "");
 
   const result = useMemo<DraftResult>(
@@ -213,10 +215,23 @@ export function WorkBudgetForm({
           quorum: quorum.trim()
             ? Number(quorum)
             : Math.floor(list.length / 2) + 1,
+          reviewerBond: bond.trim()
+            ? parseUnits(bond, decimals, "reviewerBond", "The bond")
+            : 0n,
           now: ctx.chainTime,
         });
       }),
-    [ctx, shareBudget, shareCap, money, moneyCap, open, reviewers, quorum],
+    [
+      ctx,
+      shareBudget,
+      shareCap,
+      money,
+      moneyCap,
+      open,
+      reviewers,
+      quorum,
+      bond,
+    ],
   );
 
   return (
@@ -274,7 +289,7 @@ export function WorkBudgetForm({
         value={open}
       />
       <TextAreaField
-        hint="People who judge claims. Choose people other than the ones who will claim."
+        hint="People who judge claims. Choose people other than the ones who will claim; team members whose Shares are locked cannot be reviewers."
         after={
           <PeoplePicker
             onPick={(address) =>
@@ -303,6 +318,17 @@ export function WorkBudgetForm({
         testId="budget-quorum"
         value={quorum}
       />
+      {ctx.currencyDecimals !== null ? (
+        <TextField
+          hint="Optional. Each reviewer posts this, in the same currency as the money, before judging a claim. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
+          inputMode="decimal"
+          label="Bond each reviewer must post"
+          onChange={setBond}
+          placeholder="0"
+          testId="budget-bond"
+          value={bond}
+        />
+      ) : null}
       <DraftPanel
         blocked={blocked}
         busy={busy}

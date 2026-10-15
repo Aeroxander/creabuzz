@@ -25,7 +25,7 @@ export const ACTION_SIGNATURES = {
   batchCalls: "batchCalls((address,uint256,bytes)[])",
   approve: "approve(address,uint256)",
   createMandate:
-    "create(address,uint128,uint128,uint128,uint128,uint64,address[],uint256)",
+    "create(address,uint128,uint128,uint128,uint128,uint64,address[],uint256,uint128)",
   approveProject:
     "approveProject(bytes32,address,uint128,uint128,uint64,bytes32)",
   award: "awardContribution(address,bytes32,uint96,bool)",
@@ -133,6 +133,11 @@ export interface MandateInput {
   expiresAt: number;
   reviewers: readonly string[];
   quorum: number;
+  /**
+   * The bond, in the currency's base units, each reviewer must post before they may judge a claim (0 for none). It is
+   * paid in the claim's own currency, never the project's token, and the DAO can take it after a disputed approval.
+   */
+  reviewerBond: bigint;
   /** Unix seconds: "now" for the expiry check. */
   now: number;
 }
@@ -169,6 +174,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
     [input.cap, "cap"],
     [input.shareBudget, "shareBudget"],
     [input.shareCap, "shareCap"],
+    [input.reviewerBond, "reviewerBond"],
   ] as const) {
     if (v > U128_MAX) fail(field, "That amount is too large.");
   }
@@ -189,6 +195,8 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
     input.quorum > reviewers.length
   )
     fail("quorum", `How many reviewers must agree: 1 to ${reviewers.length}.`);
+  if (input.reviewerBond < 0n)
+    fail("reviewerBond", "A reviewer's bond cannot be negative.");
 
   const create = encodeFunctionData(
     ACTION_SIGNATURES.createMandate,
@@ -201,6 +209,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
       "uint64",
       { array: "address" },
       "uint256",
+      "uint128",
     ],
     [
       currency,
@@ -211,6 +220,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
       BigInt(input.expiresAt),
       reviewers,
       BigInt(input.quorum),
+      input.reviewerBond,
     ],
   );
   const lines = [
@@ -226,6 +236,9 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
       : []),
     `Open until ${new Date(input.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
     `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${input.quorum} must agree on each claim`,
+    input.reviewerBond > 0n
+      ? `Each reviewer posts a bond of ${formatUnits(input.reviewerBond, input.currencyDecimals)} before judging a claim`
+      : "Reviewers post no bond",
   ];
   const base = {
     lane: "unrestricted" as const,
@@ -480,20 +493,40 @@ function describeCall(
   try {
     if (sel === selectorOfSig("createMandate")) {
       if (ctx.factory && !same(call.to, ctx.factory)) return null;
-      const [, budget, cap, shareBudget, shareCap, expires, reviewers, quorum] =
-        decodeParameters(
-          [
-            "address",
-            "uint128",
-            "uint128",
-            "uint128",
-            "uint128",
-            "uint64",
-            { array: "address" },
-            "uint256",
-          ],
-          args,
-        ) as [string, bigint, bigint, bigint, bigint, bigint, string[], bigint];
+      const [
+        ,
+        budget,
+        cap,
+        shareBudget,
+        shareCap,
+        expires,
+        reviewers,
+        quorum,
+        reviewerBond,
+      ] = decodeParameters(
+        [
+          "address",
+          "uint128",
+          "uint128",
+          "uint128",
+          "uint128",
+          "uint64",
+          { array: "address" },
+          "uint256",
+          "uint128",
+        ],
+        args,
+      ) as [
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        string[],
+        bigint,
+        bigint,
+      ];
       return {
         kind: "work-budget",
         title: "Set aside a work budget",
@@ -510,6 +543,9 @@ function describeCall(
             : []),
           `Open until ${date(expires)}`,
           `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${quorum} must agree on each claim`,
+          reviewerBond > 0n
+            ? `Each reviewer posts a bond of ${money(reviewerBond, ctx)} before judging a claim`
+            : "Reviewers post no bond",
         ],
       };
     }

@@ -13,6 +13,11 @@ import {
   decodeProjectApproved,
   encodeAttest,
   encodeBind,
+  encodeBond,
+  encodeCurrencyApprove,
+  bondShortfall,
+  decodeVerifier,
+  TOPIC_VERIFIER_ACCEPTED,
   encodeCallId,
   encodeIsReviewer,
   encodeSetCheck,
@@ -254,4 +259,45 @@ test("a claim that asks to be paid carries its amount and stake, as cast encodes
       ),
     /negative/,
   );
+});
+
+test("a reviewer's bond calls equal what cast encodes, and the topic is the one cast derives", () => {
+  assert.equal(
+    encodeBond(50_000_000n),
+    "0x9940686e0000000000000000000000000000000000000000000000000000000002faf080",
+  );
+  assert.equal(
+    encodeCurrencyApprove(
+      "0x00000000000000000000000000000000000000e1",
+      50_000_000n,
+    ),
+    "0x095ea7b300000000000000000000000000000000000000000000000000000000000000e10000000000000000000000000000000000000000000000000000000002faf080",
+  );
+  assert.equal(
+    TOPIC_VERIFIER_ACCEPTED,
+    "0x9dd55d8f86034e4277820777f5835b19a780ee2365d14a9371446b7d8c383314",
+  );
+  assert.throws(() => encodeBond(0n));
+  assert.throws(() => encodeCurrencyApprove("0x12", 1n));
+});
+
+test("what a reviewer still owes is the bond less what they hold, and nothing when none is asked", () => {
+  assert.equal(bondShortfall(null, 0n), 0n);
+  assert.equal(bondShortfall({ minBond: 50n }, 0n), 50n);
+  assert.equal(bondShortfall({ minBond: 50n }, 20n), 30n);
+  assert.equal(bondShortfall({ minBond: 50n }, 50n), 0n);
+  assert.equal(bondShortfall({ minBond: 50n }, 80n), 0n);
+});
+
+test("verifiers(address) reads as whether they are on the panel and the bond they hold", () => {
+  const w = (v) => BigInt(v).toString(16).padStart(64, "0");
+  assert.deepEqual(decodeVerifier(`0x${w(1)}${w(50)}${w(0)}${w(0)}`), {
+    active: true,
+    stake: 50n,
+  });
+  assert.deepEqual(decodeVerifier(`0x${w(0)}${w(0)}${w(0)}${w(0)}`), {
+    active: false,
+    stake: 0n,
+  });
+  assert.deepEqual(decodeVerifier("0x"), { active: false, stake: 0n });
 });
