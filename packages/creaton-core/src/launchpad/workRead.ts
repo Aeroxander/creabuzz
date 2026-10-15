@@ -74,6 +74,8 @@ export interface MandateView {
   challengeWindow: number;
   projects: ProjectView[];
   claims: ClaimView[];
+  /** This is the panel the DAO named at launch to judge its team's milestones: it holds no money and awards no Shares. */
+  isMilestonePanel: boolean;
   /** The connected wallet is on this mandate's reviewer panel. */
   walletIsReviewer: boolean;
   /** Claim ids the connected wallet already gave a verdict on. */
@@ -99,6 +101,12 @@ export interface MandateView {
 
 export interface WorkSnapshot {
   dao: string;
+  /**
+   * The mandate the DAO named, when it was born, as the panel that judges the milestones its team's Shares are locked
+   * behind; null when it named none (the milestone lock then accepts any mandate the DAO made). It is one of
+   * `mandates` when it could be read.
+   */
+  milestonePanel: string | null;
   /** The chain's own clock when this was read. */
   chainTime: number;
   mandates: MandateView[];
@@ -335,6 +343,7 @@ async function readMandate(
     challengeWindow: number(windowHex),
     projects,
     claims,
+    isMilestonePanel: false, // `readWork` knows which one the DAO named
     walletIsReviewer,
     walletAttested,
     bond,
@@ -346,6 +355,25 @@ async function readMandate(
 }
 
 /** A DAO's mandates and everything under them. `wallet` is the connected account, if any. */
+/** The mandate the DAO named as its milestone panel, or null: a factory made before panels existed has no such function. */
+async function readMilestonePanel(
+  chain: WorkChain,
+  factory: string,
+  dao: string,
+): Promise<string | null> {
+  try {
+    const panel = decodeAddress(
+      await chain.call(
+        factory,
+        encodeFunctionData(SIGNATURES.milestoneMandate, ["address"], [dao]),
+      ),
+    );
+    return /^0x0+$/.test(panel) ? null : panel.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 export async function readWork(
   chain: WorkChain,
   dao: string,
@@ -366,11 +394,25 @@ export async function readWork(
     const decoded = decodeMandateCreated(log as never);
     return decoded ? [decoded] : [];
   });
-  const mandates = await Promise.all(
-    created.slice(-MAX_MANDATES).map((c) => readMandate(chain, c, wallet)),
-  );
+  const milestonePanel = await readMilestonePanel(chain, factory, dao);
+  // The panel is read whatever else was made after it: it is the one that matters for the team's Shares.
+  const recent = created.slice(-MAX_MANDATES);
+  const panelCreated = milestonePanel
+    ? created.find((c) => c.mandate.toLowerCase() === milestonePanel)
+    : undefined;
+  const wanted =
+    panelCreated && !recent.includes(panelCreated)
+      ? [panelCreated, ...recent.slice(1)]
+      : recent;
+  const mandates = (
+    await Promise.all(wanted.map((c) => readMandate(chain, c, wallet)))
+  ).map((m) => ({
+    ...m,
+    isMilestonePanel: m.address.toLowerCase() === milestonePanel,
+  }));
   return {
     dao,
+    milestonePanel,
     chainTime,
     mandates,
     truncated:

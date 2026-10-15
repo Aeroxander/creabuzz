@@ -238,6 +238,7 @@ test("a DAO with no mandates, and a claim nobody can read, are quiet rather than
   const empty = await readWork({ ...none, logs: async () => [] }, DAO, null);
   assert.deepEqual(empty, {
     dao: DAO,
+    milestonePanel: null,
     chainTime: 2_000_000_000,
     mandates: [],
     truncated: false,
@@ -367,4 +368,39 @@ test("a wallet that is not on the panel holds no bond", async () => {
     BOB,
   );
   assert.equal(read.mandates[0].walletStake, 0n);
+});
+
+test("the mandate a DAO named as its milestone panel is read as that, and a factory that has no such thing names none", async () => {
+  const base = chain([]);
+  // A factory made before panels existed has no such function: the fake chain answers nothing, and that is no panel.
+  const before = await readWork(base, DAO, null);
+  assert.equal(before.milestonePanel, null);
+  // A factory that remembers the DAO's panel.
+  const named = {
+    ...base,
+    call: async (to, data) =>
+      to === FACTORY &&
+      data ===
+        encodeFunctionData(SIGNATURES.milestoneMandate, ["address"], [DAO])
+        ? words(MANDATE)
+        : base.call(to, data),
+  };
+  const read = await readWork(named, DAO, null);
+  assert.equal(read.milestonePanel, MANDATE.toLowerCase());
+  assert.ok(
+    read.mandates.some(
+      (m) => m.address.toLowerCase() === MANDATE.toLowerCase(),
+    ),
+  );
+  // A zero answer is no panel.
+  const zero = {
+    ...base,
+    call: async (to, data) =>
+      to === FACTORY &&
+      data ===
+        encodeFunctionData(SIGNATURES.milestoneMandate, ["address"], [DAO])
+        ? words(0)
+        : base.call(to, data),
+  };
+  assert.equal((await readWork(zero, DAO, null)).milestonePanel, null);
 });

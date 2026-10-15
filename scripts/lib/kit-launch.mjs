@@ -3,8 +3,9 @@
 //
 // ⚠️  DEV ONLY. Used by the throwaway-world e2e scripts; nothing here signs or sends.
 //
-//   node --experimental-strip-types scripts/lib/kit-launch.mjs plan   <rpc> <kit> <launcher> <currency> <startBlock>
-//       prints {"to","data"} for `cast send`.
+//   node --experimental-strip-types scripts/lib/kit-launch.mjs plan   <rpc> <kit> <launcher> <currency> <startBlock> <reviewers> <quorum> [bond]
+//       prints {"to","data"} for `cast send`. `reviewers` is a comma-separated list of the wallets that judge the
+//       team's milestones (named in the launch itself); `bond` is whole units of the sale currency, 6 decimals.
 //   node --experimental-strip-types scripts/lib/kit-launch.mjs decode <kit> <receipt.json>
 //       prints {"dao","shares","executor","auction","lock","launcher"} from the receipt's Launched event.
 
@@ -37,7 +38,7 @@ async function ethCall(rpc, to, data) {
 }
 
 if (mode === "plan") {
-  const [rpc, kit, launcher, currency, start] = args;
+  const [rpc, kit, launcher, currency, start, reviewers, quorum, bond] = args;
   const startBlock = Number(start);
   // A 200M-Share sale of a 1B supply in the dev USDC ($0.01 a Share, a $300,000 threshold); the team's 20% is held
   // back by two milestones, worded exactly as the project that judges each will word its acceptance check.
@@ -62,7 +63,16 @@ if (mode === "plan") {
       ],
     },
   };
-  const plan = planDaoLaunch(daoLaunchInputsFromRecord(record, launcher));
+  const now = Math.floor(Date.now() / 1000);
+  const panel = {
+    reviewers: (reviewers ?? "").split(",").filter(Boolean),
+    quorum: Number(quorum ?? "1"),
+    bond: bond ? BigInt(bond) * 10n ** 6n : 0n,
+    bondToken: "",
+    endsAt: now + 730 * 86_400,
+    now,
+  };
+  const plan = planDaoLaunch(daoLaunchInputsFromRecord(record, launcher, { panel }));
   const executor = `0x${(await ethCall(rpc, kit, encodeKitPredictExecutor(launcher, plan.salt))).slice(-40)}`;
   console.log(JSON.stringify({ to: kit, data: encodeKitLaunch(plan, executor) }));
 } else if (mode === "decode") {

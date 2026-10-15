@@ -106,7 +106,8 @@ step "checking what the chain now holds"
 [[ "$(lower "$(cast call "$KIT" 'summoner()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SUMMONER")" ]] || fail "the kit does not name this summoner"
 [[ "$(lower "$(cast call "$KIT" 'factory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$CCA_FACTORY")" ]] || fail "the kit does not name the auction factory"
 [[ "$(lower "$(cast call "$KIT" 'sharesImplementation()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SHARES_IMPL")" ]] || fail "the kit does not name the Shares implementation"
-echo "  ✓ the kit at $KIT names the summoner, the auction factory and the Shares implementation it was given"
+[[ "$(lower "$(cast call "$KIT" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" ]] || fail "the kit does not name the summoner's work budget factory"
+echo "  ✓ the kit at $KIT names the summoner, the auction factory, the Shares implementation and the work budget factory it was given"
 
 if [[ "$MODE" == "rehearse" ]]; then
   step "rehearsal passed. To deploy for real: put SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY in .env and run with --broadcast"

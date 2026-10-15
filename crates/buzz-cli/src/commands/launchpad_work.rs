@@ -190,6 +190,10 @@ pub struct ProjectArgs {
     /// The acceptance check in words; its keccak256 is used
     #[arg(long)]
     pub check_text: Option<String>,
+    /// A project in the DAO's milestone panel holds nothing: no money, no Shares. It only lets one of the team's
+    /// milestones be judged, against its exact words (--check-text)
+    #[arg(long)]
+    pub milestone: bool,
     /// The proposal nonce (0x + 64 hex); a fresh one is made when omitted
     #[arg(long)]
     pub nonce: Option<String>,
@@ -866,9 +870,10 @@ pub fn cmd_project(args: &ProjectArgs) -> Result<(), CliError> {
         (None, _) => BigUint::from(0u8),
     };
     let shares = units_or_zero(args.shares.as_deref(), 18, 128, "shares")?;
-    if amount == BigUint::from(0u8) && shares == BigUint::from(0u8) {
+    if amount == BigUint::from(0u8) && shares == BigUint::from(0u8) && !args.milestone {
         return Err(CliError::Usage(
-            "a project needs a budget of something: --amount, --shares, or both".into(),
+            "a project needs a budget of something: --amount, --shares, or both (a milestone project, in the milestone panel, holds nothing: say --milestone)"
+                .into(),
         ));
     }
     let expires = expiry(
@@ -1797,6 +1802,44 @@ mod tests {
         same.reviewer_bond = Some("50".into());
         same.reviewer_bond_token = Some("0x3333333333333333333333333333333333333333".into());
         assert!(cmd_mandate(&same).is_ok());
+    }
+
+    #[test]
+    fn a_project_holds_something_unless_it_is_a_milestone_project() {
+        let base = |milestone: bool| ProjectArgs {
+            dao: DAO.into(),
+            mandate: "0x5555555555555555555555555555555555555555".into(),
+            id: "alpha".into(),
+            manager: "0x00000000000000000000000000000000000B0B00".into(),
+            amount: None,
+            decimals: None,
+            shares: None,
+            expires: None,
+            expires_in_days: Some(30),
+            check: None,
+            check_text: Some("alpha shipped".into()),
+            milestone,
+            nonce: None,
+        };
+        assert!(
+            cmd_project(&base(false)).is_err(),
+            "an ordinary project with nothing to hold is refused"
+        );
+        assert!(
+            cmd_project(&base(true)).is_ok(),
+            "a milestone project holds nothing"
+        );
+        // And what it encodes is the call a milestone panel accepts: no money, no Shares.
+        let data = encode_approve_project(
+            &bytes32_arg("alpha", "id").unwrap(),
+            "0x00000000000000000000000000000000000B0B00",
+            &BigUint::from(0u8),
+            &BigUint::from(0u8),
+            1_893_456_000,
+            &abi::keccak256(b"alpha shipped"),
+        )
+        .unwrap();
+        assert_eq!(&hex::encode(&data)[..8], "7eb44f4d");
     }
 
     #[test]

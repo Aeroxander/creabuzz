@@ -8,8 +8,9 @@
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain, nothing else.
 #
 # The founder (the first dev account) launches; the launch gives them the team's 20% of a 1B supply, 40% of it tied to
-# "alpha shipped" and 60% to "mainnet live". The DAO then votes a work budget (reviewers + quorum), a project whose
-# acceptance check is "alpha shipped", and the founder files a claim for it. `world_milestone_paid` runs it to Paid.
+# "alpha shipped" and 60% to "mainnet live". The launch itself names the panel that judges them (two outside reviewers,
+# both must agree). The DAO then votes a project in that panel whose acceptance check is "alpha shipped", and the founder
+# files a claim for it. `world_milestone_paid` runs it to Paid.
 
 # shellcheck source=no-raise-world.sh
 . "$(dirname "${BASH_SOURCE[0]}")/no-raise-world.sh"
@@ -25,7 +26,7 @@ world_launch_with_lock() {
     "$DEPLOYMENTS/dao-launch-kit-31337.json") || fail "no launch kit in the dev chain's manifest"
   local head plan receipt_file
   head=$(cast block-number --rpc-url "$RPC")
-  plan=$(node --experimental-strip-types "$REPO_ROOT/scripts/lib/kit-launch.mjs" plan "$RPC" "$KIT" "$FOUNDER" "$CURRENCY" "$((head + 500))") \
+  plan=$(node --experimental-strip-types "$REPO_ROOT/scripts/lib/kit-launch.mjs" plan "$RPC" "$KIT" "$FOUNDER" "$CURRENCY" "$((head + 500))" "$REVIEWER1,$REVIEWER2" 2) \
     || fail "could not plan the launch"
   receipt_file="$STATE/launch-receipt.json"
   cast send --json --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$(echo "$plan" | jget to)" "$(echo "$plan" | jget data)" >"$receipt_file" \
@@ -48,13 +49,17 @@ world_launch_with_lock() {
   step "dao ${DAO}  lock ${LOCK}"
 }
 
-# The DAO's reviewers' work budget and a project whose acceptance check is the first milestone's words, by two votes.
+# The milestone panel the launch named (two outside reviewers, both must agree) and a project in it whose acceptance check
+# is the first milestone's words. The project holds nothing; one vote approves it.
 world_milestone_project() {
-  world_mandate
+  MANDATE=$(cast call "$FACTORY" "milestoneMandate(address)(address)" "$DAO" --rpc-url "$RPC")
+  [[ "$MANDATE" =~ ^0x[0-9a-fA-F]{40}$ && "$MANDATE" != "0x0000000000000000000000000000000000000000" ]] \
+    || fail "the launch did not name a milestone panel"
+  step "the launch named the milestone panel ${MANDATE}"
   step "the DAO votes a project whose acceptance check is the first milestone's words"
   local intent
   intent=$(as $KEY_FOUNDER work project --dao "$DAO" --mandate "$MANDATE" --id alpha --manager "$MANAGER" \
-    --shares 10 --expires-in-days 30 --check-text "alpha shipped")
+    --milestone --expires-in-days 30 --check-text "alpha shipped")
   [[ "$(echo "$intent" | jget lane)" == "bounded" ]] || fail "a project should take the bounded lane"
   decide "$intent" 90000
 }

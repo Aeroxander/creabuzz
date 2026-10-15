@@ -592,7 +592,8 @@ launch_kit_deployed() {
   got_factory=$(cast call "$address" "factory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]] \
     && [[ "$(lower "$got_factory")" == "$(lower "$CCA_FACTORY_ADDRESS")" ]] \
-    && [[ -n "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]]
+    && [[ -n "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]] \
+    && [[ -n "$(cast call "$address" "mandateFactory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]]
 }
 
 deploy_launch_kit() {

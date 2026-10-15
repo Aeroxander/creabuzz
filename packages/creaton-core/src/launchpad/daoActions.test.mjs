@@ -526,3 +526,33 @@ test("a bond token that is not an address, or a bond with decimals nobody knows,
   assert.ok(quiet.lines.includes("Reviewers post no bond"));
   assert.equal(quiet.data, mandateDecision(mandate()).data);
 });
+
+test("a milestone project holds nothing: only inside the milestone panel may both amounts be zero, and the vote says so", () => {
+  const milestone = {
+    ...baseProject(),
+    id: "milestone-1",
+    amount: 0n,
+    shares: 0n,
+    checkText: "alpha shipped",
+    milestone: true,
+  };
+  const d = projectDecision(milestone);
+  assert.equal(d.lane, "bounded");
+  assert.equal(
+    d.data,
+    "0x7eb44f4d6d696c6573746f6e652d3100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006b49d200584c2cefcd48562da6fb9889be81b5ec58deec77062db839bf9de9f7bbb9aab8",
+  );
+  assert.ok(
+    d.lines.some((l) => /Holds no money and awards no Shares/.test(l)),
+    d.lines.join(" | "),
+  );
+  const read = describeAction(d, { mandates: [MANDATE] });
+  assert.equal(read.kind, "project");
+  assert.ok(read.lines.some((l) => /only lets a milestone be judged/.test(l)));
+  // Anywhere else an empty project is still refused.
+  refused(() => projectDecision({ ...milestone, milestone: false }), "amount");
+  refused(
+    () => projectDecision({ ...milestone, milestone: undefined }),
+    "amount",
+  );
+});

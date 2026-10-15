@@ -154,6 +154,7 @@ const claim = (over = {}, record = {}) => ({
 });
 const work = (...claims) => ({
   dao: DAO,
+  milestonePanel: null,
   chainTime: 1,
   truncated: false,
   mandates: [{ address: MANDATE, claimsAddress: CLAIMS, claims }],
@@ -250,4 +251,44 @@ test("one claim is offered for one milestone only, even when two are worded alik
   const offers = await findUnlockOffers(fakeChain(), view, work(claim()));
   assert.equal(offers.length, 1);
   assert.equal(offers[0].tranche.index, 0);
+});
+
+test("when the DAO named its milestone panel, only that mandate's claims are offered", async () => {
+  const OTHER = "0x00000000000000000000000000000000000000f1";
+  const both = (panel) => ({
+    dao: DAO,
+    milestonePanel: panel,
+    chainTime: 1,
+    truncated: false,
+    mandates: [
+      { address: OTHER, claimsAddress: CLAIMS, claims: [claim()] },
+      {
+        address: MANDATE,
+        claimsAddress: CLAIMS,
+        claims: [claim({ id: `0x${"c2".repeat(32)}` })],
+      },
+    ],
+  });
+  // No panel named: the first mandate with a paid claim will do, as before.
+  const any = await findUnlockOffers(fakeChain(), lockView(), both(null));
+  assert.deepEqual(
+    any.map((o) => o.mandate),
+    [OTHER],
+  );
+  // A panel named: the other mandate's claim is not offered, because the lock would refuse it.
+  const named = await findUnlockOffers(
+    fakeChain(),
+    lockView(),
+    both(MANDATE.toLowerCase()),
+  );
+  assert.deepEqual(
+    named.map((o) => o.mandate),
+    [MANDATE],
+  );
+  // A panel with no paid claim offers nothing, however many claims the others hold.
+  const none = {
+    ...both(MANDATE.toLowerCase()),
+    mandates: [both(null).mandates[0]],
+  };
+  assert.deepEqual(await findUnlockOffers(fakeChain(), lockView(), none), []);
 });

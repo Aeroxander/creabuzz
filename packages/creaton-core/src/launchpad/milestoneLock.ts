@@ -181,6 +181,13 @@ export async function findUnlockOffers(
   for (const tranche of view.tranches) {
     if (tranche.unlocked || tranche.forfeited) continue;
     for (const mandate of work.mandates) {
+      // When the DAO named its milestone panel at launch, the lock honours that mandate and no other.
+      if (
+        work.milestonePanel &&
+        mandate.address.toLowerCase() !== work.milestonePanel
+      ) {
+        continue;
+      }
       let found: UnlockOffer | null = null;
       for (const claim of mandate.claims) {
         const key = `${mandate.address}:${claim.id}`.toLowerCase();

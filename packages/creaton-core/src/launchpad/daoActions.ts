@@ -317,6 +317,11 @@ export interface ProjectInput {
   checkText: string;
   now: number;
   currencyDecimals: number;
+  /**
+   * A project inside the DAO's milestone panel holds no money and awards no Shares: it only lets one of the team's
+   * milestones be judged. Only then may both amounts be zero.
+   */
+  milestone?: boolean;
 }
 
 /** The vote that approves a project inside a work budget the DAO already voted: the lighter vote. */
@@ -329,7 +334,7 @@ export function projectDecision(input: ProjectInput): DecisionDraft {
   } catch {
     return fail("id", "Give the project a short name (up to 32 letters).");
   }
-  if (input.amount === 0n && input.shares === 0n)
+  if (input.amount === 0n && input.shares === 0n && !input.milestone)
     fail("amount", "A project needs some Shares, some money, or both.");
   if (input.amount > U128_MAX || input.shares > U128_MAX)
     fail("amount", "That amount is too large.");
@@ -353,6 +358,11 @@ export function projectDecision(input: ProjectInput): DecisionDraft {
     title: `Approve the project “${idLabel(id)}”`,
     lines: [
       `Managed by ${manager}`,
+      ...(input.amount === 0n && input.shares === 0n
+        ? [
+            "Holds no money and awards no Shares: it only lets a milestone be judged",
+          ]
+        : []),
       ...(input.shares > 0n
         ? [`May award up to ${shares(input.shares)} Shares`]
         : []),
@@ -613,6 +623,11 @@ function describeCall(
         title: `Approve the project “${idLabel(id)}”`,
         lines: [
           `Managed by ${manager}`,
+          ...(projectShares === 0n && amount === 0n
+            ? [
+                "Holds no money and awards no Shares: it only lets a milestone be judged",
+              ]
+            : []),
           ...(projectShares > 0n
             ? [`May award up to ${shares(projectShares)} Shares`]
             : []),

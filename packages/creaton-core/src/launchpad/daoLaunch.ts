@@ -46,6 +46,25 @@ export interface DaoLaunchMilestone {
   percent: number;
 }
 
+/**
+ * Who judges the milestones, named in the launch itself so the backers see them before they buy and no later vote can
+ * swap them for friendlier ones. Required when there are milestones; ignored when there are none.
+ */
+export interface DaoLaunchPanelInput {
+  /** The reviewers' wallets. None may be on the team: a team member cannot judge the team's milestones. */
+  reviewers: string[];
+  /** How many of them must agree on a milestone. */
+  quorum: number;
+  /** The bond each posts before judging, in base units of the bond token (0 for none). */
+  bond: bigint;
+  /** What the bond is paid in; blank is the sale currency, the safest choice. Ignored without a bond. */
+  bondToken: string;
+  /** Unix seconds when the panel ends. It must outlast the last milestone: nothing unlocks once it has ended. */
+  endsAt: number;
+  /** Unix seconds now, for the check that it ends in the future. */
+  now: number;
+}
+
 export interface DaoLaunchInputs {
   name: string;
   symbol: string;
@@ -62,6 +81,8 @@ export interface DaoLaunchInputs {
    * leave out is never locked. Empty locks nothing.
    */
   milestones: DaoLaunchMilestone[];
+  /** The panel that judges the milestones; see {@link DaoLaunchPanelInput}. */
+  panel?: DaoLaunchPanelInput | null;
   /** Whole Shares needed to open a proposal; "0" lets any holder. */
   proposalThreshold: string;
   /** Sale currency; null or "" is the chain's native currency. */
@@ -86,6 +107,18 @@ export class DaoLaunchPlanError extends Error {
   }
 }
 
+/** The panel as the kit takes it. */
+export interface DaoLaunchPanelPlan {
+  reviewers: string[];
+  quorum: number;
+  bond: bigint;
+  /** The bond's token (the sale currency unless one was named); the zero address when there is no bond. */
+  bondToken: string;
+  /** What the panel's claims are paid and staked in: the sale currency. */
+  currency: string;
+  endsAt: number;
+}
+
 export interface DaoLaunchPlan {
   name: string;
   symbol: string;
@@ -100,6 +133,8 @@ export interface DaoLaunchPlan {
   milestoneBps: number[];
   /** The words behind the hashes, for the receipt and the screen. */
   milestones: DaoLaunchMilestone[];
+  /** Who judges them; null exactly when there are no milestones. */
+  panel: DaoLaunchPanelPlan | null;
   daoShares: bigint;
   saleSupply: bigint;
   totalSupply: bigint;
@@ -134,6 +169,80 @@ function percent(value: number, field: string): number {
 /** A launch's salt: stable across retries (so the addresses can be found again) and unique per launch. */
 export function launchSalt(launchId: string): string {
   return `0x${bytesToHex(keccak_256(utf8ToBytes(`creaton.launch:${launchId}`)))}`;
+}
+
+const MAX_REVIEWERS = 32;
+const U128_MAX = (1n << 128n) - 1n;
+const ONE_DAY = 86_400;
+
+/** The panel the kit takes, or null when there are no milestones to judge. Every rule the kit enforces is checked first. */
+function planPanel(
+  panel: DaoLaunchPanelInput | null,
+  context: { milestones: number; team: string[]; saleCurrency: string },
+): DaoLaunchPanelPlan | null {
+  if (context.milestones === 0) return null;
+  if (panel === null || panel.reviewers.length === 0) {
+    return fail("panel", "Name who judges the milestones.");
+  }
+  if (context.saleCurrency === ZERO_ADDRESS) {
+    return fail(
+      "currency",
+      "A launch with milestones sells for a token such as USDC, so the reviewers' bond and claims have something to be paid in.",
+    );
+  }
+  if (panel.reviewers.length > MAX_REVIEWERS) {
+    fail("panel", `Name at most ${MAX_REVIEWERS} reviewers.`);
+  }
+  const reviewers: string[] = [];
+  for (const raw of panel.reviewers) {
+    const reviewer = raw.trim().toLowerCase();
+    if (!ADDRESS_RE.test(reviewer) || reviewer === ZERO_ADDRESS) {
+      fail("panel", `A reviewer's wallet is not an address: ${raw}`);
+    }
+    if (reviewers.includes(reviewer)) {
+      fail("panel", "A reviewer is named twice.");
+    }
+    if (context.team.includes(reviewer)) {
+      fail(
+        "panel",
+        "A team member cannot judge the team's milestones. Name people outside the team.",
+      );
+    }
+    reviewers.push(reviewer);
+  }
+  if (
+    !Number.isInteger(panel.quorum) ||
+    panel.quorum < 1 ||
+    panel.quorum > reviewers.length
+  ) {
+    fail("panel", `How many reviewers must agree: 1 to ${reviewers.length}.`);
+  }
+  if (panel.bond < 0n || panel.bond > U128_MAX) {
+    fail("panel", "That bond is not an amount the contract can hold.");
+  }
+  let bondToken = ZERO_ADDRESS;
+  if (panel.bond > 0n) {
+    const named = panel.bondToken.trim().toLowerCase();
+    if (named !== "" && !ADDRESS_RE.test(named)) {
+      fail("panel", `The bond token is not an address: ${panel.bondToken}`);
+    }
+    bondToken = named === "" ? context.saleCurrency : named;
+  }
+  if (
+    !Number.isSafeInteger(panel.endsAt) ||
+    panel.endsAt < panel.now + ONE_DAY ||
+    panel.endsAt >= 2 ** 63
+  ) {
+    fail("panel", "The panel has to stay open for at least a day.");
+  }
+  return {
+    reviewers,
+    quorum: panel.quorum,
+    bond: panel.bond,
+    bondToken,
+    currency: context.saleCurrency,
+    endsAt: panel.endsAt,
+  };
 }
 
 /**
@@ -249,6 +358,13 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
   if (currencyInput !== "" && !ADDRESS_RE.test(currencyInput)) {
     fail("currency", `The sale currency is not an address: ${inputs.currency}`);
   }
+  const saleCurrency =
+    currencyInput === "" ? ZERO_ADDRESS : currencyInput.toLowerCase();
+  const panel = planPanel(inputs.panel ?? null, {
+    milestones: milestoneChecks.length,
+    team: teamAddresses,
+    saleCurrency,
+  });
   const floorPrice = decimalField(inputs.floorPrice, "floor price");
   if (floorPrice < (1n << 32n) + 1n) {
     fail(
@@ -307,6 +423,7 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
       check: m.check.trim(),
       percent: m.percent,
     })),
+    panel,
     daoShares,
     saleSupply,
     totalSupply: total,
@@ -330,6 +447,12 @@ const PARAMS_TYPE: AbiType = {
     { array: "uint256" }, // teamShares
     { array: "bytes32" }, // milestoneChecks
     { array: "uint16" }, // milestoneBps
+    { array: "address" }, // reviewers
+    "uint256", // reviewQuorum
+    "uint128", // reviewerBond
+    "address", // bondToken
+    "address", // panelCurrency
+    "uint64", // panelExpires
     "uint256", // daoShares
     "uint128", // saleSupply
     "bytes", // auctionConfig
@@ -339,7 +462,7 @@ const PARAMS_TYPE: AbiType = {
 
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
 export const SIGNATURE_KIT_LAUNCH =
-  "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],uint256,uint128,bytes,bytes32))";
+  "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32))";
 export const SIGNATURE_KIT_PREDICT_EXECUTOR =
   "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
@@ -388,6 +511,12 @@ export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
         plan.teamShares,
         plan.milestoneChecks,
         plan.milestoneBps.map(BigInt),
+        plan.panel?.reviewers ?? [],
+        BigInt(plan.panel?.quorum ?? 0),
+        plan.panel?.bond ?? 0n,
+        plan.panel?.bondToken ?? ZERO_ADDRESS,
+        plan.panel?.currency ?? ZERO_ADDRESS,
+        BigInt(plan.panel?.endsAt ?? 0),
         plan.daoShares,
         plan.saleSupply,
         auctionConfig,
@@ -542,7 +671,11 @@ export interface DaoLaunchRecordLike {
 export function daoLaunchInputsFromRecord(
   record: DaoLaunchRecordLike,
   founder: string,
-  options: { proposalThreshold?: string } = {},
+  options: {
+    proposalThreshold?: string;
+    /** Who judges the milestones, when the founder has named them. */
+    panel?: DaoLaunchPanelInput | null;
+  } = {},
 ): DaoLaunchInputs {
   const plan = record.tokenPlan;
   if (plan?.mode !== "dao") {
@@ -591,6 +724,7 @@ export function daoLaunchInputsFromRecord(
     },
     team: team > 0 ? [{ address: founder, percent: 100 }] : [],
     milestones: lockMilestones,
+    panel: options.panel ?? null,
     proposalThreshold: threshold,
     currency: record.currency,
     floorPrice: record.floorPrice ?? "",
@@ -672,6 +806,18 @@ export function daoLaunchReceiptContent(input: {
     daoShares: plan.daoShares.toString(),
     team: plan.team,
     milestones: plan.milestones,
+    // Who judges them, so the launch page can say so without reading the chain first.
+    ...(plan.panel
+      ? {
+          panel: {
+            reviewers: plan.panel.reviewers,
+            quorum: plan.panel.quorum,
+            bond: plan.panel.bond.toString(),
+            bondToken: plan.panel.bond > 0n ? plan.panel.bondToken : null,
+            endsAt: plan.panel.endsAt,
+          },
+        }
+      : {}),
     ragequittable: true,
   };
 }

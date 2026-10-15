@@ -43,6 +43,7 @@ export const SIGNATURES = {
   bind: "fundMilestone(bytes32,bytes32,address)",
   policy: "votingWeight()",
   factory: "mandateFactory()",
+  milestoneMandate: "milestoneMandate(address)",
   bondToken: "bondToken()",
   minBond: "minBond()",
   bond: "bond(uint256)",
