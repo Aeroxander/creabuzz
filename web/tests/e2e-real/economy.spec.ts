@@ -8,6 +8,8 @@ import {
   newKeyWallet,
   walletFromKey,
 } from "../helpers/key-wallet";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 import {
   finalizeEvent,
@@ -73,10 +75,24 @@ const word = (value: string | bigint) =>
     .toLowerCase()
     .padStart(64, "0");
 
-/** Pay a new wallet: gas from the chain's faucet, and dev dollars minted to it (the currency's `mint` is open). */
+/**
+ * How dollars reach a wallet: `mint` on the dev chain, whose currency has an open `mint`; `storage` on a fork of Sepolia,
+ * whose currency is Circle's real USDC and has none, so a balance is written straight into its storage (a mapping at
+ * slot 9, which `scripts/web-sepolia-fork-e2e.sh` checks by reading the balance back through the contract).
+ */
+const FUNDING = process.env.E2E_CURRENCY_FUNDING ?? "mint";
+
+/** Pay a new wallet: gas from the chain's faucet, and dollars (see `FUNDING`). */
 async function fund(address: string, dollars: bigint) {
   await rpc("anvil_setBalance", [address, "0x56bc75e2d63100000"]); // 100 ETH
-  if (dollars > 0n) {
+  if (dollars > 0n && FUNDING === "storage") {
+    const slot = `0x${bytesToHex(keccak_256(hexToBytes(word(address) + word(9n))))}`;
+    await rpc("anvil_setStorageAt", [
+      CURRENCY,
+      slot,
+      `0x${word(dollars * 10n ** 6n)}`,
+    ]);
+  } else if (dollars > 0n) {
     await faucet.request({
       method: "eth_sendTransaction",
       params: [
@@ -174,6 +190,8 @@ async function arrive(
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
   });
+  // A step that cannot be taken says so after a minute, naming what it waited for, not after the whole test budget.
+  context.setDefaultTimeout(60_000);
   const page = await context.newPage();
   const wallet = newKeyWallet();
   await fund(wallet.address, dollars);
@@ -390,11 +408,25 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
 
   // ── Time passes on the chain, and the capital contributor collects the Shares their money bought ──────
   await mineTo(start + 260 + 2);
+  say("the chain is past the claim block");
   await capital.page.goto(daoUrl);
+  say("the capital contributor is on the launch page");
   await capital.page.getByRole("tab", { name: /My bids/ }).click();
+  say("the capital contributor opened My bids");
   // A bid is settled in two steps: exit (which settles what was filled and refunds the rest), then claim.
   const settle = async (button: string) => {
-    await capital.page.getByTestId(button).click();
+    const offered = capital.page.getByTestId(button);
+    // If the step never appears, say what the panel said instead: waiting out the whole test budget tells nothing.
+    await offered.waitFor({ timeout: 60_000 }).catch(async () => {
+      const page = await capital.page
+        .locator("main")
+        .innerText()
+        .catch(() => "(no page)");
+      throw new Error(
+        `${button} was never offered. The page said:\n${page.slice(-2500)}`,
+      );
+    });
+    await offered.click();
     await capital.page.getByTestId("mybids-run").click();
     await expect(capital.page.getByTestId("mybids-done")).toBeVisible({
       timeout: 90_000,

@@ -280,4 +280,9 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   mocked suite 352 pass; real-chain journeys: milestone (CLI and web), no-raise, work (now bonded), paid work, decisions, DAO journey, and the economy run, which first failed because its panel named the founder (a locked team
   member), which is the rule working on a wizard-launched DAO; its panel is now the outside backer alone, posting a 100 bond. Not built: the panel named in the launch, a vote that counts only unlocked Shares when naming the panel,
   reviewer pay, and screens for asking a bond back or slashing one.
-
+- **A Sepolia testnet, rehearsed** (D40, `docs/sepolia-testnet.md`): `scripts/sepolia-deploy.sh` deploys our summoner and the launch kit on top of what Sepolia already has (rehearsal on a fork by default; `--broadcast` needs
+  `SEPOLIA_RPC_URL` and a testnet-only `DEPLOYER_PRIVATE_KEY` in `.env`). Checked: a Forge journey on a fork of the real chain (launch with the real sale factory, Permit2 and Circle's USDC, bids, graduation, claims,
+  ragequit; a bonded review, a milestone unlock and a slash), the computed Shares implementation equals a real DAO's, the rehearsal, and the whole browser economy journey on a fork (`scripts/web-sepolia-fork-e2e.sh`).
+  That last run found a real bug: every event read began at block 0, which a real node refuses past about 50,000 blocks, so **My bids** could not list a bid on Sepolia; reads now fall back to pages and start at the block the kit
+  was deployed (`VITE_HISTORY_FROM_BLOCKS`; 10 unit tests plus 5 on `ethGetLogs`, each guard broken once to see a test fail). The market is off on Sepolia on purpose (D40). Not done: the real deploy and hosting (need you), page-splitting in
+  the CLI and desktop app.

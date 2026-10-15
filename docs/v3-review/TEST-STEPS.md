@@ -430,3 +430,16 @@ vote cannot run: the contract refuses a team member on the panel. Once the budge
 the reviewer sees "Post my bond" and no Approve until they have posted it (an approval, then the bond: two wallet confirmations). Asking the bond back
 (`requestUnbond`, then `withdraw` after 14 days) and the DAO slashing it (`slashReviewer`) are contract functions with no screen yet.
 
+## 4x. A Sepolia testnet (2026-10-15)
+
+```bash
+scripts/sepolia-deploy.sh                       # rehearsal on a local fork of Sepolia: no key, nothing public changes
+cd contracts && forge test --match-contract 'SepoliaLaunchForkTest|DeployLaunchKitTest' --fork-url https://ethereum-sepolia-rpc.publicnode.com -vv
+scripts/web-sepolia-fork-e2e.sh                 # three browsers play a founder, a worker and a backer on the fork, incl. a bonded reviewer
+cd web && node --experimental-strip-types --test src/features/launchpad/chain.test.mjs src/features/launchpad/lib/log-pages.test.mjs
+```
+
+Without a fork URL the Forge fork tests skip rather than fail. By hand, once you have put `SEPOLIA_RPC_URL` and a testnet-only `DEPLOYER_PRIVATE_KEY` in `.env`
+(see `docs/sepolia-testnet.md`): `scripts/sepolia-deploy.sh --broadcast`, build the web app with the settings it prints, host it with the server, and walk the story once:
+make a community, launch a project, back it from a second browser (Circle's faucet gives test USDC), open **My bids**, exit and claim. The market card should say the
+exchange could not be verified and offer nothing.
