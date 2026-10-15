@@ -148,7 +148,8 @@ contract DaoGovernanceJourneyTest is Test {
                     uint64(vm.getBlockTimestamp() + 90 days),
                     reviewers,
                     uint256(2),
-                    uint128(0)
+                    uint128(0),
+                    address(0)
                 )
             )
         );

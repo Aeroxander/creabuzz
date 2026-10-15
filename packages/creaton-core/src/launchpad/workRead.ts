@@ -78,8 +78,16 @@ export interface MandateView {
   walletIsReviewer: boolean;
   /** Claim ids the connected wallet already gave a verdict on. */
   walletAttested: string[];
-  /** The bond each reviewer must hold to judge claims, or null when none is asked. */
-  bond: { token: string; minBond: bigint } | null;
+  /**
+   * The bond each reviewer must hold to judge claims, or null when none is asked. It is paid in `token`, which is the
+   * claim currency unless the vote that made the budget named another; `symbol` and `decimals` are that token's.
+   */
+  bond: {
+    token: string;
+    minBond: bigint;
+    symbol: string;
+    decimals: number;
+  } | null;
   /** The reviewer panel, as accepted when the mandate was made. */
   reviewers: ReviewerView[];
   /** The bond the connected wallet holds as a reviewer (0 when none, or no wallet). */
@@ -132,7 +140,12 @@ async function readCurrency(
 async function readBond(
   chain: WorkChain,
   verifiers: string,
-): Promise<{ token: string; minBond: bigint } | null> {
+): Promise<{
+  token: string;
+  minBond: bigint;
+  symbol: string;
+  decimals: number;
+} | null> {
   try {
     const token = decodeAddress(
       await chain.call(verifiers, encodeCall0(SIGNATURES.bondToken)),
@@ -141,7 +154,7 @@ async function readBond(
     const minBond = decodeWord(
       await chain.call(verifiers, encodeCall0(SIGNATURES.minBond)),
     );
-    return { token, minBond };
+    return { token, minBond, ...(await readCurrency(chain, token)) };
   } catch {
     return null;
   }

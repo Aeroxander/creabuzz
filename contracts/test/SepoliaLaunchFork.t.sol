@@ -252,13 +252,13 @@ contract SepoliaLaunchForkTest is Test {
         withFounder[1] = founder;
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), withFounder, 1, BOND);
+        factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), withFounder, 1, BOND, USDC);
 
         address[] memory panel = new address[](2);
         panel[0] = reviewer;
         panel[1] = reviewer2;
         vm.prank(address(dao));
-        TreasuryMandate mandate = factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), panel, 1, BOND);
+        TreasuryMandate mandate = factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), panel, 1, BOND, USDC);
         VerifierSet verifiers = mandate.verifiers();
         ClaimStake claims = mandate.claims();
         vm.startPrank(address(dao));

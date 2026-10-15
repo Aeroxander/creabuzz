@@ -18,8 +18,9 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// A verifier's stake is a real bond when the owner turns bonding on (`setBond`):
 /// the verifier posts the bond currency themselves, cannot attest while their stake
 /// is under the minimum, can only take it back after an unbonding delay, and loses
-/// it to the owner when slashed. The bond is always the claim's own currency, never
-/// the project's token: a token whose price an insider can set is no deterrent.
+/// it to the owner when slashed. The bond can be any ERC-20 the owner names; the safe
+/// choice is the claim's own currency, because a token whose price an insider can set
+/// is a weak deterrent, but that is the owner's call.
 /// Without `setBond` the set behaves as it always did and nobody has stake.
 contract VerifierSet {
     using SafeERC20 for IERC20;

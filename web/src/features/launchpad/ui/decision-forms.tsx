@@ -162,6 +162,25 @@ interface FormProps {
 
 const reviewerExample = "0x… (one wallet address per line)";
 
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** The decimals of a token the vote names for the reviewers' bond, read from the chain (null while it cannot be). */
+function useTokenDecimals(token: string) {
+  return useQuery({
+    queryKey: ["launchpad", "token-decimals", token.toLowerCase()],
+    enabled: ADDRESS_RE.test(token),
+    queryFn: async () => {
+      const word = decodeWord(
+        await ethCall(getRpcEndpoint(), token, "0x313ce567"),
+      );
+      if (word > 36n) throw new Error("not a token");
+      return Number(word);
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
 export function WorkBudgetForm({
   ctx,
   blocked,
@@ -177,6 +196,15 @@ export function WorkBudgetForm({
   const [reviewers, setReviewers] = useState("");
   const [quorum, setQuorum] = useState("");
   const [bond, setBond] = useState("");
+  // What the bond is paid in: the claim currency when there is one (the safest), the project's own token, or another.
+  const hasCurrency = ctx.currencyDecimals !== null;
+  const [bondIn, setBondIn] = useState<"currency" | "project" | "other">(
+    hasCurrency ? "currency" : "project",
+  );
+  const [bondOther, setBondOther] = useState("");
+  const otherDecimals = useTokenDecimals(
+    bondIn === "other" ? bondOther.trim() : "",
+  );
   const dirty = [
     shareBudget,
     shareCap,
@@ -185,6 +213,7 @@ export function WorkBudgetForm({
     reviewers,
     quorum,
     bond,
+    bondOther,
   ].some((v) => v !== "");
 
   const result = useMemo<DraftResult>(
@@ -192,6 +221,54 @@ export function WorkBudgetForm({
       attempt(() => {
         const decimals = ctx.currencyDecimals ?? 0;
         const list = names(reviewers);
+        // The bond's token, its decimals and how the summary names it. The claim currency needs no words.
+        const bondTerms = () => {
+          if (!bond.trim()) return { reviewerBond: 0n };
+          if (bondIn === "currency") {
+            return {
+              reviewerBond: parseUnits(
+                bond,
+                decimals,
+                "reviewerBond",
+                "The bond",
+              ),
+            };
+          }
+          if (bondIn === "project") {
+            return {
+              reviewerBond: parseUnits(bond, 18, "reviewerBond", "The bond"),
+              reviewerBondToken: ctx.sharesToken,
+              reviewerBondDecimals: 18,
+              reviewerBondLabel: "of the project's own token",
+            };
+          }
+          const token = bondOther.trim();
+          if (!ADDRESS_RE.test(token))
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "Paste the address of the token the bond is paid in.",
+            );
+          if (otherDecimals.isError)
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "That address does not look like a token on this chain.",
+            );
+          if (otherDecimals.data === undefined)
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "Reading that token…",
+            );
+          return {
+            reviewerBond: parseUnits(
+              bond,
+              otherDecimals.data,
+              "reviewerBond",
+              "The bond",
+            ),
+            reviewerBondToken: token,
+            reviewerBondDecimals: otherDecimals.data,
+          };
+        };
         return mandateDecision({
           dao: ctx.dao,
           factory: ctx.factory,
@@ -215,9 +292,7 @@ export function WorkBudgetForm({
           quorum: quorum.trim()
             ? Number(quorum)
             : Math.floor(list.length / 2) + 1,
-          reviewerBond: bond.trim()
-            ? parseUnits(bond, decimals, "reviewerBond", "The bond")
-            : 0n,
+          ...bondTerms(),
           now: ctx.chainTime,
         });
       }),
@@ -231,6 +306,10 @@ export function WorkBudgetForm({
       reviewers,
       quorum,
       bond,
+      bondIn,
+      bondOther,
+      otherDecimals.data,
+      otherDecimals.isError,
     ],
   );
 
@@ -318,16 +397,56 @@ export function WorkBudgetForm({
         testId="budget-quorum"
         value={quorum}
       />
-      {ctx.currencyDecimals !== null ? (
-        <TextField
-          hint="Optional. Each reviewer posts this, in the same currency as the money, before judging a claim. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
-          inputMode="decimal"
-          label="Bond each reviewer must post"
-          onChange={setBond}
-          placeholder="0"
-          testId="budget-bond"
-          value={bond}
-        />
+      <TextField
+        hint="Optional. Each reviewer posts this before judging a claim. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
+        inputMode="decimal"
+        label="Bond each reviewer must post"
+        onChange={setBond}
+        placeholder="0"
+        testId="budget-bond"
+        value={bond}
+      />
+      {bond.trim() ? (
+        <>
+          <SelectField
+            label="Bond paid in"
+            onChange={(next) => setBondIn(next as typeof bondIn)}
+            options={[
+              ...(hasCurrency
+                ? [
+                    {
+                      value: "currency",
+                      label: `${ctx.currencySymbol || "The payment currency"} (recommended)`,
+                    },
+                  ]
+                : []),
+              { value: "project", label: "The project's own token" },
+              { value: "other", label: "Another token" },
+            ]}
+            testId="budget-bond-token"
+            value={bondIn}
+          />
+          {bondIn === "other" ? (
+            <TextField
+              hint="The address of the token on this network."
+              label="Token address"
+              onChange={setBondOther}
+              placeholder="0x…"
+              testId="budget-bond-other"
+              value={bondOther}
+            />
+          ) : null}
+          {bondIn !== "currency" ? (
+            <p
+              className="text-xs text-amber-700 dark:text-amber-300"
+              data-testid="budget-bond-warning"
+            >
+              {bondIn === "project"
+                ? "A bond in the project's own token is worth least when the project struggles, and the people steering the project help set its price. Reviewers may not accept it."
+                : "Any token works, but a bond only deters if it keeps its value and nobody involved can freeze or inflate it. Check the token before you vote."}
+            </p>
+          ) : null}
+        </>
       ) : null}
       <DraftPanel
         blocked={blocked}

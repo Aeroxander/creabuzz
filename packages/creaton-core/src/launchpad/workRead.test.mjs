@@ -123,8 +123,18 @@ function chain(claims, over = {}, bond = null) {
   ]);
   // A panel that asks for a bond: the currency and least stake, and each reviewer's stake.
   if (bond) {
-    set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(CURRENCY));
+    // The bond is paid in the claim currency unless the vote that made the budget named another token.
+    const bondToken = bond.token ?? CURRENCY;
+    set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(bondToken));
     set(VERIFIERS, encodeCall0(SIGNATURES.minBond), words(bond.min));
+    if (bondToken !== CURRENCY) {
+      set(bondToken, encodeCall0("decimals()"), words(18));
+      set(
+        bondToken,
+        encodeCall0("symbol()"),
+        `0x${word(32)}${word(4)}${"50524f4a".padEnd(64, "0")}`,
+      );
+    }
     set(
       CURRENCY,
       encodeCall0("symbol()"),
@@ -296,7 +306,12 @@ test("a panel that asks for a bond reads as the bond, the reviewers and what eac
     ALICE,
   );
   const [mandate] = read.mandates;
-  assert.deepEqual(mandate.bond, { token: CURRENCY, minBond: 50_000_000n });
+  assert.deepEqual(mandate.bond, {
+    token: CURRENCY,
+    minBond: 50_000_000n,
+    symbol: "USDC",
+    decimals: 6,
+  });
   assert.deepEqual(
     mandate.reviewers.map((r) => [r.address, r.stake]),
     [
@@ -308,6 +323,32 @@ test("a panel that asks for a bond reads as the bond, the reviewers and what eac
   );
   assert.equal(mandate.walletStake, 50_000_000n);
   // A bonded panel moves currency, so its currency is read for the amounts.
+  assert.deepEqual(mandate.currency, { symbol: "USDC", decimals: 6 });
+});
+
+test("a bond paid in another token is read with that token's own name and decimals", async () => {
+  const PROJECT_TOKEN = "0x00000000000000000000000000000000000000d1";
+  const read = await readWork(
+    chain(
+      [],
+      {},
+      {
+        token: PROJECT_TOKEN,
+        min: 50n * 10n ** 18n,
+        reviewers: [{ address: ALICE, stake: 0 }],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  const [mandate] = read.mandates;
+  assert.deepEqual(mandate.bond, {
+    token: PROJECT_TOKEN,
+    minBond: 50n * 10n ** 18n,
+    symbol: "PROJ",
+    decimals: 18,
+  });
+  // The claim currency is still the currency's own.
   assert.deepEqual(mandate.currency, { symbol: "USDC", decimals: 6 });
 });
 

@@ -25,7 +25,7 @@ export const ACTION_SIGNATURES = {
   batchCalls: "batchCalls((address,uint256,bytes)[])",
   approve: "approve(address,uint256)",
   createMandate:
-    "create(address,uint128,uint128,uint128,uint128,uint64,address[],uint256,uint128)",
+    "create(address,uint128,uint128,uint128,uint128,uint64,address[],uint256,uint128,address)",
   approveProject:
     "approveProject(bytes32,address,uint128,uint128,uint64,bytes32)",
   award: "awardContribution(address,bytes32,uint96,bool)",
@@ -134,10 +134,19 @@ export interface MandateInput {
   reviewers: readonly string[];
   quorum: number;
   /**
-   * The bond, in the currency's base units, each reviewer must post before they may judge a claim (0 for none). It is
-   * paid in the claim's own currency, never the project's token, and the DAO can take it after a disputed approval.
+   * The bond, in the bond token's base units, each reviewer must post before they may judge a claim (0 for none). The
+   * DAO can take it after a disputed approval.
    */
   reviewerBond: bigint;
+  /**
+   * What the bond is paid in. Left out, it is the claim currency, which is the safest choice: nobody can price or
+   * pause it. The vote may name the project's own token or any other token instead; then `reviewerBondDecimals` is
+   * that token's, and `reviewerBondLabel` is how the summary names it ("the project's own token"). Ignored without a
+   * bond.
+   */
+  reviewerBondToken?: string;
+  reviewerBondDecimals?: number;
+  reviewerBondLabel?: string;
   /** Unix seconds: "now" for the expiry check. */
   now: number;
 }
@@ -197,6 +206,25 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
     fail("quorum", `How many reviewers must agree: 1 to ${reviewers.length}.`);
   if (input.reviewerBond < 0n)
     fail("reviewerBond", "A reviewer's bond cannot be negative.");
+  // The token the bond is paid in: the claim currency unless the vote names another. No bond, no token.
+  const bondToken =
+    input.reviewerBond === 0n
+      ? ZERO_ADDRESS
+      : input.reviewerBondToken
+        ? address(
+            input.reviewerBondToken,
+            "reviewerBondToken",
+            "The bond token",
+          )
+        : currency;
+  if (input.reviewerBond > 0n && bondToken === ZERO_ADDRESS)
+    fail("reviewerBondToken", "Name the token the bond is paid in.");
+  const bondDecimals = input.reviewerBondDecimals ?? input.currencyDecimals;
+  if (
+    input.reviewerBond > 0n &&
+    (!Number.isInteger(bondDecimals) || bondDecimals < 0 || bondDecimals > 36)
+  )
+    fail("reviewerBondDecimals", "The bond token's decimals are not known.");
 
   const create = encodeFunctionData(
     ACTION_SIGNATURES.createMandate,
@@ -210,6 +238,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
       { array: "address" },
       "uint256",
       "uint128",
+      "address",
     ],
     [
       currency,
@@ -221,6 +250,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
       reviewers,
       BigInt(input.quorum),
       input.reviewerBond,
+      bondToken,
     ],
   );
   const lines = [
@@ -237,7 +267,7 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
     `Open until ${new Date(input.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
     `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${input.quorum} must agree on each claim`,
     input.reviewerBond > 0n
-      ? `Each reviewer posts a bond of ${formatUnits(input.reviewerBond, input.currencyDecimals)} before judging a claim`
+      ? `Each reviewer posts a bond of ${formatUnits(input.reviewerBond, bondDecimals)}${bondToken === currency ? "" : ` ${input.reviewerBondLabel ?? `of the token ${bondToken}`}`} before judging a claim`
       : "Reviewers post no bond",
   ];
   const base = {
@@ -462,6 +492,8 @@ export interface DescribeContext {
   /** The currency the treasury holds, so a payment out of it can be recognised. */
   currency?: string;
   currencySymbol?: string;
+  /** The DAO's own Shares (18 decimals), so a bond paid in them is described as the project's own token. */
+  projectToken?: string;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -473,6 +505,22 @@ function money(value: bigint, ctx: DescribeContext): string {
   return ctx.currencyDecimals === undefined
     ? `${value.toString()} base units`
     : formatUnits(value, ctx.currencyDecimals);
+}
+
+/**
+ * A bond in words. In the claim currency it reads as an amount; in the DAO's own Shares it says so; in any other token
+ * it names the token and gives the raw amount, because the token's decimals are not something a call carries.
+ */
+function bondText(
+  amount: bigint,
+  token: string,
+  currency: string,
+  ctx: DescribeContext,
+): string {
+  if (same(token, currency)) return money(amount, ctx);
+  if (ctx.projectToken && same(token, ctx.projectToken))
+    return `${formatUnits(amount, 18)} of the project's own token`;
+  return `${amount.toString()} base units of the token ${token}`;
 }
 
 function date(seconds: bigint): string {
@@ -494,7 +542,7 @@ function describeCall(
     if (sel === selectorOfSig("createMandate")) {
       if (ctx.factory && !same(call.to, ctx.factory)) return null;
       const [
-        ,
+        currency,
         budget,
         cap,
         shareBudget,
@@ -503,6 +551,7 @@ function describeCall(
         reviewers,
         quorum,
         reviewerBond,
+        bondToken,
       ] = decodeParameters(
         [
           "address",
@@ -514,6 +563,7 @@ function describeCall(
           { array: "address" },
           "uint256",
           "uint128",
+          "address",
         ],
         args,
       ) as [
@@ -526,6 +576,7 @@ function describeCall(
         string[],
         bigint,
         bigint,
+        string,
       ];
       return {
         kind: "work-budget",
@@ -544,7 +595,7 @@ function describeCall(
           `Open until ${date(expires)}`,
           `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${quorum} must agree on each claim`,
           reviewerBond > 0n
-            ? `Each reviewer posts a bond of ${money(reviewerBond, ctx)} before judging a claim`
+            ? `Each reviewer posts a bond of ${bondText(reviewerBond, bondToken, currency, ctx)} before judging a claim`
             : "Reviewers post no bond",
         ],
       };

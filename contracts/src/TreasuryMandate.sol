@@ -27,8 +27,10 @@ interface IMandateLock {
 /// out of the project's share budget, which the broad vote that created the mandate capped.
 ///
 /// The reviewers are fixed when the mandate is made. None may be someone whose own Shares a milestone lock holds
-/// (a team member cannot judge the team's milestones), and each can be made to post a real bond in the mandate's
-/// currency before they may attest; the DAO can slash a bond after a disputed approval.
+/// (a team member cannot judge the team's milestones), and each can be made to post a real bond before they may
+/// attest; the DAO can slash a bond after a disputed approval. The bond is in whichever ERC-20 the vote that made the
+/// mandate names: the claim currency (the default, and the safest: nobody prices it), the project's own token, or any
+/// other. What the bond is worth as a deterrent is the DAO's call, and the vote says which token it chose.
 contract TreasuryMandate {
     using SafeERC20 for IERC20;
 
@@ -39,8 +41,10 @@ contract TreasuryMandate {
     /// @notice Most Shares this mandate can ever cause to be awarded, in total and per project.
     uint128 public immutable shareBudget;
     uint128 public immutable perProjectShareCap;
-    /// @notice The bond, in `currency`, each reviewer must hold to attest (zero: reviewers need no bond).
+    /// @notice The bond, in `reviewerBondToken`, each reviewer must hold to attest (zero: reviewers need no bond).
     uint128 public immutable reviewerBond;
+    /// @notice What the bond is paid in (zero exactly when there is no bond).
+    address public immutable reviewerBondToken;
     uint64 public immutable expiresAt;
     VerifierSet public immutable verifiers;
     ClaimStake public immutable claims;
@@ -106,7 +110,8 @@ contract TreasuryMandate {
         uint64 expires_,
         address[] memory reviewers,
         uint256 quorum,
-        uint128 reviewerBond_
+        uint128 reviewerBond_,
+        address bondToken_
     ) {
         // Each budget is all-or-nothing: a cap with no budget (or a budget with no cap) cannot be spent sensibly.
         if (
@@ -114,6 +119,9 @@ contract TreasuryMandate {
                 || (shareBudget_ == 0) != (shareCap_ == 0) || shareCap_ > shareBudget_
                 || (budget_ == 0 && shareBudget_ == 0) || expires_ <= block.timestamp || reviewers.length > 32
                 || quorum == 0 || quorum > reviewers.length
+                // A bond needs a real token to be paid in, and no bond needs none named.
+                || (reviewerBond_ == 0) != (bondToken_ == address(0))
+                || (bondToken_ != address(0) && bondToken_.code.length == 0)
         ) revert InvalidMandate();
         dao = dao_;
         currency = IERC20(currency_);
@@ -123,11 +131,12 @@ contract TreasuryMandate {
         perProjectShareCap = shareCap_;
         expiresAt = expires_;
         reviewerBond = reviewerBond_;
+        reviewerBondToken = bondToken_;
         VerifierSet panel = new VerifierSet(address(this), quorum);
         verifiers = panel;
         claims = new ClaimStake(panel, address(this), currency_);
         panel.setClaimStake(address(claims));
-        if (reviewerBond_ != 0) panel.setBond(currency_, reviewerBond_);
+        if (reviewerBond_ != 0) panel.setBond(bondToken_, reviewerBond_);
         for (uint256 i; i < reviewers.length; ++i) {
             // A team member whose Shares a milestone lock holds cannot sit on the panel that judges the milestones.
             if (reviewers[i] == address(0) || _isLockedTeamMember(dao_, reviewers[i])) revert InvalidMandate();
@@ -234,7 +243,7 @@ contract TreasuryMandate {
     /// like any treasury-scale action; nobody else can.
     function slashReviewer(address reviewer, uint256 amount) external onlyDAO nonReentrant {
         uint256 taken = verifiers.slash(reviewer, amount);
-        if (taken != 0 && reviewerBond != 0) currency.safeTransfer(dao, taken);
+        if (taken != 0 && reviewerBond != 0) IERC20(reviewerBondToken).safeTransfer(dao, taken);
         emit ReviewerSlashed(reviewer, taken);
     }
 
@@ -294,10 +303,11 @@ contract TreasuryMandateFactory {
         uint64 expires,
         address[] calldata reviewers,
         uint256 quorum,
-        uint128 reviewerBond
+        uint128 reviewerBond,
+        address bondToken
     ) external returns (TreasuryMandate mandate) {
         mandate = new TreasuryMandate(
-            msg.sender, currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum, reviewerBond
+            msg.sender, currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum, reviewerBond, bondToken
         );
         if (budget != 0) {
             IERC20(currency).safeTransferFrom(msg.sender, address(mandate), budget);

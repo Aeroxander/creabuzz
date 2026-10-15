@@ -57,7 +57,7 @@ contract MilestoneLockTest is VotingFixture {
         TreasuryMandateFactory factory = ledger.mandateFactory();
         vm.startPrank(address(dao));
         mandate =
-            factory.create(address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 365 days), reviewers, 2, 0);
+            factory.create(address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 365 days), reviewers, 2, 0, address(0));
         mandate.approveProject(PROJECT, BOB, 0, 2, uint64(vm.getBlockTimestamp() + 300 days), CHECK_ONE);
         mandate.approveProject(bytes32("founders-2"), BOB, 0, 2, uint64(vm.getBlockTimestamp() + 300 days), CHECK_TWO);
         vm.stopPrank();
@@ -243,7 +243,7 @@ contract MilestoneLockTest is VotingFixture {
         address[] memory reviewers = new address[](1);
         reviewers[0] = address(this);
         TreasuryMandate foreign = ledger.mandateFactory()
-            .create(address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1, 0);
+            .create(address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 90 days), reviewers, 1, 0, address(0));
         foreign.approveProject(PROJECT, address(this), 0, 2, uint64(vm.getBlockTimestamp() + 30 days), CHECK_ONE);
         // (This test contract is the foreign mandate's DAO, so it can approve its own project and claims.)
         ClaimStake claims = foreign.claims();

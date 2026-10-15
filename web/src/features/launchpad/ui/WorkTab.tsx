@@ -212,6 +212,11 @@ function MandateCard({
   const unit = mandate.currency?.symbol ?? "";
   const money = (units: bigint) =>
     `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${unit}`.trim();
+  // The bond is paid in its own token: the claim currency unless the vote that made this budget named another.
+  const bondMoney = (units: bigint) =>
+    mandate.bond
+      ? `${formatAtomic(units, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`.trim()
+      : money(units);
   const myProjects = mandate.projects.filter((p) =>
     sameAddress(wallet, p.record.manager),
   );
@@ -220,10 +225,11 @@ function MandateCard({
     ? bondShortfall(mandate.bond, mandate.walletStake)
     : 0n;
   const postBond = async () => {
-    // The approval first; the bond only if it went through.
+    if (!mandate.bond) return;
+    // The approval first (on the bond's own token); the bond only if it went through.
     const approved = await onSend(
       `bond-approve-${mandate.address}`,
-      mandate.created.currency,
+      mandate.bond.token,
       encodeCurrencyApprove(mandate.verifiersAddress, owes),
     );
     if (!approved) return;
@@ -271,7 +277,7 @@ function MandateCard({
         <dt className="text-muted-foreground">Reviewer bond</dt>
         <dd data-testid="work-bond">
           {mandate.bond
-            ? `${money(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
+            ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
             : "None: a reviewer risks nothing by approving carelessly"}
         </dd>
       </dl>
@@ -302,7 +308,7 @@ function MandateCard({
           data-testid="work-bond-owed"
         >
           <p>
-            You are a reviewer here. Post a bond of {money(owes)} before you
+            You are a reviewer here. Post a bond of {bondMoney(owes)} before you
             judge a claim. You can ask for it back later; it stays at risk for
             14 days after you do.
           </p>

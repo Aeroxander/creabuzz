@@ -26,9 +26,9 @@ contract FeeCurrency is ERC20 {
     }
 }
 
-/// @notice A reviewer's stake is a real bond in the claim's own currency: it must be posted before they may attest,
-/// it comes back only after a delay, and the DAO can take it. And a team member whose Shares a milestone lock holds
-/// cannot be on the panel at all.
+/// @notice A reviewer's stake is a real bond (in the claim's own currency unless the vote names another token): it must
+/// be posted before they may attest, it comes back only after a delay, and the DAO can take it. And a team member
+/// whose Shares a milestone lock holds cannot be on the panel at all.
 contract ReviewerBondTest is VotingFixture {
     address internal constant DAVE = address(0xDA7E);
     address internal constant ERIN = address(0xE41);
@@ -70,11 +70,21 @@ contract ReviewerBondTest is VotingFixture {
         mandate.approveProject(PROJECT, BOB, 0, 2, uint64(vm.getBlockTimestamp() + 300 days), CHECK_ONE);
     }
 
-    /// The DAO makes the mandate (the factory is read first: a prank covers only the next call).
+    /// The DAO makes the mandate, its bond (if any) in the claim currency itself (the factory is read first: a prank
+    /// covers only the next call).
     function _create(address cash, address[] memory reviewers, uint128 bond) internal returns (TreasuryMandate made) {
+        made = _createWithBondToken(cash, bond == 0 ? address(0) : cash, reviewers, bond);
+    }
+
+    function _createWithBondToken(address cash, address bondToken, address[] memory reviewers, uint128 bond)
+        internal
+        returns (TreasuryMandate made)
+    {
         TreasuryMandateFactory factory = ledger.mandateFactory();
         vm.prank(address(dao));
-        made = factory.create(cash, 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 365 days), reviewers, 2, bond);
+        made = factory.create(
+            cash, 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 365 days), reviewers, 2, bond, bondToken
+        );
     }
 
     function _bond(address reviewer, uint256 amount) internal {
@@ -106,7 +116,9 @@ contract ReviewerBondTest is VotingFixture {
         TreasuryMandateFactory factory = ledger.mandateFactory();
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 30 days), withTeam, 2, 0);
+        factory.create(
+            address(currency), 0, 0, 10, 10, uint64(vm.getBlockTimestamp() + 30 days), withTeam, 2, 0, address(0)
+        );
         // Outsiders are fine.
         _create(address(currency), _reviewers(), 0);
     }
@@ -244,5 +256,65 @@ contract ReviewerBondTest is VotingFixture {
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(VerifierSet.OnlyOwner.selector, address(0xBAD)));
         panel.setBond(address(currency), 1);
+    }
+
+    // ---- the bond can be in another token ------------------------------------------------------
+
+    function test_the_bond_can_be_in_a_token_other_than_the_claim_currency() public {
+        // The DAO's vote names the project's own token (or any other) as the bond; claims are still paid in `currency`.
+        MandateCurrency projectToken = new MandateCurrency();
+        TreasuryMandate other = _createWithBondToken(address(currency), address(projectToken), _reviewers(), BOND);
+        VerifierSet otherPanel = other.verifiers();
+        assertEq(address(otherPanel.bondToken()), address(projectToken));
+        assertEq(other.reviewerBondToken(), address(projectToken));
+        assertEq(address(other.currency()), address(currency));
+
+        // Bonding in the claim currency does nothing for this panel: only the named token counts.
+        currency.mint(CAROL, BOND);
+        vm.startPrank(CAROL);
+        currency.approve(address(otherPanel), BOND);
+        vm.expectRevert();
+        otherPanel.bond(BOND);
+        vm.stopPrank();
+
+        projectToken.mint(CAROL, 2 * BOND);
+        vm.startPrank(CAROL);
+        projectToken.approve(address(otherPanel), 2 * BOND);
+        otherPanel.bond(BOND);
+        vm.stopPrank();
+        assertEq(projectToken.balanceOf(address(otherPanel)), BOND);
+
+        // A slash pays the DAO in the bond's token, and the claim currency is untouched.
+        uint256 projectBefore = projectToken.balanceOf(address(dao));
+        uint256 cashBefore = currency.balanceOf(address(dao));
+        vm.prank(address(dao));
+        other.slashReviewer(CAROL, 20e18);
+        assertEq(projectToken.balanceOf(address(dao)) - projectBefore, 20e18);
+        assertEq(currency.balanceOf(address(dao)), cashBefore);
+
+        // What is left comes back after the delay, in the bond's token.
+        vm.prank(CAROL);
+        otherPanel.requestUnbond(30e18);
+        vm.warp(vm.getBlockTimestamp() + 14 days);
+        vm.prank(CAROL);
+        otherPanel.withdraw();
+        assertEq(projectToken.balanceOf(CAROL), 2 * BOND - BOND + 30e18);
+    }
+
+    function test_a_bond_and_its_token_must_be_named_together_and_the_token_must_exist() public {
+        TreasuryMandateFactory factory = ledger.mandateFactory();
+        uint64 expires = uint64(vm.getBlockTimestamp() + 30 days);
+        address[] memory reviewers = _reviewers();
+        vm.startPrank(address(dao));
+        // A bond with no token to pay it in.
+        vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
+        factory.create(address(currency), 0, 0, 10, 10, expires, reviewers, 2, BOND, address(0));
+        // A token with no bond to pay.
+        vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
+        factory.create(address(currency), 0, 0, 10, 10, expires, reviewers, 2, 0, address(currency));
+        // A bond token that is no contract.
+        vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
+        factory.create(address(currency), 0, 0, 10, 10, expires, reviewers, 2, BOND, address(0xDEAD0));
+        vm.stopPrank();
     }
 }

@@ -48,8 +48,7 @@ contract EquityMandateTest is VotingFixture {
             uint64(vm.getBlockTimestamp() + 90 days),
             _reviewers(),
             2,
-            0
-        );
+            0, address(0));
     }
 
     /// A bounded-lane vote: opened, backed by the lone holder, reviewed, queued, executed.
@@ -110,21 +109,21 @@ contract EquityMandateTest is VotingFixture {
         // Neither budget.
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 0, 0, 0, 0, expires, reviewers, 2, 0);
+        factory.create(address(currency), 0, 0, 0, 0, expires, reviewers, 2, 0, address(0));
         // A cash budget with no cap, and the reverse.
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 100e18, 0, 10e18, 5e18, expires, reviewers, 2, 0);
+        factory.create(address(currency), 100e18, 0, 10e18, 5e18, expires, reviewers, 2, 0, address(0));
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 0, 5e18, 10e18, 5e18, expires, reviewers, 2, 0);
+        factory.create(address(currency), 0, 5e18, 10e18, 5e18, expires, reviewers, 2, 0, address(0));
         // A share budget with no cap, a cap above its budget.
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 0, 0, 10e18, 0, expires, reviewers, 2, 0);
+        factory.create(address(currency), 0, 0, 10e18, 0, expires, reviewers, 2, 0, address(0));
         vm.prank(address(dao));
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
-        factory.create(address(currency), 0, 0, 10e18, 11e18, expires, reviewers, 2, 0);
+        factory.create(address(currency), 0, 0, 10e18, 11e18, expires, reviewers, 2, 0, address(0));
     }
 
     function test_a_shares_only_mandate_moves_no_money_and_is_still_the_daos() public view {
@@ -276,8 +275,7 @@ contract EquityMandateTest is VotingFixture {
         assertFalse(ledger.boundedAction(1, address(dao), 0, award));
         // A mandate this DAO did not create (any contract can create one for itself; here, this test).
         TreasuryMandate foreign = factory.create(
-            address(currency), 0, 0, 10e18, 5e18, uint64(vm.getBlockTimestamp() + 90 days), _reviewers(), 2, 0
-        );
+            address(currency), 0, 0, 10e18, 5e18, uint64(vm.getBlockTimestamp() + 90 days), _reviewers(), 2, 0, address(0));
         assertFalse(
             ledger.boundedAction(
                 0,

@@ -518,11 +518,16 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   ).toHaveCount(1, { timeout: 30_000 });
   await reviewerPicker.selectOption(capital.wallet.address.toLowerCase());
   await founder.page.getByTestId("budget-bond").fill("100");
+  // The bond is paid in the project's own Shares this time: the vote names the token, and says plainly what that means.
+  await founder.page.getByTestId("budget-bond-token").selectOption("project");
+  await expect(founder.page.getByTestId("budget-bond-warning")).toContainText(
+    "worth least when the project struggles",
+  );
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
     "1 reviewer, 1 must agree on each claim",
   );
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
-    "Each reviewer posts a bond of 100",
+    "Each reviewer posts a bond of 100 of the project's own token",
   );
   await founder.page.getByTestId("decision-draft-submit").click();
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
@@ -589,17 +594,23 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   await open(capital, "Work");
   await expect(capital.page.getByTestId("work-bond")).toContainText("100");
+  await expect(capital.page.getByTestId("work-bond")).not.toContainText("USDC");
   // Nothing to judge with until the bond is in; posting it is an approval and then the bond, from their own wallet.
   await expect(capital.page.getByTestId("work-approve")).toHaveCount(0);
   const capitalBefore = await dollarsOf(capital.wallet.address);
+  const sharesOf = async (who: string) =>
+    callWord(shares, `0x70a08231${word(who)}`);
+  const sharesBefore = await sharesOf(capital.wallet.address);
   await capital.page.getByTestId("work-post-bond").click();
   await expect(capital.page.getByTestId("work-bond-owed")).toHaveCount(0, {
     timeout: 90_000,
   });
-  expect(capitalBefore - (await dollarsOf(capital.wallet.address))).toBe(
-    dollars(100),
+  // The bond left in Shares, not in dollars.
+  expect(sharesBefore - (await sharesOf(capital.wallet.address))).toBe(
+    100n * 10n ** 18n,
   );
-  say("the reviewer posted their bond of 100");
+  expect(await dollarsOf(capital.wallet.address)).toBe(capitalBefore);
+  say("the reviewer posted their bond of 100 Shares");
   await capital.page.getByTestId("work-approve").click();
   await expect(capital.page.getByTestId("work-claim-next")).not.toContainText(
     "0 of 1 approvals",
