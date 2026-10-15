@@ -15,6 +15,7 @@ import {
   decodeU256,
   defaultChainPreset,
   exchangeAddresses,
+  exchangeCodehashes,
   getRpcEndpoint,
   isDevBuild,
   priceIndexerUrl,
@@ -399,4 +400,62 @@ test("the exchange's contracts are only ever the ones the build names, every add
     null,
   );
   assert.equal(exchangeAddresses(31337, env([good])), null);
+});
+
+test("an exchange on any chain but the local one needs pinned code, or it is refused", () => {
+  const addresses = {
+    amm: "0x00000000000000000000000000000000000000a1",
+    hook: "0x00000000000000000000000000000000000000a2",
+    registry: "0x00000000000000000000000000000000000000a3",
+    poolType: "0x00000000000000000000000000000000000000a4",
+  };
+  const pins = Object.fromEntries(
+    Object.keys(addresses).map((k, i) => [k, `0x${String(i + 1).repeat(64)}`]),
+  );
+  const env = (entry) => ({
+    VITE_LBAMM_ADDRESSES: JSON.stringify({ 11155111: entry, 31337: entry }),
+  });
+
+  // Unpinned: fine on the local test chain, refused anywhere real.
+  assert.notEqual(exchangeAddresses(31337, env(addresses)), null);
+  assert.equal(exchangeAddresses(11155111, env(addresses)), null);
+  assert.equal(exchangeCodehashes(11155111, env(addresses)), null);
+
+  // Pinned: accepted, and the pins read back lower-cased.
+  const pinned = { ...addresses, codehashes: pins };
+  assert.notEqual(exchangeAddresses(11155111, env(pinned)), null);
+  assert.deepEqual(exchangeCodehashes(11155111, env(pinned)), pins);
+  assert.deepEqual(
+    exchangeCodehashes(
+      11155111,
+      env({
+        ...addresses,
+        codehashes: Object.fromEntries(
+          Object.entries(pins).map(([k, v]) => [
+            k,
+            v.toUpperCase().replace("0X", "0x"),
+          ]),
+        ),
+      }),
+    ),
+    pins,
+  );
+
+  // A pin that is missing, short, or not hex makes the whole entry unusable.
+  assert.equal(
+    exchangeAddresses(
+      11155111,
+      env({ ...addresses, codehashes: { ...pins, hook: "0x1234" } }),
+    ),
+    null,
+  );
+  const { poolType: _dropped, ...partial } = pins;
+  assert.equal(
+    exchangeAddresses(11155111, env({ ...addresses, codehashes: partial })),
+    null,
+  );
+  assert.equal(
+    exchangeAddresses(11155111, env({ ...addresses, codehashes: [pins] })),
+    null,
+  );
 });

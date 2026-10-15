@@ -1,6 +1,7 @@
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
-import { exchangeAddresses, recordSaleCurrency } from "../chain";
+import { recordSaleCurrency } from "../chain";
+import { useVerifiedExchange } from "../use-exchange";
 import type { Launch } from "../models";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
@@ -34,7 +35,7 @@ export function DecisionsTab({
     ? recordSaleCurrency(launch.record)
     : null;
   const currencyDecimals = sale?.decimals;
-  const exchange = exchangeAddresses(launch.record.chainId);
+  const { exchange } = useVerifiedExchange(launch.record.chainId);
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);

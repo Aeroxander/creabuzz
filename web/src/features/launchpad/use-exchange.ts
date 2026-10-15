@@ -2,10 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   ethCall,
+  ethGetCode,
   exchangeAddresses,
+  exchangeCodehashes,
   getRpcEndpoint,
   recordSaleCurrency,
 } from "./chain";
+import { type ExchangeCheck, verifyExchange } from "./lib/exchange-verify";
 import { readMilestoneLock } from "./lib/milestone-lock";
 import {
   findMarketPool,
@@ -19,13 +22,50 @@ import { endpointChain } from "./use-work";
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const word = (a: string) => a.slice(2).toLowerCase().padStart(64, "0");
 
+/**
+ * The exchange this build names for `chainId`, once it has been checked: on the local test chain as it is, anywhere
+ * else only when the code at every address matches the build's pinned hashes. While the check runs, or when it fails,
+ * the exchange is null and `check` says why, so no market is ever shown on contracts nobody verified.
+ */
+export function useVerifiedExchange(chainId: string | null) {
+  const configured = exchangeAddresses(chainId);
+  const pins = exchangeCodehashes(chainId);
+  const check = useQuery({
+    queryKey: [
+      "launchpad",
+      "exchange-check",
+      chainId,
+      configured?.amm,
+      configured?.hook,
+      configured?.registry,
+      configured?.poolType,
+    ],
+    enabled: configured !== null && pins !== null,
+    queryFn: (): Promise<ExchangeCheck> =>
+      verifyExchange(
+        configured as NonNullable<typeof configured>,
+        pins as NonNullable<typeof pins>,
+        (address) => ethGetCode(getRpcEndpoint(), address),
+      ),
+    staleTime: 60_000,
+  });
+  if (configured === null) return { exchange: null, check: null };
+  // The local test chain's exchange is a throwaway clone and needs no pinned code.
+  if (pins === null) return { exchange: configured, check: null };
+  const result = check.data ?? null;
+  return {
+    exchange: result?.state === "verified" ? configured : null,
+    check: result,
+  };
+}
+
 /** Everything the trade card needs about one project's market: where it trades, what at, and what this wallet holds. */
 export function useExchange(
   launch: Launch,
   dao: string,
   wallet: string | null,
 ) {
-  const exchange = exchangeAddresses(launch.record.chainId);
+  const { exchange, check } = useVerifiedExchange(launch.record.chainId);
   const { token, currency } = launch.record;
   const usable =
     exchange !== null &&
@@ -111,5 +151,5 @@ export function useExchange(
     refetchInterval: (q) => (q.state.status === "error" ? false : 10_000),
   });
 
-  return { exchange, usable, decimals, pool, price, holdings };
+  return { exchange, check, usable, decimals, pool, price, holdings };
 }

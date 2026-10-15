@@ -1,3 +1,8 @@
+import {
+  type CodeHashes,
+  EXCHANGE_CONTRACTS,
+  parseCodeHash,
+} from "./lib/exchange-verify.ts";
 import { saleCurrencyFor, type SaleCurrency } from "./lib/sale-currency.ts";
 import type { LaunchRecord } from "./models";
 import {
@@ -121,8 +126,10 @@ export interface ChainEnv {
   VITE_PRICE_INDEXER_URL?: string;
   /**
    * The exchange's contracts per chain, as JSON: `{"31337":{"amm":"0x…","hook":"0x…","registry":"0x…","poolType":"0x…"}}`.
-   * A chain with no entry has no market to put Shares on or trade them in. The exchange is evaluation-only software, so
-   * this is only ever set for a local test chain.
+   * A chain with no entry has no market to put Shares on or trade them in. On any chain but the local test chain an
+   * entry must also carry `"codehashes"` (the keccak256 of each contract's runtime code, same four names): the app
+   * reads the code at each address and offers a market only when it matches. An unpinned entry for a real chain is
+   * refused, so a build can never point at an address nobody checked.
    */
   VITE_LBAMM_ADDRESSES?: string;
 }
@@ -186,7 +193,42 @@ export function priceIndexerUrl(
   }
 }
 
-/** The exchange's contracts on `chainId`, or null when the build names none (never guessed). Strict about every address. */
+/** The local test chain: its exchange is a throwaway clone, so it needs no pinned code. */
+const LOCAL_CHAIN_ID = 31337;
+
+/** The code hashes a build pins for the exchange on `chainId`, or null when it pins none or pins them badly. */
+export function exchangeCodehashes(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): CodeHashes | null {
+  const raw = env?.VITE_LBAMM_ADDRESSES?.trim();
+  if (!raw || chainId === null) return null;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map))
+      return null;
+    const entry = (map as Record<string, unknown>)[String(chainId)];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
+      return null;
+    const pins = (entry as Record<string, unknown>).codehashes;
+    if (pins === null || typeof pins !== "object" || Array.isArray(pins))
+      return null;
+    const out: Record<string, string> = {};
+    for (const key of EXCHANGE_CONTRACTS) {
+      const hash = parseCodeHash((pins as Record<string, unknown>)[key]);
+      if (hash === null) return null;
+      out[key] = hash;
+    }
+    return out as CodeHashes;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The exchange's contracts on `chainId`, or null when the build names none (never guessed). Strict about every address,
+ * and about pins: any chain but the local test chain needs its code hashes, or the entry is refused.
+ */
 export function exchangeAddresses(
   chainId: string | number | null,
   env: ChainEnv | undefined = viteEnv(),
@@ -208,6 +250,11 @@ export function exchangeAddresses(
         return null;
       out[key] = value.toLowerCase();
     }
+    if (
+      Number(chainId) !== LOCAL_CHAIN_ID &&
+      exchangeCodehashes(chainId, env) === null
+    )
+      return null;
     return out as unknown as ExchangeAddresses;
   } catch {
     return null;
@@ -755,6 +802,16 @@ export async function erc20BalanceOf(
   } catch {
     return null;
   }
+}
+
+/** The runtime code at `address` as `0x…` hex (`0x` when there is none). Throws on RPC failure. */
+export async function ethGetCode(
+  endpoint: string,
+  address: string,
+): Promise<string> {
+  const code = await rpc(endpoint, "eth_getCode", [address, "latest"]);
+  if (typeof code !== "string") throw new Error("bad eth_getCode return");
+  return code;
 }
 
 /** True when address holds contract code. Throws on RPC failure. */

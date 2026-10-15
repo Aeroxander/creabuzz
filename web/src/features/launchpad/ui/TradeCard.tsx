@@ -5,6 +5,7 @@ import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 import { getRpcEndpoint, recordSaleCurrency } from "../chain";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
+import { exchangeCheckNote } from "../lib/exchange-verify";
 import { encodeSwap } from "../lib/market-actions";
 import { estimateTrade, minimumOut, type TradeSide } from "../lib/market-read";
 import { encodeErc20Approve } from "../lib/evmCalls";
@@ -28,6 +29,17 @@ export function TradeCard({ launch, dao }: { launch: Launch; dao: string }) {
   const [done, setDone] = useState<string | null>(null);
 
   const { exchange, decimals, pool, price, holdings } = market;
+  // The build names an exchange for this network but its code could not be checked, or is not the pinned code:
+  // say so, rather than show nothing or a market on contracts nobody verified.
+  if (market.check && market.check.state !== "verified") {
+    return (
+      <Card className="p-4" data-testid="market-unverified">
+        <p className="text-sm text-muted-foreground" role="status">
+          {exchangeCheckNote(market.check)}
+        </p>
+      </Card>
+    );
+  }
   if (!market.usable || !pool.data || !exchange) return null;
 
   const symbol = launch.record.tokenPlan?.symbol ?? "Shares";
