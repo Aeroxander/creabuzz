@@ -20,6 +20,12 @@ struct ForkKitParams {
     uint256[] teamShares;
     bytes32[] milestoneChecks;
     uint16[] milestoneBps;
+    address[] reviewers;
+    uint256 reviewQuorum;
+    uint128 reviewerBond;
+    address bondToken;
+    address panelCurrency;
+    uint64 panelExpires;
     uint256 daoShares;
     uint128 saleSupply;
     bytes auctionConfig;
@@ -156,13 +162,27 @@ contract SepoliaLaunchForkTest is Test {
         p.milestoneBps = new uint16[](2);
         p.milestoneBps[0] = 4000;
         p.milestoneBps[1] = 4000;
+        // The launch names the panel that judges the milestones, with a 25 USDC bond each.
+        p.reviewers = new address[](2);
+        p.reviewers[0] = reviewer;
+        p.reviewers[1] = reviewer2;
+        p.reviewQuorum = 1;
+        p.reviewerBond = BOND;
+        p.bondToken = USDC;
+        p.panelCurrency = USDC;
+        p.panelExpires = uint64(block.timestamp + 730 days);
         p.daoShares = 0;
         p.saleSupply = SALE;
         p.auctionConfig = _config(predicted);
         p.auctionSalt = salt;
 
         vm.prank(founder);
+        uint256 gasBefore = gasleft();
         (address d, address e, address a) = kit.launch(p);
+        uint256 used = gasBefore - gasleft();
+        emit log_named_uint("gas the one launch transaction uses", used);
+        // Ethereum caps one transaction at 2^24 gas (EIP-7825): a launch that needs more could not be sent at all.
+        assertLt(used, 16_777_216, "the launch must fit in one transaction");
         assertEq(e, predicted, "the executor lands where the client computed it");
         dao = Moloch(payable(d));
         shares = dao.shares();
@@ -244,8 +264,8 @@ contract SepoliaLaunchForkTest is Test {
         MilestoneLock lock = MilestoneLock(shares.lockGuard());
         assertEq(lock.lockedOf(founder), 480e18, "80% of the founder's 600 are held back until milestones");
 
-        // A work budget the DAO makes: a Shares-only budget, paid-for in USDC bonds. The founder is a locked team member
-        // (the kit's lock names them), so the contract refuses them on the panel.
+        // The panel was named in the launch, with its bond; the founder is a locked team member, so the contract also
+        // refuses them on any panel the DAO makes later.
         TreasuryMandateFactory factory = TreasuryMandateFactory(_factory());
         address[] memory withFounder = new address[](2);
         withFounder[0] = reviewer;
@@ -254,15 +274,20 @@ contract SepoliaLaunchForkTest is Test {
         vm.expectRevert(TreasuryMandate.InvalidMandate.selector);
         factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), withFounder, 1, BOND, USDC);
 
-        address[] memory panel = new address[](2);
-        panel[0] = reviewer;
-        panel[1] = reviewer2;
-        vm.prank(address(dao));
-        TreasuryMandate mandate = factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), panel, 1, BOND, USDC);
+        TreasuryMandate mandate = TreasuryMandate(factory.milestoneMandate(address(dao)));
+        assertTrue(address(mandate) != address(0), "the launch named the milestone panel");
         VerifierSet verifiers = mandate.verifiers();
+        assertEq(address(verifiers.bondToken()), USDC);
+        assertEq(verifiers.minBond(), BOND);
         ClaimStake claims = mandate.claims();
+        // A friendlier panel the DAO makes afterwards cannot unlock anything: only the one the backers saw counts.
+        address[] memory friendly = new address[](1);
+        friendly[0] = reviewer2;
+        vm.prank(address(dao));
+        TreasuryMandate later = factory.create(USDC, 0, 0, 10, 10, uint64(block.timestamp + 90 days), friendly, 1, 0, address(0));
         vm.startPrank(address(dao));
-        mandate.approveProject(PROJECT, manager, 0, 2, uint64(block.timestamp + 60 days), CHECK_ONE);
+        later.approveProject(bytes32("later"), manager, 0, 2, uint64(block.timestamp + 60 days), CHECK_ONE);
+        mandate.approveProject(PROJECT, manager, 0, 0, uint64(block.timestamp + 60 days), CHECK_ONE);
         vm.stopPrank();
 
         // The founder files the first milestone, the manager takes it on.
@@ -294,6 +319,9 @@ contract SepoliaLaunchForkTest is Test {
 
         // The first tranche is freed, and exactly that much: 40% of 600. The rest is still held.
         lock.unlock(founder, 0, address(mandate), claim);
+        // (And a claim cannot be used twice, nor taken to the later, friendlier mandate.)
+        vm.expectRevert(MilestoneLock.NotThisDaosMandate.selector);
+        lock.unlock(founder, 1, address(later), claim);
         assertEq(lock.lockedOf(founder), 240e18);
         vm.prank(founder);
         shares.transfer(alice, 240e18 + 120e18); // the unlocked 240 and the never-locked 120

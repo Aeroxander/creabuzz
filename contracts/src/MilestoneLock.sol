@@ -5,6 +5,11 @@ import {MilestoneBadge} from "./MilestoneBadge.sol";
 
 interface IMilestoneDao {
     function votingWeight() external view returns (address);
+    function shares() external view returns (address);
+}
+
+interface IMilestoneShares {
+    function burnForfeited(address from, uint256 amount) external;
 }
 
 interface IMilestonePolicy {
@@ -13,6 +18,7 @@ interface IMilestonePolicy {
 
 interface IMilestoneFactory {
     function daos(address mandate) external view returns (address);
+    function milestoneMandate(address dao) external view returns (address);
 }
 
 interface IMilestoneMandate {
@@ -39,9 +45,14 @@ interface IMilestoneClaims {
 /// tranche and mints the beneficiary a soulbound `MilestoneBadge` as the receipt. No vote is needed to unlock:
 /// the DAO already agreed to the schedule at launch.
 ///
-/// The DAO can `forfeit` a beneficiary's remaining tranches (a founder who left). That sets the lock to zero for them,
-/// which is what lets the DAO then burn or move those Shares in the same governance batch; the lock is the only thing
-/// that stood in its way.
+/// Whose reviewers? When the DAO named a milestone panel at launch (the launch kit does, whenever there are milestones),
+/// only that panel's mandate can unlock a tranche: a later vote cannot swap in a friendlier panel, and the panel is
+/// the one the backers saw before they bought. A lock made without one (tests, older DAOs) accepts any mandate the
+/// DAO's own factory made.
+///
+/// The DAO can `forfeit` a beneficiary's remaining tranches (a founder who left). Forfeiting burns those Shares on
+/// the spot: they never become free to sell or take out, so a vote cannot release the team from its own lock, only
+/// remove what the team has not earned.
 contract MilestoneLock {
     uint256 public constant MAX_TRANCHES = 8;
     uint256 internal constant BPS = 10_000;
@@ -137,8 +148,11 @@ contract MilestoneLock {
         if (tranche.unlocked || tranche.forfeited) revert AlreadyResolved();
 
         // The mandate must be one this DAO created: anyone can create a mandate for themselves with friendly reviewers.
-        address factory = IMilestonePolicy(IMilestoneDao(dao).votingWeight()).mandateFactory();
-        if (IMilestoneFactory(factory).daos(mandate) != dao) revert NotThisDaosMandate();
+        IMilestoneFactory factory = IMilestoneFactory(IMilestonePolicy(IMilestoneDao(dao).votingWeight()).mandateFactory());
+        if (factory.daos(mandate) != dao) revert NotThisDaosMandate();
+        // And when the DAO named its panel at launch, no other mandate will do.
+        address panel = factory.milestoneMandate(dao);
+        if (panel != address(0) && mandate != panel) revert NotThisDaosMandate();
 
         address claims = IMilestoneMandate(mandate).claims();
         if (claimUsed[claims][claimId]) revert ClaimAlreadyUsed();
@@ -157,8 +171,9 @@ contract MilestoneLock {
 
     // ---- the DAO ---------------------------------------------------------------------------------
 
-    /// @notice The DAO gives up on `beneficiary`'s remaining tranches: they are no longer locked, so the DAO can burn
-    /// or move them (in the same batch). Returns the amount released from the lock.
+    /// @notice The DAO gives up on `beneficiary`'s remaining tranches (a founder who left): those Shares are burned.
+    /// They are never free in between, so the DAO cannot use this to let the team sell what it has not earned. Returns
+    /// the amount burned.
     function forfeit(address beneficiary) external returns (uint96 total) {
         if (msg.sender != dao) revert OnlyDao();
         Tranche[] storage t = _tranches[beneficiary];
@@ -168,6 +183,7 @@ contract MilestoneLock {
                 total += t[i].amount;
             }
         }
+        if (total != 0) IMilestoneShares(IMilestoneDao(dao).shares()).burnForfeited(beneficiary, total);
         emit Forfeited(beneficiary, total);
     }
 }

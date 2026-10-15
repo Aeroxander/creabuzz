@@ -22,7 +22,9 @@ interface IMandateLock {
 /// Team managers reserve milestone payments and bind claims; independent reviewers and a challenge window release
 /// them. Returned funds never silently replenish the mandate's allocation authority.
 ///
-/// Either budget may be zero, but not both. A mandate with no currency is how a project with no treasury (one that
+/// Either budget may be zero, but not both, except the one kind of mandate that holds nothing at all: the milestone
+/// panel a DAO names at launch to judge its team's milestones. Its projects hold no money and award no Shares; they
+/// exist so a milestone claim can be bound and judged. A mandate with no currency is how a project with no treasury (one that
 /// never raised) rewards contributors: the work is verified exactly as paid work is, and the DAO then awards Shares
 /// out of the project's share budget, which the broad vote that created the mandate capped.
 ///
@@ -46,6 +48,8 @@ contract TreasuryMandate {
     /// @notice What the bond is paid in (zero exactly when there is no bond).
     address public immutable reviewerBondToken;
     uint64 public immutable expiresAt;
+    /// @notice Whether this is a DAO's milestone panel: no budgets, and projects that hold nothing.
+    bool public immutable milestonePanel;
     VerifierSet public immutable verifiers;
     ClaimStake public immutable claims;
     uint128 public allocated;
@@ -111,13 +115,16 @@ contract TreasuryMandate {
         address[] memory reviewers,
         uint256 quorum,
         uint128 reviewerBond_,
-        address bondToken_
+        address bondToken_,
+        bool milestonePanel_
     ) {
         // Each budget is all-or-nothing: a cap with no budget (or a budget with no cap) cannot be spent sensibly.
         if (
             dao_.code.length == 0 || currency_.code.length == 0 || (budget_ == 0) != (cap_ == 0) || cap_ > budget_
                 || (shareBudget_ == 0) != (shareCap_ == 0) || shareCap_ > shareBudget_
-                || (budget_ == 0 && shareBudget_ == 0) || expires_ <= block.timestamp || reviewers.length > 32
+                // Something to spend, unless this is the panel that only judges (then there must be nothing).
+                || (budget_ == 0 && shareBudget_ == 0) != milestonePanel_ || expires_ <= block.timestamp
+                || reviewers.length > 32
                 || quorum == 0 || quorum > reviewers.length
                 // A bond needs a real token to be paid in, and no bond needs none named.
                 || (reviewerBond_ == 0) != (bondToken_ == address(0))
@@ -132,6 +139,7 @@ contract TreasuryMandate {
         expiresAt = expires_;
         reviewerBond = reviewerBond_;
         reviewerBondToken = bondToken_;
+        milestonePanel = milestonePanel_;
         VerifierSet panel = new VerifierSet(address(this), quorum);
         verifiers = panel;
         claims = new ClaimStake(panel, address(this), currency_);
@@ -179,7 +187,7 @@ contract TreasuryMandate {
                 || closed || block.timestamp >= expiresAt || expires <= block.timestamp || expires > expiresAt
         ) revert InvalidProject();
         if (
-            (amount == 0 && shareAmount == 0) || amount > perProjectCap || uint256(allocated) + amount > budget
+            (amount == 0 && shareAmount == 0 && !milestonePanel) || amount > perProjectCap || uint256(allocated) + amount > budget
                 || shareAmount > perProjectShareCap || uint256(sharesAllocated) + shareAmount > shareBudget
         ) revert BudgetExceeded();
         allocated += amount;
@@ -279,7 +287,11 @@ contract TreasuryMandate {
 contract TreasuryMandateFactory {
     using SafeERC20 for IERC20;
     mapping(address => address) public daos;
+    /// @notice The mandate a DAO named, when it was born, as the panel that judges the milestones its team's Shares are
+    /// locked behind (zero for a DAO that named none). Set once, by the DAO itself; the milestone lock honours no other.
+    mapping(address => address) public milestoneMandate;
     error FundingMismatch();
+    error PanelAlreadyNamed();
     event MandateCreated(
         address indexed dao,
         address indexed mandate,
@@ -289,6 +301,7 @@ contract TreasuryMandateFactory {
         uint128 shareBudget,
         uint128 perProjectShareCap
     );
+    event MilestonePanelNamed(address indexed dao, address indexed mandate);
 
     /// @notice Create and fund a mandate atomically via a broadly approved DAO
     /// action. The DAO first approves this factory for exactly the budget.
@@ -306,8 +319,54 @@ contract TreasuryMandateFactory {
         uint128 reviewerBond,
         address bondToken
     ) external returns (TreasuryMandate mandate) {
+        mandate = _make(
+            currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum, reviewerBond, bondToken, false
+        );
+    }
+
+    /// @notice The DAO names, once, the panel that judges its team's milestones. It is a mandate that moves no money and
+    /// awards no Shares (its projects hold nothing); it exists for its reviewers, their bond and the claims they judge. Called from the DAO's own initialization, so the
+    /// panel is part of the terms the backers see before they buy, and no later vote can change it.
+    function createMilestonePanel(
+        address currency,
+        uint64 expires,
+        address[] calldata reviewers,
+        uint256 quorum,
+        uint128 reviewerBond,
+        address bondToken
+    ) external returns (TreasuryMandate mandate) {
+        if (milestoneMandate[msg.sender] != address(0)) revert PanelAlreadyNamed();
+        mandate = _make(currency, 0, 0, 0, 0, expires, reviewers, quorum, reviewerBond, bondToken, true);
+        milestoneMandate[msg.sender] = address(mandate);
+        emit MilestonePanelNamed(msg.sender, address(mandate));
+    }
+
+    function _make(
+        address currency,
+        uint128 budget,
+        uint128 cap,
+        uint128 shareBudget,
+        uint128 shareCap,
+        uint64 expires,
+        address[] calldata reviewers,
+        uint256 quorum,
+        uint128 reviewerBond,
+        address bondToken,
+        bool milestonePanel
+    ) private returns (TreasuryMandate mandate) {
         mandate = new TreasuryMandate(
-            msg.sender, currency, budget, cap, shareBudget, shareCap, expires, reviewers, quorum, reviewerBond, bondToken
+            msg.sender,
+            currency,
+            budget,
+            cap,
+            shareBudget,
+            shareCap,
+            expires,
+            reviewers,
+            quorum,
+            reviewerBond,
+            bondToken,
+            milestonePanel
         );
         if (budget != 0) {
             IERC20(currency).safeTransferFrom(msg.sender, address(mandate), budget);

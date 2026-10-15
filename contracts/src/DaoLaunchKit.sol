@@ -25,10 +25,28 @@ interface IKitSummoner {
         KitCall[] calldata initCalls
     ) external payable returns (address dao);
     function getImplementation() external view returns (address);
+    function mandateFactory() external view returns (address);
 }
 
 interface IKitDao {
     function shares() external view returns (address);
+    function votingWeight() external view returns (address);
+}
+
+interface IKitPolicy {
+    function mandateFactory() external view returns (address);
+}
+
+interface IKitMandateFactory {
+    function createMilestonePanel(
+        address currency,
+        uint64 expires,
+        address[] calldata reviewers,
+        uint256 quorum,
+        uint128 reviewerBond,
+        address bondToken
+    ) external returns (address mandate);
+    function milestoneMandate(address dao) external view returns (address);
 }
 
 interface IKitErc20 {
@@ -60,7 +78,9 @@ interface IKitLockable {
 ///     ragequit until a reviewed milestone unlocks it (and mints the founder a soulbound badge);
 ///  3. summons the DAO with the team, the executor and (for an allocation the DAO keeps itself) this kit as its only
 ///     initial holders, and, in the DAO's own initialization, points its Shares at the lock, so there is never a
-///     moment when the founders' Shares are free;
+///     moment when the founders' Shares are free, and names the panel that judges the milestones (reviewers, how many
+///     must agree, their bond), so it is part of the terms the backers see before they buy and no later vote can swap
+///     it for a friendlier one;
 ///  4. points the executor's payee at the DAO;
 ///  5. creates the auction on the canonical factory, binds the executor to it, and has the executor fund it.
 ///
@@ -81,6 +101,8 @@ contract DaoLaunchKit {
     /// @notice The Shares implementation the summoner's DAOs clone: the DAO's Shares address is computed from it, so
     /// the lock can be pointed at them in the DAO's own initialization.
     address public immutable sharesImplementation;
+    /// @notice The work budget factory of the summoner's DAOs, where the milestone panel is named.
+    IKitMandateFactory public immutable mandateFactory;
 
     struct Params {
         string name;
@@ -98,6 +120,17 @@ contract DaoLaunchKit {
         /// The part of each team member's Shares each milestone unlocks (they add up to at most 10,000; the rest is
         /// not locked at all).
         uint16[] milestoneBps;
+        /// The panel that judges the milestones: who, how many must agree, and the bond each posts before judging (zero
+        /// for none, with `bondToken` zero too). Required when there are milestones, and refused when there are none.
+        /// None may be a team member whose Shares the lock holds back.
+        address[] reviewers;
+        uint256 reviewQuorum;
+        uint128 reviewerBond;
+        address bondToken;
+        /// What the panel's claims are paid and staked in (the sale currency), and when its mandate ends (unix seconds):
+        /// it must outlast the last milestone, because nothing can be unlocked once it has ended.
+        address panelCurrency;
+        uint64 panelExpires;
         /// Shares the DAO holds itself from the start: treasury, liquidity, milestones, community. They never vote
         /// (they are outside voting supply) and never count toward a member's ragequit share.
         uint256 daoShares;
@@ -122,6 +155,8 @@ contract DaoLaunchKit {
     error EmptyLaunch();
     error TeamMismatch();
     error TooManyTeam();
+    /// @notice Milestones need a panel to judge them, and a panel needs milestones to judge.
+    error PanelMismatch();
 
     constructor(IKitSummoner summoner_, IKitAuctionFactory factory_, address sharesImplementation_) {
         require(
@@ -132,6 +167,8 @@ contract DaoLaunchKit {
         summoner = summoner_;
         factory = factory_;
         sharesImplementation = sharesImplementation_;
+        mandateFactory = IKitMandateFactory(summoner_.mandateFactory());
+        require(address(mandateFactory).code.length != 0, "kit: no mandate factory");
     }
 
     /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
@@ -189,7 +226,10 @@ contract DaoLaunchKit {
                 )
             );
         }
-        uint256 calls = (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 1);
+        // Milestones and their panel go together.
+        if ((lock != address(0)) != (p.reviewers.length != 0)) revert PanelMismatch();
+        // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
+        uint256 calls = (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 2);
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         if (p.proposalThreshold != 0) {
@@ -198,12 +238,23 @@ contract DaoLaunchKit {
         }
         if (lock != address(0)) {
             initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
+            initCalls[next++] = KitCall(
+                address(mandateFactory),
+                0,
+                abi.encodeCall(
+                    IKitMandateFactory.createMilestonePanel,
+                    (p.panelCurrency, p.panelExpires, p.reviewers, p.reviewQuorum, p.reviewerBond, p.bondToken)
+                )
+            );
         }
         dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, initCalls);
         // Fail closed: the addresses the lock and the guard were built on must be the ones that exist.
         require(dao == predictedDao, "kit: dao address");
         address shares = IKitDao(dao).shares();
         require(shares == predictedShares, "kit: shares address");
+        // The factory the panel was named in is the one this DAO's own voting policy uses, or the lock would not honour it.
+        require(IKitPolicy(IKitDao(dao).votingWeight()).mandateFactory() == address(mandateFactory), "kit: mandate factory");
+        if (lock != address(0)) require(mandateFactory.milestoneMandate(dao) != address(0), "kit: milestone panel");
 
         if (p.daoShares != 0) require(IKitErc20(shares).transfer(dao, p.daoShares), "kit: dao allocation");
 

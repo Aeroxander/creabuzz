@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import {MilestoneLock} from "../src/MilestoneLock.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
+import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
+import {VerifierSet} from "../src/VerifierSet.sol";
 import {Call, Moloch, Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {
     LaunchCurrency,
@@ -26,6 +28,12 @@ struct KitParams {
     uint256[] teamShares;
     bytes32[] milestoneChecks;
     uint16[] milestoneBps;
+    address[] reviewers;
+    uint256 reviewQuorum;
+    uint128 reviewerBond;
+    address bondToken;
+    address panelCurrency;
+    uint64 panelExpires;
     uint256 daoShares;
     uint128 saleSupply;
     bytes auctionConfig;
@@ -36,6 +44,7 @@ interface IKit {
     function launch(KitParams calldata p) external returns (address dao, address executor, address auction);
     function predictExecutor(address launcher, bytes32 salt) external view returns (address);
     function sharesImplementation() external view returns (address);
+    function mandateFactory() external view returns (address);
 }
 
 /// @notice The one-transaction launch against the real auction factory and the real patched DAO.
@@ -50,6 +59,9 @@ contract DaoLaunchKitTest is Test {
     address internal founder = makeAddr("founder");
     address internal cofounder = makeAddr("cofounder");
     address internal alice = makeAddr("alice");
+    address internal judgeOne = makeAddr("judge one");
+    address internal judgeTwo = makeAddr("judge two");
+    address internal judgeThree = makeAddr("judge three");
     address internal bob = makeAddr("bob");
     LaunchCurrency internal currency;
     IKit internal kit;
@@ -136,6 +148,14 @@ contract DaoLaunchKitTest is Test {
         p.milestoneBps = new uint16[](2);
         p.milestoneBps[0] = 3000;
         p.milestoneBps[1] = 5000;
+        // Three outside reviewers judge the milestones, two must agree, and nobody posts a bond in this fixture.
+        p.reviewers = new address[](3);
+        p.reviewers[0] = judgeOne;
+        p.reviewers[1] = judgeTwo;
+        p.reviewers[2] = judgeThree;
+        p.reviewQuorum = 2;
+        p.panelCurrency = address(currency);
+        p.panelExpires = uint64(block.timestamp + 730 days);
         p.daoShares = 300e18; // treasury, milestones, community: the DAO's own, outside voting and outside exits
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
@@ -208,12 +228,83 @@ contract DaoLaunchKitTest is Test {
         KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
         p.milestoneChecks = new bytes32[](0);
         p.milestoneBps = new uint16[](0);
+        p.reviewers = new address[](0); // no milestones, so no panel to judge them
         vm.prank(founder);
         (address d,,) = kit.launch(p);
         Shares shares = Moloch(payable(d)).shares();
         assertEq(shares.lockGuard(), address(0));
         vm.prank(founder);
         shares.transfer(alice, 225e18);
+    }
+
+    function test_the_launch_names_the_milestone_panel_and_no_vote_can_take_the_lock_off() public {
+        _needArtifacts();
+        (Moloch dao,,) = _launch(bytes32("panel"));
+        Shares shares = dao.shares();
+        AllocationVoting policy = AllocationVoting(dao.votingWeight());
+        TreasuryMandateFactory factory = policy.mandateFactory();
+        assertEq(kit.mandateFactory(), address(factory), "the kit names the factory the DAO's own policy uses");
+
+        // The panel exists from the first block, made by the DAO, and the factory remembers it as the DAO's panel.
+        TreasuryMandate panel = TreasuryMandate(factory.milestoneMandate(address(dao)));
+        assertTrue(address(panel) != address(0));
+        assertEq(factory.daos(address(panel)), address(dao));
+        assertEq(panel.dao(), address(dao));
+        assertEq(address(panel.currency()), address(currency));
+        assertEq(panel.budget(), 0, "it moves no money");
+        assertEq(panel.expiresAt(), uint64(block.timestamp + 730 days));
+        VerifierSet judges = panel.verifiers();
+        assertEq(judges.quorum(), 2);
+        (bool one,,,) = judges.verifiers(judgeOne);
+        (bool two,,,) = judges.verifiers(judgeTwo);
+        (bool three,,,) = judges.verifiers(judgeThree);
+        assertTrue(one && two && three, "all three were accepted at birth");
+        (bool theFounder,,,) = judges.verifiers(founder);
+        assertFalse(theFounder);
+
+        // The DAO cannot take the lock off, or swap it, or name another panel: a vote only governs what the team is
+        // not bound by.
+        address lock = shares.lockGuard();
+        vm.prank(address(dao));
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(address(0));
+        vm.prank(address(dao));
+        vm.expectRevert(TreasuryMandateFactory.PanelAlreadyNamed.selector);
+        factory.createMilestonePanel(address(currency), uint64(block.timestamp + 365 days), p_reviewers(), 1, 0, address(0));
+        assertEq(shares.lockGuard(), lock);
+    }
+
+    function p_reviewers() internal view returns (address[] memory r) {
+        r = new address[](1);
+        r[0] = judgeOne;
+    }
+
+    function test_a_team_member_cannot_be_named_to_judge_the_teams_milestones_so_the_launch_fails() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("friendly");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.reviewers[2] = cofounder; // a founder whose Shares the lock holds back
+        vm.prank(founder);
+        vm.expectRevert();
+        kit.launch(p);
+    }
+
+    function test_milestones_and_their_panel_go_together() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("mismatch");
+        // Milestones with nobody to judge them.
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.reviewers = new address[](0);
+        vm.prank(founder);
+        vm.expectRevert(bytes4(keccak256("PanelMismatch()")));
+        kit.launch(p);
+        // A panel with nothing to judge.
+        p = _params(salt, kit.predictExecutor(founder, salt));
+        p.milestoneChecks = new bytes32[](0);
+        p.milestoneBps = new uint16[](0);
+        vm.prank(founder);
+        vm.expectRevert(bytes4(keccak256("PanelMismatch()")));
+        kit.launch(p);
     }
 
     function test_a_kit_that_misjudges_the_shares_address_reverts_the_whole_launch() public {

@@ -54,8 +54,11 @@ surface that wraps upstream primitives:
   cannot be transferred or burned (so not sold and not ragequit) until that
   milestone is reached. A milestone is a work claim approved by a mandate's
   independent reviewers; `unlock` is permissionless and mints the founder a
-  soulbound badge. The DAO can `forfeit` a departed founder's remaining
-  tranches. The Shares contract exposes the lock as its `lockGuard` and is
+  soulbound badge. When the launch kit made the DAO it also named the panel that
+  judges the milestones (the factory's `milestoneMandate(dao)`), and the lock
+  accepts no other. The Shares' lock guard can be set once and never changed, and
+  the DAO can `forfeit` a departed founder's remaining tranches, which burns
+  them on the spot. The Shares contract exposes the lock as its `lockGuard` and is
   ERC-20C compatible (see `docs/token-voting-design.md`).
 - `src/ShareVesting.sol` — time vesting. The launch kit no longer uses it
   (milestones replaced time); it remains for DAOs that want a plain schedule.

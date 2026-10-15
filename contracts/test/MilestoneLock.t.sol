@@ -65,14 +65,18 @@ contract MilestoneLockTest is VotingFixture {
 
     /// Alice files the claim, the manager binds it, two reviewers approve it, the window passes, she takes it.
     function _earn(bytes32 claim, bytes32 project, bytes32 check) internal {
-        ClaimStake claims = mandate.claims();
-        VerifierSet panel = mandate.verifiers();
+        _earnIn(mandate, claim, project, check);
+    }
+
+    function _earnIn(TreasuryMandate where, bytes32 claim, bytes32 project, bytes32 check) internal {
+        ClaimStake claims = where.claims();
+        VerifierSet panel = where.verifiers();
         vm.startPrank(ALICE);
         claims.submitClaim(claim, 0, 0, keccak256(abi.encode(claim)));
         claims.setCheck(claim, check);
         vm.stopPrank();
         vm.prank(BOB);
-        mandate.fundMilestone(project, claim, ALICE);
+        where.fundMilestone(project, claim, ALICE);
         vm.prank(CAROL);
         panel.attest(claim, true);
         vm.prank(DAVE);
@@ -264,7 +268,7 @@ contract MilestoneLockTest is VotingFixture {
 
     // ---- the DAO's escape -----------------------------------------------------------------------
 
-    function test_the_dao_can_forfeit_what_a_founder_never_earned() public {
+    function test_the_dao_can_forfeit_what_a_founder_never_earned_and_it_is_burned_not_freed() public {
         _earn(bytes32("alpha"), PROJECT, CHECK_ONE);
         lock.unlock(ALICE, 0, address(mandate), bytes32("alpha"));
         vm.prank(ALICE);
@@ -275,17 +279,111 @@ contract MilestoneLockTest is VotingFixture {
         vm.prank(address(dao));
         vm.expectRevert(Shares.LockedShares.selector);
         shares.burnFromMoloch(ALICE, 51e18);
+        // And nobody but the lock can burn through the forfeit path.
+        vm.prank(address(dao));
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        shares.burnForfeited(ALICE, 50e18);
 
+        uint256 supply = shares.totalSupply();
         vm.prank(address(dao));
         assertEq(lock.forfeit(ALICE), 50e18, "the unearned second tranche");
-        assertEq(lock.lockedOf(ALICE), 0);
-        vm.prank(address(dao));
-        shares.burnFromMoloch(ALICE, 50e18);
+        // Burned on the spot: the supply fell by exactly that, and she never held it free.
+        assertEq(shares.totalSupply(), supply - 50e18);
         assertEq(shares.balanceOf(ALICE), 50e18);
+        assertEq(lock.lockedOf(ALICE), 0);
         // What was earned stays earned, and a forfeited tranche cannot be unlocked afterwards.
         assertEq(badge.balanceOf(ALICE), 1);
         vm.expectRevert(MilestoneLock.AlreadyResolved.selector);
         lock.unlock(ALICE, 1, address(mandate), bytes32("alpha"));
+        // A second forfeit has nothing left to take.
+        vm.prank(address(dao));
+        assertEq(lock.forfeit(ALICE), 0);
+        assertEq(shares.totalSupply(), supply - 50e18);
+    }
+
+    // ---- the panel named at launch ----------------------------------------------------------------
+
+    function test_a_dao_that_named_its_milestone_panel_unlocks_through_that_panel_only() public {
+        TreasuryMandateFactory factory = ledger.mandateFactory();
+        address[] memory panelists = new address[](3);
+        panelists[0] = CAROL;
+        panelists[1] = DAVE;
+        panelists[2] = ERIN;
+        uint64 ends = uint64(vm.getBlockTimestamp() + 730 days);
+        vm.prank(address(dao));
+        TreasuryMandate named = factory.createMilestonePanel(address(currency), ends, panelists, 2, 0, address(0));
+        assertEq(factory.milestoneMandate(address(dao)), address(named));
+        assertEq(factory.daos(address(named)), address(dao), "it is the DAO's, like any mandate it made");
+        assertEq(named.budget(), 0, "it moves no money");
+        // Named once: a later vote cannot name another.
+        vm.prank(address(dao));
+        vm.expectRevert(TreasuryMandateFactory.PanelAlreadyNamed.selector);
+        factory.createMilestonePanel(address(currency), ends, panelists, 1, 0, address(0));
+
+        // The friendly mandate the DAO made in setUp (any reviewers it likes) earned a paid claim, and it no longer counts.
+        _earn(bytes32("alpha"), PROJECT, CHECK_ONE);
+        vm.expectRevert(MilestoneLock.NotThisDaosMandate.selector);
+        lock.unlock(ALICE, 0, address(mandate), bytes32("alpha"));
+        assertEq(lock.lockedOf(ALICE), 80e18, "nothing moved");
+
+        // The named panel's mandate does, once the DAO approves a project in it (a milestone project holds nothing).
+        vm.prank(address(dao));
+        named.approveProject(bytes32("milestone-1"), BOB, 0, 0, uint64(vm.getBlockTimestamp() + 300 days), CHECK_ONE);
+        _earnIn(named, bytes32("beta"), bytes32("milestone-1"), CHECK_ONE);
+        lock.unlock(ALICE, 0, address(named), bytes32("beta"));
+        assertEq(lock.lockedOf(ALICE), 50e18);
+    }
+
+    function test_the_milestone_panel_holds_nothing_and_its_projects_can_neither_hold_nor_award() public {
+        TreasuryMandateFactory factory = ledger.mandateFactory();
+        address[] memory panelists = new address[](3);
+        panelists[0] = CAROL;
+        panelists[1] = DAVE;
+        panelists[2] = ERIN;
+        uint64 ends = uint64(vm.getBlockTimestamp() + 730 days);
+        vm.prank(address(dao));
+        TreasuryMandate named = factory.createMilestonePanel(address(currency), ends, panelists, 2, 0, address(0));
+        assertTrue(named.milestonePanel());
+        assertFalse(mandate.milestonePanel(), "an ordinary mandate is not the panel");
+        assertEq(named.budget(), 0);
+        assertEq(named.shareBudget(), 0);
+
+        // A project in it holds nothing, and cannot be given anything.
+        uint64 until = uint64(vm.getBlockTimestamp() + 300 days);
+        vm.startPrank(address(dao));
+        named.approveProject(bytes32("empty"), BOB, 0, 0, until, CHECK_ONE);
+        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
+        named.approveProject(bytes32("money"), BOB, 1, 0, until, CHECK_ONE);
+        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
+        named.approveProject(bytes32("shares"), BOB, 0, 1, until, CHECK_TWO);
+        vm.stopPrank();
+
+        // A claim for the milestone is bound without reserving anything; one that asks for money cannot be.
+        ClaimStake claims = named.claims();
+        vm.startPrank(ALICE);
+        claims.submitClaim(bytes32("asks"), 5, 0, keccak256("e"));
+        claims.setCheck(bytes32("asks"), CHECK_ONE);
+        vm.stopPrank();
+        vm.prank(BOB);
+        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
+        named.fundMilestone(bytes32("empty"), bytes32("asks"), ALICE);
+
+        // Nothing can be awarded out of it, whatever the claim.
+        _earnIn(named, bytes32("beta"), bytes32("empty"), CHECK_ONE);
+        vm.prank(address(dao));
+        vm.expectRevert(TreasuryMandate.BudgetExceeded.selector);
+        named.consumeContribution(bytes32("beta"), 1);
+    }
+
+    // The ordinary mandate still needs something to spend: the tests in TreasuryMandate.t.sol and EquityMandate.t.sol refuse
+    // one with neither budget.
+
+    function test_a_dao_that_named_no_panel_keeps_the_older_rule() public {
+        // The factory records no panel for this DAO, so any mandate the DAO made still unlocks (the tests above).
+        assertEq(ledger.mandateFactory().milestoneMandate(address(dao)), address(0));
+        _earn(bytes32("alpha"), PROJECT, CHECK_ONE);
+        lock.unlock(ALICE, 0, address(mandate), bytes32("alpha"));
+        assertEq(lock.lockedOf(ALICE), 50e18);
     }
 
     // ---- the badge -----------------------------------------------------------------------------

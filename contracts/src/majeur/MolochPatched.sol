@@ -1467,6 +1467,7 @@ contract Shares {
     event TransferValidatorUpdated(address oldValidator, address newValidator);
     event LockGuardUpdated(address oldGuard, address newGuard);
     error LockedShares();
+    error LockGuardSet();
 
     /// @notice The collection admin a validator checks. It is the DAO, so only the DAO can configure its rules.
     function owner() external view returns (address) {
@@ -1493,8 +1494,19 @@ contract Shares {
 
     function setLockGuard(address guard) public payable onlyDAO {
         require(guard == address(0) || guard.code.length != 0, Unauthorized());
+        // Set once. A lock that a vote could undo or swap for a friendlier one is a promise the team would have to
+        // keep only for as long as they keep a majority, so the DAO that sets it cannot take it off again.
+        require(lockGuard == address(0), LockGuardSet());
         emit LockGuardUpdated(lockGuard, guard);
         lockGuard = guard;
+    }
+
+    /// @notice The lock guard burns what a forfeited milestone held back, and only that: the DAO decided the beneficiary
+    /// left their tranches, and the lock (which says what is locked) is the one that knows how much. Nothing else
+    /// reaches a locked holder's Shares, and the Shares never become free to move on the way.
+    function burnForfeited(address from, uint256 amount) public {
+        require(msg.sender == lockGuard && msg.sender != address(0), Unauthorized());
+        _burn(from, amount);
     }
 
     /// @dev ERC-165: this is an ICreatorToken (0xad0d7f6c).
@@ -1529,6 +1541,10 @@ contract Shares {
     // @@CREABUZZ PATCH BEGIN shares-burn-lock
         _requireUnlocked(from, amount);
     // @@CREABUZZ PATCH END shares-burn-lock
+        _burn(from, amount);
+    }
+
+    function _burn(address from, uint256 amount) internal {
         balanceOf[from] -= amount;
         unchecked {
             totalSupply -= amount;
@@ -2538,9 +2554,19 @@ contract Summoner {
 
     Moloch[] public daos;
     Moloch immutable implementation;
+    // @@CREABUZZ PATCH BEGIN summoner-mandate-factory
+    /// @notice The voting policy every DAO this summoner makes clones, whose work budget factory is theirs too.
+    AllocationVoting immutable policyImplementation_;
+
+    /// @notice The work budget factory the DAOs of this summoner use (a launch kit names a milestone panel in it).
+    function mandateFactory() public view returns (address) {
+        return address(policyImplementation_.mandateFactory());
+    }
+    // @@CREABUZZ PATCH END summoner-mandate-factory
 
     // @@CREABUZZ PATCH BEGIN conviction-summoner
     constructor(address policyImplementation) payable {
+        policyImplementation_ = AllocationVoting(policyImplementation);
         emit NewDAO(address(this), implementation = new Moloch{salt: bytes32(0)}(policyImplementation));
     }
     /*

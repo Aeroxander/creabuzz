@@ -274,19 +274,26 @@ contract SharesCreatorTokenTest is VotingFixture {
         shares.transfer(DAVE, 1);
     }
 
-    function test_the_dao_can_remove_a_guard_and_only_the_dao() public {
+    function test_the_guard_is_set_once_so_no_vote_can_take_it_off_or_swap_it() public {
         locks.set(ALICE, 100e18);
         _setGuard(address(locks));
         vm.prank(ALICE);
         vm.expectRevert(Shares.LockedShares.selector);
         shares.transfer(CAROL, 1);
+        // Only the DAO could ever change it, and the DAO cannot: not to nothing, not to a friendlier guard.
         vm.prank(ALICE);
         vm.expectRevert();
         shares.setLockGuard(address(0));
-        vm.expectEmit(address(shares));
-        emit Shares.LockGuardUpdated(address(locks), address(0));
-        _setGuard(address(0));
+        vm.prank(address(dao));
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(address(0));
+        address friendlier = address(new FixedLocks()); // made first: a prank covers only the next call
+        vm.prank(address(dao));
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(friendlier);
+        assertEq(shares.lockGuard(), address(locks));
         vm.prank(ALICE);
+        vm.expectRevert(Shares.LockedShares.selector);
         shares.transfer(CAROL, 1);
     }
 
