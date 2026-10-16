@@ -77,6 +77,14 @@ out of the DAO: the same call the lock refused before), and the founder holds a 
 By hand, after a `scripts/cli-milestone-e2e.sh`-style world, `buzz launchpad work locks --dao <dao>` lists each milestone
 with its state and what to do next.
 
+**Submitting a milestone and reading the evidence (D45).** In the browser journey the founder submits the second milestone
+from its own row on the Locked Shares card: an empty box is refused before the wallet is asked, then one box and one button
+file the claim, name the milestone and send it to the panel's reviewers (three wallet confirmations, no vote and no project
+manager). Working looks like: the row says "With the reviewers: 0 of 2 approvals" and the Shares stay locked. On the Work tab,
+a reviewer sees "Evidence submitted" and the words it is judged against, with a line saying they match what the claim
+committed to. A claim whose text was never published shows "No evidence has been published for this claim" and offers no
+Approve button (Object stays); the person who filed it can publish the text again from that box.
+
 ## 4b. Shares as an apptoken
 
 ```bash
