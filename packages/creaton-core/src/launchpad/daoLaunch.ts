@@ -457,12 +457,13 @@ const PARAMS_TYPE: AbiType = {
     "uint128", // saleSupply
     "bytes", // auctionConfig
     "bytes32", // auctionSalt
+    "uint64", // governanceStartBlock
   ],
 };
 
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
 export const SIGNATURE_KIT_LAUNCH =
-  "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32))";
+  "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32,uint64))";
 export const SIGNATURE_KIT_PREDICT_EXECUTOR =
   "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
@@ -521,6 +522,8 @@ export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
         plan.saleSupply,
         auctionConfig,
         plan.auctionSalt,
+        // The DAO opens for proposals when the buyers can claim: until then the team is the only electorate.
+        BigInt(plan.auction.claimBlock),
       ],
     ],
   );

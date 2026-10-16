@@ -471,3 +471,13 @@ tab lists **Milestone panel**, with its reviewers and bond. To approve a milesto
 which milestone, not for Shares or words. Try the three things a vote cannot do (they are contract rules, tested in Forge): set the lock guard again, name a second
 panel, or unlock a milestone through any other budget.
 
+## 4aa. Nothing can be voted on during the sale (2026-10-16)
+
+```bash
+cd contracts && REQUIRE_CONTRACT_ARTIFACTS=true forge test         # whole suite; the kit tests include the sale-boundary drain and the once-only setter
+scripts/web-dao-launch-e2e.sh && scripts/web-economy-e2e.sh        # REAL chain: a launch still goes through, and the DAO votes after the sale
+```
+
+By hand: launch a project and, before its sale's claim block, try to open any decision on the **Decisions** tab: the chain refuses. After the claim block the same decision opens.
+Backers: claim promptly after the claim block; a decision opened right then has no unclaimed buyers in its electorate, and the review plus the execution delay (at least three days) is the time to claim and leave.
+

@@ -46,6 +46,9 @@ world_launch_with_lock() {
   [[ "$(cast call "$SHARES" "lockGuard()(address)" --rpc-url "$RPC")" == "$LOCK" ]] \
     || fail "the Shares do not name the lock as their guard"
   [[ "$(shares_of "$FOUNDER")" == "$TEAM_SHARES" ]] || fail "the founder should hold the whole team allocation"
+  # The DAO opens for proposals when the buyers can claim (start + 260 blocks, and the sale starts 500 blocks out): this world
+  # runs no sale, so it mines to that block before anyone votes.
+  cast rpc --rpc-url "$RPC" anvil_mine 0x320 >/dev/null || fail "could not mine to the claim block"
   step "dao ${DAO}  lock ${LOCK}"
 }
 

@@ -294,4 +294,8 @@ decisions are D18-D22 in [DECISIONS.md](DECISIONS.md).
   any call, so the only sound version reverses D13; the contract rules above make the commitments hold without it (see D42). Checked: 6 mutations of the new rules, each caught by a test; the whole Forge suite (347); cast-pinned
   launch calldata; and the real-chain launch, economy and milestone journeys. Found on the way: my own bond-token commit left `decision-forms.tsx` over the file-size limit (fixed by moving the work budget form into its own file).
   Not built: an exchange on the Sepolia fork (needs a clone of Limit Break's examples, outside this repo), page-splitting in the CLI and desktop app, screens for asking a bond back or slashing one.
+- **Governance opens when the buyers can claim** (D43): another AI's product review pointed at the sale boundary (a team that votes from block one could pass a treasury drain during the sale and run it the moment the raise landed). A Forge
+  test on the real kit reproduced it (the drain ran), so the DAO a launch makes now refuses every proposal until the auction's claim block (set once in its own initialization, checked against the auction). Checked: the reproduction
+  turned into a passing test, four deliberate breakages each caught by a test, the whole Forge suite (349), cast-pinned launch calldata with the new field, and the real-chain launch, economy, milestone (CLI and web), DAO journeys and the
+  economy journey on the Sepolia fork. The review's other findings are triaged in the conversation; its document is `MVP-PRODUCT-REVIEW-2026-10-16.md` (not mine, left uncommitted).
 
