@@ -317,7 +317,7 @@ test("the raise terms are money a buyer can read", async ({ page }) => {
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
 
-  await expect(page.getByText("Graduation threshold")).toBeVisible();
+  await expect(page.getByText("Minimum raise")).toBeVisible();
   await expect(page.getByText("300,000 USDC").first()).toBeVisible();
   await expect(page.getByText("None set", { exact: false })).toHaveCount(0);
   await expect(page.getByText("$0.01 per token")).toBeVisible();
@@ -327,6 +327,13 @@ test("the raise terms are money a buyer can read", async ({ page }) => {
   await expect(settlement).toContainText("If the threshold is met");
   await expect(settlement).toContainText("If the threshold is missed");
   await expect(settlement).toContainText("refundable in full");
+
+  // Before the token trades the page shows the sale (the floor, what the auction clears at, how much of the minimum is
+  // in), never a chart of bid limits dressed as prices; and it says how a bid fills.
+  await expect(page.getByTestId("launch-sale-price")).toBeVisible();
+  await expect(page.getByTestId("launch-price-chart")).toHaveCount(0);
+  await expect(page.getByText(/fills over time at the auction/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Place bid" })).toBeVisible();
 });
 
 test("the founder sees what is still missing before deploying", async ({
@@ -370,7 +377,9 @@ test("the buyer sees what the rest of the supply implies", async ({ page }) => {
   await expect(tokenomics).toContainText(/9,999,000|10,000,000/);
   await expect(tokenomics).toContainText("Valuation at the floor");
   await expect(tokenomics).toContainText("$1,000 buys about");
-  await expect(tokenomics).toContainText("you pay that, not your maximum");
+  await expect(tokenomics).toContainText(
+    "fills over time at the auction's current clearing price",
+  );
 });
 
 test("an allocation that does not add up blocks the launch", async ({
@@ -434,7 +443,7 @@ test("a bid sends onchain before the mirror is allowed", async ({ page }) => {
   await page.reload();
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
-  await page.getByRole("button", { name: "Back this launch" }).click();
+  await page.getByRole("button", { name: "Place bid" }).click();
 
   // The mirror is disabled until a tx hash exists.
   await expect(page.getByTestId("bid-record")).toBeDisabled();
@@ -610,10 +619,11 @@ test("a failed launch can be relaunched under the same record", async ({
       );
   } finally {
     servedStage = "live";
+    servedAuction = "";
   }
 });
 
-test("the exit path is a one-click proposal on the treasury", async ({
+test("the exit path is a one-click suggestion on the treasury, confirmed once it is published", async ({
   page,
 }) => {
   // The credible threat of taking money back disciplines the treasury. The
@@ -635,6 +645,9 @@ test("the exit path is a one-click proposal on the treasury", async ({
         content: expect.stringContaining("return-capital"),
       }),
     );
+  // It says "Suggested" only after the server took it, and says plainly that no money moves.
+  await expect(page.getByTestId("propose-return")).toHaveText("Suggested");
+  await expect(exit).toContainText("does not move any money");
 });
 
 test("performance vesting is validated and published", async ({ page }) => {
@@ -1045,3 +1058,31 @@ async function toSaleStepFromOpenDialog(page: import("@playwright/test").Page) {
   await token.getByLabel(/supply/i).fill("1000000");
   await page.getByTestId("wizard-continue").click();
 }
+
+// Last on purpose: it links an auction to the fixture, and a founder who opens the page can republish the record with it.
+test("the main button follows the sale: bid while it is open, then claim tokens or a refund", async ({
+  page,
+}) => {
+  // Claiming and refunds happen on the auction contract, so the record must link one.
+  servedAuction = `0x${"a1".repeat(20)}`;
+  try {
+    for (const [stage, button] of [
+      ["failed", "Claim refund"],
+      ["graduated", "Claim tokens"],
+    ] as const) {
+      servedStage = stage;
+      await page.goto("/launchpad");
+      await page.getByText("Nebula DAO").click();
+      await expect(page).toHaveURL(/\/launchpad\/nebula/);
+      await expect(page.getByRole("button", { name: button })).toBeVisible({
+        timeout: 15_000,
+      });
+      // A sale that is over is never offered another bid.
+      await expect(page.getByRole("button", { name: "Place bid" })).toHaveCount(
+        0,
+      );
+    }
+  } finally {
+    servedStage = "live";
+  }
+});

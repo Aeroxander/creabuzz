@@ -619,7 +619,7 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
   );
   await backerPage.goto("/launchpad");
   await backerPage.getByText("Nebula DAO").click();
-  await backerPage.getByRole("button", { name: "Back this launch" }).click();
+  await backerPage.getByRole("button", { name: "Place bid" }).click();
   await backerPage.getByTestId("bid-budget").fill("400000");
   await expect(backerPage.getByTestId("bid-issues")).toHaveCount(0);
   await backerPage.getByTestId("bid-send").click();

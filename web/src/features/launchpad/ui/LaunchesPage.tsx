@@ -71,7 +71,7 @@ const FILTER_LABELS: Record<Filter, string> = {
   mine: "Mine",
   following: "Following",
   "closing-soon": "Closing soon",
-  graduated: "Graduated",
+  graduated: "Sale completed",
 };
 /**
  * One funding chip: the label, the count it would show, and whether it is the

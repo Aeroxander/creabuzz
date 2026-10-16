@@ -5,6 +5,7 @@ import { Badge } from "@/shared/ui/badge";
 import {
   auctionProgress,
   progressPercent,
+  recordSaleCurrency,
   type AuctionProgress,
 } from "../chain";
 import { formatMoney } from "../lib/amounts";
@@ -22,7 +23,7 @@ const STAGE_LABELS: Record<LaunchStage, string> = {
   review: "In review",
   live: "Live",
   funding: "Funding",
-  graduated: "Graduated",
+  graduated: "Sale completed",
   failed: "Failed",
 };
 
@@ -104,6 +105,8 @@ export function ProgressBar({
   const { data } = useAuctionProgress(record);
   const measurable = data !== undefined && data.source !== "unavailable";
   const pct = measurable ? progressPercent(data.raised, data.goal) : 0;
+  // The raise is in the sale's own currency (ETH has 18 decimals, USDC 6): never assume one.
+  const currency = recordSaleCurrency(record);
   if (quietWhenUnknown && !measurable) return null;
   return (
     <div>
@@ -153,7 +156,8 @@ export function ProgressBar({
           className="mt-1 text-2xs text-black/60 dark:text-white/60"
           data-testid="launch-raise-line"
         >
-          {formatMoney(data.raised)} of {formatMoney(data.goal)} raised
+          {formatMoney(data.raised, currency)} of{" "}
+          {formatMoney(data.goal, currency)} raised
         </p>
       ) : null}
     </div>

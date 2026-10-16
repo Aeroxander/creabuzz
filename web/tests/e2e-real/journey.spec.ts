@@ -334,7 +334,7 @@ test("idea to sale to backer: the founder's whole journey on a real relay and ch
     await expect(alice.getByTestId("launch-chat-locked")).toBeVisible({
       timeout: 30_000,
     });
-    await alice.getByRole("button", { name: "Back this launch" }).click();
+    await alice.getByRole("button", { name: "Place bid" }).click();
     await alice.getByTestId("bid-budget").fill(APPTOKEN ? "5" : "1000");
     await expect(alice.getByTestId("bid-issues")).toHaveCount(0);
     await alice.getByTestId("bid-send").click();

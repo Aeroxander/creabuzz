@@ -376,7 +376,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const walletBefore = await dollarsOf(capital.wallet.address);
   await capital.page.goto("/launchpad");
   await capital.page.getByText("Nebula").first().click();
-  await capital.page.getByRole("button", { name: "Back this launch" }).click();
+  await capital.page.getByRole("button", { name: "Place bid" }).click();
   await capital.page.getByTestId("bid-budget").fill("400000");
   await expect(capital.page.getByTestId("bid-issues")).toHaveCount(0);
   await capital.page.getByTestId("bid-send").click();

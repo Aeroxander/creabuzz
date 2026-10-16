@@ -38,7 +38,7 @@ const STAGE_LABEL: Record<string, string> = {
   review: "In review",
   live: "Live",
   funding: "Raising",
-  graduated: "Graduated",
+  graduated: "Sale completed",
   failed: "Did not graduate",
 };
 

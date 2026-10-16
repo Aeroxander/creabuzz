@@ -28,7 +28,8 @@ export function TreasuryTab({
   onProposeReturn,
 }: {
   launch: Launch;
-  onProposeReturn: (title: string) => void;
+  /** Publishes the suggestion; rejects when it could not be published. */
+  onProposeReturn: (title: string) => Promise<void>;
 }) {
   const streams = launch.receipts.filter((r) => r.table === "stream");
   const { record } = launch;
@@ -44,6 +45,7 @@ export function TreasuryTab({
   const chainId = Number(record.chainId ?? "") || 0;
   const [returnTitle, setReturnTitle] = useState("");
   const [proposed, setProposed] = useState(false);
+  const [returnProblem, setReturnProblem] = useState<string | null>(null);
   const [balance, setBalance] = useState<{
     state: "idle" | "loading" | "done";
     value: bigint | null;
@@ -219,9 +221,10 @@ export function TreasuryTab({
         <h2 className="text-base font-semibold">Exit</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           The credible threat of taking money back is what disciplines a
-          treasury. Anyone can raise a proposal to return capital. Before
-          graduation this is a signal on Nostr (the onchain refund path is the
-          auction contract itself); after graduation it is a real DAO decision.
+          treasury. Anyone can suggest returning the money. A suggestion is a
+          public note for the holders to discuss: it does not move any money and
+          it is not a vote. A decision that does is put to the holders on the
+          Decisions tab.
         </p>
         <div className="mt-2 flex gap-2">
           <Input
@@ -234,18 +237,33 @@ export function TreasuryTab({
             data-testid="propose-return"
             disabled={proposed || returnTitle.trim() === ""}
             onClick={() => {
+              setReturnProblem(null);
               onProposeReturn(
                 returnTitle.trim() || "Return the remaining treasury pro-rata",
+              ).then(
+                () => setProposed(true),
+                () =>
+                  setReturnProblem(
+                    "The suggestion could not be published. Try again.",
+                  ),
               );
-              setProposed(true);
             }}
             size="sm"
             variant="outline"
             type="button"
           >
-            {proposed ? "Proposed" : "Propose capital return"}
+            {proposed ? "Suggested" : "Suggest returning funds"}
           </Button>
         </div>
+        {returnProblem ? (
+          <p
+            className="mt-1 text-sm text-red-700 dark:text-red-300"
+            data-testid="return-problem"
+            role="alert"
+          >
+            {returnProblem}
+          </p>
+        ) : null}
       </Card>
     </div>
   );

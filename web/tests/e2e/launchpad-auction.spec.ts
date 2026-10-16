@@ -530,7 +530,7 @@ for (const journey of JOURNEYS) {
     );
     await bidderPage.goto("/launchpad");
     await bidderPage.getByText("Nebula DAO").click();
-    await bidderPage.getByRole("button", { name: "Back this launch" }).click();
+    await bidderPage.getByRole("button", { name: "Place bid" }).click();
     // The sale is in its own currency, in plain units.
     await expect(
       bidderPage.getByText(`Your budget (${journey.symbol})`),

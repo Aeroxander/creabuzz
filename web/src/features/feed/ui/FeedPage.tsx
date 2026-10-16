@@ -30,7 +30,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "hot", label: "Hot" },
   { id: "new", label: "New" },
   { id: "closing-soon", label: "Closing soon" },
-  { id: "graduated", label: "Graduated" },
+  { id: "graduated", label: "Sale completed" },
 ];
 
 /**

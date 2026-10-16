@@ -258,7 +258,7 @@ test("the directory lists DAOs, live launches, and open projects", async ({
   // Section 2 — launches: stage, target, and a CTA that matches the stage.
   await expect(page.getByTestId("discover-launch")).toHaveCount(2);
 
-  // The summon receipt graduates this raise: the card says "Graduated" (not
+  // The summon receipt graduates this raise: the card says "Sale completed" (not
   // the record's stale "live") and offers "View launch", never a bid the
   // auction would refuse.
   const graduated = page
@@ -267,7 +267,7 @@ test("the directory lists DAOs, live launches, and open projects", async ({
   await expect(graduated.getByTestId("discover-launch-title")).toHaveText(
     "Nebula Launch",
   );
-  await expect(graduated).toContainText("Graduated");
+  await expect(graduated).toContainText("Sale completed");
   await expect(graduated).toContainText("Target 6 USDC");
   await expect(
     graduated.getByRole("link", { name: /View launch/ }),

@@ -29,7 +29,9 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, isEvmAddress, type Launch } from "../models";
-import { effectiveFunding } from "../lib/funding";
+import { chainRaise, effectiveFunding } from "../lib/funding";
+import { saleAction } from "../lib/sale-action";
+import { SaleActionButton } from "./SaleActionButton";
 import { isIdea } from "../lib/idea";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
@@ -135,6 +137,8 @@ export function LaunchDetailPage({
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
   // The chain head is what tells a declared stance apart from a live sale.
   const blockHeight = useChainBlockHeight();
+  // The auction as the chain reads it: what the main button offers depends on whether bidding is open and who can act.
+  const auctionRead = useAuctionProgress(launch?.record).data;
   // A founder who opens their launch has seen its supporters.
   const seenCount = supporterCoord
     ? (supporterCounts.data?.get(supporterCoord) ?? null)
@@ -181,6 +185,12 @@ export function LaunchDetailPage({
   }
 
   const stage = effectiveStage(launch);
+  const mainAction = saleAction({
+    raise: chainRaise(launch, blockHeight),
+    stage,
+    hasAuction: Boolean(launch.record.auction),
+    progress: auctionRead,
+  });
 
   const recordBid = async (input: {
     bucket: string;
@@ -299,8 +309,15 @@ export function LaunchDetailPage({
                 onToggle={(onDone) => follows.toggle(coord, onDone)}
                 supportersRoom={launch.record.chat.supporters}
               />
-            ) : stage === "graduated" ? null : (
-              <Button onClick={() => setBidOpen(true)}>Back this launch</Button>
+            ) : mainAction === null ? null : (
+              <SaleActionButton
+                action={mainAction}
+                onBid={() => setBidOpen(true)}
+                onOpenBids={(what) => {
+                  setMybidsAutoAction(what);
+                  setTab("mybids");
+                }}
+              />
             )}
             {isFounder ? (
               <Button onClick={() => setUpdateOpen(true)} variant="outline">
@@ -404,8 +421,8 @@ export function LaunchDetailPage({
       {tab === "treasury" ? (
         <TreasuryTab
           launch={launch}
-          onProposeReturn={(title) => {
-            void mirror.mutateAsync({
+          onProposeReturn={async (title) => {
+            await mirror.mutateAsync({
               kind: KIND_LAUNCH_PROPOSAL,
               author: launch.record.author,
               launchId: launch.record.id,
@@ -495,7 +512,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
     // funded state of zero rather than an unknown one.
     ["Raised", live ? formatMoney(raised, cur) : "—"],
     [
-      "Graduation threshold",
+      "Minimum raise",
       goal
         ? `${formatMoney(goal, cur)}${percent !== null ? ` · ${percent}% reached` : ""}`
         : "None set. The raise can complete at any amount.",
@@ -683,8 +700,9 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
                 {perThousand !== null
                   ? `${sample.label} buys about ${formatAtomic(perThousand, 0)} tokens at the floor price. Expect less if the sale clears higher.`
                   : "Set a floor price and a token plan to see what a budget buys."}{" "}
-                The sale clears at one uniform price; you pay that, not your
-                maximum.
+                Your bid fills over time at the auction&apos;s current clearing
+                price, up to your price limit. Different parts of the sale can
+                clear at different prices.
               </p>
             </>
           );

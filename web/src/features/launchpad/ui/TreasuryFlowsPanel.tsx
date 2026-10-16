@@ -37,7 +37,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
-import { getRpcEndpoint } from "../chain";
+import { getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { LaunchReceipt, LaunchRecord } from "../models";
 import {
   explorerAddressUrl,
@@ -55,6 +55,7 @@ import {
   type OrgBudget,
   type SpendReceipt,
 } from "../lib/org-money";
+import { formatAtomic, formatMoney } from "../lib/amounts";
 import { ETH_TOKEN } from "../lib/ragequit-tx";
 import { useOrgMoney } from "../use-launches";
 
@@ -65,8 +66,18 @@ export interface TreasuryFlowsPanelProps {
   chainId: number;
 }
 
-function amount(value: bigint): string {
-  return value.toString();
+/** How this panel prints an amount: money in the sale's own currency, tokens in their 18 decimals. */
+interface Amounts {
+  money(value: bigint): string;
+  tokens(value: bigint): string;
+}
+
+function amountsFor(record: LaunchRecord): Amounts {
+  const currency = recordSaleCurrency(record);
+  return {
+    money: (value) => formatMoney(value, currency),
+    tokens: (value) => formatAtomic(value, 18, { maxFractionDigits: 2 }),
+  };
 }
 
 /**
@@ -77,6 +88,16 @@ function amount(value: bigint): string {
 function payloadText(payload: Record<string, unknown>, field: string): string {
   const raw = payload[field];
   return typeof raw === "string" || typeof raw === "number" ? String(raw) : "—";
+}
+
+/** A receipt's amount: written out in the sale's currency when it is a whole number, else shown as recorded. */
+function payloadAmount(
+  payload: Record<string, unknown>,
+  field: string,
+  print: (value: bigint) => string,
+): string {
+  const text = payloadText(payload, field);
+  return /^\d+$/.test(text) ? print(BigInt(text)) : text;
 }
 
 function TxLink({ chainId, tx }: { chainId: number; tx: string }) {
@@ -120,9 +141,11 @@ function AddrLink({ chainId, address }: { chainId: number; address: string }) {
 
 /** The money-story summary line + the split rows. */
 function SplitSection({
+  amounts,
   chainId,
   state,
 }: {
+  amounts: Amounts;
   chainId: number;
   state: GraduationState;
 }) {
@@ -137,25 +160,25 @@ function SplitSection({
       </h4>
       <p className="mt-1 text-sm text-black/70 dark:text-white/70">
         The raise swept to the executor and split onchain:{" "}
-        <strong>{amount(state.record.currencyRaised)}</strong> raised →{" "}
-        <strong>{amount(split.reserveShare)}</strong> held in escrow for the
-        market&apos;s price floor (reserveBps {state.reserveBps.toString()}
-        /10000) + <strong>{amount(split.treasuryShare)}</strong> to the
+        <strong>{amounts.money(state.record.currencyRaised)}</strong> raised →{" "}
+        <strong>{amounts.money(split.reserveShare)}</strong> held in escrow for
+        the market&apos;s price floor (reserveBps {state.reserveBps.toString()}
+        /10000) + <strong>{amounts.money(split.treasuryShare)}</strong> to the
         treasury. The escrow is a promise the treasury keeps, not a guarantee:
         it is released to the recorded pool, and if no pool is recorded the
         treasury can withdraw it once the executor&apos;s reserve lock (30 days
         by default) has passed. Unsold launch tokens (
-        {amount(state.record.unsoldTokens)}) went to the treasury; sold tokens (
-        {amount(state.record.tokensSold)}) went to buyers.
+        {amounts.tokens(state.record.unsoldTokens)}) went to the treasury; sold
+        tokens ({amounts.tokens(state.record.tokensSold)}) went to buyers.
       </p>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/80 dark:text-white/80">
         <dt>Reserve escrow (from the record)</dt>
         <dd className="text-right" data-testid="fundflow-reserve">
-          {amount(state.record.reserveEscrow)}
+          {amounts.money(state.record.reserveEscrow)}
         </dd>
         <dt>Treasury share (from the record)</dt>
         <dd className="text-right" data-testid="fundflow-treasury-share">
-          {amount(state.record.treasuryShare)}
+          {amounts.money(state.record.treasuryShare)}
         </dd>
         <dt>Executed</dt>
         <dd className="text-right">
@@ -184,9 +207,11 @@ function SplitSection({
 
 /** The recorded 47005 money movements, each bound to its tx. */
 function ReceiptSection({
+  amounts,
   chainId,
   rows,
 }: {
+  amounts: Amounts;
   chainId: number;
   rows: ReceiptRow[];
 }) {
@@ -216,9 +241,9 @@ function ReceiptSection({
           >
             <span>
               {row.table === "sweep"
-                ? `sweep: raised ${payloadText(row.payload, "currencyRaised")}, treasury share ${payloadText(row.payload, "treasuryShare")}, unsold ${payloadText(row.payload, "unsoldTokens")}`
+                ? `sweep: raised ${payloadAmount(row.payload, "currencyRaised", amounts.money)}, treasury share ${payloadAmount(row.payload, "treasuryShare", amounts.money)}, unsold ${payloadAmount(row.payload, "unsoldTokens", amounts.tokens)}`
                 : row.table === "lock"
-                  ? `lock: reserve escrow ${payloadText(row.payload, "reserveEscrow")} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
+                  ? `lock: reserve escrow ${payloadAmount(row.payload, "reserveEscrow", amounts.money)} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
                   : row.table === "summon"
                     ? "summon: the DAO was summoned for this launch"
                     : "ragequit: an owner burned shares and claimed treasury"}
@@ -237,12 +262,12 @@ function ReceiptSection({
 
 /** Where the money sits right now (live balances). */
 function PositionSection({
+  amounts,
   chainId,
-  currency,
   positions,
 }: {
+  amounts: Amounts;
   chainId: number;
-  currency: string;
   positions: Awaited<ReturnType<typeof fetchFundFlowPositions>>;
 }) {
   const labels: Record<string, string> = {
@@ -261,13 +286,10 @@ function PositionSection({
             className="flex flex-wrap items-center justify-between gap-2 text-sm text-black/80 dark:text-white/80"
             key={`${row.label}-${row.holder}`}
           >
-            <span>
-              {labels[row.label] ?? row.label}{" "}
-              {currency === ETH_TOKEN ? "ETH" : truncatePubkey(currency)}
-            </span>
+            <span>{labels[row.label] ?? row.label}</span>
             <span>
               <strong data-testid={`fundflow-position-${row.label}`}>
-                {amount(row.balance)}
+                {amounts.money(row.balance)}
               </strong>{" "}
               · <AddrLink chainId={chainId} address={row.holder} />
             </span>
@@ -283,11 +305,13 @@ function PositionSection({
 
 /** One budget row: the window, the ceiling, and the live allowance state. */
 function BudgetRow({
+  amounts,
   budget,
   token,
   chainId,
   spends,
 }: {
+  amounts: Amounts;
   budget: OrgBudget;
   token: string;
   chainId: number;
@@ -326,7 +350,8 @@ function BudgetRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
           budget {budget.id}: ceiling{" "}
-          {budget.allocation ? amount(budget.allocation) : "—"} / {window}
+          {budget.allocation ? amounts.money(budget.allocation) : "—"} /{" "}
+          {window}
           {budget.rollover ? " (rolls over)" : ""}
         </span>
         <span className="text-black/60 dark:text-white/60">
@@ -343,10 +368,10 @@ function BudgetRow({
           </p>
         ) : allowanceQuery.data ? (
           <p className="mt-1">
-            onchain: spent {amount(allowanceQuery.data.spent)} of{" "}
-            {amount(allowanceQuery.data.allowance)} this {window} (epoch{" "}
+            onchain: spent {amounts.money(allowanceQuery.data.spent)} of{" "}
+            {amounts.money(allowanceQuery.data.allowance)} this {window} (epoch{" "}
             {allowanceQuery.data.epoch.toString()}), remaining{" "}
-            {amount(allowanceQuery.data.remaining)}
+            {amounts.money(allowanceQuery.data.remaining)}
             {allowanceQuery.data.spender ? (
               <>
                 {" "}
@@ -376,15 +401,15 @@ function BudgetRow({
               key={spend.id}
             >
               <span>
-                spend {amount(spend.amount)} by{" "}
+                spend {amounts.money(spend.amount)} by{" "}
                 {spend.agent ? truncatePubkey(spend.agent) : "—"}
               </span>
               <TxLink chainId={chainId} tx={spend.txHash} />
             </li>
           ))}
           <li className="text-black/60 dark:text-white/60">
-            recorded spend receipts total {amount(recorded)} (advisory mirror of
-            the onchain ledger)
+            recorded spend receipts total {amounts.money(recorded)} (advisory
+            mirror of the onchain ledger)
           </li>
         </ul>
       ) : (
@@ -402,6 +427,7 @@ export function TreasuryFlowsPanel({
   chainId,
 }: TreasuryFlowsPanelProps) {
   const rpcEndpoint = getRpcEndpoint();
+  const amounts = amountsFor(record);
   const graduationQuery = useQuery({
     queryKey: ["fund-flow", record.auction, rpcEndpoint],
     enabled: Boolean(record.auction),
@@ -454,12 +480,20 @@ export function TreasuryFlowsPanel({
         </p>
       ) : (
         <>
-          <SplitSection chainId={chainId} state={graduation} />
-          <ReceiptSection chainId={chainId} rows={receiptRows} />
+          <SplitSection
+            amounts={amounts}
+            chainId={chainId}
+            state={graduation}
+          />
+          <ReceiptSection
+            amounts={amounts}
+            chainId={chainId}
+            rows={receiptRows}
+          />
           {positionsQuery.data ? (
             <PositionSection
+              amounts={amounts}
               chainId={chainId}
-              currency={currency}
               positions={positionsQuery.data}
             />
           ) : positionsQuery.error ? (
@@ -506,6 +540,7 @@ export function TreasuryFlowsPanel({
             <ul className="mt-2 flex flex-col gap-2">
               {orgMoney.data.budgets.map((budget) => (
                 <BudgetRow
+                  amounts={amounts}
                   budget={budget}
                   chainId={chainId}
                   key={`${budget.author}-${budget.id}`}
