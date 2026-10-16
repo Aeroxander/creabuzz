@@ -1,7 +1,16 @@
+import { useMemo } from "react";
+
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { formatAtomic } from "../lib/amounts";
+import {
+  type EvidencePacket,
+  evidenceFor,
+  evidenceUpdateContent,
+  packetsOf,
+} from "../lib/evidence";
 import {
   bondShortfall,
   encodeAttest,
@@ -15,9 +24,11 @@ import {
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
 import type { Launch } from "../models";
+import { usePublishMirror } from "../use-launches";
 import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { LockedSharesCard } from "./LockedSharesCard";
 
@@ -52,6 +63,8 @@ export function WorkTab({
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
+  // What contributors published for their claims: the text a reviewer reads before judging.
+  const packets = useMemo(() => packetsOf(launch.updates), [launch.updates]);
 
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">
@@ -92,6 +105,7 @@ export function WorkTab({
           gate={gate}
           launch={launch}
           lock={lock.data}
+          work={work.data}
           onSend={send}
           wallet={wallet.address}
         />
@@ -133,6 +147,7 @@ export function WorkTab({
             </p>
           ) : null}
           <FileClaimCard
+            launch={launch}
             busy={busy}
             gate={gate}
             mandates={work.data?.mandates ?? []}
@@ -146,8 +161,10 @@ export function WorkTab({
               dao={dao}
               gate={gate}
               key={mandate.address}
+              launch={launch}
               mandate={mandate}
               onOpenDecisions={onOpenDecisions}
+              packets={packets}
               onSend={send}
               wallet={wallet.address}
             />
@@ -197,7 +214,11 @@ function MandateCard({
   busy,
   onSend,
   onOpenDecisions,
+  launch,
+  packets,
 }: {
+  launch: Launch;
+  packets: EvidencePacket[];
   mandate: MandateView;
   chainTime: number;
   wallet: string | null;
@@ -217,6 +238,26 @@ function MandateCard({
     mandate.bond
       ? `${formatAtomic(units, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`.trim()
       : money(units);
+  const publish = usePublishMirror();
+  const republish = async (
+    claimId: string,
+    name: string,
+    evidence: string,
+    check: string,
+  ) => {
+    await publish.mutateAsync({
+      kind: KIND_LAUNCH_UPDATE,
+      author: launch.record.author,
+      launchId: launch.record.id,
+      content: evidenceUpdateContent({
+        name,
+        claimId,
+        mandate: mandate.address,
+        evidence,
+        check,
+      }),
+    });
+  };
   const myProjects = mandate.projects.filter((p) =>
     sameAddress(wallet, p.record.manager),
   );
@@ -370,14 +411,23 @@ function MandateCard({
       ) : (
         <ul className="mt-1 flex flex-col gap-2" data-testid="work-claims">
           {mandate.claims.map((claim) => {
-            const step = nextStep(claim, chainTime, mandate.challengeWindow);
+            const step = nextStep(
+              claim,
+              chainTime,
+              mandate.challengeWindow,
+              mandate.isMilestonePanel,
+            );
             const mine = sameAddress(wallet, claim.record.contributor);
-            const canReview =
+            // A reviewer's turn: the claim waits for them, they owe no bond, and it is not their own.
+            const reviewerTurn =
               step.kind === "review" &&
               mandate.walletIsReviewer &&
               owes === 0n &&
               !mandate.walletAttested.includes(claim.id) &&
               !mine;
+            // And they can read what they would be approving. Objecting never needs the evidence; approving always does.
+            const standing = evidenceFor(claim, packets, mandate.address);
+            const canReview = reviewerTurn && standing.kind === "verified";
             const label = idLabel(claim.id);
             return (
               <li
@@ -401,6 +451,15 @@ function MandateCard({
                 <p className="mt-1" data-testid="work-claim-next">
                   {step.text}
                 </p>
+                <EvidenceBlock
+                  busy={busy !== null}
+                  claim={claim}
+                  mine={mine}
+                  onRepublish={(evidence, check) =>
+                    republish(claim.id, label, evidence, check)
+                  }
+                  standing={standing}
+                />
                 {claim.record.amount > 0n ? (
                   <p
                     className="mt-2 text-xs text-muted-foreground"
@@ -439,23 +498,25 @@ function MandateCard({
                         </Button>
                       ))
                     : null}
-                  {canReview ? (
+                  {reviewerTurn ? (
                     <>
-                      <Button
-                        data-testid="work-approve"
-                        disabled={busy !== null || gate !== null}
-                        onClick={() =>
-                          void onSend(
-                            `approve-${claim.id}`,
-                            mandate.verifiersAddress,
-                            encodeAttest(claim.id, true),
-                          )
-                        }
-                        size="sm"
-                        type="button"
-                      >
-                        Approve
-                      </Button>
+                      {canReview ? (
+                        <Button
+                          data-testid="work-approve"
+                          disabled={busy !== null || gate !== null}
+                          onClick={() =>
+                            void onSend(
+                              `approve-${claim.id}`,
+                              mandate.verifiersAddress,
+                              encodeAttest(claim.id, true),
+                            )
+                          }
+                          size="sm"
+                          type="button"
+                        >
+                          Approve
+                        </Button>
+                      ) : null}
                       <Button
                         data-testid="work-object"
                         disabled={busy !== null || gate !== null}

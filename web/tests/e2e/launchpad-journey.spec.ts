@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { publishedEvents } from "../helpers/published-events";
 
 /**
  * A DAO run entirely from the browser, against a REAL local chain: no command line anywhere.
@@ -31,6 +32,10 @@ test.skip(
   !ANVIL_URL || !DAO || !SHARES,
   "set E2E_ANVIL_URL, E2E_DAO and E2E_SHARES (scripts/web-dao-journey-e2e.sh does)",
 );
+
+/** What the pages of one test publish, read back by the others (the reviewers read the contributor's evidence). */
+const published = publishedEvents();
+test.beforeEach(() => published.clear());
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   const res = await fetch(ANVIL_URL, {
@@ -141,6 +146,7 @@ async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
       }
       if (!Array.isArray(parsed)) return;
       if (parsed[0] === "EVENT") {
+        published.remember(parsed[1] as { id: string; kind: number });
         ws.send(
           JSON.stringify(["OK", (parsed[1] as { id: string }).id, true, ""]),
         );
@@ -165,6 +171,7 @@ async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
           ws.send(JSON.stringify(["EVENT", subId, profileOf(person)]));
         }
       }
+      published.serve(ws, subId, filter.kinds);
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });

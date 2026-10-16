@@ -1,10 +1,10 @@
-import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { formatAtomic } from "../lib/amounts";
-import { encodeUnlock } from "../lib/milestone-lock";
 import { hashText } from "../lib/work";
+import type { WorkSnapshot } from "../lib/work-read";
 import type { Launch } from "../models";
 import type { MilestoneLockState } from "../use-work";
+import { MilestoneRow } from "./MilestoneRow";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 
@@ -16,6 +16,7 @@ const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
  */
 export function LockedSharesCard({
   lock,
+  work,
   launch,
   wallet,
   gate,
@@ -23,6 +24,8 @@ export function LockedSharesCard({
   onSend,
 }: {
   lock: MilestoneLockState;
+  /** The DAO's work, where the milestone panel and its claims are read. */
+  work: WorkSnapshot | undefined;
   launch: Launch;
   wallet: string;
   gate: string | null;
@@ -30,7 +33,7 @@ export function LockedSharesCard({
   /** Sends one transaction; resolves true once it landed. */
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
-  const { view, offers } = lock;
+  const { view } = lock;
   const words = new Map(
     (launch.record.unlocks?.milestones ?? []).map((m) => [
       hashText(m.label).toLowerCase(),
@@ -53,75 +56,20 @@ export function LockedSharesCard({
           : `${shares(view.locked)} Shares are still locked.`}
       </p>
       <ol aria-label="Milestones" className="mt-2 flex flex-col gap-2">
-        {view.tranches.map((tranche) => {
-          const label = words.get(tranche.checkHash.toLowerCase());
-          const offer = offers.find((o) => o.tranche.index === tranche.index);
-          const key = `unlock-${tranche.index}`;
-          return (
-            <li
-              className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
-              data-testid={`locked-shares-milestone-${tranche.index}`}
-              key={tranche.index}
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="font-medium">
-                  Milestone {tranche.index + 1}: {shares(tranche.amount)} Shares
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {tranche.unlocked
-                    ? "Unlocked"
-                    : tranche.forfeited
-                      ? "Given up"
-                      : "Locked"}
-                </span>
-              </div>
-              {label ? (
-                <p className="mt-1 text-muted-foreground">
-                  Judged by: <code>{label}</code>
-                </p>
-              ) : null}
-              {tranche.unlocked || tranche.forfeited ? null : offer ? (
-                <div className="mt-2">
-                  <p className="text-muted-foreground">
-                    The reviewers approved your claim for this milestone.
-                  </p>
-                  <Button
-                    aria-busy={busy === key}
-                    aria-label={`Unlock milestone ${tranche.index + 1}`}
-                    className="mt-1"
-                    data-testid={`locked-shares-unlock-${tranche.index}`}
-                    disabled={busy !== null || gate !== null}
-                    onClick={() =>
-                      void onSend(
-                        key,
-                        view.lock,
-                        encodeUnlock(
-                          wallet,
-                          tranche.index,
-                          offer.mandate,
-                          offer.claimId,
-                        ),
-                      )
-                    }
-                    size="sm"
-                    type="button"
-                  >
-                    {busy === key ? "Unlocking…" : "Unlock"}
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-1 text-muted-foreground">
-                  File a claim below in a work budget, with
-                  {label
-                    ? " these exact words"
-                    : " this milestone's exact words"}{" "}
-                  as its check. Once the reviewers approve it and the waiting
-                  period ends, you can unlock it here.
-                </p>
-              )}
-            </li>
-          );
-        })}
+        {view.tranches.map((tranche) => (
+          <MilestoneRow
+            busy={busy}
+            gate={gate}
+            key={tranche.index}
+            launch={launch}
+            lock={view.lock}
+            onSend={onSend}
+            tranche={tranche}
+            wallet={wallet}
+            words={words.get(tranche.checkHash.toLowerCase())}
+            work={work}
+          />
+        ))}
       </ol>
     </Card>
   );

@@ -219,7 +219,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   await expect(second).toContainText("120,000,000 Shares");
   await expect(second).toContainText("mainnet live");
   await expect(page.getByTestId("locked-shares-unlock-1")).toHaveCount(0);
-  await expect(second).toContainText("File a claim");
+  await expect(second).toContainText("Not submitted yet");
 
   await page.getByTestId("locked-shares-unlock-0").click();
   await expect(page.getByTestId("locked-shares-total")).toContainText(
@@ -319,4 +319,21 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   });
   await expect(nobody.getByTestId("portfolio-holding")).toHaveCount(0);
   await nobody.close();
+
+  // The second milestone is submitted from its own row: one box for the evidence, one button, and the wallet is asked
+  // three times (file it, say which milestone it is for, send it to the panel's reviewers). Words that are not evidence
+  // are refused before the wallet is asked.
+  await page.getByTestId("milestone-submit-1").click();
+  await expect(page.getByTestId("milestone-problem-1")).toBeVisible();
+  await page
+    .getByTestId("milestone-evidence-1")
+    .fill("Mainnet is live: https://example.com/mainnet");
+  await page.getByTestId("milestone-submit-1").click();
+  await expect(page.getByTestId("milestone-stage-1")).toContainText(
+    "With the reviewers: 0 of 2 approvals",
+    { timeout: 90_000 },
+  );
+  await expect(page.getByTestId("milestone-submit-1")).toHaveCount(0);
+  // Nothing was put up for a vote, and the Shares are still locked until the reviewers have their say.
+  expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
 });

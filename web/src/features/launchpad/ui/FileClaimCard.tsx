@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
+import { evidenceProblem, evidenceUpdateContent } from "../lib/evidence";
 import { encodeErc20Approve } from "../lib/evmCalls";
 import {
   encodeSetCheck,
@@ -15,6 +17,8 @@ import {
   ZERO_WORD,
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
+import type { Launch } from "../models";
+import { usePublishMirror } from "../use-launches";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
@@ -29,12 +33,15 @@ const sameAddress = (a: string | null, b: string) =>
  * which is one more step to the wallet.
  */
 export function FileClaimCard({
+  launch,
   mandates,
   wallet,
   gate,
   busy,
   onSend,
 }: {
+  /** The launch the evidence is published to, so reviewers can read what was submitted. */
+  launch: Launch;
   mandates: MandateView[];
   wallet: string | null;
   gate: string | null;
@@ -42,11 +49,9 @@ export function FileClaimCard({
   /** Sends one transaction; resolves true once it landed. */
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
-  // Ordinary work budgets first: the milestone panel is for the team's milestones, and is listed last.
-  const open = [
-    ...mandates.filter((m) => !m.closed && !m.isMilestonePanel),
-    ...mandates.filter((m) => !m.closed && m.isMilestonePanel),
-  ];
+  // Ordinary work budgets only: a team's milestones are submitted from the milestone card, with the milestone chosen.
+  const open = mandates.filter((m) => !m.closed && !m.isMilestonePanel);
+  const publish = usePublishMirror();
   const [which, setWhich] = useState(0);
   const [name, setName] = useState("");
   const [evidence, setEvidence] = useState("");
@@ -95,6 +100,11 @@ export function FileClaimCard({
     }
     if (evidence.trim() === "" || check.trim() === "") {
       setProblem("Say where the work is, and how it should be judged.");
+      return;
+    }
+    const tooLong = evidenceProblem(evidence);
+    if (tooLong) {
+      setProblem(tooLong);
       return;
     }
     // What it asks for, in the budget's currency: nothing unless the person filled it in.
@@ -156,6 +166,27 @@ export function FileClaimCard({
         encodeSetCheck(id, hashText(check)),
       );
       if (!landed) return;
+    }
+    // The text itself, signed, so reviewers can read what the claim committed to. A claim without it cannot be approved,
+    // so a failure here is said plainly and retried by pressing the button again (the steps above are skipped).
+    try {
+      await publish.mutateAsync({
+        kind: KIND_LAUNCH_UPDATE,
+        author: launch.record.author,
+        launchId: launch.record.id,
+        content: evidenceUpdateContent({
+          name: name.trim(),
+          claimId: id,
+          mandate: mandate.address,
+          evidence,
+          check,
+        }),
+      });
+    } catch {
+      setProblem(
+        "The claim is filed, but its evidence could not be published, and reviewers cannot approve a claim they cannot read. Press File claim again to publish it.",
+      );
+      return;
     }
     setFiled(name.trim());
     setName("");

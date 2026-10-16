@@ -193,6 +193,12 @@ export interface LaunchUpdate {
   title: string;
   body: string;
   links: string[];
+  /**
+   * Set when this update is the evidence a contributor submitted for a work claim: the claim it is for, the work budget
+   * that holds it, and the exact words of the acceptance check. Reviewers read it, and it counts only when it hashes to
+   * what the claim committed to on the chain (see `lib/evidence.ts`).
+   */
+  claim?: { id: string; mandate: string; check: string };
 }
 
 export type ProposalKind = "plain" | "futarchy-budget" | "signal";
@@ -585,6 +591,30 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     title: typeof body.title === "string" ? body.title : "Update",
     body: typeof body.body === "string" ? body.body : "",
     links: strs(body.links),
+    claim: parseUpdateClaim(body.claim),
+  };
+}
+
+const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** The claim an evidence update is for, or undefined when it names none or names it badly. */
+function parseUpdateClaim(value: unknown): LaunchUpdate["claim"] {
+  if (value === null || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.id !== "string" ||
+    !WORD_RE.test(raw.id) ||
+    typeof raw.mandate !== "string" ||
+    !ADDRESS_RE.test(raw.mandate) ||
+    typeof raw.check !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    id: raw.id.toLowerCase(),
+    mandate: raw.mandate.toLowerCase(),
+    check: raw.check,
   };
 }
 

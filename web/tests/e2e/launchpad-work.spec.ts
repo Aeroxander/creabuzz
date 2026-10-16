@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { publishedEvents } from "../helpers/published-events";
 
 /**
  * The contributor path in the browser, against a REAL local chain.
@@ -27,6 +28,10 @@ test.skip(
   !ANVIL_URL || !DAO || !MANDATE,
   "set E2E_ANVIL_URL, E2E_DAO and E2E_MANDATE (scripts/web-work-e2e.sh does)",
 );
+
+/** What the pages of one test publish, read back by the others (the reviewers read the contributor's evidence). */
+const published = publishedEvents();
+test.beforeEach(() => published.clear());
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   const res = await fetch(ANVIL_URL, {
@@ -76,6 +81,7 @@ async function serveRecord(page: Page) {
       }
       if (!Array.isArray(parsed)) return;
       if (parsed[0] === "EVENT") {
+        published.remember(parsed[1] as { id: string; kind: number });
         ws.send(
           JSON.stringify(["OK", (parsed[1] as { id: string }).id, true, ""]),
         );
@@ -90,6 +96,7 @@ async function serveRecord(page: Page) {
       if (filter.kinds?.includes(37001)) {
         ws.send(JSON.stringify(["EVENT", subId, record]));
       }
+      published.serve(ws, subId, filter.kinds);
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
@@ -175,6 +182,14 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     timeout: 60_000,
   });
   await expect(claimNext(filer)).toContainText("Waiting for a project manager");
+  // What they submitted is published beside the claim, and the page shows it matches what the claim committed to.
+  await expect(filer.getByTestId("work-evidence-text")).toContainText(
+    "https://example.com/pr/1",
+    { timeout: 30_000 },
+  );
+  await expect(filer.getByTestId("work-evidence-check")).toContainText(
+    "docs merged and reviewed",
+  );
 
   // ── the manager takes the claim on ─────────────────────────────────────────
   const manager = await context.newPage();
@@ -206,9 +221,23 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await expect(claimNext(contributor)).toContainText("0 of 2 approvals");
   await expect(contributor.getByTestId("work-approve")).toHaveCount(0);
 
+  // ── a reviewer who cannot read the evidence is told so and is not offered Approve ─────
+  published.withhold(true);
+  const blind = await context.newPage();
+  await openWork(blind, REVIEWER1);
+  await expect(blind.getByTestId("work-evidence-missing")).toContainText(
+    "cannot approve what they cannot read",
+  );
+  await expect(blind.getByTestId("work-approve")).toHaveCount(0);
+  published.withhold(false);
+  await blind.close();
+
   // ── two reviewers approve ──────────────────────────────────────────────────
   const first = await context.newPage();
   await openWork(first, REVIEWER1);
+  await expect(first.getByTestId("work-evidence-text")).toContainText(
+    "https://example.com/pr/1",
+  );
   await postBondIfAsked(first);
   await first.getByTestId("work-approve").click();
   await expect(claimNext(first)).toContainText("1 of 2 approvals", {
