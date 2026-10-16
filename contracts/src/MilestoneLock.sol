@@ -133,6 +133,16 @@ contract MilestoneLock {
         return _tranches[beneficiary].length;
     }
 
+    /// @notice Whether `beneficiary` holds a tranche worded `checkHash` that is neither unlocked nor given up: a milestone
+    /// their claim could still reach.
+    function isOpenMilestone(address beneficiary, bytes32 checkHash) external view returns (bool) {
+        Tranche[] storage t = _tranches[beneficiary];
+        for (uint256 i; i < t.length; ++i) {
+            if (t[i].checkHash == checkHash && !t[i].unlocked && !t[i].forfeited) return true;
+        }
+        return false;
+    }
+
     function trancheOf(address beneficiary, uint256 index) external view returns (Tranche memory) {
         if (index >= _tranches[beneficiary].length) revert UnknownTranche();
         return _tranches[beneficiary][index];

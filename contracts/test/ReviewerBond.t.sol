@@ -266,7 +266,7 @@ contract ReviewerBondTest is VotingFixture {
         TreasuryMandate other = _createWithBondToken(address(currency), address(projectToken), _reviewers(), BOND);
         VerifierSet otherPanel = other.verifiers();
         assertEq(address(otherPanel.bondToken()), address(projectToken));
-        assertEq(other.reviewerBondToken(), address(projectToken));
+        // (the panel itself names its bond token; the mandate does not repeat it)
         assertEq(address(other.currency()), address(currency));
 
         // Bonding in the claim currency does nothing for this panel: only the named token counts.

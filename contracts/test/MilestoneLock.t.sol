@@ -343,8 +343,8 @@ contract MilestoneLockTest is VotingFixture {
         uint64 ends = uint64(vm.getBlockTimestamp() + 730 days);
         vm.prank(address(dao));
         TreasuryMandate named = factory.createMilestonePanel(address(currency), ends, panelists, 2, 0, address(0));
-        assertTrue(named.milestonePanel());
-        assertFalse(mandate.milestonePanel(), "an ordinary mandate is not the panel");
+        assertEq(ledger.mandateFactory().milestoneMandate(address(dao)), address(named));
+        assertTrue(address(mandate) != address(named), "an ordinary mandate is not the panel");
         assertEq(named.budget(), 0);
         assertEq(named.shareBudget(), 0);
 
@@ -429,7 +429,107 @@ contract MilestoneLockTest is VotingFixture {
         (,, uint64 review,,) = ledger.lanes(0);
         uint256 slowest = uint256(review) + dao.timelockDelay();
         assertGe(mandate.claims().challengeWindow(), slowest + 3 days, "a problem noticed late must still be stoppable");
-        assertEq(mandate.claims().challengeWindow(), mandate.CHALLENGE_WINDOW());
+        assertEq(mandate.claims().challengeWindow(), 7 days);
+    }
+
+    // ---- a milestone needs no project vote -------------------------------------------------------
+
+    function _namedPanel() internal returns (TreasuryMandate named) {
+        TreasuryMandateFactory factory = ledger.mandateFactory();
+        address[] memory panelists = new address[](3);
+        panelists[0] = CAROL;
+        panelists[1] = DAVE;
+        panelists[2] = ERIN;
+        vm.prank(address(dao));
+        named = factory.createMilestonePanel(
+            address(currency), uint64(vm.getBlockTimestamp() + 730 days), panelists, 2, 0, address(0)
+        );
+    }
+
+    function _file(TreasuryMandate where, bytes32 claim, bytes32 check) internal {
+        ClaimStake claims = where.claims();
+        vm.startPrank(ALICE);
+        claims.submitClaim(claim, 0, 0, keccak256(abi.encode(claim)));
+        claims.setCheck(claim, check);
+        vm.stopPrank();
+    }
+
+    function test_a_team_member_files_a_milestone_claim_with_no_vote_and_no_manager_and_it_unlocks() public {
+        TreasuryMandate named = _namedPanel();
+        ClaimStake claims = named.claims();
+        _file(named, bytes32("alpha"), CHECK_ONE);
+        vm.prank(ALICE);
+        named.bindMilestone(bytes32("alpha"));
+        assertEq(named.claimProject(bytes32("alpha")), keccak256("creaton.milestone"));
+
+        // The reviewers judge it, it waits out the window, and the lock honours it. No project was ever approved.
+        VerifierSet panel = named.verifiers();
+        vm.prank(CAROL);
+        panel.attest(bytes32("alpha"), true);
+        vm.prank(DAVE);
+        panel.attest(bytes32("alpha"), true);
+        claims.settle(bytes32("alpha"));
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+        vm.prank(ALICE);
+        claims.payout(bytes32("alpha"));
+        lock.unlock(ALICE, 0, address(named), bytes32("alpha"));
+        assertEq(lock.lockedOf(ALICE), 50e18);
+        assertEq(badge.balanceOf(ALICE), 1);
+    }
+
+    function test_only_a_beneficiarys_own_open_free_claim_for_a_tranche_they_still_hold_can_be_bound() public {
+        TreasuryMandate named = _namedPanel();
+        // Not in the panel at all: an ordinary budget has projects and a manager, not this.
+        vm.prank(ALICE);
+        vm.expectRevert(TreasuryMandate.Unauthorized.selector);
+        mandate.bindMilestone(bytes32("x"));
+
+        // Someone else's claim: bound by the contributor only.
+        _file(named, bytes32("mine"), CHECK_ONE);
+        vm.prank(BOB);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("mine"));
+
+        // Words that are no tranche of theirs, or no words at all.
+        _file(named, bytes32("other"), keccak256("something else entirely"));
+        vm.prank(ALICE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("other"));
+        ClaimStake claims = named.claims();
+        vm.prank(ALICE);
+        claims.submitClaim(bytes32("blank"), 0, 0, keccak256("e"));
+        vm.prank(ALICE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("blank"));
+
+        // A stranger with their own claim at the team's words: they hold no tranche.
+        vm.startPrank(DAVE);
+        claims.submitClaim(bytes32("dave"), 0, 0, keccak256("d"));
+        claims.setCheck(bytes32("dave"), CHECK_ONE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("dave"));
+        vm.stopPrank();
+
+        // A claim that asks for money is not a milestone claim.
+        vm.startPrank(ALICE);
+        claims.submitClaim(bytes32("paid"), 5, 0, keccak256("p"));
+        claims.setCheck(bytes32("paid"), CHECK_ONE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("paid"));
+        vm.stopPrank();
+
+        // Bound once; and a tranche already freed or given up cannot be bound again.
+        vm.prank(ALICE);
+        named.bindMilestone(bytes32("mine"));
+        vm.prank(ALICE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("mine"));
+        vm.prank(address(dao));
+        lock.forfeit(ALICE);
+        _file(named, bytes32("late"), CHECK_TWO);
+        vm.prank(ALICE);
+        vm.expectRevert(TreasuryMandate.InvalidClaim.selector);
+        named.bindMilestone(bytes32("late"));
     }
 
     function test_a_dao_that_named_no_panel_keeps_the_older_rule() public {

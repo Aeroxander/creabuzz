@@ -16,6 +16,7 @@ interface IMandateShares {
 
 interface IMandateLock {
     function trancheCount(address beneficiary) external view returns (uint256);
+    function isOpenMilestone(address beneficiary, bytes32 checkHash) external view returns (bool);
 }
 
 /// @notice A DAO-approved, finite mandate over two budgets: currency to pay for work, and Shares to recognise it.
@@ -39,7 +40,10 @@ contract TreasuryMandate {
     /// @notice How long after a claim is approved before its payout (and a milestone's unlock) can be taken. A freeze is a
     /// DAO decision, and the slowest vote takes 48 hours of review and a day of execution delay before it can run, so the
     /// window must be well past three days or a problem noticed after approval could never be stopped in time.
-    uint64 public constant CHALLENGE_WINDOW = 7 days;
+    uint64 internal constant CHALLENGE_WINDOW = 7 days;
+    /// @notice The stand-in "project" every milestone claim in the panel is bound to: a milestone needs no project, because
+    /// the lock names the milestone and its exact words and the panel's reviewers judge it.
+    bytes32 internal constant MILESTONE_PROJECT = keccak256("creaton.milestone");
 
     address public immutable dao;
     IERC20 public immutable currency;
@@ -51,10 +55,10 @@ contract TreasuryMandate {
     /// @notice The bond, in `reviewerBondToken`, each reviewer must hold to attest (zero: reviewers need no bond).
     uint128 public immutable reviewerBond;
     /// @notice What the bond is paid in (zero exactly when there is no bond).
-    address public immutable reviewerBondToken;
+    address internal immutable reviewerBondToken;
     uint64 public immutable expiresAt;
     /// @notice Whether this is a DAO's milestone panel: no budgets, and projects that hold nothing.
-    bool public immutable milestonePanel;
+    bool internal immutable milestonePanel;
     VerifierSet public immutable verifiers;
     ClaimStake public immutable claims;
     uint128 public allocated;
@@ -148,7 +152,7 @@ contract TreasuryMandate {
         VerifierSet panel = new VerifierSet(address(this), quorum);
         verifiers = panel;
         claims = new ClaimStake(panel, address(this), currency_);
-        claims.setWindows(claims.claimWindow(), CHALLENGE_WINDOW);
+        claims.setWindows(30 days, CHALLENGE_WINDOW); // an unapproved claim still lapses after 30 days, as before
         panel.setClaimStake(address(claims));
         if (reviewerBond_ != 0) panel.setBond(bondToken_, reviewerBond_);
         for (uint256 i; i < reviewers.length; ++i) {
@@ -158,21 +162,23 @@ contract TreasuryMandate {
         }
     }
 
-    /// @dev Whether the DAO's Shares name `who` as a beneficiary of their lock guard. A DAO without a guard, or a
-    /// caller that is not a DAO at all, locks nobody; a mandate made by a stranger carries no authority over a real DAO
-    /// (the lock only honours mandates the DAO's own factory made for it), so being lenient here is harmless.
-    function _isLockedTeamMember(address dao_, address who) private view returns (bool) {
+    /// @dev The lock guard of `dao_`'s Shares, or zero. A DAO without Shares or a guard, or a caller that is not a DAO at
+    /// all, has none; a mandate made by a stranger carries no authority over a real DAO (the lock only honours mandates the
+    /// DAO's own factory made for it), so being lenient here is harmless.
+    function _guardOf(address dao_) private view returns (address guard) {
         try IMandateDao(dao_).shares() returns (address shares_) {
-            try IMandateShares(shares_).lockGuard() returns (address guard) {
-                if (guard == address(0)) return false;
-                try IMandateLock(guard).trancheCount(who) returns (uint256 n) {
-                    return n != 0;
-                } catch {
-                    return false;
-                }
-            } catch {
-                return false;
-            }
+            try IMandateShares(shares_).lockGuard() returns (address g) {
+                return g;
+            } catch {}
+        } catch {}
+    }
+
+    /// @dev Whether the DAO's lock names `who` as a beneficiary.
+    function _isLockedTeamMember(address dao_, address who) private view returns (bool) {
+        address guard = _guardOf(dao_);
+        if (guard == address(0)) return false;
+        try IMandateLock(guard).trancheCount(who) returns (uint256 n) {
+            return n != 0;
         } catch {
             return false;
         }
@@ -200,6 +206,32 @@ contract TreasuryMandate {
         sharesAllocated += shareAmount;
         projects[id] = Project(manager, amount, 0, expires, checkHash, shareAmount, 0);
         emit ProjectApproved(id, manager, amount, shareAmount, expires, checkHash);
+    }
+
+    /// @notice A team member files their own milestone claim into the panel: no vote and no manager. In the milestone panel
+    /// only, and only for a claim that
+    ///  - is theirs, asks for no money, and is still open;
+    ///  - states, as its check, the exact words of one of their tranches the lock has not yet freed or given up.
+    /// The lock is what names the milestone, so nothing else needs to approve it before the reviewers judge it; the reviewers
+    /// still have to approve it, and it still waits out the challenge window before the lock will honour it.
+    function bindMilestone(bytes32 claimId) external {
+        if (!milestonePanel) revert Unauthorized();
+        if (closed || block.timestamp >= expiresAt || claimProject[claimId] != bytes32(0)) revert InvalidClaim();
+        (address contributor, uint256 amount, bytes32 checkHash, ClaimStake.Status status) = claims.claimTerms(claimId);
+        if (
+            msg.sender != contributor || contributor == address(0) || amount != 0
+                || status != ClaimStake.Status.Open || checkHash == bytes32(0)
+                || !_hasOpenMilestone(contributor, checkHash)
+        ) revert InvalidClaim();
+        claimProject[claimId] = MILESTONE_PROJECT;
+        claims.lockCheck(claimId, checkHash);
+    }
+
+    /// @dev Whether the DAO's lock holds a tranche of `who` worded `checkHash` that is neither freed nor given up. A DAO
+    /// with no lock has no milestone, and a panel is only ever made by a DAO that has Shares.
+    function _hasOpenMilestone(address who, bytes32 checkHash) private view returns (bool) {
+        address guard = IMandateShares(IMandateDao(dao).shares()).lockGuard();
+        return guard != address(0) && IMandateLock(guard).isOpenMilestone(who, checkHash);
     }
 
     /// @notice Bind a submitted claim to a team's approved project, reserving its payment if it asks for one.
