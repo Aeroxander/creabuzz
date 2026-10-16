@@ -10,9 +10,12 @@ import {
   type VestingConfig,
 } from "../models";
 import type { CreateLaunchInput } from "../use-launches";
+import { useTokenMode } from "./create-wizard/useTokenMode";
 import {
   STANDARD_ALLOCATION,
   allocationIssue,
+  changeAllocation,
+  startingAllocation,
   type SupplyAllocation,
 } from "../lib/allocation";
 import {
@@ -179,11 +182,10 @@ export function CreateLaunchDialog({
   const [budget, setBudget] = useState<string>(initial?.budget ?? "");
   const [auction, setAuction] = useState(initial?.auction ?? "");
   const [treasury, setTreasury] = useState(initial?.treasury ?? "");
-  const [admission, setAdmission] = useState<"curated" | "community">(
-    initialAdmission(initial, Boolean(daoLaunchKit(chainId))),
-  );
-  const [allocation, setAllocation] = useState<SupplyAllocation>(
-    () => initial?.allocation ?? { ...STANDARD_ALLOCATION },
+  const [admission, setAdmission] = useState(initialAdmission(initial, true));
+  const initialMode = initialTokenMode(initial, Boolean(daoLaunchKit(chainId)));
+  const [allocation, setAllocation] = useState<SupplyAllocation>(() =>
+    startingAllocation(initial?.allocation, initialMode === "dao"),
   );
   const allocationMessage = allocationIssue(allocation);
   const [vesting, setVesting] = useState<VestingConfig | null>(() =>
@@ -208,9 +210,7 @@ export function CreateLaunchDialog({
   );
   const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
-  const [tokenMode, setTokenMode] = useState(
-    initialTokenMode(initial, Boolean(daoLaunchKit(chainId))),
-  );
+  const [tokenMode, setTokenMode] = useTokenMode(initialMode, setAllocation);
   const [tokenName, setTokenName] = useState(
     () => initial?.tokenPlan?.name ?? ideaTokenDefaults(idea?.name).tokenName,
   );
@@ -732,6 +732,7 @@ export function CreateLaunchDialog({
           ...(saleCurrency.kind === "eth" ? { unit: "ETH" } : {}),
         })} a token. Graduates at ${formatMoney(form.requiredRaised, saleCurrency)} raised; below that, every bid refunds.`;
 
+  const ownDao = tokenMode === "dao";
   const controller: WizardController = {
     wizard,
     patch,
@@ -755,12 +756,11 @@ export function CreateLaunchDialog({
     supply: {
       allocation,
       issue: allocationMessage,
-      onReset: () => setAllocation({ ...STANDARD_ALLOCATION }),
+      onReset: () => setAllocation(startingAllocation(null, ownDao)),
       onChange: (key, value) => {
-        setAllocation((previous) => ({ ...previous, [key]: value }));
-        // The tranche is derived from the total: a sale-share change
-        // re-derives it, because the tokenomics card turns the tranche back
-        // into the total with this same share.
+        setAllocation((prev) => changeAllocation(prev, key, value, ownDao));
+        // The tranche is derived from the total: a sale-share change re-derives it, because the
+        // tokenomics card turns the tranche back into the total with this same share.
         if (key === "sale") setSupply(trancheFromTotal(totalSupplyText, value));
       },
     },
@@ -776,7 +776,7 @@ export function CreateLaunchDialog({
       onRaiseTarget,
     },
     unlocks: {
-      ownDao: tokenMode === "dao",
+      ownDao,
       issues: wizardStepIssues(wizard, form, "unlocks"),
       onLabel: (index, value) =>
         setMilestoneRows(

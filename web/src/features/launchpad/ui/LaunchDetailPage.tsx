@@ -11,6 +11,7 @@ import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { IpRecordCard } from "./IpRecordCard";
+import { PowersCard } from "./PowersCard";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
@@ -29,8 +30,8 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, isEvmAddress, type Launch } from "../models";
-import { chainRaise, effectiveFunding } from "../lib/funding";
-import { saleAction } from "../lib/sale-action";
+import { effectiveFunding } from "../lib/funding";
+import { saleActionFor } from "../lib/sale-action";
 import { SaleActionButton } from "./SaleActionButton";
 import { isIdea } from "../lib/idea";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
@@ -56,11 +57,7 @@ import { useAuctionProgress, OwnershipOnlyNote, ProgressBar } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { floorPricePerToken } from "../lib/launch-params";
-import {
-  ALLOCATION_LABELS,
-  impliedFdv,
-  tokensForBudget,
-} from "../lib/allocation";
+import { allocationRows, impliedFdv, tokensForBudget } from "../lib/allocation";
 import { sandboxRecord } from "../lib/sandbox";
 import {
   SETTLEMENT_TERMS,
@@ -185,12 +182,7 @@ export function LaunchDetailPage({
   }
 
   const stage = effectiveStage(launch);
-  const mainAction = saleAction({
-    raise: chainRaise(launch, blockHeight),
-    stage,
-    hasAuction: Boolean(launch.record.auction),
-    progress: auctionRead,
-  });
+  const mainAction = saleActionFor(launch, stage, blockHeight, auctionRead);
 
   const recordBid = async (input: {
     bucket: string;
@@ -664,8 +656,10 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           return (
             <>
               <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
-                {ALLOCATION_LABELS.map(({ key, label }) => {
-                  const share = record.allocation[key];
+                {allocationRows(
+                  record.allocation,
+                  record.tokenPlan?.mode === "dao",
+                ).map(({ key, label, share }) => {
                   const tokens =
                     totalSupply !== null
                       ? (totalSupply * BigInt(Math.round(share))) / 100n
@@ -725,6 +719,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           ))}
         </dl>
       </Card>
+      {record.tokenPlan?.mode === "dao" ? <PowersCard /> : null}
       <LaunchContractsCard record={record} />
       <ProvenCommitmentsCard launch={launch} />
       <IpRecordCard launch={launch} />

@@ -50,7 +50,7 @@ function record(auction?: string) {
         twapWindow: null,
       },
       tokenPlan: {
-        mode: "mint",
+        mode: servedTokenMode,
         name: "Nebula Token",
         symbol: "NBL",
         supply: "200000000",
@@ -98,6 +98,8 @@ const published: Array<{ kind: number; content: string; tags: string[][] }> =
 let servedAuction = "";
 /** Stage served for the fixture record (defaults to the wizard's live). */
 let servedStage = "live";
+/** Token plan served for the fixture record: a minted token by default, or the project's own Shares. */
+let servedTokenMode = "mint";
 /**
  * Milestone mirrors (kind 47005) served for the detail page. Empty by
  * default, so every existing test still sees a launch with no recorded
@@ -227,9 +229,8 @@ test("the create form refuses parameters the auction contract would reject", asy
   // enabled/disabled assertion below prove nothing.
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-two");
-  await page
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Nebula Two");
+  // (Opened the Advanced drawer above: the token's own Name field is on the page too, so pick the launch's by id.)
+  await page.locator("#launch-name").fill("Nebula Two");
 
   await expect(page.getByTestId("launch-param-issues")).toBeHidden();
   await wizardToPublish(page);
@@ -254,9 +255,8 @@ test("recommended terms fill in deployable numbers", async ({ page }) => {
   await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-three");
-  await page
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Nebula Three");
+  // (Opened the Advanced drawer above: the token's own Name field is on the page too, so pick the launch's by id.)
+  await page.locator("#launch-name").fill("Nebula Three");
   await page.getByLabel("Floor price").fill("1000000");
   await page.getByTestId("launch-recommended-terms").click();
 
@@ -697,6 +697,9 @@ test("the liquidity minimum is shown before a thin pool ships", async ({
     .fill("Nebula Eight");
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-eight");
+  // Only a minted token seeds a pool from the supply (an own-DAO launch keeps its reserve in the DAO), so this is the
+  // minted-token path.
+  await page.getByRole("button", { name: "Mint new" }).click();
   // Standard allocation: 20% sale, 15% liquidity = 15% of the raise at the
   // floor, above the 4% minimum for a 20%-of-raise pool.
   await expect(page.getByTestId("launch-lp-minimum")).toContainText(
@@ -1085,4 +1088,78 @@ test("the main button follows the sale: bid while it is open, then claim tokens 
   } finally {
     servedStage = "live";
   }
+});
+
+test("a new launch on a network with no launch kit is still the project's own Shares, and says it cannot launch there", async ({
+  page,
+}) => {
+  // This build names no launch kit for the network, and that must not quietly turn the project into a minted token with
+  // different ownership: the draft stays the same product and the page says plainly it cannot be launched here.
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
+  await page.getByTestId("launch-advanced").locator("> summary").click();
+  await expect(page.getByTestId("token-mode-dao")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByRole("button", { name: "Project Shares" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("dao-kit-missing")).toContainText(
+    "You can save the draft",
+  );
+});
+
+test("a launch into its own DAO shows three shares, and says what each is", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
+  const split = page.getByTestId("launch-allocation");
+  await expect(split.getByText("Public sale")).toBeVisible();
+  await expect(split.getByText("Team allocation")).toBeVisible();
+  await expect(split.getByText("DAO reserve")).toBeVisible();
+  // Nothing in an own-DAO launch is funded separately, so the old rows and the pool-coverage claim are gone.
+  await expect(split.getByText("Liquidity")).toHaveCount(0);
+  await expect(page.getByTestId("launch-lp-minimum")).toHaveCount(0);
+  await expect(page.getByTestId("launch-allocation-total")).toContainText(
+    "100%",
+  );
+  // The DAO's share is one number: raising the sale share makes the split not add up until the reserve follows.
+  await page.getByTestId("launch-allocation-sale").fill("30");
+  await expect(page.getByTestId("launch-allocation-issue")).toContainText(
+    "110%",
+  );
+  await page.getByTestId("launch-allocation-treasury").fill("50");
+  await expect(page.getByTestId("launch-allocation-issue")).toHaveCount(0);
+  await expect(page.getByTestId("launch-allocation-total")).toContainText(
+    "100%",
+  );
+});
+
+test("a project with its own DAO says what can and cannot be changed, before a bid", async ({
+  page,
+}) => {
+  // Last on purpose, like the test above: it changes what the fixture record is.
+  servedTokenMode = "dao";
+  try {
+    await page.goto("/launchpad");
+    await page.getByText("Nebula DAO").click();
+    const powers = page.getByTestId("launch-powers");
+    await expect(powers).toBeVisible({ timeout: 15_000 });
+    await expect(powers).toContainText("No vote can undo");
+    await expect(powers).toContainText("The holders can change by vote");
+    await expect(powers).toContainText("Spend the money the DAO holds");
+    await expect(powers).toContainText("The team votes too");
+    await expect(powers).toContainText("you can leave with your share");
+  } finally {
+    servedTokenMode = "mint";
+  }
+});
+
+test("a project that sells a minted token does not show the DAO's powers", async ({
+  page,
+}) => {
+  await page.getByText("Nebula DAO").click();
+  await expect(page.getByTestId("launch-settlement-terms")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("launch-powers")).toHaveCount(0);
 });

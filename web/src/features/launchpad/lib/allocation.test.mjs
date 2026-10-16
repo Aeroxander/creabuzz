@@ -3,7 +3,12 @@ import test from "node:test";
 
 import {
   STANDARD_ALLOCATION,
+  STANDARD_DAO_ALLOCATION,
   allocationIssue,
+  allocationForMode,
+  allocationRows,
+  daoReserve,
+  withDaoReserve,
   impliedFdv,
   minimumLiquidityPercent,
   parseAllocation,
@@ -101,4 +106,46 @@ test("minimumLiquidityPercent is the supply-converted raise rule", () => {
     minimumLiquidityPercent({ salePercent: 20, raiseShareBps: 0 }),
     null,
   );
+});
+
+test("an own-DAO launch shows three shares, and the DAO's is everything not sold and not the team's", () => {
+  // The standard six-way split is the same supply as 20 / 20 / 60: nothing is funded separately in a DAO launch.
+  assert.equal(daoReserve(STANDARD_ALLOCATION), 60);
+  assert.equal(totalAllocation(STANDARD_DAO_ALLOCATION), 100);
+  assert.equal(allocationIssue(STANDARD_DAO_ALLOCATION), null);
+  const rows = allocationRows(STANDARD_ALLOCATION, true);
+  assert.deepEqual(
+    rows.map((r) => [r.label, r.share]),
+    [
+      ["Public sale", 20],
+      ["Team allocation", 20],
+      ["DAO reserve", 60],
+    ],
+  );
+  // The other token modes still show the six stored shares.
+  assert.equal(allocationRows(STANDARD_ALLOCATION, false).length, 6);
+});
+
+test("setting the DAO's share writes it all into one stored share and keeps the total honest", () => {
+  const next = withDaoReserve(STANDARD_ALLOCATION, 50);
+  assert.equal(next.treasury, 50);
+  assert.equal(next.liquidity + next.milestones + next.community, 0);
+  assert.equal(daoReserve(next), 50);
+  assert.equal(next.sale, STANDARD_ALLOCATION.sale);
+  assert.equal(next.team, STANDARD_ALLOCATION.team);
+  assert.match(String(allocationIssue(next)), /unassigned/);
+});
+
+test("changing the kind of token swaps an untouched standard split and leaves an edited one alone", () => {
+  assert.deepEqual(
+    allocationForMode({ ...STANDARD_ALLOCATION }, true),
+    STANDARD_DAO_ALLOCATION,
+  );
+  assert.deepEqual(
+    allocationForMode({ ...STANDARD_DAO_ALLOCATION }, false),
+    STANDARD_ALLOCATION,
+  );
+  const edited = { ...STANDARD_DAO_ALLOCATION, sale: 25, treasury: 55 };
+  assert.deepEqual(allocationForMode(edited, false), edited);
+  assert.deepEqual(allocationForMode(edited, true), edited);
 });

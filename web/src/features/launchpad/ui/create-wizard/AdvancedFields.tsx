@@ -277,9 +277,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
                 role="status"
               >
                 Launching a project with its own DAO is not set up for this
-                network yet. You can still save the draft, but it cannot be
-                launched here until it is. Pick another network, or mint a token
-                instead.
+                network yet. You can save the draft, but it cannot be launched
+                here until it is. Pick another network to launch now.
               </p>
             ) : null}
             <Field id="launch-token-name" label="Name">

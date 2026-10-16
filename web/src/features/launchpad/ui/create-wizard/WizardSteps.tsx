@@ -281,6 +281,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
         issue={controller.supply.issue}
         onChange={controller.supply.onChange}
         onReset={controller.supply.onReset}
+        ownDao={controller.unlocks.ownDao}
         totalSupply={token.totalSupply}
       />
       <p className="text-xs text-black/60 dark:text-white/60">

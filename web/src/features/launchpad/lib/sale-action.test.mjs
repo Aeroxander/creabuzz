@@ -85,3 +85,56 @@ test("a settled sale offers what its outcome allows, and nothing with no auction
     null,
   );
 });
+
+test("a running auction is open to bids whatever the record's stage says, and not before it starts", () => {
+  const window = (head) => ({ startBlock: 100, endBlock: 200, head });
+  // The founder launched the project but has not set the record to Live: the auction is real and open.
+  assert.deepEqual(
+    saleAction({
+      raise: "none",
+      stage: "draft",
+      hasAuction: true,
+      window: window(150),
+    }),
+    { kind: "bid", label: "Place bid" },
+  );
+  // Before the start block a bid would be refused: say so instead of offering it.
+  assert.deepEqual(
+    saleAction({
+      raise: "none",
+      stage: "draft",
+      hasAuction: true,
+      window: window(50),
+    }),
+    { kind: "closed", label: "Bidding not open yet" },
+  );
+  assert.deepEqual(
+    saleAction({
+      raise: "open",
+      stage: "live",
+      hasAuction: true,
+      window: window(50),
+    }),
+    { kind: "closed", label: "Bidding not open yet" },
+  );
+  // With no auction linked the stage alone decides, and a draft offers nothing.
+  assert.equal(
+    saleAction({
+      raise: "none",
+      stage: "draft",
+      hasAuction: false,
+      window: window(150),
+    }),
+    null,
+  );
+  // An unreadable chain falls back to the stage.
+  assert.deepEqual(
+    saleAction({
+      raise: "open",
+      stage: "live",
+      hasAuction: true,
+      window: window(null),
+    }),
+    { kind: "bid", label: "Place bid" },
+  );
+});

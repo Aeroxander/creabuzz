@@ -7,7 +7,7 @@
  */
 
 import {
-  ALLOCATION_LABELS,
+  allocationRows,
   minimumLiquidityPercent,
   totalAllocation,
   type SupplyAllocation,
@@ -43,6 +43,11 @@ export interface SupplySplitProps {
   issue: string | null;
   /** The total supply as typed, so each share can show its token count. */
   totalSupply: string;
+  /**
+   * The project launches into its own DAO: three shares (sale, team, DAO reserve), because that is what the launch does.
+   * Otherwise the six stored shares are shown.
+   */
+  ownDao: boolean;
 }
 
 export function SupplySplit({
@@ -51,15 +56,20 @@ export function SupplySplit({
   onReset,
   issue,
   totalSupply,
+  ownDao,
 }: SupplySplitProps) {
+  const rows = allocationRows(allocation, ownDao);
   const total = totalAllocation(allocation);
   const supply = parseSupply(totalSupply);
   const balanced = total === 100;
   const barBase = Math.max(total, 100);
-  const minLiquidity = minimumLiquidityPercent({
-    salePercent: allocation.sale,
-    raiseShareBps: 2000,
-  });
+  // Only the other token modes seed a pool from the supply; an own-DAO launch keeps its reserve in the DAO.
+  const minLiquidity = ownDao
+    ? null
+    : minimumLiquidityPercent({
+        salePercent: allocation.sale,
+        raiseShareBps: 2000,
+      });
   const thin = minLiquidity !== null && allocation.liquidity < minLiquidity;
 
   return (
@@ -93,14 +103,14 @@ export function SupplySplit({
         className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-foreground/10"
         data-testid="launch-allocation-bar"
       >
-        {ALLOCATION_LABELS.map(({ key }) =>
-          allocation[key] > 0 ? (
+        {rows.map(({ key, share }) =>
+          share > 0 ? (
             <span
               className="h-full first:rounded-l-full last:rounded-r-full"
               key={key}
               style={{
                 backgroundColor: SHARE_COLORS[key],
-                width: `${(allocation[key] / barBase) * 100}%`,
+                width: `${(share / barBase) * 100}%`,
               }}
             />
           ) : null,
@@ -108,7 +118,7 @@ export function SupplySplit({
       </div>
 
       <ul className="mt-3 divide-y divide-border/60">
-        {ALLOCATION_LABELS.map(({ key, label, hint }) => (
+        {rows.map(({ key, label, hint, share }) => (
           <li
             className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-4 py-2.5"
             key={key}
@@ -144,7 +154,7 @@ export function SupplySplit({
                     onChange(key, next);
                   }}
                   type="number"
-                  value={allocation[key]}
+                  value={share}
                 />
                 <span
                   aria-hidden
@@ -155,8 +165,7 @@ export function SupplySplit({
               </div>
               {supply !== null ? (
                 <p className="mt-0.5 text-2xs tabular-nums text-muted-foreground">
-                  {compactNumber.format((supply * allocation[key]) / 100)}{" "}
-                  tokens
+                  {compactNumber.format((supply * share) / 100)} tokens
                 </p>
               ) : null}
             </div>

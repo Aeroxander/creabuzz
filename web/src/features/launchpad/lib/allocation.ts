@@ -59,6 +59,144 @@ export const STANDARD_ALLOCATION: SupplyAllocation = {
   community: 5,
 };
 
+/**
+ * What a project that launches into its own DAO actually does with its supply: it sells the sale share, locks the team's
+ * share behind the milestone schedule, and puts everything else in the DAO (`daoLaunch.ts` maps treasury, liquidity,
+ * milestones and community into one DAO reserve). The six stored shares are not six funded destinations there, so the
+ * launch shows three, and the DAO decides later what to do with its reserve. The record keeps its six numbers (older
+ * launches and the other token modes use them); a DAO launch writes its whole reserve into `treasury`.
+ */
+export const DAO_RESERVE_KEYS = [
+  "treasury",
+  "liquidity",
+  "milestones",
+  "community",
+] as const;
+
+/** The shape a new own-DAO launch starts from: a fifth sold, a fifth for the team, the rest in the DAO. */
+export const STANDARD_DAO_ALLOCATION: SupplyAllocation = {
+  sale: 20,
+  team: 20,
+  treasury: 60,
+  liquidity: 0,
+  milestones: 0,
+  community: 0,
+};
+
+/** The DAO's share: every part that is neither sold nor the team's. */
+export function daoReserve(allocation: SupplyAllocation): number {
+  return DAO_RESERVE_KEYS.reduce(
+    (total, key) => total + (allocation[key] || 0),
+    0,
+  );
+}
+
+/** Set the DAO's share as one number: it all lives in `treasury`, and the other reserve parts are zero. */
+export function withDaoReserve(
+  allocation: SupplyAllocation,
+  percent: number,
+): SupplyAllocation {
+  return {
+    ...allocation,
+    treasury: percent,
+    liquidity: 0,
+    milestones: 0,
+    community: 0,
+  };
+}
+
+/** The split a form starts from: the launch's own, else the standard one for the kind of token it will be. */
+export function startingAllocation(
+  saved: SupplyAllocation | null | undefined,
+  ownDao: boolean,
+): SupplyAllocation {
+  return (
+    saved ?? { ...(ownDao ? STANDARD_DAO_ALLOCATION : STANDARD_ALLOCATION) }
+  );
+}
+
+const sameShares = (a: SupplyAllocation, b: SupplyAllocation) =>
+  (Object.keys(a) as Array<keyof SupplyAllocation>).every(
+    (key) => a[key] === b[key],
+  );
+
+/**
+ * The split after the kind of token changes. A founder who has not touched the standard split gets the other kind's
+ * standard one (an own DAO shows three shares, the other modes six); anything they edited stays as they set it.
+ */
+export function allocationForMode(
+  allocation: SupplyAllocation,
+  ownDao: boolean,
+): SupplyAllocation {
+  if (ownDao && sameShares(allocation, STANDARD_ALLOCATION)) {
+    return { ...STANDARD_DAO_ALLOCATION };
+  }
+  if (!ownDao && sameShares(allocation, STANDARD_DAO_ALLOCATION)) {
+    return { ...STANDARD_ALLOCATION };
+  }
+  return allocation;
+}
+
+/** One share edited. An own-DAO launch shows the DAO's share as one number, and it all lives in the treasury share. */
+export function changeAllocation(
+  allocation: SupplyAllocation,
+  key: keyof SupplyAllocation,
+  value: number,
+  ownDao: boolean,
+): SupplyAllocation {
+  return ownDao && key === "treasury"
+    ? withDaoReserve(allocation, value)
+    : { ...allocation, [key]: value };
+}
+
+export interface AllocationRow {
+  /** The stored share this row edits. */
+  key: keyof SupplyAllocation;
+  label: string;
+  hint: string;
+  share: number;
+}
+
+/** The three shares an own-DAO launch shows. */
+export const DAO_ALLOCATION_LABELS: ReadonlyArray<{
+  key: "sale" | "team" | "treasury";
+  label: string;
+  hint: string;
+}> = [
+  { key: "sale", label: "Public sale", hint: "Sold in the auction." },
+  {
+    key: "team",
+    label: "Team allocation",
+    hint: "Locked. Each part unlocks only when the named reviewers approve its milestone.",
+  },
+  {
+    key: "treasury",
+    label: "DAO reserve",
+    hint: "Held by the DAO. The holders decide by vote what to do with it.",
+  },
+];
+
+/** The rows to show: three for a project launching into its own DAO, the six stored shares otherwise. */
+export function allocationRows(
+  allocation: SupplyAllocation,
+  ownDao: boolean,
+): AllocationRow[] {
+  if (!ownDao) {
+    return ALLOCATION_LABELS.map(({ key, label, hint }) => ({
+      key,
+      label,
+      hint,
+      share: allocation[key],
+    }));
+  }
+  return DAO_ALLOCATION_LABELS.map(({ key, label, hint }) => ({
+    key,
+    label,
+    hint,
+    share: key === "treasury" ? daoReserve(allocation) : allocation[key],
+  }));
+}
+
 export function totalAllocation(allocation: SupplyAllocation): number {
   return ALLOCATION_LABELS.reduce(
     (total, { key }) => total + (allocation[key] || 0),

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { initialAdmission, initialTokenMode } from "./wizard.ts";
 
-test("a new launch starts on the project's own Shares where a kit exists, and on a minted token where none does", () => {
-  assert.equal(initialTokenMode(undefined, true), "dao");
-  assert.equal(initialTokenMode(null, false), "mint");
-  assert.equal(initialTokenMode({}, true), "dao");
+test("a new launch is always the project's own Shares, so a network with no launch kit never turns it into a minted token", () => {
+  for (const hasKit of [true, false]) {
+    assert.equal(initialTokenMode(undefined, hasKit), "dao");
+    assert.equal(initialTokenMode(null, hasKit), "dao");
+    assert.equal(initialTokenMode({}, hasKit), "dao");
+  }
 });
 
 test("a launch that already has a token keeps what it is when edited", () => {
@@ -17,6 +19,11 @@ test("a launch that already has a token keeps what it is when edited", () => {
     "dao",
   );
   assert.equal(initialTokenMode({ tokenPlan: { mode: "mint" } }, true), "dao");
+  // An edit never rewrites what was published: a minted-token launch stays one where no kit exists.
+  assert.equal(
+    initialTokenMode({ tokenPlan: { mode: "mint" } }, false),
+    "mint",
+  );
 });
 
 test("a new launch that will be a DAO starts on the open sale, because a DAO launch cannot be curated", () => {

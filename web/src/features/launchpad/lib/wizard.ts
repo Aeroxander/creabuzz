@@ -170,8 +170,10 @@ export interface WizardState {
  */
 /**
  * Which token a launch form starts on. A launch already made as a DAO stays one when edited (its Shares are the
- * record's token, not an import); a new one defaults to the project's own Shares wherever this build can launch them
- * (`hasKit`), and to a minted apptoken elsewhere.
+ * record's token, not an import); a new one is always the project's own Shares. A network with no launch kit does not
+ * change the product: the draft is saved as the same own-DAO launch and the launch step says it cannot go yet, rather than
+ * quietly turning the project into a minted token with different ownership. Only an existing launch that was published as
+ * a minted token stays one where no kit exists, because an edit never rewrites what the founder published.
  */
 export function initialTokenMode(
   initial:
@@ -182,7 +184,8 @@ export function initialTokenMode(
 ): "mint" | "import" | "dao" {
   if (initial?.tokenPlan?.mode === "dao") return "dao";
   if (initial?.token) return "import";
-  return hasKit ? "dao" : "mint";
+  if (initial?.tokenPlan?.mode === "mint" && !hasKit) return "mint";
+  return "dao";
 }
 
 /**
