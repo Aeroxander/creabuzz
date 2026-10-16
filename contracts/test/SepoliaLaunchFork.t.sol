@@ -30,6 +30,7 @@ struct ForkKitParams {
     uint128 saleSupply;
     bytes auctionConfig;
     bytes32 auctionSalt;
+    uint64 governanceStartBlock;
 }
 
 interface IForkKit {
@@ -175,6 +176,7 @@ contract SepoliaLaunchForkTest is Test {
         p.saleSupply = SALE;
         p.auctionConfig = _config(predicted);
         p.auctionSalt = salt;
+        p.governanceStartBlock = claimBlock;
 
         vm.prank(founder);
         uint256 gasBefore = gasleft();

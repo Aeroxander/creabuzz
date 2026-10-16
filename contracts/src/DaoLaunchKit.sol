@@ -26,6 +26,7 @@ interface IKitSummoner {
     ) external payable returns (address dao);
     function getImplementation() external view returns (address);
     function mandateFactory() external view returns (address);
+    function policyImplementation() external view returns (address);
 }
 
 interface IKitDao {
@@ -35,6 +36,11 @@ interface IKitDao {
 
 interface IKitPolicy {
     function mandateFactory() external view returns (address);
+    function setGovernanceStart(uint64 startBlock) external;
+}
+
+interface IKitAuction {
+    function claimBlock() external view returns (uint64);
 }
 
 interface IKitMandateFactory {
@@ -139,6 +145,10 @@ contract DaoLaunchKit {
         /// `abi.encode(AuctionParameters)` with the PREDICTED executor as tokensRecipient and fundsRecipient.
         bytes auctionConfig;
         bytes32 auctionSalt;
+        /// The first block at which the DAO can open a proposal: the sale's claim block, which the kit checks against the
+        /// auction. Until then the only electorate is the team, so nothing it passes can run before buyers can hold
+        /// Shares and leave.
+        uint64 governanceStartBlock;
     }
 
     /// @notice Everything a client needs to follow the launch, in one event.
@@ -229,9 +239,14 @@ contract DaoLaunchKit {
         // Milestones and their panel go together.
         if ((lock != address(0)) != (p.reviewers.length != 0)) revert PanelMismatch();
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 2);
+        uint256 calls = 1 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 2);
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
+        // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
+        // initialization, so its address is predicted the way the Shares' is.
+        address predictedPolicy = _predictClone(predictedDao, summoner.policyImplementation());
+        initCalls[next++] =
+            KitCall(predictedPolicy, 0, abi.encodeCall(IKitPolicy.setGovernanceStart, (p.governanceStartBlock)));
         if (p.proposalThreshold != 0) {
             initCalls[next++] =
                 KitCall(predictedDao, 0, abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold)));
@@ -253,6 +268,7 @@ contract DaoLaunchKit {
         address shares = IKitDao(dao).shares();
         require(shares == predictedShares, "kit: shares address");
         // The factory the panel was named in is the one this DAO's own voting policy uses, or the lock would not honour it.
+        require(IKitDao(dao).votingWeight() == predictedPolicy, "kit: policy address");
         require(IKitPolicy(IKitDao(dao).votingWeight()).mandateFactory() == address(mandateFactory), "kit: mandate factory");
         if (lock != address(0)) require(mandateFactory.milestoneMandate(dao) != address(0), "kit: milestone panel");
 
@@ -265,6 +281,8 @@ contract DaoLaunchKit {
         auction = factory.create(shares, p.saleSupply, p.auctionConfig, p.auctionSalt);
         exec.bindAuction(auction);
         exec.fundAuction(auction, p.saleSupply);
+        // Fail closed: the block governance opens at is the block the buyers can claim from.
+        require(IKitAuction(auction).claimBlock() == p.governanceStartBlock, "kit: governance start");
 
         emit Launched(dao, msg.sender, shares, executor, auction, lock, p.saleSupply);
     }
@@ -293,8 +311,13 @@ contract DaoLaunchKit {
     /// @dev The DAO makes its Shares as a minimal-proxy clone of the Shares implementation, with CREATE2 from the DAO and
     /// a salt that is the DAO's own address; the same proxy code the summoner's DAOs use.
     function _predictShares(address dao) private view returns (address) {
+        return _predictClone(dao, sharesImplementation);
+    }
+
+    /// @dev Any of the DAO's own clones (Shares, voting policy): the same proxy code, made with CREATE2 by the DAO.
+    function _predictClone(address dao, address implementation) private pure returns (address) {
         bytes memory creationCode = abi.encodePacked(
-            hex"602d5f8160095f39f35f5f365f5f37365f73", sharesImplementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+            hex"602d5f8160095f39f35f5f365f5f37365f73", implementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
         );
         return address(
             uint160(

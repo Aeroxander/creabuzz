@@ -116,6 +116,10 @@ contract AllocationVoting is IVotingWeight {
     mapping(uint256 => mapping(address => Position)) public positions;
     mapping(uint256 => Rules) public proposals;
     mapping(uint256 => Support) private support;
+    /// @notice The first block at which a proposal can open (zero: the DAO is open from its birth, as an ordinary DAO is).
+    /// A DAO born with a sale sets this to the sale's claim block: until the buyers can hold Shares, the only electorate is
+    /// the team, and anything it passed then could run the moment the raise lands, before any buyer could vote or leave.
+    uint64 public governanceStartBlock;
 
     error Unauthorized();
     error InvalidInitialization();
@@ -126,6 +130,9 @@ contract AllocationVoting is IVotingWeight {
     error TooManyAllocations();
     error InvalidLane();
     error TooManyExcluded();
+    /// @notice No proposal can open yet: governance starts at `opensAtBlock`.
+    error GovernanceNotOpen(uint64 opensAtBlock);
+    event GovernanceStartSet(uint64 startBlock);
     event AllocationChanged(
         uint256 indexed proposalId, address indexed owner, address indexed caller, uint8 side, uint96 amount
     );
@@ -167,6 +174,14 @@ contract AllocationVoting is IVotingWeight {
             _checkpoint(owner);
         }
         if (totalCapacity != shares.totalSupply()) revert InvalidInitialization();
+    }
+
+    /// @notice Hold governance closed until `startBlock`. Once, by the DAO itself (the launch kit does it in the DAO's
+    /// own initialization), and only into the future: it can postpone the first proposal, never freeze a DAO later.
+    function setGovernanceStart(uint64 startBlock) external onlyDAO {
+        if (governanceStartBlock != 0 || startBlock <= block.number) revert InvalidLane();
+        governanceStartBlock = startBlock;
+        emit GovernanceStartSet(startBlock);
     }
 
     // ------------------------------------------------------------------
@@ -231,6 +246,7 @@ contract AllocationVoting is IVotingWeight {
         uint64 delay,
         bool bounded
     ) external onlyDAO {
+        if (block.number < governanceStartBlock) revert GovernanceNotOpen(governanceStartBlock);
         Lane memory lane = lanes[bounded ? 1 : 0];
         if (
             IAllocationGovernor(dao).createdAt(id) != block.timestamp || proposals[id].expiresAt != 0 || bps > 10_000

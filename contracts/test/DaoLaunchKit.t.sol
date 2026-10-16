@@ -38,6 +38,7 @@ struct KitParams {
     uint128 saleSupply;
     bytes auctionConfig;
     bytes32 auctionSalt;
+    uint64 governanceStartBlock;
 }
 
 interface IKit {
@@ -160,6 +161,7 @@ contract DaoLaunchKitTest is Test {
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
         p.auctionSalt = salt;
+        p.governanceStartBlock = CLAIM_BLOCK;
     }
 
     function _launch(bytes32 salt) internal returns (Moloch dao, IExecutor executor, IAuction auction) {
@@ -414,6 +416,95 @@ contract DaoLaunchKitTest is Test {
             uint256(800e18) * 180e18 / 700e18,
             "800 over the 700 member Shares, times her 180"
         );
+    }
+
+    /// The team votes with its Shares from the first block, and a proposal's electorate is fixed when it opens. A
+    /// treasury drain opened and passed while the sale is still running would have an electorate with no buyers in it,
+    /// and run the moment the raise lands, leaving the backers nothing to exit with. So the DAO does not open for
+    /// proposals until the buyers can claim.
+    function test_no_proposal_can_open_during_the_sale_so_a_drain_cannot_be_prepared_before_the_buyers_arrive() public {
+        _needArtifacts();
+        (Moloch dao, IExecutor executor, IAuction auction) = _launch(bytes32("sale-boundary"));
+        AllocationVoting policy = AllocationVoting(dao.votingWeight());
+        assertEq(policy.governanceStartBlock(), CLAIM_BLOCK, "governance opens when the buyers can claim");
+        vm.roll(block.number + 1);
+
+        bytes memory drain = abi.encodeWithSignature("transfer(address,uint256)", founder, uint256(800e18));
+        bytes32 nonce = bytes32("drain");
+        uint256 id = dao.proposalId(0, address(currency), 0, drain, nonce);
+        // The team cannot open it, vote it in or open it by intent while the sale runs.
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(AllocationVoting.GovernanceNotOpen.selector, CLAIM_BLOCK));
+        dao.castVote(id, 1, 225e18);
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(AllocationVoting.GovernanceNotOpen.selector, CLAIM_BLOCK));
+        dao.openProposalWithAction(0, address(currency), 0, drain, nonce);
+
+        // The sale runs and ends; the raise lands in the DAO. Still nothing can be opened.
+        vm.roll(START_BLOCK);
+        address carol = makeAddr("carol");
+        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        _bid(address(auction), carol, 240e18, 2 * Q96, Q96);
+        uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
+        vm.roll(END_BLOCK + 1);
+        auction.checkpoint();
+        executor.executeGraduation(address(auction));
+        assertEq(currency.balanceOf(address(dao)), 800e18);
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(AllocationVoting.GovernanceNotOpen.selector, CLAIM_BLOCK));
+        dao.castVote(id, 1, 225e18);
+        vm.expectRevert();
+        dao.executeByVotes(0, address(currency), 0, drain, nonce);
+
+        // Once the buyers can claim, the DAO opens. A drain opened at that moment still takes the review, the hold and the
+        // execution delay, and a buyer who claims in that time leaves with their share of the raise first.
+        vm.roll(END_BLOCK + 2);
+        vm.prank(bob);
+        auction.exitBid(bobBid);
+        vm.prank(alice);
+        auction.exitPartiallyFilledBid(aliceBid, START_BLOCK, 0);
+        vm.roll(CLAIM_BLOCK);
+        vm.prank(founder);
+        dao.castVote(id, 1, 225e18);
+        vm.prank(cofounder);
+        dao.castVote(id, 1, 75e18);
+        vm.expectRevert();
+        dao.queue(id); // not yet: the review has not passed
+        vm.prank(alice);
+        auction.claimTokens(aliceBid);
+        vm.roll(block.number + 1);
+        address[] memory assets = new address[](1);
+        assets[0] = address(currency);
+        uint256 before_ = currency.balanceOf(alice);
+        vm.prank(alice);
+        dao.ragequit(assets, 180e18, 0);
+        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 700e18);
+    }
+
+    function test_governance_can_only_be_held_closed_once_and_only_into_the_future() public {
+        _needArtifacts();
+        (Moloch dao,,) = _launch(bytes32("once"));
+        AllocationVoting policy = AllocationVoting(dao.votingWeight());
+        vm.prank(address(dao));
+        vm.expectRevert(AllocationVoting.InvalidLane.selector); // already set
+        policy.setGovernanceStart(uint64(block.number + 1000));
+        vm.prank(founder);
+        vm.expectRevert(AllocationVoting.Unauthorized.selector);
+        policy.setGovernanceStart(uint64(block.number + 1000));
+        // A launch whose claim block is not in the future cannot be made: the DAO would be born unable to close.
+        bytes32 salt = bytes32("past");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.governanceStartBlock = uint64(block.number);
+        vm.prank(founder);
+        vm.expectRevert();
+        kit.launch(p);
+        // And the block the DAO opens at has to be the auction's own claim block.
+        salt = bytes32("mismatch");
+        p = _params(salt, kit.predictExecutor(founder, salt));
+        p.governanceStartBlock = CLAIM_BLOCK + 1;
+        vm.prank(founder);
+        vm.expectRevert(bytes("kit: governance start"));
+        kit.launch(p);
     }
 
     function test_a_launch_cannot_be_repeated_and_a_wrong_auction_config_reverts_everything() public {

@@ -2558,6 +2558,11 @@ contract Summoner {
     /// @notice The voting policy every DAO this summoner makes clones, whose work budget factory is theirs too.
     AllocationVoting immutable policyImplementation_;
 
+    /// @notice The voting policy every DAO this summoner makes clones; a DAO's own policy is a CREATE2 clone of it.
+    function policyImplementation() public view returns (address) {
+        return address(policyImplementation_);
+    }
+
     /// @notice The work budget factory the DAOs of this summoner use (a launch kit names a milestone panel in it).
     function mandateFactory() public view returns (address) {
         return address(policyImplementation_.mandateFactory());
