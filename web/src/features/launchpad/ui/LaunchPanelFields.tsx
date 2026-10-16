@@ -1,4 +1,8 @@
-import type { PanelDraft } from "../lib/launch-panel";
+import {
+  PANEL_OPEN_YEARS,
+  panelSpare,
+  type PanelDraft,
+} from "../lib/launch-panel";
 import {
   PeoplePicker,
   SelectField,
@@ -24,6 +28,7 @@ export function LaunchPanelFields({
   problem: string | null;
 }) {
   const patch = (next: Partial<PanelDraft>) => onChange({ ...draft, ...next });
+  const spare = panelSpare(draft);
   return (
     <div
       className="mt-3 grid gap-3 rounded-lg border border-black/10 p-3 dark:border-white/10"
@@ -110,6 +115,29 @@ export function LaunchPanelFields({
             </>
           ) : null}
         </>
+      ) : null}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="launch-panel-continuity"
+      >
+        The reviewers are fixed, and the panel stays open for {PANEL_OPEN_YEARS}{" "}
+        years. If too few of them can be reached, or the panel runs out, no
+        milestone can be approved and the locked Shares stay locked; the only
+        thing the DAO can then do with them is give them up and burn them. Ask
+        your reviewers first, and name more people than the number who must
+        agree.
+      </p>
+      {spare !== null && spare.spare < 1 ? (
+        <p
+          className="text-xs text-amber-700 dark:text-amber-300"
+          data-testid="launch-panel-no-spare"
+          role="status"
+        >
+          {spare.needed === spare.reviewers
+            ? "Every reviewer must agree, so one who cannot be reached stops every milestone."
+            : "Too few reviewers are named for that many to agree."}{" "}
+          Name at least one more.
+        </p>
       ) : null}
       {problem ? (
         <p

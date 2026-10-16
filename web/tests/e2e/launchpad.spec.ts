@@ -29,6 +29,7 @@ function record(auction?: string) {
     ],
     content: JSON.stringify({
       pitch: "To the stars.",
+      ...(servedLongPitch ? { longPitch: servedLongPitch } : {}),
       // Circle's USDC on Sepolia (the fixture's chain): amounts read as USDC.
       currency: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
       stage: servedStage,
@@ -100,6 +101,8 @@ let servedAuction = "";
 let servedStage = "live";
 /** Token plan served for the fixture record: a minted token by default, or the project's own Shares. */
 let servedTokenMode = "mint";
+/** The founder's longer story served for the fixture record; empty = none, as in most tests. */
+let servedLongPitch = "";
 /**
  * Milestone mirrors (kind 47005) served for the detail page. Empty by
  * default, so every existing test still sees a launch with no recorded
@@ -1162,4 +1165,38 @@ test("a project that sells a minted token does not show the DAO's powers", async
     timeout: 15_000,
   });
   await expect(page.getByTestId("launch-powers")).toHaveCount(0);
+});
+
+test("the sale page opens with the team's own story, kept apart from what the network says", async ({
+  page,
+}) => {
+  servedLongPitch =
+    "We are building a telescope for everyone.\nPhase one ships in spring.";
+  try {
+    await page.goto("/launchpad");
+    await page.getByText("Nebula DAO").click();
+    const about = page.getByTestId("launch-about");
+    await expect(about).toBeVisible({ timeout: 15_000 });
+    await expect(about).toContainText(
+      "We are building a telescope for everyone.",
+    );
+    await expect(about).toContainText("the network does not check it");
+    // The planned spending is money in the sale's currency, not raw units.
+    await expect(page.getByTestId("launch-about-budget")).toContainText(
+      "Up to 50,000 USDC a month",
+    );
+    await expect(page.getByTestId("launch-about-team")).not.toBeEmpty();
+  } finally {
+    servedLongPitch = "";
+  }
+});
+
+test("the About card shows only what the team declared", async ({ page }) => {
+  await page.getByText("Nebula DAO").click();
+  await expect(page.getByTestId("launch-settlement-terms")).toBeVisible({
+    timeout: 15_000,
+  });
+  // The fixture states a monthly budget, so the card appears with it alone, and says nothing it was not told.
+  await expect(page.getByTestId("launch-about")).toBeVisible();
+  await expect(page.getByTestId("launch-about")).not.toContainText("telescope");
 });

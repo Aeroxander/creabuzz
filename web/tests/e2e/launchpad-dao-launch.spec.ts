@@ -269,6 +269,19 @@ test("the founder launches a project into its own DAO with one button, and the p
   await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
   await namePanel(page);
   await expect(page.getByTestId("dao-launch-gate")).toHaveCount(0);
+  // The founder is told what happens if the reviewers cannot be reached, and warned when none could be missing.
+  await expect(page.getByTestId("launch-panel-continuity")).toContainText(
+    "the locked Shares stay locked",
+  );
+  await expect(page.getByTestId("launch-panel-no-spare")).toContainText(
+    "Every reviewer must agree",
+  );
+  await namePanel(page, [
+    ...JUDGES,
+    "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+  ]);
+  await expect(page.getByTestId("launch-panel-no-spare")).toHaveCount(0);
+  await namePanel(page);
   // The founder is told, in plain words, where each part of the supply goes.
   const summary = page.getByTestId("dao-launch-summary");
   await expect(summary).toContainText("200,000,000 Shares");

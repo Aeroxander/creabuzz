@@ -50,6 +50,24 @@ export interface BondTokenFacts {
   other: { decimals: number } | "loading" | "unreadable";
 }
 
+/** How long the panel stays open, in whole years, for the words that tell the founder. */
+export const PANEL_OPEN_YEARS = Math.round(PANEL_OPEN_SECONDS / (365 * 86_400));
+
+/**
+ * How many reviewers could be unreachable before no milestone can be approved: the people named, less the number that must
+ * agree. `null` until anyone is named or while the quorum is not a usable number (the form says so elsewhere).
+ */
+export function panelSpare(
+  draft: Pick<PanelDraft, "reviewers" | "quorum">,
+): { reviewers: number; needed: number; spare: number } | null {
+  const reviewers = reviewerList(draft.reviewers).length;
+  if (reviewers === 0) return null;
+  const text = draft.quorum.trim();
+  const needed = text === "" ? Math.floor(reviewers / 2) + 1 : Number(text);
+  if (!Number.isInteger(needed) || needed < 1) return null;
+  return { reviewers, needed, spare: reviewers - needed };
+}
+
 export function panelFromDraft(
   draft: PanelDraft,
   facts: BondTokenFacts,

@@ -5,7 +5,9 @@ import {
   EMPTY_PANEL_DRAFT,
   loadPanelDraft,
   PANEL_OPEN_SECONDS,
+  PANEL_OPEN_YEARS,
   panelFromDraft,
+  panelSpare,
   reviewerList,
   savePanelDraft,
 } from "./launch-panel.ts";
@@ -146,4 +148,27 @@ test("a draft that is missing, broken or the wrong shape is ignored rather than 
   // No storage at all (a private window) is the empty draft, and saving into it does not throw.
   assert.deepEqual(loadPanelDraft("x", null), EMPTY_PANEL_DRAFT);
   savePanelDraft("x", EMPTY_PANEL_DRAFT, null);
+});
+
+test("the panel says how many reviewers could be unreachable before no milestone can be approved", () => {
+  // Three named, a simple majority (two) must agree: one can be missing.
+  assert.deepEqual(panelSpare(draft()), { reviewers: 3, needed: 2, spare: 1 });
+  // Everyone must agree: nobody can be missing, which is the warning case.
+  assert.deepEqual(panelSpare(draft({ quorum: "3" })), {
+    reviewers: 3,
+    needed: 3,
+    spare: 0,
+  });
+  // One reviewer is a majority of one.
+  assert.equal(panelSpare(draft({ reviewers: A })).spare, 0);
+  // Asking for more agreement than there are people is negative, never hidden.
+  assert.equal(panelSpare(draft({ quorum: "5" })).spare, -2);
+  // Nothing to say until someone is named, or while the number is not one.
+  assert.equal(panelSpare(draft({ reviewers: "" })), null);
+  assert.equal(panelSpare(draft({ quorum: "many" })), null);
+  assert.equal(panelSpare(draft({ quorum: "0" })), null);
+});
+
+test("the panel's lifetime in the words is the lifetime it is created with", () => {
+  assert.equal(PANEL_OPEN_YEARS * 365 * 86_400, PANEL_OPEN_SECONDS);
 });

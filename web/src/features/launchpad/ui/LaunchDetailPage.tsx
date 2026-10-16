@@ -11,6 +11,7 @@ import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { IpRecordCard } from "./IpRecordCard";
+import { AboutProjectCard } from "./AboutProjectCard";
 import { PowersCard } from "./PowersCard";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
@@ -561,6 +562,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
   ];
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <AboutProjectCard record={record} />
       <Card className="p-4">
         <h2 className="text-base font-semibold">Raise terms</h2>
         <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
