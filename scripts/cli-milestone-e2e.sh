@@ -34,6 +34,21 @@ fi
 
 # ── 2. the first milestone is earned ────────────────────────────────────────────
 world_milestone_project
+
+step "only a team member's own claim, worded as one of their milestones, can be sent to the panel"
+echo "something unrelated" > "$STATE/other-evidence.txt"
+as $KEY_FOUNDER work claim --mandate "$MANDATE" --id other --evidence-file "$STATE/other-evidence.txt" >/dev/null
+as $KEY_FOUNDER work check --mandate "$MANDATE" --id other --check-text "something the lock does not name" >/dev/null
+if as $KEY_FOUNDER work bind --mandate "$MANDATE" --id other --milestone >/dev/null 2>&1; then
+  fail "a claim worded for no milestone was sent to the panel"
+fi
+echo "alpha, shipped" > "$STATE/theirs-evidence.txt"
+as $KEY_FOUNDER work claim --mandate "$MANDATE" --id theirs --evidence-file "$STATE/theirs-evidence.txt" >/dev/null
+as $KEY_FOUNDER work check --mandate "$MANDATE" --id theirs --check-text "alpha shipped" >/dev/null
+if as $KEY_CONTRIBUTOR work bind --mandate "$MANDATE" --id theirs --milestone >/dev/null 2>&1; then
+  fail "someone else sent the founder's claim to the panel"
+fi
+
 world_milestone_paid
 
 step "a claim for the first milestone does not unlock the second"

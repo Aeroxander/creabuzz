@@ -41,6 +41,7 @@ export const SIGNATURES = {
   settle: "settle(bytes32)",
   payout: "payout(bytes32)",
   bind: "fundMilestone(bytes32,bytes32,address)",
+  bindMilestone: "bindMilestone(bytes32)",
   policy: "votingWeight()",
   factory: "mandateFactory()",
   milestoneMandate: "milestoneMandate(address)",
@@ -92,6 +93,12 @@ export function encodeAttest(claimId: string, approve: boolean): string {
     ["bytes32", "bool"],
     [claimId, approve],
   );
+}
+
+/** A team member files their own milestone claim into the DAO's milestone panel: no project and no manager. */
+export function encodeBindMilestone(claimId: string): string {
+  assertWord(claimId, "claim id");
+  return encodeFunctionData(SIGNATURES.bindMilestone, ["bytes32"], [claimId]);
 }
 
 export function encodeBind(
@@ -423,7 +430,7 @@ export interface ClaimView {
 
 /** What happens to a claim next, and who does it. */
 export type NextStep =
-  | { kind: "bind"; who: "manager"; text: string }
+  | { kind: "bind"; who: "manager" | "contributor"; text: string }
   | { kind: "review"; who: "reviewer"; text: string }
   | { kind: "settle"; who: "anyone"; text: string }
   | { kind: "payout"; who: "contributor"; text: string }
@@ -435,10 +442,19 @@ export function nextStep(
   claim: ClaimView,
   now: number,
   challengeWindow: number,
+  /** The claim is in the DAO's milestone panel, where its team member files it themselves. */
+  milestonePanel = false,
 ): NextStep {
   const { record } = claim;
   switch (record.status) {
     case "Open":
+      if (claim.project === null && milestonePanel) {
+        return {
+          kind: "bind",
+          who: "contributor",
+          text: "Filed, but not yet submitted to the milestone panel. The team member who filed it submits it.",
+        };
+      }
       if (claim.project === null) {
         return {
           kind: "bind",
@@ -473,6 +489,12 @@ export function nextStep(
           };
     }
     case "Paid":
+      if (milestonePanel)
+        return {
+          kind: "none",
+          who: "nobody",
+          text: "Approved and past the waiting period. The Shares this milestone covers can be unlocked.",
+        };
       if (claim.sharesAwarded)
         return {
           kind: "none",

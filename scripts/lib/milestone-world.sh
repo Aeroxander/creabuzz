@@ -52,29 +52,23 @@ world_launch_with_lock() {
   step "dao ${DAO}  lock ${LOCK}"
 }
 
-# The milestone panel the launch named (two outside reviewers, both must agree) and a project in it whose acceptance check
-# is the first milestone's words. The project holds nothing; one vote approves it.
+# The milestone panel the launch named (two outside reviewers, both must agree). A milestone needs no project and no vote:
+# the team member files the claim into the panel themselves, and the lock names the milestone.
 world_milestone_project() {
   MANDATE=$(cast call "$FACTORY" "milestoneMandate(address)(address)" "$DAO" --rpc-url "$RPC")
   [[ "$MANDATE" =~ ^0x[0-9a-fA-F]{40}$ && "$MANDATE" != "0x0000000000000000000000000000000000000000" ]] \
     || fail "the launch did not name a milestone panel"
   step "the launch named the milestone panel ${MANDATE}"
-  step "the DAO votes a project whose acceptance check is the first milestone's words"
-  local intent
-  intent=$(as $KEY_FOUNDER work project --dao "$DAO" --mandate "$MANDATE" --id alpha --manager "$MANAGER" \
-    --milestone --expires-in-days 30 --check-text "alpha shipped")
-  [[ "$(echo "$intent" | jget lane)" == "bounded" ]] || fail "a project should take the bounded lane"
-  decide "$intent" 90000
 }
 
-# The founder files a claim for the milestone, states its words, the manager takes it on, two reviewers approve it, and
+# The founder files a claim for the milestone, states its words, sends it to the panel, two reviewers approve it, and
 # after the challenge window it is Paid.
 world_milestone_paid() {
   step "the founder files a claim for the first milestone, worded exactly as the lock names it"
   echo "alpha, shipped" > "$STATE/alpha-evidence.txt"
   as $KEY_FOUNDER work claim --mandate "$MANDATE" --id alpha --evidence-file "$STATE/alpha-evidence.txt" >/dev/null
   as $KEY_FOUNDER work check --mandate "$MANDATE" --id alpha --check-text "alpha shipped" >/dev/null
-  as $KEY_MANAGER work bind --mandate "$MANDATE" --project alpha --id alpha --contributor "$FOUNDER" >/dev/null
+  as $KEY_FOUNDER work bind --mandate "$MANDATE" --id alpha --milestone >/dev/null
   as $KEY_REVIEWER1 work attest --mandate "$MANDATE" --id alpha --verdict approve >/dev/null
   as $KEY_REVIEWER2 work attest --mandate "$MANDATE" --id alpha --verdict approve >/dev/null
   as $KEY_REVIEWER1 work settle --mandate "$MANDATE" --id alpha >/dev/null

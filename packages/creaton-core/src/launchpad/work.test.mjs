@@ -13,6 +13,7 @@ import {
   decodeProjectApproved,
   encodeAttest,
   encodeBind,
+  encodeBindMilestone,
   encodeBond,
   encodeCurrencyApprove,
   bondShortfall,
@@ -49,6 +50,11 @@ test("calldata equals what cast encodes for the same arguments", () => {
   assert.equal(
     encodeBind(idWord("docs"), ID, DAVE),
     "0xec7742ad646f63730000000000000000000000000000000000000000000000000000000077726974652d646f63730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000da",
+  );
+  // A team member files their own milestone claim into the panel: one word, as cast encodes it.
+  assert.equal(
+    encodeBindMilestone(ID),
+    "0x3d3d949b77726974652d646f637300000000000000000000000000000000000000000000",
   );
   assert.equal(
     encodeIsReviewer(DAVE),
@@ -300,4 +306,19 @@ test("verifiers(address) reads as whether they are on the panel and the bond the
     stake: 0n,
   });
   assert.deepEqual(decodeVerifier("0x"), { active: false, stake: 0n });
+});
+
+test("a claim in the milestone panel is submitted by its team member, and when it is done the Shares unlock, not an award", () => {
+  const WINDOW = 604_800;
+  const unbound = view({ project: null });
+  assert.equal(nextStep(unbound, 0, WINDOW).who, "manager");
+  const inPanel = nextStep(unbound, 0, WINDOW, true);
+  assert.equal(inPanel.kind, "bind");
+  assert.equal(inPanel.who, "contributor");
+  assert.match(inPanel.text, /milestone panel/);
+  const paid = view({ record: { status: "Paid" } });
+  assert.equal(nextStep(paid, 0, WINDOW).kind, "award");
+  const done = nextStep(paid, 0, WINDOW, true);
+  assert.equal(done.kind, "none");
+  assert.match(done.text, /unlocked/);
 });

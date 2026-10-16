@@ -38,6 +38,7 @@ const SIG_AWARD: &str = "awardContribution(address,bytes32,uint96,bool)";
 const SIG_SUBMIT_CLAIM: &str = "submitClaim(bytes32,uint256,uint256,bytes32)";
 const SIG_SET_CHECK: &str = "setCheck(bytes32,bytes32)";
 const SIG_FUND_MILESTONE: &str = "fundMilestone(bytes32,bytes32,address)";
+const SIG_BIND_MILESTONE: &str = "bindMilestone(bytes32)";
 const SIG_ATTEST: &str = "attest(bytes32,bool)";
 const SIG_SETTLE: &str = "settle(bytes32)";
 const SIG_PAYOUT: &str = "payout(bytes32)";
@@ -267,16 +268,20 @@ pub struct BindArgs {
     /// The mandate (`0x…`)
     #[arg(long)]
     pub mandate: String,
-    /// The project the claim is bound to
-    #[arg(long)]
+    /// The project the claim is bound to (not for --milestone)
+    #[arg(long, default_value = "")]
     pub project: String,
     /// The claim's id
     #[arg(long)]
     pub id: String,
     /// Who you mean to bind: the contributor's address. A claim id is first come, first served, so this refuses
-    /// a claim someone else filed under the id you were told
-    #[arg(long)]
+    /// a claim someone else filed under the id you were told (not for --milestone, where you bind your own claim)
+    #[arg(long, default_value = "")]
     pub contributor: String,
+    /// File your own milestone claim into the DAO's milestone panel: no project and no manager. The claim must be
+    /// yours, ask for no money, and state as its check the exact words of one of your tranches still locked
+    #[arg(long)]
+    pub milestone: bool,
 }
 
 #[derive(Args)]
@@ -1131,8 +1136,33 @@ pub async fn cmd_check(args: &CheckArgs) -> Result<(), CliError> {
 }
 
 pub async fn cmd_bind(args: &BindArgs) -> Result<(), CliError> {
-    let project = bytes32_arg(&args.project, "project id")?;
     let id = bytes32_arg(&args.id, "claim id")?;
+    if args.milestone {
+        let (rpc_url, spender) = load_chain()?;
+        let chain = Chain::open(&rpc_url, &args.mandate)?;
+        let tx = chain
+            .send(
+                &spender,
+                &chain.mandate,
+                &call(SIG_BIND_MILESTONE, &[id]),
+                "the milestone binding",
+            )
+            .await?;
+        print_sent(
+            "bind",
+            &chain.mandate,
+            &args.id,
+            &tx,
+            json!({ "milestone": true }),
+        );
+        return Ok(());
+    }
+    if args.project.is_empty() || args.contributor.is_empty() {
+        return Err(CliError::Usage(
+            "--project and --contributor are needed to bind a claim (or --milestone for your own milestone claim)".into(),
+        ));
+    }
+    let project = bytes32_arg(&args.project, "project id")?;
     let expected = validate_eth_address(&args.contributor, "contributor")?;
     let (rpc_url, spender) = load_chain()?;
     let chain = Chain::open(&rpc_url, &args.mandate)?;
@@ -1501,6 +1531,7 @@ mod tests {
             (SIG_SETTLE, "987757dd"),
             (SIG_PAYOUT, "cfefb3d5"),
             (SIG_FUND_MILESTONE, "ec7742ad"),
+            (SIG_BIND_MILESTONE, "3d3d949b"),
             (SIG_ATTEST, "5747a6b1"),
             (SIG_APPROVE_PROJECT, "7eb44f4d"),
             (SIG_CREATE_MANDATE, "d7810bbc"),
