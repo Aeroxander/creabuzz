@@ -48,7 +48,7 @@ claim paid 200
 as $KEY_REVIEWER1 work attest --mandate "$MANDATE" --id paid --verdict approve >/dev/null
 as $KEY_REVIEWER2 work attest --mandate "$MANDATE" --id paid --verdict approve >/dev/null
 as $KEY_REVIEWER1 work settle --mandate "$MANDATE" --id paid >/dev/null
-warp 260000
+warp 700000
 as $KEY_CONTRIBUTOR work payout --mandate "$MANDATE" --id paid >/dev/null
 [[ "$(as $KEY_CONTRIBUTOR work state --mandate "$MANDATE" --id paid | jget status)" == "Paid" ]] || fail "the first claim should be Paid"
 

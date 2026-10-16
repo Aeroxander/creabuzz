@@ -199,7 +199,7 @@ contract DaoLaunchJourneyTest is Test {
         dao.castVote(id, 0, 160e18);
         vm.prank(carol);
         dao.castVote(id, 0, 60e18);
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(block.timestamp + 7 days);
         assertFalse(policy.qualifies(id), "600 for and 400 against is 60%, below the 66% bar");
         vm.expectRevert(Moloch.NotOk.selector);
         dao.executeByVotes(0, address(currency), 0, pay, nonce);

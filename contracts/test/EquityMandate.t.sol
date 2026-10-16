@@ -90,7 +90,7 @@ contract EquityMandateTest is VotingFixture {
         vm.prank(CAROL);
         panel.attest(claim, true);
         claims.settle(claim);
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(DAVE);
         claims.payout(claim);
     }

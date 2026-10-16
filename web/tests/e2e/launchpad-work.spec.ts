@@ -245,7 +245,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await expect(contributor.getByTestId("work-payout")).toHaveCount(0);
 
   // ── the window passes (the chain's clock, not the browser's) ───────────────
-  await rpc("anvil_increaseTime", [260_000]);
+  await rpc("anvil_increaseTime", [700_000]);
   await rpc("anvil_mine", ["0x1"]);
   await contributor.reload();
   await contributor.getByRole("tab", { name: "Work" }).click();

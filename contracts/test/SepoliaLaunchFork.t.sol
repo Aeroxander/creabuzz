@@ -315,7 +315,7 @@ contract SepoliaLaunchForkTest is Test {
         verifiers.attest(claim, true);
 
         claims.settle(claim);
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(founder);
         claims.payout(claim);
 

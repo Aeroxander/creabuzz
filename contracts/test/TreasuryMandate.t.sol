@@ -148,7 +148,7 @@ contract TreasuryMandateTest is VotingFixture {
         vm.prank(BOB);
         vm.expectPartialRevert(ClaimStake.InChallengeWindow.selector);
         claims.payout(claim);
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(BOB);
         claims.payout(claim);
         assertEq(currency.balanceOf(BOB), 210e18);

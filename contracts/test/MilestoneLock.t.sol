@@ -82,7 +82,7 @@ contract MilestoneLockTest is VotingFixture {
         vm.prank(DAVE);
         panel.attest(claim, true);
         claims.settle(claim);
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(ALICE);
         claims.payout(claim);
     }
@@ -258,7 +258,7 @@ contract MilestoneLockTest is VotingFixture {
         foreign.fundMilestone(PROJECT, bytes32("fake"), ALICE);
         foreign.verifiers().attest(bytes32("fake"), true);
         claims.settle(bytes32("fake"));
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(ALICE);
         claims.payout(bytes32("fake"));
         vm.expectRevert(MilestoneLock.NotThisDaosMandate.selector);
@@ -377,6 +377,60 @@ contract MilestoneLockTest is VotingFixture {
 
     // The ordinary mandate still needs something to spend: the tests in TreasuryMandate.t.sol and EquityMandate.t.sol refuse
     // one with neither budget.
+
+    // ---- disputes ------------------------------------------------------------------------------
+
+    /// A freeze is a DAO decision. The slowest vote takes 48 hours of review and a day of delay; a payout window shorter
+    /// than that (or barely longer) means a problem noticed after approval can never be stopped in time.
+    function test_a_problem_noticed_an_hour_after_approval_can_still_be_frozen_before_the_payout_opens() public {
+        ClaimStake claims = mandate.claims();
+        VerifierSet panel = mandate.verifiers();
+        bytes32 claim = bytes32("late");
+        vm.startPrank(ALICE);
+        claims.submitClaim(claim, 0, 0, keccak256("e"));
+        claims.setCheck(claim, CHECK_ONE);
+        vm.stopPrank();
+        vm.prank(BOB);
+        mandate.fundMilestone(PROJECT, claim, ALICE);
+        vm.prank(CAROL);
+        panel.attest(claim, true);
+        vm.prank(DAVE);
+        panel.attest(claim, true);
+        claims.settle(claim);
+        uint256 approvedAt = vm.getBlockTimestamp();
+
+        // Someone notices an hour in, and the holders put a freeze to the full vote.
+        vm.warp(approvedAt + 1 hours);
+        bytes memory data = abi.encodeCall(TreasuryMandate.freezeClaim, (claim));
+        bytes32 nonce = bytes32("freeze");
+        uint256 id = dao.proposalId(0, address(mandate), 0, data, nonce);
+        vote(ALICE, id, 100e18);
+        vm.warp(approvedAt + 1 hours + 48 hours);
+        dao.queue(id);
+        vm.warp(approvedAt + 1 hours + 48 hours + 1 days + 1);
+        // The payout is not yet open: the window is longer than the slowest freeze takes, with days to spare.
+        vm.prank(ALICE);
+        vm.expectRevert();
+        claims.payout(claim);
+        dao.executeByVotes(0, address(mandate), 0, data, nonce);
+        (,,, ClaimStake.Status status) = claims.claimTerms(claim);
+        assertEq(uint8(status), uint8(ClaimStake.Status.Frozen));
+
+        // Frozen, it stays frozen after the window has passed, and the milestone does not unlock.
+        vm.warp(approvedAt + 8 days);
+        vm.prank(ALICE);
+        vm.expectRevert();
+        claims.payout(claim);
+        vm.expectRevert();
+        lock.unlock(ALICE, 0, address(mandate), claim);
+    }
+
+    function test_the_payout_window_outlasts_the_slowest_freeze_with_days_to_spare() public view {
+        (,, uint64 review,,) = ledger.lanes(0);
+        uint256 slowest = uint256(review) + dao.timelockDelay();
+        assertGe(mandate.claims().challengeWindow(), slowest + 3 days, "a problem noticed late must still be stoppable");
+        assertEq(mandate.claims().challengeWindow(), mandate.CHALLENGE_WINDOW());
+    }
 
     function test_a_dao_that_named_no_panel_keeps_the_older_rule() public {
         // The factory records no panel for this DAO, so any mandate the DAO made still unlocks (the tests above).

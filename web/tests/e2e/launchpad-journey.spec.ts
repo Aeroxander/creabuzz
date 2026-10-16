@@ -371,7 +371,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
     "Approved",
     { timeout: 60_000 },
   );
-  await pass(260_000);
+  await pass(700_000);
   await refresh(contributor, "Work");
   await contributor.getByTestId("work-payout").click();
   await expect(contributor.getByTestId("work-claim-status")).toContainText(

@@ -651,7 +651,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   say("the claim was approved");
 
   // ── After the challenge window, the labor contributor takes the payment; the deposit comes back ─────────
-  await pass(260_000);
+  await pass(700_000);
   await open(labor, "Work");
   await labor.page.getByRole("button", { name: "Refresh work status" }).click();
   await labor.page.getByTestId("work-payout").click();

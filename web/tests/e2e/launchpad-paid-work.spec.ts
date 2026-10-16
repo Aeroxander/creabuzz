@@ -303,7 +303,7 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   );
 
   // ── 5. after the waiting period the contributor takes the payment, and the deposit comes back ─────
-  await pass(260_000);
+  await pass(700_000);
   await contributor
     .getByRole("button", { name: "Refresh work status" })
     .click();

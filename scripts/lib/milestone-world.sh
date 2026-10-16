@@ -78,7 +78,7 @@ world_milestone_paid() {
   as $KEY_REVIEWER1 work attest --mandate "$MANDATE" --id alpha --verdict approve >/dev/null
   as $KEY_REVIEWER2 work attest --mandate "$MANDATE" --id alpha --verdict approve >/dev/null
   as $KEY_REVIEWER1 work settle --mandate "$MANDATE" --id alpha >/dev/null
-  warp 260000
+  warp 700000
   as $KEY_FOUNDER work payout --mandate "$MANDATE" --id alpha >/dev/null
   [[ "$(as $KEY_FOUNDER work state --mandate "$MANDATE" --id alpha | jget status)" == "Paid" ]] \
     || fail "the milestone claim should be Paid"

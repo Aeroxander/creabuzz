@@ -36,6 +36,11 @@ interface IMandateLock {
 contract TreasuryMandate {
     using SafeERC20 for IERC20;
 
+    /// @notice How long after a claim is approved before its payout (and a milestone's unlock) can be taken. A freeze is a
+    /// DAO decision, and the slowest vote takes 48 hours of review and a day of execution delay before it can run, so the
+    /// window must be well past three days or a problem noticed after approval could never be stopped in time.
+    uint64 public constant CHALLENGE_WINDOW = 7 days;
+
     address public immutable dao;
     IERC20 public immutable currency;
     uint128 public immutable budget;
@@ -143,6 +148,7 @@ contract TreasuryMandate {
         VerifierSet panel = new VerifierSet(address(this), quorum);
         verifiers = panel;
         claims = new ClaimStake(panel, address(this), currency_);
+        claims.setWindows(claims.claimWindow(), CHALLENGE_WINDOW);
         panel.setClaimStake(address(claims));
         if (reviewerBond_ != 0) panel.setBond(bondToken_, reviewerBond_);
         for (uint256 i; i < reviewers.length; ++i) {

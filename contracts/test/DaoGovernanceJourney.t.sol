@@ -213,7 +213,7 @@ contract DaoGovernanceJourneyTest is Test {
         vm.prank(INVESTOR);
         vm.expectPartialRevert(ClaimStake.InChallengeWindow.selector);
         claims.payout(bytes32("delivered"));
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(INVESTOR);
         claims.payout(bytes32("delivered"));
         assertEq(cash.balanceOf(INVESTOR), 1450e18, "payment and returned stake");

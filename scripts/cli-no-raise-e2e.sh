@@ -42,7 +42,7 @@ step "nothing is paid inside the challenge window"
 if as $KEY_CONTRIBUTOR work payout --mandate "$MANDATE" --id write-docs >/dev/null 2>&1; then
   fail "a payout went through inside the challenge window"
 fi
-warp 260000
+warp 700000
 as $KEY_CONTRIBUTOR work payout --mandate "$MANDATE" --id write-docs >/dev/null
 state=$(as $KEY_CONTRIBUTOR work state --mandate "$MANDATE" --id write-docs)
 [[ "$(echo "$state" | jget status)" == "Paid" ]] || fail "the claim should be paid out: $state"
