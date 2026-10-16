@@ -1,0 +1,102 @@
+/**
+ * A reviewer taking their bond back, from the page.
+ *
+ * Posting a bond was a button; getting it back was not, so a reviewer who was done had no way to leave with their money
+ * short of calling the contract by hand. Two steps, as the contract has them: ask for it (it stops counting toward
+ * judging at once and stays at risk for 14 days), then take it once the days have passed.
+ */
+
+import { Button } from "@/shared/ui/button";
+
+import { encodeRequestUnbond, encodeWithdraw } from "../lib/work";
+import type { MandateView } from "../lib/work-read";
+
+const day = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+export function BondReturn({
+  mandate,
+  chainTime,
+  money,
+  blocked,
+  onSend,
+}: {
+  mandate: MandateView;
+  /** The chain's own clock, not the browser's. */
+  chainTime: number;
+  /** An amount of the bond, in its own token. */
+  money: (units: bigint) => string;
+  /** A transaction is already in flight or the wallet is not ready. */
+  blocked: boolean;
+  onSend: (key: string, to: string, data: string) => Promise<boolean>;
+}) {
+  const { walletStake, walletUnbond } = mandate;
+  if (!mandate.walletIsReviewer || !mandate.bond) return null;
+  if (walletStake === 0n && walletUnbond === null) return null;
+  const ready = walletUnbond !== null && chainTime >= walletUnbond.availableAt;
+  return (
+    <div
+      className="mt-2 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+      data-testid="work-bond-return"
+    >
+      {walletStake > 0n ? (
+        <>
+          <p>
+            Your bond here: {money(walletStake)}. You can ask for it back. It
+            stops counting at once, so you cannot judge claims until you post it
+            again, and it stays at risk for 14 days after you ask.
+          </p>
+          <Button
+            className="mt-2"
+            data-testid="work-unbond"
+            disabled={blocked}
+            onClick={() =>
+              void onSend(
+                `unbond-${mandate.address}`,
+                mandate.verifiersAddress,
+                encodeRequestUnbond(walletStake),
+              )
+            }
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Ask for my bond back
+          </Button>
+        </>
+      ) : null}
+      {walletUnbond !== null ? (
+        <div className={walletStake > 0n ? "mt-3" : ""}>
+          <p data-testid="work-unbond-pending">
+            {money(walletUnbond.amount)} is on its way back.{" "}
+            {ready
+              ? "The waiting is over: you can take it now."
+              : `It stays at risk until ${day(walletUnbond.availableAt)}.`}
+          </p>
+          {ready ? (
+            <Button
+              className="mt-2"
+              data-testid="work-withdraw-bond"
+              disabled={blocked}
+              onClick={() =>
+                void onSend(
+                  `withdraw-${mandate.address}`,
+                  mandate.verifiersAddress,
+                  encodeWithdraw(),
+                )
+              }
+              size="sm"
+              type="button"
+            >
+              Take my bond back
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}

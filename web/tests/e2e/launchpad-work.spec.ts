@@ -298,6 +298,39 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     "Awarding Shares is a decision the DAO votes on",
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
+
+  // ── a reviewer who is done takes their bond back: ask, wait out the days, take it ─────────────
+  if (REVIEWER_BOND !== "") {
+    await first.reload();
+    await first.getByRole("tab", { name: "Work" }).click();
+    const back = first.getByTestId("work-bond-return");
+    await expect(back).toContainText(`Your bond here: ${REVIEWER_BOND}`, {
+      timeout: 30_000,
+    });
+    // Someone who is not on the panel is offered nothing to take back.
+    await expect(stranger.getByTestId("work-bond-return")).toHaveCount(0);
+    await first.getByTestId("work-unbond").click();
+    await expect(first.getByTestId("work-unbond-pending")).toContainText(
+      "on its way back",
+      { timeout: 60_000 },
+    );
+    // It stopped counting at once, and cannot be taken yet.
+    await expect(first.getByTestId("work-unbond")).toHaveCount(0);
+    await expect(first.getByTestId("work-withdraw-bond")).toHaveCount(0);
+    await rpc("anvil_increaseTime", [15 * 86_400]);
+    await rpc("anvil_mine", ["0x1"]);
+    await first.reload();
+    await first.getByRole("tab", { name: "Work" }).click();
+    await expect(first.getByTestId("work-unbond-pending")).toContainText(
+      "you can take it now",
+      { timeout: 30_000 },
+    );
+    await first.getByTestId("work-withdraw-bond").click();
+    await expect(first.getByTestId("work-bond-return")).toHaveCount(0, {
+      timeout: 60_000,
+    });
+    await expect(first.getByTestId("work-failure")).toHaveCount(0);
+  }
   if (process.env.E2E_SHOTS) {
     await contributor
       .getByTestId("work-tab")

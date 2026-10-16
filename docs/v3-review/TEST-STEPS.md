@@ -59,7 +59,10 @@ second launch.
 scripts/web-work-e2e.sh
 ```
 
-Working looks like: 1 passing test in which five different wallets file, take on, review, finish and collect a claim.
+Working looks like: 1 passing test in which five different wallets file, take on, review, finish and collect a claim, and
+a reviewer then takes their bond back (D48). By hand as a reviewer on a bonded panel: on the Work tab press Ask for my bond
+back, see "on its way back" with a date, and no button to take it; once the chain's clock is 14 days on (`anvil_increaseTime`
+1,300,000 and mine a block) reload, press Take my bond back, and the bond card goes away.
 
 ## 4a. The team's milestone lock, from launch to unlock
 

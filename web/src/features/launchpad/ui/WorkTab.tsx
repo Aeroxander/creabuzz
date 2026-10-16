@@ -28,6 +28,7 @@ import { usePublishMirror } from "../use-launches";
 import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { BondReturn } from "./BondReturn";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { LockedSharesCard } from "./LockedSharesCard";
@@ -374,6 +375,13 @@ function MandateCard({
           </Button>
         </div>
       ) : null}
+      <BondReturn
+        blocked={busy !== null || gate !== null}
+        chainTime={chainTime}
+        mandate={mandate}
+        money={bondMoney}
+        onSend={onSend}
+      />
 
       <h4 className="mt-3 text-sm font-semibold">Projects</h4>
       {mandate.projects.length === 0 ? (
