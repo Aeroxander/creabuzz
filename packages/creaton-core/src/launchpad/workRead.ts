@@ -24,12 +24,14 @@ import {
   decodeClaimSubmitted,
   decodeMandateCreated,
   decodeProject,
+  decodeUnbond,
   decodeProjectApproved,
   decodeVerifier,
   decodeWord,
   encodeCall0,
   encodeCallId,
   encodeIsReviewer,
+  encodeUnbonds,
 } from "./work.ts";
 import { encodeFunctionData } from "./evmAbi.ts";
 
@@ -94,6 +96,8 @@ export interface MandateView {
   reviewers: ReviewerView[];
   /** The bond the connected wallet holds as a reviewer (0 when none, or no wallet). */
   walletStake: bigint;
+  /** Bond the connected wallet asked back and is waiting to take, with when it can; null when none is pending. */
+  walletUnbond: { amount: bigint; availableAt: number } | null;
   /** The currency's symbol and decimals, read once; null when the mandate moves no currency. */
   currency: { symbol: string; decimals: number } | null;
   truncated: boolean;
@@ -327,6 +331,18 @@ async function readMandate(
     reviewers.find(
       (r) => wallet && r.address.toLowerCase() === wallet.toLowerCase(),
     )?.stake ?? 0n;
+  // A bond asked back waits out a delay and stays slashable meanwhile; a panel without bonds has no such record.
+  let walletUnbond: { amount: bigint; availableAt: number } | null = null;
+  if (wallet && bond) {
+    try {
+      const pending = decodeUnbond(
+        await chain.call(verifiersAddress, encodeUnbonds(wallet)),
+      );
+      if (pending.amount > 0n) walletUnbond = pending;
+    } catch {
+      walletUnbond = null;
+    }
+  }
   const moves =
     bond !== null ||
     created.budget > 0n ||
@@ -349,6 +365,7 @@ async function readMandate(
     bond,
     reviewers,
     walletStake,
+    walletUnbond,
     currency: moves ? await readCurrency(chain, created.currency) : null,
     truncated,
   };

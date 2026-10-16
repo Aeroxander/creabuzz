@@ -15,6 +15,10 @@ import {
   encodeBind,
   encodeBindMilestone,
   encodeBond,
+  encodeRequestUnbond,
+  encodeUnbonds,
+  encodeWithdraw,
+  decodeUnbond,
   encodeCurrencyApprove,
   bondShortfall,
   decodeVerifier,
@@ -321,4 +325,29 @@ test("a claim in the milestone panel is submitted by its team member, and when i
   const done = nextStep(paid, 0, WINDOW, true);
   assert.equal(done.kind, "none");
   assert.match(done.text, /unlocked/);
+});
+
+test("taking a bond back calls equal what cast encodes, and a pending unbond reads as an amount and a time", () => {
+  assert.equal(
+    encodeRequestUnbond(50_000_000n),
+    "0x54f63b140000000000000000000000000000000000000000000000000000000002faf080",
+  );
+  assert.equal(encodeWithdraw(), "0x3ccfd60b");
+  assert.equal(
+    encodeUnbonds("0x00000000000000000000000000000000000000e1"),
+    "0x653ec13400000000000000000000000000000000000000000000000000000000000000e1",
+  );
+  assert.throws(() => encodeRequestUnbond(0n));
+  assert.throws(() => encodeUnbonds("0x12"));
+  const w = (v) => BigInt(v).toString(16).padStart(64, "0");
+  assert.deepEqual(decodeUnbond(`0x${w(25)}${w(1_900_000_000)}`), {
+    amount: 25n,
+    availableAt: 1_900_000_000,
+  });
+  // Nothing pending, or nothing readable, is nothing: never a made-up amount.
+  assert.deepEqual(decodeUnbond(`0x${w(0)}${w(0)}`), {
+    amount: 0n,
+    availableAt: 0,
+  });
+  assert.deepEqual(decodeUnbond("0x"), { amount: 0n, availableAt: 0 });
 });

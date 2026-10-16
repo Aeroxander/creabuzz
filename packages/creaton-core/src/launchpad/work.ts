@@ -48,6 +48,9 @@ export const SIGNATURES = {
   bondToken: "bondToken()",
   minBond: "minBond()",
   bond: "bond(uint256)",
+  requestUnbond: "requestUnbond(uint256)",
+  withdraw: "withdraw()",
+  unbonds: "unbonds(address)",
   currencyApprove: "approve(address,uint256)",
 } as const;
 
@@ -175,6 +178,29 @@ export function encodeBond(amount: bigint): string {
   return encodeFunctionData(SIGNATURES.bond, ["uint256"], [amount]);
 }
 
+/**
+ * `requestUnbond(uint256)` on the VerifierSet: ask for `amount` of the bond back. It stops counting toward judging at
+ * once and stays slashable until the delay has passed.
+ */
+export function encodeRequestUnbond(amount: bigint): string {
+  if (amount <= 0n) throw new Error("ask for more than zero");
+  return encodeFunctionData(SIGNATURES.requestUnbond, ["uint256"], [amount]);
+}
+
+/** `withdraw()` on the VerifierSet: take back what was asked for, once the delay has passed. */
+export function encodeWithdraw(): string {
+  return selectorOf(SIGNATURES.withdraw);
+}
+
+/** What `unbonds(address)` says: the bond asked back and when it can be taken (zero when nothing is pending). */
+export function decodeUnbond(hex: string): {
+  amount: bigint;
+  availableAt: number;
+} {
+  const w = wordsOf(hex);
+  return { amount: w[0] ?? 0n, availableAt: Number(w[1] ?? 0n) };
+}
+
 /** The ERC-20 `approve` a reviewer sends before posting a bond. */
 export function encodeCurrencyApprove(spender: string, amount: bigint): string {
   if (!ADDRESS_RE.test(spender)) throw new Error(`not an address: ${spender}`);
@@ -202,6 +228,11 @@ export function bondShortfall(
 ): bigint {
   if (!bond || stake >= bond.minBond) return 0n;
   return bond.minBond - stake;
+}
+
+export function encodeUnbonds(address: string): string {
+  if (!ADDRESS_RE.test(address)) throw new Error(`not an address: ${address}`);
+  return encodeFunctionData(SIGNATURES.unbonds, ["address"], [address]);
 }
 
 export function encodeIsReviewer(address: string): string {
