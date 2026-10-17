@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {MilestoneLock} from "../src/MilestoneLock.sol";
 import {MilestoneChallenge} from "../src/MilestoneChallenge.sol";
 import {MilestoneLockFactory} from "../src/MilestoneLockFactory.sol";
+import {MilestoneChallengeFactory} from "../src/MilestoneChallengeFactory.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
@@ -60,6 +61,7 @@ interface IKit {
         external
         returns (address dao, address executor, address auction);
     function lockFactory() external view returns (address);
+    function challengeFactory() external view returns (address);
     function predictExecutor(address launcher, bytes32 salt) external view returns (address);
     function sharesImplementation() external view returns (address);
     function mandateFactory() external view returns (address);
@@ -569,6 +571,18 @@ contract DaoLaunchKitTest is Test {
         kit.launch(p);
     }
 
+    /// A contract larger than 24,576 bytes cannot be deployed on a real chain, though the test EVM allows it, so the launch
+    /// kit and the factories it deploys are held to the limit here. (A first version of the factory was 592 bytes over and
+    /// only a real chain refused it.)
+    function test_the_kit_and_its_factories_fit_on_a_real_chain() public {
+        _needArtifacts();
+        assertLe(address(kit).code.length, 24_576, "the kit");
+        assertLe(kit.lockFactory().code.length, 24_576, "the panel lock factory");
+        assertLe(kit.challengeFactory().code.length, 24_576, "the challenge lock factory");
+        // The kit's creation code is limited too (EIP-3860), and it carries both factories.
+        assertLe(vm.getCode("DaoLaunchKit.sol:DaoLaunchKit").length, 49_152 - 64 * 3, "the kit's creation code");
+    }
+
     // ---- milestones that unlock unless holders object -------------------------------------------------
 
     function _challengeTerms() internal view returns (KitChallengeTerms memory c) {
@@ -619,7 +633,7 @@ contract DaoLaunchKitTest is Test {
         assertEq(lock.earliestBlock(), CLAIM_BLOCK, "milestones wait for the buyers, like governance");
 
         // It came from the kit's own factory, which says so, and there is no panel to name.
-        MilestoneLockFactory factory = MilestoneLockFactory(kit.lockFactory());
+        MilestoneChallengeFactory factory = MilestoneChallengeFactory(kit.challengeFactory());
         assertEq(factory.createdBy(address(lock)), address(kit));
         assertEq(TreasuryMandateFactory(kit.mandateFactory()).milestoneMandate(address(dao)), address(0));
 
@@ -664,9 +678,8 @@ contract DaoLaunchKitTest is Test {
         (Moloch panelDao,,) = _launch(bytes32("kind-a"));
         (Moloch challengeDao,,) = _launchChallenged(bytes32("kind-b"));
         assertTrue(panelDao.shares().lockGuard() != challengeDao.shares().lockGuard());
-        MilestoneLockFactory factory = MilestoneLockFactory(kit.lockFactory());
-        assertEq(factory.createdBy(panelDao.shares().lockGuard()), address(kit));
-        assertEq(factory.createdBy(challengeDao.shares().lockGuard()), address(kit));
+        assertEq(MilestoneLockFactory(kit.lockFactory()).createdBy(panelDao.shares().lockGuard()), address(kit));
+        assertEq(MilestoneChallengeFactory(kit.challengeFactory()).createdBy(challengeDao.shares().lockGuard()), address(kit));
     }
 
     /// The whole path on the real kit, DAO and auction: the sale settles, the founder publishes a milestone, a backer

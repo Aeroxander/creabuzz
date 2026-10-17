@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {GraduationExecutor} from "./GraduationExecutor.sol";
 import {MilestoneChallenge} from "./MilestoneChallenge.sol";
 import {MilestoneLockFactory} from "./MilestoneLockFactory.sol";
+import {MilestoneChallengeFactory} from "./MilestoneChallengeFactory.sol";
 
 /// @dev The one `Call` shape Majeur's `Summoner.summon` takes for its initialization calls.
 struct KitCall {
@@ -65,7 +66,10 @@ interface IKitLockFactory {
         bytes32[] calldata checks,
         uint16[] calldata bps
     ) external returns (address lock);
-    function createChallengeLock(
+}
+
+interface IKitChallengeFactory {
+    function create(
         bytes32 salt,
         address dao,
         address[] calldata team,
@@ -130,8 +134,10 @@ contract DaoLaunchKit {
     address public immutable sharesImplementation;
     /// @notice The work budget factory of the summoner's DAOs, where the milestone panel is named.
     IKitMandateFactory public immutable mandateFactory;
-    /// @notice Makes the milestone locks (deployed by this kit's constructor, which has the room the kit's own code lacks).
+    /// @notice Make the milestone locks (deployed by this kit's constructor, which has the room the kit's own code lacks): the
+    /// panel's lock, and the lock whose milestones unlock unless holders object.
     IKitLockFactory public immutable lockFactory;
+    IKitChallengeFactory public immutable challengeFactory;
 
     /// @notice How a challenge lock lets milestones through (see `MilestoneChallenge.Terms`; its earliest block is the
     /// sale's claim block, which the kit fills in).
@@ -215,6 +221,7 @@ contract DaoLaunchKit {
         mandateFactory = IKitMandateFactory(summoner_.mandateFactory());
         require(address(mandateFactory).code.length != 0, "kit: no mandate factory");
         lockFactory = IKitLockFactory(address(new MilestoneLockFactory()));
+        challengeFactory = IKitChallengeFactory(address(new MilestoneChallengeFactory()));
     }
 
     /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
@@ -285,7 +292,7 @@ contract DaoLaunchKit {
         address lock;
         if (n != 0 && p.milestoneChecks.length != 0) {
             lock = challenged
-                ? lockFactory.createChallengeLock(
+                ? challengeFactory.create(
                     _lockSalt(msg.sender, p.salt),
                     predictedDao,
                     p.team,
