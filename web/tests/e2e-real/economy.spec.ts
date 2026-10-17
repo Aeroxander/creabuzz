@@ -912,5 +912,18 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   expect(await sharesOf(capital.wallet.address)).toBe(0n);
   say("the backer left with exactly the share the screen showed");
+  // The same pages on a phone, with real data (only when screenshots are being saved).
+  if (process.env.E2E_SHOTS) {
+    await founder.page.setViewportSize({ width: 390, height: 844 });
+    for (const [tab, name] of [
+      ["Overview", "p1-overview"],
+      ["Decisions", "p2-decisions"],
+      ["Work", "p3-work"],
+      ["Treasury", "p4-treasury"],
+    ] as const) {
+      await open(founder, tab);
+      await shot(founder.page, `phone-${name}`);
+    }
+  }
   say("the books agree");
 });
