@@ -224,3 +224,23 @@ test("with several team members, a milestone unlocked for only some says how man
   assert.deepEqual(entries[0].unlockedFor, { unlocked: 1, of: 2 });
   assert.notEqual(entries[0].stage, "unlocked");
 });
+
+test("before the project launches, the tokens a milestone would hold back come from the record's plan, marked as planned", () => {
+  const { entries } = build({
+    panel: null,
+    tranches: [],
+    milestones: [
+      { label: "Beta shipped", percent: 50, plannedTokens: 100n },
+      { label: "First paying users", percent: 50, plannedTokens: null },
+    ],
+  });
+  assert.equal(entries[0].tokens, 100n);
+  assert.equal(entries[0].tokensPlanned, true);
+  assert.equal(entries[1].tokens, null);
+  // Once there is a lock, its figure wins and is not marked as a plan.
+  const after = build({
+    milestones: [{ label: "Beta shipped", percent: 50, plannedTokens: 100n }],
+  }).entries[0];
+  assert.equal(after.tokens, 500n);
+  assert.equal(after.tokensPlanned, false);
+});

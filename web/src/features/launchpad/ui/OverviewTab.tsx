@@ -31,6 +31,7 @@ import {
 } from "../lib/amounts";
 import { IpRecordCard } from "./IpRecordCard";
 import { AboutProjectCard } from "./AboutProjectCard";
+import { MilestoneSummaryCard } from "./MilestoneSummaryCard";
 import { PowersSection } from "./PowersCard";
 import { LaunchContractsCard } from "./LaunchContractsCard";
 import { TrackRecordCard } from "./TrackRecordCard";
@@ -38,7 +39,14 @@ import { TrustGateCard } from "./TrustGateCard";
 
 type TabLaunch = Launch;
 
-export function OverviewTab({ launch }: { launch: TabLaunch }) {
+export function OverviewTab({
+  launch,
+  onOpenMilestones,
+}: {
+  launch: TabLaunch;
+  /** Open the Milestones tab: the summary card links to it. */
+  onOpenMilestones?: () => void;
+}) {
   const progress = useAuctionProgress(launch.record);
   const { record } = launch;
   const live = progress.data && progress.data.source !== "unavailable";
@@ -106,6 +114,12 @@ export function OverviewTab({ launch }: { launch: TabLaunch }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <AboutProjectCard record={record} />
+      {onOpenMilestones ? (
+        <MilestoneSummaryCard
+          onOpenMilestones={onOpenMilestones}
+          record={record}
+        />
+      ) : null}
       <Card className="p-4">
         <h2 className="text-base font-semibold">Raise terms</h2>
         <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">

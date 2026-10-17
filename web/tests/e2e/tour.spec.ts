@@ -194,3 +194,96 @@ test("starting an organization, step by step", async ({ page }) => {
   });
   await shot(page, "org-5-chart");
 });
+
+test("a project that is raising, as a backer meets it", async ({ page }) => {
+  test.setTimeout(120_000);
+  // Someone else's project: the page a backer meets, not the founder's own.
+  const FOUNDER = "ab".repeat(32);
+  const relay = createMockRelay();
+  relay.seed({
+    id: "record-nebula",
+    pubkey: FOUNDER,
+    created_at: 100,
+    kind: 37001,
+    tags: [
+      ["d", "nebula"],
+      ["name", "Nebula"],
+      ["t", "dao-launchpad"],
+      ["chain", "11155111"],
+    ],
+    content: JSON.stringify({
+      pitch: "An open-source tool that maps the night sky for everyone.",
+      longPitch:
+        "Telescope owners and hobbyists already share photos; nobody has a shared, correct map. Nebula is a free tool that turns their photos into one.\n\nWhat exists: a working prototype that plate-solves a photo in under a second. Why now: cheap sensors. What failure looks like: we never reach 1,000 contributors and the map stays patchy.",
+      reviewerTerms:
+        "Three reviewers, none on the team: two astronomers and a maintainer of an open-source mapping project. Each agreed to read the evidence and answer within 7 days. They are unpaid.",
+      currency: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      stage: "live",
+      floorPrice: "792281625140000",
+      tickSpacing: "79228162514",
+      requiredRaised: "299999999998",
+      budget: "50000000000",
+      tokenPlan: {
+        mode: "dao",
+        name: "Nebula",
+        symbol: "NEB",
+        supply: "200000000",
+      },
+      unlocks: {
+        mode: "milestones",
+        allocationPct: 20,
+        milestones: [
+          {
+            claim: "m1",
+            label:
+              "A public beta that plate-solves a photo, live at a public address, with its source published",
+            percent: 40,
+          },
+          {
+            claim: "m2",
+            label:
+              "1,000 contributed photos in the shared map, viewable online",
+            percent: 30,
+          },
+          {
+            claim: "m3",
+            label: "Version 1.0 released with documentation",
+            percent: 30,
+          },
+        ],
+        months: null,
+      },
+    }),
+    sig: "sig",
+  });
+  await relay.install(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+  }, NSEC);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  for (const [name, path] of [
+    ["launches-with-a-project", "/launchpad"],
+    ["discover-with-a-project", "/discover"],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByTestId("app-nav")).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1_000);
+    await shot(page, `backer-${name}`);
+  }
+  await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
+  await expect(page.getByRole("tab", { name: "Milestones" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.waitForTimeout(1_000);
+  await shot(page, "backer-project-overview", true);
+  await page.getByRole("tab", { name: "Milestones" }).click();
+  await page.waitForTimeout(1_000);
+  await shot(page, "backer-project-milestones", true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
+  await page.waitForTimeout(1_500);
+  await shot(page, "backer-phone-project-overview", true);
+  await page.getByRole("tab", { name: "Milestones" }).click();
+  await page.waitForTimeout(1_000);
+  await shot(page, "backer-phone-project-milestones", true);
+});

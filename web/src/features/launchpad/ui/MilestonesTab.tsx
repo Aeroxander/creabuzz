@@ -16,6 +16,7 @@ import {
   type ReviewerVerdict,
   type TimelineEntry,
 } from "../lib/milestone-timeline";
+import { plannedMilestoneTokens } from "../lib/milestone-plan";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
 import { useEvidencePackets } from "../use-evidence";
@@ -65,9 +66,11 @@ export function MilestonesTab({
   onOpenDecisions: () => void;
 }) {
   const plan = launch.record.unlocks;
-  const planned = (plan?.milestones ?? []).map((m) => ({
+  const plannedTokens = plannedMilestoneTokens(launch.record);
+  const planned = (plan?.milestones ?? []).map((m, index) => ({
     label: m.label,
     percent: m.percent,
+    plannedTokens: plannedTokens[index] ?? null,
   }));
   const work = useWork(dao, null);
   const events = useRecordEvents(dao, work.data);
@@ -218,7 +221,9 @@ function MilestoneCard({
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {entry.tokens !== null
-            ? `${formatShares(entry.tokens)} tokens held back${entry.holders > 1 ? ` across ${entry.holders} team members` : ""}`
+            ? entry.tokensPlanned
+              ? `About ${formatShares(entry.tokens)} tokens will be held back (${entry.percent}% of the milestone allocation)`
+              : `${formatShares(entry.tokens)} tokens held back${entry.holders > 1 ? ` across ${entry.holders} team members` : ""}`
             : entry.percent !== null
               ? `${entry.percent}% of the milestone allocation`
               : ""}

@@ -277,7 +277,10 @@ export function LaunchDetailPage({
       {/* The TrustGraph surface: gate state, published roots, the graph. */}
       <PriceChartCard launch={launch} />
       {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}
-      <OverviewTab launch={launch} />
+      <OverviewTab
+        launch={launch}
+        onOpenMilestones={() => setTab("milestones")}
+      />
     </>
   );
 

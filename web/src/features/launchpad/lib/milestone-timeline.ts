@@ -27,6 +27,8 @@ export interface PlannedMilestone {
   label: string;
   /** Its share of the milestone allocation, percent. */
   percent: number | null;
+  /** How many tokens the record says it would hold back, before there is a lock to ask; null when it cannot be worked out. */
+  plannedTokens?: bigint | null;
 }
 
 /** One team member's tranche for one milestone, as the lock reports it. */
@@ -64,8 +66,10 @@ export interface TimelineEntry {
   index: number;
   label: string;
   percent: number | null;
-  /** The tokens this milestone holds back, across the team members it applies to; null before there is a lock to ask. */
+  /** The tokens this milestone holds back, across the team members it applies to; null when neither the lock nor the record says. */
   tokens: bigint | null;
+  /** `tokens` is the record's plan, not read from a lock (the project has not launched). */
+  tokensPlanned: boolean;
   /** How many team members have tokens behind this milestone. */
   holders: number;
   stage: TimelineStage;
@@ -201,7 +205,9 @@ export function buildTimeline(input: {
     const allUnlocked = mine.length > 0 && unlockedCount === mine.length;
     const allGivenUp = mine.length > 0 && mine.every((t) => t.forfeited);
     const tokens =
-      mine.length > 0 ? mine.reduce((sum, t) => sum + t.amount, 0n) : null;
+      mine.length > 0
+        ? mine.reduce((sum, t) => sum + t.amount, 0n)
+        : (planned.plannedTokens ?? null);
     const releasedAt = allUnlocked
       ? Math.max(0, ...mine.map((t) => t.reachedAt ?? 0)) || null
       : null;
@@ -276,6 +282,7 @@ export function buildTimeline(input: {
       label: planned.label,
       percent: planned.percent,
       tokens,
+      tokensPlanned: mine.length === 0 && tokens !== null,
       holders: mine.length,
       stage,
       done,

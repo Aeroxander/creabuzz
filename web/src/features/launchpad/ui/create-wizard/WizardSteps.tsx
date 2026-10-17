@@ -547,6 +547,11 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
           </button>
         ))}
       </div>
+      <p className="text-xs text-black/60 dark:text-white/60">
+        Write each milestone so a stranger could check it: what will exist, and
+        where they can see it. Your reviewers judge it by exactly these words,
+        and backers read them before they bid.
+      </p>
       {wizard.milestones.map((row, index) => (
         <div
           className="flex items-end gap-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
@@ -630,35 +635,51 @@ function DaoStep({ controller }: { controller: WizardController }) {
   const { wizard, patch, dao } = controller;
   return (
     <div className="flex flex-col gap-3" data-testid="wizard-step-dao">
-      <fieldset className="rounded-lg border border-black/10 p-3 dark:border-white/10">
-        <legend className="text-sm font-medium text-black dark:text-white">
-          Turn the project into a DAO when the raise succeeds?
-        </legend>
-        <div className="mt-1 flex gap-4">
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              checked={wizard.formDao}
-              name="wizard-dao"
-              onChange={() => patch({ formDao: true })}
-              type="radio"
-            />
-            Yes
-          </label>
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              checked={!wizard.formDao}
-              name="wizard-dao"
-              onChange={() => patch({ formDao: false })}
-              type="radio"
-            />
-            No
-          </label>
+      {controller.unlocks.ownDao ? (
+        <div
+          className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+          data-testid="wizard-own-dao-note"
+        >
+          <p className="font-medium text-black dark:text-white">
+            Your project gets its own DAO when it launches
+          </p>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            Everyone who holds Shares votes on how the money is spent, from the
+            first day. The DAO is created in the same step that opens the sale;
+            there is nothing to set up afterwards.
+          </p>
         </div>
-        <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          A DAO lets everyone who holds Shares vote on how the money is spent.
-          This only records your choice; you set the DAO up after the sale.
-        </p>
-      </fieldset>
+      ) : (
+        <fieldset className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+          <legend className="text-sm font-medium text-black dark:text-white">
+            Turn the project into a DAO when the raise succeeds?
+          </legend>
+          <div className="mt-1 flex gap-4">
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                checked={wizard.formDao}
+                name="wizard-dao"
+                onChange={() => patch({ formDao: true })}
+                type="radio"
+              />
+              Yes
+            </label>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                checked={!wizard.formDao}
+                name="wizard-dao"
+                onChange={() => patch({ formDao: false })}
+                type="radio"
+              />
+              No
+            </label>
+          </div>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            A DAO lets everyone who holds Shares vote on how the money is spent.
+            This only records your choice; you set the DAO up after the sale.
+          </p>
+        </fieldset>
+      )}
       <Select
         hint="Shown on the project page. Starting with none is a fine choice; you can decide later."
         id="dao-legal-wrapper"
@@ -672,7 +693,7 @@ function DaoStep({ controller }: { controller: WizardController }) {
         value={wizard.legalWrapper}
       />
       <Select
-        hint="How much the project may spend each month, as a share of what the sale raises."
+        hint="The monthly budget the team says it will spend, as a share of what the sale raises. It is the team's promise, shown on the project page; the contracts do not enforce it."
         id="dao-budget"
         label="Operating budget"
         onChange={(event) => dao.onShare(Number(event.target.value))}

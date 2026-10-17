@@ -29,7 +29,9 @@ export type LaunchCardRecord = Pick<
   | "currency"
   | "chainId"
   | "requiredRaised"
->;
+> &
+  // Optional: a preview filled from a form need not carry it.
+  Partial<Pick<LaunchRecord, "unlocks">>;
 
 export interface LaunchCardProps {
   record: LaunchCardRecord;
@@ -175,6 +177,16 @@ export function LaunchCard({
         <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
           {record.pitch || "No pitch yet."}
         </p>
+
+        {!idea && record.unlocks?.mode === "milestones" ? (
+          <p
+            className="mt-2 text-xs text-muted-foreground"
+            data-testid="launch-card-milestones"
+          >
+            Team tokens unlock with {record.unlocks.milestones.length}{" "}
+            milestones
+          </p>
+        ) : null}
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-4">
           <span
