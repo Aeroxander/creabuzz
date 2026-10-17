@@ -656,6 +656,9 @@ export async function ethGetBalance(
   );
 }
 
+/** How many block lookups are in flight at once: a public node refuses a burst of a couple of hundred. */
+export const BLOCK_LOOKUP_CONCURRENCY = 8;
+
 /**
  * Timestamps for explicit block numbers — the sample the block-time
  * conversion runs on. Bounded by the caller (`SAMPLE_BLOCKS`) and best-effort:
@@ -665,29 +668,31 @@ export async function ethBlockTimestamps(
   endpoint: string,
   blocks: readonly number[],
 ): Promise<BlockSample[]> {
-  const results = await Promise.allSettled(
-    blocks.map(async (block) => {
-      const tag = `0x${Math.trunc(block).toString(16)}`;
-      const result = await rpc(endpoint, "eth_getBlockByNumber", [tag, false]);
-      if (result === null || typeof result !== "object") {
-        throw new Error("bad eth_getBlockByNumber return");
-      }
-      const body = result as { number?: unknown; timestamp?: unknown };
-      if (
-        typeof body.number !== "string" ||
-        typeof body.timestamp !== "string"
-      ) {
-        throw new Error("block without number/timestamp");
-      }
-      return {
-        block: Number(decodeQuantity(body.number)),
-        timestampSeconds: Number(decodeQuantity(body.timestamp)),
-      } satisfies BlockSample;
-    }),
-  );
+  const lookup = async (block: number): Promise<BlockSample> => {
+    const tag = `0x${Math.trunc(block).toString(16)}`;
+    const result = await rpc(endpoint, "eth_getBlockByNumber", [tag, false]);
+    if (result === null || typeof result !== "object") {
+      throw new Error("bad eth_getBlockByNumber return");
+    }
+    const body = result as { number?: unknown; timestamp?: unknown };
+    if (typeof body.number !== "string" || typeof body.timestamp !== "string") {
+      throw new Error("block without number/timestamp");
+    }
+    return {
+      block: Number(decodeQuantity(body.number)),
+      timestampSeconds: Number(decodeQuantity(body.timestamp)),
+    };
+  };
+  // A few at a time, not all at once: a node that answers a burst with "too many requests" would otherwise drop most of
+  // the sample. A block that still cannot be fetched is left out, never invented.
   const samples: BlockSample[] = [];
-  for (const result of results) {
-    if (result.status === "fulfilled") samples.push(result.value);
+  for (let i = 0; i < blocks.length; i += BLOCK_LOOKUP_CONCURRENCY) {
+    const batch = await Promise.allSettled(
+      blocks.slice(i, i + BLOCK_LOOKUP_CONCURRENCY).map(lookup),
+    );
+    for (const result of batch) {
+      if (result.status === "fulfilled") samples.push(result.value);
+    }
   }
   return samples;
 }

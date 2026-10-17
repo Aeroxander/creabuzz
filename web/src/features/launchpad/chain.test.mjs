@@ -17,7 +17,9 @@ import {
   defaultChainPreset,
   exchangeAddresses,
   exchangeCodehashes,
+  BLOCK_LOOKUP_CONCURRENCY,
   ethBlockNumber,
+  ethBlockTimestamps,
   ethCall,
   ethGetLogs,
   getRpcEndpoint,
@@ -695,6 +697,50 @@ test("a reverted call is a real answer: it is not asked again", async () => {
       /execution reverted/,
     );
     assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("block times are looked up a few at a time, and a block that cannot be had is left out, never invented", async () => {
+  const original = globalThis.fetch;
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [];
+  let inFlight = 0;
+  let peak = 0;
+  globalThis.fetch = async (_url, init) => {
+    const { params } = JSON.parse(init.body);
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    inFlight -= 1;
+    const number = Number(BigInt(params[0]));
+    // Block 7 cannot be had.
+    if (number === 7) return { ok: false, status: 429, json: async () => ({}) };
+    return {
+      ok: true,
+      json: async () => ({
+        result: {
+          number: `0x${number.toString(16)}`,
+          timestamp: `0x${(1_700_000_000 + number).toString(16)}`,
+        },
+      }),
+    };
+  };
+  try {
+    const blocks = Array.from({ length: 40 }, (_, i) => i + 1);
+    const samples = await ethBlockTimestamps("http://node.test", blocks);
+    assert.ok(
+      peak <= BLOCK_LOOKUP_CONCURRENCY,
+      `${peak} lookups at once, not more than ${BLOCK_LOOKUP_CONCURRENCY}`,
+    );
+    assert.equal(samples.length, 39);
+    assert.ok(!samples.some((s) => s.block === 7));
+    assert.equal(
+      samples.find((s) => s.block === 3).timestampSeconds,
+      1_700_000_003,
+    );
   } finally {
     globalThis.fetch = original;
     RPC_RETRY.delaysMs = delays;
