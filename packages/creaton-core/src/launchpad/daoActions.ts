@@ -537,7 +537,7 @@ export interface CloseBudgetInput {
   mandate: string;
 }
 
-/** The vote that closes a work budget early: no new claims, and its unused money returns to the DAO. */
+/** The vote that closes a work budget early: no new claims, its unused money returns to the DAO, and its Shares awards end. */
 export function closeBudgetDecision(input: CloseBudgetInput): DecisionDraft {
   const mandate = address(input.mandate, "mandate", "The work budget");
   return {
@@ -548,7 +548,8 @@ export function closeBudgetDecision(input: CloseBudgetInput): DecisionDraft {
     lines: [
       "No new claim can be started in it.",
       "Money not set aside for a claim goes back to the DAO.",
-      "Claims that are already funded keep their own rules.",
+      "Claims whose money is already set aside keep their own payment rules.",
+      "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
     ],
   };
 }
@@ -826,7 +827,8 @@ function describeCall(
         lines: [
           "No new claim can be started in it.",
           "Money not set aside for a claim goes back to the DAO.",
-          "Claims that are already funded keep their own rules.",
+          "Claims whose money is already set aside keep their own payment rules.",
+          "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
         ],
       };
     }

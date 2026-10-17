@@ -594,6 +594,12 @@ test("holding a work budget to account: freeze, unwind, close and slash are exac
   const close = closeBudgetDecision({ mandate: MANDATE });
   assert.equal(close.data, "0x43d726d6");
   assert.equal(describeAction(close, ctx).kind, "close-budget");
+  // The vote says what closing costs beyond stopping new claims: the budget's Shares awards end too.
+  assert.ok(
+    describeAction(close, ctx).lines.some((line) =>
+      /No more Shares can be awarded/.test(line),
+    ),
+  );
 
   const slash = slashReviewerDecision({
     mandate: MANDATE,

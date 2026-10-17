@@ -7,7 +7,11 @@ import {
   payDecision,
   projectDecision,
 } from "./daoActions.ts";
-import { spendingHeadline, summariseSpending } from "./spending.ts";
+import {
+  spendingHeadline,
+  spendingIsComplete,
+  summariseSpending,
+} from "./spending.ts";
 
 const DAO = "0x00000000000000000000000000000000000000d0";
 const FACTORY = "0x00000000000000000000000000000000000000fa";
@@ -70,7 +74,9 @@ const mandateView = (over = {}, claims = []) => ({
   claims,
   ...over,
 });
-const paidClaim = (amount, status = "Paid", project = null) => ({
+// A claim is committed to only once a project has taken it on; every claim here is taken on unless it says otherwise.
+const BOUND = `0x${"aa".repeat(32)}`;
+const paidClaim = (amount, status = "Paid", project = BOUND) => ({
   project,
   record: { status, amount },
 });
@@ -110,8 +116,8 @@ test("a closed budget counts only what is still committed to a claim or was paid
         paidClaim(4_000_000n),
         paidClaim(1_000_000n, "Recovered"),
         paidClaim(2_000_000n, "Approved"),
-        paidClaim(500_000n, "Open", `0x${"aa".repeat(32)}`),
-        paidClaim(300_000n, "Open"),
+        paidClaim(500_000n, "Open"),
+        paidClaim(300_000n, "Open", null),
       ]),
     ],
   };
@@ -214,10 +220,88 @@ test("a decision that ran and could move money but is not a call the app recogni
   );
   assert.equal(s.unread, 4);
   assert.equal(s.directTotal, 0n);
-  assert.match(
-    spendingHeadline(s),
+  // Nothing classified went either way, so the headline must not say money went both: it says it could not read.
+  const headline = spendingHeadline(s);
+  assert.doesNotMatch(
+    headline,
     /Some money went through reviewed work budgets/,
   );
+  assert.doesNotMatch(headline, /paid out directly/);
+  assert.match(headline, /could not read everything/);
+});
+
+test("a claim that asked for money but was never taken on has committed nothing, even when it ended up frozen", () => {
+  // A budget of 100 closed with one unbound frozen claim asking for 1,000: the old count said 1,000 was committed.
+  const s = summariseSpending(
+    input([], {
+      mandates: [
+        mandateView(
+          { closed: true, created: { currency: USDC, budget: 100n } },
+          [paidClaim(1_000n, "Frozen", null)],
+        ),
+      ],
+    }),
+  );
+  assert.equal(s.reviewedBudget, 0n);
+  assert.equal(s.reviewedPaid, 0n);
+  // A frozen claim that WAS taken on still holds its reserved money.
+  const bound = summariseSpending(
+    input([], {
+      mandates: [
+        mandateView(
+          { closed: true, created: { currency: USDC, budget: 100n } },
+          [paidClaim(40n, "Frozen")],
+        ),
+      ],
+    }),
+  );
+  assert.equal(bound.reviewedBudget, 40n);
+});
+
+test("what is committed never exceeds what was set aside", () => {
+  const s = summariseSpending(
+    input([], {
+      mandates: [
+        mandateView(
+          { closed: true, created: { currency: USDC, budget: 100n } },
+          [paidClaim(80n), paidClaim(80n, "Approved")],
+        ),
+      ],
+    }),
+  );
+  assert.equal(s.reviewedBudget, 100n);
+});
+
+test("work budgets that were cut off or never read are said so: the picture is incomplete, never complete-looking", () => {
+  const cut = summariseSpending(
+    input([], { truncated: true, mandates: [mandateView()] }),
+  );
+  assert.equal(cut.workTruncated, true);
+  assert.equal(spendingIsComplete(cut), false);
+  assert.match(spendingHeadline(cut), /could not read everything/);
+
+  const unread = summariseSpending(input([], undefined));
+  assert.equal(unread.workRead, false);
+  assert.equal(spendingIsComplete(unread), false);
+  assert.doesNotMatch(
+    spendingHeadline(unread),
+    /^No money has left the treasury by a decision yet\.$/,
+  );
+
+  const whole = summariseSpending(input([], { mandates: [mandateView()] }));
+  assert.equal(spendingIsComplete(whole), true);
+});
+
+test("decisions cut off at the bound also make the picture incomplete", () => {
+  const s = summariseSpending(
+    input(
+      [decision("p", "Executed", call(pay(ALICE, 1_000_000n)))],
+      { mandates: [] },
+      { truncated: true, decisionsTotal: 40 },
+    ),
+  );
+  assert.equal(spendingIsComplete(s), false);
+  assert.match(spendingHeadline(s), /could not read everything/);
 });
 
 test("things that move no money out of the treasury are not counted: a project, a defeated vote, the milestone panel", () => {

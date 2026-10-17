@@ -36,6 +36,8 @@ const key = (to, data) => `${to.toLowerCase()}:${data.toLowerCase()}`;
 /** A chain with one mandate, one project and `claims` claims, each described by `{ id, status, project, approvals }`. */
 function chain(claims, over = {}, bond = null) {
   const answers = new Map();
+  // Calls that fail the way a slow or dropped node does (no answer), as opposed to one a contract refuses (a revert).
+  const failing = new Set();
   const set = (to, data, value) => answers.set(key(to, data), value);
   set(DAO, encodeCall0(SIGNATURES.policy), words(POLICY));
   set(POLICY, encodeCall0(SIGNATURES.factory), words(FACTORY));
@@ -126,8 +128,16 @@ function chain(claims, over = {}, bond = null) {
   if (bond) {
     // The bond is paid in the claim currency unless the vote that made the budget named another token.
     const bondToken = bond.token ?? CURRENCY;
-    set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(bondToken));
-    set(VERIFIERS, encodeCall0(SIGNATURES.minBond), words(bond.min));
+    if (bond.metadataUnreadable) {
+      failing.add(key(VERIFIERS, encodeCall0(SIGNATURES.bondToken)));
+    } else {
+      set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(bondToken));
+    }
+    if (bond.minBondUnreadable) {
+      failing.add(key(VERIFIERS, encodeCall0(SIGNATURES.minBond)));
+    } else {
+      set(VERIFIERS, encodeCall0(SIGNATURES.minBond), words(bond.min));
+    }
     if (bondToken !== CURRENCY) {
       set(bondToken, encodeCall0("decimals()"), words(18));
       set(
@@ -149,14 +159,19 @@ function chain(claims, over = {}, bond = null) {
       })),
     );
     for (const r of bond.reviewers) {
-      if (!r.unbondUnreadable) {
+      if (r.unbondUnreadable) {
+        failing.add(key(VERIFIERS, encodeUnbonds(r.address)));
+      } else {
         set(
           VERIFIERS,
           encodeUnbonds(r.address),
           words(r.unbond?.amount ?? 0, r.unbond?.availableAt ?? 0),
         );
       }
-      if (r.unreadable) continue;
+      if (r.unreadable) {
+        failing.add(key(VERIFIERS, encodeIsReviewer(r.address)));
+        continue;
+      }
       set(VERIFIERS, encodeIsReviewer(r.address), words(1, r.stake, 0, 0));
     }
   }
@@ -166,9 +181,14 @@ function chain(claims, over = {}, bond = null) {
     now: async () => 2_000_000_000,
     call: async (to, data) => {
       calls.push(key(to, data));
+      if (failing.has(key(to, data)))
+        throw new Error("The chain node did not answer in time.");
       const hit = answers.get(key(to, data));
+      // A function the contract does not have is refused, as a real node reports it.
       if (hit === undefined)
-        throw new Error(`the fake chain has no answer for ${key(to, data)}`);
+        throw new Error(
+          `execution reverted: the fake chain has no answer for ${key(to, data)}`,
+        );
       return hit;
     },
     logs: async ({ address, topics }) => {
@@ -486,4 +506,113 @@ test("the wallet's own bond does not depend on the panel listing being readable"
   };
   const snapshot = await readWork(noListing, DAO, ALICE);
   assert.equal(snapshot.mandates[0].walletStake, 70_000_000n);
+});
+
+test("every reviewer's pending bond is read beside their stake, so a bond asked back stays visible and slashable", async () => {
+  const snapshot = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        reviewers: [
+          // Asked for the whole bond back: stake zero, everything pending.
+          {
+            address: ALICE,
+            stake: 0,
+            unbond: { amount: 50_000_000, availableAt: 1_900_000_000 },
+          },
+          // Asked for part: some still counts, some waits.
+          {
+            address: BOB,
+            stake: 30_000_000,
+            unbond: { amount: 20_000_000, availableAt: 1_950_000_000 },
+          },
+          // Nothing pending.
+          { address: ERIN, stake: 50_000_000 },
+        ],
+      },
+    ),
+    DAO,
+    null,
+  );
+  const [mandate] = snapshot.mandates;
+  const by = Object.fromEntries(mandate.reviewers.map((r) => [r.address, r]));
+  assert.equal(by[ALICE].stake, 0n);
+  assert.deepEqual(by[ALICE].pending, {
+    amount: 50_000_000n,
+    availableAt: 1_900_000_000,
+  });
+  assert.equal(by[BOB].stake, 30_000_000n);
+  assert.deepEqual(by[BOB].pending, {
+    amount: 20_000_000n,
+    availableAt: 1_950_000_000,
+  });
+  assert.equal(by[ERIN].pending, null);
+  assert.equal(by[ERIN].pendingUnreadable, false);
+});
+
+test("a reviewer's pending bond that cannot be read is flagged for that reviewer, not read as nothing", async () => {
+  const snapshot = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        reviewers: [
+          { address: ALICE, stake: 0, unbondUnreadable: true },
+          { address: BOB, stake: 10_000_000 },
+        ],
+      },
+    ),
+    DAO,
+    null,
+  );
+  const by = Object.fromEntries(
+    snapshot.mandates[0].reviewers.map((r) => [r.address, r]),
+  );
+  assert.equal(by[ALICE].pending, null);
+  assert.equal(by[ALICE].pendingUnreadable, true);
+  assert.equal(by[BOB].pendingUnreadable, false);
+});
+
+test("a panel made before bonds existed is bond-free, and that is not the same as a bond that could not be read", async () => {
+  // No bond functions at all: the contract refuses the call.
+  const legacy = await readWork(chain([]), DAO, ALICE);
+  assert.equal(legacy.mandates[0].bond, null);
+  assert.equal(legacy.mandates[0].bondUnreadable, false);
+  assert.equal(legacy.mandates[0].walletBondUnreadable, false);
+});
+
+test("bond terms that cannot be read are reported as unreadable, and a bond waiting to come back is still found", async () => {
+  for (const failure of [{ metadataUnreadable: true }, { minBondUnreadable: true }]) {
+    const snapshot = await readWork(
+      chain(
+        [],
+        {},
+        {
+          min: 50_000_000,
+          ...failure,
+          reviewers: [
+            {
+              address: ALICE,
+              stake: 0,
+              unbond: { amount: 50_000_000, availableAt: 1_900_000_000 },
+            },
+          ],
+        },
+      ),
+      DAO,
+      ALICE,
+    );
+    const [mandate] = snapshot.mandates;
+    assert.equal(mandate.bond, null, JSON.stringify(failure));
+    assert.equal(mandate.bondUnreadable, true, JSON.stringify(failure));
+    // The return surface does not depend on the terms: the pending bond is read regardless.
+    assert.deepEqual(mandate.walletUnbond, {
+      amount: 50_000_000n,
+      availableAt: 1_900_000_000,
+    });
+    assert.equal(mandate.walletBondUnreadable, false);
+  }
 });

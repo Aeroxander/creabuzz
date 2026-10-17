@@ -54,6 +54,10 @@ export interface SpendingSummary {
   decisionsTotal: number;
   /** There were more decisions than were read: the newest are counted, the oldest are not. */
   truncated: boolean;
+  /** The work budgets were read. False means the reviewed-work figures are missing, not zero. */
+  workRead: boolean;
+  /** The work budgets or their claims were cut off at a bound, so the reviewed-work figures may be low. */
+  workTruncated: boolean;
 }
 
 interface Input {
@@ -128,21 +132,27 @@ export function summariseSpending(input: Input): SpendingSummary {
       continue;
     }
     // A closed budget gave its unused money back to the DAO, so only what is still committed to a claim, or paid, counts
-    // as set aside for reviewed work. An open one counts whole.
+    // as set aside for reviewed work. An open one counts whole. Money is committed to a claim only once the claim is
+    // bound to a project (that is when its funds are reserved): a claim that asks for 1,000 and was never taken on has
+    // committed nothing, however it ended up (a frozen claim that was never bound reserved nothing).
     let committed = 0n;
     for (const claim of mandate.claims) {
       const { status, amount } = claim.record;
+      if (claim.project === null) continue;
       if (status === "Paid") reviewedPaid += amount;
       if (
         status === "Paid" ||
         status === "Approved" ||
         status === "Frozen" ||
-        (status === "Open" && claim.project !== null)
+        status === "Open"
       ) {
         committed += amount;
       }
     }
-    reviewedBudget += mandate.closed ? committed : mandate.created.budget;
+    // What was set aside bounds what can be committed: a total above the budget is a misread, not more money.
+    const bounded =
+      committed > mandate.created.budget ? mandate.created.budget : committed;
+    reviewedBudget += mandate.closed ? bounded : mandate.created.budget;
   }
 
   const direct: DirectPayment[] = [];
@@ -198,21 +208,43 @@ export function summariseSpending(input: Input): SpendingSummary {
     decisionsRead: decisions.length,
     decisionsTotal: input.decisionsTotal,
     truncated: input.truncated,
+    workRead: work !== undefined,
+    workTruncated: Boolean(work?.truncated),
   };
 }
 
-/** How the picture reads in one plain sentence, for a headline. */
+/** The picture covers everything: every decision and every work budget was read, none could not be understood. */
+export function spendingIsComplete(summary: SpendingSummary): boolean {
+  return (
+    summary.unread === 0 &&
+    !summary.truncated &&
+    summary.workRead &&
+    !summary.workTruncated
+  );
+}
+
+/**
+ * How the picture reads in one plain sentence, for a headline. It claims only what was read: where something could not be
+ * read or was cut off the sentence says so, and a headline never says money went both ways because something is unknown.
+ */
 export function spendingHeadline(summary: SpendingSummary): string {
-  const anyMoney =
-    summary.reviewedBudget > 0n ||
-    summary.directTotal > 0n ||
-    summary.unread > 0;
-  if (!anyMoney) return "No money has left the treasury by a decision yet.";
-  if (summary.directTotal === 0n && summary.unread === 0) {
-    return "Everything that has left the treasury went through reviewed work budgets.";
+  const complete = spendingIsComplete(summary);
+  const reviewed = summary.reviewedBudget > 0n;
+  const direct = summary.directTotal > 0n;
+  if (!reviewed && !direct) {
+    return complete
+      ? "No money has left the treasury by a decision yet."
+      : "No money could be traced leaving the treasury by a decision, but this page could not read everything.";
   }
-  if (summary.reviewedBudget === 0n && summary.unread === 0) {
-    return "Money has left the treasury by direct payment only. No reviewer checked any of it.";
+  if (!direct) {
+    return complete
+      ? "Everything that has left the treasury went through reviewed work budgets."
+      : "Everything this page could read that has left the treasury went through reviewed work budgets, but it could not read everything.";
   }
-  return "Some money went through reviewed work budgets, and some was paid out directly with no reviewer.";
+  if (!reviewed) {
+    return complete
+      ? "Money has left the treasury by direct payment only. No reviewer checked any of it."
+      : "The money this page could read that left the treasury was paid out directly, with no reviewer checking any of it, and it could not read everything.";
+  }
+  return `Some money went through reviewed work budgets, and some was paid out directly with no reviewer.${complete ? "" : " This page could not read everything."}`;
 }

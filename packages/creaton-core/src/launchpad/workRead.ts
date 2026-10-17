@@ -61,7 +61,15 @@ export interface ProjectView {
 /** One person on a mandate's reviewer panel, and the bond they hold (null when it could not be read). */
 export interface ReviewerView {
   address: string;
+  /** The bond they hold and count toward judging; null when it could not be read. */
   stake: bigint | null;
+  /**
+   * A bond they asked back and have not taken yet, and when they can. It no longer counts toward judging but stays
+   * slashable until then, so it is part of what the DAO can take. Null when nothing is pending.
+   */
+  pending: { amount: bigint; availableAt: number } | null;
+  /** The pending amount could not be read (not the same as nothing pending: asking for the whole bond leaves a stake of zero). */
+  pendingUnreadable: boolean;
 }
 
 export interface MandateView {
@@ -92,6 +100,12 @@ export interface MandateView {
     symbol: string;
     decimals: number;
   } | null;
+  /**
+   * The bond could not be read, which is not the same as the budget asking for none (`bond` is null in both): a budget
+   * made before bonds existed has no bond functions and is bond-free, but a failed read of a bonded one says nothing.
+   * The page then says so and offers a retry, and still lets a reviewer take back a bond that was asked back.
+   */
+  bondUnreadable: boolean;
   /** The reviewer panel, as accepted when the mandate was made. */
   reviewers: ReviewerView[];
   /** The bond the connected wallet holds as a reviewer (0 when none, or no wallet). */
@@ -150,27 +164,70 @@ async function readCurrency(
   return { symbol, decimals };
 }
 
-/** The bond a panel asks of its reviewers; a panel made before bonds existed has no such functions and asks none. */
-async function readBond(
-  chain: WorkChain,
-  verifiers: string,
-): Promise<{
+/** A call the contract refused (no such function, or it reverted), as opposed to one that did not get an answer. */
+function isRevert(error: unknown): boolean {
+  return error instanceof Error && /revert/i.test(error.message);
+}
+
+type BondTerms = {
   token: string;
   minBond: bigint;
   symbol: string;
   decimals: number;
-} | null> {
+};
+
+/**
+ * The bond a panel asks of its reviewers. A panel made before bonds existed has no such functions, so the contract
+ * refuses the call: that is a bond-free panel. A call that gets no answer (a slow node, a dropped connection) says
+ * nothing about the panel, so it is reported as unreadable and never as "no bond".
+ */
+async function readBond(
+  chain: WorkChain,
+  verifiers: string,
+): Promise<
+  | { status: "set"; bond: BondTerms }
+  | { status: "none" }
+  | { status: "unreadable" }
+> {
   try {
     const token = decodeAddress(
       await chain.call(verifiers, encodeCall0(SIGNATURES.bondToken)),
     );
-    if (/^0x0+$/.test(token)) return null; // bonding is off
+    if (/^0x0+$/.test(token)) return { status: "none" }; // bonding is off
     const minBond = decodeWord(
       await chain.call(verifiers, encodeCall0(SIGNATURES.minBond)),
     );
-    return { token, minBond, ...(await readCurrency(chain, token)) };
-  } catch {
-    return null;
+    return {
+      status: "set",
+      bond: { token, minBond, ...(await readCurrency(chain, token)) },
+    };
+  } catch (error) {
+    return isRevert(error) ? { status: "none" } : { status: "unreadable" };
+  }
+}
+
+/**
+ * One reviewer's bond waiting to come back, bounded to the same calls as the rest. A panel without bonds has no such
+ * function (the contract refuses: nothing pending); a call that got no answer is unreadable, never "nothing pending".
+ */
+async function readPending(
+  chain: WorkChain,
+  verifiers: string,
+  reviewer: string,
+): Promise<{
+  pending: { amount: bigint; availableAt: number } | null;
+  pendingUnreadable: boolean;
+}> {
+  try {
+    const pending = decodeUnbond(
+      await chain.call(verifiers, encodeUnbonds(reviewer)),
+    );
+    return {
+      pending: pending.amount > 0n ? pending : null,
+      pendingUnreadable: false,
+    };
+  } catch (error) {
+    return { pending: null, pendingUnreadable: !isRevert(error) };
   }
 }
 
@@ -200,14 +257,19 @@ async function readReviewers(
   }
   return Promise.all(
     addresses.slice(0, MAX_REVIEWERS).map(async (address) => {
-      try {
-        const { stake } = decodeVerifier(
-          await chain.call(verifiers, encodeIsReviewer(address)),
-        );
-        return { address, stake };
-      } catch {
-        return { address, stake: null };
-      }
+      const [stake, pending] = await Promise.all([
+        (async () => {
+          try {
+            return decodeVerifier(
+              await chain.call(verifiers, encodeIsReviewer(address)),
+            ).stake;
+          } catch {
+            return null;
+          }
+        })(),
+        readPending(chain, verifiers, address),
+      ]);
+      return { address, stake, ...pending };
     }),
   );
 }
@@ -330,25 +392,24 @@ async function readMandate(
       )
     : { active: false, stake: 0n };
   const walletIsReviewer = walletVerifier.active;
-  const [bond, reviewers] = await Promise.all([
+  const [bondRead, reviewers] = await Promise.all([
     readBond(chain, verifiersAddress),
     readReviewers(chain, verifiersAddress),
   ]);
+  const bond = bondRead.status === "set" ? bondRead.bond : null;
+  const bondUnreadable = bondRead.status === "unreadable";
   const walletStake = walletVerifier.stake;
   // A bond asked back waits out a delay and stays slashable meanwhile; a panel without bonds has no such record. A read
   // that fails is reported as unreadable, never as nothing pending: asking for the whole bond back leaves a stake of
   // zero, and the pending amount is then the only sign the reviewer has money waiting.
   let walletUnbond: { amount: bigint; availableAt: number } | null = null;
   let walletBondUnreadable = false;
-  if (wallet && bond && walletIsReviewer) {
-    try {
-      const pending = decodeUnbond(
-        await chain.call(verifiersAddress, encodeUnbonds(wallet)),
-      );
-      if (pending.amount > 0n) walletUnbond = pending;
-    } catch {
-      walletBondUnreadable = true;
-    }
+  // This does not depend on the bond's terms being readable: a failed read of those must not hide a bond that is
+  // waiting to come back. Only a panel confirmed to have no bond skips it.
+  if (wallet && walletIsReviewer && bondRead.status !== "none") {
+    const mine = await readPending(chain, verifiersAddress, wallet);
+    walletUnbond = mine.pending;
+    walletBondUnreadable = mine.pendingUnreadable;
   }
   const moves =
     bond !== null ||
@@ -370,6 +431,7 @@ async function readMandate(
     walletIsReviewer,
     walletAttested,
     bond,
+    bondUnreadable,
     reviewers,
     walletStake,
     walletUnbond,
