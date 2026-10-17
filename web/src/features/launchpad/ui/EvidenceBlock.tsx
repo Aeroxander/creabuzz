@@ -51,6 +51,7 @@ export function EvidenceBlock({
   onRepublish,
   onRetry,
   unreadable,
+  incomplete = false,
   busy,
 }: {
   claim: ClaimView;
@@ -62,6 +63,8 @@ export function EvidenceBlock({
   busy: boolean;
   /** Looking for the evidence failed: say so, instead of claiming nothing was published. */
   unreadable: boolean;
+  /** The launch has more updates than were read: "nothing found" may only mean "nothing found in the newest ones". */
+  incomplete?: boolean;
   onRetry: () => void;
 }) {
   const [evidence, setEvidence] = useState("");
@@ -169,7 +172,9 @@ export function EvidenceBlock({
       <p>
         {standing.kind === "mismatch"
           ? "Something was published for this claim, but it is not what the claim committed to. Do not approve it."
-          : "No evidence has been published for this claim. A reviewer cannot approve what they cannot read."}
+          : incomplete
+            ? "No evidence for this claim was found in the updates this page reads. This project has more updates than that, so it may be in an older one. A reviewer cannot approve what they cannot read."
+            : "No evidence has been published for this claim. A reviewer cannot approve what they cannot read."}
       </p>
       {mine ? (
         <div className="mt-2 grid gap-2">

@@ -129,3 +129,33 @@ test("a saved submission comes back after a reload, per wallet and per milestone
   store.set(key, JSON.stringify({ name: "", evidence: "x" }));
   assert.equal(loadSubmission(key, storage), null);
 });
+
+test("a submission that could not be kept is reported as not saved, so nothing is sent after it", () => {
+  const K = submissionKey("0xDAO", WALLET, 1);
+  // Saved and read back: kept.
+  const kept = new Map();
+  assert.equal(
+    saveSubmission(K, draft, {
+      setItem: (k, v) => kept.set(k, v),
+      getItem: (k) => kept.get(k) ?? null,
+    }),
+    true,
+  );
+  // The write throws (quota, private mode).
+  assert.equal(
+    saveSubmission(K, draft, {
+      setItem: () => {
+        throw new DOMException("full", "QuotaExceededError");
+      },
+      getItem: () => null,
+    }),
+    false,
+  );
+  // The write is dropped without a word: reading it back finds nothing.
+  assert.equal(
+    saveSubmission(K, draft, { setItem: () => {}, getItem: () => null }),
+    false,
+  );
+  // No storage at all.
+  assert.equal(saveSubmission(K, draft, null), false);
+});

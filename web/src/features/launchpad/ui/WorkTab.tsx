@@ -245,7 +245,12 @@ function MandateCard({
   launch: Launch;
   /** Read the DAO's work again (a read that failed, tried once more). */
   onRefresh: () => void;
-  evidence: { packets: EvidencePacket[]; error: boolean; refetch: () => void };
+  evidence: {
+    packets: EvidencePacket[];
+    error: boolean;
+    incomplete: boolean;
+    refetch: () => void;
+  };
   mandate: MandateView;
   chainTime: number;
   wallet: string | null;
@@ -262,10 +267,13 @@ function MandateCard({
   const money = (units: bigint) =>
     `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${unit}`.trim();
   // The bond is paid in its own token: the claim currency unless the vote that made this budget named another.
+  // When the bond's terms could not be read its token is unknown: show the raw number, never the claim currency's scale.
   const bondMoney = (units: bigint) =>
     mandate.bond
       ? `${formatAtomic(units, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`.trim()
-      : money(units);
+      : mandate.bondUnreadable
+        ? `${units.toString()} raw units`
+        : money(units);
   const publish = usePublishMirror();
   const republish = async (
     claimId: string,
@@ -356,7 +364,9 @@ function MandateCard({
         <dd data-testid="work-bond">
           {mandate.bond
             ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
-            : "None: a reviewer risks nothing by approving carelessly"}
+            : mandate.bondUnreadable
+              ? "Could not be read. The network did not answer; this is not the same as no bond."
+              : "None: a reviewer risks nothing by approving carelessly"}
         </dd>
       </dl>
       {mandate.reviewers.length > 0 ? (
@@ -373,6 +383,12 @@ function MandateCard({
                   : reviewer.stake >= mandate.bond.minBond
                     ? " · bond posted"
                     : " · bond not posted yet"
+                : ""}
+              {reviewer.pending
+                ? ` · ${bondMoney(reviewer.pending.amount)} waiting to be taken back`
+                : ""}
+              {reviewer.pendingUnreadable
+                ? " · a bond waiting to be taken back could not be read"
                 : ""}
             </li>
           ))}
@@ -502,6 +518,7 @@ function MandateCard({
                   }
                   onRetry={evidence.refetch}
                   standing={standing}
+                  incomplete={evidence.incomplete}
                   unreadable={evidence.error}
                 />
                 {claim.record.amount > 0n ? (

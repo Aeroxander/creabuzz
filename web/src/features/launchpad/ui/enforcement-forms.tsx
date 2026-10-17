@@ -15,6 +15,10 @@ import {
   resolveFrozenClaimDecision,
   slashReviewerDecision,
 } from "../lib/dao-actions";
+import { closeEffects } from "../lib/close-effects";
+import { resolvePick } from "../lib/claim-pick";
+import { formatShares } from "../lib/shares-format";
+import { slashableReviewers } from "../lib/slashable";
 import { type ClaimView, idLabel } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
 import { SelectField, TextField } from "./decision-fields";
@@ -73,17 +77,37 @@ function ClaimPickForm({
   make: (pick: Pick) => ReturnType<typeof freezeClaimDecision>;
 }) {
   const options = claimsIn(ctx.work?.mandates ?? [], states);
-  const [which, setWhich] = useState(initialPick ?? "");
-  const chosen =
-    options.find((o) => pickKey(o).toLowerCase() === which.toLowerCase()) ??
-    options[0];
+  const [selected, setSelected] = useState("");
+  // A claim the person came here for, or picked, that is no longer eligible is never swapped for another one.
+  const pick = resolvePick(options.map(pickKey), initialPick ?? null, selected);
+  const chosen = pick.key
+    ? options.find((o) => pickKey(o) === pick.key)
+    : undefined;
   const result = useMemo<DraftResult>(
-    () => (chosen ? attempt(() => make(chosen)) : { problem: none }),
-    [chosen, none, make],
+    () =>
+      chosen
+        ? attempt(() => make(chosen))
+        : {
+            problem: pick.gone
+              ? "That claim is no longer open to this. Choose which claim you mean."
+              : none,
+          },
+    [chosen, pick.gone, none, make],
   );
   return (
     <div className="mt-3 grid gap-3" data-testid={`form-${testId}`}>
       <p className="text-sm text-muted-foreground">{intro}</p>
+      {pick.gone ? (
+        <p
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid={`${testId}-gone`}
+          role="status"
+        >
+          The claim you chose is no longer open to this. It may have been paid,
+          frozen or closed since you looked.
+          {options.length > 0 ? " Choose the claim you mean below." : ""}
+        </p>
+      ) : null}
       {options.length === 0 ? (
         <p className="text-sm" data-testid={`${testId}-none`}>
           {none}
@@ -91,11 +115,11 @@ function ClaimPickForm({
       ) : (
         <SelectField
           label={label}
-          onChange={setWhich}
-          options={options.map((o) => ({
-            value: pickKey(o),
-            label: pickLabel(o),
-          }))}
+          onChange={setSelected}
+          options={[
+            ...(chosen ? [] : [{ value: "", label: "Choose a claim…" }]),
+            ...options.map((o) => ({ value: pickKey(o), label: pickLabel(o) })),
+          ]}
           testId={`${testId}-claim`}
           value={chosen ? pickKey(chosen) : ""}
         />
@@ -167,24 +191,46 @@ export function CloseBudgetForm({
   const open = (ctx.work?.mandates ?? []).filter(
     (m) => !m.closed && !m.isMilestonePanel,
   );
-  const [which, setWhich] = useState("");
-  const chosen = open.find((m) => m.address === which) ?? open[0];
+  const [selected, setSelected] = useState("");
+  const pick = resolvePick(
+    open.map((m) => m.address),
+    null,
+    selected,
+  );
+  const chosen = pick.key
+    ? open.find((m) => m.address === pick.key)
+    : undefined;
+  const effects = chosen ? closeEffects(chosen) : null;
   const result = useMemo<DraftResult>(
     () =>
       chosen
         ? attempt(() => closeBudgetDecision({ mandate: chosen.address }))
-        : { problem: "No work budget is open." },
-    [chosen],
+        : {
+            problem: pick.gone
+              ? "That work budget is no longer open. Choose which one you mean."
+              : "No work budget is open.",
+          },
+    [chosen, pick.gone],
   );
   return (
     <div className="mt-3 grid gap-3" data-testid="form-close">
       <p className="text-sm text-muted-foreground">
         Close a work budget early. No new claim can be started in it and the
-        money not set aside for a claim goes back to the DAO. Claims that are
-        already funded keep their own rules. The milestone panel is not offered
-        here: closing it would leave the team&apos;s locked Shares with no way
-        to unlock.
+        money not set aside for a claim goes back to the DAO. Claims whose money
+        is already set aside keep their own payment rules. The milestone panel
+        is not offered here: closing it would leave the team&apos;s locked
+        Shares with no way to unlock.
       </p>
+      {pick.gone ? (
+        <p
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="close-gone"
+          role="status"
+        >
+          The work budget you chose is no longer open.
+          {open.length > 0 ? " Choose the one you mean below." : ""}
+        </p>
+      ) : null}
       {open.length === 0 ? (
         <p className="text-sm" data-testid="close-none">
           No work budget is open.
@@ -192,15 +238,41 @@ export function CloseBudgetForm({
       ) : (
         <SelectField
           label="Work budget to close"
-          onChange={setWhich}
-          options={open.map((m) => ({
-            value: m.address,
-            label: `${short(m.address)}, open until ${new Date(m.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
-          }))}
+          onChange={setSelected}
+          options={[
+            ...(chosen ? [] : [{ value: "", label: "Choose a work budget…" }]),
+            ...open.map((m) => ({
+              value: m.address,
+              label: `${short(m.address)}, open until ${new Date(m.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
+            })),
+          ]}
           testId="close-budget"
           value={chosen?.address ?? ""}
         />
       )}
+      {effects && (effects.awardsLost > 0 || effects.allowanceLost > 0n) ? (
+        <div
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="close-effects"
+          role="note"
+        >
+          <p className="font-medium">
+            Closing also ends this budget&apos;s Shares allowance.
+          </p>
+          <p className="mt-1">
+            {effects.awardsLost > 0
+              ? `${effects.awardsLost} ${effects.awardsLost === 1 ? "claim that was" : "claims that were"} approved and paid ${effects.awardsLost === 1 ? "is" : "are"} still waiting for a Shares award, and can no longer be awarded. `
+              : ""}
+            {effects.allowanceLost > 0n
+              ? `${formatShares(effects.allowanceLost)} Shares of allowance would go unused. `
+              : ""}
+            {effects.incomplete
+              ? "This budget has more history than the page reads, so there may be more. "
+              : ""}
+            If that work should earn Shares, put the awards to a vote first.
+          </p>
+        </div>
+      ) : null}
       <DraftPanel
         blocked={blocked}
         busy={busy}
@@ -215,31 +287,34 @@ export function CloseBudgetForm({
 
 /** Take some of a reviewer's bond after an approval the DAO disputes; it is paid to the DAO. */
 export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
-  const reviewers = (ctx.work?.mandates ?? []).flatMap((mandate) =>
-    mandate.bond
-      ? mandate.reviewers
-          .filter((r) => r.stake !== null && r.stake > 0n)
-          .map((reviewer) => ({ mandate, reviewer }))
-      : [],
+  // The bond a reviewer asked back stays slashable until they take it, so it counts beside their active stake.
+  const { entries: reviewers, unreadableBudgets } = slashableReviewers(
+    ctx.work?.mandates ?? [],
   );
   const key = (r: (typeof reviewers)[number]) =>
     `${r.mandate.address}:${r.reviewer.address}`;
-  const [which, setWhich] = useState("");
+  const [selected, setSelected] = useState("");
   const [amount, setAmount] = useState("");
-  const chosen = reviewers.find((r) => key(r) === which) ?? reviewers[0];
+  const pick = resolvePick(reviewers.map(key), null, selected);
+  const chosen = pick.key
+    ? reviewers.find((r) => key(r) === pick.key)
+    : undefined;
   const bond = chosen?.mandate.bond ?? null;
   const result = useMemo<DraftResult>(() => {
     if (!chosen || !bond)
-      return { problem: "No reviewer holds a bond that could be taken." };
+      return {
+        problem: pick.gone
+          ? "That reviewer no longer holds a bond that could be taken. Choose which one you mean."
+          : "No reviewer holds a bond that could be taken.",
+      };
     return attempt(() => {
       const wei = amount.trim()
         ? parseUnits(amount, bond.decimals, "amount", "The amount")
         : 0n;
-      const held = chosen.reviewer.stake ?? 0n;
-      if (wei > held)
+      if (wei > chosen.total)
         throw new DecisionInputError(
           "amount",
-          `That reviewer holds only ${formatUnits(held, bond.decimals, 4)} ${bond.symbol}.`,
+          `That reviewer holds only ${formatUnits(chosen.total, bond.decimals, 4)} ${bond.symbol}${chosen.waiting > 0n ? ", counting the part they are waiting to take back" : ""}.`,
         );
       return slashReviewerDecision({
         mandate: chosen.mandate.address,
@@ -249,13 +324,41 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         bondSymbol: bond.symbol,
       });
     });
-  }, [chosen, bond, amount]);
+  }, [chosen, bond, amount, pick.gone]);
+  const held = (r: (typeof reviewers)[number]) => {
+    const b = r.mandate.bond;
+    if (!b) return "";
+    const fmt = (v: bigint) => `${formatUnits(v, b.decimals, 4)} ${b.symbol}`;
+    return [
+      r.active > 0n || r.waiting === 0n ? fmt(r.active) : null,
+      r.waiting > 0n
+        ? `${fmt(r.waiting)} waiting to be taken back${r.waitingUntil ? ` until ${new Date(r.waitingUntil * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+        : null,
+      r.waitingUnreadable ? "a waiting amount that could not be read" : null,
+    ]
+      .filter(Boolean)
+      .join(" + ");
+  };
   return (
     <div className="mt-3 grid gap-3" data-testid="form-slash">
       <p className="text-sm text-muted-foreground">
         Take some of a reviewer&apos;s bond after an approval you dispute. It is
-        paid to the DAO, and no more than the reviewer holds can be taken.
+        paid to the DAO. This includes bond a reviewer has asked to take back
+        but has not received yet: it stays at risk until they do. No more than
+        the reviewer holds can be taken.
       </p>
+      {unreadableBudgets > 0 ? (
+        <p
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="slash-unreadable"
+          role="status"
+        >
+          {unreadableBudgets === 1
+            ? "One work budget's bond could not be read, so its reviewers are not listed."
+            : `${unreadableBudgets} work budgets' bonds could not be read, so their reviewers are not listed.`}{" "}
+          Reload the page to try again.
+        </p>
+      ) : null}
       {reviewers.length === 0 ? (
         <p className="text-sm" data-testid="slash-none">
           No reviewer holds a bond. A work budget has to ask its reviewers for
@@ -265,11 +368,14 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         <>
           <SelectField
             label="Reviewer"
-            onChange={setWhich}
-            options={reviewers.map((r) => ({
-              value: key(r),
-              label: `${short(r.reviewer.address)} in ${budgetName(r.mandate)}, holding ${formatUnits(r.reviewer.stake ?? 0n, r.mandate.bond?.decimals ?? 18, 4)} ${r.mandate.bond?.symbol ?? ""}`,
-            }))}
+            onChange={setSelected}
+            options={[
+              ...(chosen ? [] : [{ value: "", label: "Choose a reviewer…" }]),
+              ...reviewers.map((r) => ({
+                value: key(r),
+                label: `${short(r.reviewer.address)} in ${budgetName(r.mandate)}, holding ${held(r)}`,
+              })),
+            ]}
             testId="slash-reviewer"
             value={chosen ? key(chosen) : ""}
           />

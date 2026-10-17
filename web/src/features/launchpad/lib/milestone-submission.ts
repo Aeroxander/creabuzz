@@ -120,15 +120,23 @@ export function loadSubmission(
   }
 }
 
+/**
+ * Keep the submission so a cancel or a reload finds it again. True only when it is really kept: the write did not fail
+ * and reading it back gives the same text (some browsers drop a write without saying so). A submission that is not kept
+ * must not be sent: a claim filed with no saved name and evidence is exactly the lost one this draft exists to prevent.
+ */
 export function saveSubmission(
   key: string,
   draft: SubmissionDraft,
-  storage: Pick<Storage, "setItem"> | null = safeStorage(),
-): void {
+  storage: Pick<Storage, "setItem" | "getItem"> | null = safeStorage(),
+): boolean {
+  if (!storage) return false;
   try {
-    storage?.setItem(key, JSON.stringify(draft));
+    const raw = JSON.stringify(draft);
+    storage.setItem(key, raw);
+    return storage.getItem(key) === raw;
   } catch {
-    // Storage unavailable: the submission just does not survive a reload.
+    return false;
   }
 }
 

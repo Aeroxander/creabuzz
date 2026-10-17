@@ -38,7 +38,11 @@ export function BondReturn({
   onRetry: () => void;
 }) {
   const { walletStake, walletUnbond } = mandate;
-  if (!mandate.walletIsReviewer || !mandate.bond) return null;
+  // The bond's terms (its token, its least amount) can fail to read while a bond is waiting to come back: the return
+  // surface must not depend on them. Only a budget confirmed to ask no bond has nothing to return.
+  const termsUnreadable = !mandate.bond && mandate.bondUnreadable;
+  if (!mandate.walletIsReviewer || (!mandate.bond && !termsUnreadable))
+    return null;
   // A read that failed is not "nothing waiting": after asking for the whole bond the stake is zero and the pending
   // amount is the only sign of the money, so say it could not be read and let them try again.
   if (mandate.walletBondUnreadable) {
@@ -64,14 +68,32 @@ export function BondReturn({
       </div>
     );
   }
-  if (walletStake === 0n && walletUnbond === null) return null;
+  if (walletStake === 0n && walletUnbond === null && !termsUnreadable)
+    return null;
   const ready = walletUnbond !== null && chainTime >= walletUnbond.availableAt;
   return (
     <div
       className="mt-2 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
       data-testid="work-bond-return"
     >
-      {walletStake > 0n ? (
+      {termsUnreadable ? (
+        <div data-testid="work-bond-terms-unreadable">
+          <p>
+            This budget&apos;s bond terms could not be read. Amounts below are
+            in the bond token&apos;s smallest units until they can.
+          </p>
+          <Button
+            className="mt-2"
+            onClick={onRetry}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Try again
+          </Button>
+        </div>
+      ) : null}
+      {walletStake > 0n && !termsUnreadable ? (
         <>
           <p>
             Your bond here: {money(walletStake)}. You can ask for it back. It
@@ -98,7 +120,7 @@ export function BondReturn({
         </>
       ) : null}
       {walletUnbond !== null ? (
-        <div className={walletStake > 0n ? "mt-3" : ""}>
+        <div className={walletStake > 0n || termsUnreadable ? "mt-3" : ""}>
           <p data-testid="work-unbond-pending">
             {money(walletUnbond.amount)} is on its way back.{" "}
             {ready

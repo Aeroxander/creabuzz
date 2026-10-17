@@ -35,6 +35,7 @@
  * `ragequit-position.test.mjs` to `cast sig` goldens recorded there.
  */
 import { decodeU256, ethCall, ethGetBalance } from "../chain.ts";
+import type { TokenInfo } from "./exit-tokens.ts";
 import { ETH_TOKEN } from "./ragequit-tx.ts";
 
 /** `cast sig` goldens (recorded in `ragequit-position.test.mjs`). */
@@ -59,12 +60,6 @@ export function decodeAddress(hex: string): string {
     throw new Error(`ragequit-position: expected a 32-byte word, got ${hex}`);
   }
   return `0x${body.slice(24, 64).toLowerCase()}`;
-}
-
-/** How a token is named and counted: its symbol and decimals. */
-export interface TokenInfo {
-  symbol: string;
-  decimals: number;
 }
 
 /**
@@ -93,24 +88,26 @@ export function decodeSymbol(hex: string): string | null {
   return null;
 }
 
-/** A token's symbol and decimals, tolerating one that answers neither (then "units", 18). */
+/**
+ * A token's symbol and decimals. Either is null when the token did not answer: callers then show raw units rather than
+ * inventing a scale (an unreadable six-decimal token read as 18 decimals prints a trillion times too small).
+ */
 export async function fetchTokenInfo(
   endpoint: string,
   token: string,
 ): Promise<TokenInfo> {
-  let decimals = 18;
-  let symbol = "units";
+  let decimals: number | null = null;
+  let symbol: string | null = null;
   try {
     const d = decodeU256(await ethCall(endpoint, token, SELECTOR_DECIMALS));
     if (d <= 36n) decimals = Number(d);
   } catch {
-    // An unreadable token is counted in 18 decimals and named "units".
+    // Left unknown: shown as raw units.
   }
   try {
-    symbol =
-      decodeSymbol(await ethCall(endpoint, token, SELECTOR_SYMBOL)) ?? symbol;
+    symbol = decodeSymbol(await ethCall(endpoint, token, SELECTOR_SYMBOL));
   } catch {
-    // Keep the neutral word.
+    // Left unknown.
   }
   return { symbol, decimals };
 }

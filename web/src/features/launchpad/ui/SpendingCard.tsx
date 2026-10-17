@@ -87,6 +87,24 @@ export function SpendingCard({
           they did.
         </p>
       ) : null}
+      {!summary.workRead ? (
+        <p
+          className="mt-2 text-xs text-amber-700 dark:text-amber-300"
+          data-testid="dao-spending-work-unread"
+        >
+          The work budgets have not been read, so the reviewed-work figure above
+          may be missing rather than zero.
+        </p>
+      ) : null}
+      {summary.workTruncated ? (
+        <p
+          className="mt-2 text-xs text-amber-700 dark:text-amber-300"
+          data-testid="dao-spending-work-cut"
+        >
+          This DAO has more work budgets or claims than this page reads, so the
+          reviewed-work figures may be low.
+        </p>
+      ) : null}
       {summary.otherCurrencyBudgets > 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
           {summary.otherCurrencyBudgets} work budget

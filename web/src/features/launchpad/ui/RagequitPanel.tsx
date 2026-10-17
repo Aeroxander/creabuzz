@@ -31,7 +31,7 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { toast } from "sonner";
 
-import { ethCall, getRpcEndpoint } from "../chain";
+import { ethCall, getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { LaunchRecord } from "../models";
 import {
   buildRagequitPlan,
@@ -42,20 +42,20 @@ import {
   runRagequitFlow,
   senderRagequitDeps,
 } from "../lib/ragequit-flow";
-import {
-  buildRagequitTx,
-  ETH_TOKEN,
-  normalizeRagequitTokens,
-} from "../lib/ragequit-tx";
+import { buildRagequitTx, ETH_TOKEN } from "../lib/ragequit-tx";
 import {
   fetchRagequitPosition,
   fetchTokenInfo,
   overdrawsPosition,
   type RagequitPosition,
-  type TokenInfo,
 } from "../lib/ragequit-position";
+import {
+  decodeCurrencyAnswer,
+  exitTokensFor,
+  formatTokenAmount,
+  type TokenInfo,
+} from "../lib/exit-tokens";
 import { formatShares } from "../lib/shares-format";
-import { formatUnits } from "../lib/dao-actions";
 import type { DaoBinding } from "../lib/org-money";
 import { usePublishMirror } from "../use-launches";
 import { Modal } from "./Modal";
@@ -76,11 +76,6 @@ export interface RagequitPanelProps {
   daoBinding: DaoBinding | null;
 }
 
-/** A token amount as people read it: its own decimals, a few fraction digits, and its name. */
-function formatToken(value: bigint, info: TokenInfo): string {
-  return `${formatUnits(value, info.decimals, info.decimals > 6 ? 4 : 2)} ${info.symbol}`;
-}
-
 /** One claimable pool row: what the exit pays, and from which balance. */
 function ClaimRow({
   pool,
@@ -94,10 +89,10 @@ function ClaimRow({
   return (
     <li className="flex items-center justify-between gap-2 text-sm text-black/80 dark:text-white/80">
       <span className="text-black/60 dark:text-white/60">
-        The treasury holds {formatToken(pool, info)}
+        The treasury holds {formatTokenAmount(pool, info)}
       </span>
       <span className="font-medium" data-testid="ragequit-claim-row">
-        You get {formatToken(due, info)}
+        You get {formatTokenAmount(due, info)}
       </span>
     </li>
   );
@@ -119,58 +114,72 @@ export function RagequitPanel({
 
   // The DAO's pools to claim: ETH plus the auction's raise currency when one
   // exists. Tokens outside this list are NOT claimed by this action (stated
-  // in the dialog) — a custom-token exit is deferred.
+  // in the dialog) — a custom-token exit is deferred. The exit burns the holder's
+  // Shares once and pays only what it names, so the sale's currency must be READ
+  // before any exit is offered: while it loads, fails or comes back garbled there
+  // is no token list at all (never a quiet ETH-only one).
   const currencyQuery = useQuery({
     queryKey: ["ragequit-currency", record.auction, getRpcEndpoint()],
     enabled: Boolean(record.auction),
-    queryFn: async () => {
-      const raw = await ethCall(
-        getRpcEndpoint(),
-        record.auction as string,
-        SELECTOR_CURRENCY,
-      );
-      // A currency() answer is one ABI word; a short/garbled reply (an
-      // unanswered mock or a non-contract) is NOT an address — fall back to
-      // the ETH-only token list instead of composing a bogus one.
-      const body = raw.startsWith("0x") ? raw.slice(2) : raw;
-      if (body.length !== 64) return null;
-      return `0x${body.slice(-40).toLowerCase()}`;
-    },
+    queryFn: async () =>
+      decodeCurrencyAnswer(
+        await ethCall(
+          getRpcEndpoint(),
+          record.auction as string,
+          SELECTOR_CURRENCY,
+        ),
+      ),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
-  const tokens = currencyQuery.data
-    ? normalizeRagequitTokens([ETH_TOKEN, currencyQuery.data])
-    : [ETH_TOKEN];
+  const saleCurrency = recordSaleCurrency(record);
+  const exit = exitTokensFor({
+    hasAuction: Boolean(record.auction),
+    recordCurrency: saleCurrency.kind === "eth" ? null : saleCurrency.value,
+    currency: currencyQuery.isSuccess
+      ? { state: "success", address: currencyQuery.data }
+      : currencyQuery.isError
+        ? {
+            state: "error",
+            message:
+              currencyQuery.error instanceof Error
+                ? currencyQuery.error.message
+                : "The sale's currency could not be read.",
+          }
+        : { state: "pending" },
+  });
+  const tokens = exit.status === "ready" ? exit.tokens : null;
+  // The sale currency's own name and decimals (ETH needs no read).
+  const infoWanted = Boolean(tokens?.some((t) => t !== ETH_TOKEN));
   const currencyInfoQuery = useQuery({
     queryKey: ["ragequit-token-info", currencyQuery.data, getRpcEndpoint()],
-    enabled: Boolean(currencyQuery.data),
+    enabled: infoWanted,
     queryFn: () =>
       fetchTokenInfo(getRpcEndpoint(), currencyQuery.data as string),
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
-  // How each token in the exit is named and counted; the sale's currency is read from its own contract.
+  // How each token in the exit is named and counted. A token that did not say is shown in raw units, never at a guessed scale.
   const infoOf = (token: string): TokenInfo =>
     token === ETH_TOKEN
       ? { symbol: "ETH", decimals: 18 }
-      : (currencyInfoQuery.data ?? { symbol: "units", decimals: 18 });
+      : (currencyInfoQuery.data ?? { symbol: null, decimals: null });
 
   const positionQuery = useQuery({
     queryKey: [
       "ragequit-position",
       daoBinding?.dao,
       holder,
-      tokens.join(","),
+      tokens?.join(",") ?? null,
       getRpcEndpoint(),
     ],
-    enabled: Boolean(daoBinding && holder),
+    enabled: Boolean(daoBinding && holder && tokens),
     queryFn: () =>
       fetchRagequitPosition(
         getRpcEndpoint(),
         daoBinding?.dao as string,
         holder as string,
-        tokens,
+        tokens as string[],
       ),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
@@ -213,11 +222,33 @@ export function RagequitPanel({
       {/* The picker sits here because the position is the SELECTED account's:
           switching wallet ↔ passkey re-reads who is exiting. */}
       <SenderPickerControls state={picker} testIdPrefix="ragequit-" />
-      {holder ? (
+      {holder && exit.status === "reading" ? (
+        <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+          Checking what currency this project was funded in…
+        </p>
+      ) : holder && exit.status === "failed" ? (
+        <div data-testid="ragequit-currency-failed">
+          <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+            {exit.message}
+          </p>
+          <Button
+            className="mt-2"
+            data-testid="ragequit-currency-retry"
+            onClick={() => void currencyQuery.refetch()}
+            size="sm"
+            variant="outline"
+          >
+            Try again
+          </Button>
+        </div>
+      ) : holder ? (
         <PositionBody
           infoOf={infoOf}
           position={positionQuery.data ?? null}
-          loading={positionQuery.isFetching}
+          loading={
+            positionQuery.isFetching ||
+            (infoWanted && currencyInfoQuery.isPending)
+          }
           error={
             positionQuery.error instanceof Error
               ? positionQuery.error.message
@@ -231,7 +262,7 @@ export function RagequitPanel({
           see that account&apos;s claimable position.
         </p>
       )}
-      {dialogOpen && daoBinding ? (
+      {dialogOpen && daoBinding && tokens ? (
         <RagequitDialog
           record={record}
           chainId={chainId}

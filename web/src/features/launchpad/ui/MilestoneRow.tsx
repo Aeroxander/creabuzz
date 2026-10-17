@@ -241,8 +241,14 @@ export function MilestoneRow({
       ),
       evidence,
     };
-    // Saved before the first prompt, so a cancel or a reload finds it.
-    saveSubmission(storageKey, saved);
+    // Saved before the first prompt, so a cancel or a reload finds it. If it cannot be kept, nothing is sent: a claim
+    // filed whose name and evidence are lost on the next reload cannot be finished or checked.
+    if (!saveSubmission(storageKey, saved)) {
+      setProblem(
+        "Your browser would not keep a copy of this submission, so nothing was sent. Your text is still in the box. Free some browser storage or allow site data, then try again.",
+      );
+      return;
+    }
     setDraft(saved);
     await proceed(saved);
   };
