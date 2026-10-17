@@ -2,7 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {GraduationExecutor} from "./GraduationExecutor.sol";
-import {MilestoneLock} from "./MilestoneLock.sol";
+import {MilestoneChallenge} from "./MilestoneChallenge.sol";
+import {MilestoneLockFactory} from "./MilestoneLockFactory.sol";
 
 /// @dev The one `Call` shape Majeur's `Summoner.summon` takes for its initialization calls.
 struct KitCall {
@@ -53,6 +54,26 @@ interface IKitMandateFactory {
         address bondToken
     ) external returns (address mandate);
     function milestoneMandate(address dao) external view returns (address);
+}
+
+interface IKitLockFactory {
+    function createPanelLock(
+        bytes32 salt,
+        address dao,
+        address[] calldata team,
+        uint256[] calldata totals,
+        bytes32[] calldata checks,
+        uint16[] calldata bps
+    ) external returns (address lock);
+    function createChallengeLock(
+        bytes32 salt,
+        address dao,
+        address[] calldata team,
+        uint256[] calldata totals,
+        bytes32[] calldata checks,
+        uint16[] calldata bps,
+        MilestoneChallenge.Terms calldata terms
+    ) external returns (address lock);
 }
 
 interface IKitErc20 {
@@ -109,6 +130,20 @@ contract DaoLaunchKit {
     address public immutable sharesImplementation;
     /// @notice The work budget factory of the summoner's DAOs, where the milestone panel is named.
     IKitMandateFactory public immutable mandateFactory;
+    /// @notice Makes the milestone locks (deployed by this kit's constructor, which has the room the kit's own code lacks).
+    IKitLockFactory public immutable lockFactory;
+
+    /// @notice How a challenge lock lets milestones through (see `MilestoneChallenge.Terms`; its earliest block is the
+    /// sale's claim block, which the kit fills in).
+    struct ChallengeTerms {
+        uint64 window;
+        uint64 votePeriod;
+        uint64 clawback;
+        uint16 minRejectBps;
+        address bondToken;
+        uint128 bond;
+        uint128 deposit;
+    }
 
     struct Params {
         string name;
@@ -179,6 +214,7 @@ contract DaoLaunchKit {
         sharesImplementation = sharesImplementation_;
         mandateFactory = IKitMandateFactory(summoner_.mandateFactory());
         require(address(mandateFactory).code.length != 0, "kit: no mandate factory");
+        lockFactory = IKitLockFactory(address(new MilestoneLockFactory()));
     }
 
     /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
@@ -197,7 +233,25 @@ contract DaoLaunchKit {
         return _predictDao(salt, holders, amounts);
     }
 
+    /// @notice Launch with a panel that judges the milestones (`p.reviewers` and friends).
     function launch(Params calldata p) external returns (address dao, address executor, address auction) {
+        ChallengeTerms memory none;
+        return _launch(p, none, false);
+    }
+
+    /// @notice Launch with milestones that unlock unless holders object (`MilestoneChallenge`): no panel, so `p.reviewers`
+    /// and the rest of the panel fields must be empty. Needs milestones.
+    function launchChallenged(Params calldata p, ChallengeTerms calldata c)
+        external
+        returns (address dao, address executor, address auction)
+    {
+        return _launch(p, c, true);
+    }
+
+    function _launch(Params calldata p, ChallengeTerms memory c, bool challenged)
+        private
+        returns (address dao, address executor, address auction)
+    {
         if (p.saleSupply == 0) revert EmptyLaunch();
         if (p.team.length != p.teamShares.length) revert TeamMismatch();
         if (p.team.length > MAX_TEAM) revert TooManyTeam();
@@ -230,16 +284,37 @@ contract DaoLaunchKit {
         //    while it is being born (its initialization calls run as the DAO), so the team's Shares are never free.
         address lock;
         if (n != 0 && p.milestoneChecks.length != 0) {
-            lock = address(
-                new MilestoneLock{salt: _lockSalt(msg.sender, p.salt)}(
-                    predictedDao, p.team, p.teamShares, p.milestoneChecks, p.milestoneBps
+            lock = challenged
+                ? lockFactory.createChallengeLock(
+                    _lockSalt(msg.sender, p.salt),
+                    predictedDao,
+                    p.team,
+                    p.teamShares,
+                    p.milestoneChecks,
+                    p.milestoneBps,
+                    MilestoneChallenge.Terms(
+                        c.window,
+                        c.votePeriod,
+                        c.clawback,
+                        c.minRejectBps,
+                        p.governanceStartBlock,
+                        c.bondToken,
+                        c.bond,
+                        c.deposit
+                    )
                 )
-            );
+                : lockFactory.createPanelLock(
+                    _lockSalt(msg.sender, p.salt), predictedDao, p.team, p.teamShares, p.milestoneChecks, p.milestoneBps
+                );
         }
-        // Milestones and their panel go together.
-        if ((lock != address(0)) != (p.reviewers.length != 0)) revert PanelMismatch();
+        // Milestones and their panel go together, and a challenged launch has milestones and no panel.
+        if (challenged) {
+            if (lock == address(0) || p.reviewers.length != 0) revert PanelMismatch();
+        } else if ((lock != address(0)) != (p.reviewers.length != 0)) {
+            revert PanelMismatch();
+        }
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = 1 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : 2);
+        uint256 calls = 1 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : (challenged ? 1 : 2));
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
@@ -253,14 +328,16 @@ contract DaoLaunchKit {
         }
         if (lock != address(0)) {
             initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
-            initCalls[next++] = KitCall(
-                address(mandateFactory),
-                0,
-                abi.encodeCall(
-                    IKitMandateFactory.createMilestonePanel,
-                    (p.panelCurrency, p.panelExpires, p.reviewers, p.reviewQuorum, p.reviewerBond, p.bondToken)
-                )
-            );
+            if (!challenged) {
+                initCalls[next++] = KitCall(
+                    address(mandateFactory),
+                    0,
+                    abi.encodeCall(
+                        IKitMandateFactory.createMilestonePanel,
+                        (p.panelCurrency, p.panelExpires, p.reviewers, p.reviewQuorum, p.reviewerBond, p.bondToken)
+                    )
+                );
+            }
         }
         dao = summoner.summon(p.name, p.symbol, p.uri, 500, true, address(0), p.salt, holders, amounts, initCalls);
         // Fail closed: the addresses the lock and the guard were built on must be the ones that exist.
@@ -270,7 +347,9 @@ contract DaoLaunchKit {
         // The factory the panel was named in is the one this DAO's own voting policy uses, or the lock would not honour it.
         require(IKitDao(dao).votingWeight() == predictedPolicy, "kit: policy address");
         require(IKitPolicy(IKitDao(dao).votingWeight()).mandateFactory() == address(mandateFactory), "kit: mandate factory");
-        if (lock != address(0)) require(mandateFactory.milestoneMandate(dao) != address(0), "kit: milestone panel");
+        if (lock != address(0) && !challenged) {
+            require(mandateFactory.milestoneMandate(dao) != address(0), "kit: milestone panel");
+        }
 
         if (p.daoShares != 0) require(IKitErc20(shares).transfer(dao, p.daoShares), "kit: dao allocation");
 

@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {MilestoneLock} from "../src/MilestoneLock.sol";
+import {MilestoneChallenge} from "../src/MilestoneChallenge.sol";
+import {MilestoneLockFactory} from "../src/MilestoneLockFactory.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
@@ -41,8 +43,23 @@ struct KitParams {
     uint64 governanceStartBlock;
 }
 
+/// @dev Same field order as `DaoLaunchKit.ChallengeTerms`.
+struct KitChallengeTerms {
+    uint64 window;
+    uint64 votePeriod;
+    uint64 clawback;
+    uint16 minRejectBps;
+    address bondToken;
+    uint128 bond;
+    uint128 deposit;
+}
+
 interface IKit {
     function launch(KitParams calldata p) external returns (address dao, address executor, address auction);
+    function launchChallenged(KitParams calldata p, KitChallengeTerms calldata c)
+        external
+        returns (address dao, address executor, address auction);
+    function lockFactory() external view returns (address);
     function predictExecutor(address launcher, bytes32 salt) external view returns (address);
     function sharesImplementation() external view returns (address);
     function mandateFactory() external view returns (address);
@@ -550,6 +567,179 @@ contract DaoLaunchKitTest is Test {
         p.teamShares = new uint256[](1);
         vm.expectRevert();
         kit.launch(p);
+    }
+
+    // ---- milestones that unlock unless holders object -------------------------------------------------
+
+    function _challengeTerms() internal view returns (KitChallengeTerms memory c) {
+        c = KitChallengeTerms({
+            window: 7 days,
+            votePeriod: 5 days,
+            clawback: 30 days,
+            minRejectBps: 300,
+            bondToken: address(currency),
+            bond: 10e18,
+            deposit: 1e18
+        });
+    }
+
+    /// @dev The same launch as `_params`, with no panel: its milestones go to the holders instead.
+    function _challengeParams(bytes32 salt, address executor) internal view returns (KitParams memory p) {
+        p = _params(salt, executor);
+        p.reviewers = new address[](0);
+        p.reviewQuorum = 0;
+        p.panelCurrency = address(0);
+        p.panelExpires = 0;
+    }
+
+    function _launchChallenged(bytes32 salt) internal returns (Moloch dao, IExecutor executor, IAuction auction) {
+        address predicted = kit.predictExecutor(founder, salt);
+        vm.prank(founder);
+        (address d, address e, address a) = kit.launchChallenged(_challengeParams(salt, predicted), _challengeTerms());
+        assertEq(e, predicted);
+        return (Moloch(payable(d)), IExecutor(e), IAuction(a));
+    }
+
+    function test_a_challenged_launch_locks_the_team_behind_the_holders_and_names_no_panel() public {
+        _needArtifacts();
+        (Moloch dao,,) = _launchChallenged(bytes32("challenged"));
+        Shares shares = dao.shares();
+        MilestoneChallenge lock = MilestoneChallenge(shares.lockGuard());
+        assertTrue(address(lock) != address(0));
+        assertEq(lock.dao(), address(dao));
+        assertEq(lock.lockedOf(founder), 180e18);
+        assertEq(lock.lockedOf(cofounder), 60e18);
+        assertEq(lock.window(), 7 days);
+        assertEq(lock.votePeriod(), 5 days);
+        assertEq(lock.clawback(), 30 days);
+        assertEq(lock.minRejectBps(), 300);
+        assertEq(lock.bond(), 10e18);
+        assertEq(lock.deposit(), 1e18);
+        assertEq(lock.bondToken(), address(currency));
+        assertEq(lock.earliestBlock(), CLAIM_BLOCK, "milestones wait for the buyers, like governance");
+
+        // It came from the kit's own factory, which says so, and there is no panel to name.
+        MilestoneLockFactory factory = MilestoneLockFactory(kit.lockFactory());
+        assertEq(factory.createdBy(address(lock)), address(kit));
+        assertEq(TreasuryMandateFactory(kit.mandateFactory()).milestoneMandate(address(dao)), address(0));
+
+        // The lock holds the team's Shares as firmly as the panel's does.
+        vm.prank(founder);
+        shares.transfer(alice, 45e18);
+        vm.prank(founder);
+        vm.expectRevert(Shares.LockedShares.selector);
+        shares.transfer(alice, 1);
+        // Nobody can take it off or swap it.
+        vm.prank(address(dao));
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(address(0));
+    }
+
+    function test_a_challenged_launch_has_milestones_and_no_panel() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("challenged-mismatch");
+        // A panel named as well.
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        vm.prank(founder);
+        vm.expectRevert(bytes4(keccak256("PanelMismatch()")));
+        kit.launchChallenged(p, _challengeTerms());
+        // No milestones to hand to the holders.
+        p = _challengeParams(salt, kit.predictExecutor(founder, salt));
+        p.milestoneChecks = new bytes32[](0);
+        p.milestoneBps = new uint16[](0);
+        vm.prank(founder);
+        vm.expectRevert(bytes4(keccak256("PanelMismatch()")));
+        kit.launchChallenged(p, _challengeTerms());
+        // Terms the lock refuses fail the whole launch.
+        p = _challengeParams(salt, kit.predictExecutor(founder, salt));
+        KitChallengeTerms memory bad = _challengeTerms();
+        bad.window = 1 hours;
+        vm.prank(founder);
+        vm.expectRevert(MilestoneChallenge.BadTerms.selector);
+        kit.launchChallenged(p, bad);
+    }
+
+    function test_the_panel_and_the_challenge_locks_of_one_launcher_never_share_an_address() public {
+        _needArtifacts();
+        (Moloch panelDao,,) = _launch(bytes32("kind-a"));
+        (Moloch challengeDao,,) = _launchChallenged(bytes32("kind-b"));
+        assertTrue(panelDao.shares().lockGuard() != challengeDao.shares().lockGuard());
+        MilestoneLockFactory factory = MilestoneLockFactory(kit.lockFactory());
+        assertEq(factory.createdBy(panelDao.shares().lockGuard()), address(kit));
+        assertEq(factory.createdBy(challengeDao.shares().lockGuard()), address(kit));
+    }
+
+    /// The whole path on the real kit, DAO and auction: the sale settles, the founder publishes a milestone, a backer
+    /// objects and the backers hold it up, the founder tries again with a longer window, nobody objects, and it unlocks.
+    function test_a_milestone_the_backers_reject_is_tried_again_and_unlocks_when_nobody_objects() public {
+        _needArtifacts();
+        (Moloch dao, IExecutor executor, IAuction auction) = _launchChallenged(bytes32("journey"));
+        Shares shares = dao.shares();
+        MilestoneChallenge lock = MilestoneChallenge(shares.lockGuard());
+        vm.roll(START_BLOCK);
+        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
+        vm.roll(END_BLOCK + 1);
+        auction.checkpoint();
+        executor.executeGraduation(address(auction));
+        vm.roll(END_BLOCK + 2);
+        vm.prank(bob);
+        auction.exitBid(bobBid);
+        vm.prank(alice);
+        auction.exitPartiallyFilledBid(aliceBid, START_BLOCK, 0);
+
+        // Before the buyers can claim, nothing can be published.
+        currency.mint(founder, 100e18);
+        vm.prank(founder);
+        currency.approve(address(lock), type(uint256).max);
+        vm.prank(founder);
+        vm.expectRevert(MilestoneChallenge.TooEarly.selector);
+        lock.submit(0, bytes32("evidence"));
+
+        vm.roll(CLAIM_BLOCK);
+        vm.prank(alice);
+        auction.claimTokens(aliceBid);
+        vm.prank(bob);
+        auction.claimTokens(bobBid);
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(shares.balanceOf(bob), 160e18);
+
+        // The founder publishes the first milestone (30% of the team's Shares: a 14-day window) and bob objects.
+        vm.prank(founder);
+        lock.submit(0, bytes32("evidence"));
+        currency.mint(bob, 1e18);
+        vm.prank(bob);
+        currency.approve(address(lock), type(uint256).max);
+        vm.prank(bob);
+        lock.object(0);
+        vm.prank(alice);
+        lock.vote(0, true);
+        vm.warp(vm.getBlockTimestamp() + 14 days);
+        lock.resolve(0);
+        (MilestoneChallenge.Phase phase,, uint8 attempts,,,,,) = lock.milestone(0);
+        assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
+        assertEq(attempts, 1);
+        assertEq(currency.balanceOf(bob), 1e18 + 5e18, "the deposit back, and half the founder's bond");
+        assertEq(currency.balanceOf(address(dao)), 800e18 + 5e18, "the raise, and the other half of the bond");
+        assertEq(lock.lockedOf(founder), 180e18);
+
+        // The second attempt waits twice as long. Nobody objects, anyone finishes it, and the team's 30% is free.
+        vm.prank(founder);
+        lock.submit(0, bytes32("better evidence"));
+        vm.warp(vm.getBlockTimestamp() + 28 days);
+        lock.finish(0);
+        assertEq(lock.lockedOf(founder), 112.5e18);
+        assertEq(lock.lockedOf(cofounder), 37.5e18);
+        vm.prank(founder);
+        shares.transfer(alice, 112.5e18); // the 20% never locked, and the 30% that just unlocked
+        vm.prank(founder);
+        vm.expectRevert(Shares.LockedShares.selector);
+        shares.transfer(alice, 1);
+        // The bond comes back once the month of clawback is over.
+        vm.warp(vm.getBlockTimestamp() + 30 days);
+        uint256 before_ = currency.balanceOf(founder);
+        lock.releaseBond(0);
+        assertEq(currency.balanceOf(founder), before_ + 10e18);
     }
 
     function _bid(address auction, address bidder, uint128 amount, uint256 maxPrice, uint256 prevTick)
