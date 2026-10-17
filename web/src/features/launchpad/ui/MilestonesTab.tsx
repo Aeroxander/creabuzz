@@ -11,17 +11,13 @@
 import { Card } from "@/shared/ui/card";
 
 import {
-  buildTimeline,
   MILESTONE_STEPS,
   type ReviewerVerdict,
   type TimelineEntry,
 } from "../lib/milestone-timeline";
-import { plannedMilestoneTokens } from "../lib/milestone-plan";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
-import { useEvidencePackets } from "../use-evidence";
-import { useRecordEvents, useWork } from "../use-work";
-import { useWalletLabels } from "../use-wallet-labels";
+import { useMilestoneTimeline } from "../use-milestone-timeline";
 import { Linked } from "./EvidenceBlock";
 
 const STAGE_LABEL: Record<TimelineEntry["stage"], string> = {
@@ -65,40 +61,9 @@ export function MilestonesTab({
   onOpenWork: () => void;
   onOpenDecisions: () => void;
 }) {
-  const plan = launch.record.unlocks;
-  const plannedTokens = plannedMilestoneTokens(launch.record);
-  const planned = (plan?.milestones ?? []).map((m, index) => ({
-    label: m.label,
-    percent: m.percent,
-    plannedTokens: plannedTokens[index] ?? null,
-  }));
-  const work = useWork(dao, null);
-  const events = useRecordEvents(dao, work.data);
-  const evidence = useEvidencePackets(launch);
-  const panel = work.data?.mandates.find((m) => m.isMilestonePanel) ?? null;
+  const { entries, summary, panel, reading, failed, labelOf } =
+    useMilestoneTimeline(launch, dao);
   const reviewerAddresses = (panel?.reviewers ?? []).map((r) => r.address);
-  const labelOf = useWalletLabels(reviewerAddresses);
-
-  // A project with a DAO whose chain read has not come back is not shown as "agreed": that would claim nothing has
-  // happened. It says it is reading, or that it could not.
-  const reading = dao !== null && (work.isLoading || events.isLoading);
-  const failed = dao !== null && !reading && (!work.data || !events.data);
-  const { entries, summary } = buildTimeline({
-    milestones: planned,
-    panel: panel
-      ? {
-          address: panel.address,
-          reviewers: panel.reviewers,
-          quorum: panel.quorum,
-          challengeWindow: panel.challengeWindow,
-          claims: panel.claims,
-        }
-      : null,
-    tranches: (events.data?.promises ?? []).map((p) => p.tranches),
-    verdicts: events.data?.verdicts,
-    packets: evidence.packets,
-    now: work.data?.chainTime ?? Math.floor(Date.now() / 1000),
-  });
 
   return (
     <div className="flex flex-col gap-4" data-testid="milestones-tab">

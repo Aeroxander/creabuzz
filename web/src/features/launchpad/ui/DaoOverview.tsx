@@ -27,9 +27,10 @@ import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
+import { MilestoneProgressCard } from "./MilestoneProgressCard";
 import { SpendingCard } from "./SpendingCard";
 
-export type OverviewTarget = "decisions" | "work" | "record";
+export type OverviewTarget = "decisions" | "work" | "record" | "milestones";
 
 export function DaoOverview({
   launch,
@@ -172,6 +173,12 @@ export function DaoOverview({
           </ul>
         )}
       </Card>
+
+      <MilestoneProgressCard
+        dao={dao}
+        launch={launch}
+        onOpen={() => onOpen("milestones")}
+      />
 
       {spending && sale ? (
         <SpendingCard

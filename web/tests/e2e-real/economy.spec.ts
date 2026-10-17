@@ -882,6 +882,13 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   expect(bids.map((event) => event.pubkey)).toEqual([capital.pubkey]);
   // The DAO's front page tells the same story: all of it went through a reviewed budget, none paid out directly.
   await open(founder, "Overview");
+  // It also shows where the team's milestones stand, the same as the Milestones tab does.
+  await expect(
+    founder.page.getByTestId("dao-milestones-summary"),
+  ).toContainText("0 of 3 reached", { timeout: 60_000 });
+  await expect(founder.page.getByTestId("dao-milestone-0")).toContainText(
+    "Not submitted",
+  );
   await shot(founder.page, "6-overview");
   await expect(founder.page.getByTestId("dao-spending-reviewed")).toContainText(
     "4,000 USDC, of which 4,000 USDC has been paid to claims the reviewers approved",
