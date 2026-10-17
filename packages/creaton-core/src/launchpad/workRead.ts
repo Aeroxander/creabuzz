@@ -98,6 +98,8 @@ export interface MandateView {
   walletStake: bigint;
   /** Bond the connected wallet asked back and is waiting to take, with when it can; null when none is pending. */
   walletUnbond: { amount: bigint; availableAt: number } | null;
+  /** Whether the pending bond could not be read: the page then says so and offers a retry, instead of showing nothing. */
+  walletBondUnreadable: boolean;
   /** The currency's symbol and decimals, read once; null when the mandate moves no currency. */
   currency: { symbol: string; decimals: number } | null;
   truncated: boolean;
@@ -320,27 +322,32 @@ async function readMandate(
     )
   ).flatMap((c) => (c ? [c] : []));
 
-  const walletIsReviewer = wallet
-    ? decodeBool(await chain.call(verifiersAddress, encodeIsReviewer(wallet)))
-    : false;
+  // One read says both whether the wallet is on the panel and what bond it holds, so the bond never depends on the
+  // panel listing (a listing that could not be read must not turn a held bond into "none").
+  const walletVerifier = wallet
+    ? decodeVerifier(
+        await chain.call(verifiersAddress, encodeIsReviewer(wallet)),
+      )
+    : { active: false, stake: 0n };
+  const walletIsReviewer = walletVerifier.active;
   const [bond, reviewers] = await Promise.all([
     readBond(chain, verifiersAddress),
     readReviewers(chain, verifiersAddress),
   ]);
-  const walletStake =
-    reviewers.find(
-      (r) => wallet && r.address.toLowerCase() === wallet.toLowerCase(),
-    )?.stake ?? 0n;
-  // A bond asked back waits out a delay and stays slashable meanwhile; a panel without bonds has no such record.
+  const walletStake = walletVerifier.stake;
+  // A bond asked back waits out a delay and stays slashable meanwhile; a panel without bonds has no such record. A read
+  // that fails is reported as unreadable, never as nothing pending: asking for the whole bond back leaves a stake of
+  // zero, and the pending amount is then the only sign the reviewer has money waiting.
   let walletUnbond: { amount: bigint; availableAt: number } | null = null;
-  if (wallet && bond) {
+  let walletBondUnreadable = false;
+  if (wallet && bond && walletIsReviewer) {
     try {
       const pending = decodeUnbond(
         await chain.call(verifiersAddress, encodeUnbonds(wallet)),
       );
       if (pending.amount > 0n) walletUnbond = pending;
     } catch {
-      walletUnbond = null;
+      walletBondUnreadable = true;
     }
   }
   const moves =
@@ -366,6 +373,7 @@ async function readMandate(
     reviewers,
     walletStake,
     walletUnbond,
+    walletBondUnreadable,
     currency: moves ? await readCurrency(chain, created.currency) : null,
     truncated,
   };

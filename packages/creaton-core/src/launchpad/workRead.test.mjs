@@ -11,6 +11,7 @@ import {
   encodeCall0,
   encodeCallId,
   encodeIsReviewer,
+  encodeUnbonds,
   idWord,
 } from "./work.ts";
 import { MAX_CLAIMS, readWork } from "./workRead.ts";
@@ -148,6 +149,13 @@ function chain(claims, over = {}, bond = null) {
       })),
     );
     for (const r of bond.reviewers) {
+      if (!r.unbondUnreadable) {
+        set(
+          VERIFIERS,
+          encodeUnbonds(r.address),
+          words(r.unbond?.amount ?? 0, r.unbond?.availableAt ?? 0),
+        );
+      }
       if (r.unreadable) continue;
       set(VERIFIERS, encodeIsReviewer(r.address), words(1, r.stake, 0, 0));
     }
@@ -403,4 +411,79 @@ test("the mandate a DAO named as its milestone panel is read as that, and a fact
         : base.call(to, data),
   };
   assert.equal((await readWork(zero, DAO, null)).milestonePanel, null);
+});
+
+test("a bond a reviewer asked back is read as an amount and a time, and nothing pending is none", async () => {
+  const waiting = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        reviewers: [
+          {
+            address: ALICE,
+            stake: 0,
+            unbond: { amount: 50_000_000, availableAt: 1_900_000_000 },
+          },
+        ],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  const [mandate] = waiting.mandates;
+  assert.equal(mandate.walletStake, 0n);
+  assert.deepEqual(mandate.walletUnbond, {
+    amount: 50_000_000n,
+    availableAt: 1_900_000_000,
+  });
+  assert.equal(mandate.walletBondUnreadable, false);
+
+  const none = await readWork(
+    chain([], {}, { min: 50, reviewers: [{ address: ALICE, stake: 50 }] }),
+    DAO,
+    ALICE,
+  );
+  assert.equal(none.mandates[0].walletUnbond, null);
+  assert.equal(none.mandates[0].walletBondUnreadable, false);
+});
+
+test("a pending bond that cannot be read is reported as unreadable, never as nothing pending", async () => {
+  // After asking for the whole bond back the stake is zero, so the pending amount is the only sign of the money.
+  const snapshot = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        reviewers: [{ address: ALICE, stake: 0, unbondUnreadable: true }],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  const [mandate] = snapshot.mandates;
+  assert.equal(mandate.walletUnbond, null);
+  assert.equal(mandate.walletBondUnreadable, true);
+});
+
+test("the wallet's own bond does not depend on the panel listing being readable", async () => {
+  const base = chain(
+    [],
+    {},
+    {
+      min: 50_000_000,
+      reviewers: [{ address: ALICE, stake: 70_000_000 }],
+    },
+  );
+  const noListing = {
+    ...base,
+    logs: async (filter) => {
+      if (filter.address === VERIFIERS) throw new Error("log range too large");
+      return base.logs(filter);
+    },
+  };
+  const snapshot = await readWork(noListing, DAO, ALICE);
+  assert.equal(snapshot.mandates[0].walletStake, 70_000_000n);
 });
