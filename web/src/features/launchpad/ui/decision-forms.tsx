@@ -44,6 +44,8 @@ export interface FormContext {
   currencyDecimals: number | null;
   currencySymbol: string;
   work: WorkSnapshot | undefined;
+  /** Why the work budgets could not be read, when they could not; null while they are still being read. */
+  workError?: string | null;
   /** The DAO's voting policy and its Shares. */
   policy: string;
   sharesToken: string;

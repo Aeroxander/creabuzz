@@ -14,9 +14,35 @@ import {
   PayForm,
   ProjectForm,
 } from "./decision-forms";
+import {
+  CloseBudgetForm,
+  FreezeForm,
+  SlashForm,
+  UnwindForm,
+} from "./enforcement-forms";
 import { WorkBudgetForm } from "./WorkBudgetForm";
 
-type Kind = "budget" | "project" | "award" | "market" | "fees" | "pay";
+type Kind =
+  | "budget"
+  | "project"
+  | "award"
+  | "market"
+  | "fees"
+  | "pay"
+  | "freeze"
+  | "unwind"
+  | "slash"
+  | "close";
+
+/** The decisions whose forms pick from the DAO's work budgets and claims. */
+const WORK_KINDS: ReadonlySet<Kind> = new Set([
+  "project",
+  "award",
+  "freeze",
+  "unwind",
+  "slash",
+  "close",
+]);
 
 const KINDS: { id: Kind; label: string; about: string }[] = [
   {
@@ -47,9 +73,31 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     about: "Move the fees the market has collected into the treasury.",
   },
   {
+    id: "freeze",
+    label: "Freeze a claim",
+    about:
+      "Stop a payment you doubt. Nothing is paid for it until a later decision unwinds it.",
+  },
+  {
+    id: "unwind",
+    label: "Unwind a frozen claim",
+    about: "Send the money reserved for it back to the budget.",
+  },
+  {
+    id: "slash",
+    label: "Take a reviewer's bond",
+    about: "After an approval you dispute. It is paid to the DAO.",
+  },
+  {
+    id: "close",
+    label: "Close a work budget",
+    about: "Stop new claims and take back what is not set aside.",
+  },
+  {
     id: "pay",
     label: "Pay from the treasury",
-    about: "Send some of the treasury's money to someone.",
+    about:
+      "Send some of the treasury's money to someone. No reviewer checks it.",
   },
 ];
 
@@ -156,7 +204,19 @@ export function DecisionComposer({
               </button>
             ))}
           </fieldset>
-          {kind === "budget" ? (
+          {WORK_KINDS.has(kind) && !ctx.work ? (
+            // These forms pick from the DAO's work budgets and claims. Until those are read they would say
+            // there is nothing to pick, which is not true yet.
+            <p
+              className="mt-3 text-sm text-muted-foreground"
+              data-testid="decision-reading-work"
+              role="status"
+            >
+              {ctx.workError
+                ? `Couldn't read the work budgets from the network: ${ctx.workError}`
+                : "Reading the work budgets from the network…"}
+            </p>
+          ) : kind === "budget" ? (
             <WorkBudgetForm
               blocked={blocked}
               busy={busy}
@@ -183,6 +243,42 @@ export function DecisionComposer({
               key={`a${formKey}`}
               onSubmit={submit}
             />
+          ) : kind === "freeze" ? (
+            <FreezeForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`z${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "unwind" ? (
+            <UnwindForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`u${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "slash" ? (
+            <SlashForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`s${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "close" ? (
+            <CloseBudgetForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`c${formKey}`}
+              onSubmit={submit}
+            />
           ) : kind === "market" ? (
             <MarketForm
               blocked={blocked}
@@ -193,14 +289,39 @@ export function DecisionComposer({
               onSubmit={submit}
             />
           ) : kind === "pay" ? (
-            <PayForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`y${formKey}`}
-              onSubmit={submit}
-            />
+            <>
+              <div
+                className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                data-testid="decision-pay-warning"
+                role="note"
+              >
+                <p>
+                  This pays straight out of the treasury. No reviewer checks
+                  anything before it goes, and nothing checks what the money is
+                  spent on. If it is for work someone will do, set aside a work
+                  budget instead: the money then leaves only against claims the
+                  reviewers approve.
+                </p>
+                <Button
+                  className="mt-2"
+                  data-testid="decision-pay-use-budget"
+                  onClick={() => setKind("budget")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Set aside a work budget instead
+                </Button>
+              </div>
+              <PayForm
+                blocked={blocked}
+                busy={busy}
+                ctx={ctx}
+                gate={gate}
+                key={`y${formKey}`}
+                onSubmit={submit}
+              />
+            </>
           ) : (
             <CollectFeesForm
               blocked={blocked}

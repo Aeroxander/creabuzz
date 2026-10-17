@@ -121,7 +121,7 @@ export function DelegationCard({
         });
       } catch {
         setError(
-          `Delegation landed (tx ${result.txHash.slice(0, 10)}…) but its receipt mirror failed. Record it from the manage panel.`,
+          `Delegation landed (tx ${result.txHash.slice(0, 10)}…) but it could not be saved to this project's record. It still counts.`,
         );
       }
     } catch (err) {
@@ -135,9 +135,9 @@ export function DelegationCard({
     <Card className="p-4" data-testid="delegation-card">
       <h2 className="text-base font-semibold">Vote delegation</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        You and your delegate manage the same Shares allocations. Delegation
-        gives no extra voting power. Revoke it through Shares.delegate; your
-        allocations stay in place. Loot has economic rights and does not vote.
+        Hand your votes to someone you trust. They vote with your Shares, and
+        your Shares stay yours: you can take the votes back at any time by
+        delegating to yourself. It adds no extra voting power.
       </p>
       {current.data ? (
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
@@ -153,7 +153,7 @@ export function DelegationCard({
           className="mt-2 text-xs text-black/60 dark:text-white/60"
           role="status"
         >
-          Record-only: delegation opens when the launch is bound to a DAO.
+          Delegation opens once this project has a DAO.
         </p>
       ) : (
         <div className="mt-2">
@@ -164,7 +164,7 @@ export function DelegationCard({
               label="Delegate to"
               onValueChange={setDelegatee}
               options={options}
-              placeholder="0x… (delegate address)"
+              placeholder="Their wallet address"
               testId="delegate-target"
               value={delegatee}
             />
@@ -189,8 +189,7 @@ export function DelegationCard({
             </p>
           ) : null}
           <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-            Mirrors a 47005 `delegate` receipt (the assignment is public record;
-            the votes remain yours to reclaim).
+            Who holds your votes is public, and you can always take them back.
           </p>
         </div>
       )}

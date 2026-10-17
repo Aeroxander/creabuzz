@@ -49,9 +49,13 @@ import {
 } from "../lib/ragequit-tx";
 import {
   fetchRagequitPosition,
+  fetchTokenInfo,
   overdrawsPosition,
   type RagequitPosition,
+  type TokenInfo,
 } from "../lib/ragequit-position";
+import { formatShares } from "../lib/shares-format";
+import { formatUnits } from "../lib/dao-actions";
 import type { DaoBinding } from "../lib/org-money";
 import { usePublishMirror } from "../use-launches";
 import { Modal } from "./Modal";
@@ -72,31 +76,28 @@ export interface RagequitPanelProps {
   daoBinding: DaoBinding | null;
 }
 
-function formatAmount(value: bigint): string {
-  return value.toString();
+/** A token amount as people read it: its own decimals, a few fraction digits, and its name. */
+function formatToken(value: bigint, info: TokenInfo): string {
+  return `${formatUnits(value, info.decimals, info.decimals > 6 ? 4 : 2)} ${info.symbol}`;
 }
 
 /** One claimable pool row: what the exit pays, and from which balance. */
 function ClaimRow({
-  token,
   pool,
   due,
+  info,
 }: {
-  token: string;
   pool: bigint;
   due: bigint;
+  info: TokenInfo;
 }) {
-  const label = token === ETH_TOKEN ? "ETH" : truncatePubkey(token);
   return (
     <li className="flex items-center justify-between gap-2 text-sm text-black/80 dark:text-white/80">
-      <span>
-        {label}{" "}
-        <span className="text-black/50 dark:text-white/50">
-          (DAO balance {formatAmount(pool)})
-        </span>
+      <span className="text-black/60 dark:text-white/60">
+        The treasury holds {formatToken(pool, info)}
       </span>
       <span className="font-medium" data-testid="ragequit-claim-row">
-        claims {formatAmount(due)}
+        You get {formatToken(due, info)}
       </span>
     </li>
   );
@@ -141,6 +142,19 @@ export function RagequitPanel({
   const tokens = currencyQuery.data
     ? normalizeRagequitTokens([ETH_TOKEN, currencyQuery.data])
     : [ETH_TOKEN];
+  const currencyInfoQuery = useQuery({
+    queryKey: ["ragequit-token-info", currencyQuery.data, getRpcEndpoint()],
+    enabled: Boolean(currencyQuery.data),
+    queryFn: () =>
+      fetchTokenInfo(getRpcEndpoint(), currencyQuery.data as string),
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+  });
+  // How each token in the exit is named and counted; the sale's currency is read from its own contract.
+  const infoOf = (token: string): TokenInfo =>
+    token === ETH_TOKEN
+      ? { symbol: "ETH", decimals: 18 }
+      : (currencyInfoQuery.data ?? { symbol: "units", decimals: 18 });
 
   const positionQuery = useQuery({
     queryKey: [
@@ -169,13 +183,11 @@ export function RagequitPanel({
         data-testid="ragequit-panel"
       >
         <h3 className="text-base font-semibold text-black dark:text-white">
-          Exit (ragequit)
+          Leave and take your share
         </h3>
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-          No DAO is bound to this launch yet, so there is nothing to exit. The
-          exit becomes available when the launch graduates into a DAO (its{" "}
-          <code>summon</code> receipt or the community org root names the DAO
-          contract).
+          There is no DAO for this project yet, so there is nothing to leave.
+          This opens once the sale ends and the DAO starts.
         </p>
       </section>
     );
@@ -187,14 +199,15 @@ export function RagequitPanel({
       data-testid="ragequit-panel"
     >
       <h3 className="text-base font-semibold text-black dark:text-white">
-        Exit (ragequit)
+        Leave and take your share
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        What is happening: you hold DAO shares that entitle you to a
-        proportional claim on the treasury. Exiting burns those shares and pays
-        the claim to this account.{" "}
+        Your shares are a claim on the treasury. If you stop believing in the
+        project, you can give them up and take your part of the treasury back.
+        Shares the DAO keeps for itself do not count, so they never shrink what
+        you get.{" "}
         <span className="text-black/45 dark:text-white/45">
-          DAO {truncatePubkey(daoBinding.dao)} (from {daoBinding.source}).
+          DAO {truncatePubkey(daoBinding.dao)}.
         </span>
       </p>
       {/* The picker sits here because the position is the SELECTED account's:
@@ -202,6 +215,7 @@ export function RagequitPanel({
       <SenderPickerControls state={picker} testIdPrefix="ragequit-" />
       {holder ? (
         <PositionBody
+          infoOf={infoOf}
           position={positionQuery.data ?? null}
           loading={positionQuery.isFetching}
           error={
@@ -234,11 +248,13 @@ export function RagequitPanel({
 }
 
 function PositionBody({
+  infoOf,
   position,
   loading,
   error,
   onExit,
 }: {
+  infoOf: (token: string) => TokenInfo;
   position: RagequitPosition | null;
   loading: boolean;
   error: string | null;
@@ -250,22 +266,22 @@ function PositionBody({
         className="mt-2 text-sm text-red-700 dark:text-red-300"
         data-testid="ragequit-error"
       >
-        Could not read the claimable position: {error}
+        Could not read what you could take back: {error}
       </p>
     );
   }
   if (!position || loading) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        Reading the claimable position…
+        Reading what you could take back…
       </p>
     );
   }
   if (position.zeroSupply) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        This DAO has no shares or loot outstanding, so there is nothing to claim
-        and the exit would fail.
+        Nobody outside the DAO holds shares yet, so there is nothing to take
+        back.
       </p>
     );
   }
@@ -275,47 +291,84 @@ function PositionBody({
         className="mt-2 text-sm text-amber-800 dark:text-amber-200"
         data-testid="ragequit-locked"
       >
-        The DAO is not accepting exits right now, so there is nothing you need
-        to do. An exit would fail onchain.
+        This DAO is not letting members leave right now, so there is nothing you
+        need to do.
       </p>
     );
   }
   if (position.sharesBalance === 0n) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        This account holds no shares, so there is nothing to exit. (Loot is
-        displayed separately and is not burned by this action.)
+        This account holds no shares, so there is nothing to leave with.
       </p>
     );
   }
+  if (position.sharesBurnable === 0n) {
+    return (
+      <p
+        className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+        data-testid="ragequit-all-locked"
+      >
+        All {formatShares(position.sharesBalance)} of your shares are still
+        locked until the project reaches its milestones, so none can be given up
+        yet.
+      </p>
+    );
+  }
+  // A token the treasury holds none of is not worth a line.
+  const payable = position.rows.filter((row) => row.pool > 0n);
   return (
     <>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/80 dark:text-white/80">
-        <dt>Shares held (would burn)</dt>
+        <dt>Shares you would give up</dt>
         <dd className="text-right font-medium" data-testid="ragequit-shares">
-          {formatAmount(position.sharesBalance)}
+          {formatShares(position.sharesBurnable)}
         </dd>
-        <dt>Loot held (kept)</dt>
-        <dd className="text-right">{formatAmount(position.lootBalance)}</dd>
-        <dt>Shares + loot outstanding</dt>
+        {position.sharesLocked > 0n ? (
+          <>
+            <dt>Shares still locked (kept)</dt>
+            <dd className="text-right" data-testid="ragequit-locked-shares">
+              {formatShares(position.sharesLocked)}
+            </dd>
+          </>
+        ) : null}
+        {position.lootBalance > 0n ? (
+          <>
+            <dt>Non-voting shares (kept)</dt>
+            <dd className="text-right">{formatShares(position.lootBalance)}</dd>
+          </>
+        ) : null}
+        <dt>Shares held outside the DAO</dt>
         <dd className="text-right">
-          {formatAmount(position.sharesTotal + position.lootTotal)}
+          {formatShares(
+            position.sharesTotal + position.lootTotal - position.daoHeld,
+          )}
         </dd>
       </dl>
       <p className="mt-3 text-sm font-medium text-black dark:text-white">
-        What you would claim now (proportional to shares burned):
+        What you would take back now:
       </p>
       <ul className="mt-1 flex flex-col gap-1">
-        {position.rows.map((row) => (
-          <ClaimRow key={row.token} {...row} />
+        {payable.length === 0 ? (
+          <li className="text-sm text-black/60 dark:text-white/60">
+            The treasury holds nothing to take back right now.
+          </li>
+        ) : null}
+        {payable.map((row) => (
+          <ClaimRow
+            due={row.due}
+            info={infoOf(row.token)}
+            key={row.token}
+            pool={row.pool}
+          />
         ))}
       </ul>
       <p className="mt-2 text-xs text-black/50 dark:text-white/50">
-        The claim is computed live from the DAO&apos;s balances; the exact
-        payout is fixed by the chain at the moment the exit is confirmed.
+        This is worked out from the treasury as it is now. The exact amount is
+        fixed when the exit goes through.
       </p>
       <Button className="mt-3" onClick={onExit} data-testid="ragequit-exit">
-        Exit and claim
+        Leave and take my share
       </Button>
     </>
   );
@@ -348,7 +401,8 @@ function RagequitDialog({
   const [running, setRunning] = useState(false);
   const published = usePublishMirror();
 
-  const sharesToBurn = position?.sharesBalance ?? 0n;
+  // Locked team Shares cannot be burned: the exit gives up only what is free.
+  const sharesToBurn = position?.sharesBurnable ?? 0n;
   const overdrawn = position
     ? overdrawsPosition({
         sharesToBurn,
@@ -357,6 +411,7 @@ function RagequitDialog({
         lootBalance: position.lootBalance,
         sharesTotal: position.sharesTotal,
         lootTotal: position.lootTotal,
+        daoHeld: position.daoHeld,
         pools: [],
       })
     : true;
@@ -415,23 +470,21 @@ function RagequitDialog({
   const exitLanded = state.steps.exit === "done";
 
   return (
-    <Modal label="Exit and claim" onClose={onClose}>
+    <Modal label="Leave and take your share" onClose={onClose}>
       <h2 className="text-lg font-semibold text-black dark:text-white">
-        Exit and claim
+        Leave and take your share
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Burns {formatAmount(sharesToBurn)} shares of {truncatePubkey(dao)} and
-        claims the proportional treasury share to{" "}
-        {holder ? truncatePubkey(holder) : "this account"} in one transaction,
-        then leaves a receipt on this launch recording it. The chain is the
-        ledger; the receipt is the readable record.
+        You give up {formatShares(sharesToBurn)} shares and receive your part of
+        the treasury at {holder ? truncatePubkey(holder) : "this account"}, in
+        one step. A record of it is then saved on this project.
       </p>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-        Tokens claimed:{" "}
+        You receive:{" "}
         {tokens
           .map((t) => (t === ETH_TOKEN ? "ETH" : truncatePubkey(t)))
           .join(", ")}
-        . Tokens the DAO holds outside this list are not claimed by this exit.
+        . Anything else the DAO holds stays in the treasury.
       </p>
       <ol className="mt-3 flex flex-col gap-1">
         {state.order.map((step) => (
@@ -497,7 +550,7 @@ function RagequitDialog({
             onClick={() => void run()}
             size="sm"
           >
-            {running ? "Running…" : "Exit and claim"}
+            {running ? "Working…" : "Leave and take my share"}
           </Button>
         )}
       </div>

@@ -3,7 +3,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { type DescribeContext, formatUnits } from "../lib/dao-actions";
+import type { DescribeContext } from "../lib/dao-actions";
+import { formatShares } from "../lib/shares-format";
 import { describeDecision } from "../lib/decision-describe";
 import type { Decision, DecisionsSnapshot } from "../lib/decisions";
 import { encodeExecuteByVotes, encodeQueue } from "../lib/vote-tx";
@@ -13,7 +14,7 @@ import { DecisionVote } from "./DecisionVote";
 
 export { decisionStage };
 
-const shares = (wei: bigint) => formatUnits(wei, 18, 4);
+const shares = formatShares;
 
 const TONE: Record<string, string> = {
   open: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
@@ -113,6 +114,15 @@ export function DecisionCard({
             Read it carefully
           </span>
         )}
+        {described?.kind === "payment" ? (
+          <span
+            className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
+            data-testid="decision-no-review"
+            title="This pays straight out of the treasury. No reviewer checks anything before it goes."
+          >
+            No reviewer
+          </span>
+        ) : null}
       </div>
       <h3 className="mt-1 text-sm font-semibold" data-testid="decision-title">
         {described?.title ?? "This decision did not say what it would do"}
@@ -132,8 +142,11 @@ export function DecisionCard({
       )}
       <p className="mt-2 text-xs text-muted-foreground">
         Proposed by{" "}
-        <span className="font-mono">{decision.proposer.slice(0, 8)}…</span> ·{" "}
-        {when(decision.openedAt)}
+        <span className="font-mono">
+          {describeContext.label?.(decision.proposer) ??
+            `${decision.proposer.slice(0, 8)}…`}
+        </span>{" "}
+        · {when(decision.openedAt)}
       </p>
 
       {rules ? (
@@ -216,7 +229,17 @@ export function DecisionCard({
         </div>
       ) : null}
 
-      {renderDiscussion?.(described?.title ?? "this decision")}
+      {/* A decision that is over keeps its discussion out of the way: open it to read or add to it. */}
+      {["Executed", "Defeated", "Expired"].includes(decision.state) ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Discussion
+          </summary>
+          {renderDiscussion?.(described?.title ?? "this decision")}
+        </details>
+      ) : (
+        renderDiscussion?.(described?.title ?? "this decision")
+      )}
 
       {link ? (
         <button

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { keepIfSame } from "./keep-previous";
 
 import {
   ethBlockNumber,
@@ -55,6 +56,8 @@ export function workQuery(dao: string | null, wallet: string | null) {
     enabled: dao !== null,
     queryFn: () =>
       readWork(endpointChain(getRpcEndpoint()), dao as string, wallet),
+    // When the wallet connects the key changes; the forms on this page must not be torn down for the new read.
+    placeholderData: keepIfSame(2, dao),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   };
@@ -94,6 +97,13 @@ export function useMilestoneLock(
       const offers = await findUnlockOffers(chain, view, work as WorkSnapshot);
       return { view, offers };
     },
+    // The key moves with the chain's clock after every action; the card must not be rebuilt each time (a milestone's
+    // evidence box would lose what was typed). Only this wallet's own answer is kept.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[4] === wallet &&
+      previousQuery?.queryKey[2] === dao
+        ? previous
+        : undefined,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
@@ -126,6 +136,7 @@ export function useRecordEvents(
     enabled: dao !== null && work !== undefined,
     queryFn: () =>
       readRecordEvents(recordChain(getRpcEndpoint()), work as WorkSnapshot),
+    placeholderData: keepIfSame(2, dao),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });

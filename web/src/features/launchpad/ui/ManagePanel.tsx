@@ -4,7 +4,10 @@ import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
-import { hasFounderCommitments } from "../models";
+import { effectiveStage, hasFounderCommitments } from "../models";
+import { useChainBlockHeight } from "@/features/feed/use-feed";
+import { stageForLaunch } from "../lib/sale-stage";
+import { useAuctionProgress } from "./widgets";
 import { planningIsStale } from "../lib/funding";
 import { toAtomic } from "../lib/amounts";
 import { hasBlockingIssue, validateLaunchParams } from "../lib/launch-params";
@@ -61,6 +64,8 @@ export function ManagePanel({
   onDelete: () => Promise<void>;
 }) {
   const { launch } = useLaunch(launchId, author);
+  const blockHeight = useChainBlockHeight();
+  const auctionRead = useAuctionProgress(launch?.record).data;
   const save = useCreateLaunch();
   const mirror = usePublishMirror();
   const [editOpen, setEditOpen] = useState(false);
@@ -86,6 +91,16 @@ export function ManagePanel({
   const [relaunchSeed, setRelaunchSeed] = useState(false);
   if (!launch) return null;
   const { record } = launch;
+  // The sale's stage follows the auction once it exists: a project that launched into its own DAO has nothing left to
+  // advance by hand, and the checklist for opening a sale is over.
+  const stage = stageForLaunch(
+    launch,
+    effectiveStage(launch),
+    blockHeight,
+    auctionRead,
+  );
+  const saleStarted = Boolean(record.auction);
+  const stageIsAutomatic = record.tokenPlan?.mode === "dao" && saleStarted;
 
   const toInput = (overrides: Partial<CreateLaunchInput> = {}) =>
     recordToInput(record, overrides);
@@ -262,9 +277,10 @@ export function ManagePanel({
    */
   const order = ["draft", "review", "live", "funding", "graduated"] as const;
   const terminal = record.stage === "graduated" || record.stage === "failed";
-  const next = terminal
-    ? undefined
-    : order[order.indexOf(record.stage as (typeof order)[number]) + 1];
+  const next =
+    terminal || stageIsAutomatic
+      ? undefined
+      : order[order.indexOf(record.stage as (typeof order)[number]) + 1];
 
   /**
    * Founder commitments the record must carry before the launch leaves
@@ -350,42 +366,52 @@ export function ManagePanel({
           </Button>
         </Card>
       ) : null}
-      <Card className="p-4" data-testid="launch-readiness">
-        <h2 className="text-base font-semibold">Before the sale can open</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          {open === 0
-            ? "Everything is ready."
-            : `${open} step${open === 1 ? "" : "s"} still open.`}
-        </p>
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {readiness.map((item) => (
-            <li className="flex items-start gap-2 text-sm" key={item.label}>
-              <span
-                aria-hidden="true"
-                className={item.ok ? "text-emerald-600" : "text-amber-600"}
-              >
-                {item.ok ? "✓" : "•"}
-              </span>
-              <span>
-                <span className="font-medium">{item.label}</span>
-                <span className="sr-only">{item.ok ? ": set" : ": open"}</span>
-                {!item.ok ? (
-                  <span className="block text-xs text-black/60 dark:text-white/60">
-                    {item.hint}
+      {saleStarted ? null : (
+        <Card className="p-4" data-testid="launch-readiness">
+          <h2 className="text-base font-semibold">Before the sale can open</h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            {open === 0
+              ? "Everything is ready."
+              : `${open} step${open === 1 ? "" : "s"} still open.`}
+          </p>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {readiness.map((item) => (
+              <li className="flex items-start gap-2 text-sm" key={item.label}>
+                <span
+                  aria-hidden="true"
+                  className={item.ok ? "text-emerald-600" : "text-amber-600"}
+                >
+                  {item.ok ? "✓" : "•"}
+                </span>
+                <span>
+                  <span className="font-medium">{item.label}</span>
+                  <span className="sr-only">
+                    {item.ok ? ": set" : ": open"}
                   </span>
-                ) : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Card>
+                  {!item.ok ? (
+                    <span className="block text-xs text-black/60 dark:text-white/60">
+                      {item.hint}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms and status</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Stage: {record.stage} · {record.admission} track · chain{" "}
+          Stage: {stage} · {record.admission} track · chain{" "}
           {record.chainId ?? "undeployed"}
         </p>
+        {stageIsAutomatic ? (
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            This follows the sale on the network, so there is nothing to advance
+            by hand.
+          </p>
+        ) : null}
         {confirmRegress === "failed" ? (
           <div className="mt-2 flex flex-wrap gap-2" role="alert">
             <span className="text-xs text-red-700 dark:text-red-400">
@@ -432,14 +458,16 @@ export function ManagePanel({
             </Button>
           ) : null}
           {record.stage !== "failed" ? (
-            <Button
-              disabled={save.isPending}
-              onClick={() => setConfirmRegress("failed")}
-              size="sm"
-              variant="ghost"
-            >
-              Mark as failed
-            </Button>
+            stageIsAutomatic ? null : (
+              <Button
+                disabled={save.isPending}
+                onClick={() => setConfirmRegress("failed")}
+                size="sm"
+                variant="ghost"
+              >
+                Mark as failed
+              </Button>
+            )
           ) : (
             <Button
               data-testid="launch-relaunch"
@@ -702,7 +730,19 @@ export function ManagePanel({
           launch={launch}
           // Like the auction link below: propagate the publish error so the run can offer a retry, and keep every
           // field the record holds.
-          onLink={(link) => save.mutateAsync(toInput(link))}
+          // The launch starts a real sale, so the record says it is live (the founder's commitments are asked for on the
+          // way to launching, and the auction is open to bids whatever this label says).
+          onLink={(link) =>
+            save.mutateAsync(
+              toInput({
+                ...link,
+                stage:
+                  record.stage === "draft" || record.stage === "review"
+                    ? "live"
+                    : record.stage,
+              }),
+            )
+          }
         />
       ) : null}
 

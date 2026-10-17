@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -27,6 +29,7 @@ import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
+import { useWalletLabels } from "../use-wallet-labels";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { LockedSharesCard } from "./LockedSharesCard";
@@ -64,6 +67,17 @@ export function WorkTab({
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   // What contributors published for their claims: the text a reviewer reads before judging.
   const evidence = useEvidencePackets(launch);
+  // Names for the wallets on this page: people on this server who bound that wallet to their account.
+  const people = useMemo(
+    () =>
+      (work.data?.mandates ?? []).flatMap((m) => [
+        ...m.reviewers.map((r) => r.address),
+        ...m.claims.map((c) => c.record.contributor),
+        ...m.projects.map((p) => p.record.manager),
+      ]),
+    [work.data],
+  );
+  const labelOf = useWalletLabels(people);
 
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">
@@ -164,6 +178,7 @@ export function WorkTab({
               mandate={mandate}
               onOpenDecisions={onOpenDecisions}
               evidence={evidence}
+              labelOf={labelOf}
               onRefresh={() => void work.refetch()}
               onSend={send}
               wallet={wallet.address}
@@ -216,8 +231,11 @@ function MandateCard({
   onOpenDecisions,
   launch,
   evidence,
+  labelOf,
   onRefresh,
 }: {
+  /** How to write a wallet: the person's name with the short address, or just the address. */
+  labelOf: (address: string) => string;
   launch: Launch;
   /** Read the DAO's work again (a read that failed, tried once more). */
   onRefresh: () => void;
@@ -341,9 +359,7 @@ function MandateCard({
         >
           {mandate.reviewers.map((reviewer) => (
             <li data-testid="work-reviewer" key={reviewer.address}>
-              <span className="font-mono">
-                {truncatePubkey(reviewer.address)}
-              </span>
+              <span className="font-mono">{labelOf(reviewer.address)}</span>
               {mandate.bond
                 ? reviewer.stake === null
                   ? " · bond could not be read"
@@ -401,7 +417,7 @@ function MandateCard({
               <span className="font-medium">{idLabel(project.id)}</span>
               <span className="text-muted-foreground">
                 {" "}
-                · managed by {truncatePubkey(project.record.manager)}
+                · managed by {labelOf(project.record.manager)}
                 {project.record.shareBudget > 0n
                   ? ` · ${shares(project.record.sharesAwarded)} of ${shares(project.record.shareBudget)} Shares awarded`
                   : ""}
@@ -457,7 +473,7 @@ function MandateCard({
                     data-testid="work-claim-status"
                   >
                     {claim.record.status} · filed by{" "}
-                    {truncatePubkey(claim.record.contributor)}
+                    {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n
                       ? ` · asks for ${money(claim.record.amount)}`
                       : " · asks to be recognised, not paid"}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  effectiveFundingAt,
   FUNDING_PATHS,
   FUNDING_SEEKING,
   FUNDING_STANCES,
@@ -420,4 +421,20 @@ test("a path that was planned but never built reads as no declaration", () => {
     const parsed = parseFunding({ stance: "planning", seeking: [], path });
     assert.equal(parsed?.path, null, path);
   }
+});
+
+test("the funding status follows the stage the auction corrected, not a saved label that is behind", () => {
+  const launch = {
+    record: {
+      stage: "draft",
+      endBlock: 200,
+      funding: null,
+      createdAt: 1,
+    },
+    receipts: [],
+  };
+  // The saved label says draft, but the sale ran and was funded: it reads closed, not "closing the raise".
+  assert.equal(effectiveFundingAt(launch, "graduated", 300).stance, "closed");
+  // While the sale is running the same record reads as raising.
+  assert.equal(effectiveFundingAt(launch, "live", 150).stance, "raising");
 });

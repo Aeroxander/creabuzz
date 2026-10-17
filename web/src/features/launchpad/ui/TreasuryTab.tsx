@@ -15,22 +15,34 @@ import { erc20BalanceOf, getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { Launch } from "../models";
 import { formatAtomic, formatMoney, toAtomic } from "../lib/amounts";
 import { resolveDaoBinding } from "../lib/org-money";
-import { useOrgMoney } from "../use-launches";
+import { KIND_LAUNCH_PROPOSAL } from "@/shared/constants/kinds";
+import { useOrgMoney, usePublishMirror } from "../use-launches";
 import { RagequitPanel } from "./RagequitPanel";
 import { RoyaltyStatementCard } from "./RoyaltyStatementCard";
 import { EnforcementCard } from "./EnforcementCard";
+import { DaoTreasuryTab } from "./DaoTreasuryTab";
 import { DelegationCard } from "./DelegationCard";
 import { milestoneChoices } from "../lib/claim-choices";
 import { TreasuryFlowsPanel } from "./TreasuryFlowsPanel";
 
 export function TreasuryTab({
   launch,
-  onProposeReturn,
+  onOpenDecisions,
 }: {
   launch: Launch;
-  /** Publishes the suggestion; rejects when it could not be published. */
-  onProposeReturn: (title: string) => Promise<void>;
+  /** Go to the Decisions tab. */
+  onOpenDecisions: () => void;
 }) {
+  const mirror = usePublishMirror();
+  /** Publishes the suggestion to return the money; rejects when it could not be published. */
+  const onProposeReturn = async (title: string) => {
+    await mirror.mutateAsync({
+      kind: KIND_LAUNCH_PROPOSAL,
+      author: launch.record.author,
+      launchId: launch.record.id,
+      content: { kind: "return-capital", title, state: "open" },
+    });
+  };
   const streams = launch.receipts.filter((r) => r.table === "stream");
   const { record } = launch;
   // The money story (post-sale fund flows) and the exit surface both resolve
@@ -72,6 +84,19 @@ export function TreasuryTab({
     record.requiredRaised,
     launch.record.tokenPlan?.supply,
   ]);
+
+  // A project that launched into its own DAO has its own, simpler picture of the money.
+  if (record.tokenPlan?.mode === "dao" && daoBinding) {
+    return (
+      <DaoTreasuryTab
+        chainId={chainId}
+        dao={daoBinding.dao}
+        daoBinding={daoBinding}
+        launch={launch}
+        onOpenDecisions={onOpenDecisions}
+      />
+    );
+  }
 
   const readBalance = async () => {
     if (!record.token || !record.treasury) return;
@@ -140,7 +165,7 @@ export function TreasuryTab({
                 : "—",
             ],
             [
-              "Graduation threshold",
+              "Minimum raise",
               record.requiredRaised
                 ? formatMoney(record.requiredRaised, recordSaleCurrency(record))
                 : "—",

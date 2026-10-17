@@ -65,6 +65,8 @@ export interface OverviewInput {
   wallet: string | null;
   /** What a decision is called on screen; injected so this stays free of the describing code. */
   titleOf: (decision: Decision) => string;
+  /** How a wallet is written (a person's name beside its short address); the short address alone when not given. */
+  labelOf?: (address: string) => string;
 }
 
 /**
@@ -74,6 +76,7 @@ export interface OverviewInput {
  */
 export function attentionItems(input: OverviewInput): AttentionItem[] {
   const { decisions, work, wallet, titleOf } = input;
+  const who = input.labelOf ?? shortAddress;
   if (wallet === null) return [];
   const items: AttentionItem[] = [];
 
@@ -104,7 +107,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         items.push({
           key: `review-${claim.id}`,
           kind: "review",
-          text: `${shortAddress(claim.record.contributor)} filed a claim that needs your review.`,
+          text: `${who(claim.record.contributor)} filed a claim that needs your review.`,
           action: "Review it",
           tab: "work",
         });
@@ -147,7 +150,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           items.push({
             key: `award-${claim.id}`,
             kind: "award",
-            text: `The work of ${shortAddress(claim.record.contributor)} is done. The DAO can vote to award Shares for it.`,
+            text: `The work of ${who(claim.record.contributor)} is done. The DAO can vote to award Shares for it.`,
             action: "Put it to a vote",
             tab: "decisions",
           });
@@ -163,6 +166,8 @@ export interface OverviewCounts {
   openDecisions: number;
   openClaims: number;
   workBudgets: number;
+  /** Decisions that ran: the DAO has done things, even if nothing is open right now. */
+  carriedOut?: number;
 }
 
 export function overviewCounts(
@@ -179,6 +184,9 @@ export function overviewCounts(
     // The milestone panel judges the team's milestones and holds no budget: it is not "a work budget" to start with.
     workBudgets: mandates.filter(
       (mandate) => !mandate.closed && !mandate.isMilestonePanel,
+    ).length,
+    carriedOut: (decisions?.decisions ?? []).filter(
+      (decision) => decision.state === "Executed",
     ).length,
   };
 }
@@ -200,8 +208,12 @@ export function summaryLine(counts: OverviewCounts): string {
     );
   }
   if (parts.length === 0) {
-    return counts.workBudgets > 0
-      ? "Nothing is waiting. Work budgets are open for people to claim."
+    if (counts.workBudgets > 0) {
+      return "Nothing is waiting. Work budgets are open for people to claim.";
+    }
+    // A DAO that has already done things is not "just starting": say that no work budget is open.
+    return (counts.carriedOut ?? 0) > 0
+      ? "Nothing is waiting, and no work budget is open. Put a decision to a vote to set work in motion."
       : "Nothing is going on yet. Put the first decision to a vote to set work in motion.";
   }
   return `${parts.join(" and ")}.`.replace(/^./, (c) => c.toUpperCase());

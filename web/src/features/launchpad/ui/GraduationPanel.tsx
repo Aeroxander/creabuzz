@@ -146,11 +146,9 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         Graduate the launch
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Once the auction has ended and raised enough, one transaction sweeps the
-        raise and the unsold supply, puts {DEFAULT_RESERVE_BPS / 100}% of the
-        raise into the reserve escrow that backs the token&apos;s price floor,
-        sends the rest to the treasury, and records the graduation. Anyone can
-        send it; the money can only go to those two places.
+        {record.tokenPlan?.mode === "dao"
+          ? "Once the auction has ended and raised enough, one transaction sweeps the raise and the unsold supply to the DAO's treasury and records the graduation. Anyone can send it; the money can only go there."
+          : `Once the auction has ended and raised enough, one transaction sweeps the raise and the unsold supply, puts ${DEFAULT_RESERVE_BPS / 100}% of the raise into the reserve escrow that backs the token's price floor, sends the rest to the treasury, and records the graduation. Anyone can send it; the money can only go to those two places.`}
       </p>
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="graduation" wallet={wallet} />
@@ -186,10 +184,15 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
               "Paid to the treasury",
               formatMoney(flow.result.treasuryShare, cur),
             ],
-            [
-              "Held in reserve for the price floor",
-              formatMoney(flow.result.reserveEscrow, cur),
-            ],
+            // A project with its own DAO keeps no reserve: the whole raise goes to the treasury.
+            ...(flow.result.reserveEscrow > 0n
+              ? [
+                  [
+                    "Held in reserve for the price floor",
+                    formatMoney(flow.result.reserveEscrow, cur),
+                  ],
+                ]
+              : []),
             [
               "Unsold tokens returned to the treasury",
               formatAtomic(flow.result.unsoldTokens, 18, {

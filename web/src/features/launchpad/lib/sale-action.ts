@@ -15,16 +15,22 @@
  */
 
 import { chainRaise, type ChainRaise, type FundingLaunch } from "./funding.ts";
+import {
+  type SaleStageInput,
+  type Stage,
+  stageForLaunch,
+} from "./sale-stage.ts";
 
 export type SaleAction =
   | { kind: "bid"; label: "Place bid" }
   | { kind: "closed"; label: "Bidding closed" | "Bidding not open yet" }
-  | { kind: "claim"; label: "Claim tokens" }
-  | { kind: "refund"; label: "Claim refund" };
+  | { kind: "claim"; label: "Your bids and tokens" }
+  | { kind: "refund"; label: "Your bids and refund" };
 
 const BID: SaleAction = { kind: "bid", label: "Place bid" };
-const CLAIM: SaleAction = { kind: "claim", label: "Claim tokens" };
-const REFUND: SaleAction = { kind: "refund", label: "Claim refund" };
+// Everyone sees this button, not only people who bid, so it opens their bids rather than promising tokens they may not have.
+const CLAIM: SaleAction = { kind: "claim", label: "Your bids and tokens" };
+const REFUND: SaleAction = { kind: "refund", label: "Your bids and refund" };
 const CLOSED: SaleAction = { kind: "closed", label: "Bidding closed" };
 const NOT_YET: SaleAction = { kind: "closed", label: "Bidding not open yet" };
 
@@ -95,4 +101,16 @@ export function saleAction(input: SaleActionInput): SaleAction | null {
   if (raise === "none") return null;
   if (raise === "open") return BID;
   return hasAuction ? CLOSED : null;
+}
+
+/** The stage the page shows (the auction corrects the saved label) and the one main button that goes with it. */
+export function saleView(
+  launch: Parameters<typeof saleActionFor>[0] &
+    Parameters<typeof stageForLaunch>[0],
+  saved: Stage,
+  head: number | bigint | null,
+  progress: SaleActionInput["progress"] & SaleStageInput["progress"],
+): { stage: Stage; mainAction: SaleAction | null } {
+  const stage = stageForLaunch(launch, saved, head, progress);
+  return { stage, mainAction: saleActionFor(launch, stage, head, progress) };
 }

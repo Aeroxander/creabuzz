@@ -6,6 +6,7 @@ import {
   CONFIGURED_DEFAULT_CHAIN_ID,
   DEFAULT_RPC_ENDPOINT,
   LOCAL_ANVIL_PRESET,
+  RPC_RETRY,
   SELECTOR_CLEARING_PRICE,
   auctionProgress,
   chainPresetByChainId,
@@ -16,6 +17,8 @@ import {
   defaultChainPreset,
   exchangeAddresses,
   exchangeCodehashes,
+  ethBlockNumber,
+  ethCall,
   ethGetLogs,
   getRpcEndpoint,
   historyFromBlock,
@@ -614,6 +617,8 @@ test("a capped node with no start named is refused with what to set, not read fo
 
 test("a node that fails for another reason is not paged around", async () => {
   const original = globalThis.fetch;
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [];
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
@@ -627,5 +632,71 @@ test("a node that fails for another reason is not paged around", async () => {
     assert.equal(calls, 1);
   } finally {
     globalThis.fetch = original;
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("a busy node is asked again, and one dropped read does not fail the screen", async () => {
+  const original = globalThis.fetch;
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [1, 1];
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) return { ok: false, status: 503, json: async () => ({}) };
+    if (calls === 2) throw new TypeError("Failed to fetch");
+    return { ok: true, json: async () => ({ result: "0x2a" }) };
+  };
+  try {
+    assert.equal(await ethBlockNumber("http://node.test"), 42n);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = original;
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("a read that never answers fails in plain words, after the retries", async () => {
+  const original = globalThis.fetch;
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [1];
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new DOMException("signal is aborted without reason", "AbortError");
+  };
+  try {
+    await assert.rejects(
+      ethBlockNumber("http://node.test"),
+      /did not answer in time/,
+    );
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = original;
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("a reverted call is a real answer: it is not asked again", async () => {
+  const original = globalThis.fetch;
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [1, 1];
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      json: async () => ({ error: { message: "execution reverted" } }),
+    };
+  };
+  try {
+    await assert.rejects(
+      ethCall("http://node.test", `0x${"11".repeat(20)}`, "0x"),
+      /execution reverted/,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+    RPC_RETRY.delaysMs = delays;
   }
 });

@@ -13,12 +13,18 @@
  * events. (37011 grants are the org plane's delegation record; nothing in the
  * majeur ragequit path reads them.)
  *
- * Claimable derivation — `Moloch.sol:772-793`, verbatim:
+ * Claimable derivation — `Moloch.sol:772-793`, verbatim, plus the Creaton
+ * patch `ragequit-excludes-treasury-shares` (MolochPatched.sol):
  *
  *   total = shares.totalSupply() + loot.totalSupply()      // BEFORE the burn
+ *   total -= shares.balanceOf(dao) + loot.balanceOf(dao)   // patch: the DAO's own
  *   amt   = sharesToBurn + lootToBurn
  *   pool  = tk == address(0) ? dao.balance : balanceOfThis(tk)
  *   due   = mulDiv(pool, amt, total)                        // floor
+ *
+ * Shares a holder has not yet earned (the milestone lock guard) cannot be
+ * burned: `burnFromMoloch` reverts `LockedShares` unless the balance covers the
+ * burn plus the locked amount, so the exit burns `balance - lockedOf(holder)`.
  *
  * `balanceOfThis(tk)` is the token's `balanceOf(dao)` (Moloch.sol:1999), so
  * the pools are reads of the DAO's own balances. ETH is the zero-address
@@ -37,6 +43,10 @@ export const SELECTOR_LOOT = "0x9b7b2ab0"; // loot()
 export const SELECTOR_BALANCE_OF = "0x70a08231"; // balanceOf(address)
 export const SELECTOR_TOTAL_SUPPLY = "0x18160ddd"; // totalSupply()
 export const SELECTOR_RAGEQUITTABLE = "0x14a6d7de"; // ragequittable()
+export const SELECTOR_DECIMALS = "0x313ce567"; // decimals()
+export const SELECTOR_SYMBOL = "0x95d89b41"; // symbol()
+export const SELECTOR_LOCK_GUARD = "0x36bc529d"; // lockGuard()
+export const SELECTOR_LOCKED_OF = "0xa5f1e282"; // lockedOf(address)
 
 function addressWord(address: string): string {
   return address.toLowerCase().slice(2).padStart(64, "0");
@@ -51,6 +61,60 @@ export function decodeAddress(hex: string): string {
   return `0x${body.slice(24, 64).toLowerCase()}`;
 }
 
+/** How a token is named and counted: its symbol and decimals. */
+export interface TokenInfo {
+  symbol: string;
+  decimals: number;
+}
+
+/**
+ * Decode an ERC-20 `symbol()` answer: a dynamic string, or the 32-byte word some older tokens return instead. Null when
+ * it is neither, so the caller can keep a neutral word instead of printing garbage.
+ */
+export function decodeSymbol(hex: string): string | null {
+  const body = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const text = (bytes: string): string | null => {
+    const pairs = bytes.match(/../g) ?? [];
+    const chars = pairs
+      .map((pair) => Number.parseInt(pair, 16))
+      .filter((code) => code !== 0);
+    if (chars.length === 0 || chars.some((c) => c < 0x20 || c > 0x7e)) {
+      return null;
+    }
+    return String.fromCharCode(...chars);
+  };
+  if (body.length >= 128) {
+    const length = Number(BigInt(`0x${body.slice(64, 128)}`));
+    if (length > 0 && length <= 32 && body.length >= 128 + length * 2) {
+      return text(body.slice(128, 128 + length * 2));
+    }
+  }
+  if (body.length === 64) return text(body);
+  return null;
+}
+
+/** A token's symbol and decimals, tolerating one that answers neither (then "units", 18). */
+export async function fetchTokenInfo(
+  endpoint: string,
+  token: string,
+): Promise<TokenInfo> {
+  let decimals = 18;
+  let symbol = "units";
+  try {
+    const d = decodeU256(await ethCall(endpoint, token, SELECTOR_DECIMALS));
+    if (d <= 36n) decimals = Number(d);
+  } catch {
+    // An unreadable token is counted in 18 decimals and named "units".
+  }
+  try {
+    symbol =
+      decodeSymbol(await ethCall(endpoint, token, SELECTOR_SYMBOL)) ?? symbol;
+  } catch {
+    // Keep the neutral word.
+  }
+  return { symbol, decimals };
+}
+
 /** One composed view call: `{ name, to, data }`, executed by the fetcher. */
 export interface RagequitRead {
   name:
@@ -59,8 +123,12 @@ export interface RagequitRead {
     | "loot"
     | "holder-shares"
     | "holder-loot"
+    | "dao-shares"
+    | "dao-loot"
     | "shares-total"
     | "loot-total"
+    | "lock-guard"
+    | "locked-of"
     | "pool";
   to: string;
   data: string;
@@ -82,8 +150,6 @@ export function buildRagequitReads(
     { name: "ragequittable", to: target, data: SELECTOR_RAGEQUITTABLE },
     { name: "shares", to: target, data: SELECTOR_SHARES },
     { name: "loot", to: target, data: SELECTOR_LOOT },
-    { name: "shares-total", to: target, data: SELECTOR_TOTAL_SUPPLY },
-    { name: "loot-total", to: target, data: SELECTOR_TOTAL_SUPPLY },
   ];
   for (const token of tokens) {
     const tk = token.toLowerCase();
@@ -102,25 +168,75 @@ export function buildRagequitReads(
   return reads;
 }
 
-/** The holder's share/loot balances — composed against the token addresses. */
+/**
+ * How many Shares and Loot exist: `totalSupply()` on the two TOKEN contracts, whose addresses are only known once the
+ * DAO has answered `shares()` and `loot()`. (These were once sent to the DAO itself, which has no such function, so the
+ * whole position read reverted.)
+ */
+export function buildSupplyReads(
+  sharesToken: string,
+  lootToken: string,
+): RagequitRead[] {
+  return [
+    {
+      name: "shares-total",
+      to: sharesToken.toLowerCase(),
+      data: SELECTOR_TOTAL_SUPPLY,
+    },
+    {
+      name: "loot-total",
+      to: lootToken.toLowerCase(),
+      data: SELECTOR_TOTAL_SUPPLY,
+    },
+  ];
+}
+
+/**
+ * The holder's share/loot balances and the DAO's own — composed against the
+ * token addresses. The DAO's balances leave the exit denominator.
+ */
 export function buildHolderBalanceReads(
   sharesToken: string,
   lootToken: string,
   holder: string,
+  dao: string,
 ): RagequitRead[] {
   const who = addressWord(holder);
+  const self = addressWord(dao);
+  const shares = sharesToken.toLowerCase();
+  const loot = lootToken.toLowerCase();
   return [
-    {
-      name: "holder-shares",
-      to: sharesToken.toLowerCase(),
-      data: `${SELECTOR_BALANCE_OF}${who}`,
-    },
-    {
-      name: "holder-loot",
-      to: lootToken.toLowerCase(),
-      data: `${SELECTOR_BALANCE_OF}${who}`,
-    },
+    { name: "holder-shares", to: shares, data: `${SELECTOR_BALANCE_OF}${who}` },
+    { name: "holder-loot", to: loot, data: `${SELECTOR_BALANCE_OF}${who}` },
+    { name: "dao-shares", to: shares, data: `${SELECTOR_BALANCE_OF}${self}` },
+    { name: "dao-loot", to: loot, data: `${SELECTOR_BALANCE_OF}${self}` },
   ];
+}
+
+/** `lockGuard()` on the Shares token (zero address = no guard set). */
+export function buildLockGuardRead(sharesToken: string): RagequitRead {
+  return {
+    name: "lock-guard",
+    to: sharesToken.toLowerCase(),
+    data: SELECTOR_LOCK_GUARD,
+  };
+}
+
+/** `lockedOf(holder)` on the lock guard. */
+export function buildLockedOfRead(guard: string, holder: string): RagequitRead {
+  return {
+    name: "locked-of",
+    to: guard.toLowerCase(),
+    data: `${SELECTOR_LOCKED_OF}${addressWord(holder)}`,
+  };
+}
+
+/**
+ * What the holder can actually burn: the balance minus whatever the lock guard
+ * still holds back (the patched Shares refuse a burn that would dip into it).
+ */
+export function burnableShares(balance: bigint, locked: bigint): bigint {
+  return locked >= balance ? 0n : balance - locked;
 }
 
 /** What one token would pay out on exit. */
@@ -149,17 +265,28 @@ export interface PositionInput {
   sharesTotal: bigint;
   /** `loot.totalSupply()` before the burn. */
   lootTotal: bigint;
+  /**
+   * Shares + loot the DAO holds itself. The patched exit leaves them out of
+   * the denominator, so they never shrink a member's payout.
+   */
+  daoHeld: bigint;
   /** Per-token DAO pools (token address → balance). */
   pools: ReadonlyArray<{ token: string; pool: bigint }>;
 }
 
+/** The exit denominator: everything outstanding except what the DAO holds. */
+export function exitDenominator(input: PositionInput): bigint {
+  const outstanding = input.sharesTotal + input.lootTotal;
+  return input.daoHeld >= outstanding ? 0n : outstanding - input.daoHeld;
+}
+
 /**
- * Pure claimable derivation (Moloch.sol:772-793). Floor-division; a zero
- * supply claims zero (the chain's `div(0)` would revert inside `mulDiv` —
- * the UI never sends a call in that state).
+ * Pure claimable derivation (Moloch.sol:772-793 and the treasury-shares
+ * patch). Floor-division; a zero denominator claims zero (the chain's `div(0)`
+ * would revert inside `mulDiv` — the UI never sends a call in that state).
  */
 export function deriveClaimablePosition(input: PositionInput): ClaimableRow[] {
-  const total = input.sharesTotal + input.lootTotal;
+  const total = exitDenominator(input);
   const amt = input.sharesToBurn + input.lootToBurn;
   return input.pools.map(({ token, pool }) => ({
     token,
@@ -185,12 +312,18 @@ export interface RagequitPosition {
   /** The loot token address (`loot()`). */
   lootToken: string;
   sharesBalance: bigint;
+  /** Shares the lock guard still holds back (milestone-locked team Shares). */
+  sharesLocked: bigint;
+  /** Shares an exit can burn: the balance minus the locked amount. */
+  sharesBurnable: bigint;
   lootBalance: bigint;
   sharesTotal: bigint;
   lootTotal: bigint;
-  /** Pools + claimable rows for a full-shares exit (loot untouched). */
+  /** Shares + loot the DAO holds itself (outside the exit denominator). */
+  daoHeld: bigint;
+  /** Pools + claimable rows for a full exit of the burnable Shares (loot untouched). */
   rows: ClaimableRow[];
-  /** True when the full-shares claimable derivation needs more supply. */
+  /** True when nobody but the DAO holds Shares or Loot. */
   zeroSupply: boolean;
 }
 
@@ -221,16 +354,34 @@ export async function fetchRagequitPosition(
   }
   const sharesToken = results.get("shares") as string;
   const lootToken = results.get("loot") as string;
-  for (const read of buildHolderBalanceReads(sharesToken, lootToken, holder)) {
+  for (const read of [
+    ...buildSupplyReads(sharesToken, lootToken),
+    ...buildHolderBalanceReads(sharesToken, lootToken, holder, dao),
+  ]) {
     results.set(
       read.name,
       decodeU256(await ethCall(endpoint, read.to, read.data)),
+    );
+  }
+  // The lock guard is optional: a DAO with no guard locks nothing.
+  const guardRead = buildLockGuardRead(sharesToken);
+  const guard = decodeAddress(
+    await ethCall(endpoint, guardRead.to, guardRead.data),
+  );
+  let sharesLocked = 0n;
+  if (!/^0x0{40}$/.test(guard)) {
+    const lockedRead = buildLockedOfRead(guard, holder);
+    sharesLocked = decodeU256(
+      await ethCall(endpoint, lockedRead.to, lockedRead.data),
     );
   }
   const sharesTotal = results.get("shares-total") as bigint;
   const lootTotal = results.get("loot-total") as bigint;
   const sharesBalance = results.get("holder-shares") as bigint;
   const lootBalance = results.get("holder-loot") as bigint;
+  const daoHeld =
+    (results.get("dao-shares") as bigint) + (results.get("dao-loot") as bigint);
+  const sharesBurnable = burnableShares(sharesBalance, sharesLocked);
   const pools = tokens.map((token) => {
     const key =
       token.toLowerCase() === ETH_TOKEN
@@ -241,26 +392,32 @@ export async function fetchRagequitPosition(
       pool: (results.get(key) as bigint) ?? 0n,
     };
   });
-  // The default view is a full-shares exit (loot stays — the CLI's semantic,
-  // org_ragequit.rs: burns shares only; loot exit is a separate surface).
-  const rows = deriveClaimablePosition({
-    sharesToBurn: sharesBalance,
+  // The default view is a full exit of the burnable Shares (loot stays — the
+  // CLI's semantic, org_ragequit.rs: burns shares only; loot exit is a
+  // separate surface).
+  const input = {
+    sharesToBurn: sharesBurnable,
     lootToBurn: 0n,
     sharesBalance,
     lootBalance,
     sharesTotal,
     lootTotal,
+    daoHeld,
     pools,
-  });
+  };
+  const rows = deriveClaimablePosition(input);
   return {
     ragequittable: (results.get("ragequittable") as boolean) ?? false,
     sharesToken,
     lootToken,
     sharesBalance,
+    sharesLocked,
+    sharesBurnable,
     lootBalance,
     sharesTotal,
     lootTotal,
+    daoHeld,
     rows,
-    zeroSupply: sharesTotal + lootTotal === 0n,
+    zeroSupply: exitDenominator(input) === 0n,
   };
 }

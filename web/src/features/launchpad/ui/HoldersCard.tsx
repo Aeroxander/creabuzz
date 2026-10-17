@@ -35,12 +35,15 @@ export function HoldersCard({
   failed,
   dao,
   labelOf,
+  contracts,
 }: {
   read: HoldersRead | undefined;
   loading: boolean;
   failed: boolean;
   dao: string;
   labelOf: (address: string) => string;
+  /** Names for the DAO's own contracts that hold Shares (reviewers' bonds, work budgets), by lowercase address. */
+  contracts?: ReadonlyMap<string, string>;
 }) {
   return (
     <Card className="p-4" data-testid="record-holders">
@@ -80,7 +83,10 @@ export function HoldersCard({
                   key={holder.holder}
                 >
                   <span className="min-w-0 font-medium">
-                    {isDao ? "The DAO itself" : labelOf(holder.holder)}
+                    {isDao
+                      ? "The DAO itself"
+                      : (contracts?.get(holder.holder) ??
+                        labelOf(holder.holder))}
                   </span>
                   <span className="text-right tabular-nums">
                     <span data-testid="record-holder-share">

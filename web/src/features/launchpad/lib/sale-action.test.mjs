@@ -6,8 +6,8 @@ import { saleAction } from "./sale-action.ts";
 const BID = { kind: "bid", label: "Place bid" };
 const CLOSED = { kind: "closed", label: "Bidding closed" };
 const NOT_YET = { kind: "closed", label: "Bidding not open yet" };
-const CLAIM = { kind: "claim", label: "Claim tokens" };
-const REFUND = { kind: "refund", label: "Claim refund" };
+const CLAIM = { kind: "claim", label: "Your bids and tokens" };
+const REFUND = { kind: "refund", label: "Your bids and refund" };
 
 const win = (head, claimBlock = 260) => ({
   startBlock: 100,

@@ -22,10 +22,12 @@ import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useDecisionContext, useDecisions } from "../use-decisions";
+import { useSpendingSummary } from "../use-spending";
 import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
-import { decisionTitler } from "./decision-title";
+import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
+import { SpendingCard } from "./SpendingCard";
 
 export type OverviewTarget = "decisions" | "work" | "record";
 
@@ -59,6 +61,16 @@ export function DaoOverview({
     dao,
     factory: context.data?.factory,
     mandates: work.data?.mandates.map((m) => m.address),
+    bonds: bondsOf(work.data),
+    projectToken: context.data?.shares,
+  });
+
+  const { spending, labelOf } = useSpendingSummary({
+    dao,
+    currency: launch.record.currency,
+    decisions: decisions.data,
+    work: work.data,
+    factory: context.data?.factory,
   });
 
   const items = attentionItems({
@@ -66,6 +78,7 @@ export function DaoOverview({
     work: work.data,
     wallet,
     titleOf,
+    labelOf,
   });
   const counts = overviewCounts(decisions.data, work.data);
   const loading = decisions.isLoading || work.isLoading;
@@ -103,7 +116,9 @@ export function DaoOverview({
       counts.openDecisions === 0 ? (
         <Card className="p-4" data-testid="dao-start-work">
           <h3 className="text-sm font-semibold">
-            Set up the first work budget
+            {(counts.carriedOut ?? 0) > 0
+              ? "Set up a work budget"
+              : "Set up the first work budget"}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
             A work budget sets aside Shares (and money, if you want) for people
@@ -157,6 +172,16 @@ export function DaoOverview({
           </ul>
         )}
       </Card>
+
+      {spending && sale ? (
+        <SpendingCard
+          decimals={sale.decimals}
+          labelOf={labelOf}
+          onOpenDecisions={() => onOpen("decisions")}
+          summary={spending}
+          symbol={symbol}
+        />
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Figure

@@ -17,6 +17,7 @@ import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
 import { formatUnits } from "../lib/dao-actions";
+import { contractNames } from "../lib/contract-names";
 import { hashText } from "../lib/work";
 import {
   buildLedger,
@@ -41,7 +42,7 @@ import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePeopleWithWallets } from "../use-people";
 import { useDaoHolders, useRecordEvents, useWork } from "../use-work";
-import { decisionTitler } from "./decision-title";
+import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
 import { HoldersCard } from "./HoldersCard";
 
@@ -112,6 +113,8 @@ export function RecordTab({
     dao,
     factory: context.data?.factory,
     mandates: work.data?.mandates.map((m) => m.address),
+    bonds: bondsOf(work.data),
+    projectToken: context.data?.shares,
   });
   // The launch record carries each milestone's words; the chain only holds their hash, so match them up.
   const milestoneWords = new Map(
@@ -359,6 +362,7 @@ export function RecordTab({
       ) : null}
 
       <HoldersCard
+        contracts={contractNames(work.data)}
         dao={dao}
         failed={holders.isError}
         labelOf={labels.person}

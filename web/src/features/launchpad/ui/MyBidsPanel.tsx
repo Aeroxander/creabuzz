@@ -16,6 +16,8 @@ import { Button } from "@/shared/ui/button";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
 
+import { recordSaleCurrency } from "../chain";
+import { bidSummary } from "../lib/bid-words.ts";
 import type { LaunchRecord } from "../models";
 import {
   buildClaimExecution,
@@ -44,15 +46,6 @@ import {
   useSenderPicker,
 } from "./SenderPicker";
 import { grantedWalletAccount } from "../use-connected-wallet";
-
-const STATUS_LABELS: Record<string, string> = {
-  active: "In play",
-  outbid: "Outbid",
-  ended: "Auction ended",
-  exited: "Exited",
-  claimable: "Claimable",
-  settled: "Settled",
-};
 
 interface OwnerGroup {
   kind: "wallet" | "passkey";
@@ -101,6 +94,7 @@ export function MyBidsPanel({
   autoAction?: "exit" | "claim" | null;
 }) {
   const auction = record.auction;
+  const currency = recordSaleCurrency(record);
   const [groups, setGroups] = useState<OwnerGroup[]>([]);
   const [snapshots, setSnapshots] = useState<Record<string, GroupSnapshot>>({});
   const [action, setAction] = useState<Action | null>(null);
@@ -218,9 +212,9 @@ export function MyBidsPanel({
             My bids
           </h2>
           <p className="text-sm text-black/60 dark:text-white/60">
-            Onchain bids owned by your wallet or passkey account. Exit refunds
-            the unfilled share; claim collects filled tokens after the claim
-            block.
+            Your bids on this sale, from your wallet or passkey account. Take
+            back the money that did not buy anything, then collect the tokens
+            you bought once the sale pays out.
           </p>
         </div>
         <Button onClick={refresh} size="sm" variant="outline">
@@ -278,6 +272,7 @@ export function MyBidsPanel({
                 {snap.snapshot.bids.map((entry) => (
                   <BidRow
                     key={entry.bidId.toString()}
+                    currency={currency}
                     bidId={entry.bidId}
                     bid={entry.bid}
                     actions={entry.actions}
@@ -347,12 +342,14 @@ function ClaimAllButton({
 function BidRow({
   bidId,
   bid,
+  currency,
   actions,
   onExit,
   onClaim,
 }: {
   bidId: bigint;
   bid: BidView;
+  currency: ReturnType<typeof recordSaleCurrency>;
   actions: BidActions;
   onExit: (plan: ExitPlan) => void;
   onClaim: () => void;
@@ -364,8 +361,7 @@ function BidRow({
       <div className="text-sm text-black dark:text-white">
         <span className="font-medium">Bid #{bidId.toString()}</span>{" "}
         <span className="text-black/60 dark:text-white/60">
-          max {bid.maxPrice.toString()} · filled {bid.tokensFilled.toString()} ·{" "}
-          {STATUS_LABELS[actions.status] ?? actions.status}
+          {bidSummary(actions.status, bid.amountQ96, currency)}
         </span>
       </div>
       <div className="flex gap-2">
@@ -376,34 +372,20 @@ function BidRow({
             size="sm"
             variant="outline"
           >
-            Exit
+            Take back unspent money
           </Button>
-        ) : (
-          <span
-            className="self-center text-xs text-black/60 dark:text-white/60"
-            title={
-              actions.exit.kind === "unavailable" ? actions.exit.reason : ""
-            }
-          >
-            Exit unavailable
-          </span>
-        )}
+        ) : null}
         {claimReady ? (
           <Button data-testid="mybids-claim" onClick={onClaim} size="sm">
-            Claim
+            Collect tokens
           </Button>
-        ) : (
-          <span
-            className="self-center text-xs text-black/60 dark:text-white/60"
-            title={
-              actions.claim.kind === "unavailable" ? actions.claim.reason : ""
-            }
-          >
-            {actions.claim.kind === "unavailable"
-              ? actions.claim.reason
-              : "Claim unavailable"}
+        ) : actions.status === "exited" &&
+          actions.claim.kind === "unavailable" ? (
+          // Why the tokens cannot be collected yet, when that is news: the other states already say what to do.
+          <span className="self-center text-xs text-black/60 dark:text-white/60">
+            {actions.claim.reason}
           </span>
-        )}
+        ) : null}
       </div>
     </li>
   );

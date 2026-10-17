@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { keepIfSame } from "./keep-previous";
 
 import { ethCall, ethTransactionInput, getRpcEndpoint } from "./chain";
 import { type DecisionChain, readDecisions } from "./lib/decisions";
@@ -18,6 +19,7 @@ export function decisionsQuery(dao: string | null, wallet: string | null) {
   return {
     queryKey: ["launchpad", "work", dao, "decisions", wallet],
     enabled: dao !== null,
+    placeholderData: keepIfSame(2, dao),
     queryFn: () =>
       readDecisions(decisionChain(getRpcEndpoint()), dao as string, wallet),
     staleTime: 8_000,

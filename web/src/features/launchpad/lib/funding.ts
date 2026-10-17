@@ -276,6 +276,18 @@ export interface ResolvedFunding {
   raisingNow: boolean;
 }
 
+/** The funding status for a launch whose stage the auction has corrected (`stageForLaunch`): the saved label may be behind. */
+export function effectiveFundingAt(
+  launch: Pick<FundingLaunch, "record" | "receipts">,
+  stage: string,
+  head: number | bigint | null,
+): ResolvedFunding {
+  return effectiveFunding(
+    { record: { ...launch.record, stage }, receipts: launch.receipts },
+    head,
+  );
+}
+
 export function effectiveFunding(
   launch: Pick<FundingLaunch, "record" | "receipts">,
   head: number | bigint | null,

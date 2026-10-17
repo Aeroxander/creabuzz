@@ -213,7 +213,12 @@ test("the counts and the sentence say what is going on, or that nothing is", () 
     ],
   };
   const counts = overviewCounts(decisions, work);
-  assert.deepEqual(counts, { openDecisions: 2, openClaims: 2, workBudgets: 1 });
+  assert.deepEqual(counts, {
+    openDecisions: 2,
+    openClaims: 2,
+    workBudgets: 1,
+    carriedOut: 1,
+  });
   assert.equal(
     summaryLine(counts),
     "2 decisions are open and 2 pieces of work are in progress.",
@@ -230,6 +235,15 @@ test("the counts and the sentence say what is going on, or that nothing is", () 
     summaryLine({ openDecisions: 0, openClaims: 0, workBudgets: 0 }),
     /Nothing is going on yet/,
   );
+  // A DAO that has already carried things out is not new: it says no budget is open instead of "first decision".
+  const done = summaryLine({
+    openDecisions: 0,
+    openClaims: 0,
+    workBudgets: 0,
+    carriedOut: 6,
+  });
+  assert.match(done, /no work budget is open/);
+  assert.doesNotMatch(done, /first decision/);
 });
 
 test("the milestone panel is not a work budget: a DAO with only that is still offered its first one", () => {

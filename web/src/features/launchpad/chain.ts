@@ -517,15 +517,26 @@ export function decodeQuantity(hex: string): bigint {
   return BigInt(`0x${body}`);
 }
 
-async function rpc(
+/**
+ * How a read that fails for a passing reason is tried again: after each pause here, then it gives up. A public node
+ * regularly drops a request or answers slowly; one dropped read must not turn a whole screen into an error. Reads only
+ * (nothing here sends a transaction), so asking twice is harmless. Tests set it empty to fail fast.
+ */
+export const RPC_RETRY = { delaysMs: [300, 900] as number[] };
+
+/** A failure worth asking again about: a timeout, a dropped connection, or a node that is busy. */
+function isPassingFailure(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (error instanceof TypeError) return true;
+  return error instanceof Error && /^rpc http (429|5\d\d)$/.test(error.message);
+}
+
+async function rpcOnce(
   endpoint: string,
   method: string,
   params: unknown[],
-  timeoutMs = 6000,
+  timeoutMs: number,
 ): Promise<unknown> {
-  if (!endpoint) {
-    throw new Error("This site is not connected to a chain yet.");
-  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -550,6 +561,40 @@ async function rpc(
     return body.result;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function rpc(
+  endpoint: string,
+  method: string,
+  params: unknown[],
+  timeoutMs = 6000,
+): Promise<unknown> {
+  if (!endpoint) {
+    throw new Error("This site is not connected to a chain yet.");
+  }
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await rpcOnce(endpoint, method, params, timeoutMs);
+    } catch (error) {
+      if (!isPassingFailure(error)) throw error;
+      const pause = RPC_RETRY.delaysMs[attempt];
+      if (pause === undefined) {
+        // Say it in words: the raw abort text ("signal is aborted without reason") reaches people's screens.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw new Error(
+            "The chain node did not answer in time. Try again in a moment.",
+          );
+        }
+        if (error instanceof TypeError) {
+          throw new Error(
+            "Could not reach the chain node. Check your connection and try again.",
+          );
+        }
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pause));
+    }
   }
 }
 

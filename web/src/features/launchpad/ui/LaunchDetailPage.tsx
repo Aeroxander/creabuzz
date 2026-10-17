@@ -19,11 +19,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import {
-  KIND_LAUNCH_BID,
-  KIND_LAUNCH_PROPOSAL,
-  KIND_LAUNCH_UPDATE,
-} from "@/shared/constants/kinds";
+import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import {
   useDeleteLaunch,
   useIsFounder,
@@ -31,8 +27,8 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, isEvmAddress, type Launch } from "../models";
-import { effectiveFunding } from "../lib/funding";
-import { saleActionFor } from "../lib/sale-action";
+import { effectiveFundingAt } from "../lib/funding";
+import { saleView } from "../lib/sale-action";
 import { SaleActionButton } from "./SaleActionButton";
 import { isIdea } from "../lib/idea";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
@@ -135,7 +131,6 @@ export function LaunchDetailPage({
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
   // The chain head is what tells a declared stance apart from a live sale.
   const blockHeight = useChainBlockHeight();
-  // The auction as the chain reads it: what the main button offers depends on whether bidding is open and who can act.
   const auctionRead = useAuctionProgress(launch?.record).data;
   // A founder who opens their launch has seen its supporters.
   const seenCount = supporterCoord
@@ -182,8 +177,12 @@ export function LaunchDetailPage({
     );
   }
 
-  const stage = effectiveStage(launch);
-  const mainAction = saleActionFor(launch, stage, blockHeight, auctionRead);
+  const { stage, mainAction } = saleView(
+    launch,
+    effectiveStage(launch),
+    blockHeight,
+    auctionRead,
+  );
 
   const recordBid = async (input: {
     bucket: string;
@@ -321,7 +320,7 @@ export function LaunchDetailPage({
         }
         followDisabled={!follows.ready || follows.pending}
         followed={followed}
-        funding={effectiveFunding(launch, blockHeight)}
+        funding={effectiveFundingAt(launch, stage, blockHeight)}
         idea={idea}
         supporters={
           supporterCoord
@@ -343,7 +342,7 @@ export function LaunchDetailPage({
         <IdeaProgressCard launch={launch} />
       ) : null}
 
-      {!sandbox && isFounder && !idea && isSetupStage(launch.record.stage) ? (
+      {!sandbox && isFounder && !idea && isSetupStage(stage) ? (
         <SaleProgressCard
           launch={launch}
           onOpenManage={() => setTab("manage")}
@@ -414,18 +413,7 @@ export function LaunchDetailPage({
       {tab === "treasury" ? (
         <TreasuryTab
           launch={launch}
-          onProposeReturn={async (title) => {
-            await mirror.mutateAsync({
-              kind: KIND_LAUNCH_PROPOSAL,
-              author: launch.record.author,
-              launchId: launch.record.id,
-              content: {
-                kind: "return-capital",
-                title,
-                state: "open",
-              },
-            });
-          }}
+          onOpenDecisions={() => setTab("decisions")}
         />
       ) : null}
       {tab === "decisions" && workDao ? (

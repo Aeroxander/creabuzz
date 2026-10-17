@@ -13,6 +13,8 @@ import { useDaoThreads } from "@/features/board/use-dao-threads";
 import { DecisionCard } from "./DecisionCard";
 import { DecisionDiscussion } from "./DecisionDiscussion";
 import { DecisionComposer } from "./DecisionComposer";
+import { useSpendingSummary } from "../use-spending";
+import { bondsOf } from "./decision-title";
 
 /**
  * Everything the DAO has put to a vote, read from the chain: what each decision would do, where it stands, and how
@@ -43,6 +45,13 @@ export function DecisionsTab({
   const chainId = Number(launch.record.chainId);
   const usableChain = Number.isSafeInteger(chainId) && chainId > 0;
   const discussion = useDaoThreads(usableChain ? chainId : null, dao);
+  const { labelOf } = useSpendingSummary({
+    dao,
+    currency: launch.record.currency,
+    decisions: snapshot,
+    work: work.data,
+    factory: context.data?.factory,
+  });
 
   return (
     <div className="flex flex-col gap-4" data-testid="decisions-tab">
@@ -81,6 +90,12 @@ export function DecisionsTab({
             currencySymbol:
               sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "units"),
             work: work.data,
+            workError:
+              work.isError && !work.data
+                ? work.error instanceof Error
+                  ? work.error.message
+                  : "unknown error"
+                : null,
             policy: context.data.policy,
             sharesToken: context.data.shares,
             exchange,
@@ -138,6 +153,9 @@ export function DecisionsTab({
                     dao,
                     factory: context.data?.factory,
                     mandates: work.data?.mandates.map((m) => m.address),
+                    bonds: bondsOf(work.data),
+                    label: labelOf,
+                    projectToken: context.data?.shares,
                     amm: exchange?.amm,
                     currency: launch.record.currency ?? undefined,
                     currencySymbol:

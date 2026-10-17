@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { keepIfSame } from "./keep-previous";
 
 import { erc20BalanceOf, ethCall, getRpcEndpoint } from "./chain";
 import { decodeU256 } from "./chain";
@@ -26,6 +27,7 @@ export function useDaoHoldings(input: {
   return useQuery({
     queryKey: ["launchpad", "work", dao, "holdings", currency, shares, wallet],
     enabled: shares !== null,
+    placeholderData: keepIfSame(2, dao),
     queryFn: async (): Promise<DaoHoldings> => {
       const endpoint = getRpcEndpoint();
       const [treasury, sharesInAll, yourShares] = await Promise.all([
