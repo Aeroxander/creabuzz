@@ -391,6 +391,10 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await capital.page.getByRole("button", { name: "Place bid" }).click();
   await capital.page.getByTestId("bid-budget").fill("400000");
   await shot(capital.page, "1c-backer-bid-dialog");
+  // Next to the money, the backer is told what the lock covers and what it does not.
+  await expect(capital.page.getByTestId("bid-agreement-note")).toContainText(
+    "do not stop a vote from spending the treasury",
+  );
   await expect(capital.page.getByTestId("bid-issues")).toHaveCount(0);
   await capital.page.getByTestId("bid-send").click();
   await expect

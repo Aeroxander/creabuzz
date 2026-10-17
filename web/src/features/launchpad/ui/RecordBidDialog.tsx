@@ -281,6 +281,19 @@ export function RecordBidDialog({
         Your bid goes from your wallet straight to the auction, and is recorded
         on this launch&apos;s page so the founder and others can see it.
       </p>
+      {record.unlocks?.mode === "milestones" ? (
+        // Said next to the money: the lock is on the team's own tokens, not on what backers put in.
+        <p
+          className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-black/70 dark:bg-white/5 dark:text-white/70"
+          data-testid="bid-agreement-note"
+        >
+          Before you bid: your money goes to the project&apos;s treasury, which
+          holders vote on, and the team votes too. The milestones lock the
+          team&apos;s own tokens until named reviewers approve delivery; they do
+          not stop a vote from spending the treasury. If the sale misses its
+          minimum, every bid is refunded.
+        </p>
+      ) : null}
       {!auction ? (
         <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           This launch has no auction contract linked yet, so it cannot accept
