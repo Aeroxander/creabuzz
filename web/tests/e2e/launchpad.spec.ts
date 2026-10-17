@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
 
@@ -12,6 +12,11 @@ const FOUNDER = getPublicKey(
     Number.parseInt(byte, 16),
   ),
 );
+
+/** The launch page folds its contract addresses, proofs and raw record counts under one heading; open it to read them. */
+async function openTechnicalDetails(page: Page) {
+  await page.getByTestId("launch-technical-summary").click();
+}
 
 function record(auction?: string) {
   return {
@@ -587,6 +592,7 @@ test("a published score root is shown as a community data plane", async ({
   // not claim a member's score (that needs a leaf proof, surfaced elsewhere).
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await openTechnicalDetails(page);
   await expect(page.getByTestId("launch-score-roots")).toBeVisible({
     timeout: 15_000,
   });
@@ -793,6 +799,7 @@ test("the trust page states each commitment and its real proof state", async ({
   await page.route(/127\.0\.0\.1:8545/, (route) => route.abort());
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await openTechnicalDetails(page);
   const card = page.getByTestId("launch-commitments");
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).toContainText("Proven commitments");
@@ -924,6 +931,7 @@ test("the track record says what was recorded — or that nothing was", async ({
 }) => {
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await openTechnicalDetails(page);
   const card = page.getByTestId("launch-track-record");
   await expect(card).toBeVisible({ timeout: 15_000 });
   // No 47005 mirrors for this launch: the honest empty copy, and no
@@ -944,6 +952,7 @@ test("a recorded verdict renders a timeline bound to its claim and derivation", 
   servedMilestones = milestoneMirrors();
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
+  await openTechnicalDetails(page);
   const card = page.getByTestId("launch-track-record");
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).not.toContainText("No verdicts or receipts yet.");
@@ -983,6 +992,7 @@ test("the sandbox walks a full raise, clearly badged as simulated", async ({
   await expect(page.getByTestId("launch-progress-source")).toHaveText(
     "Simulated",
   );
+  await openTechnicalDetails(page);
   await expect(page.getByText("Proven commitments")).toBeVisible();
   // No fabricated chain addresses.
   await expect(page.getByText("Auction contract")).toBeVisible();
