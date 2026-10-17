@@ -10,7 +10,7 @@ import {
 interface LaunchSearch {
   author?: string;
   action?: LaunchAction;
-  tab?: "decisions" | "record" | "milestones";
+  tab?: "decisions" | "record" | "milestones" | "work";
   /** One decision to show: its id. Opens the Decisions tab and highlights that card. */
   decision?: string;
 }
@@ -29,7 +29,8 @@ export const Route = createFileRoute("/launchpad/$launchId")({
     tab:
       search.tab === "decisions" ||
       search.tab === "record" ||
-      search.tab === "milestones"
+      search.tab === "milestones" ||
+      search.tab === "work"
         ? search.tab
         : undefined,
     decision:

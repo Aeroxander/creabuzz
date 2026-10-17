@@ -16,6 +16,7 @@ import {
   attentionItems,
 } from "@/features/launchpad/lib/dao-overview";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
+import { reviewerTargets } from "@/features/launchpad/lib/reviewer-launches";
 import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
 import type { Launch } from "@/features/launchpad/models";
 import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
@@ -71,6 +72,17 @@ export function useWaitingOnMe(): {
         if (dao && !byDao.has(dao)) {
           byDao.set(dao, { launch, dao, wallet: connected });
         }
+      }
+    }
+    // A reviewer is usually an outsider with no Shares and no project of their own: the launch receipt names the panel,
+    // so the projects that named this wallet are found from the launches already read.
+    for (const found of reviewerTargets(
+      launches.data ?? [],
+      connected ?? null,
+      (launch) => launch.record.id === SANDBOX_ID,
+    )) {
+      if (!byDao.has(found.dao) && connected) {
+        byDao.set(found.dao, { ...found, wallet: connected });
       }
     }
     return [...byDao.values()]

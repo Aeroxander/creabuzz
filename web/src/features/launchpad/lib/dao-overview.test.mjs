@@ -256,3 +256,55 @@ test("the milestone panel is not a work budget: a DAO with only that is still of
   // Its claims are still work in progress: a founder's milestone claim is real work to judge.
   assert.equal(counts.openClaims, 1);
 });
+
+test("a reviewer who has not posted the bond is told to, first, and not asked to review what they cannot yet judge", () => {
+  const bonded = (extra) =>
+    attentionItems({
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [
+          mandate([], {
+            walletIsReviewer: true,
+            bond: { minBond: 50n, decimalsKnown: true },
+            walletStake: 0n,
+            isMilestonePanel: true,
+            ...extra,
+          }),
+        ],
+      },
+      wallet: ME,
+      titleOf,
+    });
+  const [item] = bonded({});
+  assert.equal(item.kind, "bond");
+  assert.equal(item.tab, "work");
+  assert.match(item.text, /reviewers for the team's milestones/);
+  // Part of the bond is not enough, and enough is nothing to do.
+  assert.equal(bonded({ walletStake: 49n })[0].kind, "bond");
+  assert.deepEqual(bonded({ walletStake: 50n }), []);
+  // A budget that asks no bond, a closed one, and a wallet that is not on the panel say nothing.
+  assert.deepEqual(bonded({ bond: null }), []);
+  assert.deepEqual(bonded({ closed: true }), []);
+  assert.deepEqual(bonded({ walletIsReviewer: false }), []);
+});
+
+test("the bond reminder comes before everything else", () => {
+  const open = claim("c1", "Open", { project: "0x" + "aa".repeat(32) });
+  const items = attentionItems({
+    decisions: snap([decision("a", "Active")]),
+    work: {
+      chainTime: 10_000,
+      mandates: [
+        mandate([open], {
+          walletIsReviewer: true,
+          bond: { minBond: 50n, decimalsKnown: true },
+          walletStake: 0n,
+        }),
+      ],
+    },
+    wallet: ME,
+    titleOf,
+  });
+  assert.equal(items[0].kind, "bond");
+});

@@ -40,7 +40,8 @@ export function WaitingOnYou() {
                 search={{
                   action: undefined,
                   author: launch.record.author,
-                  tab: item.tab === "decisions" ? "decisions" : undefined,
+                  // The tab where the thing is acted on: a reviewer's bond or review is on Work, a vote on Decisions.
+                  tab: item.tab,
                 }}
                 to="/launchpad/$launchId"
               >

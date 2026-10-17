@@ -378,6 +378,18 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   // The launch started a real sale, so the saved record says it is live: nobody has to remember to flip the label.
   expect(JSON.parse(launched.content).stage).toBe("live");
 
+  // The backer was named a reviewer at launch, holds no Shares and started nothing: Home still tells them they have work, and
+  // that it starts with posting their bond.
+  await capital.page.goto("/");
+  await expect(capital.page.getByTestId("home-waiting")).toContainText(
+    "Post your bond",
+    { timeout: 60_000 },
+  );
+  await capital.page.getByTestId("home-waiting-open").first().click();
+  await expect(capital.page.getByTestId("work-tab")).toBeVisible({
+    timeout: 30_000,
+  });
+
   // ── The capital contributor backs the launch from their own wallet, through the bid dialog ──────────
   await mineTo(start + 2);
   const raisedBefore = await dollarsOf(dao);

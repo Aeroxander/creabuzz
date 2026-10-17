@@ -19,7 +19,7 @@ export type AttentionTab = "decisions" | "work";
 export interface AttentionItem {
   /** Stable, so a list re-renders without flicker. */
   key: string;
-  kind: "vote" | "move" | "review" | "payout" | "award";
+  kind: "bond" | "vote" | "move" | "review" | "payout" | "award";
   /** One sentence, naming the thing. */
   text: string;
   /** The label of the one button. */
@@ -81,6 +81,23 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
   const items: AttentionItem[] = [];
 
   for (const mandate of work?.mandates ?? []) {
+    // A reviewer on a bonded panel cannot judge anything until their bond is posted: say so first, with the way to do it.
+    if (
+      mandate.walletIsReviewer &&
+      !mandate.closed &&
+      mandate.bond &&
+      mandate.walletStake < mandate.bond.minBond
+    ) {
+      items.push({
+        key: `bond-${mandate.address}`,
+        kind: "bond",
+        text: mandate.isMilestonePanel
+          ? "You are one of the reviewers for the team's milestones. Post your bond before you judge one."
+          : "You are a reviewer on a work budget. Post your bond before you judge a claim.",
+        action: "Post your bond",
+        tab: "work",
+      });
+    }
     for (const claim of mandate.claims) {
       const step = nextStep(
         claim,
@@ -158,7 +175,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
       }
     }
   }
-  const order = ["payout", "review", "vote", "move", "award"];
+  const order = ["bond", "payout", "review", "vote", "move", "award"];
   return items.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
 }
 
