@@ -93,6 +93,25 @@ a reviewer sees "Evidence submitted" and the words it is judged against, with a 
 committed to. A claim whose text was never published shows "No evidence has been published for this claim" and offers no
 Approve button (Object stays); the person who filed it can publish the text again from that box.
 
+### Holding a budget to account (D50)
+
+```bash
+scripts/web-economy-e2e.sh
+```
+
+Working looks like: 1 passing test. By hand as a holder on the DAO's Decisions tab: New decision, then Freeze a claim (pick an
+approved claim inside its challenge window), put it to a vote, back it, let the waits pass, run it: the claim reads Frozen and
+the contributor is offered no payout. Then Unwind a frozen claim: it reads Recovered, the contributor's deposit is back and
+nothing was paid. Take a reviewer's bond and Close a work budget work the same way; closing returns what was not set aside to
+the treasury. On the DAO's Overview, "Where the treasury's money went" splits reviewed budgets from direct payments, and a
+direct payment's decision card is marked "No reviewer".
+
+### Leaving the DAO with your share (D51)
+
+By hand as a holder with Shares on a finished launch, on the Treasury tab: "Leave and take your share" lists the Shares you would give up, what you would take back now, and, if you are on a milestone-locked team, how many Shares stay locked. Working looks like: the amount you would take back is your Shares divided by the Shares held by everyone except the DAO, times the treasury; a holder whose Shares are all still locked sees "All of your shares are still locked" and no button; confirming the exit pays that amount and the record appears on the project.
+
+The economy journey (`scripts/web-economy-e2e.sh`) ends with a backer leaving: it works out what the treasury owes from the chain's own numbers (their Shares over everything outstanding except the DAO's), checks the screen shows that, runs the exit, and checks their wallet received exactly that amount.
+
 ## 4b. Shares as an apptoken
 
 ```bash
