@@ -104,10 +104,9 @@ function PanelMilestones({
       <Card className="p-4">
         <h2 className="text-base font-bold">Milestones</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The team votes with all of its tokens from the start, but a defined
-          part of them stays locked: it cannot be sold or moved until named
-          reviewers read the evidence for a milestone and approve it, and a
-          waiting period passes in which anyone can object.
+          {panel
+            ? "The team votes with all of its tokens from the start, but a defined part of them stays locked: it cannot be sold or moved until named reviewers read the evidence for a milestone and approve it, and a waiting period passes in which anyone can object."
+            : "The team votes with all of its tokens from the start, but a defined part of them stays locked: it cannot be sold or moved until each milestone has been reached and judged. How they are judged is set when the project launches, and nobody can change it after."}
         </p>
         {dao && !reading && !failed ? (
           <p className="mt-2 text-sm" data-testid="milestones-summary">
@@ -135,20 +134,17 @@ function PanelMilestones({
             the project launches: nobody can swap in friendlier reviewers later,
             and if too few of them can be reached the locked tokens stay locked.
           </p>
-        ) : (
-          <p className="mt-2 text-sm text-muted-foreground">
-            The reviewers are named when the project launches, and cannot be
-            changed after.
+        ) : null}
+        {panel || launch.record.reviewerTerms ? (
+          <p
+            className="mt-2 whitespace-pre-wrap text-sm"
+            data-testid="milestones-reviewer-terms"
+          >
+            {launch.record.reviewerTerms
+              ? `In the team's own words, the reviewers will work like this: ${launch.record.reviewerTerms}`
+              : "The team has not said how its reviewers will work."}
           </p>
-        )}
-        <p
-          className="mt-2 whitespace-pre-wrap text-sm"
-          data-testid="milestones-reviewer-terms"
-        >
-          {launch.record.reviewerTerms
-            ? `In the team's own words, the reviewers will work like this: ${launch.record.reviewerTerms}`
-            : "The team has not said how its reviewers will work."}
-        </p>
+        ) : null}
         <p
           className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-muted-foreground dark:bg-white/5"
           data-testid="milestones-limits"

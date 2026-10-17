@@ -257,7 +257,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(founder.getByTestId("dao-launch-panel")).toBeVisible({
     timeout: 15_000,
   });
-  // Named reviewers are the default for now, and ask for people the founder has not named.
+  // Holders judging the milestones is the default, and asks nothing of the founder but a bond.
+  await expect(founder.getByTestId("launch-review-challenge")).toBeChecked();
+  await expect(founder.getByTestId("dao-launch-start")).toBeEnabled();
+  // Choosing named reviewers instead asks for people the founder has not named; going back brings the default back.
+  await founder.getByTestId("launch-review-panel").check();
   await expect(founder.getByTestId("dao-launch-start")).toBeDisabled();
   await founder.getByTestId("launch-review-challenge").check();
   await expect(founder.getByTestId("launch-challenge-fields")).toContainText(
