@@ -362,19 +362,6 @@ export function RecordBidDialog({
           }}
           testId="bid-sign-recovery"
         />
-        <div>
-          <label className="text-sm font-medium" htmlFor="bid-tx">
-            Transaction hash
-          </label>
-          <Input
-            id="bid-tx"
-            data-testid="bid-tx"
-            className="mt-1"
-            onChange={(e) => setTx(e.target.value)}
-            placeholder="0x…"
-            value={tx}
-          />
-        </div>
       </div>
       <details
         className="mt-3 rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
@@ -383,9 +370,36 @@ export function RecordBidDialog({
         <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
           Advanced
           <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
-            bucket and who records this bid
+            record a bid made elsewhere, bucket, who signs
           </span>
         </summary>
+        <div className="mt-2">
+          <label className="text-sm font-medium" htmlFor="bid-tx">
+            Bid made outside this page? Its transaction hash
+          </label>
+          <div className="mt-1 flex gap-2">
+            <Input
+              id="bid-tx"
+              data-testid="bid-tx"
+              onChange={(e) => setTx(e.target.value)}
+              placeholder="0x…"
+              value={tx}
+            />
+            <Button
+              data-testid="bid-record"
+              disabled={!canMirror}
+              onClick={submit}
+              type="button"
+              variant="outline"
+            >
+              {isPublishing ? "Recording…" : "Record bid"}
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            This only saves a note of the bid on this page. Sending a bid above
+            does that for you.
+          </p>
+        </div>
         <div className="mt-2">
           <label className="text-sm font-medium" htmlFor="bid-bucket">
             Bucket
@@ -430,14 +444,6 @@ export function RecordBidDialog({
           type="button"
         >
           {sending ? "Sending…" : "Send bid"}
-        </Button>
-        <Button
-          data-testid="bid-record"
-          disabled={!canMirror}
-          onClick={submit}
-          type="button"
-        >
-          {isPublishing ? "Recording…" : "Record bid"}
         </Button>
       </div>
     </Modal>
