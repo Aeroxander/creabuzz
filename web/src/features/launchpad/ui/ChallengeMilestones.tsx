@@ -126,23 +126,39 @@ export function ChallengeMilestones({
           part of them stays locked: it cannot be sold or moved until a
           milestone is reached.
         </p>
-        <p className="mt-2 text-sm" data-testid="challenge-rules">
-          A milestone is reached like this. The team publishes its evidence and
-          posts a bond of {money(terms.bond)}. For {span(terms.window)} (longer
-          for a bigger milestone, and longer again after each attempt holders
-          turn down) any holder can object; if nobody does, anyone can finish it
-          and the tokens unlock. A holder who objects posts{" "}
-          {terms.deposit > 0n ? money(terms.deposit) : "nothing"} and holders
-          vote. The team&apos;s own tokens do not count. The objection stands
-          only if more is against the milestone than for it and at least{" "}
-          {terms.minRejectBps / 100}% of what could vote is against it; with
-          less interest than that, the milestone stands. For{" "}
-          {span(terms.clawback)} after an unlock, one more objection is
-          possible, and if holders uphold it the team&apos;s remaining locked
-          tokens are burned. Milestones are published in order, so the
-          milestones still ahead are locked while an earlier one can be objected
-          to; once the last one has unlocked, what stands behind it is the bond.
-        </p>
+        <div className="mt-2 text-sm" data-testid="challenge-rules">
+          <p>A milestone is reached like this:</p>
+          <ol className="mt-1 list-decimal space-y-1 pl-5">
+            <li>
+              The team publishes its evidence and posts a bond of{" "}
+              {money(terms.bond)}.
+            </li>
+            <li>
+              For {span(terms.window)} (longer for a bigger milestone, and
+              longer again after each attempt holders turn down) any holder can
+              object. If nobody does, anyone can finish it and the tokens
+              unlock.
+            </li>
+            <li>
+              A holder who objects posts{" "}
+              {terms.deposit > 0n ? money(terms.deposit) : "nothing"} and
+              holders vote; the team&apos;s own tokens do not count. The
+              objection stands only if more is against the milestone than for it
+              and at least {terms.minRejectBps / 100}% of what could vote is
+              against it. With less interest than that, the milestone stands.
+            </li>
+            <li>
+              For {span(terms.clawback)} after an unlock, one more objection is
+              possible. If holders uphold it, the team&apos;s remaining locked
+              tokens are burned.
+            </li>
+          </ol>
+          <p className="mt-1 text-muted-foreground">
+            Milestones are published in order, so the ones still ahead are
+            locked while an earlier one can be objected to. Once the last one
+            has unlocked, what stands behind it is the bond.
+          </p>
+        </div>
         <p className="mt-2 text-sm text-muted-foreground">
           Backers can still leave with their share of the treasury while a
           milestone waits.

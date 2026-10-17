@@ -61,7 +61,6 @@ const me = (over = {}) => ({
   voted: false,
   ...over,
 });
-const shares = (units) => `${units / WAD} Shares`;
 const OPEN = { block: 1_000, previousStood: true };
 const actions = (milestone, who, gate = OPEN) =>
   challengeActions(milestone, TERMS, NOW, who, gate);
@@ -210,7 +209,7 @@ test("the bond can be taken back once the month is over and nothing is open, by 
 });
 
 test("the headline says where a milestone stands and what happens next, in plain words", () => {
-  const say = (milestone) => challengeHeadline(milestone, TERMS, NOW, shares);
+  const say = (milestone) => challengeHeadline(milestone, TERMS, NOW);
   assert.match(say(m()), /holders have 14 days to object/);
   assert.match(
     say(m({ stage: "rejected", attempts: 1, nextWindow: 14 * DAY })),
@@ -224,8 +223,8 @@ test("the headline says where a milestone stands and what happens next, in plain
   const voting = say(
     m({ stage: "voting", phase: "voting", objection: objection() }),
   );
-  assert.match(voting, /6 Shares against, 2 Shares in favour/);
-  assert.match(voting, /at least 3% of what could vote/);
+  assert.match(voting, /^A holder objected\. Holders vote until /);
+  assert.doesNotMatch(voting, /against/, "the tally box carries the numbers");
   assert.match(
     say(
       m({
@@ -300,7 +299,6 @@ test("a deadline is an exact moment with its time zone", () => {
     m({ stage: "waiting", phase: "pending", windowEnds: 1_800_000_000 }),
     TERMS,
     NOW,
-    shares,
   );
   assert.ok(headline.includes(text), "the headline says the exact time");
 });

@@ -190,10 +190,8 @@ export function challengeHeadline(
   m: ChallengeMilestone,
   terms: ChallengeTerms,
   now: number,
-  shares: (units: bigint) => string,
 ): string {
   const open = m.objection?.open ? m.objection : null;
-  const minimum = `${terms.minRejectBps / 100}%`;
   switch (m.stage) {
     case "not-submitted":
       return `Not published yet. When the team publishes its evidence, holders have ${span(m.nextWindow)} to object. If nobody does, it unlocks.`;
@@ -205,19 +203,17 @@ export function challengeHeadline(
       return "Nobody objected. Anyone can finish it now, and the tokens unlock.";
     case "voting":
       return open
-        ? `A holder objected. Holders vote until ${deadline(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. It is turned down only if more is against it than in favour and at least ${minimum} of what could vote is against it.`
+        ? `A holder objected. Holders vote until ${deadline(open.voteEnds)}.`
         : "A holder objected.";
     case "vote-ended":
-      return open
-        ? `The vote has ended (${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour). Anyone can settle it.`
-        : "The vote has ended. Anyone can settle it.";
+      return "The vote has ended. Anyone can settle it.";
     case "unlocked-open":
       return `Unlocked on ${date(m.unlockedAt)}. For ${span(m.unlockedAt + terms.clawback - now)} more a holder can raise one more objection; if holders uphold it, the team's remaining locked tokens are burned.`;
     case "unlocked":
       return `Unlocked on ${date(m.unlockedAt)}.`;
     case "late-voting":
       return open
-        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. If it is upheld, the team's remaining locked tokens are burned.`
+        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}. If it is upheld, the team's remaining locked tokens are burned.`
         : `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since.`;
     case "late-vote-ended":
       return `The vote on the objection to this unlocked milestone has ended. Anyone can settle it.`;

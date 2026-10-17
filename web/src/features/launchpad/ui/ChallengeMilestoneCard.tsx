@@ -137,7 +137,7 @@ export function ChallengeMilestoneCard({
           })}
         </ol>
         <p className="mt-2 text-sm" data-testid={`challenge-headline-${index}`}>
-          {challengeHeadline(m, terms, now, shares)}
+          {challengeHeadline(m, terms, now)}
         </p>
         {m.attempts > 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
