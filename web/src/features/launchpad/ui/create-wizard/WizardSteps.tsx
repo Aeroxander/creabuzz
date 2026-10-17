@@ -517,7 +517,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
         data-testid="unlock-gap"
       >
         {ownDao
-          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold or taken out of the DAO until the DAO's reviewers approve the work for it. The words of a milestone are what the reviewers judge it by."
+          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold or taken out of the DAO until the milestone is reached. By default you publish evidence and holders get a week to object; you can name reviewers instead when you launch. The words of a milestone are what it is judged by."
           : UNLOCK_ENFORCEMENT_GAP}
       </p>
       {unlocks.customLadderNote ? (
@@ -549,8 +549,8 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
       </div>
       <p className="text-xs text-black/60 dark:text-white/60">
         Write each milestone so a stranger could check it: what will exist, and
-        where they can see it. Your reviewers judge it by exactly these words,
-        and backers read them before they bid.
+        where they can see it. Holders (or reviewers, if you name them) judge it
+        by exactly these words, and backers read them before they bid.
       </p>
       {wizard.milestones.map((row, index) => (
         <div

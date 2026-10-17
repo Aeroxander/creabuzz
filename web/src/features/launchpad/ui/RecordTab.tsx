@@ -298,8 +298,8 @@ export function RecordTab({
           <>
             <p className="mt-1 text-sm text-muted-foreground">
               The team can vote with all of their Shares from the start, but the
-              part tied to a milestone cannot be sold or taken out until the
-              reviewers approve that milestone.{" "}
+              part tied to a milestone cannot be sold or taken out until that
+              milestone is reached.{" "}
               <span data-testid="record-promise-summary">
                 {promised.reached} of {promised.milestones} milestones reached.{" "}
                 {shares(promised.held)} Shares still held back,{" "}

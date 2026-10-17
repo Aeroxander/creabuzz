@@ -97,7 +97,7 @@ export function stepsFor(role: Role, signals: Signals): Step[] {
       id: "milestones",
       done: signals.setUpMilestones,
       label: "Set up your funding agreement",
-      hint: "Name the milestones, who judges them, and how much of the team's tokens each one unlocks.",
+      hint: "Name the milestones and how much of the team's tokens each one unlocks. Holders can object before a milestone unlocks.",
       to: "/launchpad",
     },
     {
