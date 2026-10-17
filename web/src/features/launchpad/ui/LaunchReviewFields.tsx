@@ -82,19 +82,36 @@ export function LaunchReviewFields({
           className="mt-3 grid gap-3 rounded-lg border border-black/10 p-3 dark:border-white/10"
           data-testid="launch-challenge-fields"
         >
-          <p className="text-sm text-muted-foreground">
-            Each milestone waits {span(CHALLENGE_DEFAULTS.window)} for
-            objections (longer for a bigger milestone, and longer again after
-            each attempt holders turn down). A holder who objects starts a vote
-            of holders; your team&apos;s own tokens do not count. The objection
-            stands only if more is against the milestone than for it and at
-            least {CHALLENGE_DEFAULTS.minRejectBps / 100}% of what could vote is
-            against it; otherwise, including when nobody votes, the milestone
-            stands. For {span(CHALLENGE_DEFAULTS.clawback)} after an unlock one
-            more objection is possible, and if holders uphold it your remaining
-            locked tokens are burned. Backers see all of this before they bid,
-            and no vote can change it.
-          </p>
+          <div className="text-sm text-muted-foreground">
+            <ul className="list-disc space-y-1 pl-5">
+              <li>
+                Each milestone waits {span(CHALLENGE_DEFAULTS.window)} for
+                objections (longer for a bigger milestone, and longer again
+                after each attempt holders turn down).
+              </li>
+              <li>
+                A holder who objects starts a vote of holders; your team&apos;s
+                own tokens do not count. The objection stands only if more is
+                against the milestone than for it and at least{" "}
+                {CHALLENGE_DEFAULTS.minRejectBps / 100}% of what could vote is
+                against it. Otherwise, including when nobody votes, the
+                milestone stands.
+              </li>
+              <li>
+                For {span(CHALLENGE_DEFAULTS.clawback)} after an unlock one more
+                objection is possible, and if holders uphold it your remaining
+                locked tokens are burned.
+              </li>
+              <li>
+                Milestones are published in order. Once the last one has
+                unlocked, only your bond stands behind it.
+              </li>
+            </ul>
+            <p className="mt-2">
+              Backers see all of this before they bid, and no vote can change
+              it.
+            </p>
+          </div>
           <TextField
             hint={
               defaultBond !== null

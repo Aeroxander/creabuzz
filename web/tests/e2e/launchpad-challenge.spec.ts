@@ -291,9 +291,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   // Holders judging the milestones is the default, and asks nothing of the founder but a bond.
   await expect(founder.getByTestId("launch-review-challenge")).toBeChecked();
   await expect(founder.getByTestId("dao-launch-start")).toBeEnabled();
+  await shot(founder, "0a-launch-form-default");
   // Choosing named reviewers instead asks for people the founder has not named; going back brings the default back.
   await founder.getByTestId("launch-review-panel").check();
   await expect(founder.getByTestId("dao-launch-start")).toBeDisabled();
+  await shot(founder, "0b-launch-form-panel");
   await founder.getByTestId("launch-review-challenge").check();
   await expect(founder.getByTestId("launch-challenge-fields")).toContainText(
     "your team's own tokens do not count",
