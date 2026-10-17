@@ -106,6 +106,10 @@ nothing was paid. Take a reviewer's bond and Close a work budget work the same w
 the treasury. On the DAO's Overview, "Where the treasury's money went" splits reviewed budgets from direct payments, and a
 direct payment's decision card is marked "No reviewer".
 
+### Doubting a claim (D52)
+
+On the Work tab, as anyone, find a claim that is still being judged or approved and inside its challenge window. Working looks like: under the claim, "Doubt this claim?" and a "Put a freeze to a vote" button; pressing it opens the Decisions tab with the freeze form open and that claim chosen. A claim past its challenge window or already paid shows no such line.
+
 ### Leaving the DAO with your share (D51)
 
 By hand as a holder with Shares on a finished launch, on the Treasury tab: "Leave and take your share" lists the Shares you would give up, what you would take back now, and, if you are on a milestone-locked team, how many Shares stay locked. Working looks like: the amount you would take back is your Shares divided by the Shares held by everyone except the DAO, times the treasury; a holder whose Shares are all still locked sees "All of your shares are still locked" and no button; confirming the exit pays that amount and the record appears on the project.

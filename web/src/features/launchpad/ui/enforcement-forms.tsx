@@ -55,6 +55,7 @@ function ClaimPickForm({
   busy,
   gate,
   onSubmit,
+  initialPick,
   states,
   none,
   intro,
@@ -62,6 +63,8 @@ function ClaimPickForm({
   testId,
   make,
 }: FormProps & {
+  /** A claim to have chosen when the form opens (from a claim card), as the pick key. */
+  initialPick?: string;
   states: readonly string[];
   none: string;
   intro: string;
@@ -70,8 +73,10 @@ function ClaimPickForm({
   make: (pick: Pick) => ReturnType<typeof freezeClaimDecision>;
 }) {
   const options = claimsIn(ctx.work?.mandates ?? [], states);
-  const [which, setWhich] = useState("");
-  const chosen = options.find((o) => pickKey(o) === which) ?? options[0];
+  const [which, setWhich] = useState(initialPick ?? "");
+  const chosen =
+    options.find((o) => pickKey(o).toLowerCase() === which.toLowerCase()) ??
+    options[0];
   const result = useMemo<DraftResult>(
     () => (chosen ? attempt(() => make(chosen)) : { problem: none }),
     [chosen, none, make],
@@ -108,7 +113,7 @@ function ClaimPickForm({
 }
 
 /** Stop a payment the DAO doubts: nothing is paid for the claim, and no Shares are unlocked by it, until it is unwound. */
-export function FreezeForm(props: FormProps) {
+export function FreezeForm(props: FormProps & { initialPick?: string }) {
   const make = useMemo(
     () => (p: Pick) =>
       freezeClaimDecision({ mandate: p.mandate.address, claimId: p.claim.id }),
@@ -128,7 +133,7 @@ export function FreezeForm(props: FormProps) {
 }
 
 /** Unwind a frozen claim: the money reserved for it returns to the budget, and the contributor's deposit to them. */
-export function UnwindForm(props: FormProps) {
+export function UnwindForm(props: FormProps & { initialPick?: string }) {
   const make = useMemo(
     () => (p: Pick) =>
       resolveFrozenClaimDecision({

@@ -1,3 +1,4 @@
+import type { ChallengeIntent } from "../lib/challenge";
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { recordSaleCurrency } from "../chain";
@@ -25,11 +26,14 @@ export function DecisionsTab({
   launch,
   dao,
   focusDecision,
+  challenge,
 }: {
   launch: Launch;
   dao: string;
   /** The decision a link pointed at: highlighted and scrolled to. */
   focusDecision?: string;
+  /** A claim someone came here to doubt: the form for it opens with that claim chosen. */
+  challenge?: ChallengeIntent | null;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const decisions = useDecisions(dao, wallet.address);
@@ -78,6 +82,7 @@ export function DecisionsTab({
       {snapshot && context.data ? (
         <DecisionComposer
           busy={busy}
+          challenge={challenge}
           ctx={{
             dao,
             chainId,

@@ -1,3 +1,4 @@
+import { type ChallengeIntent, challengePickKey } from "../lib/challenge";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
@@ -117,15 +118,18 @@ export function DecisionComposer({
   busy,
   gate,
   onSend,
+  challenge,
 }: {
   snapshot: DecisionsSnapshot;
   ctx: FormContext;
   busy: string | null;
   gate: string | null;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** Someone came from a claim card to doubt it: open with that form and that claim chosen. */
+  challenge?: ChallengeIntent | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<Kind>("budget");
+  const [open, setOpen] = useState(Boolean(challenge));
+  const [kind, setKind] = useState<Kind>(challenge?.kind ?? "budget");
   const [done, setDone] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
 
@@ -245,6 +249,7 @@ export function DecisionComposer({
             />
           ) : kind === "freeze" ? (
             <FreezeForm
+              initialPick={challenge ? challengePickKey(challenge) : undefined}
               blocked={blocked}
               busy={busy}
               ctx={ctx}
@@ -254,6 +259,7 @@ export function DecisionComposer({
             />
           ) : kind === "unwind" ? (
             <UnwindForm
+              initialPick={challenge ? challengePickKey(challenge) : undefined}
               blocked={blocked}
               busy={busy}
               ctx={ctx}

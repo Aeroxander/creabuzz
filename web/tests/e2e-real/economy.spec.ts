@@ -725,9 +725,13 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   say("a second claim was approved, inside its challenge window");
 
-  await open(founder, "Decisions");
-  await founder.page.getByTestId("decision-new").click();
-  await founder.page.getByTestId("decision-kind-freeze").click();
+  // Doubting a claim starts on its own card: "Put a freeze to a vote" opens the form with that claim chosen.
+  await open(founder, "Work");
+  await founder.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" })
+    .getByTestId("work-challenge")
+    .click();
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
     "Freeze the claim “extra-docs”",
     { timeout: 30_000 },

@@ -1,3 +1,4 @@
+import { type ChallengeIntent, challengeFor } from "../lib/challenge";
 import { useMemo } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -56,11 +57,14 @@ export function WorkTab({
   launch,
   dao,
   onOpenDecisions,
+  onChallenge,
 }: {
   launch: Launch;
   dao: string;
   /** Go to the Decisions tab, where the DAO's votes are opened. */
   onOpenDecisions?: () => void;
+  /** Go to the Decisions tab with the form for doubting (or unwinding) one claim already filled in. */
+  onChallenge?: (intent: ChallengeIntent) => void;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
@@ -176,6 +180,7 @@ export function WorkTab({
               key={mandate.address}
               launch={launch}
               mandate={mandate}
+              onChallenge={onChallenge}
               onOpenDecisions={onOpenDecisions}
               evidence={evidence}
               labelOf={labelOf}
@@ -229,6 +234,7 @@ function MandateCard({
   busy,
   onSend,
   onOpenDecisions,
+  onChallenge,
   launch,
   evidence,
   labelOf,
@@ -248,6 +254,7 @@ function MandateCard({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   dao: string;
   onOpenDecisions?: () => void;
+  onChallenge?: (intent: ChallengeIntent) => void;
 }) {
   const { created } = mandate;
   const decimals = mandate.currency?.decimals ?? 18;
@@ -460,6 +467,10 @@ function MandateCard({
             );
             const canReview = reviewerTurn && standing.kind === "verified";
             const label = idLabel(claim.id);
+            // An approved claim can be frozen only until its challenge window ends (then it can be paid).
+            const challengeKind = challengeFor(claim.record.status);
+            const pastChallengeWindow =
+              claim.record.status === "Approved" && step.kind === "payout";
             return (
               <li
                 className="rounded-lg border border-black/10 p-2 text-sm dark:border-white/10"
@@ -603,6 +614,32 @@ function MandateCard({
                     </Button>
                   ) : null}
                 </div>
+                {onChallenge && challengeKind && !pastChallengeWindow ? (
+                  <p
+                    className="mt-2 text-xs text-muted-foreground"
+                    data-testid="work-challenge-help"
+                  >
+                    {challengeKind === "freeze"
+                      ? "Doubt this claim? Holders can vote to freeze it: nothing is paid and no Shares unlock while it is frozen."
+                      : "A vote to unwind it returns the money to the budget and the deposit to the contributor."}{" "}
+                    <button
+                      className="underline"
+                      data-testid="work-challenge"
+                      onClick={() =>
+                        onChallenge({
+                          kind: challengeKind,
+                          mandate: mandate.address,
+                          claimId: claim.id,
+                        })
+                      }
+                      type="button"
+                    >
+                      {challengeKind === "freeze"
+                        ? "Put a freeze to a vote"
+                        : "Put an unwind to a vote"}
+                    </button>
+                  </p>
+                ) : null}
                 {step.kind === "award" ? (
                   <p
                     className="mt-2 text-xs text-muted-foreground"

@@ -1,3 +1,4 @@
+import type { ChallengeIntent } from "../lib/challenge";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -151,6 +152,11 @@ export function LaunchDetailPage({
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
     "exit" | "claim" | null
   >(null);
+  // A claim someone is on their way to doubt: the Decisions tab opens its form with that claim chosen, once.
+  const [challenge, setChallenge] = useState<ChallengeIntent | null>(null);
+  useEffect(() => {
+    if (tab !== "decisions") setChallenge(null);
+  }, [tab]);
   const follows = useLaunchFollows();
   const navigate = useNavigate();
   // Read before any early return: hooks keep their order. It resolves which DAO, if any, this launch belongs to.
@@ -418,6 +424,7 @@ export function LaunchDetailPage({
       ) : null}
       {tab === "decisions" && workDao ? (
         <DecisionsTab
+          challenge={challenge}
           dao={workDao}
           focusDecision={initialDecision}
           launch={launch}
@@ -427,6 +434,10 @@ export function LaunchDetailPage({
         <WorkTab
           dao={workDao}
           launch={launch}
+          onChallenge={(intent) => {
+            setChallenge(intent);
+            setTab("decisions");
+          }}
           onOpenDecisions={() => setTab("decisions")}
         />
       ) : null}
