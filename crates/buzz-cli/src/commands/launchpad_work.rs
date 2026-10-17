@@ -35,6 +35,10 @@ const SIG_CREATE_MANDATE: &str =
 const SIG_BATCH_CALLS: &str = "batchCalls((address,uint256,bytes)[])";
 const SIG_APPROVE_PROJECT: &str = "approveProject(bytes32,address,uint128,uint128,uint64,bytes32)";
 const SIG_AWARD: &str = "awardContribution(address,bytes32,uint96,bool)";
+const SIG_FREEZE_CLAIM: &str = "freezeClaim(bytes32)";
+const SIG_RESOLVE_FROZEN_CLAIM: &str = "resolveFrozenClaim(bytes32)";
+const SIG_CLOSE_MANDATE: &str = "close()";
+const SIG_SLASH_REVIEWER: &str = "slashReviewer(address,uint256)";
 const SIG_SUBMIT_CLAIM: &str = "submitClaim(bytes32,uint256,uint256,bytes32)";
 const SIG_SET_CHECK: &str = "setCheck(bytes32,bytes32)";
 const SIG_FUND_MILESTONE: &str = "fundMilestone(bytes32,bytes32,address)";
@@ -80,6 +84,14 @@ pub enum WorkCmd {
     Project(ProjectArgs),
     /// Compose the vote that awards Shares for an approved claim
     Award(AwardArgs),
+    /// Compose the vote that freezes a claim the DAO doubts: nothing is paid for it until it is unwound
+    Freeze(ClaimVoteArgs),
+    /// Compose the vote that unwinds a frozen claim: its reserved money returns to the budget, the deposit to the contributor
+    Unwind(ClaimVoteArgs),
+    /// Compose the vote that closes a work budget early: no new claims, unused money back to the DAO
+    Close(CloseArgs),
+    /// Compose the vote that takes part of a reviewer's bond after an approval the DAO disputes
+    Slash(SlashArgs),
     /// File a claim for work (contributor)
     Claim(ClaimArgs),
     /// State the acceptance check a claim will be judged against (contributor, before a reviewer looks)
@@ -223,6 +235,58 @@ pub struct AwardArgs {
 }
 
 #[derive(Args)]
+pub struct ClaimVoteArgs {
+    /// The DAO that will vote on it (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// The mandate the claim belongs to (`0x…`)
+    #[arg(long)]
+    pub mandate: String,
+    /// The claim's id
+    #[arg(long)]
+    pub claim: String,
+    /// The proposal nonce (0x + 64 hex); a fresh one is made when omitted
+    #[arg(long)]
+    pub nonce: Option<String>,
+}
+
+#[derive(Args)]
+pub struct CloseArgs {
+    /// The DAO that will vote on it (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// The mandate to close (`0x…`). Not the milestone panel: closing it would leave the team's locked Shares with
+    /// no way to unlock
+    #[arg(long)]
+    pub mandate: String,
+    /// The proposal nonce (0x + 64 hex); a fresh one is made when omitted
+    #[arg(long)]
+    pub nonce: Option<String>,
+}
+
+#[derive(Args)]
+pub struct SlashArgs {
+    /// The DAO that will vote on it (`0x…`)
+    #[arg(long)]
+    pub dao: String,
+    /// The mandate whose reviewer bond it is (`0x…`)
+    #[arg(long)]
+    pub mandate: String,
+    /// The reviewer whose bond is taken (`0x…`)
+    #[arg(long)]
+    pub reviewer: String,
+    /// How much to take, in whole units of the bond token
+    #[arg(long)]
+    pub amount: String,
+    /// Decimals of the bond token (there is no safe default)
+    #[arg(long)]
+    pub decimals: u8,
+    /// The proposal nonce (0x + 64 hex); a fresh one is made when omitted
+    #[arg(long)]
+    pub nonce: Option<String>,
+}
+
+#[derive(Args)]
 pub struct ClaimArgs {
     /// The mandate the claim is filed under (`0x…`)
     #[arg(long)]
@@ -342,6 +406,10 @@ pub async fn run(step: &WorkCmd) -> Result<(), CliError> {
         WorkCmd::Mandate(args) => cmd_mandate(args),
         WorkCmd::Project(args) => cmd_project(args),
         WorkCmd::Award(args) => cmd_award(args),
+        WorkCmd::Freeze(args) => cmd_freeze(args),
+        WorkCmd::Unwind(args) => cmd_unwind(args),
+        WorkCmd::Close(args) => cmd_close(args),
+        WorkCmd::Slash(args) => cmd_slash(args),
         WorkCmd::Claim(args) => cmd_claim(args).await,
         WorkCmd::Check(args) => cmd_check(args).await,
         WorkCmd::Bind(args) => cmd_bind(args).await,
@@ -640,6 +708,29 @@ pub fn encode_award(
     ))
 }
 
+/// `freezeClaim(bytes32)` on a mandate: the DAO suspends a claim it doubts.
+pub fn encode_freeze_claim(claim: &[u8; 32]) -> Vec<u8> {
+    call(SIG_FREEZE_CLAIM, &[*claim])
+}
+
+/// `resolveFrozenClaim(bytes32)` on a mandate: unwinds a frozen claim without taking anyone's money.
+pub fn encode_resolve_frozen_claim(claim: &[u8; 32]) -> Vec<u8> {
+    call(SIG_RESOLVE_FROZEN_CLAIM, &[*claim])
+}
+
+/// `close()` on a mandate: no new claims, unused money back to the DAO.
+pub fn encode_close_mandate() -> Vec<u8> {
+    call(SIG_CLOSE_MANDATE, &[])
+}
+
+/// `slashReviewer(address,uint256)` on a mandate: part of a reviewer's bond, paid to the DAO.
+pub fn encode_slash_reviewer(reviewer: &str, amount: &BigUint) -> Result<Vec<u8>, CliError> {
+    Ok(call(
+        SIG_SLASH_REVIEWER,
+        &[address_word(reviewer, "reviewer")?, word_of(amount)],
+    ))
+}
+
 pub fn encode_submit_claim(
     id: &[u8; 32],
     amount: &BigUint,
@@ -924,6 +1015,81 @@ pub fn cmd_award(args: &AwardArgs) -> Result<(), CliError> {
         &nonce,
         "bounded",
         "The mandate refuses an award larger than the project has left, however the vote goes.",
+    );
+    Ok(())
+}
+
+pub fn cmd_freeze(args: &ClaimVoteArgs) -> Result<(), CliError> {
+    let dao = validate_eth_address(&args.dao, "dao")?;
+    let mandate = validate_eth_address(&args.mandate, "mandate")?;
+    let claim = bytes32_arg(&args.claim, "claim id")?;
+    let data = encode_freeze_claim(&claim);
+    let nonce = nonce_arg(&args.nonce, "freeze", &data)?;
+    print_intent(
+        "freeze",
+        &dao,
+        &mandate,
+        &data,
+        &nonce,
+        "unrestricted",
+        "While it is frozen nothing is paid for the claim and no Shares are unlocked by it. A freeze is not a verdict: a later vote unwinds it.",
+    );
+    Ok(())
+}
+
+pub fn cmd_unwind(args: &ClaimVoteArgs) -> Result<(), CliError> {
+    let dao = validate_eth_address(&args.dao, "dao")?;
+    let mandate = validate_eth_address(&args.mandate, "mandate")?;
+    let claim = bytes32_arg(&args.claim, "claim id")?;
+    let data = encode_resolve_frozen_claim(&claim);
+    let nonce = nonce_arg(&args.nonce, "unwind", &data)?;
+    print_intent(
+        "unwind",
+        &dao,
+        &mandate,
+        &data,
+        &nonce,
+        "unrestricted",
+        "The money reserved for the claim returns to the work budget and the contributor's deposit returns to them. Nothing is taken from anyone.",
+    );
+    Ok(())
+}
+
+pub fn cmd_close(args: &CloseArgs) -> Result<(), CliError> {
+    let dao = validate_eth_address(&args.dao, "dao")?;
+    let mandate = validate_eth_address(&args.mandate, "mandate")?;
+    let data = encode_close_mandate();
+    let nonce = nonce_arg(&args.nonce, "close", &data)?;
+    print_intent(
+        "close",
+        &dao,
+        &mandate,
+        &data,
+        &nonce,
+        "unrestricted",
+        "No new claim can start in it and the money not set aside for a claim returns to the DAO. Do not close the milestone panel: the team's locked Shares could then never unlock.",
+    );
+    Ok(())
+}
+
+pub fn cmd_slash(args: &SlashArgs) -> Result<(), CliError> {
+    let dao = validate_eth_address(&args.dao, "dao")?;
+    let mandate = validate_eth_address(&args.mandate, "mandate")?;
+    let reviewer = validate_eth_address(&args.reviewer, "reviewer")?;
+    let amount = scaled_units(&args.amount, args.decimals, 256, "amount")?;
+    if amount == BigUint::from(0u8) {
+        return Err(CliError::Usage("taking nothing is refused".into()));
+    }
+    let data = encode_slash_reviewer(&reviewer, &amount)?;
+    let nonce = nonce_arg(&args.nonce, "slash", &data)?;
+    print_intent(
+        "slash",
+        &dao,
+        &mandate,
+        &data,
+        &nonce,
+        "unrestricted",
+        "It is paid to the DAO, taken only from the bond the reviewer posted, and no more than they hold.",
     );
     Ok(())
 }
@@ -1691,6 +1857,31 @@ mod tests {
         })
         .unwrap();
         assert_eq!(hex::encode(data), "d7810bbc0000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000056bc75e2d631000000000000000000000000000000000000000000000000000015af1d78b58c400000000000000000000000000000000000000000000000000000000000070dbd88000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000002b5e3af16b18800000000000000000000000000004444444444444444444444444444444444444444000000000000000000000000000000000000000000000000000000000000000200000000000000000000000011111111111111111111111111111111111111110000000000000000000000002222222222222222222222222222222222222222");
+    }
+
+    #[test]
+    fn holding_a_budget_to_account_matches_the_cast_golden() {
+        let claim = bytes32_arg("work", "id").unwrap();
+        // cast calldata "freezeClaim(bytes32)" 0x776f726b00…, and the three others.
+        assert_eq!(
+            hex::encode(encode_freeze_claim(&claim)),
+            "c82e8896776f726b00000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            hex::encode(encode_resolve_frozen_claim(&claim)),
+            "48540022776f726b00000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(hex::encode(encode_close_mandate()), "43d726d6");
+        assert_eq!(
+            hex::encode(
+                encode_slash_reviewer(
+                    "0x0000000000000000000000000000000000000001",
+                    &BigUint::from(25_000_000u64),
+                )
+                .unwrap()
+            ),
+            "d6d541f9000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000017d7840"
+        );
     }
 
     #[test]
