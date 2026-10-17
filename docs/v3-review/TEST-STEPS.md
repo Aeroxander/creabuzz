@@ -533,3 +533,46 @@ scripts/web-dao-launch-e2e.sh && scripts/web-economy-e2e.sh        # REAL chain:
 By hand: launch a project and, before its sale's claim block, try to open any decision on the **Decisions** tab: the chain refuses. After the claim block the same decision opens.
 Backers: claim promptly after the claim block; a decision opened right then has no unclaimed buyers in its electorate, and the review plus the execution delay (at least three days) is the time to claim and leave.
 
+
+## 4ab. Milestones that unlock unless holders object (D56, D57, 2026-10-18)
+
+```bash
+cd contracts && REQUIRE_CONTRACT_ARTIFACTS=true forge test      # the whole suite (394 tests); the lock has 36 of its own and the kit launches one end to end
+scripts/web-challenge-e2e.sh                                    # REAL chain, real browsers: the whole story below, about a minute
+```
+
+Working looks like: `1 passed` and the lines `the founder launched a project whose milestones go to the holders`, `an unreadable
+lock was shown as unknown, not as a panel`, `the holders turned the milestone down`, `the milestone unlocked and the team's
+first 40% is free`, `the late objection was upheld and the remaining locked Shares were burned`. Read
+`web/tests/e2e/launchpad-challenge.spec.ts` for the sequence; every step is a button and a transaction, checked against the chain.
+Set `E2E_SHOTS=<dir>` to save screenshots of the screens as they are met.
+
+**By hand, in the browser** (three wallets: a founder and two backers; run the journey's world with `scripts/dev-chain.sh` or the
+Sepolia testnet in `docs/sepolia-testnet.md`):
+
+1. **Launch.** On the launch's **Manage** tab the form opens on **Holders can object**; the Launch button works with nothing to
+   name. Choose **Named reviewers** and it asks for people (and goes off again); choose **Holders can object** to come back.
+2. **Before the buyers can claim,** the founder's **Milestones** tab says publishing opens at the claim block and offers nothing to send.
+3. **Backers bid, the sale ends, graduation runs, backers collect their Shares** as before.
+4. **The founder publishes milestone one.** Type the evidence and press **Publish this milestone**: three wallet prompts (the
+   text is published first, then the bond is approved, then the milestone is sent). The card says **Open to objections** and the
+   date and time it closes, with the time zone. The next milestone says milestones go in order and offers nothing.
+5. **A backer sees it.** On Home the line **Read the evidence** is waiting; it opens the milestone. Open **Evidence the team
+   published**: it says it is the text the team committed to. Try pulling the network cable (or stopping the server) and reload:
+   the card says it **could not look for the evidence just now, which does not mean the team did not publish it**, with **Try again**.
+6. **A backer objects.** **Object to this milestone** asks you to confirm and shows the deposit you post. After it, the card says
+   **Holders are voting** with the tally. A second backer who already had the page open sees **Vote against / for the milestone**
+   appear without reloading (within about 15 seconds). The founder is offered no vote and no objection.
+7. **Let the vote end** (on a local chain: `cast rpc evm_increaseTime <seconds>` then `cast rpc anvil_mine`). Anyone presses
+   **Settle the vote**. If the objection stood, the milestone says **Turned down**, the objector has their deposit back and half of
+   the founder's bond, and the retry window is twice as long.
+8. **The founder publishes again; nobody objects; time passes.** A backer's open page changes to **Ready to finish** on its own,
+   and the founder's Home says so. **Finish it and unlock the tokens** (anyone can): the team's part unlocks, a badge is minted,
+   and the founder can move exactly that part and not one Share more.
+9. **A month after, the bond comes back** with **Return the team's bond** (not before).
+10. **A late objection.** Inside the month a backer can object once more. If holders uphold it, **the milestones still ahead are
+    burned** (they were locked, because milestones go in order) and what already unlocked stays.
+
+What to check a person understands (the pilot's questions, `PILOT-RUNBOOK.md`): the page says a milestone nobody objects to
+unlocks, the team's own tokens do not count in the vote, a backer can still leave with their share while one waits, and the last
+milestone is protected only by its bond.

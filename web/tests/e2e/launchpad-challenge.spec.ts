@@ -170,9 +170,19 @@ function launchRecord(startBlock: number): StoredEvent {
 }
 
 /** A tiny relay: serves the record and the updates the pages publish (shared by every page of the test). */
+interface RelayFilter {
+  kinds?: number[];
+  limit?: number;
+  "#a"?: string[];
+}
+
 function makeRelay(initial: StoredEvent) {
   let current: StoredEvent = initial;
   const published: StoredEvent[] = [];
+  // Reads the relay refuses, as a busy server does: nothing is lost, the answer just does not come.
+  let failing: ((filter: RelayFilter) => boolean) | null = null;
+  // Kinds the relay answers with nothing, as if they were older than what a list read reaches.
+  let hidden: number[] = [];
   const install = async (page: Page) => {
     await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
       ws.onMessage((message) => {
@@ -191,17 +201,17 @@ function makeRelay(initial: StoredEvent) {
           return;
         }
         if (parsed[0] !== "REQ") return;
-        const [, subId, filter] = parsed as [
-          string,
-          string,
-          { kinds?: number[] },
-        ];
+        const [, subId, filter] = parsed as [string, string, RelayFilter];
         const kinds = filter.kinds ?? [];
+        if (failing?.(filter)) {
+          ws.send(JSON.stringify(["CLOSED", subId, "error: server is busy"]));
+          return;
+        }
         if (kinds.includes(37001)) {
           ws.send(JSON.stringify(["EVENT", subId, current]));
         }
         for (const kind of [47005, 47003, 47002]) {
-          if (!kinds.includes(kind)) continue;
+          if (!kinds.includes(kind) || hidden.includes(kind)) continue;
           for (const e of published.filter((p) => p.kind === kind)) {
             ws.send(JSON.stringify(["EVENT", subId, e]));
           }
@@ -210,7 +220,28 @@ function makeRelay(initial: StoredEvent) {
       });
     });
   };
-  return { published, current: () => current, install };
+  return {
+    published,
+    current: () => current,
+    install,
+    failReads: (match: ((filter: RelayFilter) => boolean) | null) => {
+      failing = match;
+    },
+    hideKinds: (kinds: number[]) => {
+      hidden = kinds;
+    },
+  };
+}
+
+/** With `E2E_SHOTS=<dir>`, save the page as it looks now, so a person can read the screens off real data. */
+async function shot(page: Page, name: string) {
+  const dir = process.env.E2E_SHOTS;
+  if (!dir) return;
+  await page.waitForTimeout(500);
+  await page.screenshot({
+    path: `${dir}/challenge-${name}.png`,
+    fullPage: true,
+  });
 }
 
 const tag = (event: StoredEvent, name: string) =>
@@ -430,6 +461,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await flaky.close();
   say("an unreadable lock was shown as unknown, not as a panel");
 
+  await shot(founder, "1-publish-form-team");
   // ── The founder publishes milestone one: the evidence first, then the bond, then the milestone ──────
   const founderUsdcBefore = await balanceOf(CURRENCY, FOUNDER_WALLET);
   await founder.getByTestId("challenge-text-0").fill(EVIDENCE_ONE);
@@ -476,9 +508,38 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     { timeout: 30_000 },
   );
 
+  // A relay that does not answer is not the team failing to publish: the screen says it could not look, and trying again finds it.
+  // (Only the read that looks for one launch's evidence fails, and the launch list does not reach the update: it is older than
+  // what the list reads, which is the case the dedicated read exists for. The list of launches itself must still load.)
+  relay.hideKinds([47003]);
+  relay.failReads(
+    (filter) =>
+      (filter.kinds ?? []).includes(47003) &&
+      filter.limit === 500 &&
+      filter["#a"]?.length === 1,
+  );
+  await openMilestones(backerOne);
+  await expect(
+    backerOne.getByTestId("challenge-evidence-unreadable-0"),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(
+    backerOne.getByTestId("challenge-evidence-missing-0"),
+  ).toHaveCount(0);
+  relay.failReads(null);
+  relay.hideKinds([]);
+  await backerOne
+    .getByTestId("challenge-evidence-unreadable-0")
+    .getByRole("button", { name: "Try again" })
+    .click();
+  await expect(
+    backerOne.getByTestId("challenge-evidence-toggle-0"),
+  ).toBeVisible({ timeout: 60_000 });
+  say("a failed read of the evidence said so, and trying again found it");
+
   // A holder sees it, can read the evidence, and is offered an objection; the founder is not.
   await openMilestones(backerOne);
   await backerOne.getByTestId("challenge-evidence-toggle-0").click();
+  await shot(backerOne, "2-waiting-holder");
   await expect(backerOne.getByTestId("challenge-evidence-0")).toContainText(
     "https://beta.example.org",
   );
@@ -518,6 +579,10 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(backerTwo.getByTestId("challenge-vote-0")).toBeVisible({
     timeout: 60_000,
   });
+  await shot(backerTwo, "3-voting-holder");
+  await backerTwo.setViewportSize({ width: 390, height: 844 });
+  await shot(backerTwo, "3b-voting-holder-phone");
+  await backerTwo.setViewportSize({ width: 1280, height: 720 });
   // The richest state of the page, scanned: a vote is open and this holder can cast one.
   await expectAccessible(backerTwo, "Milestones with a vote open");
   await backerTwo.getByTestId("challenge-vote-reject-0").click();
@@ -574,6 +639,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Finish it to unlock your tokens",
     { timeout: 60_000 },
   );
+  await shot(founder, "4-founder-home-waiting");
   // The untouched page notices the window has closed, and offers to finish it, without a reload.
   await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
     "Ready to finish",
@@ -588,6 +654,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(backerTwo.getByTestId("challenge-summary")).toContainText(
     "1 of 2 milestones unlocked. 120,000,000 tokens still locked.",
   );
+  await shot(backerTwo, "5-unlocked");
   say("the milestone unlocked and the team's first 40% is free");
   // The unlocked part can now move; the rest still cannot.
   await expect(

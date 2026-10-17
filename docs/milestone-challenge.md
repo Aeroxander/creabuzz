@@ -63,6 +63,10 @@ deposit back), half to the DAO, and the team may try again with a doubled window
 - If nobody is watching, a bogus milestone unlocks. The bond and bounty exist to make watching pay; Home lists a
   waiting milestone for every holder; an AI helper can check what is checkable (the link is live, the contract is
   deployed). None of that decides anything.
+- A holder with most of the non-team weight decides every vote, and can turn down each attempt unopposed, collecting the
+  deposit back and half of each bond and stretching the next window. Nothing in the contract stops a majority; the team's recourse
+  is a DAO vote to forfeit (where the team's own Shares count) and every backer's exit. A pilot cohort should not hold such a whale,
+  and a real launch should look at how concentrated its buyers are before relying on this.
 - Shares still sitting unclaimed in the sale count as able to vote when the minimum is worked out, which raises the bar for an
   objection a little until buyers claim them.
 - It is new, unaudited contract code. The panel path, which is also unaudited, stays available.
