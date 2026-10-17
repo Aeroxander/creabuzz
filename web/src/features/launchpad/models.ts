@@ -415,7 +415,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     longPitch: str(body.longPitch),
     ipList: strs(body.ipList),
     updateCadence: str(body.updateCadence),
-    reviewerTerms: str(body.reviewerTerms),
+    // Read from anyone's record, so bounded: the founder's own form stops at 1,000 characters.
+    reviewerTerms: str(body.reviewerTerms)?.slice(0, 2_000) ?? null,
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
     funding: parseFunding(body.funding),
     currency: str(body.currency),

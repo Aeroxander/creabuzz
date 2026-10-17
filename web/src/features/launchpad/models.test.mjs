@@ -265,3 +265,18 @@ test("a return-capital proposal parses with its kind", () => {
   assert.equal(parsed.title, "Return the remaining treasury pro-rata");
   assert.equal(parsed.state, "open");
 });
+
+test("how the reviewers will work is read as the founder wrote it, and a huge one is cut rather than shown whole", () => {
+  const [launch] = buildLaunches([
+    record(ALICE, "nebula", 100, {
+      reviewerTerms: "Each answers within 7 days.",
+    }),
+  ]);
+  assert.equal(launch.record.reviewerTerms, "Each answers within 7 days.");
+  const [huge] = buildLaunches([
+    record(ALICE, "orion", 100, { reviewerTerms: "x".repeat(50_000) }),
+  ]);
+  assert.equal(huge.record.reviewerTerms.length, 2_000);
+  const [none] = buildLaunches([record(ALICE, "vega", 100)]);
+  assert.equal(none.record.reviewerTerms, null);
+});
