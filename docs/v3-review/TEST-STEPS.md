@@ -106,6 +106,15 @@ nothing was paid. Take a reviewer's bond and Close a work budget work the same w
 the treasury. On the DAO's Overview, "Where the treasury's money went" splits reviewed budgets from direct payments, and a
 direct payment's decision card is marked "No reviewer".
 
+### The failure cases (D54)
+
+```bash
+scripts/test-mvp-gate.sh          # the journey runner touches only what it started
+scripts/mvp-gate.sh web-economy-e2e web-milestone-e2e
+```
+
+Working looks like: the economy journey makes the sale's currency unreadable once and checks no exit is offered until it can be read again, has a reviewer ask for their whole bond back and checks the DAO can still take part of it, and ends with a backer leaving for exactly the amount shown. The milestone journey makes the browser refuse to save the draft and checks nothing is sent. By hand: on the Decisions tab, Close a work budget with paid work still waiting for Shares and read the amber note before voting; open a freeze from a claim card, let that claim be paid in another tab, and check the form says the claim is no longer open instead of showing another one.
+
 ### Doubting a claim (D52)
 
 On the Work tab, as anyone, find a claim that is still being judged or approved and inside its challenge window. Working looks like: under the claim, "Doubt this claim?" and a "Put a freeze to a vote" button; pressing it opens the Decisions tab with the freeze form open and that claim chosen. A claim past its challenge window or already paid shows no such line.
