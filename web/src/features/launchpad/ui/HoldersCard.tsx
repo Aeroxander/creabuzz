@@ -12,6 +12,7 @@ import { Card } from "@/shared/ui/card";
 
 import { formatAtomic } from "../lib/amounts";
 import { type HoldersRead, percentOfSupply } from "../lib/holders-read";
+import { countOf } from "@/shared/lib/count-of";
 
 const shares = (atomic: bigint): string =>
   formatAtomic(atomic, 18, { maxFractionDigits: 0 });
@@ -65,9 +66,9 @@ export function HoldersCard({
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
-            The {read.holders.length === read.found ? "" : "largest "}
-            {read.holders.length} of {read.found}{" "}
-            {read.found === 1 ? "wallet" : "wallets"} that hold Shares.{" "}
+            {read.holders.length === read.found
+              ? `${countOf(read.found, "wallet")} ${read.found === 1 ? "holds" : "hold"} Shares.`
+              : `The largest ${read.holders.length} of ${read.found} wallets that hold Shares.`}{" "}
             {read.tracked
               ? "Time held is the average moment the Shares were acquired: buying more brings it down, and Shares passed to another wallet do not take their time with them."
               : "This DAO was made before holding times were kept, so only what each wallet holds is shown."}

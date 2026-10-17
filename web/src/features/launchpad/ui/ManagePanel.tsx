@@ -6,6 +6,7 @@ import { Card } from "@/shared/ui/card";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { effectiveStage, hasFounderCommitments } from "../models";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
+import { networkLabel } from "../chain";
 import { stageForLaunch } from "../lib/sale-stage";
 import { useAuctionProgress } from "./widgets";
 import { planningIsStale } from "../lib/funding";
@@ -408,9 +409,9 @@ export function ManagePanel({
             ? "Open to the community"
             : "Curated list of bidders"}{" "}
           ·{" "}
-          {record.chainId
-            ? `Network ${record.chainId}`
-            : "Not on a network yet"}
+          {record.chainId && Number.isFinite(Number(record.chainId))
+            ? `on ${networkLabel(Number(record.chainId))}`
+            : "not on a network yet"}
         </p>
         {stageIsAutomatic ? (
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
