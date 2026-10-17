@@ -3,8 +3,8 @@
  * do next for people who just signed up.
  *
  * Signed out: a short pitch that leads with what the product is for (back a
- * project early, and watch the team's tokens unlock as named reviewers approve
- * its milestones), two doors (make an account, look around) and the three ideas it
+ * project early, and watch the team's tokens unlock as its milestones are
+ * reached), two doors (make an account, look around) and the three ideas it
  * stands on. Signed in: a checklist built only from things the app can verify,
  * so a ticked box never lies. It asks different things of someone who came to back
  * projects and someone who came to build one (`lib/home-steps.ts`): a backer is
@@ -102,9 +102,9 @@ function Welcome() {
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
         Back early projects, follow their progress, and see the team&apos;s
-        tokens unlock when named reviewers approve delivery. A defined part of
-        the team&apos;s tokens stays locked until they approve the agreed
-        milestones.
+        tokens unlock as its milestones are reached. A defined part of the
+        team&apos;s tokens stays locked until each agreed milestone has been
+        delivered and judged.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button

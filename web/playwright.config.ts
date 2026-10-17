@@ -24,6 +24,7 @@ export default defineConfig({
         "**/voting-allocation.spec.ts",
         "**/launchpad-auction.spec.ts",
         "**/launchpad-dao-launch.spec.ts",
+        "**/launchpad-challenge.spec.ts",
         "**/launchpad-work.spec.ts",
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-record.spec.ts",

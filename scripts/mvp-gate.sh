@@ -74,6 +74,7 @@ ALL=(
   web-work-e2e
   web-paid-work-e2e
   web-dao-launch-e2e
+  web-challenge-e2e
   web-dao-journey-e2e
   web-economy-e2e
   web-sepolia-fork-e2e

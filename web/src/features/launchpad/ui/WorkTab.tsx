@@ -30,9 +30,11 @@ import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
+import { useChallengeLock } from "../use-challenge-lock";
 import { useWalletLabels } from "../use-wallet-labels";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
+import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
@@ -69,6 +71,7 @@ export function WorkTab({
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
+  const challengeLock = useChallengeLock(dao);
   // What contributors published for their claims: the text a reviewer reads before judging.
   const evidence = useEvidencePackets(launch);
   // Names for the wallets on this page: people on this server who bound that wallet to their account.
@@ -117,15 +120,19 @@ export function WorkTab({
       </Card>
 
       {lock.data && wallet.address ? (
-        <LockedSharesCard
-          busy={busy}
-          gate={gate}
-          launch={launch}
-          lock={lock.data}
-          work={work.data}
-          onSend={send}
-          wallet={wallet.address}
-        />
+        challengeLock.data ? (
+          <ChallengeLockedCard launch={launch} view={challengeLock.data} />
+        ) : (
+          <LockedSharesCard
+            busy={busy}
+            gate={gate}
+            launch={launch}
+            lock={lock.data}
+            work={work.data}
+            onSend={send}
+            wallet={wallet.address}
+          />
+        )
       ) : null}
 
       {work.isLoading ? (

@@ -31,8 +31,8 @@ export function MilestoneSummaryCard({
         {countOf(milestones.length, "milestone")}
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        The team&apos;s locked tokens are released one milestone at a time, when
-        named reviewers approve the evidence for it. Each milestone is judged by
+        The team&apos;s locked tokens are released one milestone at a time,
+        once the evidence for it has been judged. Each milestone is judged by
         exactly these words.
       </p>
       <ol className="mt-3 divide-y divide-black/10 text-sm dark:divide-white/10">

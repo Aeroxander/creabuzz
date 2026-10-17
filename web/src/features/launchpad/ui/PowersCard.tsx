@@ -13,8 +13,11 @@
 
 import { Card } from "@/shared/ui/card";
 
+import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
+import { span } from "../lib/challenge-copy";
 import { isEvmAddress, type LaunchRecord } from "../models";
+import { useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
 
 const day = (seconds: number) =>
@@ -33,6 +36,16 @@ export interface PanelFacts {
   bond: string | null;
 }
 
+/** How a lock that lets holders object lets milestones through, as a backer needs it before they bid. */
+export interface ChallengeFacts {
+  window: number;
+  votePeriod: number;
+  clawback: number;
+  minRejectBps: number;
+  /** The bond the team posts with each milestone, in words, or null for none. */
+  bond: string | null;
+}
+
 const ALWAYS = [
   "No decision of any kind can be opened before the buyers can claim their tokens.",
 ] as const;
@@ -42,6 +55,13 @@ const LOCKED = [
   "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
   "Who judges the milestones is named at launch, with how many must agree. A vote cannot swap in a different panel.",
 ] as const;
+
+const LOCKED_BY_OBJECTION = (c: ChallengeFacts) =>
+  [
+    `The team's locked Shares unlock only when a milestone is reached: the team publishes its evidence, holders have ${span(c.window)} to object, and a vote of holders can turn it down. The lock is set once, at launch.`,
+    "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
+    "How milestones are judged is set at launch. No vote can change it.",
+  ] as const;
 
 const NOT_LOCKED = [
   "The team's Shares are not locked. The team can sell or move them from the start, and they count when the DAO votes.",
@@ -61,6 +81,7 @@ export function PowersCard({
   locked,
   panel,
   reviewerTerms = null,
+  challenge = null,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
@@ -68,6 +89,8 @@ export function PowersCard({
   panel: PanelFacts | null;
   /** How the team says its reviewers will work, in its own words; null when it never said. */
   reviewerTerms?: string | null;
+  /** Set when the milestones unlock unless holders object, instead of a panel approving them. */
+  challenge?: ChallengeFacts | null;
 }) {
   return (
     <Card className="p-4" data-testid="launch-powers">
@@ -81,11 +104,44 @@ export function PowersCard({
       </p>
       <h3 className="mt-3 text-sm font-medium">No vote can undo</h3>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-        {[...(locked ? LOCKED : NOT_LOCKED), ...ALWAYS].map((line) => (
+        {[
+          ...(locked
+            ? challenge
+              ? LOCKED_BY_OBJECTION(challenge)
+              : LOCKED
+            : NOT_LOCKED),
+          ...ALWAYS,
+        ].map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
-      {locked ? (
+      {locked && challenge ? (
+        <div className="mt-2 text-sm" data-testid="launch-powers-challenge">
+          <p>
+            Each milestone waits {span(challenge.window)} for objections, longer
+            for a bigger one and longer again after each attempt holders turn
+            down. A holder who objects starts a vote that runs for{" "}
+            {span(challenge.votePeriod)}; the team&apos;s own Shares do not
+            count. The objection stands only if more is against the milestone
+            than for it and at least {challenge.minRejectBps / 100}% of what
+            could vote is against it. With less interest than that, including
+            when nobody votes, the milestone stands.
+            {challenge.bond
+              ? ` The team posts a bond of ${challenge.bond} with each milestone; it is forfeited if holders turn the milestone down.`
+              : ""}
+          </p>
+          <p className="mt-1">
+            For {span(challenge.clawback)} after an unlock one more objection is
+            possible, and if holders uphold it the team&apos;s remaining locked
+            Shares are burned.
+          </p>
+          <p className="mt-1 text-black/60 dark:text-white/60">
+            This protects you only as far as someone is watching: a milestone
+            nobody objects to unlocks. You can leave with your share of the
+            treasury while one waits.
+          </p>
+        </div>
+      ) : locked ? (
         <div className="mt-2 text-sm" data-testid="launch-powers-panel">
           {panel ? (
             <p>
@@ -148,6 +204,7 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
       ? record.treasury
       : null;
   const work = useWork(dao, null);
+  const challengeLock = useChallengeLock(dao);
   const mandate = work.data?.mandates.find((m) => m.isMilestonePanel);
   const panel: PanelFacts | null = mandate
     ? {
@@ -162,10 +219,27 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
           : null,
       }
     : null;
+  const lock = challengeLock.data;
+  const sale = recordSaleCurrency(record);
+  const challenge: ChallengeFacts | null = lock
+    ? {
+        window: lock.terms.window,
+        votePeriod: lock.terms.votePeriod,
+        clawback: lock.terms.clawback,
+        minRejectBps: lock.terms.minRejectBps,
+        bond:
+          lock.terms.bond > 0n &&
+          (lock.terms.bondToken ?? "").toLowerCase() ===
+            sale.value.toLowerCase()
+            ? `${formatAtomic(lock.terms.bond, sale.decimals, { maxFractionDigits: 2 })} ${sale.symbol}`
+            : null,
+      }
+    : null;
   return (
     <PowersCard
+      challenge={challenge}
       locked={locked}
-      panel={panel}
+      panel={challenge ? null : panel}
       reviewerTerms={record.reviewerTerms}
     />
   );

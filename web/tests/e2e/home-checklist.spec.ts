@@ -200,7 +200,7 @@ test("someone who is not signed in is told what the product is for: backing team
   await expect(welcome.getByRole("heading")).toContainText("Back teams.");
   await expect(welcome.getByRole("heading")).not.toContainText("AI helpers");
   await expect(welcome).toContainText(
-    "see the team's tokens unlock when named reviewers approve delivery",
+    "see the team's tokens unlock as its milestones are reached",
   );
   await expect(welcome).toContainText(
     "The team's tokens unlock with its milestones",

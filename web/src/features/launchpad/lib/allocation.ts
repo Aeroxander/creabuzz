@@ -167,7 +167,7 @@ export const DAO_ALLOCATION_LABELS: ReadonlyArray<{
   {
     key: "team",
     label: "Team allocation",
-    hint: "Locked. Each part unlocks only when the named reviewers approve its milestone.",
+    hint: "Locked. Each part unlocks only when its milestone is reached.",
   },
   {
     key: "treasury",
