@@ -38,7 +38,8 @@ happened.
 Ask each backer, without prompting, after reading the project page and before bidding:
 
 1. "What happens to the team's tokens?" The right answer: locked until each milestone is reached; the team publishes evidence,
-   holders can object for a week, and with no objection it unlocks.
+   holders can object until the deadline the page shows (a week to start with; longer for a big milestone or a retry), and with
+   no objection it unlocks.
 2. "Can the team spend the raised money before a milestone is reached?" The right answer: yes, holders can vote to spend it;
    the lock is on the team's own tokens, not on the money. If they say no, the page has misled them.
 3. "What happens if the sale does not reach its minimum?" Every bid is refunded.

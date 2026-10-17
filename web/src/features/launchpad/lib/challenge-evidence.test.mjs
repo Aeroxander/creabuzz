@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { hashText } from "@creaton/core/launchpad/work.ts";
 import {
   challengeEvidenceFor,
+  challengeEvidenceView,
   challengeEvidenceHash,
   challengeUpdateContent,
 } from "./challenge-evidence.ts";
@@ -109,4 +110,31 @@ test("the newest matching text wins, and a bad one beside a good one does not hi
   const standing = challengeEvidenceFor(milestone(), packets, LOCK);
   assert.equal(standing.kind, "verified");
   assert.equal(standing.packet.eventId, "new");
+});
+
+test("looking and not finding is not the same as the team not having published", () => {
+  const verified = { kind: "verified", packet: {} };
+  const missing = { kind: "missing" };
+  const mismatch = { kind: "mismatch", packets: 1 };
+  const view = (over) =>
+    challengeEvidenceView({
+      submitted: true,
+      standing: missing,
+      error: false,
+      incomplete: false,
+      ...over,
+    });
+  assert.equal(view({ submitted: false }), "none");
+  assert.equal(view({ standing: verified }), "verified");
+  // A text that verifies is shown even if a later read failed or the history was cut short.
+  assert.equal(
+    view({ standing: verified, error: true, incomplete: true }),
+    "verified",
+  );
+  assert.equal(view({ error: true }), "unreadable");
+  assert.equal(view({ error: true, standing: mismatch }), "unreadable");
+  assert.equal(view({ standing: mismatch }), "mismatch");
+  assert.equal(view({ incomplete: true }), "incomplete");
+  assert.equal(view({ standing: mismatch, incomplete: true }), "mismatch");
+  assert.equal(view({}), "missing");
 });

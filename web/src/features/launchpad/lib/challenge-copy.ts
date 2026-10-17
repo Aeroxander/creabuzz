@@ -56,11 +56,22 @@ export function span(seconds: number): string {
   return "less than 2 hours";
 }
 
+/** A calendar date, for something that happened. */
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
+  });
+
+/** An exact moment with its time zone, for a deadline someone may have to act before. */
+export const deadline = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   });
 
 /** How many of {@link CHALLENGE_STEPS} are behind a milestone in this stage. */
@@ -97,19 +108,49 @@ export const NO_VIEWER: ChallengeViewer = {
   voted: false,
 };
 
+/** What the lock needs to be true before a milestone can be published, as far as the chain says. */
+export interface ChallengeGate {
+  /** The chain's latest block: a milestone cannot be published before the lock's earliest block. */
+  block: number;
+  /** The milestone before this one has stood (the first has nothing before it): milestones go in order. */
+  previousStood: boolean;
+}
+
+/** Why publishing is not open yet, in words, or null when it is. */
+export function challengePublishBlock(
+  index: number,
+  terms: ChallengeTerms,
+  gate: ChallengeGate,
+): string | null {
+  if (gate.block < terms.earliestBlock) {
+    return `Publishing opens when the buyers can claim, at block ${terms.earliestBlock}. The chain is at block ${gate.block}.`;
+  }
+  if (!gate.previousStood) {
+    return `Milestones go in order: milestone ${index} has to unlock first.`;
+  }
+  return null;
+}
+
 /** What the connected person can do about this milestone right now. */
 export function challengeActions(
   m: ChallengeMilestone,
   terms: ChallengeTerms,
   now: number,
   who: ChallengeViewer,
+  gate: ChallengeGate,
 ): ChallengeAction[] {
   const actions: ChallengeAction[] = [];
   const connected = who.wallet !== null;
   switch (m.stage) {
     case "not-submitted":
     case "rejected":
-      if (connected && who.onTeam) actions.push("publish");
+      if (
+        connected &&
+        who.onTeam &&
+        challengePublishBlock(m.index, terms, gate) === null
+      ) {
+        actions.push("publish");
+      }
       break;
     case "ready":
       if (connected) actions.push("finish");
@@ -159,12 +200,12 @@ export function challengeHeadline(
     case "rejected":
       return `Holders turned down the last attempt. The team can publish again, and holders then have ${span(m.nextWindow)} to object.`;
     case "waiting":
-      return `Published. Holders can object until ${date(m.windowEnds)}. If nobody does, it unlocks.`;
+      return `Published. Holders can object until ${deadline(m.windowEnds)}. If nobody does, it unlocks.`;
     case "ready":
       return "Nobody objected. Anyone can finish it now, and the tokens unlock.";
     case "voting":
       return open
-        ? `A holder objected. Holders vote until ${date(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. It is turned down only if more is against it than in favour and at least ${minimum} of what could vote is against it.`
+        ? `A holder objected. Holders vote until ${deadline(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. It is turned down only if more is against it than in favour and at least ${minimum} of what could vote is against it.`
         : "A holder objected.";
     case "vote-ended":
       return open
@@ -176,7 +217,7 @@ export function challengeHeadline(
       return `Unlocked on ${date(m.unlockedAt)}.`;
     case "late-voting":
       return open
-        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${date(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. If it is upheld, the team's remaining locked tokens are burned.`
+        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}: ${shares(open.rejectWeight)} against, ${shares(open.acceptWeight)} in favour. If it is upheld, the team's remaining locked tokens are burned.`
         : `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since.`;
     case "late-vote-ended":
       return `The vote on the objection to this unlocked milestone has ended. Anyone can settle it.`;

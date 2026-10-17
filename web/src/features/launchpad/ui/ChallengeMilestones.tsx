@@ -9,6 +9,7 @@
 
 import { useMemo } from "react";
 
+import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { countOf } from "@/shared/lib/count-of";
 
@@ -18,6 +19,7 @@ import {
   type ChallengeViewer,
   NO_VIEWER,
   challengeActions,
+  challengePublishBlock,
   span,
 } from "../lib/challenge-copy";
 import { challengeEvidenceFor } from "../lib/challenge-evidence";
@@ -26,7 +28,7 @@ import { plannedMilestoneTokens } from "../lib/milestone-plan";
 import { formatShares } from "../lib/shares-format";
 import { hashText } from "../lib/work";
 import type { Launch } from "../models";
-import { useChallengeViewers } from "../use-challenge-lock";
+import { type LockState, useChallengeViewers } from "../use-challenge-lock";
 import { useChallengeActions } from "../use-challenge-actions";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useEvidencePackets } from "../use-evidence";
@@ -35,15 +37,25 @@ import { FailureNote, GateNote, WalletStrip } from "./auction-widgets";
 import { ChallengeMilestoneCard } from "./ChallengeMilestoneCard";
 import { useTokenDecimals } from "./WorkBudgetForm";
 
+const clock = (ms: number) =>
+  new Date(ms).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
 export function ChallengeMilestones({
   launch,
   dao,
   view,
+  lockState,
   onOpenDecisions,
 }: {
   launch: Launch;
   dao: string;
   view: ChallengeLockView;
+  /** How fresh the lock is, and how to read it again. */
+  lockState: LockState;
   onOpenDecisions: () => void;
 }) {
   const { terms } = view;
@@ -75,9 +87,13 @@ export function ChallengeMilestones({
     bondIsSale ? "" : (terms.bondToken ?? ""),
   );
   const money = (units: bigint): string => {
-    const decimals = bondIsSale ? sale.decimals : (otherDecimals.data ?? 18);
-    const symbol = bondIsSale ? sale.symbol : "of the bond token";
-    return `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${symbol}`;
+    if (bondIsSale) {
+      return `${formatAtomic(units, sale.decimals, { maxFractionDigits: 2 })} ${sale.symbol}`;
+    }
+    // A bond in some other token: its precision is shown only once it has been read. A guessed one would misstate the amount.
+    return otherDecimals.data === undefined
+      ? `${units.toString()} raw units of the bond token`
+      : `${formatAtomic(units, otherDecimals.data, { maxFractionDigits: 2 })} of the bond token`;
   };
   const shares = (units: bigint) => formatShares(units);
 
@@ -94,6 +110,11 @@ export function ChallengeMilestones({
   const labelOf = useWalletLabels(people);
 
   const actions = useChallengeActions({ launch, dao, view, wordsOf });
+  // What the lock needs before a milestone can be published: the sale's claim block, and the milestone before it standing.
+  const gateFor = (index: number) => ({
+    block: view.block,
+    previousStood: index === 0 || view.milestones[index - 1]?.phase === "stood",
+  });
   const unlocked = view.milestones.filter((m) => m.phase === "stood").length;
 
   return (
@@ -118,7 +139,9 @@ export function ChallengeMilestones({
           less interest than that, the milestone stands. For{" "}
           {span(terms.clawback)} after an unlock, one more objection is
           possible, and if holders uphold it the team&apos;s remaining locked
-          tokens are burned.
+          tokens are burned. Milestones are published in order, so the
+          milestones still ahead are locked while an earlier one can be objected
+          to; once the last one has unlocked, what stands behind it is the bond.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           Backers can still leave with their share of the treasury while a
@@ -139,6 +162,42 @@ export function ChallengeMilestones({
             See the decisions
           </button>
         </p>
+        <p
+          className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-testid="challenge-freshness"
+        >
+          <span>
+            {lockState.readAt
+              ? `Read from the network at ${clock(lockState.readAt)}.`
+              : "Reading from the network…"}
+          </span>
+          {lockState.paused ? (
+            <span>It has stopped updating on its own.</span>
+          ) : (
+            <span>It updates on its own while you watch.</span>
+          )}
+          <Button
+            aria-busy={lockState.fetching}
+            data-testid="challenge-refresh"
+            onClick={lockState.refresh}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {lockState.fetching ? "Refreshing…" : "Refresh"}
+          </Button>
+        </p>
+        {lockState.stale ? (
+          <p
+            className="mt-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+            data-testid="challenge-stale"
+            role="status"
+          >
+            Could not refresh just now. What is shown is what was read at{" "}
+            {lockState.readAt ? clock(lockState.readAt) : "an earlier time"},
+            and a vote or a deadline since then may not show yet.
+          </p>
+        ) : null}
         <WalletStrip testIdPrefix="challenge" wallet={wallet} />
         <GateNote
           gate={
@@ -163,7 +222,13 @@ export function ChallengeMilestones({
           const tokens = plannedTokens[m.index];
           return (
             <ChallengeMilestoneCard
-              actions={challengeActions(m, terms, view.now, viewer)}
+              actions={challengeActions(
+                m,
+                terms,
+                view.now,
+                viewer,
+                gateFor(m.index),
+              )}
               blocked={actions.blocked}
               handlers={actions}
               key={m.index}
@@ -171,6 +236,15 @@ export function ChallengeMilestones({
               m={m}
               money={money}
               shares={shares}
+              evidenceError={evidence.error}
+              evidenceIncomplete={evidence.incomplete}
+              onRetryEvidence={evidence.refetch}
+              publishNote={
+                viewer.onTeam &&
+                (m.stage === "not-submitted" || m.stage === "rejected")
+                  ? challengePublishBlock(m.index, terms, gateFor(m.index))
+                  : null
+              }
               standing={challengeEvidenceFor(m, evidence.packets, view.lock)}
               tokens={
                 tokens !== null && tokens !== undefined

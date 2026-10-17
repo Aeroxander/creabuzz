@@ -7,6 +7,8 @@ import {
   challengeActions,
   challengeDone,
   challengeHeadline,
+  challengePublishBlock,
+  deadline,
   span,
 } from "./challenge-copy.ts";
 
@@ -18,7 +20,7 @@ const TERMS = {
   votePeriod: 5 * DAY,
   clawback: 30 * DAY,
   minRejectBps: 300,
-  earliestBlock: 0,
+  earliestBlock: 105,
   bondToken: "0x" + "4".repeat(40),
   bond: 10n * WAD,
   deposit: WAD,
@@ -60,8 +62,9 @@ const me = (over = {}) => ({
   ...over,
 });
 const shares = (units) => `${units / WAD} Shares`;
-const actions = (milestone, who) =>
-  challengeActions(milestone, TERMS, NOW, who);
+const OPEN = { block: 1_000, previousStood: true };
+const actions = (milestone, who, gate = OPEN) =>
+  challengeActions(milestone, TERMS, NOW, who, gate);
 
 test("a length of time is said the way people say it", () => {
   assert.equal(span(7 * DAY), "7 days");
@@ -252,4 +255,52 @@ test("the headline says where a milestone stands and what happens next, in plain
     ),
     /remaining locked tokens are burned/,
   );
+});
+
+test("the team cannot publish before the lock's earliest block, or before the milestone before it has stood", () => {
+  const team = me({ onTeam: true, weight: 0n });
+  assert.deepEqual(actions(m(), team, { block: 104, previousStood: true }), []);
+  assert.deepEqual(actions(m(), team, { block: 105, previousStood: true }), [
+    "publish",
+  ]);
+  assert.deepEqual(
+    actions(m({ index: 1 }), team, { block: 1_000, previousStood: false }),
+    [],
+  );
+  assert.deepEqual(
+    actions(m({ index: 1 }), team, { block: 1_000, previousStood: true }),
+    ["publish"],
+  );
+  // What is said instead of the button.
+  assert.match(
+    challengePublishBlock(0, TERMS, { block: 100, previousStood: true }),
+    /opens when the buyers can claim, at block 105. The chain is at block 100/,
+  );
+  assert.match(
+    challengePublishBlock(2, TERMS, { block: 1_000, previousStood: false }),
+    /Milestones go in order: milestone 2 has to unlock first/,
+  );
+  assert.equal(challengePublishBlock(0, TERMS, OPEN), null);
+  // The other actions do not depend on it.
+  assert.deepEqual(
+    actions(m({ stage: "ready", phase: "pending" }), me(), {
+      block: 1,
+      previousStood: false,
+    }),
+    ["finish"],
+  );
+});
+
+test("a deadline is an exact moment with its time zone", () => {
+  const text = deadline(1_800_000_000);
+  assert.match(text, /\d{1,2}:\d{2}/);
+  assert.match(text, /(AM|PM)/);
+  assert.match(text, /[A-Z]{2,5}|GMT[+-]\d+/, "a time zone is named");
+  const headline = challengeHeadline(
+    m({ stage: "waiting", phase: "pending", windowEnds: 1_800_000_000 }),
+    TERMS,
+    NOW,
+    shares,
+  );
+  assert.ok(headline.includes(text), "the headline says the exact time");
 });

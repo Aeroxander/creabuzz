@@ -30,7 +30,7 @@ import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
-import { useChallengeLock } from "../use-challenge-lock";
+import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWalletLabels } from "../use-wallet-labels";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
@@ -72,6 +72,7 @@ export function WorkTab({
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   const challengeLock = useChallengeLock(dao);
+  const lockKind = lockKindOf(dao, challengeLock);
   // What contributors published for their claims: the text a reviewer reads before judging.
   const evidence = useEvidencePackets(launch);
   // Names for the wallets on this page: people on this server who bound that wallet to their account.
@@ -120,8 +121,19 @@ export function WorkTab({
       </Card>
 
       {lock.data && wallet.address ? (
-        challengeLock.data ? (
+        lockKind === "challenge" && challengeLock.data ? (
           <ChallengeLockedCard launch={launch} view={challengeLock.data} />
+        ) : lockKind !== "panel" ? (
+          // Not known yet, or could not be read: the team's claim flow belongs to a panel, so it is not offered until it is
+          // known that this is one.
+          <Card
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="locked-shares-rule-unknown"
+          >
+            {lockKind === "unreadable"
+              ? "Could not read how this project's milestones are judged just now, so your locked team Shares are not shown. Reload to try again."
+              : "Reading how this project's milestones are judged…"}
+          </Card>
         ) : (
           <LockedSharesCard
             busy={busy}

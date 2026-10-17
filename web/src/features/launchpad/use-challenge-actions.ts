@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 
+import { challengePublishBlock } from "./lib/challenge-copy";
 import { challengeUpdateContent } from "./lib/challenge-evidence";
 import { challengeEvidenceHash } from "./lib/challenge-evidence";
 import { evidenceProblem } from "./lib/evidence";
@@ -17,7 +18,9 @@ import {
 } from "./lib/milestone-challenge";
 import { hashText } from "./lib/work";
 import type { Launch } from "./models";
+import { getRpcEndpoint } from "./chain";
 import { usePublishMirror } from "./use-launches";
+import { endpointChain } from "./use-work";
 import { useWalletSend } from "./use-wallet-send";
 
 /**
@@ -82,6 +85,26 @@ export function useChallengeActions(input: {
         const wrong = evidenceProblem(evidence);
         if (wrong) {
           setProblem(wrong);
+          return false;
+        }
+        // The lock would refuse it before the sale's claim block, or out of order, after the evidence and the bond approval had
+        // already gone: ask the chain's current block first, so nothing is spent on a step that cannot succeed.
+        let block: number;
+        try {
+          block = await endpointChain(getRpcEndpoint()).blockNumber();
+        } catch {
+          setProblem(
+            "Could not check whether publishing is open yet, so nothing was sent. Try again.",
+          );
+          return false;
+        }
+        const closed = challengePublishBlock(index, terms, {
+          block,
+          previousStood:
+            index === 0 || view.milestones[index - 1]?.phase === "stood",
+        });
+        if (closed) {
+          setProblem(closed);
           return false;
         }
         // The text first: a holder cannot object to what they cannot read, and nothing is spent until it is out.

@@ -12,7 +12,7 @@ import type { TimelineEntry } from "../lib/milestone-timeline";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
 import { hashText } from "../lib/work";
-import { useChallengeLock } from "../use-challenge-lock";
+import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useMilestoneTimeline } from "../use-milestone-timeline";
 
 const STAGE_WORDS: Record<TimelineEntry["stage"], string> = {
@@ -44,11 +44,39 @@ export function MilestoneProgressCard({
     dao,
   );
   const challenge = useChallengeLock(dao);
+  const kind = lockKindOf(dao, challenge);
   if (launch.record.unlocks?.mode !== "milestones" || entries.length === 0) {
     return null;
   }
+  // Not known yet, or could not be read: neither rule's rows are shown in place of the real ones.
+  if (kind === "loading" || kind === "unreadable") {
+    return (
+      <Card className="p-4" data-testid="dao-milestones">
+        <h3 className="text-sm font-semibold">The team&apos;s milestones</h3>
+        <p
+          className={`mt-1 text-sm ${kind === "unreadable" ? "text-amber-800 dark:text-amber-200" : "text-muted-foreground"}`}
+          data-testid={
+            kind === "unreadable" ? "dao-milestones-failed" : undefined
+          }
+        >
+          {kind === "unreadable"
+            ? "Could not read how the milestones are judged or where they stand just now."
+            : "Reading the milestones…"}
+        </p>
+        <Button
+          className="mt-2"
+          data-testid="dao-milestones-open"
+          onClick={onOpen}
+          size="sm"
+          variant="outline"
+        >
+          Open the milestones
+        </Button>
+      </Card>
+    );
+  }
   // When the lock lets holders object, the rows come from that lock, not from a panel's claims.
-  const lock = challenge.data;
+  const lock = kind === "challenge" ? challenge.data : null;
   if (lock) {
     const planned = launch.record.unlocks?.milestones ?? [];
     return (

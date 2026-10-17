@@ -8,6 +8,7 @@
  * holders from voting to spend the treasury or to issue more Shares.
  */
 
+import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import {
@@ -17,7 +18,7 @@ import {
 } from "../lib/milestone-timeline";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
-import { useChallengeLock } from "../use-challenge-lock";
+import { useChallengeLockState } from "../use-challenge-lock";
 import { useMilestoneTimeline } from "../use-milestone-timeline";
 import { ChallengeMilestones } from "./ChallengeMilestones";
 import { Linked } from "./EvidenceBlock";
@@ -65,24 +66,51 @@ interface MilestonesTabProps {
  * Shares, so it needs no record), or a named panel of reviewers.
  */
 export function MilestonesTab(props: MilestonesTabProps) {
-  const challenge = useChallengeLock(props.dao);
-  if (props.dao !== null && challenge.data) {
+  const lock = useChallengeLockState(props.dao);
+  if (props.dao !== null && lock.kind === "challenge" && lock.view) {
     return (
       <ChallengeMilestones
         dao={props.dao}
         launch={props.launch}
+        lockState={lock}
         onOpenDecisions={props.onOpenDecisions}
-        view={challenge.data}
+        view={lock.view}
       />
     );
   }
-  if (props.dao !== null && challenge.isLoading) {
+  if (props.dao !== null && lock.kind === "loading") {
     return (
       <Card
         className="p-4 text-sm text-muted-foreground"
         data-testid="milestones-tab"
       >
         Reading the milestones from the network…
+      </Card>
+    );
+  }
+  // A read that failed says nothing about which rule this project uses, so no rule's guarantees are shown in its place.
+  if (props.dao !== null && lock.kind === "unreadable") {
+    return (
+      <Card className="p-4" data-testid="milestones-rule-unreadable">
+        <h2 className="text-base font-bold">Milestones</h2>
+        <p
+          className="mt-1 text-sm text-amber-800 dark:text-amber-200"
+          role="status"
+        >
+          Could not read how this project&apos;s milestones are judged just now,
+          so none of its milestones is shown as reached or not. That is not the
+          same as there being nothing to see.
+        </p>
+        <Button
+          className="mt-2"
+          data-testid="milestones-rule-retry"
+          onClick={lock.refresh}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Try again
+        </Button>
       </Card>
     );
   }

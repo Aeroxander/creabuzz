@@ -66,7 +66,7 @@ const IDEAS = [
   {
     icon: ShieldCheck,
     title: "The team's tokens unlock with its milestones",
-    body: "The team's own tokens stay locked. They unlock as named reviewers read the evidence and approve each milestone.",
+    body: "The team's own tokens stay locked. The team publishes evidence and posts a bond, and the tokens unlock after an objection period unless holders successfully challenge the claim. A project can instead name reviewers who approve each milestone.",
   },
   {
     icon: Users,

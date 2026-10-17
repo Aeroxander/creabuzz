@@ -1184,9 +1184,17 @@ test("a project with its own DAO says what can and cannot be changed, before a b
     await expect(powers).toContainText("Spend the money the DAO holds");
     await expect(powers).toContainText("The team votes too");
     await expect(powers).toContainText("you can leave with your share");
-    // A locked plan tells backers the lock's weak point: the reviewers are fixed and the Shares stay locked without them.
-    await expect(page.getByTestId("launch-powers-panel")).toContainText(
-      "The reviewers are fixed",
+    // Before the project has a DAO, which rule judges the milestones is not known, so nothing is said of reviewers; what is
+    // true of every rule is said instead (it is fixed at launch, and no vote can free the locked Shares).
+    await expect(page.getByTestId("launch-powers-rule")).toContainText(
+      "chosen when the project launches",
+    );
+    await expect(powers).toContainText(
+      "How milestones are judged is fixed at launch",
+    );
+    await expect(page.getByTestId("launch-powers-panel")).toHaveCount(0);
+    await expect(powers).not.toContainText(
+      "unlock only when the named reviewers",
     );
     await expect(powers).toContainText(
       "Give up a team member's unearned Shares",

@@ -42,6 +42,39 @@ export function challengeUpdateContent(input: {
 }
 
 /**
+ * What the screen says about a milestone's evidence. Looking and not finding are different from the team not having
+ * published: a read that failed, or a history that was only read in part, says nothing about whether the text exists.
+ *  - `none`: nothing was submitted to the lock yet, so there is no evidence to speak of.
+ *  - `verified`: the published text hashes to what the lock holds.
+ *  - `unreadable`: looking for it failed.
+ *  - `mismatch`: something was published for it, and none of it matches.
+ *  - `incomplete`: nothing was found, but not every update could be read, so it may be in an older one.
+ *  - `missing`: nothing was found in a complete read.
+ */
+export type ChallengeEvidenceView =
+  | "none"
+  | "verified"
+  | "unreadable"
+  | "mismatch"
+  | "incomplete"
+  | "missing";
+
+export function challengeEvidenceView(input: {
+  submitted: boolean;
+  standing: EvidenceStanding;
+  /** Looking for the published text failed. */
+  error: boolean;
+  /** There are more updates than were read. */
+  incomplete: boolean;
+}): ChallengeEvidenceView {
+  if (!input.submitted) return "none";
+  if (input.standing.kind === "verified") return "verified";
+  if (input.error) return "unreadable";
+  if (input.standing.kind === "mismatch") return "mismatch";
+  return input.incomplete ? "incomplete" : "missing";
+}
+
+/**
  * What a holder can rely on for a milestone: the newest published text that hashes to the lock's evidence hash and whose
  * check words hash to the milestone's check. Nothing that does not is shown as the evidence.
  */

@@ -23,8 +23,11 @@ with their share.
    Shares *and* is larger than the accepting weight. Anything else, including nobody turning up, means the milestone
    stands and unlocks. (Your call: silence is consent; the bar for an objector is therefore low.)
 6. **Clawback**: for a month after an unlock, a holder can object again, once. If that is upheld, every team member's
-   remaining locked Shares are burned and the bond is forfeited. The tranche that already unlocked stays unlocked, so
-   the last tranche should be the largest.
+   remaining locked Shares are burned and the bond is forfeited. The tranche that already unlocked stays unlocked.
+7. **In order**: a milestone can be published only once the one before it has stood. So when an earlier milestone is
+   objected to late, the tranches still ahead are still locked and are what gets burned. (Without this, a team could
+   publish every milestone at once, unlock them all together, and leave nothing for a late objection to burn.) What stands
+   behind the last milestone is the bond; the pilot says so.
 
 Nothing here lets a vote free locked Shares. The lock stays set-once, forfeiting still burns instead of freeing, and
 the DAO can still forfeit a departed founder's tranches.
@@ -47,9 +50,11 @@ deposit back), half to the DAO, and the team may try again with a doubled window
 ## Who votes, and how much
 
 - Anyone who is not a team member. A team member cannot object or vote on their own milestones.
-- Weight is the smaller of the wallet's votes at the block before the objection and the Shares it holds now. Buying
-  after the objection counts for nothing, and votes delegated in cannot be used (the Shares would have to be the
-  voter's own).
+- Weight is the smaller of the Shares the wallet **owned** at the block before the objection (from the voting policy's own
+  ownership history, which does not depend on delegation) and the Shares it holds now. Buying after the objection counts
+  for nothing, and neither delegated votes nor the same Shares passed between wallets can be counted (a first version used
+  historical delegated votes, which a team could lend to a small holder who then bought more after the objection: an
+  independent review reproduced a tie turning an upheld objection into an unlock).
 - One vote per wallet per objection.
 
 ## What this does not fix

@@ -8,8 +8,10 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import { plannedMilestoneTokens } from "../lib/milestone-plan";
+import { span } from "../lib/challenge-copy";
 import { formatShares } from "../lib/shares-format";
-import type { LaunchRecord } from "../models";
+import { isEvmAddress, type LaunchRecord } from "../models";
+import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { countOf } from "@/shared/lib/count-of";
 
 export function MilestoneSummaryCard({
@@ -20,6 +22,16 @@ export function MilestoneSummaryCard({
   onOpenMilestones: () => void;
 }) {
   const milestones = record.unlocks?.milestones ?? [];
+  // How the milestones are judged is read from the project's own lock, so the agreement says the rule it really has.
+  const dao =
+    record.tokenPlan?.mode === "dao" &&
+    record.treasury &&
+    isEvmAddress(record.treasury)
+      ? record.treasury
+      : null;
+  const lockRead = useChallengeLock(dao);
+  const kind = lockKindOf(dao, lockRead);
+  const lock = kind === "challenge" ? (lockRead.data ?? null) : null;
   if (record.unlocks?.mode !== "milestones" || milestones.length === 0) {
     return null;
   }
@@ -31,9 +43,18 @@ export function MilestoneSummaryCard({
         {countOf(milestones.length, "milestone")}
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        The team&apos;s locked tokens are released one milestone at a time,
-        once the evidence for it has been judged. Each milestone is judged by
-        exactly these words.
+        Each milestone unlocks part of the team&apos;s locked tokens when the
+        team shows it was reached and the project&apos;s rule for judging it is
+        satisfied. Each milestone is judged by exactly these words.
+      </p>
+      <p className="mt-1 text-sm" data-testid="launch-milestone-rule">
+        {kind === "challenge" && lock
+          ? `How they are judged: holders can object. The team publishes evidence and posts a bond; its tokens unlock after the objection period (${span(lock.terms.window)} to start with, longer for a bigger milestone or a retry) unless holders successfully challenge the claim. Milestones go in order.`
+          : kind === "panel"
+            ? "How they are judged: named reviewers read the evidence and approve each milestone, and a waiting period follows in which anyone can object."
+            : kind === "unreadable"
+              ? "How they are judged could not be read just now."
+              : "How they are judged is chosen when the project launches: holders can object, or named reviewers approve. It is shown here from then on."}
       </p>
       <ol className="mt-3 divide-y divide-black/10 text-sm dark:divide-white/10">
         {milestones.map((milestone, index) => (

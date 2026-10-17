@@ -296,6 +296,13 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     callWord(lock, `0xa5f1e282${word(holder)}`);
   expect(await lockedOf(FOUNDER_WALLET)).toBe(TEAM);
   say("the founder launched a project whose milestones go to the holders");
+  // Before the buyers can claim, the team is told publishing is not open yet and is offered nothing to send.
+  await founder.getByRole("tab", { name: /Milestones/ }).click();
+  await expect(founder.getByTestId("challenge-publish-note-0")).toContainText(
+    "opens when the buyers can claim",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("challenge-publish-0")).toHaveCount(0);
 
   // ── Two backers buy in, the sale ends and graduates, and they collect their Shares ──────────────────
   await mineTo(startBlock + 2);
@@ -395,6 +402,34 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     WORDS_ONE,
   );
 
+  // ── A node that does not answer says nothing about which rule this is ──────────────────────────────
+  const flaky = await personPage(context, relay, BACKER_TWO, "44".repeat(32));
+  const down = new RegExp(ANVIL_URL.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"));
+  await flaky.route(down, (route) =>
+    route.fulfill({ status: 503, body: "unavailable" }),
+  );
+  await flaky.goto("/launchpad");
+  await flaky.getByText("Nebula DAO").click();
+  // The agreement names no reviewers it cannot know, and the Milestones tab shows no rule's milestones in place of the real ones.
+  await expect(flaky.getByTestId("launch-powers-rule")).toContainText(
+    "could not be read just now",
+    { timeout: 60_000 },
+  );
+  await expect(flaky.getByTestId("launch-powers-panel")).toHaveCount(0);
+  await flaky.getByRole("tab", { name: /Milestones/ }).click();
+  await expect(flaky.getByTestId("milestones-rule-unreadable")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(flaky.getByTestId("challenge-milestones")).toHaveCount(0);
+  await expect(flaky.getByTestId("milestones-reviewer-terms")).toHaveCount(0);
+  await flaky.unroute(down);
+  await flaky.getByTestId("milestones-rule-retry").click();
+  await expect(flaky.getByTestId("challenge-milestones")).toBeVisible({
+    timeout: 60_000,
+  });
+  await flaky.close();
+  say("an unreadable lock was shown as unknown, not as a panel");
+
   // ── The founder publishes milestone one: the evidence first, then the bond, then the milestone ──────
   const founderUsdcBefore = await balanceOf(CURRENCY, FOUNDER_WALLET);
   await founder.getByTestId("challenge-text-0").fill(EVIDENCE_ONE);
@@ -410,6 +445,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(
     founder.getByTestId("challenge-evidence-toggle-0"),
   ).toBeVisible();
+  // Milestones go in order: the next one is not offered until this one has unlocked.
+  await expect(founder.getByTestId("challenge-publish-note-1")).toContainText(
+    "Milestones go in order",
+  );
+  await expect(founder.getByTestId("challenge-publish-1")).toHaveCount(0);
   say("the founder published milestone one and posted a bond");
 
   // Home tells a holder there is something to read, and the line opens the milestone.
@@ -423,6 +463,19 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     timeout: 30_000,
   });
 
+  // The agreement says the rule this project really has, not a panel's.
+  await backerOne.goto("/launchpad");
+  await backerOne.getByText("Nebula DAO").click();
+  await expect(backerOne.getByTestId("launch-powers-challenge")).toContainText(
+    "a milestone nobody objects to unlocks",
+    { timeout: 30_000 },
+  );
+  await expect(backerOne.getByTestId("launch-powers-panel")).toHaveCount(0);
+  await expect(backerOne.getByTestId("launch-milestone-rule")).toContainText(
+    "holders can object",
+    { timeout: 30_000 },
+  );
+
   // A holder sees it, can read the evidence, and is offered an objection; the founder is not.
   await openMilestones(backerOne);
   await backerOne.getByTestId("challenge-evidence-toggle-0").click();
@@ -431,6 +484,15 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   );
   await expect(backerOne.getByTestId("challenge-object-0")).toBeVisible();
   await expect(founder.getByTestId("challenge-object-0")).toHaveCount(0);
+
+  // Backer two is already looking at the milestone, and does not touch the page again until the vote has opened.
+  await openMilestones(backerTwo);
+  await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
+    "Open to objections",
+  );
+  await expect(backerTwo.getByTestId("challenge-freshness")).toContainText(
+    "updates on its own",
+  );
 
   // ── Backer one objects; backer two votes with them; the founder cannot vote ──────────────────────────
   const oneUsdcBefore = await balanceOf(CURRENCY, BACKER_ONE);
@@ -448,8 +510,14 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "against",
   );
   say("backer one objected");
-  await openMilestones(backerTwo);
-  await expect(backerTwo.getByTestId("challenge-vote-0")).toBeVisible();
+  // The page backer two left open follows on its own: the vote appears without a reload.
+  await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
+    "Holders are voting",
+    { timeout: 60_000 },
+  );
+  await expect(backerTwo.getByTestId("challenge-vote-0")).toBeVisible({
+    timeout: 60_000,
+  });
   // The richest state of the page, scanned: a vote is open and this holder can cast one.
   await expectAccessible(backerTwo, "Milestones with a vote open");
   await backerTwo.getByTestId("challenge-vote-reject-0").click();
@@ -494,6 +562,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Open to objections",
     { timeout: 90_000 },
   );
+  // Backer two watches the second attempt on a page that is not touched again.
+  await openMilestones(backerTwo);
+  await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
+    "Open to objections",
+  );
   await passTime(28 * DAY + 60);
   // Home tells the team its milestone is ready to finish.
   await founder.goto("/");
@@ -501,9 +574,10 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Finish it to unlock your tokens",
     { timeout: 60_000 },
   );
-  await openMilestones(backerTwo);
+  // The untouched page notices the window has closed, and offers to finish it, without a reload.
   await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
     "Ready to finish",
+    { timeout: 60_000 },
   );
   await backerTwo.getByTestId("challenge-finish-0").click();
   await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(

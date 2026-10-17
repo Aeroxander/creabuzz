@@ -17,7 +17,7 @@ import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
 import { span } from "../lib/challenge-copy";
 import { isEvmAddress, type LaunchRecord } from "../models";
-import { useChallengeLock } from "../use-challenge-lock";
+import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
 
 const day = (seconds: number) =>
@@ -56,6 +56,13 @@ const LOCKED = [
   "Who judges the milestones is named at launch, with how many must agree. A vote cannot swap in a different panel.",
 ] as const;
 
+/** Said when the project's rule for judging milestones is not known (no DAO yet, or it could not be read): true of every rule. */
+const LOCKED_RULE_UNKNOWN = [
+  "The team's locked Shares unlock only when a milestone is reached and judged under the rule the project sets when it launches. The lock is set once, at launch.",
+  "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
+  "How milestones are judged is fixed at launch: no vote can change it, and no vote can free the locked Shares.",
+] as const;
+
 const LOCKED_BY_OBJECTION = (c: ChallengeFacts) =>
   [
     `The team's locked Shares unlock only when a milestone is reached: the team publishes its evidence, holders have ${span(c.window)} to object, and a vote of holders can turn it down. The lock is set once, at launch.`,
@@ -82,6 +89,8 @@ export function PowersCard({
   panel,
   reviewerTerms = null,
   challenge = null,
+  rule = "panel",
+  ruleUnreadable = false,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
@@ -91,6 +100,13 @@ export function PowersCard({
   reviewerTerms?: string | null;
   /** Set when the milestones unlock unless holders object, instead of a panel approving them. */
   challenge?: ChallengeFacts | null;
+  /**
+   * How milestones are judged, as far as it is known: holders' objections, a panel of named reviewers, or not known (the
+   * project has no DAO yet, or its lock could not be read). Nothing is said of reviewers unless it is known to be a panel.
+   */
+  rule?: "challenge" | "panel" | "unknown";
+  /** The rule is unknown because reading it failed, which the card says. */
+  ruleUnreadable?: boolean;
 }) {
   return (
     <Card className="p-4" data-testid="launch-powers">
@@ -108,7 +124,9 @@ export function PowersCard({
           ...(locked
             ? challenge
               ? LOCKED_BY_OBJECTION(challenge)
-              : LOCKED
+              : rule === "unknown"
+                ? LOCKED_RULE_UNKNOWN
+                : LOCKED
             : NOT_LOCKED),
           ...ALWAYS,
         ].map((line) => (
@@ -133,13 +151,30 @@ export function PowersCard({
           <p className="mt-1">
             For {span(challenge.clawback)} after an unlock one more objection is
             possible, and if holders uphold it the team&apos;s remaining locked
-            Shares are burned.
+            Shares are burned. Milestones are published in order, so the ones
+            still ahead are locked while an earlier one can be objected to; what
+            stands behind the last milestone is the bond.
           </p>
           <p className="mt-1 text-black/60 dark:text-white/60">
             This protects you only as far as someone is watching: a milestone
             nobody objects to unlocks. You can leave with your share of the
             treasury while one waits.
           </p>
+        </div>
+      ) : locked && rule === "unknown" ? (
+        <div className="mt-2 text-sm" data-testid="launch-powers-rule">
+          {ruleUnreadable ? (
+            <p>
+              How this project&apos;s milestones are judged could not be read
+              just now. It is shown on the Milestones tab once it can be.
+            </p>
+          ) : (
+            <p className="text-black/60 dark:text-white/60">
+              Whether holders can object or named reviewers approve is chosen
+              when the project launches, and is shown here and on the Milestones
+              tab from then on.
+            </p>
+          )}
         </div>
       ) : locked ? (
         <div className="mt-2 text-sm" data-testid="launch-powers-panel">
@@ -205,6 +240,7 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
       : null;
   const work = useWork(dao, null);
   const challengeLock = useChallengeLock(dao);
+  const kind = lockKindOf(dao, challengeLock);
   const mandate = work.data?.mandates.find((m) => m.isMilestonePanel);
   const panel: PanelFacts | null = mandate
     ? {
@@ -219,7 +255,7 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
           : null,
       }
     : null;
-  const lock = challengeLock.data;
+  const lock = kind === "challenge" ? (challengeLock.data ?? null) : null;
   const sale = recordSaleCurrency(record);
   const challenge: ChallengeFacts | null = lock
     ? {
@@ -239,8 +275,16 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
     <PowersCard
       challenge={challenge}
       locked={locked}
-      panel={challenge ? null : panel}
-      reviewerTerms={record.reviewerTerms}
+      panel={kind === "panel" ? panel : null}
+      reviewerTerms={kind === "panel" ? record.reviewerTerms : null}
+      rule={
+        kind === "challenge"
+          ? "challenge"
+          : kind === "panel"
+            ? "panel"
+            : "unknown"
+      }
+      ruleUnreadable={kind === "unreadable"}
     />
   );
 }

@@ -21,6 +21,7 @@ import {
   loadChallengeDraft,
   saveChallengeDraft,
 } from "../lib/challenge-draft";
+import { challengeEvidenceView } from "../lib/challenge-evidence";
 import { evidenceProblem } from "../lib/evidence";
 import type { EvidenceStanding } from "../lib/evidence";
 import {
@@ -45,6 +46,10 @@ export function ChallengeMilestoneCard({
   words,
   tokens,
   standing,
+  evidenceError,
+  evidenceIncomplete,
+  onRetryEvidence,
+  publishNote,
   actions,
   weight,
   wallet,
@@ -62,6 +67,13 @@ export function ChallengeMilestoneCard({
   /** What it holds back, in words ("About 80,000,000 tokens", "30% of the team's tokens"). */
   tokens: string;
   standing: EvidenceStanding;
+  /** Looking for the published text failed: say so, instead of claiming nothing was published. */
+  evidenceError: boolean;
+  /** There are more updates than were read: "nothing found" may only mean "nothing in the newest ones". */
+  evidenceIncomplete: boolean;
+  onRetryEvidence: () => void;
+  /** Why the team cannot publish yet (the sale is not over, an earlier milestone has not unlocked), or null. */
+  publishNote: string | null;
   actions: ChallengeAction[];
   /** What the connected wallet's vote would count for. */
   weight: bigint;
@@ -78,6 +90,12 @@ export function ChallengeMilestoneCard({
   const now = view.now;
   const objection = m.objection?.open ? m.objection : null;
   const index = m.index;
+  const evidenceView = challengeEvidenceView({
+    submitted: m.evidence !== null,
+    standing,
+    error: evidenceError,
+    incomplete: evidenceIncomplete,
+  });
   const busy = (kind: string) => working === `challenge-${kind}-${index}`;
 
   return (
@@ -160,7 +178,7 @@ export function ChallengeMilestoneCard({
           </div>
         ) : null}
 
-        {standing.kind === "verified" ? (
+        {evidenceView === "verified" && standing.kind === "verified" ? (
           <details className="mt-2 rounded-md bg-black/5 p-2 text-sm dark:bg-white/5">
             <summary
               className="cursor-pointer text-xs font-medium"
@@ -179,20 +197,78 @@ export function ChallengeMilestoneCard({
               and it is judged against the milestone&apos;s words above.
             </p>
           </details>
-        ) : m.evidence !== null ? (
+        ) : evidenceView === "unreadable" ? (
+          <div
+            className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+            data-testid={`challenge-evidence-unreadable-${index}`}
+            role="status"
+          >
+            <p>
+              Could not look for the evidence just now, so it is not shown. That
+              does not mean the team did not publish it.
+            </p>
+            <Button
+              className="mt-2"
+              onClick={onRetryEvidence}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Try again
+            </Button>
+          </div>
+        ) : evidenceView === "mismatch" ? (
+          <p
+            className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+            data-testid={`challenge-evidence-mismatch-${index}`}
+          >
+            Something was published for this milestone, but it is not what the
+            team submitted to the lock. Do not rely on it.
+          </p>
+        ) : evidenceView === "incomplete" ? (
+          <div
+            className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+            data-testid={`challenge-evidence-incomplete-${index}`}
+            role="status"
+          >
+            <p>
+              No matching text was found in the updates that were read, but this
+              project has more updates than could be read, so it may be in an
+              older one.
+            </p>
+            <Button
+              className="mt-2"
+              onClick={onRetryEvidence}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Try again
+            </Button>
+          </div>
+        ) : evidenceView === "missing" ? (
           <p
             className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
             data-testid={`challenge-evidence-missing-${index}`}
           >
-            No published text matching what the team submitted could be found.
-            Holders cannot judge what they cannot read, so treat this with
-            suspicion.
+            The team has not published text matching what it submitted to the
+            lock. Holders cannot judge what they cannot read.
+          </p>
+        ) : null}
+
+        {publishNote ? (
+          <p
+            className="mt-2 text-xs text-muted-foreground"
+            data-testid={`challenge-publish-note-${index}`}
+          >
+            {publishNote}
           </p>
         ) : null}
 
         {actions.includes("publish") ? (
           <PublishForm
             bond={terms.bond}
+            key={`${view.lock}:${wallet ?? ""}:${index}`}
             index={index}
             lock={view.lock}
             money={money}

@@ -233,6 +233,7 @@ function fakeLock({
   team,
   throws = false,
   locked = {},
+  failure = "execution reverted",
 }) {
   const asked = [];
   const sel = (sig) => selectorOf(sig);
@@ -241,9 +242,12 @@ function fakeLock({
     async now() {
       return NOW;
     },
+    async blockNumber() {
+      return 123;
+    },
     async call(to, data) {
       asked.push({ to, data });
-      if (throws) throw new Error("execution reverted");
+      if (throws) throw new Error(failure);
       assert.equal(to, LOCK);
       const s = data.slice(0, 10);
       const arg = () => Number(BigInt(`0x${data.slice(10, 74)}`));
@@ -341,6 +345,7 @@ test("the lock is read whole: its terms, its team and each milestone with the st
   assert.equal(view.lock, LOCK);
   assert.equal(view.dao, DAO);
   assert.equal(view.now, NOW);
+  assert.equal(view.block, 123, "the chain's block when it was read");
   assert.deepEqual(view.team, [FOUNDER, COFOUNDER]);
   assert.equal(
     view.locked,
@@ -384,6 +389,32 @@ test("a milestone nobody has published reads as untouched, with no submitter or 
   assert.equal(m.evidence, null);
   assert.equal(m.objection, null);
   assert.equal(m.bond, 0n);
+});
+
+test("a lock that refuses the question is not a challenge lock, but a read that got no answer says nothing about which lock it is", async () => {
+  // A panel's lock has no milestoneCount(): the call reverts, and that is a confirmed "not a challenge lock".
+  assert.equal(
+    await readChallengeLock(
+      fakeLock({ milestones: [], team: [], throws: true }),
+      LOCK,
+    ),
+    null,
+  );
+  // A node that did not answer is unknown: it must not be read as a panel (which would hide an open objection).
+  for (const failure of [
+    "rpc http 503",
+    "The chain node did not answer in time. Try again in a moment.",
+    "Could not reach the chain node. Check your connection and try again.",
+  ]) {
+    await assert.rejects(
+      () =>
+        readChallengeLock(
+          fakeLock({ milestones: [], team: [], throws: true, failure }),
+          LOCK,
+        ),
+      new RegExp(failure.slice(0, 12)),
+    );
+  }
 });
 
 test("a lock that is not a challenge lock reads as nothing", async () => {
@@ -447,6 +478,7 @@ test("a DAO's challenge lock is found from its Shares, and a DAO with another ki
   });
   const chainFor = (guard, inner = lock) => ({
     now: inner.now,
+    blockNumber: inner.blockNumber,
     async call(to, data) {
       const sel = data.slice(0, 10);
       if (to === DAO && sel === selectorOf("shares()")) return hex(SHARES);
@@ -463,4 +495,13 @@ test("a DAO's challenge lock is found from its Shares, and a DAO with another ki
   const panelLock = fakeLock({ milestones: [], team: [], throws: true });
   assert.equal(await findChallengeLock(chainFor(LOCK, panelLock), DAO), null);
   await assert.rejects(() => findChallengeLock(lock, "nope"), /DAO/);
+  // The questions put to the DAO and its Shares are not softened either: a failure there is unknown, not "no lock".
+  const down = {
+    now: lock.now,
+    blockNumber: lock.blockNumber,
+    async call() {
+      throw new Error("rpc http 503");
+    },
+  };
+  await assert.rejects(() => findChallengeLock(down, DAO), /503/);
 });

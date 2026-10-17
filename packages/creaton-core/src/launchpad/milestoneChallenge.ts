@@ -15,6 +15,16 @@ import { encodeFunctionData, selectorOf } from "./evmAbi.ts";
 import { decodeAddress, encodeCall0 } from "./work.ts";
 import type { WorkChain } from "./workRead.ts";
 
+/** What the reader needs of a chain: view calls, the chain's own clock, and its latest block number. */
+export interface ChallengeChain extends Pick<WorkChain, "call" | "now"> {
+  blockNumber(): Promise<number>;
+}
+
+/** A call the contract refused (no such function, or it reverted), as opposed to one that did not get an answer. */
+function isRevert(error: unknown): boolean {
+  return error instanceof Error && /revert/i.test(error.message);
+}
+
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
@@ -233,6 +243,8 @@ export interface ChallengeLockView {
   milestones: ChallengeMilestone[];
   /** The chain's clock when this was read. */
   now: number;
+  /** The chain's latest block number when this was read (a milestone cannot be published before `terms.earliestBlock`). */
+  block: number;
 }
 
 /** The stage of a milestone at `now`. The contract's own comparisons, in one place. */
@@ -294,7 +306,7 @@ function decodeAddressArray(hex: string, max: number): string[] {
  * is read from the chain: only the lock's own answers decide what can happen.
  */
 export async function readChallengeLock(
-  chain: Pick<WorkChain, "call" | "now">,
+  chain: ChallengeChain,
   lock: string,
 ): Promise<ChallengeLockView | null> {
   assertAddress(lock, "the lock");
@@ -304,8 +316,11 @@ export async function readChallengeLock(
       lock,
       encodeCall0(CHALLENGE_SIGNATURES.milestoneCount),
     );
-  } catch {
-    return null;
+  } catch (error) {
+    // A lock that refuses the question is not a challenge lock (a panel's lock has no such function). A read that got
+    // no answer is not that: it says nothing about which lock this is, and must not be taken for a panel.
+    if (isRevert(error)) return null;
+    throw error;
   }
   const count = Math.min(Number(word(countHex, 0)), MAX_CHALLENGE_MILESTONES);
   if (count === 0) return null;
@@ -323,6 +338,7 @@ export async function readChallengeLock(
     deposit,
     teamHex,
     now,
+    block,
   ] = await Promise.all([
     read(CHALLENGE_SIGNATURES.dao),
     read(CHALLENGE_SIGNATURES.window),
@@ -335,6 +351,7 @@ export async function readChallengeLock(
     read(CHALLENGE_SIGNATURES.deposit),
     read(CHALLENGE_SIGNATURES.team),
     chain.now(),
+    chain.blockNumber(),
   ]);
   const token = decodeAddress(bondToken);
   const terms: ChallengeTerms = {
@@ -416,16 +433,17 @@ export async function readChallengeLock(
     locked: lockedEach.reduce((sum, hex) => sum + word(hex, 0), 0n),
     milestones,
     now,
+    block,
   };
 }
 
 /**
- * The challenge lock a DAO's Shares point at, or null when the DAO has no lock or its lock is not a challenge lock (a
- * panel's lock does not answer `milestoneCount()`). The lock is found from the Shares contract, not from a record: only
+ * The challenge lock a DAO's Shares point at, or null when the DAO has no lock or its lock is confirmed not to be a challenge
+ * lock (a panel's lock refuses `milestoneCount()`). A read that gets no answer throws: it is "unknown", never "a panel". The lock is found from the Shares contract, not from a record: only
  * the Shares contract's own answer decides what can move.
  */
 export async function findChallengeLock(
-  chain: Pick<WorkChain, "call" | "now">,
+  chain: ChallengeChain,
   dao: string,
 ): Promise<ChallengeLockView | null> {
   assertAddress(dao, "the DAO");
