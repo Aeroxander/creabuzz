@@ -28,6 +28,7 @@ import { fundingContent, type FundingStatus } from "./lib/funding";
 import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
+import { evidenceQueryKey } from "./use-evidence";
 import {
   KIND_APPROVAL_DENY,
   KIND_APPROVAL_GRANT,
@@ -502,6 +503,7 @@ export function usePublishMirror() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: launchesQueryKey });
+      void queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
     },
   });
 }

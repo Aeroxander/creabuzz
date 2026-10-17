@@ -24,6 +24,7 @@ export function BondReturn({
   money,
   blocked,
   onSend,
+  onRetry,
 }: {
   mandate: MandateView;
   /** The chain's own clock, not the browser's. */
@@ -33,9 +34,36 @@ export function BondReturn({
   /** A transaction is already in flight or the wallet is not ready. */
   blocked: boolean;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** Read the bond again. */
+  onRetry: () => void;
 }) {
   const { walletStake, walletUnbond } = mandate;
   if (!mandate.walletIsReviewer || !mandate.bond) return null;
+  // A read that failed is not "nothing waiting": after asking for the whole bond the stake is zero and the pending
+  // amount is the only sign of the money, so say it could not be read and let them try again.
+  if (mandate.walletBondUnreadable) {
+    return (
+      <div
+        className="mt-2 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+        data-testid="work-bond-unreadable"
+        role="status"
+      >
+        <p>
+          Could not check whether a bond of yours is waiting to come back. It is
+          not lost; the network just did not answer.
+        </p>
+        <Button
+          className="mt-2"
+          onClick={onRetry}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Try again
+        </Button>
+      </div>
+    );
+  }
   if (walletStake === 0n && walletUnbond === null) return null;
   const ready = walletUnbond !== null && chainTime >= walletUnbond.availableAt;
   return (

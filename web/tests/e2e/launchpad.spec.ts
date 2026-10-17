@@ -30,6 +30,19 @@ function record(auction?: string) {
     content: JSON.stringify({
       pitch: "To the stars.",
       ...(servedLongPitch ? { longPitch: servedLongPitch } : {}),
+      ...(servedTeamLocked
+        ? {
+            unlocks: {
+              mode: "milestones",
+              allocationPct: 20,
+              milestones: [
+                { claim: "alpha", label: "Alpha shipped", percent: 40 },
+                { claim: "mainnet", label: "Mainnet live", percent: 60 },
+              ],
+              months: null,
+            },
+          }
+        : {}),
       // Circle's USDC on Sepolia (the fixture's chain): amounts read as USDC.
       currency: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
       stage: servedStage,
@@ -103,6 +116,8 @@ let servedStage = "live";
 let servedTokenMode = "mint";
 /** The founder's longer story served for the fixture record; empty = none, as in most tests. */
 let servedLongPitch = "";
+/** Whether the fixture record locks the team's Shares behind milestones (the wizard also allows no lock). */
+let servedTeamLocked = false;
 /**
  * Milestone mirrors (kind 47005) served for the detail page. Empty by
  * default, so every existing test still sees a launch with no recorded
@@ -1142,6 +1157,7 @@ test("a project with its own DAO says what can and cannot be changed, before a b
 }) => {
   // Last on purpose, like the test above: it changes what the fixture record is.
   servedTokenMode = "dao";
+  servedTeamLocked = true;
   try {
     await page.goto("/launchpad");
     await page.getByText("Nebula DAO").click();
@@ -1152,6 +1168,38 @@ test("a project with its own DAO says what can and cannot be changed, before a b
     await expect(powers).toContainText("Spend the money the DAO holds");
     await expect(powers).toContainText("The team votes too");
     await expect(powers).toContainText("you can leave with your share");
+    // A locked plan tells backers the lock's weak point: the reviewers are fixed and the Shares stay locked without them.
+    await expect(page.getByTestId("launch-powers-panel")).toContainText(
+      "The reviewers are fixed",
+    );
+    await expect(powers).toContainText(
+      "Give up a team member's unearned Shares",
+    );
+  } finally {
+    servedTokenMode = "mint";
+    servedTeamLocked = false;
+  }
+});
+
+test("a project that does not lock the team's Shares says so, and drops the lines about a lock", async ({
+  page,
+}) => {
+  servedTokenMode = "dao";
+  try {
+    await page.goto("/launchpad");
+    await page.getByText("Nebula DAO").click();
+    const powers = page.getByTestId("launch-powers");
+    await expect(powers).toBeVisible({ timeout: 15_000 });
+    await expect(powers).toContainText("does not lock the team's Shares");
+    await expect(powers).not.toContainText(
+      "unlock only when the named reviewers",
+    );
+    await expect(page.getByTestId("launch-powers-panel")).toHaveCount(0);
+    await expect(powers).not.toContainText(
+      "Give up a team member's unearned Shares",
+    );
+    // What a vote can decide is true either way.
+    await expect(powers).toContainText("Spend the money the DAO holds");
   } finally {
     servedTokenMode = "mint";
   }

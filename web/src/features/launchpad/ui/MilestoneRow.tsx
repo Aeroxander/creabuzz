@@ -1,9 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 import { formatAtomic } from "../lib/amounts";
-import { evidenceProblem, evidenceUpdateContent } from "../lib/evidence";
+import {
+  evidenceFor,
+  evidenceProblem,
+  evidenceUpdateContent,
+} from "../lib/evidence";
+import {
+  claimForDraft,
+  clearSubmission,
+  loadSubmission,
+  type RemainingSteps,
+  remainingSteps,
+  type SubmissionDraft,
+  saveSubmission,
+  submissionKey,
+  type SubmitStep,
+} from "../lib/milestone-submission";
 import { encodeUnlock } from "../lib/milestone-lock";
 import type { MilestoneTranche } from "../lib/milestone-lock";
 import {
@@ -24,9 +39,18 @@ import {
 } from "../lib/work";
 import type { WorkSnapshot } from "../lib/work-read";
 import type { Launch } from "../models";
+import { useEvidencePackets } from "../use-evidence";
 import { usePublishMirror } from "../use-launches";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
+
+/** What each step of a submission is, for the sentence that says what is left. */
+const STEP_WORDS: Record<SubmitStep, string> = {
+  file: "file the claim",
+  check: "state which milestone it is for",
+  bind: "send it to the reviewers",
+  publish: "publish the evidence",
+};
 
 /**
  * One of the team's milestones: the exact words it is judged by, where it stands (Submitted, Reviewing, Waiting period,
@@ -59,21 +83,48 @@ export function MilestoneRow({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
   const panel = work?.mandates.find((m) => m.isMilestonePanel);
-  const claim = panel
-    ? claimForMilestone(panel.claims, wallet, tranche.checkHash)
-    : null;
+  // A submission that was started and not finished is kept, so cancelling a prompt or reloading resumes the same one.
+  const storageKey = submissionKey(lock, wallet, tranche.index);
+  const [draft, setDraft] = useState<SubmissionDraft | null>(() =>
+    loadSubmission(storageKey),
+  );
+  const { packets } = useEvidencePackets(launch);
+  const pending = claimForDraft(panel?.claims ?? [], draft, wallet);
+  const claim =
+    (panel
+      ? claimForMilestone(panel.claims, wallet, tranche.checkHash)
+      : null) ?? pending;
   const progress = milestoneProgress(
     claim,
     work?.chainTime ?? 0,
     panel?.challengeWindow ?? 0,
     tranche.unlocked,
   );
+  const left: RemainingSteps | null =
+    draft && panel
+      ? remainingSteps({
+          draft,
+          claim: pending,
+          checkHash: tranche.checkHash,
+          published:
+            pending !== null &&
+            evidenceFor(pending, packets, panel.address).kind === "verified",
+        })
+      : null;
   const [evidence, setEvidence] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const publish = usePublishMirror();
   const key = `milestone-${tranche.index}`;
   const blocked = busy !== null || gate !== null || working;
+
+  // Everything the saved submission needed is done: nothing is left to keep.
+  useEffect(() => {
+    if (left && "steps" in left && left.steps.length === 0) {
+      clearSubmission(storageKey);
+      setDraft(null);
+    }
+  }, [left, storageKey]);
 
   const finish = async () => {
     if (!panel || !claim) return;
@@ -98,6 +149,83 @@ export function MilestoneRow({
     }
   };
 
+  /** Do what is left of a submission, in order, stopping at the first thing that does not go through. */
+  const proceed = async (saved: SubmissionDraft) => {
+    setProblem(null);
+    if (!panel || !words) return;
+    const filed = claimForDraft(panel.claims, saved, wallet);
+    const remaining = remainingSteps({
+      draft: saved,
+      claim: filed,
+      checkHash: tranche.checkHash,
+      published:
+        filed !== null &&
+        evidenceFor(filed, packets, panel.address).kind === "verified",
+    });
+    if ("problem" in remaining) {
+      setProblem(remaining.problem);
+      return;
+    }
+    const id = idWord(saved.name);
+    setWorking(true);
+    try {
+      for (const step of remaining.steps) {
+        if (step === "publish") {
+          // The text itself, so the reviewers can read what was submitted.
+          try {
+            await publish.mutateAsync({
+              kind: KIND_LAUNCH_UPDATE,
+              author: launch.record.author,
+              launchId: launch.record.id,
+              content: evidenceUpdateContent({
+                name: saved.name,
+                claimId: id,
+                mandate: panel.address,
+                evidence: saved.evidence,
+                check: words,
+              }),
+            });
+          } catch {
+            setProblem(
+              "Submitted, but the evidence could not be published, and the reviewers cannot approve what they cannot read. Your submission is saved: press Continue to publish it.",
+            );
+            return;
+          }
+          continue;
+        }
+        const landed =
+          step === "file"
+            ? await onSend(
+                `${key}-file`,
+                panel.claimsAddress,
+                encodeSubmitPaidClaim(id, 0n, 0n, hashText(saved.evidence)),
+              )
+            : step === "check"
+              ? await onSend(
+                  `${key}-check`,
+                  panel.claimsAddress,
+                  encodeSetCheck(id, tranche.checkHash),
+                )
+              : await onSend(
+                  `${key}-bind`,
+                  panel.address,
+                  encodeBindMilestone(id),
+                );
+        if (!landed) {
+          setProblem(
+            "It stopped before the end. Your submission is saved: press Continue to finish it.",
+          );
+          return;
+        }
+      }
+      clearSubmission(storageKey);
+      setDraft(null);
+      setEvidence("");
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const submit = async () => {
     setProblem(null);
     if (!panel || !words) return;
@@ -106,65 +234,26 @@ export function MilestoneRow({
       setProblem(wrong);
       return;
     }
-    setWorking(true);
-    try {
-      const name = milestoneClaimId(
+    const saved = {
+      name: milestoneClaimId(
         tranche.index,
         panel.claims.map((c) => idLabel(c.id)),
-      );
-      const id = idWord(name);
-      // Three steps to the wallet: file the claim, state which milestone it is for, send it to the panel's reviewers.
-      if (
-        !(await onSend(
-          `${key}-file`,
-          panel.claimsAddress,
-          encodeSubmitPaidClaim(id, 0n, 0n, hashText(evidence)),
-        ))
-      ) {
-        return;
-      }
-      if (
-        !(await onSend(
-          `${key}-check`,
-          panel.claimsAddress,
-          encodeSetCheck(id, tranche.checkHash),
-        ))
-      ) {
-        return;
-      }
-      if (
-        !(await onSend(`${key}-bind`, panel.address, encodeBindMilestone(id)))
-      ) {
-        return;
-      }
-      // The text itself, so the reviewers can read what was submitted.
-      try {
-        await publish.mutateAsync({
-          kind: KIND_LAUNCH_UPDATE,
-          author: launch.record.author,
-          launchId: launch.record.id,
-          content: evidenceUpdateContent({
-            name,
-            claimId: id,
-            mandate: panel.address,
-            evidence,
-            check: words,
-          }),
-        });
-      } catch {
-        setProblem(
-          "Submitted, but the evidence could not be published, and the reviewers cannot approve what they cannot read. Open the Work tab to publish it again.",
-        );
-        return;
-      }
-      setEvidence("");
-    } finally {
-      setWorking(false);
-    }
+      ),
+      evidence,
+    };
+    // Saved before the first prompt, so a cancel or a reload finds it.
+    saveSubmission(storageKey, saved);
+    setDraft(saved);
+    await proceed(saved);
   };
 
+  const resuming =
+    draft !== null &&
+    left !== null &&
+    !("steps" in left && left.steps.length === 0);
   const canSubmit =
-    progress.stage === "not-submitted" || progress.stage === "turned-down";
+    !resuming &&
+    (progress.stage === "not-submitted" || progress.stage === "turned-down");
 
   return (
     <li
@@ -221,6 +310,49 @@ export function MilestoneRow({
       )}
       {tranche.unlocked || tranche.forfeited ? null : (
         <div className="mt-2 grid gap-2">
+          {resuming && draft && panel ? (
+            <div
+              className="grid gap-2 rounded-md bg-black/5 p-2 dark:bg-white/5"
+              data-testid={`milestone-resume-${tranche.index}`}
+            >
+              <p>
+                {left && "steps" in left
+                  ? `Your last submission is not finished. Still to do: ${left.steps.map((step) => STEP_WORDS[step]).join(", then ")}.`
+                  : "Your last submission cannot be continued."}
+              </p>
+              <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                {draft.evidence}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {left && "steps" in left ? (
+                  <Button
+                    aria-busy={working}
+                    data-testid={`milestone-continue-${tranche.index}`}
+                    disabled={blocked}
+                    onClick={() => void proceed(draft)}
+                    size="sm"
+                    type="button"
+                  >
+                    {working ? "Submitting…" : "Continue submitting"}
+                  </Button>
+                ) : null}
+                <Button
+                  data-testid={`milestone-start-over-${tranche.index}`}
+                  disabled={blocked}
+                  onClick={() => {
+                    clearSubmission(storageKey);
+                    setDraft(null);
+                    setProblem(null);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Start over
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {canSubmit && words && panel ? (
             <>
               <label className="grid gap-1 text-xs">
@@ -254,7 +386,7 @@ export function MilestoneRow({
                 : "This launch has no milestone panel to submit to."}
             </p>
           ) : null}
-          {progress.stage === "filed" && claim && panel ? (
+          {progress.stage === "filed" && claim && panel && !resuming ? (
             <Button
               data-testid={`milestone-send-${tranche.index}`}
               disabled={blocked}

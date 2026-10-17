@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { publishedEvents } from "../helpers/published-events";
 
 /**
  * Unlocking the team's Shares in the browser, against a REAL local chain.
@@ -30,6 +31,10 @@ test.skip(
   !ANVIL_URL || !DAO || !LOCK,
   "set E2E_ANVIL_URL, E2E_DAO, E2E_LOCK and E2E_SHARES (scripts/web-milestone-e2e.sh does)",
 );
+
+/** What the pages of this test publish, read back by the others (the evidence a reviewer reads). */
+const published = publishedEvents();
+test.beforeEach(() => published.clear());
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   const res = await fetch(ANVIL_URL, {
@@ -132,6 +137,7 @@ async function serveRecord(page: Page) {
       }
       if (!Array.isArray(parsed)) return;
       if (parsed[0] === "EVENT") {
+        published.remember(parsed[1] as { id: string; kind: number });
         ws.send(
           JSON.stringify(["OK", (parsed[1] as { id: string }).id, true, ""]),
         );
@@ -152,15 +158,20 @@ async function serveRecord(page: Page) {
       if (filter.kinds?.includes(0)) {
         ws.send(JSON.stringify(["EVENT", subId, profileRecord]));
       }
+      published.serve(ws, subId, filter.kinds);
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
 }
 
 /** Open the Work tab as one person's wallet. */
-async function openWork(page: Page, account: string) {
+async function openWork(
+  page: Page,
+  account: string,
+  wallet: { rejectSendAt?: number } = {},
+) {
   await serveRecord(page);
-  await installAnvilWallet(page, account, { rpcUrl: ANVIL_URL });
+  await installAnvilWallet(page, account, { rpcUrl: ANVIL_URL, ...wallet });
   await page.addInitScript(
     ([nsec, rpcUrl]) => {
       window.localStorage.setItem("buzz.identity.nsec", nsec);
@@ -325,15 +336,49 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   // are refused before the wallet is asked.
   await page.getByTestId("milestone-submit-1").click();
   await expect(page.getByTestId("milestone-problem-1")).toBeVisible();
-  await page
+
+  // The person cancels the second prompt: the claim is filed, the rest is not. (A second page of the same browser: the
+  // saved submission is shared, and the wallet that cancels is a one-time thing per page load.)
+  const interrupted = await page.context().newPage();
+  await openWork(interrupted, FOUNDER_WALLET, { rejectSendAt: 1 });
+  await interrupted
     .getByTestId("milestone-evidence-1")
     .fill("Mainnet is live: https://example.com/mainnet");
-  await page.getByTestId("milestone-submit-1").click();
-  await expect(page.getByTestId("milestone-stage-1")).toContainText(
+  await interrupted.getByTestId("milestone-submit-1").click();
+  // The page re-reads after each step that landed, so the row may be rebuilt: what survives is the saved submission,
+  // and the row says what is left of it.
+  await expect(interrupted.getByTestId("milestone-resume-1")).toContainText(
+    "Still to do: state which milestone it is for",
+    { timeout: 60_000 },
+  );
+  expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
+  await interrupted.close();
+
+  // A fresh load finds the same submission and offers to finish it, with the text they wrote.
+  const resumed = await page.context().newPage();
+  await openWork(resumed, FOUNDER_WALLET);
+  const resume = resumed.getByTestId("milestone-resume-1");
+  await expect(resume).toBeVisible({ timeout: 30_000 });
+  await expect(resume).toContainText(
+    "Still to do: state which milestone it is for",
+  );
+  await expect(resume).toContainText("https://example.com/mainnet");
+  await expect(resumed.getByTestId("milestone-evidence-1")).toHaveCount(0);
+  await resumed.getByTestId("milestone-continue-1").click();
+  await expect(resumed.getByTestId("milestone-stage-1")).toContainText(
     "With the reviewers: 0 of 2 approvals",
     { timeout: 90_000 },
   );
-  await expect(page.getByTestId("milestone-submit-1")).toHaveCount(0);
+  await expect(resumed.getByTestId("milestone-resume-1")).toHaveCount(0);
+  await expect(resumed.getByTestId("milestone-submit-1")).toHaveCount(0);
+  // It finished the same claim: there is no second one for this milestone on the panel, and the reviewers can read it.
+  await expect(resumed.getByTestId("work-claim")).toHaveCount(2);
+  await expect(
+    resumed
+      .getByTestId("work-claim")
+      .filter({ hasText: "milestone-2" })
+      .getByTestId("work-evidence-text"),
+  ).toContainText("https://example.com/mainnet", { timeout: 30_000 });
   // Nothing was put up for a vote, and the Shares are still locked until the reviewers have their say.
   expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
 });

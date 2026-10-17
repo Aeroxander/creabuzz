@@ -2,9 +2,11 @@
  * The top of Home: what this place is for people who just arrived, and what to
  * do next for people who just signed up.
  *
- * Signed out: a short pitch, two doors (make an account, look around) and the
- * three ideas the product stands on (a ready-made team, helpers that ask first,
- * and sharing ownership when the time comes). Signed in: a checklist built only
+ * Signed out: a short pitch that leads with what the product is for (back a
+ * project early, and the team has to earn its own tokens by showing its work),
+ * two doors (make an account, look around) and the three ideas it stands on
+ * (backing a project, milestones the team has to earn, and building together
+ * with a ready-made team and helpers that ask first). Signed in: a checklist built only
  * from things the app can verify (a profile, a project finished here, a helper
  * started here, a follow, a launch of your own), so a ticked box never lies.
  * The first three are the way in; the last two are for later and never hold the
@@ -12,7 +14,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { Bot, Check, Coins, Users } from "lucide-react";
+import { Check, Coins, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -42,19 +44,19 @@ function readDismissed(): boolean {
 
 const IDEAS = [
   {
-    icon: Users,
-    title: "Start from a ready-made team",
-    body: "Pick a film crew, an app team or a startup crew. Channels, helpers and a shared wiki are set up for you.",
-  },
-  {
-    icon: Bot,
-    title: "AI helpers that ask first",
-    body: "Helpers do the legwork. When one reaches its limit it asks you before going on, so nothing runs away.",
-  },
-  {
     icon: Coins,
-    title: "Share what you build",
-    body: "When you're ready, raise money and share ownership with the people who back and build it.",
+    title: "Back a project early",
+    body: "Bid in an open sale. If it misses its minimum, every bid is refunded.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Milestones the team has to earn",
+    body: "The team's own tokens stay locked until named reviewers read the evidence and approve each milestone.",
+  },
+  {
+    icon: Users,
+    title: "Build together",
+    body: "Start from a ready-made team. AI helpers do the legwork and ask before they go past their limit.",
   },
 ] as const;
 
@@ -78,13 +80,15 @@ function Welcome() {
         className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl"
         id="welcome-title"
       >
-        Make something with a team of people and{" "}
-        <span className="text-[var(--brand-violet)]">AI helpers</span>
+        Back teams.{" "}
+        <span className="text-[var(--brand-violet)]">
+          Follow what they build.
+        </span>
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
-        Creaton is a shared workspace where you plan, make and ship together. AI
-        helpers do the legwork inside a budget you set, and when you're ready
-        you can share ownership with the people who help build it.
+        Creaton is where early projects raise money from the people who believe
+        in them, and then have to show their work. A defined part of the team's
+        tokens stays locked until named reviewers approve the agreed milestones.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button

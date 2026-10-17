@@ -12,7 +12,7 @@ import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { IpRecordCard } from "./IpRecordCard";
 import { AboutProjectCard } from "./AboutProjectCard";
-import { PowersCard } from "./PowersCard";
+import { PowersSection } from "./PowersCard";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
@@ -661,6 +661,7 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
                 {allocationRows(
                   record.allocation,
                   record.tokenPlan?.mode === "dao",
+                  record.unlocks?.mode === "milestones",
                 ).map(({ key, label, share }) => {
                   const tokens =
                     totalSupply !== null
@@ -721,7 +722,9 @@ function OverviewTab({ launch }: { launch: TabLaunch }) {
           ))}
         </dl>
       </Card>
-      {record.tokenPlan?.mode === "dao" ? <PowersCard /> : null}
+      {record.tokenPlan?.mode === "dao" ? (
+        <PowersSection record={record} />
+      ) : null}
       <LaunchContractsCard record={record} />
       <ProvenCommitmentsCard launch={launch} />
       <IpRecordCard launch={launch} />

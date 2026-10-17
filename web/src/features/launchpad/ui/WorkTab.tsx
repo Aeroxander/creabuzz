@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -9,7 +7,6 @@ import {
   type EvidencePacket,
   evidenceFor,
   evidenceUpdateContent,
-  packetsOf,
 } from "../lib/evidence";
 import {
   bondShortfall,
@@ -29,6 +26,7 @@ import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useWork } from "../use-work";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { BondReturn } from "./BondReturn";
+import { useEvidencePackets } from "../use-evidence";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { LockedSharesCard } from "./LockedSharesCard";
@@ -65,7 +63,7 @@ export function WorkTab({
   const work = useWork(dao, wallet.address);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   // What contributors published for their claims: the text a reviewer reads before judging.
-  const packets = useMemo(() => packetsOf(launch.updates), [launch.updates]);
+  const evidence = useEvidencePackets(launch);
 
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">
@@ -165,7 +163,8 @@ export function WorkTab({
               launch={launch}
               mandate={mandate}
               onOpenDecisions={onOpenDecisions}
-              packets={packets}
+              evidence={evidence}
+              onRefresh={() => void work.refetch()}
               onSend={send}
               wallet={wallet.address}
             />
@@ -216,10 +215,13 @@ function MandateCard({
   onSend,
   onOpenDecisions,
   launch,
-  packets,
+  evidence,
+  onRefresh,
 }: {
   launch: Launch;
-  packets: EvidencePacket[];
+  /** Read the DAO's work again (a read that failed, tried once more). */
+  onRefresh: () => void;
+  evidence: { packets: EvidencePacket[]; error: boolean; refetch: () => void };
   mandate: MandateView;
   chainTime: number;
   wallet: string | null;
@@ -380,6 +382,7 @@ function MandateCard({
         chainTime={chainTime}
         mandate={mandate}
         money={bondMoney}
+        onRetry={onRefresh}
         onSend={onSend}
       />
 
@@ -434,7 +437,11 @@ function MandateCard({
               !mandate.walletAttested.includes(claim.id) &&
               !mine;
             // And they can read what they would be approving. Objecting never needs the evidence; approving always does.
-            const standing = evidenceFor(claim, packets, mandate.address);
+            const standing = evidenceFor(
+              claim,
+              evidence.packets,
+              mandate.address,
+            );
             const canReview = reviewerTurn && standing.kind === "verified";
             const label = idLabel(claim.id);
             return (
@@ -463,10 +470,12 @@ function MandateCard({
                   busy={busy !== null}
                   claim={claim}
                   mine={mine}
-                  onRepublish={(evidence, check) =>
-                    republish(claim.id, label, evidence, check)
+                  onRepublish={(text, check) =>
+                    republish(claim.id, label, text, check)
                   }
+                  onRetry={evidence.refetch}
                   standing={standing}
+                  unreadable={evidence.error}
                 />
                 {claim.record.amount > 0n ? (
                   <p

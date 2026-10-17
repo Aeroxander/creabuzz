@@ -49,6 +49,8 @@ export function EvidenceBlock({
   standing,
   mine,
   onRepublish,
+  onRetry,
+  unreadable,
   busy,
 }: {
   claim: ClaimView;
@@ -58,6 +60,9 @@ export function EvidenceBlock({
   /** Publish the evidence again; resolves when it is on the server. */
   onRepublish: (evidence: string, check: string) => Promise<void>;
   busy: boolean;
+  /** Looking for the evidence failed: say so, instead of claiming nothing was published. */
+  unreadable: boolean;
+  onRetry: () => void;
 }) {
   const [evidence, setEvidence] = useState("");
   const [check, setCheck] = useState("");
@@ -95,6 +100,30 @@ export function EvidenceBlock({
         <p className="mt-2 text-xs text-muted-foreground">
           This is the text the claim committed to on the network: it matches.
         </p>
+      </div>
+    );
+  }
+
+  if (unreadable) {
+    return (
+      <div
+        className="mt-2 rounded-md bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+        data-testid="work-evidence-unreadable"
+        role="status"
+      >
+        <p>
+          Could not look for the evidence just now, so it is not shown and this
+          claim cannot be approved yet.
+        </p>
+        <Button
+          className="mt-2"
+          onClick={onRetry}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Try again
+        </Button>
       </div>
     );
   }

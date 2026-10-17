@@ -282,6 +282,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
         onChange={controller.supply.onChange}
         onReset={controller.supply.onReset}
         ownDao={controller.unlocks.ownDao}
+        teamLocked={controller.wizard.unlockMode === "milestones"}
         totalSupply={token.totalSupply}
       />
       <p className="text-xs text-black/60 dark:text-white/60">

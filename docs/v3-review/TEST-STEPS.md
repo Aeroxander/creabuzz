@@ -80,6 +80,11 @@ out of the DAO: the same call the lock refused before), and the founder holds a 
 By hand, after a `scripts/cli-milestone-e2e.sh`-style world, `buzz launchpad work locks --dao <dao>` lists each milestone
 with its state and what to do next.
 
+**An interrupted milestone submission (D49).** Start submitting a milestone and cancel the wallet's second prompt (or close
+the tab after the first). Reload: the milestone row says "Your last submission is not finished. Still to do: ...", shows
+the text you wrote, and Continue submitting finishes the same claim (no second claim appears on the Work tab) and the
+reviewers can read the evidence. Start over discards it.
+
 **Submitting a milestone and reading the evidence (D45).** In the browser journey the founder submits the second milestone
 from its own row on the Locked Shares card: an empty box is refused before the wallet is asked, then one box and one button
 file the claim, name the milestone and send it to the panel's reviewers (three wallet confirmations, no vote and no project

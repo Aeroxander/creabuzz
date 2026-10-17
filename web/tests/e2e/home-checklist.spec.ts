@@ -186,3 +186,21 @@ test.describe("the one door for starting something", () => {
     await expect(page).toHaveURL(/\/start$/);
   });
 });
+
+test("someone who is not signed in is told what the product is for: backing teams that have to earn their tokens", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  await page.goto("/");
+  const welcome = page.getByTestId("home-welcome");
+  await expect(welcome).toBeVisible({ timeout: 15_000 });
+  // Funding and milestone accountability come first; the helpers are one of three supporting ideas, not the headline.
+  await expect(welcome.getByRole("heading")).toContainText("Back teams.");
+  await expect(welcome.getByRole("heading")).not.toContainText("AI helpers");
+  await expect(welcome).toContainText(
+    "stays locked until named reviewers approve the agreed milestones",
+  );
+  await expect(welcome).toContainText("Milestones the team has to earn");
+  await expect(welcome).toContainText("AI helpers do the legwork");
+});

@@ -3,138 +3,133 @@ import test from "node:test";
 
 import { saleAction } from "./sale-action.ts";
 
-const base = { raise: "open", stage: "live", hasAuction: true };
+const BID = { kind: "bid", label: "Place bid" };
+const CLOSED = { kind: "closed", label: "Bidding closed" };
+const NOT_YET = { kind: "closed", label: "Bidding not open yet" };
+const CLAIM = { kind: "claim", label: "Claim tokens" };
+const REFUND = { kind: "refund", label: "Claim refund" };
 
-test("bidding is offered only while bidding is open", () => {
-  assert.deepEqual(saleAction(base), { kind: "bid", label: "Place bid" });
-  assert.deepEqual(saleAction({ ...base, stage: "funding" }), {
-    kind: "bid",
-    label: "Place bid",
-  });
+const win = (head, claimBlock = 260) => ({
+  startBlock: 100,
+  endBlock: 200,
+  claimBlock,
+  head,
+});
+const read = (graduated) => ({ source: "rpc", graduated });
+const sale = (over) => ({
+  raise: "none",
+  stage: "draft",
+  hasAuction: true,
+  ...over,
 });
 
-test("before a sale exists the main button offers nothing", () => {
-  for (const stage of ["draft", "review"]) {
-    assert.equal(saleAction({ ...base, raise: "none", stage }), null);
+test("a running auction is open to bids from its start block up to, not including, its end block, whatever the saved stage says", () => {
+  for (const stage of ["draft", "review", "live", "funding"]) {
+    assert.deepEqual(saleAction(sale({ stage, window: win(100) })), BID);
+    assert.deepEqual(saleAction(sale({ stage, window: win(150) })), BID);
+    assert.deepEqual(saleAction(sale({ stage, window: win(199) })), BID);
   }
 });
 
-test("after bidding closes it says so until the buyers can act", () => {
-  assert.deepEqual(saleAction({ ...base, raise: "settling" }), {
-    kind: "closed",
-    label: "Bidding closed",
-  });
-  // A failed read of the chain is never taken to mean the buyers can claim.
+test("the end block itself is closed: the auction refuses a bid there", () => {
   assert.deepEqual(
-    saleAction({
-      ...base,
-      raise: "settling",
-      progress: { source: "unavailable", ended: true, graduated: true },
-    }),
-    { kind: "closed", label: "Bidding closed" },
+    saleAction(sale({ window: win(200), progress: read(true) })),
+    CLOSED,
   );
   assert.deepEqual(
-    saleAction({
-      ...base,
-      raise: "settling",
-      progress: { source: "rpc", ended: false, graduated: false },
-    }),
-    { kind: "closed", label: "Bidding closed" },
+    saleAction(sale({ stage: "live", raise: "open", window: win(200) })),
+    CLOSED,
   );
 });
 
-test("once the buyers can act, a funded sale offers tokens and a missed one a refund", () => {
+test("before the start block it says so", () => {
+  assert.deepEqual(saleAction(sale({ window: win(50) })), NOT_YET);
   assert.deepEqual(
-    saleAction({
-      ...base,
-      raise: "settling",
-      progress: { source: "rpc", ended: true, graduated: true },
-    }),
-    { kind: "claim", label: "Claim tokens" },
-  );
-  assert.deepEqual(
-    saleAction({
-      ...base,
-      raise: "settling",
-      progress: { source: "rpc", ended: true, graduated: false },
-    }),
-    { kind: "refund", label: "Claim refund" },
+    saleAction(sale({ stage: "live", raise: "open", window: win(50) })),
+    NOT_YET,
   );
 });
 
-test("a settled sale offers what its outcome allows, and nothing with no auction to claim from", () => {
-  assert.deepEqual(saleAction({ ...base, raise: "done", stage: "graduated" }), {
-    kind: "claim",
-    label: "Claim tokens",
-  });
-  assert.deepEqual(saleAction({ ...base, raise: "done", stage: "failed" }), {
-    kind: "refund",
-    label: "Claim refund",
-  });
-  assert.equal(
-    saleAction({
-      ...base,
-      raise: "done",
-      stage: "graduated",
-      hasAuction: false,
-    }),
-    null,
+test("a finished auction offers a refund or tokens whether or not the record was ever set to Live", () => {
+  // The saved label is a stale draft; the chain says the sale missed its minimum, then met it.
+  assert.deepEqual(
+    saleAction(sale({ window: win(300), progress: read(false) })),
+    REFUND,
   );
-  assert.equal(
-    saleAction({ ...base, raise: "settling", hasAuction: false }),
-    null,
+  assert.deepEqual(
+    saleAction(sale({ window: win(300), progress: read(true) })),
+    CLAIM,
+  );
+  // A refund opens as soon as the auction is over; tokens wait for the claim block.
+  assert.deepEqual(
+    saleAction(sale({ window: win(200), progress: read(false) })),
+    REFUND,
+  );
+  assert.deepEqual(
+    saleAction(sale({ window: win(230), progress: read(true) })),
+    CLOSED,
+  );
+  assert.deepEqual(
+    saleAction(sale({ window: win(260), progress: read(true) })),
+    CLAIM,
   );
 });
 
-test("a running auction is open to bids whatever the record's stage says, and not before it starts", () => {
-  const window = (head) => ({ startBlock: 100, endBlock: 200, head });
-  // The founder launched the project but has not set the record to Live: the auction is real and open.
+test("meeting the minimum while bidding is still open does not end the bidding", () => {
   assert.deepEqual(
-    saleAction({
-      raise: "none",
-      stage: "draft",
-      hasAuction: true,
-      window: window(150),
-    }),
-    { kind: "bid", label: "Place bid" },
+    saleAction(sale({ window: win(150), progress: read(true) })),
+    BID,
   );
-  // Before the start block a bid would be refused: say so instead of offering it.
+});
+
+test("a failed read of the chain is never taken to mean the buyers may act", () => {
+  for (const progress of [
+    undefined,
+    { source: "unavailable", graduated: true },
+  ]) {
+    assert.deepEqual(saleAction(sale({ window: win(300), progress })), CLOSED);
+  }
+  // No claim block on the record: tokens are not offered on a guess.
   assert.deepEqual(
-    saleAction({
-      raise: "none",
-      stage: "draft",
-      hasAuction: true,
-      window: window(50),
-    }),
-    { kind: "closed", label: "Bidding not open yet" },
+    saleAction(sale({ window: win(300, null), progress: read(true) })),
+    CLOSED,
+  );
+});
+
+test("with no reading of the clock the saved label and receipts decide, as they always did", () => {
+  assert.deepEqual(saleAction(sale({ stage: "live", raise: "open" })), BID);
+  assert.deepEqual(
+    saleAction(sale({ stage: "live", raise: "settling" })),
+    CLOSED,
   );
   assert.deepEqual(
-    saleAction({
-      raise: "open",
-      stage: "live",
-      hasAuction: true,
-      window: window(50),
-    }),
-    { kind: "closed", label: "Bidding not open yet" },
+    saleAction(sale({ stage: "graduated", raise: "done" })),
+    CLAIM,
   );
-  // With no auction linked the stage alone decides, and a draft offers nothing.
+  assert.deepEqual(
+    saleAction(sale({ stage: "failed", raise: "done" })),
+    REFUND,
+  );
+  assert.equal(saleAction(sale()), null);
+});
+
+test("with no auction there is nothing to claim or refund, and a draft offers nothing", () => {
+  assert.equal(saleAction(sale({ hasAuction: false, window: win(150) })), null);
   assert.equal(
-    saleAction({
-      raise: "none",
-      stage: "draft",
-      hasAuction: false,
-      window: window(150),
-    }),
+    saleAction(sale({ hasAuction: false, stage: "graduated", raise: "done" })),
     null,
   );
-  // An unreadable chain falls back to the stage.
+  assert.equal(
+    saleAction(sale({ hasAuction: false, stage: "failed", raise: "done" })),
+    null,
+  );
+  assert.equal(
+    saleAction(sale({ hasAuction: false, stage: "live", raise: "settling" })),
+    null,
+  );
+  // A record-only sale that is open can still record a bid.
   assert.deepEqual(
-    saleAction({
-      raise: "open",
-      stage: "live",
-      hasAuction: true,
-      window: window(null),
-    }),
-    { kind: "bid", label: "Place bid" },
+    saleAction(sale({ hasAuction: false, stage: "live", raise: "open" })),
+    BID,
   );
 });

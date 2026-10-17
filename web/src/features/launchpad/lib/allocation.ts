@@ -176,10 +176,19 @@ export const DAO_ALLOCATION_LABELS: ReadonlyArray<{
   },
 ];
 
-/** The rows to show: three for a project launching into its own DAO, the six stored shares otherwise. */
+/** What the team row says when the plan does not lock the team's Shares. */
+const TEAM_UNLOCKED_HINT =
+  "Not locked. The team holds these from the start and can move them.";
+
+/**
+ * The rows to show: three for a project launching into its own DAO, the six stored shares otherwise. `teamLocked` is
+ * whether the plan locks the team's Shares behind milestones; the team row says what the plan really does, since the
+ * wizard also allows no lock at all.
+ */
 export function allocationRows(
   allocation: SupplyAllocation,
   ownDao: boolean,
+  teamLocked = true,
 ): AllocationRow[] {
   if (!ownDao) {
     return ALLOCATION_LABELS.map(({ key, label, hint }) => ({
@@ -192,7 +201,7 @@ export function allocationRows(
   return DAO_ALLOCATION_LABELS.map(({ key, label, hint }) => ({
     key,
     label,
-    hint,
+    hint: key === "team" && !teamLocked ? TEAM_UNLOCKED_HINT : hint,
     share: key === "treasury" ? daoReserve(allocation) : allocation[key],
   }));
 }

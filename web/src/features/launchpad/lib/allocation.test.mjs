@@ -126,6 +126,21 @@ test("an own-DAO launch shows three shares, and the DAO's is everything not sold
   assert.equal(allocationRows(STANDARD_ALLOCATION, false).length, 6);
 });
 
+test("the team row says what the plan does: locked behind milestones, or not locked at all", () => {
+  const team = (locked) =>
+    allocationRows(STANDARD_DAO_ALLOCATION, true, locked).find(
+      (row) => row.key === "team",
+    ).hint;
+  assert.match(team(true), /^Locked/);
+  assert.match(team(false), /^Not locked/);
+  // The default is the locked plan, which is what the wizard starts with.
+  assert.match(
+    allocationRows(STANDARD_DAO_ALLOCATION, true).find((r) => r.key === "team")
+      .hint,
+    /^Locked/,
+  );
+});
+
 test("setting the DAO's share writes it all into one stored share and keeps the total honest", () => {
   const next = withDaoReserve(STANDARD_ALLOCATION, 50);
   assert.equal(next.treasury, 50);

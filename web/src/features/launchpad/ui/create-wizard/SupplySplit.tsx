@@ -48,6 +48,8 @@ export interface SupplySplitProps {
    * Otherwise the six stored shares are shown.
    */
   ownDao: boolean;
+  /** The plan locks the team's Shares behind milestones: the team row says so, or says it does not. */
+  teamLocked: boolean;
 }
 
 export function SupplySplit({
@@ -57,8 +59,9 @@ export function SupplySplit({
   issue,
   totalSupply,
   ownDao,
+  teamLocked,
 }: SupplySplitProps) {
-  const rows = allocationRows(allocation, ownDao);
+  const rows = allocationRows(allocation, ownDao, teamLocked);
   const total = totalAllocation(allocation);
   const supply = parseSupply(totalSupply);
   const balanced = total === 100;

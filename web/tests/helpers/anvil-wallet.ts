@@ -14,10 +14,15 @@ import type { Page } from "@playwright/test";
 export async function installAnvilWallet(
   page: Page,
   account: string,
-  options: { rpcUrl: string; rejectFirstSend?: boolean } = { rpcUrl: "" },
+  options: {
+    rpcUrl: string;
+    rejectFirstSend?: boolean;
+    /** Decline the nth transaction the page sends (0 is the first), once: a prompt cancelled part way through a flow. */
+    rejectSendAt?: number;
+  } = { rpcUrl: "" },
 ): Promise<void> {
   await page.addInitScript(
-    ({ url, account, rejectFirstSend }) => {
+    ({ url, account, rejectFirstSend, rejectSendAt }) => {
       let sends = 0;
       Object.defineProperty(window, "ethereum", {
         configurable: true,
@@ -34,15 +39,17 @@ export async function installAnvilWallet(
             }
             // The first send is declined (as if the user pressed Reject); every
             // later one goes through, so the flow can be retried to the end.
-            if (
-              method === "eth_sendTransaction" &&
-              rejectFirstSend &&
-              sends++ === 0
-            ) {
-              throw {
-                code: 4001,
-                message: "User denied transaction signature",
-              };
+            if (method === "eth_sendTransaction") {
+              const nth = sends++;
+              if (
+                (rejectFirstSend && nth === 0) ||
+                (rejectSendAt !== undefined && nth === rejectSendAt)
+              ) {
+                throw {
+                  code: 4001,
+                  message: "User denied transaction signature",
+                };
+              }
             }
             const res = await fetch(url, {
               method: "POST",
@@ -69,6 +76,7 @@ export async function installAnvilWallet(
       url: options.rpcUrl,
       account,
       rejectFirstSend: options.rejectFirstSend ?? false,
+      rejectSendAt: options.rejectSendAt,
     },
   );
 }
