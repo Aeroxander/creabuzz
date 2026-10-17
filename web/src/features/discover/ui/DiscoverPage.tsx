@@ -41,6 +41,7 @@ import {
   DiscoverLaunchCard,
   DiscoverProjectCard,
 } from "./DiscoverCards";
+import { countOf } from "@/shared/lib/count-of";
 
 const FILTERS: readonly { id: DiscoverFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -172,7 +173,7 @@ export function DiscoverPage() {
         <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           {isLoading
             ? "Reading the server…"
-            : `${daos.length} DAOs · ${launches.length} launches · ${projects.length} projects`}
+            : `${countOf(daos.length, "DAO")} · ${countOf(launches.length, "launch", "launches")} · ${countOf(projects.length, "project")}`}
         </span>
       </div>
 
@@ -223,7 +224,7 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={launches.length}
-                    description="Raises open for backing: stage, target, and progress straight from the record and the chain."
+                    description="Raises open for backing, with their stage, target and progress as the sale itself reports them."
                     title="Live launches"
                   />
                   {launches.length === 0 ? (

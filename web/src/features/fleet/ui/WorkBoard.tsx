@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { countOf } from "@/shared/lib/count-of";
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Open",
@@ -338,9 +339,9 @@ export function WorkBoard({
         title="Work"
         action={
           <span className="text-xs text-black/60 dark:text-white/60">
-            {items.length} items ·{" "}
-            {items.filter((i) => i.type === "task").length} tasks ·{" "}
-            {items.filter((i) => i.type === "issue").length} issues
+            {countOf(items.length, "item")} ·{" "}
+            {countOf(items.filter((i) => i.type === "task").length, "task")} ·{" "}
+            {countOf(items.filter((i) => i.type === "issue").length, "issue")}
           </span>
         }
       />

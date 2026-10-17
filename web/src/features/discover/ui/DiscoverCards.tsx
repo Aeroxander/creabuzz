@@ -91,7 +91,7 @@ export function DiscoverDaoCard({
     ? "DAO address"
     : card.contract
       ? `Contract · ${card.contract.role}`
-      : "Onchain address";
+      : "Address on the network";
   return (
     <li>
       <Card

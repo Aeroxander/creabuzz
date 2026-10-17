@@ -403,8 +403,14 @@ export function ManagePanel({
       <Card className="p-4">
         <h2 className="text-base font-semibold">Terms and status</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Stage: {stage} · {record.admission} track · chain{" "}
-          {record.chainId ?? "undeployed"}
+          Stage: {stage} ·{" "}
+          {record.admission === "community"
+            ? "Open to the community"
+            : "Curated list of bidders"}{" "}
+          ·{" "}
+          {record.chainId
+            ? `Network ${record.chainId}`
+            : "Not on a network yet"}
         </p>
         {stageIsAutomatic ? (
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
@@ -771,7 +777,8 @@ export function ManagePanel({
       <Card className="border-red-500/30 p-4">
         <h2 className="text-base font-semibold text-red-600">Danger zone</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Removes the launch from the directory. Onchain state is untouched.
+          Removes the launch from the directory. Nothing that already happened
+          on the network is changed.
         </p>
         {confirmDelete ? (
           <div className="mt-2 flex gap-2">

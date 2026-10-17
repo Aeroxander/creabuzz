@@ -15,6 +15,7 @@ import { launchArt } from "../lib/launch-art";
 import type { LaunchRecord, LaunchStage } from "../models";
 import type { ResolvedFunding } from "../lib/funding";
 import { FundingBadge, StageBadge } from "./widgets";
+import { countOf } from "@/shared/lib/count-of";
 
 /** What a card reads from a launch, so a preview can fill it from a form. */
 export type LaunchCardRecord = Pick<
@@ -194,8 +195,8 @@ export function LaunchCard({
             data-testid={idea ? "launch-card-supporters" : undefined}
             title={
               idea
-                ? `${supporters ?? 0} supporters · ${updates} updates`
-                : `${bids} bids · ${updates} updates`
+                ? `${countOf(supporters ?? 0, "supporter")} · ${countOf(updates, "update")}`
+                : `${countOf(bids, "bid")} · ${countOf(updates, "update")}`
             }
           >
             <Users aria-hidden className="h-4 w-4" />

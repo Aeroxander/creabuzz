@@ -56,6 +56,7 @@ import { isIdea } from "../lib/idea";
 import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
 import { cn } from "@/shared/lib/cn";
+import { countOf } from "@/shared/lib/count-of";
 
 type Filter =
   | "all"
@@ -292,7 +293,7 @@ export function LaunchesPage() {
             <option value="new">New</option>
             <option value="top">Top</option>
           </select>
-          {launches.length} launches
+          {countOf(launches.length, "launch", "launches")}
         </span>
       </div>
 

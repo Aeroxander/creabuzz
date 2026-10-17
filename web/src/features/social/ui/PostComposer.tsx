@@ -312,7 +312,7 @@ export function PostComposer({
                 onChange={(e) => setMirror(e.target.checked)}
                 type="checkbox"
               />
-              Also share on public Nostr
+              Also share outside this server, on public Nostr
             </label>
           </div>
           <span className="flex items-center gap-3">

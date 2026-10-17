@@ -19,6 +19,7 @@ import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
 import { useMilestoneTimeline } from "../use-milestone-timeline";
 import { Linked } from "./EvidenceBlock";
+import { countOf } from "@/shared/lib/count-of";
 
 const STAGE_LABEL: Record<TimelineEntry["stage"], string> = {
   agreed: "Agreed",
@@ -77,7 +78,7 @@ export function MilestonesTab({
         </p>
         {dao && !reading && !failed ? (
           <p className="mt-2 text-sm" data-testid="milestones-summary">
-            {summary.reached} of {summary.total} milestones reached.{" "}
+            {summary.reached} of {countOf(summary.total, "milestone")} reached.{" "}
             {formatShares(summary.heldBack)} tokens still locked
             {summary.released > 0n
               ? `, ${formatShares(summary.released)} released`

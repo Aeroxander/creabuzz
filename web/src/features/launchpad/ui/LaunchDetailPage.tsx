@@ -193,7 +193,9 @@ export function LaunchDetailPage({
           tx: input.tx || undefined,
         },
       });
-      toast.success("Bid recorded here. Your onchain bid is what counts.");
+      toast.success(
+        "Bid noted here. The bid you made on the network is the one that counts.",
+      );
       setBidOpen(false);
     } catch (err) {
       toast.error(

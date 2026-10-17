@@ -10,6 +10,7 @@ import { Card } from "@/shared/ui/card";
 import { plannedMilestoneTokens } from "../lib/milestone-plan";
 import { formatShares } from "../lib/shares-format";
 import type { LaunchRecord } from "../models";
+import { countOf } from "@/shared/lib/count-of";
 
 export function MilestoneSummaryCard({
   record,
@@ -26,7 +27,8 @@ export function MilestoneSummaryCard({
   return (
     <Card className="p-4 lg:col-span-2" data-testid="launch-milestone-summary">
       <h2 className="text-base font-semibold">
-        The team&apos;s tokens unlock with {milestones.length} milestones
+        The team&apos;s tokens unlock with{" "}
+        {countOf(milestones.length, "milestone")}
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         The team&apos;s locked tokens are released one milestone at a time, when

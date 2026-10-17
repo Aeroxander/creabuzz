@@ -33,6 +33,7 @@ import {
 } from "@/features/budgets/ui/BudgetAuthorForm";
 import { AgentStopDialog, type AgentStopTarget } from "./AgentStopDialog";
 import { OrgSetup } from "./OrgSetup";
+import { countOf } from "@/shared/lib/count-of";
 
 const TEAM_SUGGESTIONS = [
   "Platform",
@@ -412,7 +413,8 @@ function OrgRosterFallback({
         title="Org"
         action={
           <span className="text-xs text-black/60 dark:text-white/60">
-            {agents.length} agents · {online} online · {groups.length} teams
+            {countOf(agents.length, "AI helper")} · {online} online ·{" "}
+            {countOf(groups.length, "team")}
           </span>
         }
       />
