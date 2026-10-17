@@ -980,8 +980,10 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(
     capital.page.getByTestId("milestones-reviewer-terms"),
   ).toContainText("answer within 7 days", { timeout: 30_000 });
+  // The milestones are read from the chain (a slow node takes a while), so give the read time before judging it.
   await expect(capital.page.getByTestId("milestone-stage-0")).toHaveText(
     "Not submitted",
+    { timeout: 90_000 },
   );
   // The same pages on a phone, with real data (only when screenshots are being saved).
   if (process.env.E2E_SHOTS) {
