@@ -405,6 +405,32 @@ contract MilestoneChallengeTest is VotingFixture {
         lock.vote(0, true);
     }
 
+    function test_the_views_say_what_a_vote_would_count_for_and_whether_it_was_cast() public {
+        // With nothing open: what an objection raised now would carry.
+        assertEq(lock.voteWeight(0, BOB), 60e18);
+        assertEq(lock.voteWeight(0, ALICE), 0, "the team does not vote");
+        assertEq(lock.voteWeight(0, address(dao)), 0);
+        assertEq(lock.voteWeight(0, address(0xDEAD)), 0);
+        _submit(0);
+        assertFalse(lock.hasVoted(0, BOB));
+        _object(BOB, 0);
+        assertTrue(lock.hasVoted(0, BOB), "the objector's vote is cast");
+        assertFalse(lock.hasVoted(0, CAROL));
+        // Against the open objection: weights at its snapshot, so Shares bought since count for nothing.
+        _mintShares(CAROL, 500e18);
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(lock.voteWeight(0, CAROL), 30e18);
+        _vote(CAROL, 0, false);
+        assertTrue(lock.hasVoted(0, CAROL));
+        // A second objection on the same milestone starts a fresh round.
+        _pass(7 days);
+        lock.resolve(0);
+        _submit(0);
+        _object(BOB, 0);
+        assertFalse(lock.hasVoted(0, CAROL));
+        assertTrue(lock.hasVoted(0, BOB));
+    }
+
     // ---- how an objection ends --------------------------------------------------------------------
 
     function test_an_upheld_objection_sends_it_back_and_splits_the_bond() public {

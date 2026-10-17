@@ -264,6 +264,18 @@ contract MilestoneChallenge {
         return w > MAX_WINDOW ? MAX_WINDOW : uint64(w);
     }
 
+    /// @notice What `who`'s vote would count for on milestone `index`: against its open objection, or, with none open,
+    /// against an objection raised now. Zero for the team, the DAO and anyone with nothing to vote with.
+    function voteWeight(uint256 index, address who) external view returns (uint256) {
+        Objection storage o = objection[index];
+        return _weight(who, o.open ? o.snapshot : uint48(block.number - 1));
+    }
+
+    /// @notice Whether `who` has already voted (the objector counts) on the latest objection to milestone `index`.
+    function hasVoted(uint256 index, address who) external view returns (bool) {
+        return _voted[index][_round[index]][who];
+    }
+
     /// @notice What could vote on an objection raised now: everything that exists, less the DAO's own Shares and the
     /// team's.
     function eligibleSupply() public view returns (uint256 eligible) {

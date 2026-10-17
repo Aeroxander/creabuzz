@@ -65,6 +65,37 @@ export interface DaoLaunchPanelInput {
   now: number;
 }
 
+/** What the holders' challenge asks of a team before its milestones unlock (see `docs/milestone-challenge.md`). */
+export const CHALLENGE_DEFAULTS = {
+  /** How long a milestone waits for objections, before the size and retry scaling. */
+  window: 7 * 86_400,
+  /** How long a vote on an objection runs. */
+  votePeriod: 5 * 86_400,
+  /** How long after an unlock one more objection may be raised. */
+  clawback: 30 * 86_400,
+  /** The least rejecting weight, in basis points of what could vote, for an objection to be upheld. */
+  minRejectBps: 300,
+  /** The bond, as basis points of the raise target. */
+  bondBps: 100,
+  /** The deposit an objector posts, as basis points of the bond. */
+  depositBps: 1_000,
+} as const;
+
+/**
+ * Milestones that unlock unless holders object, instead of a named panel approving them. Every field is optional and
+ * falls back to {@link CHALLENGE_DEFAULTS}; the bond is a share of the raise target unless given.
+ */
+export interface DaoLaunchChallengeInput {
+  window?: number;
+  votePeriod?: number;
+  clawback?: number;
+  minRejectBps?: number;
+  /** Base units of the sale currency a team member posts with a milestone (0 for none). */
+  bond?: bigint;
+  /** Base units an objector posts (0 for none). */
+  deposit?: bigint;
+}
+
 export interface DaoLaunchInputs {
   name: string;
   symbol: string;
@@ -81,8 +112,10 @@ export interface DaoLaunchInputs {
    * leave out is never locked. Empty locks nothing.
    */
   milestones: DaoLaunchMilestone[];
-  /** The panel that judges the milestones; see {@link DaoLaunchPanelInput}. */
+  /** The panel that judges the milestones; see {@link DaoLaunchPanelInput}. Not together with `challenge`. */
   panel?: DaoLaunchPanelInput | null;
+  /** Milestones that unlock unless holders object; see {@link DaoLaunchChallengeInput}. Not together with `panel`. */
+  challenge?: DaoLaunchChallengeInput | null;
   /** Whole Shares needed to open a proposal; "0" lets any holder. */
   proposalThreshold: string;
   /** Sale currency; null or "" is the chain's native currency. */
@@ -119,6 +152,18 @@ export interface DaoLaunchPanelPlan {
   endsAt: number;
 }
 
+/** The challenge terms as the kit takes them (`DaoLaunchKit.ChallengeTerms`). */
+export interface DaoLaunchChallengePlan {
+  window: number;
+  votePeriod: number;
+  clawback: number;
+  minRejectBps: number;
+  /** What the bond and deposit are paid in (the sale currency); the zero address when neither is asked for. */
+  bondToken: string;
+  bond: bigint;
+  deposit: bigint;
+}
+
 export interface DaoLaunchPlan {
   name: string;
   symbol: string;
@@ -133,8 +178,10 @@ export interface DaoLaunchPlan {
   milestoneBps: number[];
   /** The words behind the hashes, for the receipt and the screen. */
   milestones: DaoLaunchMilestone[];
-  /** Who judges them; null exactly when there are no milestones. */
+  /** Who judges them; null when there are no milestones, or when the holders' challenge is used instead. */
   panel: DaoLaunchPanelPlan | null;
+  /** How the holders' challenge lets them through; null unless that is the review the launch chose. */
+  challenge: DaoLaunchChallengePlan | null;
   daoShares: bigint;
   saleSupply: bigint;
   totalSupply: bigint;
@@ -242,6 +289,66 @@ function planPanel(
     bondToken,
     currency: context.saleCurrency,
     endsAt: panel.endsAt,
+  };
+}
+
+/** The challenge the kit takes, or null when there are no milestones. Every rule the lock enforces is checked first. */
+function planChallenge(
+  challenge: DaoLaunchChallengeInput,
+  context: { milestones: number; saleCurrency: string; requiredRaised: bigint },
+): DaoLaunchChallengePlan | null {
+  if (context.milestones === 0) return null;
+  const window = challenge.window ?? CHALLENGE_DEFAULTS.window;
+  const votePeriod = challenge.votePeriod ?? CHALLENGE_DEFAULTS.votePeriod;
+  const clawback = challenge.clawback ?? CHALLENGE_DEFAULTS.clawback;
+  const minRejectBps =
+    challenge.minRejectBps ?? CHALLENGE_DEFAULTS.minRejectBps;
+  if (!Number.isInteger(window) || window < ONE_DAY || window > 30 * ONE_DAY) {
+    fail("challenge", "A milestone waits for objections for 1 to 30 days.");
+  }
+  if (
+    !Number.isInteger(votePeriod) ||
+    votePeriod < ONE_DAY ||
+    votePeriod > 30 * ONE_DAY
+  ) {
+    fail("challenge", "A vote on an objection runs for 1 to 30 days.");
+  }
+  if (!Number.isInteger(clawback) || clawback < 0 || clawback > 180 * ONE_DAY) {
+    fail("challenge", "The month after an unlock can be at most 180 days.");
+  }
+  if (
+    !Number.isInteger(minRejectBps) ||
+    minRejectBps < 1 ||
+    minRejectBps > 5_000
+  ) {
+    fail(
+      "challenge",
+      "The least support an objection needs is 0.01% to 50% of what could vote.",
+    );
+  }
+  const bond =
+    challenge.bond ??
+    (context.requiredRaised * BigInt(CHALLENGE_DEFAULTS.bondBps)) / 10_000n;
+  const deposit =
+    challenge.deposit ??
+    (bond * BigInt(CHALLENGE_DEFAULTS.depositBps)) / 10_000n;
+  if (bond < 0n || bond > U128_MAX || deposit < 0n || deposit > U128_MAX) {
+    fail("challenge", "That bond is not an amount the contract can hold.");
+  }
+  if ((bond > 0n || deposit > 0n) && context.saleCurrency === ZERO_ADDRESS) {
+    fail(
+      "challenge",
+      "A bond is paid in the sale's token such as USDC, so a sale in the chain's own currency has none: set the bond to 0.",
+    );
+  }
+  return {
+    window,
+    votePeriod,
+    clawback,
+    minRejectBps,
+    bondToken: bond > 0n || deposit > 0n ? context.saleCurrency : ZERO_ADDRESS,
+    bond,
+    deposit,
   };
 }
 
@@ -360,11 +467,20 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
   }
   const saleCurrency =
     currencyInput === "" ? ZERO_ADDRESS : currencyInput.toLowerCase();
-  const panel = planPanel(inputs.panel ?? null, {
-    milestones: milestoneChecks.length,
-    team: teamAddresses,
-    saleCurrency,
-  });
+  if (inputs.challenge && inputs.panel) {
+    fail(
+      "challenge",
+      "Choose either named reviewers or holders' objections to judge the milestones, not both.",
+    );
+  }
+  // Named reviewers, unless the holders' challenge was chosen (planned below, once the raise target is known).
+  const panel = inputs.challenge
+    ? null
+    : planPanel(inputs.panel ?? null, {
+        milestones: milestoneChecks.length,
+        team: teamAddresses,
+        saleCurrency,
+      });
   const floorPrice = decimalField(inputs.floorPrice, "floor price");
   if (floorPrice < (1n << 32n) + 1n) {
     fail(
@@ -380,6 +496,13 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
     fail("raise target", "The raise target must be above zero.");
   if (requiredRaised > (1n << 128n) - 1n)
     fail("raise target", "That raise target is too large.");
+  const challenge = inputs.challenge
+    ? planChallenge(inputs.challenge, {
+        milestones: milestoneChecks.length,
+        saleCurrency,
+        requiredRaised,
+      })
+    : null;
   const blocks = [inputs.startBlock, inputs.endBlock, inputs.claimBlock];
   if (blocks.some((b) => b === null || !Number.isSafeInteger(b))) {
     fail("blocks", "The sale window is not set.");
@@ -424,6 +547,7 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
       percent: m.percent,
     })),
     panel,
+    challenge,
     daoShares,
     saleSupply,
     totalSupply: total,
@@ -461,12 +585,30 @@ const PARAMS_TYPE: AbiType = {
   ],
 };
 
+const CHALLENGE_TERMS_TYPE: AbiType = {
+  tuple: [
+    "uint64", // window
+    "uint64", // votePeriod
+    "uint64", // clawback
+    "uint16", // minRejectBps
+    "address", // bondToken
+    "uint128", // bond
+    "uint128", // deposit
+  ],
+};
+
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
 export const SIGNATURE_KIT_LAUNCH =
   "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32,uint64))";
+/** `DaoLaunchKit.launchChallenged(Params, ChallengeTerms)`: milestones that unlock unless holders object. */
+export const SIGNATURE_KIT_LAUNCH_CHALLENGED =
+  "launchChallenged((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32,uint64),(uint64,uint64,uint64,uint16,address,uint128,uint128))";
 export const SIGNATURE_KIT_PREDICT_EXECUTOR =
   "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
+export const SELECTOR_KIT_LAUNCH_CHALLENGED = selectorOf(
+  SIGNATURE_KIT_LAUNCH_CHALLENGED,
+);
 export const SELECTOR_KIT_PREDICT_EXECUTOR = selectorOf(
   SIGNATURE_KIT_PREDICT_EXECUTOR,
 );
@@ -498,35 +640,49 @@ export function encodeKitLaunch(plan: DaoLaunchPlan, executor: string): string {
     executor,
     hook: null,
   });
-  return encodeFunctionData(
-    SIGNATURE_KIT_LAUNCH,
-    [PARAMS_TYPE],
-    [
+  const params = [
+    plan.name,
+    plan.symbol,
+    plan.uri,
+    plan.proposalThreshold,
+    plan.salt,
+    plan.team,
+    plan.teamShares,
+    plan.milestoneChecks,
+    plan.milestoneBps.map(BigInt),
+    plan.panel?.reviewers ?? [],
+    BigInt(plan.panel?.quorum ?? 0),
+    plan.panel?.bond ?? 0n,
+    plan.panel?.bondToken ?? ZERO_ADDRESS,
+    plan.panel?.currency ?? ZERO_ADDRESS,
+    BigInt(plan.panel?.endsAt ?? 0),
+    plan.daoShares,
+    plan.saleSupply,
+    auctionConfig,
+    plan.auctionSalt,
+    // The DAO opens for proposals when the buyers can claim: until then the team is the only electorate.
+    BigInt(plan.auction.claimBlock),
+  ];
+  if (plan.challenge) {
+    const c = plan.challenge;
+    return encodeFunctionData(
+      SIGNATURE_KIT_LAUNCH_CHALLENGED,
+      [PARAMS_TYPE, CHALLENGE_TERMS_TYPE],
       [
-        plan.name,
-        plan.symbol,
-        plan.uri,
-        plan.proposalThreshold,
-        plan.salt,
-        plan.team,
-        plan.teamShares,
-        plan.milestoneChecks,
-        plan.milestoneBps.map(BigInt),
-        plan.panel?.reviewers ?? [],
-        BigInt(plan.panel?.quorum ?? 0),
-        plan.panel?.bond ?? 0n,
-        plan.panel?.bondToken ?? ZERO_ADDRESS,
-        plan.panel?.currency ?? ZERO_ADDRESS,
-        BigInt(plan.panel?.endsAt ?? 0),
-        plan.daoShares,
-        plan.saleSupply,
-        auctionConfig,
-        plan.auctionSalt,
-        // The DAO opens for proposals when the buyers can claim: until then the team is the only electorate.
-        BigInt(plan.auction.claimBlock),
+        params,
+        [
+          BigInt(c.window),
+          BigInt(c.votePeriod),
+          BigInt(c.clawback),
+          BigInt(c.minRejectBps),
+          c.bondToken,
+          c.bond,
+          c.deposit,
+        ],
       ],
-    ],
-  );
+    );
+  }
+  return encodeFunctionData(SIGNATURE_KIT_LAUNCH, [PARAMS_TYPE], [params]);
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +834,8 @@ export function daoLaunchInputsFromRecord(
     proposalThreshold?: string;
     /** Who judges the milestones, when the founder has named them. */
     panel?: DaoLaunchPanelInput | null;
+    /** Or: milestones that unlock unless holders object. */
+    challenge?: DaoLaunchChallengeInput | null;
   } = {},
 ): DaoLaunchInputs {
   const plan = record.tokenPlan;
@@ -728,6 +886,7 @@ export function daoLaunchInputsFromRecord(
     team: team > 0 ? [{ address: founder, percent: 100 }] : [],
     milestones: lockMilestones,
     panel: options.panel ?? null,
+    challenge: options.challenge ?? null,
     proposalThreshold: threshold,
     currency: record.currency,
     floorPrice: record.floorPrice ?? "",
@@ -818,6 +977,23 @@ export function daoLaunchReceiptContent(input: {
             bond: plan.panel.bond.toString(),
             bondToken: plan.panel.bond > 0n ? plan.panel.bondToken : null,
             endsAt: plan.panel.endsAt,
+          },
+        }
+      : {}),
+    // Or how the holders' challenge lets them through.
+    ...(plan.challenge
+      ? {
+          challenge: {
+            window: plan.challenge.window,
+            votePeriod: plan.challenge.votePeriod,
+            clawback: plan.challenge.clawback,
+            minRejectBps: plan.challenge.minRejectBps,
+            bond: plan.challenge.bond.toString(),
+            deposit: plan.challenge.deposit.toString(),
+            bondToken:
+              plan.challenge.bond > 0n || plan.challenge.deposit > 0n
+                ? plan.challenge.bondToken
+                : null,
           },
         }
       : {}),
