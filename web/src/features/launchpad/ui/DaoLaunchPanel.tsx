@@ -6,6 +6,7 @@ import { formatAtomic } from "../lib/amounts";
 import { stepMarker } from "../lib/auction-copy";
 import { daoLaunchInputsFromRecord } from "../lib/dao-launch";
 import {
+  challengeFromDraft,
   EMPTY_PANEL_DRAFT,
   loadPanelDraft,
   type PanelDraft,
@@ -23,7 +24,7 @@ import {
   StepRow,
   WalletStrip,
 } from "./auction-widgets";
-import { LaunchPanelFields } from "./LaunchPanelFields";
+import { LaunchReviewFields } from "./LaunchReviewFields";
 import { UnauditedNotice } from "./UnauditedNotice";
 import { useTokenDecimals } from "./WorkBudgetForm";
 
@@ -88,9 +89,21 @@ export function DaoLaunchPanel({
   const otherToken = useTokenDecimals(
     panelDraft.bondIn === "other" ? panelDraft.bondOther.trim() : "",
   );
+  const challengeMode = needsPanel && panelDraft.review === "challenge";
+  const challengeResult = useMemo(
+    () =>
+      challengeMode
+        ? challengeFromDraft(panelDraft, saleCurrency.decimals)
+        : null,
+    [challengeMode, panelDraft, saleCurrency.decimals],
+  );
+  const challenge =
+    challengeResult && "challenge" in challengeResult
+      ? challengeResult.challenge
+      : null;
   const panelResult = useMemo(
     () =>
-      needsPanel
+      needsPanel && !challengeMode
         ? panelFromDraft(
             panelDraft,
             {
@@ -106,6 +119,7 @@ export function DaoLaunchPanel({
         : null,
     [
       needsPanel,
+      challengeMode,
       panelDraft,
       saleCurrency.decimals,
       otherToken.data,
@@ -124,6 +138,7 @@ export function DaoLaunchPanel({
     wallet,
     onLink,
     panel,
+    challenge,
     reviewerTerms,
   });
   const { plan, summary, gate } = view;
@@ -244,7 +259,8 @@ export function DaoLaunchPanel({
         </dl>
       ) : null}
       {needsPanel && !running && !done ? (
-        <LaunchPanelFields
+        <LaunchReviewFields
+          currencyDecimals={saleCurrency.decimals}
           currencySymbol={saleCurrency.symbol}
           draft={panelDraft}
           onChange={setPanelDraft}
@@ -253,7 +269,13 @@ export function DaoLaunchPanel({
               ? panelResult.problem
               : null
           }
+          requiredRaised={record.requiredRaised}
         />
+      ) : null}
+      {challengeResult && "problem" in challengeResult ? (
+        <p className="mt-2 text-xs text-destructive" role="status">
+          {challengeResult.problem}
+        </p>
       ) : null}
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="dao-launch" wallet={wallet} />

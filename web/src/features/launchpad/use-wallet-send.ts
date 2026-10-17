@@ -50,9 +50,11 @@ export function useWalletSend(launch: Launch, dao: string) {
       if (receipt.status !== "success") {
         throw new Error("The network rejected that step, so nothing changed.");
       }
-      await queryClient.invalidateQueries({
-        queryKey: ["launchpad", "work", dao],
-      });
+      // Screens that act on a milestone lock read it under their own key.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["launchpad", "work", dao] }),
+        queryClient.invalidateQueries({ queryKey: ["launchpad", "challenge"] }),
+      ]);
       return true;
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));

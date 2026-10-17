@@ -22,6 +22,7 @@ import {
   daoLaunchInputsFromRecord,
   daoLaunchReceiptContent,
   DaoLaunchPlanError,
+  type DaoLaunchChallengeInput,
   type DaoLaunchPanelInput,
   describeDaoLaunch,
   planDaoLaunch,
@@ -87,10 +88,19 @@ export function useDaoLaunch(input: {
   }) => Promise<unknown>;
   /** Who judges the team's milestones, as the founder named them (null until they have). */
   panel?: DaoLaunchPanelInput | null;
+  /** Or: milestones that unlock unless holders object (null for a panel). */
+  challenge?: DaoLaunchChallengeInput | null;
   /** How those reviewers will work, in the founder's words: saved on the record with the link. */
   reviewerTerms?: string;
 }): { view: DaoLaunchView; state: DaoLaunchState; start: () => void } {
-  const { launch, wallet, onLink, panel = null, reviewerTerms } = input;
+  const {
+    launch,
+    wallet,
+    onLink,
+    panel = null,
+    challenge = null,
+    reviewerTerms,
+  } = input;
   const { record } = launch;
   const chainId = chainNumber(record.chainId);
   const kit = daoLaunchKit(record.chainId);
@@ -104,7 +114,7 @@ export function useDaoLaunch(input: {
       // judged before the founder has connected anything (the gate asks for the wallet before it lets them send).
       const founder = wallet.address ?? ZERO_ADDRESS;
       const planned = planDaoLaunch(
-        daoLaunchInputsFromRecord(record, founder, { panel }),
+        daoLaunchInputsFromRecord(record, founder, { panel, challenge }),
       );
       if (record.admission === "curated") {
         return {
@@ -120,7 +130,7 @@ export function useDaoLaunch(input: {
       }
       throw error;
     }
-  }, [record, wallet.address, panel]);
+  }, [record, wallet.address, panel, challenge]);
 
   const gate = daoLaunchGate({
     mainnetBlocked: isMainnetChain(record.chainId) && !mainnetEnabled(),
@@ -256,6 +266,7 @@ export function useDaoLaunch(input: {
     record.author,
     record.chainId,
     record.id,
+    reviewerTerms,
     txStore,
     wallet.address,
     wallet.wallet,

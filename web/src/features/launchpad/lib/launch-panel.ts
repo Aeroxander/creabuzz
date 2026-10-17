@@ -10,12 +10,22 @@ import {
   DecisionInputError,
   parseUnits,
 } from "@creaton/core/launchpad/daoActions.ts";
-import type { DaoLaunchPanelInput } from "@creaton/core/launchpad/daoLaunch.ts";
+import type {
+  DaoLaunchChallengeInput,
+  DaoLaunchPanelInput,
+} from "@creaton/core/launchpad/daoLaunch.ts";
 
 /** A panel stays open for two years by default: it has to outlast the last milestone, or nothing can unlock. */
 export const PANEL_OPEN_SECONDS = 730 * 86_400;
 
+/** How the team's milestones are let through: holders who can object, or a panel of named reviewers. */
+export type ReviewMode = "challenge" | "panel";
+
 export interface PanelDraft {
+  /** Who lets the milestones through. */
+  review: ReviewMode;
+  /** For holders' objections: the bond the team posts with each milestone, in whole units of the sale currency; empty for the default. */
+  challengeBond: string;
   /** Wallet addresses, one per line (or separated by commas or spaces). */
   reviewers: string;
   /** How many must agree; empty means a simple majority. */
@@ -32,6 +42,8 @@ export interface PanelDraft {
 }
 
 export const EMPTY_PANEL_DRAFT: PanelDraft = {
+  review: "panel",
+  challengeBond: "",
   reviewers: "",
   quorum: "",
   bond: "",
@@ -157,6 +169,25 @@ export function panelFromDraft(
   };
 }
 
+/**
+ * The holders' challenge a founder asked for: the defaults, and a bond of their own if they typed one. The plan checks the
+ * rest (the lock's own limits, and that the sale's currency can pay a bond).
+ */
+export function challengeFromDraft(
+  draft: Pick<PanelDraft, "challengeBond">,
+  currencyDecimals: number,
+): { challenge: DaoLaunchChallengeInput } | { problem: string } {
+  const text = draft.challengeBond.trim();
+  if (text === "") return { challenge: {} };
+  try {
+    const bond = parseUnits(text, currencyDecimals, "bond", "The bond");
+    return { challenge: { bond } };
+  } catch (error) {
+    if (error instanceof DecisionInputError) return { problem: error.message };
+    throw error;
+  }
+}
+
 const STORAGE_PREFIX = "buzz.launchpad.panel-draft:";
 
 /**
@@ -177,6 +208,8 @@ export function loadPanelDraft(
     const text = (key: string) =>
       typeof draft[key] === "string" ? (draft[key] as string) : "";
     return {
+      review: draft.review === "challenge" ? "challenge" : "panel",
+      challengeBond: text("challengeBond"),
       reviewers: text("reviewers"),
       quorum: text("quorum"),
       bond: text("bond"),

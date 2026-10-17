@@ -228,6 +228,8 @@ export interface ChallengeLockView {
   dao: string;
   terms: ChallengeTerms;
   team: string[];
+  /** What the whole team still has locked, in Share base units (the lock's own answer for each member, added up). */
+  locked: bigint;
   milestones: ChallengeMilestone[];
   /** The chain's clock when this was read. */
   now: number;
@@ -393,14 +395,47 @@ export async function readChallengeLock(
       };
     }),
   );
+  const team = decodeAddressArray(teamHex, MAX_CHALLENGE_TEAM);
+  const lockedEach = await Promise.all(
+    team.map((member) =>
+      chain.call(
+        lock,
+        encodeFunctionData(
+          CHALLENGE_SIGNATURES.lockedOf,
+          ["address"],
+          [member],
+        ),
+      ),
+    ),
+  );
   return {
     lock: lock.toLowerCase(),
     dao: decodeAddress(dao),
     terms,
-    team: decodeAddressArray(teamHex, MAX_CHALLENGE_TEAM),
+    team,
+    locked: lockedEach.reduce((sum, hex) => sum + word(hex, 0), 0n),
     milestones,
     now,
   };
+}
+
+/**
+ * The challenge lock a DAO's Shares point at, or null when the DAO has no lock or its lock is not a challenge lock (a
+ * panel's lock does not answer `milestoneCount()`). The lock is found from the Shares contract, not from a record: only
+ * the Shares contract's own answer decides what can move.
+ */
+export async function findChallengeLock(
+  chain: Pick<WorkChain, "call" | "now">,
+  dao: string,
+): Promise<ChallengeLockView | null> {
+  assertAddress(dao, "the DAO");
+  const shares = decodeAddress(await chain.call(dao, encodeCall0("shares()")));
+  if (shares === ZERO_ADDRESS) return null;
+  const guard = decodeAddress(
+    await chain.call(shares, encodeCall0("lockGuard()")),
+  );
+  if (guard === ZERO_ADDRESS) return null;
+  return readChallengeLock(chain, guard);
 }
 
 /** What `who`'s vote would count for on a milestone, and whether they have already voted (the objector has). */

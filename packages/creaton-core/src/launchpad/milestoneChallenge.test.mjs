@@ -18,6 +18,7 @@ import {
   encodeChallengeResolve,
   encodeChallengeSubmit,
   encodeChallengeVote,
+  findChallengeLock,
   objectionCarries,
   readChallengeLock,
   readChallengeVoter,
@@ -231,6 +232,7 @@ function fakeLock({
   count = milestones.length,
   team,
   throws = false,
+  locked = {},
 }) {
   const asked = [];
   const sel = (sig) => selectorOf(sig);
@@ -255,6 +257,10 @@ function fakeLock({
       if (s === sel("bondToken()")) return hex(USDC);
       if (s === sel("bond()")) return hex(10n * WAD);
       if (s === sel("deposit()")) return hex(WAD);
+      if (s === sel("lockedOf(address)")) {
+        const who = `0x${data.slice(34, 74)}`;
+        return hex(locked[who] ?? 0);
+      }
       if (s === sel("team()")) {
         return hex(32, team.length, ...team.map((t) => BigInt(t)));
       }
@@ -296,6 +302,7 @@ function fakeLock({
 test("the lock is read whole: its terms, its team and each milestone with the stage it is in", async () => {
   const chain = fakeLock({
     team: [FOUNDER, COFOUNDER],
+    locked: { [FOUNDER]: 80n * WAD, [COFOUNDER]: 40n * WAD },
     milestones: [
       {
         check: CHECK_A,
@@ -335,6 +342,11 @@ test("the lock is read whole: its terms, its team and each milestone with the st
   assert.equal(view.dao, DAO);
   assert.equal(view.now, NOW);
   assert.deepEqual(view.team, [FOUNDER, COFOUNDER]);
+  assert.equal(
+    view.locked,
+    120n * WAD,
+    "what each member still has locked, added up",
+  );
   assert.deepEqual(view.terms, {
     window: 7 * DAY,
     votePeriod: 5 * DAY,
@@ -425,4 +437,30 @@ test("a voter's weight, whether they have voted, and whether they are on the tea
     () => readChallengeVoter(chain, LOCK, 1, "nope"),
     /voter/,
   );
+});
+
+test("a DAO's challenge lock is found from its Shares, and a DAO with another kind of lock, or none, has none", async () => {
+  const SHARES = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const lock = fakeLock({
+    team: [FOUNDER],
+    milestones: [{ check: CHECK_A, bps: 10_000, nextWindow: 7 * DAY }],
+  });
+  const chainFor = (guard, inner = lock) => ({
+    now: inner.now,
+    async call(to, data) {
+      const sel = data.slice(0, 10);
+      if (to === DAO && sel === selectorOf("shares()")) return hex(SHARES);
+      if (to === SHARES && sel === selectorOf("lockGuard()")) return hex(guard);
+      return inner.call(to, data);
+    },
+  });
+  const view = await findChallengeLock(chainFor(LOCK), DAO);
+  assert.equal(view.lock, LOCK);
+  assert.equal(view.milestones.length, 1);
+  // No guard on the Shares: nothing is locked.
+  assert.equal(await findChallengeLock(chainFor(0), DAO), null);
+  // A guard that is a panel's lock does not answer milestoneCount().
+  const panelLock = fakeLock({ milestones: [], team: [], throws: true });
+  assert.equal(await findChallengeLock(chainFor(LOCK, panelLock), DAO), null);
+  await assert.rejects(() => findChallengeLock(lock, "nope"), /DAO/);
 });

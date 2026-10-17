@@ -17,7 +17,9 @@ import {
 } from "../lib/milestone-timeline";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
+import { useChallengeLock } from "../use-challenge-lock";
 import { useMilestoneTimeline } from "../use-milestone-timeline";
+import { ChallengeMilestones } from "./ChallengeMilestones";
 import { Linked } from "./EvidenceBlock";
 import { countOf } from "@/shared/lib/count-of";
 
@@ -50,18 +52,49 @@ const VERDICT_WORDS: Record<ReviewerVerdict["verdict"], string> = {
   unknown: "could not be read",
 };
 
-export function MilestonesTab({
-  launch,
-  dao,
-  onOpenWork,
-  onOpenDecisions,
-}: {
+interface MilestonesTabProps {
   launch: Launch;
   /** The DAO this launch settled into, or null while the sale has not produced one. */
   dao: string | null;
   onOpenWork: () => void;
   onOpenDecisions: () => void;
-}) {
+}
+
+/**
+ * The milestones, for whichever way the project's lock lets them through: holders who can object (read from the DAO's own
+ * Shares, so it needs no record), or a named panel of reviewers.
+ */
+export function MilestonesTab(props: MilestonesTabProps) {
+  const challenge = useChallengeLock(props.dao);
+  if (props.dao !== null && challenge.data) {
+    return (
+      <ChallengeMilestones
+        dao={props.dao}
+        launch={props.launch}
+        onOpenDecisions={props.onOpenDecisions}
+        view={challenge.data}
+      />
+    );
+  }
+  if (props.dao !== null && challenge.isLoading) {
+    return (
+      <Card
+        className="p-4 text-sm text-muted-foreground"
+        data-testid="milestones-tab"
+      >
+        Reading the milestones from the network…
+      </Card>
+    );
+  }
+  return <PanelMilestones {...props} />;
+}
+
+function PanelMilestones({
+  launch,
+  dao,
+  onOpenWork,
+  onOpenDecisions,
+}: MilestonesTabProps) {
   const { entries, summary, panel, reading, failed, labelOf } =
     useMilestoneTimeline(launch, dao);
   const reviewerAddresses = (panel?.reviewers ?? []).map((r) => r.address);
