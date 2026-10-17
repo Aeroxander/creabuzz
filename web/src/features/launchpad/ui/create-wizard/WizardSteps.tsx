@@ -560,16 +560,24 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
           <div className="w-6 shrink-0 pb-2 text-sm font-semibold text-black/50 dark:text-white/50">
             {index + 1}
           </div>
-          <Field id={`milestone-label-${index}`} label="What has to happen">
-            <input
-              className="h-9 w-full rounded-md border border-black/15 bg-transparent px-2 text-sm text-black dark:border-white/15 dark:text-white"
-              id={`milestone-label-${index}`}
-              onChange={(event) => unlocks.onLabel(index, event.target.value)}
-              placeholder="Testnet live"
-              type="text"
-              value={row.label}
-            />
-          </Field>
+          <div className="min-w-0 flex-1">
+            <Field id={`milestone-label-${index}`} label="What has to happen">
+              <textarea
+                className="w-full resize-y rounded-md border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+                id={`milestone-label-${index}`}
+                // A milestone is one statement; a line break would only look odd on the page and in the record.
+                onChange={(event) =>
+                  unlocks.onLabel(
+                    index,
+                    event.target.value.replace(/\s*\n\s*/g, " "),
+                  )
+                }
+                placeholder="A public beta is live at a web address, with its source published"
+                rows={2}
+                value={row.label}
+              />
+            </Field>
+          </div>
           <div className="w-20 shrink-0">
             <Field id={`milestone-percent-${index}`} label="Unlocks %">
               <input

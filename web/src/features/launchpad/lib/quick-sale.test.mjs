@@ -7,7 +7,7 @@ import {
   q96ToPlainPrice,
   quickSaleDefaults,
 } from "./quick-sale.ts";
-import { unlockPlanIssues } from "./unlock-plans.ts";
+import { MILESTONE_TEMPLATES, unlockPlanIssues } from "./unlock-plans.ts";
 
 test("the first raise target is in the sale currency's own scale", () => {
   assert.equal(defaultRaiseTarget("eth"), "120");
@@ -86,4 +86,26 @@ test("an unreadable supply or no milestones still reads sensibly", () => {
   assert.equal(byLabel["Tokens for sale"], "20% of the supply");
   assert.equal(byLabel["Your own tokens unlock"], "On a schedule");
   assert.equal(byLabel["If the target is met"], "No DAO");
+});
+
+test("every starting milestone says what will exist and where it can be seen, not just a name", () => {
+  for (const template of MILESTONE_TEMPLATES) {
+    for (const text of template.milestones) {
+      // Reviewers judge a milestone by exactly these words, so "Testnet live" is not enough: it needs to be a statement
+      // of something a stranger can open, and the founder is shown these as the example to follow.
+      assert.ok(
+        text.split(/\s+/).length >= 8,
+        `"${text}" is too short to check`,
+      );
+      assert.match(
+        text,
+        /public|published|publish|address|link/i,
+        `"${text}" does not say where it can be seen`,
+      );
+    }
+  }
+  // The quick start publishes the product plan as is.
+  for (const row of defaultMilestoneRows()) {
+    assert.ok(row.label.split(/\s+/).length >= 8, row.label);
+  }
 });

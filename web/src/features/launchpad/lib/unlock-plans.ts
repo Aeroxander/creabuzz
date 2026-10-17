@@ -93,25 +93,40 @@ export interface MilestoneTemplate {
   milestones: readonly string[];
 }
 
-/** One-tap starting points; every row stays editable afterwards. */
+/**
+ * One-tap starting points; every row stays editable afterwards. Each is written the way the editor asks the founder to
+ * write one: what will exist, and where a stranger can see it. The reviewers judge a milestone by exactly these words.
+ */
 export const MILESTONE_TEMPLATES: readonly MilestoneTemplate[] = [
   {
     key: "media",
     label: "Media project",
     kind: "media",
-    milestones: ["Pilot shipped", "First episode live", "Season wrapped"],
+    milestones: [
+      "A pilot episode is published, and anyone can watch it at a public link",
+      "The first full episode is published, and anyone can watch it at a public link",
+      "Every episode of the season is published, and anyone can watch them at public links",
+    ],
   },
   {
     key: "crypto",
     label: "Crypto project",
     kind: "crypto",
-    milestones: ["Testnet live", "Audit passed", "Mainnet"],
+    milestones: [
+      "The contracts are live on a public test network, at published addresses, with their source verified",
+      "An independent audit report is published, and every serious finding in it is fixed or answered in writing",
+      "The contracts are live on the main network, at published addresses, with their source verified",
+    ],
   },
   {
     key: "product",
     label: "Product project",
     kind: "product",
-    milestones: ["Beta shipped", "First paying users", "Release 1.0"],
+    milestones: [
+      "A beta is live at a public address that anyone can try, with its source or a changelog published",
+      "The first paying customers are using it, with how many and a way to check it published",
+      "Version 1.0 is released at a public address, with its documentation published",
+    ],
   },
 ];
 
