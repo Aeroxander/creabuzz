@@ -45,10 +45,20 @@ step() { printf '\033[36m[challenge-e2e]\033[0m %s\n' "$*"; }
 # The dev chain rewrites the tracked deployment manifests (new transaction hashes
 # every run). Put them back, so a test run leaves the working tree as it was.
 cp -p "$DEPLOYMENTS"/*.json "$BACKUP"/ 2>/dev/null || true
+# Stop the anvil this run started, and nothing else: the pid its own dev-chain recorded, and only while that pid is still an anvil
+# on this run's port. Nothing is ever stopped because it happens to listen on a port (a stranger's node on a colliding port is not ours).
+stop_own_anvil() {
+  local pid
+  pid="$(cat "$STATE/anvil.pid" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 0
+  if ps -o command= -p "$pid" 2>/dev/null | grep -Eq "anvil.* --port[ =]${PORT}( |\$)"; then
+    kill "$pid" 2>/dev/null || true
+  fi
+}
 cleanup() {
   RPC_URL="$RPC" STATE_DIR="$STATE" ./scripts/dev-chain.sh down >/dev/null 2>&1 || true
-  # `dev-chain.sh down` can leave the node running: stop whatever still listens on this run's port.
-  lsof -ti "tcp:${PORT}" 2>/dev/null | xargs kill 2>/dev/null || true
+  # `dev-chain.sh down` can leave the node running: stop the one this run started, by its recorded pid.
+  stop_own_anvil
   for f in "$BACKUP"/*.json; do
     [[ -f "$f" ]] && cp -p "$f" "$DEPLOYMENTS/$(basename "$f")"
   done

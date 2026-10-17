@@ -42,11 +42,21 @@ RELAY_PID=""
 
 # The dev chain rewrites the tracked deployment manifests (new transaction hashes every run). Put them back.
 cp -p "$DEPLOYMENTS"/*.json "$BACKUP"/ 2>/dev/null || true
+# Stop the anvil this run started, and nothing else: the pid its own dev-chain recorded, and only while that pid is still an anvil
+# on this run's port. Nothing is ever stopped because it happens to listen on a port (a stranger's node on a colliding port is not ours).
+stop_own_anvil() {
+  local pid
+  pid="$(cat "$STATE/anvil.pid" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 0
+  if ps -o command= -p "$pid" 2>/dev/null | grep -Eq "anvil.* --port[ =]${ANVIL_PORT}( |\$)"; then
+    kill "$pid" 2>/dev/null || true
+  fi
+}
 cleanup() {
   [[ -n "$RELAY_PID" ]] && kill "$RELAY_PID" 2>/dev/null || true
   RPC_URL="$RPC" STATE_DIR="$STATE" ./scripts/dev-chain.sh down >/dev/null 2>&1 || true
-  # `dev-chain.sh down` can leave the node running: stop whatever still listens on this run's port.
-  lsof -ti "tcp:${ANVIL_PORT}" 2>/dev/null | xargs kill 2>/dev/null || true
+  # `dev-chain.sh down` can leave the node running: stop the one this run started, by its recorded pid.
+  stop_own_anvil
   psql "$ADMIN_URL" -qc "drop database if exists $DB with (force)" >/dev/null 2>&1 || true
   for f in "$BACKUP"/*.json; do [[ -f "$f" ]] && cp -p "$f" "$DEPLOYMENTS/$(basename "$f")"; done
   rm -rf "$STATE" "$BACKUP"
