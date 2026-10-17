@@ -107,13 +107,13 @@ function AddCommunityForm() {
   return (
     <form onSubmit={submit} className="flex w-full max-w-sm items-center gap-2">
       <label className="sr-only" htmlFor="add-community">
-        Relay host
+        Server address
       </label>
       <input
         id="add-community"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="relay.example.com"
+        placeholder="community.example.com"
         className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
         data-testid="add-community-input"
       />
