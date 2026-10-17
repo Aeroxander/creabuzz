@@ -153,7 +153,7 @@ export function ChallengeMilestones({
               tokens are burned.
             </li>
           </ol>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-2 text-muted-foreground">
             Milestones are published in order, so the ones still ahead are
             locked while an earlier one can be objected to. Once the last one
             has unlocked, what stands behind it is the bond.
