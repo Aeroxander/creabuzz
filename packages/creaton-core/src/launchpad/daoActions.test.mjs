@@ -3,7 +3,11 @@ import { test } from "node:test";
 
 import {
   awardDecision,
+  closeBudgetDecision,
   collectFeesDecision,
+  freezeClaimDecision,
+  resolveFrozenClaimDecision,
+  slashReviewerDecision,
   DecisionInputError,
   decodeBatch,
   encodeBatch,
@@ -555,4 +559,145 @@ test("a milestone project holds nothing: only inside the milestone panel may bot
     () => projectDecision({ ...milestone, milestone: undefined }),
     "amount",
   );
+});
+
+test("holding a work budget to account: freeze, unwind, close and slash are exactly the calls cast encodes, and each reads back in words", () => {
+  const ctx = {
+    dao: DAO,
+    mandates: [MANDATE],
+    currency: CUR,
+    currencyDecimals: 6,
+  };
+  const freeze = freezeClaimDecision({ mandate: MANDATE, claimId: CLAIM });
+  assert.equal(freeze.to, MANDATE);
+  assert.equal(freeze.lane, "unrestricted");
+  assert.equal(
+    freeze.data,
+    "0xc82e88967777777777777777777777777777777777777777777777777777777777777777",
+  );
+  assert.equal(describeAction(freeze, ctx).kind, "freeze");
+  assert.match(
+    describeAction(freeze, ctx).lines.join(" "),
+    /nobody's money is taken/,
+  );
+
+  const unwind = resolveFrozenClaimDecision({
+    mandate: MANDATE,
+    claimId: CLAIM,
+  });
+  assert.equal(
+    unwind.data,
+    "0x485400227777777777777777777777777777777777777777777777777777777777777777",
+  );
+  assert.equal(describeAction(unwind, ctx).kind, "unwind");
+
+  const close = closeBudgetDecision({ mandate: MANDATE });
+  assert.equal(close.data, "0x43d726d6");
+  assert.equal(describeAction(close, ctx).kind, "close-budget");
+
+  const slash = slashReviewerDecision({
+    mandate: MANDATE,
+    reviewer: R1,
+    amount: 25_000_000n,
+    bondDecimals: 6,
+    bondSymbol: "USDC",
+  });
+  assert.equal(
+    slash.data,
+    "0xd6d541f9000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000017d7840",
+  );
+  assert.equal(describeAction(slash, ctx).kind, "slash");
+  // Without the budgets' bond tokens the amount is not put in words: its decimals would be a guess.
+  assert.match(describeAction(slash, ctx).title, /^Take 25000000 base units/);
+  assert.equal(
+    describeAction(slash, {
+      ...ctx,
+      bonds: { [MANDATE]: { token: CUR, symbol: "USDC", decimals: 6 } },
+    }).title,
+    "Take 25 USDC of a reviewer's bond",
+  );
+});
+
+test("these calls are only described as what they are when aimed at the DAO's own work budgets", () => {
+  const elsewhere = "0x00000000000000000000000000000000000000f9";
+  const ctx = {
+    dao: DAO,
+    mandates: [MANDATE],
+    currency: CUR,
+    currencyDecimals: 6,
+  };
+  for (const draft of [
+    freezeClaimDecision({ mandate: elsewhere, claimId: CLAIM }),
+    resolveFrozenClaimDecision({ mandate: elsewhere, claimId: CLAIM }),
+    closeBudgetDecision({ mandate: elsewhere }),
+    slashReviewerDecision({
+      mandate: elsewhere,
+      reviewer: R1,
+      amount: 1n,
+      bondDecimals: 6,
+      bondSymbol: "USDC",
+    }),
+  ]) {
+    // The same selector sent anywhere else is a call this app cannot vouch for.
+    assert.equal(describeAction(draft, ctx).kind, "unknown");
+  }
+  // A bare close() with no known budgets to check against is never described as closing one.
+  assert.equal(
+    describeAction(closeBudgetDecision({ mandate: MANDATE }), { dao: DAO })
+      .kind,
+    "unknown",
+  );
+});
+
+test("a slash is described in the bond's own token, and refused when it takes nothing or names no claim", () => {
+  const ctx = {
+    dao: DAO,
+    mandates: [MANDATE],
+    currency: CUR,
+    currencyDecimals: 6,
+    bonds: { [MANDATE]: { token: SHARES, symbol: "NEB", decimals: 18 } },
+  };
+  const slash = slashReviewerDecision({
+    mandate: MANDATE,
+    reviewer: R1,
+    amount: 5n * WAD,
+    bondDecimals: 18,
+    bondSymbol: "NEB",
+  });
+  assert.equal(
+    describeAction(slash, ctx).title,
+    "Take 5 NEB of a reviewer's bond",
+  );
+  refused(
+    () =>
+      slashReviewerDecision({
+        mandate: MANDATE,
+        reviewer: R1,
+        amount: 0n,
+        bondDecimals: 6,
+        bondSymbol: "USDC",
+      }),
+    "amount",
+  );
+  refused(
+    () => freezeClaimDecision({ mandate: MANDATE, claimId: "0x12" }),
+    "claimId",
+  );
+});
+
+test("a decision names people when it is given a way to, and writes the full address when it is not", () => {
+  const draft = payDecision({
+    currency: CUR,
+    currencyDecimals: 6,
+    currencySymbol: "USDC",
+    recipient: R1,
+    amount: 5_000_000n,
+  });
+  const ctx = { dao: DAO, currency: CUR, currencyDecimals: 6 };
+  assert.deepEqual(describeAction(draft, ctx).lines, [`To ${R1}`]);
+  const label = (address) =>
+    address.toLowerCase() === R1 ? `Alex (${R1.slice(0, 6)}…)` : address;
+  assert.deepEqual(describeAction(draft, { ...ctx, label }).lines, [
+    `To Alex (${R1.slice(0, 6)}…)`,
+  ]);
 });

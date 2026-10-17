@@ -73,6 +73,7 @@ function world({
   states = {},
   queued = {},
   supportEmpty = false,
+  bulkFails = false,
 }) {
   const asked = [];
   const proposalIdOf = new Map(); // calldata of the proposalId view -> id
@@ -116,6 +117,14 @@ function world({
       asked.push(filter);
       assert.equal(filter.address, DAO);
       assert.equal(filter.topics[0], TOPIC_OPENED);
+      // One query for every proposal's opening log (no id named), or one for a single proposal.
+      if (filter.topics.length === 1) {
+        if (bulkFails) throw new Error("range too large");
+        return ids.map((x, index) => ({
+          topics: [TOPIC_OPENED, `0x${x.toString(16).padStart(64, "0")}`],
+          transactionHash: `0x${"00".repeat(30)}${String(index).padStart(4, "0")}`,
+        }));
+      }
       const id = BigInt(filter.topics[1]);
       const index = ids.findIndex((x) => x === id);
       return [
@@ -230,7 +239,17 @@ test("only the newest few are read, and the page says there were more", async ()
   assert.equal(snapshot.decisions.length, MAX_DECISIONS);
   assert.equal(snapshot.truncated, true);
   assert.equal(BigInt(snapshot.decisions[0].id), BigInt(MAX_DECISIONS + 7));
-  assert.equal(chain.asked.length, MAX_DECISIONS);
+  // Every opening log comes from one query, not one per decision.
+  assert.equal(chain.asked.length, 1);
+});
+
+test("if the one query for opening logs fails, each decision asks for its own", async () => {
+  const chain = world({ ids: [1n, 2n, 3n], bulkFails: true });
+  const snapshot = await readDecisions(chain, DAO, null);
+  assert.equal(snapshot.decisions.length, 3);
+  // The failed bulk query, then one per decision.
+  assert.equal(chain.asked.length, 4);
+  assert.ok(snapshot.decisions.every((d) => d.openedBy !== null));
 });
 
 test("a DAO with no decisions reads as none", async () => {

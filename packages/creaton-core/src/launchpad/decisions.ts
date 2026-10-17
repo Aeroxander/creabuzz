@@ -172,10 +172,36 @@ const SUPPORT_NONE: VotingSupport = {
   qualifiedSince: 0n,
 };
 
+/** The opening log of a proposal, as far as a decision read needs it. */
+type OpenedLog = { transactionHash?: unknown };
+
+/**
+ * Every proposal's opening log in one query, by proposal id. Asking once per decision made a DAO with thirty decisions
+ * thirty log queries (each of them paged on a node that caps the block range), which is what made the list slow to
+ * appear on a public node. Null when the one query fails: each decision then asks for its own, as it always did.
+ */
+async function readOpenedLogs(
+  chain: DecisionChain,
+  dao: string,
+): Promise<Map<string, OpenedLog> | null> {
+  try {
+    const logs = await chain.logs({ address: dao, topics: [TOPIC_OPENED] });
+    const byId = new Map<string, OpenedLog>();
+    for (const log of logs as (OpenedLog & { topics?: string[] })[]) {
+      const id = log.topics?.[1];
+      if (typeof id === "string") byId.set(id.toLowerCase(), log);
+    }
+    return byId;
+  } catch {
+    return null;
+  }
+}
+
 async function readDecision(
   chain: DecisionChain,
   dao: string,
   id: bigint,
+  opened: Map<string, OpenedLog> | null,
 ): Promise<Decision> {
   const idHex = `0x${word(id)}`;
   const [
@@ -193,7 +219,9 @@ async function readDecision(
     chain.call(dao, call1(SIGNATURES_DECISIONS.queuedAt, id)),
     chain.call(dao, encodeVotingRules(idHex)),
     chain.call(dao, encodeVotingSupport(idHex)),
-    chain.logs({ address: dao, topics: [TOPIC_OPENED, idTopic(id)] }),
+    opened
+      ? Promise.resolve([opened.get(idHex.toLowerCase())].filter(Boolean))
+      : chain.logs({ address: dao, topics: [TOPIC_OPENED, idTopic(id)] }),
   ]);
   const state = DECISION_STATES[Number(decodeWord(stateHex))] ?? "Unopened";
 
@@ -254,8 +282,9 @@ export async function readDecisions(
       await chain.call(dao, call1(SIGNATURES_DECISIONS.idAt, BigInt(index))),
     ),
   );
+  const opened = ids.length > 0 ? await readOpenedLogs(chain, dao) : null;
   const decisions = await mapLimit(ids, READ_CONCURRENCY, (id) =>
-    readDecision(chain, dao, id),
+    readDecision(chain, dao, id, opened),
   );
   const walletCapacity = wallet
     ? decodeWord(

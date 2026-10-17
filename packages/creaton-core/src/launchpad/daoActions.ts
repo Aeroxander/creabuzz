@@ -31,6 +31,10 @@ export const ACTION_SIGNATURES = {
   award: "awardContribution(address,bytes32,uint96,bool)",
   collectFees: "collectHookFeesByToken(address,address,address,uint256)",
   transfer: "transfer(address,uint256)",
+  freezeClaim: "freezeClaim(bytes32)",
+  resolveFrozenClaim: "resolveFrozenClaim(bytes32)",
+  closeMandate: "close()",
+  slashReviewer: "slashReviewer(address,uint256)",
 } as const;
 
 const CALL_TYPE: AbiType = { tuple: ["address", "uint256", "bytes"] };
@@ -470,6 +474,116 @@ export function payDecision(input: PayInput): DecisionDraft {
   };
 }
 
+// ---- holding a work budget to account -------------------------------------------------------
+//
+// The DAO is the only one who can stop a payment it has doubts about, take a careless reviewer's bond, or close a budget
+// early. Each is a decision like any other (the holders vote it), made from a form instead of a hand-built call.
+
+const CLAIM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
+
+function claimWord(value: string): string {
+  if (!CLAIM_ID_RE.test(value)) fail("claimId", "Pick the claim.");
+  return value.toLowerCase();
+}
+
+export interface ClaimActionInput {
+  mandate: string;
+  claimId: string;
+}
+
+/** The vote that freezes a claim the DAO doubts: nothing is paid for it, and no Shares are unlocked by it, until it is unwound. */
+export function freezeClaimDecision(input: ClaimActionInput): DecisionDraft {
+  const mandate = address(input.mandate, "mandate", "The work budget");
+  const claimId = claimWord(input.claimId);
+  return {
+    to: mandate,
+    data: encodeFunctionData(
+      ACTION_SIGNATURES.freezeClaim,
+      ["bytes32"],
+      [claimId],
+    ),
+    lane: "unrestricted",
+    title: `Freeze the claim “${idLabel(claimId)}”`,
+    lines: [
+      "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
+      "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
+    ],
+  };
+}
+
+/** The vote that unwinds a frozen claim: the money reserved for it returns to the work budget, the deposit to the contributor. */
+export function resolveFrozenClaimDecision(
+  input: ClaimActionInput,
+): DecisionDraft {
+  const mandate = address(input.mandate, "mandate", "The work budget");
+  const claimId = claimWord(input.claimId);
+  return {
+    to: mandate,
+    data: encodeFunctionData(
+      ACTION_SIGNATURES.resolveFrozenClaim,
+      ["bytes32"],
+      [claimId],
+    ),
+    lane: "unrestricted",
+    title: `Unwind the frozen claim “${idLabel(claimId)}”`,
+    lines: [
+      "The money set aside for it goes back to the work budget.",
+      "The contributor's deposit goes back to them. Nothing is taken from anyone.",
+    ],
+  };
+}
+
+export interface CloseBudgetInput {
+  mandate: string;
+}
+
+/** The vote that closes a work budget early: no new claims, and its unused money returns to the DAO. */
+export function closeBudgetDecision(input: CloseBudgetInput): DecisionDraft {
+  const mandate = address(input.mandate, "mandate", "The work budget");
+  return {
+    to: mandate,
+    data: encodeFunctionData(ACTION_SIGNATURES.closeMandate, [], []),
+    lane: "unrestricted",
+    title: "Close the work budget",
+    lines: [
+      "No new claim can be started in it.",
+      "Money not set aside for a claim goes back to the DAO.",
+      "Claims that are already funded keep their own rules.",
+    ],
+  };
+}
+
+export interface SlashInput {
+  mandate: string;
+  reviewer: string;
+  /** In base units of the bond's token. */
+  amount: bigint;
+  /** The bond's decimals and symbol, to say the amount in words. */
+  bondDecimals: number;
+  bondSymbol: string;
+}
+
+/** The vote that takes some of a reviewer's bond, after an approval the DAO disputes, and pays it to the DAO. */
+export function slashReviewerDecision(input: SlashInput): DecisionDraft {
+  const mandate = address(input.mandate, "mandate", "The work budget");
+  const reviewer = address(input.reviewer, "reviewer", "The reviewer");
+  if (input.amount === 0n) fail("amount", "Take more than nothing.");
+  return {
+    to: mandate,
+    data: encodeFunctionData(
+      ACTION_SIGNATURES.slashReviewer,
+      ["address", "uint256"],
+      [reviewer, input.amount],
+    ),
+    lane: "unrestricted",
+    title: `Take ${formatUnits(input.amount, input.bondDecimals, 4)} ${input.bondSymbol} of a reviewer's bond`,
+    lines: [
+      `From ${reviewer}`,
+      "It is paid to the DAO. It can only be taken from the bond they posted, and no more than they hold.",
+    ],
+  };
+}
+
 // ---- describing ------------------------------------------------------------------------------
 
 /** What an action is, in words. `kind` is `unknown` for anything this module did not write. */
@@ -480,6 +594,10 @@ export interface ActionDescription {
     | "award"
     | "fees"
     | "payment"
+    | "freeze"
+    | "unwind"
+    | "close-budget"
+    | "slash"
     | "market"
     | "batch"
     | "unknown";
@@ -504,6 +622,12 @@ export interface DescribeContext {
   currencySymbol?: string;
   /** The DAO's own Shares (18 decimals), so a bond paid in them is described as the project's own token. */
   projectToken?: string;
+  /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */
+  bonds?: Readonly<
+    Record<string, { token: string; symbol: string; decimals: number }>
+  >;
+  /** How a wallet is written (a person's name beside its short address); the full address when not given. */
+  label?: (address: string) => string;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -540,6 +664,9 @@ function date(seconds: bigint): string {
     day: "numeric",
   });
 }
+
+const who = (ctx: DescribeContext, address: string) =>
+  ctx.label ? ctx.label(address) : address;
 
 function describeCall(
   call: { to: string; data: string },
@@ -622,7 +749,7 @@ function describeCall(
         kind: "project",
         title: `Approve the project “${idLabel(id)}”`,
         lines: [
-          `Managed by ${manager}`,
+          `Managed by ${who(ctx, manager)}`,
           ...(projectShares === 0n && amount === 0n
             ? [
                 "Holds no money and awards no Shares: it only lets a milestone be judged",
@@ -661,7 +788,65 @@ function describeCall(
       return {
         kind: "payment",
         title: `Pay ${money(amount, ctx)}${ctx.currencySymbol ? ` ${ctx.currencySymbol}` : ""} from the treasury`,
-        lines: [`To ${recipient}`],
+        lines: [`To ${who(ctx, recipient)}`],
+      };
+    }
+    if (sel === selectorOfSig("freezeClaim")) {
+      if (ctx.mandates && !ctx.mandates.some((m) => same(m, call.to)))
+        return null;
+      const [claim] = decodeParameters(["bytes32"], args) as [string];
+      return {
+        kind: "freeze",
+        title: `Freeze the claim “${idLabel(claim)}”`,
+        lines: [
+          "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
+          "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
+        ],
+      };
+    }
+    if (sel === selectorOfSig("resolveFrozenClaim")) {
+      if (ctx.mandates && !ctx.mandates.some((m) => same(m, call.to)))
+        return null;
+      const [claim] = decodeParameters(["bytes32"], args) as [string];
+      return {
+        kind: "unwind",
+        title: `Unwind the frozen claim “${idLabel(claim)}”`,
+        lines: [
+          "The money set aside for it goes back to the work budget.",
+          "The contributor's deposit goes back to them. Nothing is taken from anyone.",
+        ],
+      };
+    }
+    if (sel === selectorOfSig("closeMandate")) {
+      // `close()` is a bare selector, and only a call to one of the DAO's own work budgets is this one.
+      if (!ctx.mandates?.some((m) => same(m, call.to))) return null;
+      return {
+        kind: "close-budget",
+        title: "Close the work budget",
+        lines: [
+          "No new claim can be started in it.",
+          "Money not set aside for a claim goes back to the DAO.",
+          "Claims that are already funded keep their own rules.",
+        ],
+      };
+    }
+    if (sel === selectorOfSig("slashReviewer")) {
+      if (ctx.mandates && !ctx.mandates.some((m) => same(m, call.to)))
+        return null;
+      const [reviewer, amount] = decodeParameters(
+        ["address", "uint256"],
+        args,
+      ) as [string, bigint];
+      // The bond may be paid in a token other than the claim currency, so it is only put in words when the budget's
+      // bond is known (its name and decimals); otherwise the raw amount is shown rather than a guess at its decimals.
+      const bond = ctx.bonds?.[call.to.toLowerCase()];
+      return {
+        kind: "slash",
+        title: `Take ${bond ? `${formatUnits(amount, bond.decimals, 4)} ${bond.symbol}` : `${amount.toString()} base units`} of a reviewer's bond`,
+        lines: [
+          `From ${who(ctx, reviewer)}`,
+          "It is paid to the DAO. It can only be taken from the bond they posted, and no more than they hold.",
+        ],
       };
     }
     if (sel === selectorOfSig("collectFees")) {
@@ -674,7 +859,7 @@ function describeCall(
         kind: "fees",
         title: "Collect the trading fees",
         lines: [
-          `Move ${money(amount, ctx)} collected on trades to ${recipient}`,
+          `Move ${money(amount, ctx)} collected on trades to ${who(ctx, recipient)}`,
         ],
       };
     }
