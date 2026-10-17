@@ -14,16 +14,20 @@ import { endpointChain } from "./use-work";
  * none). Read from the DAO's own Shares, not from a record. Keyed under `["launchpad", "challenge"]`, which every
  * transaction the screen sends re-reads.
  */
-export function useChallengeLock(dao: string | null) {
-  return useQuery<ChallengeLockView | null>({
+export function challengeLockQuery(dao: string | null) {
+  return {
     queryKey: ["launchpad", "challenge", dao],
     enabled: dao !== null,
-    queryFn: () =>
+    queryFn: (): Promise<ChallengeLockView | null> =>
       findChallengeLock(endpointChain(getRpcEndpoint()), dao as string),
     placeholderData: keepIfSame(2, dao),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
-  });
+  };
+}
+
+export function useChallengeLock(dao: string | null) {
+  return useQuery(challengeLockQuery(dao));
 }
 
 /** What the connected wallet's vote would count for on each milestone, and whether it has already voted. */

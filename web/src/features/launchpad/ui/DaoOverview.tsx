@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
+import { challengeAttention } from "../lib/challenge-attention";
 import {
   attentionItems,
   overviewCounts,
@@ -23,6 +24,7 @@ import { useDaoHoldings } from "../use-dao-holdings";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useSpendingSummary } from "../use-spending";
+import { useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
@@ -74,13 +76,19 @@ export function DaoOverview({
     factory: context.data?.factory,
   });
 
-  const items = attentionItems({
-    decisions: decisions.data,
-    work: work.data,
-    wallet,
-    titleOf,
-    labelOf,
-  });
+  const challengeLock = useChallengeLock(dao);
+  const items = [
+    ...attentionItems({
+      decisions: decisions.data,
+      work: work.data,
+      wallet,
+      titleOf,
+      labelOf,
+    }),
+    ...(challengeLock.data && wallet
+      ? challengeAttention(challengeLock.data, wallet)
+      : []),
+  ];
   const counts = overviewCounts(decisions.data, work.data);
   const loading = decisions.isLoading || work.isLoading;
   const money = holdings.data?.treasury;

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { expectAccessible } from "../helpers/a11y";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 
 /**
@@ -407,6 +408,17 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   ).toBeVisible();
   say("the founder published milestone one and posted a bond");
 
+  // Home tells a holder there is something to read, and the line opens the milestone.
+  await backerOne.goto("/");
+  await expect(backerOne.getByTestId("home-waiting")).toContainText(
+    "Read the evidence",
+    { timeout: 60_000 },
+  );
+  await backerOne.getByTestId("home-waiting-open").first().click();
+  await expect(backerOne.getByTestId("challenge-milestones")).toBeVisible({
+    timeout: 30_000,
+  });
+
   // A holder sees it, can read the evidence, and is offered an objection; the founder is not.
   await openMilestones(backerOne);
   await backerOne.getByTestId("challenge-evidence-toggle-0").click();
@@ -434,6 +446,8 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   say("backer one objected");
   await openMilestones(backerTwo);
   await expect(backerTwo.getByTestId("challenge-vote-0")).toBeVisible();
+  // The richest state of the page, scanned: a vote is open and this holder can cast one.
+  await expectAccessible(backerTwo, "Milestones with a vote open");
   await backerTwo.getByTestId("challenge-vote-reject-0").click();
   await expect(backerTwo.getByTestId("challenge-vote-0")).toHaveCount(0, {
     timeout: 60_000,
@@ -477,6 +491,12 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     { timeout: 90_000 },
   );
   await passTime(28 * DAY + 60);
+  // Home tells the team its milestone is ready to finish.
+  await founder.goto("/");
+  await expect(founder.getByTestId("home-waiting")).toContainText(
+    "Finish it to unlock your tokens",
+    { timeout: 60_000 },
+  );
   await openMilestones(backerTwo);
   await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
     "Ready to finish",

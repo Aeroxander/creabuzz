@@ -25,6 +25,8 @@ import {
   decisionsQuery,
 } from "@/features/launchpad/use-decisions";
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { challengeAttention } from "@/features/launchpad/lib/challenge-attention";
+import { challengeLockQuery } from "@/features/launchpad/use-challenge-lock";
 import { workQuery } from "@/features/launchpad/use-work";
 import { decisionTitler } from "@/features/launchpad/ui/decision-title";
 import { useHoldings } from "@/features/portfolio/use-portfolio";
@@ -99,23 +101,33 @@ export function useWaitingOnMe(): {
   const context = useQueries({
     queries: targets.map((t) => decisionContextQuery(t.dao)),
   });
+  const challenge = useQueries({
+    queries: targets.map((t) => challengeLockQuery(t.dao)),
+  });
 
   const waiting = targets.flatMap((target, i): WaitingInDao[] => {
     const decided = decisions[i]?.data;
     const worked = work[i]?.data;
-    // Neither could be read: unknown, not "nothing is waiting".
-    if (!decided && !worked) return [];
-    const items = attentionItems({
-      decisions: decided,
-      work: worked,
-      wallet: target.wallet,
-      titleOf: decisionTitler({
-        launch: target.launch,
-        dao: target.dao,
-        factory: context[i]?.data?.factory,
-        mandates: worked?.mandates.map((m) => m.address),
-      }),
-    });
+    const lock = challenge[i]?.data;
+    // Nothing could be read: unknown, not "nothing is waiting".
+    if (!decided && !worked && !lock) return [];
+    const items = [
+      ...(decided || worked
+        ? attentionItems({
+            decisions: decided,
+            work: worked,
+            wallet: target.wallet,
+            titleOf: decisionTitler({
+              launch: target.launch,
+              dao: target.dao,
+              factory: context[i]?.data?.factory,
+              mandates: worked?.mandates.map((m) => m.address),
+            }),
+          })
+        : []),
+      // A project whose milestones unlock unless holders object: what that asks of this person.
+      ...(lock ? challengeAttention(lock, target.wallet) : []),
+    ];
     return items.length > 0
       ? [{ launch: target.launch, dao: target.dao, items }]
       : [];

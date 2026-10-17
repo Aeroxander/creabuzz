@@ -14,7 +14,7 @@ import { nextStep, type ClaimView } from "./work.ts";
 import type { WorkSnapshot } from "./work-read.ts";
 
 /** The tab that holds the answer. */
-export type AttentionTab = "decisions" | "work";
+export type AttentionTab = "decisions" | "work" | "milestones";
 
 export interface AttentionItem {
   /** Stable, so a list re-renders without flicker. */

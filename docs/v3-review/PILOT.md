@@ -1,7 +1,7 @@
 # The pilot: what Creaton is for the first testers
 
 This replaces the long list of what the product could be with one thing it is: **back a team, understand the agreement,
-follow its work, and see its locked tokens unlock when named reviewers approve delivery.** It comes from the third review
+follow its work, and see its locked tokens unlock as its milestones are reached, unless holders object.** It comes from the third review
 (`FIRST-PRINCIPLES-REVIEW-2026-10-17.md`) and is where the decision documents disagree, this wins. The decision documents
 (`DECISIONS.md`) are a record of what was built and why, not a rulebook.
 
@@ -15,8 +15,8 @@ In the pilot:
 
 - Discover, follow, project updates and the project's page, with its terms before the bid.
 - Bids, refunds, collecting tokens, and leaving with a share of what is left in the treasury while leaving is switched on.
-- The milestones, public: the agreement, the tokens each one holds back, the evidence, what each reviewer said, the
-  waiting period and the release.
+- The milestones, public: the agreement, the tokens each one holds back, the evidence the team published, any objection and
+  the vote on it, the waiting period and the release.
 - Reviewed work budgets as the normal way to pay for work; direct payments stay possible and are shown as spending with no
   delivery review. Disputes (freeze, unwind, take a reviewer's bond) and closing a budget.
 - Workspace tools (channels, AI helpers) that help a team produce evidence, but never as part of a backer's first steps.
@@ -40,14 +40,26 @@ trade-offs, and the pilot does not claim it.
 - Say "team tokens unlock", not "the team earns its tokens": ownership and voting already exist.
 - Say "your share of what is left in the treasury, while leaving is switched on", not "refund" or a guaranteed floor. A
   missed minimum raise is different: every bid is refunded.
-- Say "approved by the reviewers", not "proven": a human judgment is the deciding input.
+- Say "nobody objected" or "holders turned it down", not "verified" or "proven": a milestone nobody objects to unlocks, so what
+  a backer is shown is the evidence and the chance to object, not a guarantee that it was reached.
 
-## Reviewers
+## How a milestone is judged
 
-A fixed panel stops friendly replacement but can strand an honest team if too few reviewers answer. So before launch the
-founder says they asked each reviewer, and says how the reviewers will work (how fast, paid or not, any tie to the team);
-backers read it on the sale page and the Milestones tab, marked as the team's own statement. A backup panel agreed before
-funding is worth evaluating for longer projects; unrestricted replacement by an interested majority is not.
+By default the holders judge it, by exception (`docs/milestone-challenge.md`, D56). The team publishes its evidence and
+posts a bond; for a week (longer for a big milestone, and longer again after each attempt holders turn down) any holder can
+object; with no objection anyone finishes it and the tokens unlock. An objection starts a vote of holders, where the team's own
+tokens do not count, and it stands only if more is against the milestone than for it and at least 3% of what could vote is
+against it. A month after an unlock one more objection is possible, and if holders uphold it the team's remaining locked
+tokens are burned. There is nobody to recruit, nobody to keep reachable, and no panel that can run out.
+
+The weakness is plain and the page says it: a milestone nobody objects to unlocks, so the protection is only as good as the
+attention of holders. The bond and the objector's bounty exist to make watching pay, and backers can leave with their share
+of the treasury while a milestone waits. A team and its friends can still buy in the sale and vote "accept" like any holder.
+
+A founder can instead name a panel of reviewers (the earlier model): then the fixed panel stops friendly replacement but can
+strand an honest team if too few reviewers answer, so before launch the founder says they asked each reviewer and how the
+reviewers will work (how fast, paid or not, any tie to the team), marked on the page as the team's own statement. A backup
+panel agreed before funding is worth evaluating for longer projects; unrestricted replacement by an interested majority is not.
 
 ## Before inviting people
 
