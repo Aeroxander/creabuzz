@@ -132,8 +132,10 @@ done
 curl -fsS -m 2 "http://localhost:$PORT/self-serve/communities" | grep -q '"enabled":true' \
   || { tail -30 "$STATE/relay.log"; fail "the relay did not come up with self-serve on"; }
 
+# A fork reads its state from a public node as it goes, so every decision takes about ten times as long as on a local chain.
 step "running the browser spec"
 cd web
 BUZZ_REAL_RELAY_URL="http://localhost:$PORT" E2E_INVITE_PORT="$PORT" \
   E2E_ANVIL_URL="$RPC" E2E_CURRENCY="$CURRENCY" E2E_LAUNCH_KIT="$KIT" E2E_CURRENCY_FUNDING=storage \
+  E2E_TIMEOUT_MS="${E2E_TIMEOUT_MS:-1800000}" \
   node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/economy.spec.ts --reporter=list --retries=0 "$@"

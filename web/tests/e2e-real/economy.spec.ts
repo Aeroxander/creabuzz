@@ -369,6 +369,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const dao = tag(launched, "treasury");
   for (const address of [shares, auction, dao])
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  // The launch started a real sale, so the saved record says it is live: nobody has to remember to flip the label.
+  expect(JSON.parse(launched.content).stage).toBe("live");
 
   // ── The capital contributor backs the launch from their own wallet, through the bid dialog ──────────
   await mineTo(start + 2);
@@ -475,7 +477,12 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     await rpc("anvil_mine", ["0x1"]);
   };
   /** Both the founder and the capital contributor hold Shares, so both back it; then the waits pass and it runs. */
-  const carryOut = async (approveAfter: number, waitFor: number) => {
+  const carryOut = async (
+    approveAfter: number,
+    waitFor: number,
+    // What both of them back together: the reviewer's bond (100 Shares, held by the panel) no longer votes once posted.
+    together = "Backing 240,000,000",
+  ) => {
     await Promise.all(
       [founder, capital].map(async (person) => {
         await open(person, "Decisions");
@@ -497,7 +504,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
         .getByTestId("decision-card")
         .first()
         .getByTestId("decision-support"),
-    ).toContainText("Backing 240,000,000", { timeout: 30_000 });
+    ).toContainText(together, { timeout: 30_000 });
     await pass(approveAfter);
     await open(founder, "Decisions");
     const approved = founder.page.getByTestId("decision-card").first();
@@ -557,6 +564,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await carryOut(175_000, 90_000);
   expect(await dollarsOf(dao)).toBe(treasuryBefore - dollars(20_000));
   say("the DAO set aside 20,000 for work");
+  await open(founder, "Decisions");
+  await shot(founder.page, "3-decisions");
 
   // 2. A project inside it that may hold money, managed by the founder.
   await open(founder, "Decisions");
@@ -637,6 +646,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   expect(await dollarsOf(capital.wallet.address)).toBe(capitalBefore);
   say("the reviewer posted their bond of 100 Shares");
+  await shot(capital.page, "5-reviewer-work");
   await budgetCard.getByTestId("work-approve").click();
   await expect(budgetCard.getByTestId("work-claim-next")).not.toContainText(
     "0 of 1 approvals",
@@ -663,10 +673,163 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     dollars(4_000),
   );
   say("the labor contributor was paid 4,000");
+  await shot(labor.page, "4-labor-work");
+
+  // ── A claim the DAO doubts is frozen by a vote, then unwound: nothing is paid, and the deposit comes back ──────
+  const laborBeforeSecond = await dollarsOf(labor.wallet.address);
+  await open(labor, "Work");
+  await expect(labor.page.getByTestId("work-projects")).toContainText("docs", {
+    timeout: 30_000,
+  });
+  await labor.page.getByTestId("work-claim-name").fill("extra-docs");
+  await labor.page
+    .getByTestId("work-claim-evidence")
+    .fill("https://example.com/pr/2");
+  await labor.page
+    .getByTestId("work-claim-check")
+    .fill("docs merged and reviewed");
+  await labor.page
+    .getByTestId("work-claim-pay-section")
+    .locator("summary")
+    .click();
+  await labor.page.getByTestId("work-claim-pay").fill("1000");
+  await labor.page.getByTestId("work-claim-deposit").fill("20");
+  await labor.page.getByTestId("work-claim-submit").click();
+  await expect(labor.page.getByTestId("work-claim-filed")).toBeVisible({
+    timeout: 90_000,
+  });
+  await open(founder, "Work");
+  const secondOnFounder = founder.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await secondOnFounder.getByTestId("work-bind").click();
+  await expect(secondOnFounder.getByTestId("work-claim-next")).toContainText(
+    "0 of 1 approvals",
+    { timeout: 60_000 },
+  );
+  await open(capital, "Work");
+  const secondOnReviewer = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" })
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await secondOnReviewer.getByTestId("work-approve").click();
+  await expect(
+    secondOnReviewer.getByTestId("work-claim-next"),
+  ).not.toContainText("0 of 1 approvals", { timeout: 60_000 });
+  await open(founder, "Work");
+  await secondOnFounder.getByTestId("work-settle").click();
+  await expect(secondOnFounder.getByTestId("work-claim-status")).toContainText(
+    "Approved",
+    { timeout: 60_000 },
+  );
+  say("a second claim was approved, inside its challenge window");
+
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-freeze").click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Freeze the claim “extra-docs”",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  await open(labor, "Work");
+  const secondOnLabor = labor.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await expect(secondOnLabor.getByTestId("work-claim-status")).toContainText(
+    "Frozen",
+    { timeout: 60_000 },
+  );
+  // Nothing is payable for a frozen claim, even to its contributor.
+  await expect(secondOnLabor.getByTestId("work-payout")).toHaveCount(0);
+  say("the DAO froze the claim by a vote");
+
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-unwind").click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Unwind the frozen claim “extra-docs”",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  await open(labor, "Work");
+  await expect(
+    labor.page
+      .getByTestId("work-claim")
+      .filter({ hasText: "extra-docs" })
+      .getByTestId("work-claim-status"),
+  ).toContainText("Recovered", { timeout: 60_000 });
+  // The deposit is back and nothing was paid: the contributor is where they were before the claim.
+  expect(await dollarsOf(labor.wallet.address)).toBe(laborBeforeSecond);
+  say("the DAO unwound it: the deposit is back and nothing was paid");
+
+  // ── The DAO takes part of the careless reviewer's bond, then closes the budget and gets its unused money back ─
+  const daoSharesBefore = await sharesOf(dao);
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-slash").click();
+  await founder.page.getByTestId("slash-amount").fill("40");
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Take 40 ",
+    { timeout: 30_000 },
+  );
+  // No more than the reviewer holds can be taken.
+  await founder.page.getByTestId("slash-amount").fill("400");
+  await expect(
+    founder.page.getByTestId("decision-draft-problem"),
+  ).toContainText("holds only 100");
+  await founder.page.getByTestId("slash-amount").fill("40");
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  expect((await sharesOf(dao)) - daoSharesBefore).toBe(40n * 10n ** 18n);
+  await open(capital, "Work");
+  await expect(
+    capital.page
+      .getByTestId("work-mandate")
+      .filter({ hasText: "Work budget" })
+      .getByTestId("work-bond-return"),
+  ).toContainText("Your bond here: 60", { timeout: 60_000 });
+  say("the DAO took 40 Shares of the reviewer's bond");
+
+  const treasuryBeforeClose = await dollarsOf(dao);
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-close").click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toHaveText(
+    "Close the work budget",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  // Of the 20,000 set aside, 4,000 was paid to the claim; the rest (the recovered claim's 1,000 included) comes back.
+  expect((await dollarsOf(dao)) - treasuryBeforeClose).toBe(dollars(16_000));
+  await open(founder, "Work");
+  await expect(
+    founder.page
+      .getByTestId("work-mandate")
+      .filter({ hasText: "Work budget" })
+      .first(),
+  ).toContainText("Closed", { timeout: 60_000 });
+  say("the DAO closed the budget and took back 16,000");
 
   // ── What everyone is left holding, on the chain and on the server ───────────────────────────────────
   expect(await dollarsOf(dao)).toBe(
-    treasuryBefore - dollars(20_000), // moved into the work budget, of which 4,000 went to the claim
+    treasuryBefore - dollars(4_000), // 20,000 went into the work budget, 4,000 of it to the claim; the rest came back
   );
   expect(cleoShares).toBeGreaterThan(0n);
   expect(await dollarsOf(capital.wallet.address)).toBeLessThanOrEqual(
@@ -683,5 +846,71 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   ).toEqual(everyone.map((person) => person.name).sort());
   const bids = await readRecords(host, { kinds: [47002] });
   expect(bids.map((event) => event.pubkey)).toEqual([capital.pubkey]);
+  // The DAO's front page tells the same story: all of it went through a reviewed budget, none paid out directly.
+  await open(founder, "Overview");
+  await shot(founder.page, "6-overview");
+  await expect(founder.page.getByTestId("dao-spending-reviewed")).toContainText(
+    "4,000 USDC, of which 4,000 USDC has been paid to claims the reviewers approved",
+    { timeout: 30_000 },
+  );
+  await expect(founder.page.getByTestId("dao-spending-direct")).toContainText(
+    "0 USDC",
+  );
+  await expect(founder.page.getByTestId("dao-spending-headline")).toContainText(
+    "went through reviewed work budgets",
+  );
+  for (const [tab, name] of [
+    ["Work", "7-work"],
+    ["Track record", "8-record"],
+    ["Treasury", "9-treasury"],
+    ["Decisions", "10-decisions"],
+    ["Manage", "11-manage"],
+  ] as const) {
+    await open(founder, tab);
+    await shot(founder.page, name);
+  }
+  await founder.page.goto("/portfolio");
+  await shot(founder.page, "12-portfolio");
+
+  // ── A backer leaves: what the screen says they take back is what the chain pays them ──────────────────
+  // The DAO's own Shares (the reserve and the slashed bond) are not counted when the treasury is split, so the share
+  // is the backer's Shares over everything outstanding except the DAO's.
+  const outstanding = await callWord(shares, "0x18160ddd");
+  const heldByDao = await sharesOf(dao);
+  const toGiveUp = await sharesOf(capital.wallet.address);
+  const treasuryNow = await dollarsOf(dao);
+  const owed = (treasuryNow * toGiveUp) / (outstanding - heldByDao);
+  expect(owed).toBeGreaterThan(0n);
+  const capitalBeforeExit = await dollarsOf(capital.wallet.address);
+  await open(capital, "Treasury");
+  // If the preview never appears, say what the panel said instead of just timing out.
+  await capital.page
+    .getByTestId("ragequit-shares")
+    .waitFor({ timeout: 60_000 })
+    .catch(async () => {
+      const panel = await capital.page
+        .getByTestId("ragequit-panel")
+        .innerText()
+        .catch(() => "(no panel)");
+      throw new Error(
+        `The exit preview never showed the backer's Shares. The panel said:\n${panel}`,
+      );
+    });
+  await expect(
+    capital.page.getByTestId("ragequit-claim-row").last(),
+  ).toContainText((owed / 10n ** 6n).toLocaleString("en-US"), {
+    timeout: 30_000,
+  });
+  await shot(capital.page, "13-leave-preview");
+  await capital.page.getByTestId("ragequit-exit").click();
+  await capital.page.getByTestId("ragequit-run").click();
+  await expect(capital.page.getByTestId("ragequit-done")).toBeVisible({
+    timeout: 90_000,
+  });
+  expect((await dollarsOf(capital.wallet.address)) - capitalBeforeExit).toBe(
+    owed,
+  );
+  expect(await sharesOf(capital.wallet.address)).toBe(0n);
+  say("the backer left with exactly the share the screen showed");
   say("the books agree");
 });

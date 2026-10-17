@@ -360,6 +360,11 @@ test("a manual treasury payment selects a verified Nostr recipient on the right 
   await openAs(page, FOUNDER_WALLET, "Decisions");
   await page.getByTestId("decision-new").click();
   await page.getByTestId("decision-kind-pay").click();
+  // A direct payment says plainly that no reviewer is involved, and offers the reviewed way instead.
+  await expect(page.getByTestId("decision-pay-warning")).toContainText(
+    "No reviewer checks anything before it goes",
+  );
+  await expect(page.getByTestId("decision-pay-use-budget")).toBeVisible();
   const picker = page.getByTestId("pay-recipient-people");
   await expect(picker.locator("option")).toHaveCount(2); // Placeholder and the one valid recipient.
   await expect(picker.locator(`option[value="${pubkey}"]`)).toBeAttached();
@@ -406,4 +411,62 @@ test("a manual treasury payment selects a verified Nostr recipient on the right 
   await carryOut(page, 175_000, 90_000);
   expect((await moneyOf(CONTRIBUTOR)) - before).toBe(12_340_000n);
   expect(treasury - (await moneyOf(DAO))).toBe(12_340_000n);
+
+  // The decision is marked as having had no reviewer, and the DAO's front page counts it apart from the reviewed budget.
+  await refresh(page, "Decisions");
+  await expect(page.getByTestId("decision-no-review").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("tab", { name: "Overview" }).click();
+  await expect(page.getByTestId("dao-spending-direct")).toContainText(
+    "12.34 USDC in 1 payment",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("dao-spending-reviewed")).toContainText(
+    "has been paid to claims the reviewers approved",
+  );
+  await expect(page.getByTestId("dao-spending-headline")).toContainText(
+    "paid out directly with no reviewer",
+  );
+});
+
+test("a form that picks from the work budgets waits for them instead of saying there are none", async ({
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const page = await context.newPage();
+  // Hold every log read that is not the DAO's own decisions: that is what the work budgets and claims are read from.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let heldReads = 0;
+  await page.route(ANVIL_URL, async (route) => {
+    let body: { method?: string; params?: { address?: string }[] } = {};
+    try {
+      body = JSON.parse(route.request().postData() ?? "{}");
+    } catch {
+      // Not a JSON-RPC call: let it through.
+    }
+    const address = body.params?.[0]?.address?.toLowerCase();
+    if (body.method === "eth_getLogs" && address !== DAO.toLowerCase()) {
+      heldReads += 1;
+      await held;
+    }
+    await route.continue();
+  });
+  await openAs(page, FOUNDER_WALLET, "Decisions");
+  await page.getByTestId("decision-new").click();
+  await page.getByTestId("decision-kind-freeze").click();
+  await expect(page.getByTestId("decision-reading-work")).toBeVisible({
+    timeout: 30_000,
+  });
+  // Not yet known is not the same as none: the form must not claim there is nothing to freeze.
+  await expect(page.getByTestId("freeze-none")).toHaveCount(0);
+  expect(heldReads).toBeGreaterThan(0);
+  release();
+  await expect(page.getByTestId("decision-reading-work")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("form-freeze")).toBeVisible();
 });

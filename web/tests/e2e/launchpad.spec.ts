@@ -196,7 +196,13 @@ async function mockRelay(page: import("@playwright/test").Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  // What one test served must not leak into the next (the page changes with a linked auction, a stage, a token plan).
   servedMilestones = [];
+  servedAuction = "";
+  servedStage = "live";
+  servedTokenMode = "mint";
+  servedLongPitch = "";
+  servedTeamLocked = false;
   await mockRelay(page);
   await page.addInitScript(
     ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
@@ -1088,8 +1094,8 @@ test("the main button follows the sale: bid while it is open, then claim tokens 
   servedAuction = `0x${"a1".repeat(20)}`;
   try {
     for (const [stage, button] of [
-      ["failed", "Claim refund"],
-      ["graduated", "Claim tokens"],
+      ["failed", "Your bids and refund"],
+      ["graduated", "Your bids and tokens"],
     ] as const) {
       servedStage = stage;
       await page.goto("/launchpad");

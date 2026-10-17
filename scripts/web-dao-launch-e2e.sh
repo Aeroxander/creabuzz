@@ -47,6 +47,8 @@ step() { printf '\033[36m[dao-launch-e2e]\033[0m %s\n' "$*"; }
 cp -p "$DEPLOYMENTS"/*.json "$BACKUP"/ 2>/dev/null || true
 cleanup() {
   RPC_URL="$RPC" STATE_DIR="$STATE" ./scripts/dev-chain.sh down >/dev/null 2>&1 || true
+  # `dev-chain.sh down` can leave the node running: stop whatever still listens on this run's port.
+  lsof -ti "tcp:${PORT}" 2>/dev/null | xargs kill 2>/dev/null || true
   for f in "$BACKUP"/*.json; do
     [[ -f "$f" ]] && cp -p "$f" "$DEPLOYMENTS/$(basename "$f")"
   done
