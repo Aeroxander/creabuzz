@@ -7,13 +7,20 @@ import {MilestoneBadge} from "./MilestoneBadge.sol";
 
 interface IChallengeDao {
     function shares() external view returns (address);
+    function votingWeight() external view returns (address);
 }
 
 interface IChallengeShares {
     function burnForfeited(address from, uint256 amount) external;
-    function getPastVotes(address account, uint48 blockNumber) external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function totalSupply() external view returns (uint256);
+}
+
+/// @dev The DAO's voting policy keeps, for each owner, the Shares they owned as of each block, independent of whom they
+/// delegated to. That is the only history a milestone vote may count: delegated votes can be filled with Shares bought after
+/// the objection, or with the same Shares passed between wallets that each hold a delegation.
+interface IChallengePolicy {
+    function getPastCapacity(address owner, uint48 snapshot) external view returns (uint96);
 }
 
 /// @title MilestoneChallenge
@@ -21,12 +28,15 @@ interface IChallengeShares {
 /// DAO's lock guard: the part of each team member's Shares a milestone covers cannot be sold or ragequit until it is
 /// reached), different way of reaching a milestone: nobody has to approve it.
 ///
-///  1. A team member publishes evidence for a milestone (its hash goes with the call) and posts a bond.
+///  1. A team member publishes evidence for a milestone (its hash goes with the call) and posts a bond. Milestones are
+///     published in order: one can be published only once the one before it has stood, so the tranches still ahead are
+///     locked while an earlier milestone can still be objected to late.
 ///  2. A public window opens. It is longer for a big tranche and doubles after each rejected attempt.
 ///  3. No objection: anyone can finish it once the window has passed, and the tranche unlocks for the whole team, each
 ///     member getting the soulbound badge.
 ///  4. An objection by a holder who is not on the team (with a deposit) goes to a vote of holders. Team Shares do not
-///     count. It is upheld only if the rejecting weight is larger than the accepting weight and at least a small share
+///     count, and a holder's weight is the Shares they owned just before the objection (never the votes delegated to
+///     them), capped by what they hold now. It is upheld only if the rejecting weight is larger than the accepting weight and at least a small share
 ///     of what could vote; anything else, including nobody voting, lets the milestone stand.
 ///  5. For a while after an unlock, a holder can object once more. If that is upheld, every team member's remaining
 ///     locked Shares are burned and the bond is forfeited. What already unlocked stays unlocked.
@@ -138,6 +148,7 @@ contract MilestoneChallenge {
     error BadTerms();
     error UnknownMilestone();
     error NotTeam();
+    error OutOfOrder();
     error TooEarly();
     error WrongPhase();
     error WindowOpen();
@@ -297,6 +308,8 @@ contract MilestoneChallenge {
         if (block.number < earliestBlock) revert TooEarly();
         Milestone storage m = milestone[index];
         if (m.phase != Phase.None || evidence == bytes32(0) || !_openFor(index)) revert WrongPhase();
+        // In order: the tranches still ahead stay locked while an earlier milestone can still be objected to late.
+        if (index != 0 && milestone[index - 1].phase != Phase.Stood) revert OutOfOrder();
         uint64 ends = uint64(block.timestamp) + windowFor(index);
         m.phase = Phase.Pending;
         m.submitter = msg.sender;
@@ -357,9 +370,9 @@ contract MilestoneChallenge {
         emit Voted(index, msg.sender, true, weight);
     }
 
-    /// @notice Vote on an open objection. A team member cannot. The weight is the smaller of the wallet's votes at the
-    /// block before the objection and the Shares it holds now, so buying after the objection counts for nothing and
-    /// votes delegated in cannot be used.
+    /// @notice Vote on an open objection. A team member cannot. The weight is the smaller of the Shares the wallet owned at
+    /// the block before the objection and the Shares it holds now: buying after the objection counts for nothing, and
+    /// votes delegated in cannot be used (delegation neither adds to nor takes from what a holder owns).
     function vote(uint256 index, bool reject) external {
         Objection storage o = objection[index];
         if (!o.open) revert WrongPhase();
@@ -479,8 +492,10 @@ contract MilestoneChallenge {
 
     function _weight(address who, uint48 snapshot) private view returns (uint256) {
         if (who == dao || isTeam[who]) return 0;
-        IChallengeShares s = IChallengeShares(IChallengeDao(dao).shares());
-        return _min(s.getPastVotes(who, snapshot), s.balanceOf(who));
+        return _min(
+            IChallengePolicy(IChallengeDao(dao).votingWeight()).getPastCapacity(who, snapshot),
+            IChallengeShares(IChallengeDao(dao).shares()).balanceOf(who)
+        );
     }
 
     function _pay(address to, uint256 amount) private {

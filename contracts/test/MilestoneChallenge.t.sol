@@ -221,6 +221,8 @@ contract MilestoneChallengeTest is VotingFixture {
     }
 
     function test_a_bigger_tranche_waits_longer() public {
+        _stand(0);
+        _stand(1);
         vm.prank(ALICE);
         lock.submit(2, EVIDENCE);
         (,,,,, uint64 ends,,) = lock.milestone(2);
@@ -368,19 +370,17 @@ contract MilestoneChallengeTest is VotingFixture {
         assertEq(acc, 10e18);
     }
 
-    function test_delegating_before_the_objection_removes_the_delegators_weight_and_caps_the_delegate() public {
+    function test_delegation_neither_adds_to_nor_takes_from_what_a_holder_owns() public {
         vm.prank(CAROL);
-        shares.delegate(ERIN); // ERIN now carries 50 votes but holds 20
+        shares.delegate(ERIN); // ERIN now carries 50 votes but owns 20; CAROL still owns her 30
         vm.roll(vm.getBlockNumber() + 1);
         _submit(0);
         _object(BOB, 0);
-        vm.prank(CAROL);
-        vm.expectRevert(MilestoneChallenge.NoWeight.selector);
-        lock.vote(0, false);
+        _vote(CAROL, 0, false);
         _vote(ERIN, 0, false);
         (,,,,,,, uint256 rej, uint256 acc) = lock.objection(0);
         assertEq(rej, 60e18);
-        assertEq(acc, 20e18); // min(50 votes, 20 held)
+        assertEq(acc, 50e18); // 30 owned by CAROL and 20 by ERIN, however the votes were handed around
     }
 
     function test_the_team_cannot_vote_and_nobody_votes_twice_or_after_the_end() public {
@@ -543,6 +543,107 @@ contract MilestoneChallengeTest is VotingFixture {
         assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
     }
 
+    // ---- what a vote counts ---------------------------------------------------------------------
+
+    function test_delegated_votes_cannot_be_filled_with_shares_bought_after_the_objection() public {
+        // The team lends its votes to a small holder; an objection is raised; the small holder then buys more Shares.
+        vm.prank(ALICE);
+        shares.delegate(FRANK);
+        vm.prank(DAVE);
+        shares.delegate(FRANK);
+        vm.roll(vm.getBlockNumber() + 1);
+        _submit(0);
+        _object(BOB, 0); // 60 against
+        _mintShares(FRANK, 50e18);
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(lock.voteWeight(0, FRANK), 10e18, "what he owned, not what he was lent or bought since");
+        _vote(FRANK, 0, false);
+        (,,,,,,, uint256 rej, uint256 acc) = lock.objection(0);
+        assertEq(rej, 60e18);
+        assertEq(acc, 10e18);
+        _pass(14 days);
+        lock.resolve(0);
+        // 60 against 10: upheld. (Counting his delegated votes it was 60 against 60, a tie, and the milestone stood.)
+        (MilestoneChallenge.Phase phase,,,,,,,) = lock.milestone(0);
+        assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
+    }
+
+    function test_shares_passed_between_wallets_that_hold_delegations_count_for_nothing() public {
+        address r1 = address(0x4E1);
+        address r2 = address(0x4E2);
+        vm.prank(ALICE);
+        shares.delegate(r1);
+        vm.prank(DAVE);
+        shares.delegate(r2);
+        vm.roll(vm.getBlockNumber() + 1);
+        _submit(0);
+        _object(BOB, 0); // 60 against
+        // CAROL owned 30 when it was raised. She hands them to one wallet that holds a delegation, which hands them on.
+        vm.prank(CAROL);
+        shares.transfer(r1, 30e18);
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(lock.voteWeight(0, r1), 0, "it owned nothing then");
+        assertEq(lock.voteWeight(0, CAROL), 0, "and she no longer holds them");
+        vm.prank(r1);
+        vm.expectRevert(MilestoneChallenge.NoWeight.selector);
+        lock.vote(0, false);
+        vm.prank(r1);
+        shares.transfer(r2, 30e18);
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(r2);
+        vm.expectRevert(MilestoneChallenge.NoWeight.selector);
+        lock.vote(0, false);
+        (,,,,,,, uint256 rej, uint256 acc) = lock.objection(0);
+        assertEq(rej, 60e18);
+        assertEq(acc, 0);
+        _pass(14 days);
+        lock.resolve(0);
+        (MilestoneChallenge.Phase phase,,,,,,,) = lock.milestone(0);
+        assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
+    }
+
+    // ---- in order ---------------------------------------------------------------------------------
+
+    function test_milestones_are_published_in_order() public {
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.OutOfOrder.selector);
+        lock.submit(1, EVIDENCE);
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.OutOfOrder.selector);
+        lock.submit(2, EVIDENCE);
+        _submit(0);
+        // Published is not enough: the one before has to have stood.
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.OutOfOrder.selector);
+        lock.submit(1, EVIDENCE);
+        _object(BOB, 0);
+        _pass(14 days);
+        lock.resolve(0); // turned down: it is not through, so the next waits
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.OutOfOrder.selector);
+        lock.submit(1, EVIDENCE);
+        _stand(0);
+        vm.prank(ALICE);
+        lock.submit(1, EVIDENCE); // now it can go
+    }
+
+    function test_the_tranches_ahead_are_the_collateral_for_a_late_objection_to_an_earlier_milestone() public {
+        _stand(0);
+        vm.prank(DAVE);
+        lock.submit(1, EVIDENCE); // the next one is published but has not stood: it is still locked
+        uint256 supplyBefore = shares.totalSupply();
+        _pass(1 days);
+        _object(BOB, 0);
+        _pass(5 days);
+        lock.resolve(0);
+        // Milestones two and three (80% of each member's Shares) were still locked, and were burned.
+        assertEq(supplyBefore - shares.totalSupply(), 120e18);
+        assertEq(lock.lockedOf(ALICE), 0);
+        assertEq(lock.lockedOf(DAVE), 0);
+        // What milestone one had already freed is theirs.
+        assertEq(shares.balanceOf(ALICE), 20e18);
+    }
+
     // ---- the clawback ------------------------------------------------------------------------
 
     function _stand(uint256 index) internal {
@@ -642,7 +743,9 @@ contract MilestoneChallengeTest is VotingFixture {
         _pass(60 days);
         lock.resolve(0);
         assertEq(lock.windowFor(0), 56 days); // the doubling stops at eight times
-        // The 21-day milestone caps at sixty days.
+        // The 21-day milestone caps at sixty days (milestones go in order, so the two before it stand first).
+        _stand(0);
+        _stand(1);
         for (uint256 i; i < 2; ++i) {
             vm.prank(ALICE);
             lock.submit(2, EVIDENCE);
@@ -708,16 +811,24 @@ contract MilestoneChallengeTest is VotingFixture {
     function test_what_the_lock_holds_is_exactly_the_bonds_and_deposits_still_owed() public {
         _submit(0); // bond 100
         assertEq(_held(), 100e18);
-        vm.prank(DAVE);
-        lock.submit(1, EVIDENCE); // bond 100
-        assertEq(_held(), 200e18);
         _object(BOB, 0); // deposit 10
-        assertEq(_held(), 210e18);
+        assertEq(_held(), 110e18);
         _pass(14 days);
-        lock.resolve(0); // upheld: bond and deposit leave, 100 left for milestone 1
+        lock.resolve(0); // upheld: the bond and the deposit leave
+        assertEq(_held(), 0);
+        vm.prank(DAVE);
+        lock.submit(0, EVIDENCE); // the other team member tries again, with a bond of their own
         assertEq(_held(), 100e18);
-        lock.finish(1); // stands; the bond stays until the clawback period ends
+        _pass(28 days);
+        lock.finish(0); // it stands; the bond stays until the clawback period ends
         assertEq(_held(), 100e18);
+        vm.prank(ALICE);
+        lock.submit(1, EVIDENCE); // the next milestone, with its own bond
+        assertEq(_held(), 200e18);
+        _pass(30 days);
+        lock.releaseBond(0);
+        assertEq(_held(), 100e18);
+        lock.finish(1);
         _pass(30 days);
         lock.releaseBond(1);
         assertEq(_held(), 0);
