@@ -1,7 +1,7 @@
 # Milestones that unlock unless holders object
 
-Status: design and contract prototype (D56). The named-reviewer panel stays, unchanged, until this path passes the
-real-chain journeys; a launch picks one of the two.
+Status: built and the default for new launches (D56). The named-reviewer panel is unchanged and still offered; a launch
+picks one of the two, once, and nothing can change it afterwards.
 
 ## Why
 
@@ -58,13 +58,22 @@ deposit back), half to the DAO, and the team may try again with a doubled window
 - If nobody is watching, a bogus milestone unlocks. The bond and bounty exist to make watching pay; Home lists a
   waiting milestone for every holder; an AI helper can check what is checkable (the link is live, the contract is
   deployed). None of that decides anything.
+- Shares still sitting unclaimed in the sale count as able to vote when the minimum is worked out, which raises the bar for an
+  objection a little until buyers claim them.
 - It is new, unaudited contract code. The panel path, which is also unaudited, stays available.
 
-## Rollout
+## Rollout (done)
 
-1. Contract and tests (`MilestoneChallenge.sol`), the panel untouched.
-2. The launch kit can create either (a launch names a panel or a challenge, never both).
-3. The shared package, the CLI and the web app: the launch form, the milestone timeline stages, submit / object /
-   vote / finish, and the Home reminder.
-4. A real-chain journey for the whole path (submit, silence, object, vote, clawback).
-5. Only then change the launch form's default from the panel to this.
+1. Contract and tests: `MilestoneChallenge.sol` (32 Forge tests, each guard broken once to see a test fail), the panel
+   untouched.
+2. The launch kit makes either (`launch` for a panel, `launchChallenged` for this), each lock from its own factory so every
+   contract fits the 24,576-byte limit (a test holds them to it; Forge's own EVM does not, and the first real chain refused a
+   combined factory that was 592 bytes over).
+3. The shared package plans, encodes (pinned to `cast`) and reads it; the web app's Milestones tab, launch form, Home
+   reminders and the DAO's front page follow whichever lock the project has.
+4. A real-chain journey (`scripts/web-challenge-e2e.sh`, in the gate): launch, sale, publish with a bond, objection and vote
+   upheld, retry with a doubled window, unlock, bond held, a late objection upheld and the remaining locked Shares burned.
+5. The launch form's default is now "Holders can object"; "Named reviewers" is one click away.
+
+Not built: `buzz` CLI commands for agents (the lock is driven from the web app only), an AI helper that checks the evidence
+(advisory only, by design), and the audit.

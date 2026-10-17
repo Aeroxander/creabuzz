@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   EMPTY_PANEL_DRAFT,
+  challengeFromDraft,
   loadPanelDraft,
   PANEL_OPEN_SECONDS,
   PANEL_OPEN_YEARS,
@@ -217,4 +218,44 @@ test("a saved draft keeps the terms and the confirmation, and a stored value of 
   const loaded = loadPanelDraft("x", storage);
   assert.equal(loaded.terms, "");
   assert.equal(loaded.agreed, false);
+});
+
+test("a new launch lets holders judge its milestones, and a draft saved before there was a choice keeps what it was", () => {
+  assert.equal(EMPTY_PANEL_DRAFT.review, "challenge");
+  const store = (value) => ({ getItem: () => JSON.stringify(value) });
+  // Reviewers typed into an old draft: it was a panel launch and stays one.
+  assert.equal(
+    loadPanelDraft("k", store({ reviewers: `${A}\n${B}`, terms: "x" })).review,
+    "panel",
+  );
+  // An old draft with nothing typed has no reason to be a panel.
+  assert.equal(
+    loadPanelDraft("k", store({ reviewers: "  " })).review,
+    "challenge",
+  );
+  // A saved choice is kept either way.
+  assert.equal(loadPanelDraft("k", store({ review: "panel" })).review, "panel");
+  assert.equal(
+    loadPanelDraft("k", store({ review: "challenge", reviewers: A })).review,
+    "challenge",
+  );
+});
+
+test("the holders' challenge asks for nothing but a bond, which is the default unless one is typed", () => {
+  assert.deepEqual(challengeFromDraft({ challengeBond: "" }, 6), {
+    challenge: {},
+  });
+  assert.deepEqual(challengeFromDraft({ challengeBond: "  " }, 6), {
+    challenge: {},
+  });
+  assert.deepEqual(challengeFromDraft({ challengeBond: "25" }, 6), {
+    challenge: { bond: 25_000_000n },
+  });
+  assert.deepEqual(challengeFromDraft({ challengeBond: "0" }, 6), {
+    challenge: { bond: 0n },
+  });
+  assert.ok("problem" in challengeFromDraft({ challengeBond: "lots" }, 6));
+  assert.ok("problem" in challengeFromDraft({ challengeBond: "-1" }, 6));
+  // More decimals than the token has are refused, not rounded.
+  assert.ok("problem" in challengeFromDraft({ challengeBond: "1.5" }, 0));
 });

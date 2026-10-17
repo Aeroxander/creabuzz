@@ -42,7 +42,7 @@ export interface PanelDraft {
 }
 
 export const EMPTY_PANEL_DRAFT: PanelDraft = {
-  review: "panel",
+  review: "challenge",
   challengeBond: "",
   reviewers: "",
   quorum: "",
@@ -208,7 +208,13 @@ export function loadPanelDraft(
     const text = (key: string) =>
       typeof draft[key] === "string" ? (draft[key] as string) : "";
     return {
-      review: draft.review === "challenge" ? "challenge" : "panel",
+      // A draft saved before there was a choice, with reviewers typed into it, was a panel launch: keep it one.
+      review:
+        draft.review === "challenge" || draft.review === "panel"
+          ? draft.review
+          : text("reviewers").trim() !== ""
+            ? "panel"
+            : "challenge",
       challengeBond: text("challengeBond"),
       reviewers: text("reviewers"),
       quorum: text("quorum"),

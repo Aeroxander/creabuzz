@@ -337,6 +337,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await founder.page.getByRole("tab", { name: /Manage/ }).click();
   // The team's Shares are held behind milestones, so the launch names who judges them: an outsider, the backer, with
   // a bond. Nobody can swap them for friendlier reviewers afterwards.
+  // (Holders judging the milestones is the default and has its own journey; this one runs the panel of named reviewers.)
+  await founder.page.getByTestId("launch-review-panel").check();
   const launchPicker = founder.page.getByTestId("launch-panel-people");
   await expect(
     launchPicker.locator("option", { hasText: capital.name }),

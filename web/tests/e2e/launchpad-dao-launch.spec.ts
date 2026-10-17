@@ -243,6 +243,8 @@ const REVIEWER_TERMS =
  * stays off.
  */
 async function namePanel(page: Page, reviewers: string[] = JUDGES) {
+  // Holders judging the milestones is the default; these launches name a panel of reviewers instead.
+  await page.getByTestId("launch-review-panel").check();
   await page.getByTestId("launch-panel-reviewers").fill(reviewers.join("\n"));
   await page.getByTestId("launch-panel-terms").fill(REVIEWER_TERMS);
   await page.getByTestId("launch-panel-agreed").check();
@@ -264,7 +266,11 @@ test("the founder launches a project into its own DAO with one button, and the p
   await expect(panel).toBeVisible({ timeout: 15_000 });
   // The old two-step path is not offered for this launch.
   await expect(page.getByTestId("auction-deploy-panel")).toHaveCount(0);
-  // The team's Shares are held behind milestones, so the launch cannot go until it says who judges them.
+  // Holders judging the milestones is the default and needs nothing from the founder; naming a panel instead means the launch
+  // cannot go until it says who judges them.
+  await expect(page.getByTestId("launch-review-challenge")).toBeChecked();
+  await expect(page.getByTestId("dao-launch-start")).toBeEnabled();
+  await page.getByTestId("launch-review-panel").check();
   await expect(page.getByTestId("dao-launch-gate")).toContainText(
     "Name who judges the milestones.",
   );
