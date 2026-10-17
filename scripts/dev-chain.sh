@@ -56,7 +56,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Toolchain: prefer the hermit-pinned node/cast when available.
 # shellcheck source=/dev/null
 . "$REPO_ROOT/bin/activate-hermit" >/dev/null 2>&1 || true
-export PATH="${HOME}/.foundry/bin:${PATH}"
+# A caller that put its own foundry directory first (the journey runner points `anvil` at its own state directory) keeps it first.
+export PATH="${FOUNDRY_BIN:+${FOUNDRY_BIN}:}${HOME}/.foundry/bin:${PATH}"
 
 RPC_HOST="${RPC_HOST:-127.0.0.1}"
 RPC_PORT="${RPC_PORT:-8545}"

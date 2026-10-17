@@ -11,27 +11,40 @@
 # Postgres and Redis (`just services`). The Sepolia-fork journey forks a public Sepolia node (SEPOLIA_RPC_URL to choose
 # one); a public node can drop a read, so a single failure there is worth one rerun before it is called a bug.
 #
-# It only ever stops what it started. Each journey runs in its own process group, and when it ends (or this is
+# It only ever stops or deletes what it started. Each journey runs in its own process group, and when it ends (or this is
 # interrupted) that group, and nothing else, is stopped. It never kills by name or by port: anything already running
 # (another task's chain, a preview server on :4173) is left alone, and a journey that needs a port someone else holds is
-# reported as blocked with who holds it. Anvil leaves scratch state under ~/.foundry/anvil/tmp when it is stopped; only
-# state created during this run is removed, and none at all while any anvil this run did not start is still running.
+# reported as blocked with who holds it. Anvil keeps scratch state on disk and leaves it behind when it is stopped; every
+# anvil a journey starts is pointed at a directory this run made (`--cache-path`), and that directory is all that is
+# removed. Nothing is ever deleted from anvil's shared default location: another run's state there is not ours to judge.
 #
 # Usage:  scripts/mvp-gate.sh [journey ...]   (no arguments: all of them)
 # Env:    LOG_DIR (default: a temp directory; each journey's full log is kept there)
-#         KEEP_ANVIL_STATE=1 leaves the scratch state alone
+#         KEEP_GATE_STATE=1 keeps the run's own scratch directory (its anvil state) instead of removing it
 #         JOURNEY_DIR where the journey scripts are (default: scripts; scripts/test-mvp-gate.sh points it at stand-ins)
-#         ANVIL_TMP where anvil keeps scratch state (default: ~/.foundry/anvil/tmp)
 
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 LOG_DIR="${LOG_DIR:-$(mktemp -d)}"
-ANVIL_TMP="${ANVIL_TMP:-$HOME/.foundry/anvil/tmp}"
-# What was already there, and when this run began: only state that appeared after this point can be this run's.
-MARKER="$(mktemp)"
-BEFORE="$(mktemp)"
-ls -1 "$ANVIL_TMP" 2>/dev/null | sort >"$BEFORE" || true
+# Everything this run makes on disk besides its logs lives under one directory it created, and only that is removed.
+STATE_ROOT="$(mktemp -d)"
+ANVIL_CACHE="$STATE_ROOT/anvil-cache"
+SHIM_DIR="$STATE_ROOT/bin"
+mkdir -p "$ANVIL_CACHE" "$SHIM_DIR"
+# Journeys start `anvil` by name. This stand-in sends its on-disk state to this run's own directory and then runs the real
+# one, so the state is provably ours without searching for it afterwards.
+REAL_ANVIL="$(PATH="${FOUNDRY_BIN:-}:$HOME/.foundry/bin:$PATH" command -v anvil 2>/dev/null || true)"
+if [[ -n "$REAL_ANVIL" ]]; then
+  cat >"$SHIM_DIR/anvil" <<SHIM
+#!/usr/bin/env bash
+exec "$REAL_ANVIL" --cache-path "$ANVIL_CACHE" "\$@"
+SHIM
+  chmod +x "$SHIM_DIR/anvil"
+  export PATH="$SHIM_DIR:$PATH"
+  # Several journeys put their own foundry directory first; keep this one ahead of it.
+  export FOUNDRY_BIN="$SHIM_DIR${FOUNDRY_BIN:+:$FOUNDRY_BIN}"
+fi
 
 # Job control puts each journey in a process group of its own, so stopping "its processes" is stopping that group.
 set -m
@@ -46,32 +59,9 @@ stop_group() {
   JOURNEY_PGID=""
 }
 
-# Anvil processes that are running now. By the time this is called every group this run started has been stopped, so any
-# that remain belong to someone else.
-foreign_anvils() { pgrep -x anvil 2>/dev/null || true; }
-
-remove_own_anvil_state() {
-  [[ "${KEEP_ANVIL_STATE:-}" == "1" ]] && return 0
-  [[ -d "$ANVIL_TMP" ]] || return 0
-  local others
-  others="$(foreign_anvils)"
-  if [[ -n "$others" ]]; then
-    printf 'left anvil scratch state in place: anvil is still running that this run did not start (pid %s)\n' \
-      "$(echo "$others" | tr '\n' ' ')" >&2
-    return 0
-  fi
-  local dir
-  find "$ANVIL_TMP" -maxdepth 1 -name 'anvil-state-*' -newer "$MARKER" 2>/dev/null | while read -r dir; do
-    # Not there when this run began: it was made by something that ran since.
-    grep -qxF "$(basename "$dir")" "$BEFORE" && continue
-    rm -rf "$dir"
-  done
-}
-
 finish() {
   stop_group
-  remove_own_anvil_state
-  rm -f "$MARKER" "$BEFORE"
+  [[ "${KEEP_GATE_STATE:-}" == "1" ]] || rm -rf "$STATE_ROOT"
 }
 trap finish EXIT
 trap 'exit 130' INT TERM
@@ -83,6 +73,7 @@ ALL=(
   web-milestone-e2e
   web-work-e2e
   web-paid-work-e2e
+  web-dao-launch-e2e
   web-dao-journey-e2e
   web-economy-e2e
   web-sepolia-fork-e2e
@@ -118,8 +109,10 @@ for journey in "${JOURNEYS[@]}"; do
   JOURNEY_PGID=$!
   wait "$JOURNEY_PGID"
   status=$?
-  # Whatever the journey left behind (a chain, a preview server) goes with its group.
+  # Whatever the journey left behind (a chain, a preview server) goes with its group, and the chain's on-disk state is this
+  # run's own directory, cleared before the next journey so a long run cannot fill the disk.
   stop_group
+  find "$ANVIL_CACHE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
   if [[ $status -eq 0 ]]; then
     passed+=("$journey")
     printf '\033[32mPASS\033[0m %s\n' "$journey"
