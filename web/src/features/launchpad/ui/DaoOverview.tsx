@@ -224,8 +224,8 @@ export function DaoOverview({
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Track record</h3>
           <p className="text-sm text-muted-foreground">
-            What this DAO has paid and to whom, and what its team has earned so
-            far. Anyone can check it.
+            What this DAO has paid and to whom, and how much of its team's
+            tokens have unlocked so far. Anyone can check it.
           </p>
         </div>
         <Button

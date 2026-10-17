@@ -312,6 +312,8 @@ export interface CreateLaunchInput {
   longPitch?: string;
   ipList?: string[];
   updateCadence?: string;
+  /** How the team's reviewers will work, in the founder's words (see `LaunchRecord.reviewerTerms`). */
+  reviewerTerms?: string;
   /** Cover image URL (optional). */
   image?: string;
   /** A topic; published as a lowercase `t` tag, which Discover browses by. */
@@ -403,6 +405,7 @@ export function useCreateLaunch() {
       if (input.ipList && input.ipList.length > 0)
         content.ipList = input.ipList;
       if (input.updateCadence) content.updateCadence = input.updateCadence;
+      if (input.reviewerTerms) content.reviewerTerms = input.reviewerTerms;
       if (input.image) content.image = input.image;
       if (input.chat && hasChat(input.chat)) {
         // Only the rooms that exist: a null would read as a promise.

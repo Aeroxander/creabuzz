@@ -64,6 +64,11 @@ export interface LaunchRecord {
   ipList: string[];
   /** Committed update cadence for investors ("monthly" etc.). */
   updateCadence: string | null;
+  /**
+   * How the team's reviewers will work, in the founder's words (how quickly they respond, whether they are paid, any
+   * tie to the team), written when the project launched. Null for a project launched before this was asked.
+   */
+  reviewerTerms: string | null;
   stage: LaunchStage;
   /**
    * The project's own word about raising, separate from `stage`: a stance a
@@ -410,6 +415,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     longPitch: str(body.longPitch),
     ipList: strs(body.ipList),
     updateCadence: str(body.updateCadence),
+    reviewerTerms: str(body.reviewerTerms),
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
     funding: parseFunding(body.funding),
     currency: str(body.currency),

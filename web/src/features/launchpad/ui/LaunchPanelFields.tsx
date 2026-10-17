@@ -139,6 +139,27 @@ export function LaunchPanelFields({
           Name at least one more.
         </p>
       ) : null}
+      <TextAreaField
+        hint="Backers read this before they bid. Say how quickly your reviewers will respond, whether they are paid, and any tie they have to your team."
+        label="How your reviewers will work"
+        onChange={(terms) => patch({ terms })}
+        placeholder="For example: each has agreed to read the evidence and answer within 7 days. They are unpaid volunteers with no stake in the project."
+        testId="launch-panel-terms"
+        value={draft.terms}
+      />
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          checked={draft.agreed}
+          className="mt-1"
+          data-testid="launch-panel-agreed"
+          onChange={(event) => patch({ agreed: event.target.checked })}
+          type="checkbox"
+        />
+        <span>
+          I have asked each of them, and each agreed to judge these milestones
+          on these terms.
+        </span>
+      </label>
       {problem ? (
         <p
           className="text-xs text-destructive"

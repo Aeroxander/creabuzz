@@ -57,6 +57,7 @@ export function DaoLaunchPanel({
     token: string;
     auction: string;
     treasury: string;
+    reviewerTerms?: string;
   }) => Promise<unknown>;
 }) {
   const { record } = launch;
@@ -113,6 +114,8 @@ export function DaoLaunchPanel({
   );
   const panel =
     panelResult && "panel" in panelResult ? panelResult.panel : null;
+  const reviewerTerms =
+    panelResult && "terms" in panelResult ? panelResult.terms : undefined;
   const panelStarted =
     JSON.stringify(panelDraft) !== JSON.stringify(EMPTY_PANEL_DRAFT);
 
@@ -121,6 +124,7 @@ export function DaoLaunchPanel({
     wallet,
     onLink,
     panel,
+    reviewerTerms,
   });
   const { plan, summary, gate } = view;
   const { progress, failure, running, resumable, done } = state;

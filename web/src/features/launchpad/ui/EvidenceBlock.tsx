@@ -11,7 +11,7 @@ const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
  * A text with its web links made clickable. Only http and https links become anchors, and every anchor opens in a new
  * tab without handing the page over: evidence is written by someone else.
  */
-function Linked({ text }: { text: string }) {
+export function Linked({ text }: { text: string }) {
   const parts = text.split(URL_RE);
   return (
     <>

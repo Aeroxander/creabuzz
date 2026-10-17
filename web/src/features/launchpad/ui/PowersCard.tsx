@@ -60,11 +60,14 @@ const GIVE_UP =
 export function PowersCard({
   locked,
   panel,
+  reviewerTerms = null,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
   /** The milestone panel as read from the chain, once the project is launched. */
   panel: PanelFacts | null;
+  /** How the team says its reviewers will work, in its own words; null when it never said. */
+  reviewerTerms?: string | null;
 }) {
   return (
     <Card className="p-4" data-testid="launch-powers">
@@ -95,11 +98,20 @@ export function PowersCard({
               {panel.bond ? ` Each posts a bond of ${panel.bond}.` : ""}
             </p>
           ) : null}
+          <p
+            className="mt-1 whitespace-pre-wrap"
+            data-testid="launch-powers-terms"
+          >
+            {reviewerTerms
+              ? `In the team's own words, the reviewers will work like this: ${reviewerTerms}`
+              : "The team has not said how its reviewers will work."}
+          </p>
           <p className="mt-1 text-black/60 dark:text-white/60">
-            The reviewers are fixed. If too few of them can be reached, or the
-            panel runs out, no milestone can be approved and the locked Shares
-            stay locked; the only thing the DAO can then do with them is give
-            them up and burn them.
+            That is the team&apos;s statement; the network cannot check it. The
+            reviewers are fixed. If too few of them can be reached, or the panel
+            runs out, no milestone can be approved and the locked Shares stay
+            locked; the only thing the DAO can then do with them is give them up
+            and burn them.
           </p>
         </div>
       ) : null}
@@ -144,9 +156,17 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
         expiresAt: mandate.expiresAt,
         closed: mandate.closed,
         bond: mandate.bond
-          ? `${formatAtomic(mandate.bond.minBond, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`
+          ? mandate.bond.decimalsKnown
+            ? `${formatAtomic(mandate.bond.minBond, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`
+            : `${mandate.bond.minBond.toString()} raw units of ${mandate.bond.symbol}`
           : null,
       }
     : null;
-  return <PowersCard locked={locked} panel={panel} />;
+  return (
+    <PowersCard
+      locked={locked}
+      panel={panel}
+      reviewerTerms={record.reviewerTerms}
+    />
+  );
 }

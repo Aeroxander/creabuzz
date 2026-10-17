@@ -1,3 +1,4 @@
+import { markFirstStep } from "@/shared/lib/first-steps";
 import type { ChallengeIntent } from "../lib/challenge";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -48,6 +49,7 @@ import { ManagePanel } from "./ManagePanel";
 import { DecisionsTab } from "./DecisionsTab";
 import { RecordTab } from "./RecordTab";
 import { WorkTab } from "./WorkTab";
+import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
 import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
@@ -59,6 +61,7 @@ import { useOrgMoney } from "../use-launches";
 
 type Tab =
   | "overview"
+  | "milestones"
   | "discussion"
   | "updates"
   | "proposals"
@@ -117,6 +120,11 @@ export function LaunchDetailPage({
       markSupportersSeen(supporterCoord, seenCount);
     }
   }, [isFounder, supporterCoord, seenCount]);
+  // Home's checklist asks a backer to look at a project: opening one counts, in this browser.
+  const lookedAt = Boolean(launch) && !sandbox;
+  useEffect(() => {
+    if (lookedAt) markFirstStep(localStorage, "looked-at-project");
+  }, [lookedAt]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
   const [tab, setTab] = useState<Tab>(
@@ -238,6 +246,10 @@ export function LaunchDetailPage({
   };
   const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
     { id: "overview", label: "Overview" },
+    // The agreement a backer follows: shown for any project whose team tokens unlock against milestones, funded or not.
+    ...(launch.record.unlocks?.mode === "milestones"
+      ? [{ id: "milestones" as const, label: "Milestones" }]
+      : []),
     ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
     ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
     ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
@@ -375,6 +387,14 @@ export function LaunchDetailPage({
         ) : (
           raiseOverview
         )
+      ) : null}
+      {tab === "milestones" && !idea ? (
+        <MilestonesTab
+          dao={workDao}
+          launch={launch}
+          onOpenDecisions={() => setTab("decisions")}
+          onOpenWork={() => setTab("work")}
+        />
       ) : null}
       {tab === "discussion" && !sandbox ? (
         <LaunchDiscussion record={launch.record} updates={launch.updates} />

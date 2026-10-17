@@ -3,14 +3,13 @@
  * do next for people who just signed up.
  *
  * Signed out: a short pitch that leads with what the product is for (back a
- * project early, and the team has to earn its own tokens by showing its work),
- * two doors (make an account, look around) and the three ideas it stands on
- * (backing a project, milestones the team has to earn, and building together
- * with a ready-made team and helpers that ask first). Signed in: a checklist built only
- * from things the app can verify (a profile, a project finished here, a helper
- * started here, a follow, a launch of your own), so a ticked box never lies.
- * The first three are the way in; the last two are for later and never hold the
- * list open. It can be dismissed, and goes away on its own when done.
+ * project early, and watch the team's tokens unlock as named reviewers approve
+ * its milestones), two doors (make an account, look around) and the three ideas it
+ * stands on. Signed in: a checklist built only from things the app can verify,
+ * so a ticked box never lies. It asks different things of someone who came to back
+ * projects and someone who came to build one (`lib/home-steps.ts`): a backer is
+ * never asked to start a project or run an AI helper. It can be dismissed, and goes
+ * away on its own when the way in is done.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -29,10 +28,26 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 
+import {
+  type Role,
+  type Signals,
+  parseRole,
+  stepsFor,
+  wayInDone,
+} from "../lib/home-steps";
 import { followedLaunches, followedPeople } from "../lib/lists";
 import { useMyLists } from "../use-feed";
 
 const DISMISSED_KEY = "creaton.home.getting-started.dismissed";
+const ROLE_KEY = "creaton.home.role";
+
+function readRole(): Role {
+  try {
+    return parseRole(localStorage.getItem(ROLE_KEY));
+  } catch {
+    return parseRole(null);
+  }
+}
 
 function readDismissed(): boolean {
   try {
@@ -50,8 +65,8 @@ const IDEAS = [
   },
   {
     icon: ShieldCheck,
-    title: "Milestones the team has to earn",
-    body: "The team's own tokens stay locked until named reviewers read the evidence and approve each milestone.",
+    title: "The team's tokens unlock with its milestones",
+    body: "The team's own tokens stay locked. They unlock as named reviewers read the evidence and approve each milestone.",
   },
   {
     icon: Users,
@@ -86,9 +101,10 @@ function Welcome() {
         </span>
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
-        Creaton is where early projects raise money from the people who believe
-        in them, and then have to show their work. A defined part of the team's
-        tokens stays locked until named reviewers approve the agreed milestones.
+        Back early projects, follow their progress, and see the team&apos;s
+        tokens unlock when named reviewers approve delivery. A defined part of
+        the team&apos;s tokens stays locked until they approve the agreed
+        milestones.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button
@@ -120,74 +136,48 @@ function Welcome() {
   );
 }
 
-interface Step {
-  done: boolean;
-  label: string;
-  hint: string;
-  to: "/c" | "/discover" | "/launchpad" | null;
-  /** For later: shown, but never holds the list open. */
-  optional?: boolean;
-}
-
 function GettingStarted({ me }: { me: string }) {
   const [dismissed, setDismissed] = useState(readDismissed);
+  const [role, setRole] = useState<Role>(readRole);
   const lists = useMyLists();
   const launches = useLaunches();
   const { data: profiles } = useProfiles([me]);
 
   const profile = profiles?.[me];
-  const named = Boolean(
-    profile && resolveUserName(profile, me) !== me.slice(0, 8),
-  );
-  const follows =
-    followedPeople(lists.data?.contacts ?? null).size +
-      followedLaunches(lists.data?.bookmarks ?? null).size >
-    0;
-  const started = (launches.data ?? []).some((l) => l.record.author === me);
-  const madeProject = hasFirstStep(localStorage, "project");
-  const ranHelper = peekAgentPubkey() !== null;
+  const mine = (launches.data ?? []).filter((l) => l.record.author === me);
+  const signals: Signals = {
+    named: Boolean(profile && resolveUserName(profile, me) !== me.slice(0, 8)),
+    lookedAtProject: hasFirstStep(localStorage, "looked-at-project"),
+    follows:
+      followedPeople(lists.data?.contacts ?? null).size +
+        followedLaunches(lists.data?.bookmarks ?? null).size >
+      0,
+    backed: (launches.data ?? []).some((l) =>
+      l.bids.some((bid) => bid.author === me),
+    ),
+    published: mine.length > 0,
+    setUpMilestones: mine.some((l) => l.record.unlocks?.mode === "milestones"),
+    madeWorkspace: hasFirstStep(localStorage, "project"),
+    ranHelper: peekAgentPubkey() !== null,
+  };
 
   // Don't flash a checklist of empty boxes while the answers are still loading.
   if (dismissed || lists.isLoading || launches.isLoading || !profiles) {
     return null;
   }
 
-  const steps: Step[] = [
-    {
-      done: named,
-      label: "Add your name and a picture",
-      hint: "Open your account menu, top right.",
-      to: null,
-    },
-    {
-      done: madeProject,
-      label: "Start a project with a ready-made team",
-      hint: "A film crew, an app team or a startup crew. Channels, helpers and pages are set up for you.",
-      to: "/c",
-    },
-    {
-      done: ranHelper,
-      label: "Put an AI helper to work",
-      hint: "In your project, open AI helpers and run one in this tab.",
-      to: "/c",
-    },
-    {
-      done: follows,
-      label: "Follow a launch or a person",
-      hint: "Optional. Their posts will show up in For you.",
-      to: "/discover",
-      optional: true,
-    },
-    {
-      done: started,
-      label: "Raise money and share ownership",
-      hint: "Optional, for when you're ready. Not needed to start working.",
-      to: "/launchpad",
-      optional: true,
-    },
-  ];
+  const steps = stepsFor(role, signals);
+  if (wayInDone(steps)) return null;
   const required = steps.filter((step) => !step.optional);
-  if (required.every((step) => step.done)) return null;
+
+  const chooseRole = (next: Role) => {
+    setRole(next);
+    try {
+      localStorage.setItem(ROLE_KEY, next);
+    } catch {
+      // Not remembered; it simply starts as a backer next visit.
+    }
+  };
 
   return (
     <section
@@ -226,11 +216,36 @@ function GettingStarted({ me }: { me: string }) {
           </Button>
         </div>
       </div>
+      <fieldset className="mt-3 inline-flex rounded-full bg-secondary/60 p-0.5 text-sm">
+        <legend className="sr-only">Why you are here</legend>
+        {(
+          [
+            ["backer", "I want to back projects"],
+            ["founder", "I'm building a project"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            aria-pressed={role === value}
+            className={`rounded-full px-3 py-1 font-medium ${
+              role === value
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground"
+            }`}
+            data-testid={`home-role-${value}`}
+            key={value}
+            onClick={() => chooseRole(value)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </fieldset>
       <ol className="mt-3 flex flex-col gap-2">
         {steps.map((step) => (
           <li
             className="flex items-center gap-3 rounded-xl bg-secondary/50 px-3 py-2.5"
-            key={step.label}
+            data-testid={`home-step-${step.id}`}
+            key={step.id}
           >
             <span
               aria-hidden

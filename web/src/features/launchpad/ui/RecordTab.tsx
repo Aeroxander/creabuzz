@@ -132,7 +132,9 @@ export function RecordTab({
     },
     person: labelOf,
     money: (mandate, atomic) =>
-      `${formatAtomic(atomic, mandate.currency?.decimals ?? 18, { maxFractionDigits: 2 })} ${mandate.currency?.symbol ?? ""}`.trim(),
+      mandate.currency && !mandate.currency.decimalsKnown
+        ? `${atomic.toString()} raw units of ${mandate.currency.symbol}`
+        : `${formatAtomic(atomic, mandate.currency?.decimals ?? 18, { maxFractionDigits: 2 })} ${mandate.currency?.symbol ?? ""}`.trim(),
     shares,
     title: titleOf,
   };
@@ -192,9 +194,10 @@ export function RecordTab({
           <div className="min-w-0">
             <h2 className="text-base font-bold">Track record</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              What this DAO has done with its money, and what its team has
-              earned. It is read straight from the network, not typed in, so
-              anyone can check it and it cannot be edited afterwards.
+              What this DAO has done with its money, and how much of its team's
+              tokens have unlocked. It is read straight from the network, not
+              typed in, so anyone can check it and it cannot be edited
+              afterwards.
             </p>
           </div>
           <Button
@@ -284,7 +287,7 @@ export function RecordTab({
       </div>
 
       <Card className="p-4" data-testid="record-promises">
-        <h3 className="text-sm font-semibold">What the team has earned</h3>
+        <h3 className="text-sm font-semibold">The team&apos;s tokens</h3>
         {promises.length === 0 ? (
           <p className="mt-1 text-sm text-muted-foreground">
             {events.isLoading

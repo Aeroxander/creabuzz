@@ -235,9 +235,17 @@ const JUDGES = [
   "0x90F79bf6EB2c4f870365E785982E1f101E9b4226",
 ];
 
-/** The launch names who judges the team's milestones; without them the button stays off. */
+const REVIEWER_TERMS =
+  "Each agreed to answer within 7 days. Unpaid, with no stake in the project.";
+
+/**
+ * The launch names who judges the team's milestones, says they agreed and how they will work; without them the button
+ * stays off.
+ */
 async function namePanel(page: Page, reviewers: string[] = JUDGES) {
   await page.getByTestId("launch-panel-reviewers").fill(reviewers.join("\n"));
+  await page.getByTestId("launch-panel-terms").fill(REVIEWER_TERMS);
+  await page.getByTestId("launch-panel-agreed").check();
 }
 
 const tag = (event: StoredEvent, name: string) =>
@@ -259,6 +267,16 @@ test("the founder launches a project into its own DAO with one button, and the p
   // The team's Shares are held behind milestones, so the launch cannot go until it says who judges them.
   await expect(page.getByTestId("dao-launch-gate")).toContainText(
     "Name who judges the milestones.",
+  );
+  await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
+  // Naming the reviewers is not enough: the founder says they asked them, and how they will work, before backers read it.
+  await page.getByTestId("launch-panel-reviewers").fill(JUDGES.join("\n"));
+  await expect(page.getByTestId("launch-panel-problem")).toContainText(
+    "asked each reviewer",
+  );
+  await page.getByTestId("launch-panel-agreed").check();
+  await expect(page.getByTestId("launch-panel-problem")).toContainText(
+    "how your reviewers will work",
   );
   await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
   // A team member cannot judge the team's milestones: said before anything is sent.
@@ -306,8 +324,10 @@ test("the founder launches a project into its own DAO with one button, and the p
     );
   }
 
-  // The record now names the DAO's Shares, the sale and the DAO as treasury.
+  // The record now names the DAO's Shares, the sale and the DAO as treasury, and keeps what the founder said about how the
+  // reviewers will work, so backers can read it.
   const record = relay.current();
+  expect(JSON.parse(record.content).reviewerTerms).toBe(REVIEWER_TERMS);
   const shares = tag(record, "token");
   const auction = tag(record, "auction");
   const dao = tag(record, "treasury");

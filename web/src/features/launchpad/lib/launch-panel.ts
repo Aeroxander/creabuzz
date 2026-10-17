@@ -25,6 +25,10 @@ export interface PanelDraft {
   /** What it is paid in: the sale currency (the safe default) or another token. */
   bondIn: "currency" | "other";
   bondOther: string;
+  /** How the reviewers will work: how quickly they respond, whether they are paid, and any tie to the team. */
+  terms: string;
+  /** The founder has asked each reviewer and each agreed to judge these milestones on these terms. */
+  agreed: boolean;
 }
 
 export const EMPTY_PANEL_DRAFT: PanelDraft = {
@@ -33,7 +37,14 @@ export const EMPTY_PANEL_DRAFT: PanelDraft = {
   bond: "",
   bondIn: "currency",
   bondOther: "",
+  terms: "",
+  agreed: false,
 };
+
+/** The least a statement of how the reviewers will work must say to say anything. */
+export const MIN_TERMS_CHARS = 20;
+/** The most it can say: it is read on the sale page and kept on the launch record. */
+export const MAX_TERMS_CHARS = 1_000;
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -72,10 +83,31 @@ export function panelFromDraft(
   draft: PanelDraft,
   facts: BondTokenFacts,
   now: number,
-): { panel: DaoLaunchPanelInput } | { problem: string } {
+): { panel: DaoLaunchPanelInput; terms: string } | { problem: string } {
   const reviewers = reviewerList(draft.reviewers);
   if (reviewers.length === 0) {
     return { problem: "Name who judges the milestones." };
+  }
+  // A panel that has not agreed to the job can strand an honest team: the reviewers are fixed at launch, and if too few
+  // of them answer, no milestone can be approved. So the founder says they asked, and says how the reviewers will work,
+  // and backers read it before they bid.
+  if (!draft.agreed) {
+    return {
+      problem:
+        "Confirm that you have asked each reviewer and that each agreed to judge your milestones.",
+    };
+  }
+  const terms = draft.terms.trim();
+  if (terms.length < MIN_TERMS_CHARS) {
+    return {
+      problem:
+        "Say how your reviewers will work: how quickly they respond, whether they are paid, and any tie they have to your team.",
+    };
+  }
+  if (terms.length > MAX_TERMS_CHARS) {
+    return {
+      problem: `Keep it under ${MAX_TERMS_CHARS} characters: backers read this before they bid.`,
+    };
   }
   const quorumText = draft.quorum.trim();
   const quorum =
@@ -121,6 +153,7 @@ export function panelFromDraft(
       endsAt: now + PANEL_OPEN_SECONDS,
       now,
     },
+    terms,
   };
 }
 
@@ -149,6 +182,8 @@ export function loadPanelDraft(
       bond: text("bond"),
       bondIn: draft.bondIn === "other" ? "other" : "currency",
       bondOther: text("bondOther"),
+      terms: text("terms"),
+      agreed: draft.agreed === true,
     };
   } catch {
     return EMPTY_PANEL_DRAFT;

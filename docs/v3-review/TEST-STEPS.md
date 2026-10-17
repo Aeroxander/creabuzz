@@ -106,6 +106,10 @@ nothing was paid. Take a reviewer's bond and Close a work budget work the same w
 the treasury. On the DAO's Overview, "Where the treasury's money went" splits reviewed budgets from direct payments, and a
 direct payment's decision card is marked "No reviewer".
 
+### The milestones, as a backer (D55)
+
+With no wallet connected, open a milestone project and its Milestones tab (`?tab=milestones`). Working looks like: each milestone shows its words, how many tokens it holds back and where it stands; a milestone with the reviewers shows each reviewer as approved, objected or not having decided; an approved one shows when anyone can still object; the evidence the team submitted opens under each submitted milestone; the page says what the lock does not do, and what the team said about how its reviewers will work. On Home, signed in, a new account sees the backer list (look at a project, follow or back one); switching to "I'm building a project" shows publish and set up the funding agreement, with the workspace and helper marked optional.
+
 ### The failure cases (D54)
 
 ```bash

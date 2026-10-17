@@ -343,6 +343,12 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   ).toHaveCount(1, { timeout: 30_000 });
   await launchPicker.selectOption(capital.wallet.address.toLowerCase());
   await founder.page.getByTestId("launch-panel-bond").fill("25");
+  await founder.page
+    .getByTestId("launch-panel-terms")
+    .fill(
+      "Cleo Capital agreed to read the evidence and answer within 7 days. Unpaid, no stake in the project.",
+    );
+  await founder.page.getByTestId("launch-panel-agreed").check();
   await founder.page.getByTestId("dao-launch-start").click();
   await expect(founder.page.getByTestId("dao-launch-status")).toContainText(
     "Your project is live",
@@ -884,6 +890,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     "went through reviewed work budgets",
   );
   for (const [tab, name] of [
+    ["Milestones", "7a-milestones"],
     ["Work", "7-work"],
     ["Track record", "8-record"],
     ["Treasury", "9-treasury"],
@@ -968,6 +975,14 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   expect(await sharesOf(capital.wallet.address)).toBe(0n);
   say("the backer left with exactly the share the screen showed");
+  // A backer reads what the team said about how its reviewers will work, and sees the milestones as the team does.
+  await open(capital, "Milestones");
+  await expect(
+    capital.page.getByTestId("milestones-reviewer-terms"),
+  ).toContainText("answer within 7 days", { timeout: 30_000 });
+  await expect(capital.page.getByTestId("milestone-stage-0")).toHaveText(
+    "Not submitted",
+  );
   // The same pages on a phone, with real data (only when screenshots are being saved).
   if (process.env.E2E_SHOTS) {
     await founder.page.setViewportSize({ width: 390, height: 844 });

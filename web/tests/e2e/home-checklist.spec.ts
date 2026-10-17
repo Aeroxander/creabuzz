@@ -4,10 +4,9 @@ import { getPublicKey } from "nostr-tools/pure";
 import { createMockRelay } from "./mock-relay";
 
 /**
- * Home's "Get started" list for someone who has just signed up. Every box is
- * ticked only for something that really happened in this browser, the first
- * three are the way in, and the last two are for later and never hold the list
- * open.
+ * Home's "Get started" list for someone who has just signed up. It asks different things of someone who came to back
+ * projects and someone who came to build one. Every box is ticked only for something that really happened, the first
+ * three are the way in, and the rest are for later and never hold the list open.
  */
 
 const OWNER_NSEC = "55".repeat(32);
@@ -51,7 +50,7 @@ async function openHome(
   await page.goto("/");
 }
 
-test("a new account is asked to start a project and run a helper, and nothing is pre-ticked", async ({
+test("a new account starts as a backer: asked to look at a project and follow or back one, never to start a project or run a helper", async ({
   page,
 }) => {
   await openHome(page);
@@ -59,49 +58,51 @@ test("a new account is asked to start a project and run a helper, and nothing is
   await expect(list).toBeVisible({ timeout: 20_000 });
   // The name is real (the profile above), the rest has not happened.
   await expect(list).toContainText("1 of 3 done");
+  await expect(list.getByText("Look at a project")).toBeVisible();
+  await expect(list.getByText("Follow a project, or back one")).toBeVisible();
+  // Backing money is for later and never holds the list open.
   await expect(
-    list.getByText("Start a project with a ready-made team"),
+    list.getByText("Optional, for when you have read"),
   ).toBeVisible();
-  await expect(list.getByText("Put an AI helper to work")).toBeVisible();
-  // The later steps are shown, marked as optional, and not counted.
-  await expect(list.getByText("Optional. Their posts")).toBeVisible();
-  await expect(
-    list.getByText("Optional, for when you're ready."),
-  ).toBeVisible();
-  // A project and a helper both point at the communities, where they are made.
+  // A backer is not asked to do a founder's work.
+  await expect(list).not.toContainText("ready-made team");
+  await expect(list).not.toContainText("AI helper");
   await expect(list.getByRole("link", { name: "Go" }).first()).toHaveAttribute(
     "href",
-    "/c",
+    "/discover",
   );
 });
 
-test("a helper started here ticks its box, and the list goes away when the way in is done", async ({
+test("a founder is asked to publish a project and set up its funding agreement; workspace and helper wait", async ({
   page,
 }) => {
-  await openHome(page, { "creaton.first-steps": JSON.stringify(["project"]) });
+  await openHome(page);
   const list = page.getByTestId("home-getting-started");
-  // Name and project are done; the helper is what is left. Seeing this first
-  // is what makes the list's later absence mean something.
-  await expect(list).toContainText("2 of 3 done", { timeout: 20_000 });
-
-  // Run a helper (its key appears in this browser), then come back to Home.
-  await page.evaluate(() =>
-    window.localStorage.setItem("buzz.agent.nsec", "ab".repeat(32)),
+  await expect(list).toBeVisible({ timeout: 20_000 });
+  await list.getByTestId("home-role-founder").click();
+  await expect(list).toContainText("1 of 3 done");
+  await expect(list.getByText("Publish your project")).toBeVisible();
+  await expect(list.getByText("Set up your funding agreement")).toBeVisible();
+  // The workspace and the AI helper are still there, marked optional, and not counted.
+  await expect(list.getByTestId("home-step-workspace")).toContainText(
+    "Optional.",
   );
-  await page.getByRole("link", { name: "Social" }).click();
-  await expect(page).toHaveURL(/\/social/);
-  await page
-    .getByRole("navigation", { name: "Main" })
-    .getByRole("link", { name: "Home", exact: true })
-    .click();
-  await expect(page.getByTestId("user-chip")).toBeVisible();
-  await expect(page.getByTestId("home-getting-started")).toHaveCount(0);
+  await expect(list.getByTestId("home-step-helper")).toContainText("Optional.");
+  // The choice is remembered, and a backer is not shown the founder's list on the next visit by accident.
+  await page.reload();
+  await expect(page.getByTestId("home-role-founder")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+    { timeout: 20_000 },
+  );
 });
 
-test("with only the project done, the list says what is left", async ({
+test("looking at a project in this browser ticks that box", async ({
   page,
 }) => {
-  await openHome(page, { "creaton.first-steps": JSON.stringify(["project"]) });
+  await openHome(page, {
+    "creaton.first-steps": JSON.stringify(["looked-at-project"]),
+  });
   const list = page.getByTestId("home-getting-started");
   await expect(list).toContainText("2 of 3 done", { timeout: 20_000 });
 });
@@ -187,7 +188,7 @@ test.describe("the one door for starting something", () => {
   });
 });
 
-test("someone who is not signed in is told what the product is for: backing teams that have to earn their tokens", async ({
+test("someone who is not signed in is told what the product is for: backing teams whose tokens unlock with their milestones", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -199,8 +200,10 @@ test("someone who is not signed in is told what the product is for: backing team
   await expect(welcome.getByRole("heading")).toContainText("Back teams.");
   await expect(welcome.getByRole("heading")).not.toContainText("AI helpers");
   await expect(welcome).toContainText(
-    "stays locked until named reviewers approve the agreed milestones",
+    "see the team's tokens unlock when named reviewers approve delivery",
   );
-  await expect(welcome).toContainText("Milestones the team has to earn");
+  await expect(welcome).toContainText(
+    "The team's tokens unlock with its milestones",
+  );
   await expect(welcome).toContainText("AI helpers do the legwork");
 });

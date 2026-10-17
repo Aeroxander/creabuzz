@@ -51,6 +51,7 @@ export function recordToInput(
     ...(record.verifierSet ? { verifierSet: record.verifierSet } : {}),
     ...(record.legalWrapper ? { legalWrapper: record.legalWrapper } : {}),
     ...(record.ipRecord ? { ipRecord: record.ipRecord } : {}),
+    ...(record.reviewerTerms ? { reviewerTerms: record.reviewerTerms } : {}),
     ...(record.unlocks ? { unlocks: record.unlocks } : {}),
     ...(record.daoAtGraduation !== null
       ? { daoAtGraduation: record.daoAtGraduation }

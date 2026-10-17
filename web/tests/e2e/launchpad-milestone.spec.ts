@@ -198,6 +198,20 @@ async function openPortfolio(page: Page, account: string) {
   await page.goto("/portfolio");
 }
 
+/** Open the milestones with no wallet at all: it is the same page for everyone. */
+async function openMilestones(page: Page) {
+  await serveRecord(page);
+  await page.addInitScript((rpcUrl) => {
+    window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+  }, ANVIL_URL);
+  await page.goto(
+    `/launchpad/nebula-milestone?author=${FOUNDER}&tab=milestones`,
+  );
+  await expect(page.getByTestId("milestones-tab")).toBeVisible({
+    timeout: 20_000,
+  });
+}
+
 /** Open the track record with no wallet at all: it is the same page for everyone. */
 async function openRecord(page: Page) {
   await serveRecord(page);
@@ -411,4 +425,34 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   ).toContainText("https://example.com/mainnet", { timeout: 30_000 });
   // Nothing was put up for a vote, and the Shares are still locked until the reviewers have their say.
   expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
+
+  // Anyone, with no wallet at all, sees the same story: the first milestone released, the second with the reviewers,
+  // the evidence the team submitted, and every reviewer as not having decided yet. It is the backer's view of the
+  // agreement, not the team wallet's.
+  const watcher = await page.context().newPage();
+  await openMilestones(watcher);
+  await expect(watcher.getByTestId("milestone-stage-0")).toHaveText(
+    "Unlocked",
+    { timeout: 30_000 },
+  );
+  await expect(watcher.getByTestId("milestone-stage-1")).toHaveText(
+    "With the reviewers",
+  );
+  await expect(watcher.getByTestId("milestone-headline-1")).toContainText(
+    "0 of 2 approved",
+  );
+  await watcher.getByTestId("milestone-evidence-toggle-1").click();
+  await expect(watcher.getByTestId("milestone-evidence-1")).toContainText(
+    "https://example.com/mainnet",
+  );
+  await expect(watcher.getByTestId("milestone-verdicts-1")).toContainText(
+    "has not decided",
+  );
+  // It says what the lock does not do, so nobody mistakes it for a promise about the treasury.
+  await expect(watcher.getByTestId("milestones-limits")).toContainText(
+    "Holders can still vote to spend the treasury",
+  );
+  await expect(watcher.getByTestId("milestones-summary")).toContainText(
+    "1 of 2 milestones reached",
+  );
 });

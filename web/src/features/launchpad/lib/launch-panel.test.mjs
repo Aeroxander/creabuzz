@@ -7,6 +7,8 @@ import {
   PANEL_OPEN_SECONDS,
   PANEL_OPEN_YEARS,
   panelFromDraft,
+  MAX_TERMS_CHARS,
+  MIN_TERMS_CHARS,
   panelSpare,
   reviewerList,
   savePanelDraft,
@@ -17,9 +19,13 @@ const B = "0x00000000000000000000000000000000000000a2";
 const C = "0x00000000000000000000000000000000000000a3";
 const NOW = 1_700_000_000;
 const USDC = { currencyDecimals: 6, other: "loading" };
+const TERMS =
+  "Each agreed to answer within 7 days. Unpaid, no stake in the project.";
 const draft = (over = {}) => ({
   ...EMPTY_PANEL_DRAFT,
   reviewers: `${A}\n${B}\n${C}`,
+  agreed: true,
+  terms: TERMS,
   ...over,
 });
 
@@ -114,6 +120,8 @@ test("what the founder typed survives a reload, per launch, and nothing else doe
     reviewers: `${A}\n${B}`,
     quorum: "2",
     bond: "25",
+    terms: TERMS,
+    agreed: true,
   };
   savePanelDraft("alice:nebula", typed, storage);
   assert.deepEqual(loadPanelDraft("alice:nebula", storage), typed);
@@ -171,4 +179,42 @@ test("the panel says how many reviewers could be unreachable before no milestone
 
 test("the panel's lifetime in the words is the lifetime it is created with", () => {
   assert.equal(PANEL_OPEN_YEARS * 365 * 86_400, PANEL_OPEN_SECONDS);
+});
+
+test("the launch is not allowed until the founder says they asked the reviewers and how those reviewers will work", () => {
+  const unasked = panelFromDraft(draft({ agreed: false }), USDC, NOW);
+  assert.match(unasked.problem, /asked each reviewer/);
+  const silent = panelFromDraft(draft({ terms: "   soon   " }), USDC, NOW);
+  assert.match(silent.problem, /how your reviewers will work/);
+  assert.ok(
+    draft({ terms: "x".repeat(MIN_TERMS_CHARS - 1) }).terms.length <
+      MIN_TERMS_CHARS,
+  );
+  assert.match(
+    panelFromDraft(draft({ terms: "x".repeat(MIN_TERMS_CHARS - 1) }), USDC, NOW)
+      .problem,
+    /how your reviewers will work/,
+  );
+  assert.match(
+    panelFromDraft(draft({ terms: "x".repeat(MAX_TERMS_CHARS + 1) }), USDC, NOW)
+      .problem,
+    /under 1000 characters/,
+  );
+});
+
+test("the terms the founder wrote come back trimmed, to be kept on the launch record beside the reviewers", () => {
+  const made = panelFromDraft(draft({ terms: `  ${TERMS}  ` }), USDC, NOW);
+  assert.equal(made.terms, TERMS);
+  assert.deepEqual(made.panel.reviewers.length, 3);
+});
+
+test("a saved draft keeps the terms and the confirmation, and a stored value of the wrong type is not trusted", () => {
+  const storage = memory();
+  storage.setItem(
+    "buzz.launchpad.panel-draft:x",
+    JSON.stringify({ reviewers: "", terms: 5, agreed: "yes" }),
+  );
+  const loaded = loadPanelDraft("x", storage);
+  assert.equal(loaded.terms, "");
+  assert.equal(loaded.agreed, false);
 });

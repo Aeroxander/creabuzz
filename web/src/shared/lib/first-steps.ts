@@ -8,7 +8,7 @@
  */
 
 /** The step names. A new one is added here, then recorded where it happens. */
-export type FirstStep = "project";
+export type FirstStep = "project" | "looked-at-project";
 
 const KEY = "creaton.first-steps";
 

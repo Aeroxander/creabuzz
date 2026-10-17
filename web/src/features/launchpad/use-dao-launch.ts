@@ -83,11 +83,14 @@ export function useDaoLaunch(input: {
     token: string;
     auction: string;
     treasury: string;
+    reviewerTerms?: string;
   }) => Promise<unknown>;
   /** Who judges the team's milestones, as the founder named them (null until they have). */
   panel?: DaoLaunchPanelInput | null;
+  /** How those reviewers will work, in the founder's words: saved on the record with the link. */
+  reviewerTerms?: string;
 }): { view: DaoLaunchView; state: DaoLaunchState; start: () => void } {
-  const { launch, wallet, onLink, panel = null } = input;
+  const { launch, wallet, onLink, panel = null, reviewerTerms } = input;
   const { record } = launch;
   const chainId = chainNumber(record.chainId);
   const kit = daoLaunchKit(record.chainId);
@@ -198,6 +201,7 @@ export function useDaoLaunch(input: {
             token: launched.shares,
             auction: launched.auction,
             treasury: launched.dao,
+            ...(reviewerTerms ? { reviewerTerms } : {}),
           }),
         publish: (launched, txHash) =>
           publishMirror({
