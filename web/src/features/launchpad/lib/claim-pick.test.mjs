@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolvePick } from "./claim-pick.ts";
+import { rememberShown, resolvePick } from "./claim-pick.ts";
 
 const KEYS = ["0xm:0xa", "0xm:0xb"];
 
@@ -37,4 +37,44 @@ test("what the person picks in the form wins over where they came from, and a pi
     key: null,
     gone: true,
   });
+});
+
+test("the first option a form shows becomes its target: if it disappears on a refresh, the next one is not quietly shown", () => {
+  // The person has not touched the dropdown; a destructive amount is typed against what is on screen.
+  let selected = "";
+  const show = (keys) => {
+    const pick = resolvePick(keys, null, selected);
+    selected = rememberShown(selected, pick);
+    return pick;
+  };
+  assert.deepEqual(show(["0xm:0xa", "0xm:0xb"]), {
+    key: "0xm:0xa",
+    gone: false,
+  });
+  // A refresh drops A. Before this, the form would have shown B in its place with the amount still typed.
+  assert.deepEqual(show(["0xm:0xb"]), { key: null, gone: true });
+  // It stays gone until the person chooses.
+  assert.deepEqual(show(["0xm:0xb"]), { key: null, gone: true });
+  selected = "0xm:0xb";
+  assert.deepEqual(show(["0xm:0xb"]), { key: "0xm:0xb", gone: false });
+});
+
+test("a form that had nothing to show takes the first one that appears, and then keeps it", () => {
+  let selected = "";
+  const show = (keys) => {
+    const pick = resolvePick(keys, null, selected);
+    selected = rememberShown(selected, pick);
+    return pick;
+  };
+  assert.deepEqual(show([]), { key: null, gone: false });
+  assert.deepEqual(show(["0xm:0xa"]), { key: "0xm:0xa", gone: false });
+  assert.deepEqual(show([]), { key: null, gone: true });
+});
+
+test("what was picked is never replaced by remembering", () => {
+  assert.equal(
+    rememberShown("0xm:0xb", { key: "0xm:0xa", gone: false }),
+    "0xm:0xb",
+  );
+  assert.equal(rememberShown("", { key: null, gone: false }), "");
 });

@@ -264,13 +264,19 @@ function MandateCard({
   const { created } = mandate;
   const decimals = mandate.currency?.decimals ?? 18;
   const unit = mandate.currency?.symbol ?? "";
+  // A currency that did not say how many decimals it has is shown as the raw number: a guessed scale misstates it.
+  const scaled = mandate.currency?.decimalsKnown ?? true;
   const money = (units: bigint) =>
-    `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${unit}`.trim();
+    scaled
+      ? `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${unit}`.trim()
+      : `${units.toString()} raw units of ${unit}`;
   // The bond is paid in its own token: the claim currency unless the vote that made this budget named another.
   // When the bond's terms could not be read its token is unknown: show the raw number, never the claim currency's scale.
   const bondMoney = (units: bigint) =>
     mandate.bond
-      ? `${formatAtomic(units, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`.trim()
+      ? mandate.bond.decimalsKnown
+        ? `${formatAtomic(units, mandate.bond.decimals, { maxFractionDigits: 2 })} ${mandate.bond.symbol}`.trim()
+        : `${units.toString()} raw units of ${mandate.bond.symbol}`
       : mandate.bondUnreadable
         ? `${units.toString()} raw units`
         : money(units);

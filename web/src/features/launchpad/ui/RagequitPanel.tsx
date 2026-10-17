@@ -149,13 +149,14 @@ export function RagequitPanel({
         : { state: "pending" },
   });
   const tokens = exit.status === "ready" ? exit.tokens : null;
-  // The sale currency's own name and decimals (ETH needs no read).
-  const infoWanted = Boolean(tokens?.some((t) => t !== ETH_TOKEN));
+  // The exit currency's own name and decimals (ETH needs no read). It is the token the exit will pay, wherever its address
+  // came from: the sale contract's answer, or the launch record when there is no sale contract.
+  const exitToken = tokens?.find((t) => t !== ETH_TOKEN) ?? null;
+  const infoWanted = exitToken !== null;
   const currencyInfoQuery = useQuery({
-    queryKey: ["ragequit-token-info", currencyQuery.data, getRpcEndpoint()],
+    queryKey: ["ragequit-token-info", exitToken, getRpcEndpoint()],
     enabled: infoWanted,
-    queryFn: () =>
-      fetchTokenInfo(getRpcEndpoint(), currencyQuery.data as string),
+    queryFn: () => fetchTokenInfo(getRpcEndpoint(), exitToken as string),
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });

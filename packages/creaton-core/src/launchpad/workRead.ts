@@ -99,6 +99,8 @@ export interface MandateView {
     minBond: bigint;
     symbol: string;
     decimals: number;
+    /** False when the bond token's `decimals()` could not be read: never scale an amount by `decimals` then. */
+    decimalsKnown: boolean;
   } | null;
   /**
    * The bond could not be read, which is not the same as the budget asking for none (`bond` is null in both): a budget
@@ -115,7 +117,12 @@ export interface MandateView {
   /** Whether the pending bond could not be read: the page then says so and offers a retry, instead of showing nothing. */
   walletBondUnreadable: boolean;
   /** The currency's symbol and decimals, read once; null when the mandate moves no currency. */
-  currency: { symbol: string; decimals: number } | null;
+  currency: {
+    symbol: string;
+    decimals: number;
+    /** False when the token's `decimals()` could not be read: `decimals` is then a placeholder, never a scale to use. */
+    decimalsKnown: boolean;
+  } | null;
   truncated: boolean;
 }
 
@@ -135,18 +142,27 @@ export interface WorkSnapshot {
 
 const number = (hex: string): number => Number(decodeWord(hex));
 
-/** `symbol()` and `decimals()` of an ERC-20, tolerating a token that answers neither. */
+/**
+ * `symbol()` and `decimals()` of an ERC-20, tolerating a token that answers neither. When `decimals()` does not answer
+ * (or answers nonsense) the precision is unknown: `decimals` then holds 18 only so the type stays a number, and
+ * `decimalsKnown` is false. Nothing may scale an amount by it: a six-decimal token read as 18 decimals prints (and
+ * parses typed amounts) a trillion times off. Callers show raw units and refuse quantity-sensitive actions instead.
+ */
 async function readCurrency(
   chain: WorkChain,
   token: string,
-): Promise<{ symbol: string; decimals: number }> {
+): Promise<{ symbol: string; decimals: number; decimalsKnown: boolean }> {
   let decimals = 18;
+  let decimalsKnown = false;
   let symbol = "units";
   try {
     const d = decodeWord(await chain.call(token, encodeCall0("decimals()")));
-    if (d <= 36n) decimals = Number(d);
+    if (d <= 36n) {
+      decimals = Number(d);
+      decimalsKnown = true;
+    }
   } catch {
-    // An unreadable token falls back to 18 decimals; the amounts then say "units".
+    // Unknown: shown as raw units, and amounts cannot be typed in until it is read.
   }
   try {
     const hex = (await chain.call(token, encodeCall0("symbol()"))).replace(
@@ -161,7 +177,7 @@ async function readCurrency(
   } catch {
     // Keep the neutral word.
   }
-  return { symbol, decimals };
+  return { symbol, decimals, decimalsKnown };
 }
 
 /** A call the contract refused (no such function, or it reverted), as opposed to one that did not get an answer. */
@@ -174,6 +190,8 @@ type BondTerms = {
   minBond: bigint;
   symbol: string;
   decimals: number;
+  /** False when the bond token's `decimals()` could not be read: `decimals` is then a placeholder, never a scale to use. */
+  decimalsKnown: boolean;
 };
 
 /**

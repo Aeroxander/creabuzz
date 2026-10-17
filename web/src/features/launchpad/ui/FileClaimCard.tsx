@@ -107,7 +107,18 @@ export function FileClaimCard({
       setProblem(tooLong);
       return;
     }
-    // What it asks for, in the budget's currency: nothing unless the person filled it in.
+    // What it asks for, in the budget's currency: nothing unless the person filled it in. A currency that did not say how
+    // many decimals it has cannot have an amount typed against it: a guessed scale would ask for the wrong sum.
+    if (
+      mandate.currency &&
+      !mandate.currency.decimalsKnown &&
+      (pay.trim() || deposit.trim())
+    ) {
+      setProblem(
+        "This work budget's currency could not be read just now, so a payment or deposit cannot be typed in safely. Reload the page and try again, or ask to be recognised without payment.",
+      );
+      return;
+    }
     const decimals = mandate.currency?.decimals ?? 0;
     let amount = 0n;
     let stake = 0n;

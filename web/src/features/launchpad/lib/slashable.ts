@@ -18,7 +18,7 @@ interface SlashReviewer {
 interface SlashMandate {
   address: string;
   /** The bond's terms, null when the budget has none or they could not be read. */
-  bond: { decimals: number; symbol: string } | null;
+  bond: { decimals: number; symbol: string; decimalsKnown: boolean } | null;
   bondUnreadable: boolean;
   reviewers: readonly SlashReviewer[];
 }
@@ -42,6 +42,8 @@ export interface SlashableList<M extends SlashMandate> {
   entries: Slashable<M>[];
   /** Budgets whose bond terms could not be read: their reviewers cannot be listed with a unit. */
   unreadableBudgets: number;
+  /** Budgets whose bond token did not say its decimals: an amount cannot be shown or typed against it safely. */
+  unscaledBudgets: number;
 }
 
 export function slashableReviewers<M extends SlashMandate>(
@@ -49,9 +51,15 @@ export function slashableReviewers<M extends SlashMandate>(
 ): SlashableList<M> {
   const entries: Slashable<M>[] = [];
   let unreadableBudgets = 0;
+  let unscaledBudgets = 0;
   for (const mandate of mandates) {
     if (mandate.bondUnreadable) unreadableBudgets += 1;
     if (!mandate.bond) continue;
+    // Raw balances are still right, but the slash form takes a typed amount: never against a guessed scale.
+    if (!mandate.bond.decimalsKnown) {
+      unscaledBudgets += 1;
+      continue;
+    }
     for (const reviewer of mandate.reviewers) {
       const active = reviewer.stake ?? 0n;
       const waiting = reviewer.pending?.amount ?? 0n;
@@ -70,5 +78,5 @@ export function slashableReviewers<M extends SlashMandate>(
       });
     }
   }
-  return { entries, unreadableBudgets };
+  return { entries, unreadableBudgets, unscaledBudgets };
 }

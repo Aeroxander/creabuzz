@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { slashableReviewers } from "./slashable.ts";
 
-const bond = { decimals: 6, symbol: "USDC" };
+const bond = { decimals: 6, symbol: "USDC", decimalsKnown: true };
 const reviewer = (
   address,
   stake,
@@ -79,4 +79,15 @@ test("a budget whose bond terms could not be read cannot list reviewers with a u
   ]);
   assert.equal(entries.length, 0);
   assert.equal(unreadableBudgets, 1);
+});
+
+test("a bond whose token did not say its decimals is not listed for an amount to be typed against a guess", () => {
+  const { entries, unscaledBudgets, unreadableBudgets } = slashableReviewers([
+    mandate("0xm", [reviewer("0xa", 50_000_000n)], {
+      bond: { decimals: 18, symbol: "USDC", decimalsKnown: false },
+    }),
+  ]);
+  assert.equal(entries.length, 0);
+  assert.equal(unscaledBudgets, 1);
+  assert.equal(unreadableBudgets, 0);
 });

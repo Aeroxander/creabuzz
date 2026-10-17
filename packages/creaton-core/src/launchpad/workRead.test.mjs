@@ -133,6 +133,9 @@ function chain(claims, over = {}, bond = null) {
     } else {
       set(VERIFIERS, encodeCall0(SIGNATURES.bondToken), words(bondToken));
     }
+    if (bond.decimalsUnreadable) {
+      failing.add(key(bondToken, encodeCall0("decimals()")));
+    }
     if (bond.minBondUnreadable) {
       failing.add(key(VERIFIERS, encodeCall0(SIGNATURES.minBond)));
     } else {
@@ -340,6 +343,7 @@ test("a panel that asks for a bond reads as the bond, the reviewers and what eac
     minBond: 50_000_000n,
     symbol: "USDC",
     decimals: 6,
+    decimalsKnown: true,
   });
   assert.deepEqual(
     mandate.reviewers.map((r) => [r.address, r.stake]),
@@ -352,7 +356,11 @@ test("a panel that asks for a bond reads as the bond, the reviewers and what eac
   );
   assert.equal(mandate.walletStake, 50_000_000n);
   // A bonded panel moves currency, so its currency is read for the amounts.
-  assert.deepEqual(mandate.currency, { symbol: "USDC", decimals: 6 });
+  assert.deepEqual(mandate.currency, {
+    symbol: "USDC",
+    decimals: 6,
+    decimalsKnown: true,
+  });
 });
 
 test("a bond paid in another token is read with that token's own name and decimals", async () => {
@@ -376,9 +384,14 @@ test("a bond paid in another token is read with that token's own name and decima
     minBond: 50n * 10n ** 18n,
     symbol: "PROJ",
     decimals: 18,
+    decimalsKnown: true,
   });
   // The claim currency is still the currency's own.
-  assert.deepEqual(mandate.currency, { symbol: "USDC", decimals: 6 });
+  assert.deepEqual(mandate.currency, {
+    symbol: "USDC",
+    decimals: 6,
+    decimalsKnown: true,
+  });
 });
 
 test("a panel with no bond, or made before bonds existed, asks for none and still lists nobody wrongly", async () => {
@@ -585,7 +598,10 @@ test("a panel made before bonds existed is bond-free, and that is not the same a
 });
 
 test("bond terms that cannot be read are reported as unreadable, and a bond waiting to come back is still found", async () => {
-  for (const failure of [{ metadataUnreadable: true }, { minBondUnreadable: true }]) {
+  for (const failure of [
+    { metadataUnreadable: true },
+    { minBondUnreadable: true },
+  ]) {
     const snapshot = await readWork(
       chain(
         [],
@@ -615,4 +631,29 @@ test("bond terms that cannot be read are reported as unreadable, and a bond wait
     });
     assert.equal(mandate.walletBondUnreadable, false);
   }
+});
+
+test("a token whose decimals could not be read is marked unknown, never read as 18", async () => {
+  // Only USDC's decimals() fails: the symbol and the minimum bond read fine, which used to read as 18 decimals.
+  const snapshot = await readWork(
+    chain(
+      [],
+      {},
+      {
+        min: 50_000_000,
+        decimalsUnreadable: true,
+        reviewers: [{ address: ALICE, stake: 50_000_000 }],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  const [mandate] = snapshot.mandates;
+  assert.equal(mandate.bond.symbol, "USDC");
+  assert.equal(mandate.bond.minBond, 50_000_000n);
+  assert.equal(mandate.bond.decimalsKnown, false);
+  assert.equal(mandate.currency.decimalsKnown, false);
+  // Everything raw still reads: the balance, the stake, the pending bond are untouched by the missing scale.
+  assert.equal(mandate.walletStake, 50_000_000n);
+  assert.equal(mandate.bondUnreadable, false);
 });

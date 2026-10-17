@@ -203,6 +203,17 @@ export function ProjectForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       return {
         problem: "This project has no milestones to judge.",
       };
+    // A currency that did not say how many decimals it has cannot have an amount typed against it.
+    if (
+      !isMilestonePanel &&
+      money.trim() &&
+      chosen.currency &&
+      !chosen.currency.decimalsKnown
+    )
+      return {
+        problem:
+          "This work budget's currency could not be read just now, so an amount cannot be typed in safely. Reload the page and try again.",
+      };
     return attempt(() =>
       projectDecision({
         mandate: chosen.address,

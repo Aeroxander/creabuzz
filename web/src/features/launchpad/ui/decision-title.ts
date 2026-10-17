@@ -12,7 +12,8 @@ export function bondsOf(
   if (!work) return undefined;
   return Object.fromEntries(
     work.mandates.flatMap((m) =>
-      m.bond
+      // A bond whose token did not say its decimals cannot put an amount in words: the vote then reads in base units.
+      m.bond?.decimalsKnown
         ? [
             [
               m.address.toLowerCase(),

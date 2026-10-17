@@ -16,12 +16,12 @@ import {
   slashReviewerDecision,
 } from "../lib/dao-actions";
 import { closeEffects } from "../lib/close-effects";
-import { resolvePick } from "../lib/claim-pick";
 import { formatShares } from "../lib/shares-format";
 import { slashableReviewers } from "../lib/slashable";
 import { type ClaimView, idLabel } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
 import { SelectField, TextField } from "./decision-fields";
+import { useStickyPick } from "./use-sticky-pick";
 import {
   attempt,
   DraftPanel,
@@ -77,9 +77,11 @@ function ClaimPickForm({
   make: (pick: Pick) => ReturnType<typeof freezeClaimDecision>;
 }) {
   const options = claimsIn(ctx.work?.mandates ?? [], states);
-  const [selected, setSelected] = useState("");
-  // A claim the person came here for, or picked, that is no longer eligible is never swapped for another one.
-  const pick = resolvePick(options.map(pickKey), initialPick ?? null, selected);
+  // A claim the person came here for, or was first shown, that is no longer eligible is never swapped for another one.
+  const { pick, select: setSelected } = useStickyPick(
+    options.map(pickKey),
+    initialPick ?? null,
+  );
   const chosen = pick.key
     ? options.find((o) => pickKey(o) === pick.key)
     : undefined;
@@ -191,11 +193,9 @@ export function CloseBudgetForm({
   const open = (ctx.work?.mandates ?? []).filter(
     (m) => !m.closed && !m.isMilestonePanel,
   );
-  const [selected, setSelected] = useState("");
-  const pick = resolvePick(
+  const { pick, select: setSelected } = useStickyPick(
     open.map((m) => m.address),
     null,
-    selected,
   );
   const chosen = pick.key
     ? open.find((m) => m.address === pick.key)
@@ -288,14 +288,20 @@ export function CloseBudgetForm({
 /** Take some of a reviewer's bond after an approval the DAO disputes; it is paid to the DAO. */
 export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   // The bond a reviewer asked back stays slashable until they take it, so it counts beside their active stake.
-  const { entries: reviewers, unreadableBudgets } = slashableReviewers(
-    ctx.work?.mandates ?? [],
-  );
+  const {
+    entries: reviewers,
+    unreadableBudgets,
+    unscaledBudgets,
+  } = slashableReviewers(ctx.work?.mandates ?? []);
   const key = (r: (typeof reviewers)[number]) =>
     `${r.mandate.address}:${r.reviewer.address}`;
-  const [selected, setSelected] = useState("");
   const [amount, setAmount] = useState("");
-  const pick = resolvePick(reviewers.map(key), null, selected);
+  const { pick, select } = useStickyPick(reviewers.map(key), null);
+  // An amount typed for one reviewer is not carried to another: choosing again starts the amount again.
+  const setSelected = (value: string) => {
+    select(value);
+    setAmount("");
+  };
   const chosen = pick.key
     ? reviewers.find((r) => key(r) === pick.key)
     : undefined;
@@ -356,6 +362,18 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
           {unreadableBudgets === 1
             ? "One work budget's bond could not be read, so its reviewers are not listed."
             : `${unreadableBudgets} work budgets' bonds could not be read, so their reviewers are not listed.`}{" "}
+          Reload the page to try again.
+        </p>
+      ) : null}
+      {unscaledBudgets > 0 ? (
+        <p
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="slash-unscaled"
+          role="status"
+        >
+          {unscaledBudgets === 1
+            ? "One work budget's bond token did not say how many decimals it has, so an amount cannot be typed for its reviewers safely."
+            : `${unscaledBudgets} work budgets' bond tokens did not say how many decimals they have, so amounts cannot be typed for their reviewers safely.`}{" "}
           Reload the page to try again.
         </p>
       ) : null}
