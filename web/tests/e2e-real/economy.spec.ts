@@ -782,10 +782,25 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   say("the DAO unwound it: the deposit is back and nothing was paid");
 
   // ── The DAO takes part of the careless reviewer's bond, then closes the budget and gets its unused money back ─
+  // The reviewer, seeing the dispute coming, asks for the whole bond back. It stops counting at once but stays at risk
+  // until they take it, so the DAO must still be able to take part of it: asking back must not be a way out.
+  await open(capital, "Work");
+  const bondBudget = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" });
+  await bondBudget.getByTestId("work-unbond").click();
+  await expect(bondBudget.getByTestId("work-unbond-pending")).toContainText(
+    "100",
+    { timeout: 60_000 },
+  );
   const daoSharesBefore = await sharesOf(dao);
   await open(founder, "Decisions");
   await founder.page.getByTestId("decision-new").click();
   await founder.page.getByTestId("decision-kind-slash").click();
+  // Their active stake is zero now; the form still lists them, with what is waiting.
+  await expect(
+    founder.page.getByTestId("slash-reviewer").locator("option").first(),
+  ).toContainText("waiting to be taken back", { timeout: 30_000 });
   await founder.page.getByTestId("slash-amount").fill("40");
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
     "Take 40 ",
@@ -808,8 +823,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     capital.page
       .getByTestId("work-mandate")
       .filter({ hasText: "Work budget" })
-      .getByTestId("work-bond-return"),
-  ).toContainText("Your bond here: 60", { timeout: 60_000 });
+      .getByTestId("work-unbond-pending"),
+  ).toContainText("60", { timeout: 60_000 });
   say("the DAO took 40 Shares of the reviewer's bond");
 
   const treasuryBeforeClose = await dollarsOf(dao);
@@ -891,7 +906,39 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const owed = (treasuryNow * toGiveUp) / (outstanding - heldByDao);
   expect(owed).toBeGreaterThan(0n);
   const capitalBeforeExit = await dollarsOf(capital.wallet.address);
+  // First the sale's currency cannot be read: leaving must not even be offered, because an exit that leaves the
+  // currency off its list burns the Shares and gives up the treasury's money.
+  await capital.page.route(ANVIL_URL, async (route) => {
+    let body: { method?: string; params?: { to?: string; data?: string }[] } =
+      {};
+    try {
+      body = JSON.parse(route.request().postData() ?? "{}");
+    } catch {
+      // Not a JSON-RPC call: let it through.
+    }
+    const call = body.params?.[0];
+    if (
+      body.method === "eth_call" &&
+      call?.to?.toLowerCase() === auction.toLowerCase() &&
+      call?.data === "0xe5a6b10f"
+    ) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
   await open(capital, "Treasury");
+  await expect(
+    capital.page.getByTestId("ragequit-currency-failed"),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(capital.page.getByTestId("ragequit-exit")).toHaveCount(0);
+  await expect(capital.page.getByTestId("ragequit-shares")).toHaveCount(0);
+  // The node answers again: one press of Try again and the exit is offered with the currency on its list.
+  await capital.page.unroute(ANVIL_URL);
+  await capital.page.getByTestId("ragequit-currency-retry").click();
   // If the preview never appears, say what the panel said instead of just timing out.
   await capital.page
     .getByTestId("ragequit-shares")

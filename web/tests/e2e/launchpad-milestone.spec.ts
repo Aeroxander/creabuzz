@@ -337,6 +337,36 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   await page.getByTestId("milestone-submit-1").click();
   await expect(page.getByTestId("milestone-problem-1")).toBeVisible();
 
+  // A browser that will not keep the draft: nothing is sent, the person is told, and their text stays in the box. (A
+  // claim filed whose name and evidence are lost on the next reload cannot be finished or checked.)
+  const unsaved = await page.context().newPage();
+  await unsaved.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name: string, value: string) {
+      if (String(name).startsWith("buzz.launchpad.milestone-submission:")) {
+        throw new DOMException("full", "QuotaExceededError");
+      }
+      return original.call(this, name, value);
+    };
+  });
+  await openWork(unsaved, FOUNDER_WALLET);
+  await unsaved
+    .getByTestId("milestone-evidence-1")
+    .fill("Mainnet is live: https://example.com/mainnet");
+  await unsaved.getByTestId("milestone-submit-1").click();
+  await expect(unsaved.getByTestId("milestone-problem-1")).toContainText(
+    "would not keep a copy",
+    { timeout: 30_000 },
+  );
+  await expect(unsaved.getByTestId("milestone-evidence-1")).toHaveValue(
+    "Mainnet is live: https://example.com/mainnet",
+  );
+  await expect(unsaved.getByTestId("milestone-resume-1")).toHaveCount(0);
+  // Nothing was sent: the second milestone is still exactly as locked, and no claim was filed for it.
+  expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
+  await expect(unsaved.getByTestId("work-claim")).toHaveCount(1);
+  await unsaved.close();
+
   // The person cancels the second prompt: the claim is filed, the rest is not. (A second page of the same browser: the
   // saved submission is shared, and the wallet that cancels is a one-time thing per page load.)
   const interrupted = await page.context().newPage();
