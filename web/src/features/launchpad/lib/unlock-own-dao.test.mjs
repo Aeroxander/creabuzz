@@ -4,7 +4,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { STANDARD_ALLOCATION } from "./allocation.ts";
-import { initialWizardState, wizardStepIssues } from "./wizard.ts";
+import {
+  initialWizardState,
+  wizardStepIssues,
+  wizardToCreateInput,
+} from "./wizard.ts";
 
 const form = (tokenMode) => ({
   id: "",
@@ -64,4 +68,25 @@ test("milestones, and no lock, are fine for a project with its own DAO", () => {
   const none = { ...initialWizardState(), unlockMode: "none" };
   assert.deepEqual(stepIssues(milestones, "dao"), []);
   assert.deepEqual(stepIssues(none, "dao"), []);
+});
+
+test("the recorded milestone plan covers the team's Shares for a project with its own DAO, and the milestones share elsewhere", () => {
+  const start = initialWizardState();
+  const wizard = {
+    ...start,
+    unlockMode: "milestones",
+    milestones: start.milestones.map((row, index) => ({
+      ...row,
+      label: `Milestone ${index + 1} words`,
+    })),
+  };
+  const dao = wizardToCreateInput(
+    { ...form("dao"), allocation: { ...STANDARD_ALLOCATION, milestones: 0 } },
+    wizard,
+    { plan: null },
+  );
+  // The lock holds the team's 20%, whatever the unused "milestones" share says.
+  assert.equal(dao.unlocks.allocationPct, STANDARD_ALLOCATION.team);
+  const mint = wizardToCreateInput(form("mint"), wizard, { plan: null });
+  assert.equal(mint.unlocks.allocationPct, STANDARD_ALLOCATION.milestones);
 });

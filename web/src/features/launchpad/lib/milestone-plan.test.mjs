@@ -60,3 +60,17 @@ test("shares that are not whole percentages are carried exactly to a hundredth o
   assert.equal(tokens[0], 66_660_000n * ONE);
   assert.equal(tokens[1], 133_340_000n * ONE);
 });
+
+test("a plan that governs no share of the supply gives nothing for each milestone, not zero tokens", () => {
+  for (const allocationPct of [0, -5]) {
+    const tokens = plannedMilestoneTokens(
+      record({
+        unlocks: {
+          allocationPct,
+          milestones: [{ percent: 50 }, { percent: 50 }],
+        },
+      }),
+    );
+    assert.deepEqual(tokens, [null, null]);
+  }
+});

@@ -33,6 +33,8 @@ export function plannedMilestoneTokens(record: PlanRecord): (bigint | null)[] {
   // The sale tranche is `sale` percent of everything: the whole supply is that many times larger.
   const total = (BigInt(supply) * 10_000n) / saleShare;
   const governed = (total * bps(record.unlocks?.allocationPct ?? 0)) / 10_000n;
+  // A plan that governs nothing (or does not say) holds nothing back: "about 0 tokens" would be a claim, not a gap.
+  if (governed <= 0n) return none;
   return milestones.map(
     (milestone) => (governed * bps(milestone.percent) * SCALE) / 10_000n,
   );

@@ -20,6 +20,7 @@ import {
   BLOCK_LOOKUP_CONCURRENCY,
   ethBlockNumber,
   ethBlockTimestamps,
+  networkLabel,
   ethCall,
   ethGetLogs,
   getRpcEndpoint,
@@ -745,4 +746,10 @@ test("block times are looked up a few at a time, and a block that cannot be had 
     globalThis.fetch = original;
     RPC_RETRY.delaysMs = delays;
   }
+});
+
+test("a chain id is said in words when the app knows the chain, and as a plain number otherwise", () => {
+  assert.equal(networkLabel(11155111), "Sepolia");
+  assert.equal(networkLabel(31337), "Local Anvil");
+  assert.equal(networkLabel(424242), "network 424242");
 });

@@ -489,10 +489,13 @@ export function budgetCapMessage(
 export function unlockPlanFromWizard(
   wizard: WizardState,
   allocation: SupplyAllocation,
+  ownDao = false,
 ): UnlockPlan {
   return {
     mode: wizard.unlockMode,
-    allocationPct: allocation.milestones,
+    // The share of the supply the milestones govern. A project with its own DAO locks its team's Shares, so that is the
+    // share they govern (its "milestones" share is always zero there); the other kinds set a share aside for them.
+    allocationPct: ownDao ? allocation.team : allocation.milestones,
     milestones:
       wizard.unlockMode === "milestones"
         ? wizard.milestones.map((row) => ({
@@ -589,7 +592,7 @@ export function wizardStepIssues(
       );
     }
     for (const issue of unlockPlanIssues(
-      unlockPlanFromWizard(wizard, form.allocation),
+      unlockPlanFromWizard(wizard, form.allocation, form.tokenMode === "dao"),
     )) {
       if (issue.severity === "error") issues.push(issue.message);
     }
@@ -891,7 +894,7 @@ export function wizardToCreateInput(
   const raw = options.rawBlocks ?? null;
   const plan = options.plan;
   const unlocks = encodeUnlockPlan(
-    unlockPlanFromWizard(wizard, form.allocation),
+    unlockPlanFromWizard(wizard, form.allocation, form.tokenMode === "dao"),
   );
   const id = effectiveLaunchId(form);
   return {

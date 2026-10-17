@@ -110,6 +110,17 @@ fail_step() { # <step> <reason> [artifact]
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
+# A mined-but-reverted transaction says nothing about why. Print its gas limit against what it used (an equal pair means it
+# ran out of gas) and a replay trace, so a one-off failure on a long journey leaves something to diagnose it with.
+explain_revert() { # <tx-hash>
+  local tx=$1 limit used
+  limit=$(cast tx "$tx" gas --rpc-url "$RPC_URL" 2>/dev/null | head -1)
+  used=$(cast receipt "$tx" gasUsed --rpc-url "$RPC_URL" 2>/dev/null | head -1)
+  echo "  revert diagnostics: gas limit ${limit:-?}, gas used ${used:-?}" >&2
+  cast run "$tx" --rpc-url "$RPC_URL" 2>&1 | tail -25 | sed 's/^/    /' >&2 || true
+}
+
+
 code_bytes() { # <address> -> decimal code size
   local code
   code=$(cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null || echo "0x")
@@ -154,6 +165,7 @@ broadcast_call() { # <step> <to> <value-hex> <data>
   fi
   parse_receipt "$out"
   if [[ "$RECEIPT_STATUS" != "success" ]]; then
+    explain_revert "$RECEIPT_TX"
     fail_step "$step" "transaction $RECEIPT_TX mined as $RECEIPT_STATUS" "$RECEIPT_TX"
   fi
   echo "  ✓ $step: tx $RECEIPT_TX (block receipt ok)"
@@ -171,6 +183,7 @@ broadcast_create() { # <step> <initcode+args hex>
   fi
   parse_receipt "$out"
   if [[ "$RECEIPT_STATUS" != "success" ]]; then
+    explain_revert "$RECEIPT_TX"
     fail_step "$step" "transaction $RECEIPT_TX mined as $RECEIPT_STATUS" "$RECEIPT_TX"
   fi
   echo "  ✓ $step: created $RECEIPT_CONTRACT (tx $RECEIPT_TX)"

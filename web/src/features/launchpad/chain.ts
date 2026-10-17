@@ -109,6 +109,14 @@ export const CHAIN_PRESETS: readonly ChainPreset[] = [
   },
 ];
 
+/** A chain id in words: the name of the preset when the app knows the chain, else "network <id>". */
+export function networkLabel(chainId: number): string {
+  return (
+    CHAIN_PRESETS.find((preset) => preset.chainId === chainId)?.label ??
+    `network ${chainId}`
+  );
+}
+
 /** Build-time env this module reads. Both keys are optional and public. */
 export interface ChainEnv {
   /** Overrides the default preset's chain id in every build. */

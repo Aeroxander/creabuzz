@@ -222,7 +222,7 @@ test("a community-track founder deploys, funds and binds the auction end to end"
   await expect(panel).toBeVisible({ timeout: 15_000 });
 
   // The wallet is already granted; the gate is open for the treasury wallet.
-  await expect(page.getByTestId("auction-wallet")).toContainText("chain 31337");
+  await expect(page.getByTestId("auction-wallet")).toContainText("Local Anvil");
   await expect(page.getByTestId("auction-gate")).toHaveCount(0);
   // Community track: no bid gate, said out loud.
   await expect(page.getByTestId("auction-step-hook")).toContainText(

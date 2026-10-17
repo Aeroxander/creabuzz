@@ -2,6 +2,7 @@ import { toast } from "sonner";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
+import { networkLabel } from "../chain";
 import type { ConnectedWalletState } from "../use-connected-wallet";
 
 /**
@@ -128,7 +129,7 @@ export function WalletStrip({
     >
       Connected as{" "}
       <span className="font-mono">{truncatePubkey(wallet.address)}</span>
-      {wallet.chainId !== null ? ` on chain ${wallet.chainId}` : ""}.
+      {wallet.chainId !== null ? ` on ${networkLabel(wallet.chainId)}` : ""}.
     </p>
   );
 }
