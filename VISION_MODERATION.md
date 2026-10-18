@@ -22,9 +22,9 @@ This document is about the first layer. The second has its own lane.
 
 ## What You See
 
-**As a member**, every message has a Report action. Pick why — spam, profanity, illegal content, impersonation, or another supported reason — add context if you want, send. Your report is private: it is never broadcast, never stored as a public event, never visible to the person you reported. It goes to the people who can act on it, and only them.
+**As a member**, every message has a Report action. Pick why — spam, profanity, illegal content, impersonation, or another supported reason — add context if you want, send. Your report is private: it is never broadcast, never stored as a public event, and not shown to the person you reported. It goes to the people who can act on it, and only them. One exception is stated plainly under Honest Edges: an owner or admin who is themselves reported can read the queue.
 
-**As an owner or admin**, you have a queue. Reports arrive grouped by target, newest first, with the reporter's identity visible to you — accountability runs both ways — and never to the reported author. From the queue you act in one motion: dismiss, delete the message, kick, timeout, ban, or escalate. Reasons travel where they should — to the audit trail, to the tombstone, to the restricted user — without exposing private report context to the room.
+**As an owner or admin**, you have a queue. Reports arrive grouped by target, newest first, with the reporter's identity visible to you — accountability runs both ways — and not to the reported author (unless the reported author is an owner or admin, see Honest Edges). From the queue you act in one motion: dismiss, delete the message, kick, timeout, ban, or escalate. Reasons travel where they should — to the audit trail, to the tombstone, to the restricted user — without exposing private report context to the room.
 
 **As the room**, a removed message leaves an honest tombstone — "removed by a community moderator," with a sanitized reason — instead of a silent hole. The room learns that the rules are real without republishing the offense.
 
@@ -51,6 +51,24 @@ This document is about the first layer. The second has its own lane.
 ---
 
 ## Honest Edges
+
+**A report about an owner or admin is not independent.** Owners and admins read the queue community-wide, including reports about
+themselves, and the queue shows the reporter's identity and note. A reported owner learns who reported them. There is no
+separate route for complaints about the people who moderate yet; the infrastructure operator, who has database access, is
+trusted in any case. Say this wherever the promise of privacy is made.
+
+**A ban ends a key, not a person.** Anyone can make a new key. A ban is friction and a record; the stronger tool is controlling
+who gets in: invite-only communities, private rooms, and (later) a request-to-join step with owner approval. The first pilot
+runs invite-only for that reason. It is a way to learn with a small group, not the permanent shape of an open product.
+
+**A kick is not a ban.** In an open room a kicked person can join again with one request, and in a private room any active
+member can add an ordinary member back. Making "apply again and be declined" real needs a room mode in which only owners and
+admins may admit people.
+
+**A community ban cuts a person off from the whole community**, including reading its public records. Moderation of
+conversation must never stand between a token holder and the evidence they need to object, vote or exit, so the launchpad needs
+a record reader that does not depend on community membership. Room-scoped restrictions are not built yet.
+
 
 **Escalation is a hook today, not a pipeline.** Escalating writes a durable, queryable record for the platform operator — but the platform-side inbox that consumes it is a separate build. The substrate is there; the tooling above it comes next.
 
