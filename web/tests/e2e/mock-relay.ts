@@ -288,6 +288,16 @@ export function createMockRelay({
                 }
               }
             }
+            if (applyDeletions && event.kind === 9005) {
+              // A moderator's removal: the real server checks the sender owns or administers the channel before it
+              // stores this, so the mock takes the target away whoever sent it and leaves the check to a test's `refuse`.
+              const doomed = new Set(
+                event.tags.filter((t) => t[0] === "e").map((t) => t[1]),
+              );
+              for (let i = events.length - 1; i >= 0; i--) {
+                if (doomed.has(events[i].id)) events.splice(i, 1);
+              }
+            }
             // Fan out after acknowledging, as a relay would.
             ws.send(JSON.stringify(["OK", event.id, true, ""]));
             deliver(event);

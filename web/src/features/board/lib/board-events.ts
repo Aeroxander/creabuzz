@@ -22,6 +22,8 @@ export const KIND_FORUM_POST = 45001;
 export const KIND_FORUM_VOTE = 45002;
 export const KIND_FORUM_COMMENT = 45003;
 export const KIND_DELETION = 5;
+/** A board owner's or admin's removal of someone else's post or reply (NIP-29 delete-event). */
+export const KIND_MODERATION_DELETE = 9005;
 
 export interface Draft {
   kind: number;
@@ -81,6 +83,25 @@ export function voteDraft(input: {
       ["e", input.target],
     ],
     content: input.direction === "up" ? "+" : "-",
+  };
+}
+
+/**
+ * Remove someone else's post or reply. The server stores this only when the sender owns or administers the board (or wrote
+ * the record), so a board treats a removal it receives as already checked, and still applies it only to what is on this
+ * board (`board-model.ts`).
+ */
+export function moderationDeletionDraft(input: {
+  boardId: string;
+  target: string;
+}): Draft {
+  return {
+    kind: KIND_MODERATION_DELETE,
+    tags: [
+      ["h", input.boardId],
+      ["e", input.target],
+    ],
+    content: "",
   };
 }
 

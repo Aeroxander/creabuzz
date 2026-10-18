@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 
 import { nip19 } from "nostr-tools";
 
-import { canAddMembers, parseMembers, parsePersonInput } from "./members.ts";
+import {
+  boardRemovers,
+  canAddMembers,
+  parseMembers,
+  parsePersonInput,
+} from "./members.ts";
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);
@@ -60,5 +65,18 @@ describe("parsePersonInput", () => {
     ]) {
       assert.equal(parsePersonInput(bad), null, bad);
     }
+  });
+});
+
+describe("boardRemovers", () => {
+  it("is the owners and admins, and nobody else", () => {
+    const removers = boardRemovers([
+      { pubkey: A, role: "owner" },
+      { pubkey: B, role: "admin" },
+      { pubkey: "c".repeat(64), role: "member" },
+      { pubkey: "d".repeat(64), role: "bot" },
+    ]);
+    assert.deepEqual([...removers].sort(), [A, B].sort());
+    assert.equal(boardRemovers([]).size, 0);
   });
 });

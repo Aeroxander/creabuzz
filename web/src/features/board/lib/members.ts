@@ -29,6 +29,17 @@ export function parseMembers(tags: readonly string[][]): BoardMember[] {
   return members;
 }
 
+/** The people the server lets remove other people's posts and replies on a board: its owners and admins. */
+export function boardRemovers(
+  members: readonly BoardMember[],
+): ReadonlySet<string> {
+  return new Set(
+    members
+      .filter((member) => member.role === "owner" || member.role === "admin")
+      .map((member) => member.pubkey),
+  );
+}
+
 /** The people who can add others to a board. */
 export function canAddMembers(
   members: readonly BoardMember[],

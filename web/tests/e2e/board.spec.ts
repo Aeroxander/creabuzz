@@ -1207,3 +1207,181 @@ test("a link to a decision of a project the app does not know is left as a plain
   await page.waitForLoadState("networkidle");
   await expect(page.getByTestId("decision-embed")).toHaveCount(0);
 });
+
+// ── moderation: report, and a board owner's removal ──────────────────────────────────────────────────────────────
+
+/** The board's membership record, as the server writes it: who is on the board and in what role. */
+function boardMembers(role: "owner" | "admin" | "member") {
+  return {
+    id: "members-board",
+    pubkey: "b".repeat(64),
+    created_at: 102,
+    kind: 39002,
+    tags: [
+      ["d", BOARD],
+      ["p", ANN, "", "member"],
+      ["p", BOB, "", "member"],
+      ["p", OWNER, "", role],
+    ],
+    content: "",
+    sig: "sig",
+  };
+}
+
+const openThread = async (page: Page, id: string) => {
+  await page
+    .getByTestId(`board-post-${id}`)
+    .getByTestId("board-post-title")
+    .click();
+  await expect(page.getByTestId("board-thread")).toBeVisible();
+};
+
+test("someone else's post or reply can be reported to the moderators, and your own cannot", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const theirs = post(ANN, now() - 600, "Not yours");
+  const theirReply = reply(BOB, now() - 500, theirs.id);
+  const mine = post(OWNER, now() - 400, "Mine");
+  for (const e of [theirs, theirReply, mine]) relay.seed(e);
+  await open(page, relay);
+
+  await openThread(page, theirs.id);
+  await page.getByTestId("board-report-post").click();
+  await page.getByTestId("report-reason-spam").check();
+  await page.getByTestId("report-submit").click();
+  await expect(page.getByTestId("report-form")).toHaveCount(0);
+  await page
+    .getByTestId(`board-reply-content-${theirReply.id}`)
+    .getByTestId("board-report-reply")
+    .click();
+  await page.getByTestId("report-reason-profanity").check();
+  await page.getByTestId("report-submit").click();
+  await expect(page.getByTestId("report-form")).toHaveCount(0);
+
+  const sent = relay.events.filter((event) => event.kind === 1984);
+  expect(sent).toHaveLength(2);
+  expect(sent[0].tags).toContainEqual(["e", theirs.id, "spam"]);
+  expect(sent[0].tags).toContainEqual(["p", ANN]);
+  expect(sent[1].tags).toContainEqual(["e", theirReply.id, "profanity"]);
+  expect(sent[1].tags).toContainEqual(["p", BOB]);
+
+  await page.getByTestId("board-back").click();
+  await openThread(page, mine.id);
+  await expect(page.getByTestId("board-report-post")).toHaveCount(0);
+});
+
+test("a signed-out reader who presses Report is told to make an account, and nothing is sent", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const theirs = post(ANN, now() - 600, "Not yours");
+  relay.seed(theirs);
+  await open(page, relay, { signedIn: false });
+  await openThread(page, theirs.id);
+  await page.getByTestId("board-report-post").click();
+  await expect(page.getByTestId("report-form")).toHaveCount(0);
+  expect(relay.events.filter((event) => event.kind === 1984)).toHaveLength(0);
+});
+
+test("only a board's owners and admins are offered Remove, and never on their own words", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const theirs = post(ANN, now() - 600, "Not yours");
+  const mine = post(OWNER, now() - 500, "Mine");
+  relay.seed(boardMembers("member"));
+  for (const e of [theirs, mine]) relay.seed(e);
+  await open(page, relay);
+  await openThread(page, theirs.id);
+  await expect(page.getByTestId("board-report-post")).toBeVisible();
+  await expect(page.getByTestId("board-remove-post")).toHaveCount(0);
+
+  const admin = relayWithBoard();
+  admin.seed(boardMembers("admin"));
+  for (const e of [theirs, mine]) admin.seed(e);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await open(page, admin);
+  await openThread(page, theirs.id);
+  await expect(page.getByTestId("board-remove-post")).toBeVisible();
+  await page.getByTestId("board-back").click();
+  await openThread(page, mine.id);
+  await expect(page.getByTestId("board-remove-post")).toHaveCount(0);
+});
+
+test("a board owner removes someone else's reply and post, and they stay gone after a reload", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const theirs = post(ANN, now() - 600, "Spam post");
+  const keep = post(BOB, now() - 500, "Keep this");
+  const theirReply = reply(BOB, now() - 400, theirs.id);
+  relay.seed(boardMembers("owner"));
+  for (const e of [theirs, keep, theirReply]) relay.seed(e);
+  await open(page, relay);
+
+  await openThread(page, theirs.id);
+  await page
+    .getByTestId(`board-reply-content-${theirReply.id}`)
+    .getByTestId("board-remove-reply")
+    .click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remove", exact: true })
+    .click();
+  await expect(page.getByTestId(`board-reply-${theirReply.id}`)).toHaveCount(0);
+
+  await page.getByTestId("board-remove-post").click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remove", exact: true })
+    .click();
+  await expect(page.getByTestId("board-posts")).toBeVisible();
+  await expectRows(page, ["Keep this"]);
+
+  const removals = relay.events.filter((event) => event.kind === 9005);
+  expect(removals).toHaveLength(2);
+  expect(removals[0].tags).toContainEqual(["h", BOARD]);
+  expect(removals[0].tags).toContainEqual(["e", theirReply.id]);
+  expect(removals[1].tags).toContainEqual(["e", theirs.id]);
+  expect(removals.every((event) => event.pubkey === OWNER)).toBe(true);
+
+  await page.reload();
+  await page.getByTestId("content-pane").waitFor();
+  await expectRows(page, ["Keep this"]);
+});
+
+test("a removal reaches another reader's open board at once, and only when an owner or admin sent it", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const spam = post(ANN, now() - 600, "Spam post");
+  const fine = post(BOB, now() - 500, "Fine post");
+  relay.seed(boardMembers("owner"));
+  for (const e of [spam, fine]) relay.seed(e);
+  await open(page, relay, { signedIn: false });
+  await expectRows(page, ["Fine post", "Spam post"]);
+  await liveOnBoard(page, relay);
+  // The members have to be read before a removal can be matched to someone who may send one.
+  await expect.poll(() => relay.requestsFor(39002)).toBeGreaterThan(0);
+
+  const removal = (sender: string, target: string) => ({
+    id: eid(),
+    pubkey: sender,
+    created_at: now(),
+    kind: 9005,
+    tags: [
+      ["h", BOARD],
+      ["e", target],
+    ],
+    content: "",
+    sig: "sig",
+  });
+  // Someone who is not an owner or admin: the board ignores it.
+  relay.deliver(removal(BOB, spam.id));
+  await page.waitForTimeout(500);
+  await expectRows(page, ["Fine post", "Spam post"]);
+  // The owner's removal of a post on the board: it goes at once, with no reload.
+  relay.deliver(removal(OWNER, spam.id));
+  await expectRows(page, ["Fine post"]);
+});

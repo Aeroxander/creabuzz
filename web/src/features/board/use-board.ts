@@ -23,6 +23,7 @@ import {
   KIND_FORUM_COMMENT,
   KIND_FORUM_POST,
   KIND_FORUM_VOTE,
+  KIND_MODERATION_DELETE,
 } from "./lib/board-events";
 import type { BoardEvent } from "./lib/board-model";
 
@@ -82,6 +83,8 @@ export function useBoardRecords(boardId: string | null): BoardRecords {
           KIND_FORUM_COMMENT,
           KIND_FORUM_VOTE,
           KIND_DELETION,
+          // A moderator's removal: the board applies it when the sender is one of its owners or admins.
+          KIND_MODERATION_DELETE,
         ],
         "#h": [boardId],
         since,

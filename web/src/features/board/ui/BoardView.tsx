@@ -25,15 +25,18 @@ import { toast } from "sonner";
 
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import type { Channel } from "@/features/channels/use-channels";
+import { useCommunityPeople } from "@/features/communities/use-access";
 import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
 import { type BoardPost, buildBoard } from "../lib/board-model";
+import { boardRemovers, canAddMembers } from "../lib/members";
 import type { PostStatus } from "../lib/post-status";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
+import { useBoardMembers } from "../use-board-members";
 import { BoardList } from "./BoardList";
 import { PostThread } from "./PostThread";
 
@@ -96,9 +99,22 @@ export function BoardView({
   const records = useBoardRecords(channel.id);
   const me = existingUserPubkey();
   const actions = useBoardActions(channel.id, records.add);
+  // Who may remove other people's words here: the board's owners and admins, and the community's. A removal sent by anyone
+  // else is not applied.
+  const { members } = useBoardMembers(channel.id, true);
+  const community = useCommunityPeople();
+  const removers = useMemo(() => {
+    const set = new Set(boardRemovers(members));
+    for (const person of community.people) {
+      if (person.role === "owner" || person.role === "admin")
+        set.add(person.pubkey);
+    }
+    return set;
+  }, [members, community.people]);
+  const canModerate = canAddMembers(members, me);
   const board = useMemo(
-    () => buildBoard(records.events, me),
-    [records.events, me],
+    () => buildBoard(records.events, me, removers),
+    [records.events, me, removers],
   );
 
   const authors = useMemo(() => {
@@ -166,6 +182,7 @@ export function BoardView({
       <PostThread
         actions={actions}
         badges={extras.badges}
+        canModerate={canModerate}
         comments={board.comments.get(open.id) ?? []}
         header={extras.header}
         key={open.id}

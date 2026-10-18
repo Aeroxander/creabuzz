@@ -422,3 +422,83 @@ describe("arrange", () => {
     );
   });
 });
+
+const removal = (author, at, target) => ({
+  id: id(),
+  pubkey: author,
+  kind: 9005,
+  created_at: at,
+  tags: [
+    ["h", "board"],
+    ["e", target],
+  ],
+  content: "",
+});
+
+describe("a moderator's removal", () => {
+  const MOD = "d".repeat(64);
+  const removers = new Set([MOD]);
+
+  it("removes someone else's post or reply when it comes from an owner or admin of the board", () => {
+    const p = post(ANN, 1);
+    const c = comment(BOB, 2, p.id);
+    const q = post(BOB, 3, "Other");
+    const board = buildBoard(
+      [p, c, q, removal(MOD, 5, p.id), removal(MOD, 6, c.id)],
+      ME,
+      removers,
+    );
+    assert.deepEqual(
+      board.posts.map((x) => x.id),
+      [q.id],
+    );
+    assert.equal(board.comments.size, 0);
+  });
+
+  it("is ignored from anyone who is not one of them, and when no one is known to be", () => {
+    const p = post(ANN, 1);
+    const c = comment(BOB, 2, p.id);
+    const forged = [p, c, removal(BOB, 5, p.id), removal(ANN, 6, c.id)];
+    // BOB removing ANN's post and ANN removing BOB's reply: neither is an owner or admin.
+    const board = buildBoard(forged, ME, removers);
+    assert.equal(board.posts.length, 1);
+    assert.equal(board.comments.get(p.id)?.length, 1);
+    // With no removers passed (the members were not read), nobody else's removal counts.
+    const unknown = buildBoard([p, removal(MOD, 5, p.id)], ME);
+    assert.equal(unknown.posts.length, 1);
+  });
+
+  it("applies only to a post or a reply, never to a vote or to a record this board does not have", () => {
+    const p = post(ANN, 1);
+    const v = vote(BOB, 2, p.id);
+    const board = buildBoard(
+      [p, v, removal(MOD, 5, v.id), removal(MOD, 6, "9".repeat(64))],
+      ME,
+      removers,
+    );
+    assert.equal(board.posts.length, 1);
+    assert.equal(board.posts[0].score, 1, "the vote still counts");
+  });
+
+  it("keeps the replies under a removed reply and shows them as answers to the post", () => {
+    const p = post(ANN, 1);
+    const parent = comment(BOB, 2, p.id);
+    const child = comment(ANN, 3, p.id, parent.id);
+    const board = buildBoard(
+      [p, parent, child, removal(MOD, 5, parent.id)],
+      ME,
+      removers,
+    );
+    const left = board.comments.get(p.id) ?? [];
+    assert.deepEqual(
+      left.map((x) => [x.id, x.replyTo]),
+      [[child.id, null]],
+    );
+  });
+
+  it("does not stop an author deleting their own words, and an author's own removal event still works", () => {
+    const p = post(ANN, 1);
+    const board = buildBoard([p, removal(ANN, 5, p.id)], ME, removers);
+    assert.equal(board.posts.length, 0);
+  });
+});

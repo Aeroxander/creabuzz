@@ -85,7 +85,7 @@ current code): a restricted key cannot return through 9021, through its own 9000
 non-elevated member; it cannot write; a person who left on their own can return; other rooms, login, the feed, DMs and
 reading records are unaffected; unban restores; an owner or admin cannot be restricted by a lower role.
 
-**A3. Board reporting and removal that readers see.** `ReportDialog` on board posts and comments. Founder or owner delete (the
+**A3. Board reporting and removal that readers see. (Built 18 October, uncommitted at the time of writing this line; see the commit log.)** Report on posts and replies, Remove for a board's owners and admins with live application to other readers, and Ban for community owners and admins; a removal is applied only when its sender is a board or community owner or admin, only to a post or reply, and never to a vote. Not built: the visible removal marker and the action log (A5). `ReportDialog` on board posts and comments. Founder or owner delete (the
 server already allows 9005 on 45001/45003). The board client must consume authorized moderation removals and the relay's
 40099 tombstones and honor them only with scope and provenance checks, not any event that looks like a 9005. Acceptance:
 two open readers both see a post and a comment disappear and a tombstone appear without a refresh; an arbitrary 9005-shaped

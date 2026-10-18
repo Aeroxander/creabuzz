@@ -24,6 +24,7 @@ import { commentThreads } from "../lib/comment-threads";
 import type { BoardActions } from "../use-board-actions";
 import { AuthorChip } from "./AuthorChip";
 import { BoardMarkdown } from "./BoardMarkdown";
+import { BoardModeration } from "./BoardModeration";
 import { CommentReplies } from "./CommentReplies";
 import { VoteButtons } from "./VoteButtons";
 
@@ -42,6 +43,7 @@ export function PostThread({
   onBack,
   header,
   badges,
+  canModerate = false,
 }: {
   post: BoardPost;
   comments: BoardComment[];
@@ -54,6 +56,8 @@ export function PostThread({
   header?: ReactNode;
   /** A short fact beside a person's name, by public key. */
   badges?: Record<string, string>;
+  /** The reader owns or administers this board: they may remove other people's posts and replies. */
+  canModerate?: boolean;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -273,6 +277,21 @@ export function PostThread({
                 Delete
               </button>
             ) : null}
+            <BoardModeration
+              author={post.author}
+              canRemove={canModerate}
+              id={post.id}
+              kind="post"
+              me={me}
+              name={nameOf(post.author)}
+              needAccount={needAccount}
+              onRemove={(id) => {
+                void run("remove that post", async () => {
+                  await actions.moderate(id);
+                  onBack();
+                });
+              }}
+            />
           </div>
           {header}
           {post.body ? (
@@ -308,6 +327,10 @@ export function PostThread({
             onVote: vote,
             onReply: selectReply,
             onDelete: (id) => setDeleting({ kind: "reply", id }),
+            canModerate,
+            needAccount,
+            onRemove: (id) =>
+              void run("remove that reply", () => actions.moderate(id)),
           }}
           threads={threads}
         />

@@ -10,7 +10,10 @@
  *
  * Deletions. The server stops returning what an author deletes, so most of this
  * file never sees a deleted record; it still honours a deletion that arrives
- * live, and only when the person deleting is the author of what is deleted.
+ * live, and only when the person deleting is the author of what is deleted. A
+ * removal by someone else (a moderator's) counts only when its sender is one of
+ * the board's owners or admins that the caller passes in, and only for a post or
+ * a reply: never for a vote, and never for something that is not on this board.
  *
  * Alias-free; `board-model.test.mjs` drives it under `node --test`.
  */
@@ -20,6 +23,7 @@ import {
   KIND_FORUM_COMMENT,
   KIND_FORUM_POST,
   KIND_FORUM_VOTE,
+  KIND_MODERATION_DELETE,
 } from "./board-events.ts";
 import { splitPost } from "./post-text.ts";
 import {
@@ -147,15 +151,35 @@ function tally(
   return { score, myVote, myVoteIds };
 }
 
-/** Ids removed by a deletion their own author sent. */
-function deletedIds(events: readonly BoardEvent[]): Set<string> {
+/**
+ * Ids removed by a deletion their own author sent, or by a removal from one of `removers` (the board's owners and admins)
+ * of a post or a reply on this board.
+ */
+function deletedIds(
+  events: readonly BoardEvent[],
+  removers: ReadonlySet<string>,
+): Set<string> {
   const authors = new Map(events.map((event) => [event.id, event.pubkey]));
+  const kinds = new Map(events.map((event) => [event.id, event.kind]));
   const deleted = new Set<string>();
   for (const event of events) {
-    if (event.kind !== KIND_DELETION) continue;
+    if (event.kind !== KIND_DELETION && event.kind !== KIND_MODERATION_DELETE) {
+      continue;
+    }
     for (const tag of event.tags) {
       if (tag[0] !== "e" || typeof tag[1] !== "string") continue;
-      if (authors.get(tag[1]) === event.pubkey) deleted.add(tag[1]);
+      if (authors.get(tag[1]) === event.pubkey) {
+        deleted.add(tag[1]);
+        continue;
+      }
+      const target = kinds.get(tag[1]);
+      if (
+        event.kind === KIND_MODERATION_DELETE &&
+        removers.has(event.pubkey) &&
+        (target === KIND_FORUM_POST || target === KIND_FORUM_COMMENT)
+      ) {
+        deleted.add(tag[1]);
+      }
     }
   }
   return deleted;
@@ -164,8 +188,9 @@ function deletedIds(events: readonly BoardEvent[]): Set<string> {
 export function buildBoard(
   events: readonly BoardEvent[],
   me: string | null,
+  removers: ReadonlySet<string> = new Set(),
 ): Board {
-  const deleted = deletedIds(events);
+  const deleted = deletedIds(events, removers);
   const live = events.filter((event) => !deleted.has(event.id));
   const votes = votesByTarget(live);
 

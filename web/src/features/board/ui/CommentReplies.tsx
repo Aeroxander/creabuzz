@@ -9,6 +9,7 @@ import type { BoardComment } from "../lib/board-model";
 import type { CommentThread } from "../lib/comment-threads";
 import { AuthorChip } from "./AuthorChip";
 import { BoardMarkdown } from "./BoardMarkdown";
+import { BoardModeration } from "./BoardModeration";
 import { VoteButtons } from "./VoteButtons";
 
 interface ReplyContext {
@@ -21,6 +22,10 @@ interface ReplyContext {
   onVote: (comment: BoardComment, direction: "up" | "down") => void;
   onReply: (id: string) => void;
   onDelete: (id: string) => void;
+  /** The reader owns or administers this board: they may remove other people's replies. */
+  canModerate: boolean;
+  needAccount: (action: string) => boolean;
+  onRemove: (id: string) => void;
 }
 
 /** Nested comment branches; deeper levels keep their order without narrowing the text further. */
@@ -43,6 +48,9 @@ export function CommentReplies({
     onVote,
     onReply,
     onDelete,
+    canModerate,
+    needAccount,
+    onRemove,
   } = context;
   return (
     <ol
@@ -98,6 +106,17 @@ export function CommentReplies({
                       Delete
                     </button>
                   ) : null}
+                  <BoardModeration
+                    author={comment.author}
+                    canRemove={canModerate}
+                    disabled={busy}
+                    id={comment.id}
+                    kind="reply"
+                    me={me}
+                    name={name}
+                    needAccount={needAccount}
+                    onRemove={onRemove}
+                  />
                 </div>
               </div>
             </article>

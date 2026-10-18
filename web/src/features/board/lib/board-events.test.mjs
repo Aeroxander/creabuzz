@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   commentDraft,
   deletionDraft,
+  moderationDeletionDraft,
   postDraft,
   voteDraft,
 } from "./board-events.ts";
@@ -120,5 +121,21 @@ describe("voteDraft / deletionDraft", () => {
       ],
       content: "",
     });
+  });
+});
+
+describe("moderationDeletionDraft", () => {
+  it("is a NIP-29 delete-event scoped to the board, naming the record", () => {
+    assert.deepEqual(
+      moderationDeletionDraft({ boardId: BOARD, target: ROOT }),
+      {
+        kind: 9005,
+        tags: [
+          ["h", BOARD],
+          ["e", ROOT],
+        ],
+        content: "",
+      },
+    );
   });
 });

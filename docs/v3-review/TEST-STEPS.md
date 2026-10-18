@@ -603,3 +603,27 @@ By hand, using a test project and development wallets:
 7. **Review urgency and layout.** A claim approaching expiry appears before a vote with a later deadline and explains how an unanswered claim can lapse. On Home, personal actions appear above onboarding. In a completed DAO, actions and treasury figures precede the compact progress feed. On a phone, project destinations scroll rather than wrap into several rows; milestone rules expand without hiding the current milestone or transaction confirmations.
 
 Working looks like: all of these destinations are reachable from the project, failed reads/writes have recovery, reading history is local, and every financial action still has its separate authorization step. The remaining investor execution/data-provider work is not implied by these screens.
+
+## 4ad. Reporting and removing on boards (moderation plan A3, 2026-10-18)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke board.spec.ts   # 34 tests, 5 of them for this
+```
+
+By hand, on a board with posts and replies by two other people:
+
+1. **Report.** Open a post. Someone else's post and each of their replies show **Report**; your own show none. Choose a
+   reason, send. The report reaches the moderators' queue (and nowhere else). Signed out, **Report** asks you to make an
+   account and sends nothing.
+2. **Remove (a board's owner or admin only).** Plain members see no **Remove**. An owner or admin sees it on other people's
+   posts and replies, never on their own (they have **Delete**). It asks before it removes, says it is for everyone on the
+   board, and goes at once.
+3. **Other readers.** With the same board open on a second screen, a post or reply you remove disappears there without a
+   reload, and stays gone after one. A removal that comes from anyone who is not one of the board's owners or admins is ignored.
+4. **Ban (the community's owner or admin only).** The button appears beside Remove for them, and not for anyone else.
+
+Not done yet: a visible marker where something was removed and the sanitized room action log (A5), room restrictions
+(dropped for the pilot), and removal by a community owner or admin from the board itself (they use the moderation queue).

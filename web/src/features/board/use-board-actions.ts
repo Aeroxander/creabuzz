@@ -1,6 +1,6 @@
 /**
  * What a reader can do on a board: post, reply, vote, take a vote back and
- * delete their own words. Each is one signed record sent as the reader; the
+ * delete their own words, and, for a board's owners and admins, remove other people's. Each is one signed record sent as the reader; the
  * result is merged into the board as soon as the server accepts it.
  */
 
@@ -12,6 +12,7 @@ import {
   commentDraft,
   type Draft,
   deletionDraft,
+  moderationDeletionDraft,
   postDraft,
   type VoteDirection,
   voteDraft,
@@ -92,6 +93,12 @@ export function useBoardActions(
         send(
           deletionDraft({ boardId, target }),
           "The server didn't delete that.",
+        ),
+      /** Remove someone else's post or reply; the server refuses anyone who does not own or administer the board. */
+      moderate: (target: string) =>
+        send(
+          moderationDeletionDraft({ boardId, target }),
+          "The server didn't remove that.",
         ),
     };
   }, [boardId, add]);
