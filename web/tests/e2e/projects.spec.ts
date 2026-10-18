@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { waitForAnimations } from "../../../desktop/tests/helpers/animations";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
@@ -280,6 +281,7 @@ test("an over-pool pitch is refused before anything reaches the relay", async ({
   await page.getByRole("button", { name: "Pitch a project" }).click();
   await page.getByLabel("Project name").fill("Neptune");
   await page.getByLabel("One-line pitch").fill("A telescope network.");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   // 90% to the founder + the default 12% writer role breaks the pool bound.
   await page.locator("#role-pct-0").fill("90");
 
@@ -365,3 +367,326 @@ test("the summon preview maps the board to shares and refuses what it must", asy
   await expect(page.getByTestId("summon-step-send")).toHaveText("pending");
   await expect(page.getByTestId("summon-disabled-reason")).toBeVisible();
 });
+
+async function openPitch(
+  page: Page,
+  relay: ReturnType<typeof createMockRelay>,
+  theme = "light",
+) {
+  await page.addInitScript(
+    ([nsec, theme]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem("buzz.theme", theme);
+    },
+    [FOUNDER_NSEC, theme],
+  );
+  await relay.install(page);
+  await page.goto("/projects");
+  await page
+    .getByRole("button", { name: "Pitch a project", exact: true })
+    .first()
+    .click();
+  return page.getByRole("dialog", { name: "Pitch a project" });
+}
+
+async function fillProject(page: Page, name = "Neptune") {
+  await page.getByLabel("Project name", { exact: true }).fill(name);
+  await page
+    .getByLabel("One-line pitch", { exact: true })
+    .fill("A telescope network.");
+}
+
+test("pitch steps keep drafts and publish the displayed roles through the real write path", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  const dialog = await openPitch(page, relay);
+  await expect(page.getByLabel("Project name", { exact: true })).toBeFocused();
+  await fillProject(page);
+  await page
+    .getByLabel("Description", { exact: true })
+    .fill("Build it with us.");
+  // Enter and the visible Continue button are the same form action.
+  await page.getByLabel("One-line pitch", { exact: true }).press("Enter");
+  await expect(page.getByLabel("Your role", { exact: true })).toBeFocused();
+  await page.getByLabel("Stake for your role", { exact: true }).fill("35");
+  await page.getByRole("button", { name: "Add a role", exact: true }).click();
+  await page.getByLabel("Role 2", { exact: true }).fill("Designer");
+  await page.getByLabel("Stake for role 2", { exact: true }).fill("8");
+  await expect(page.getByTestId("pitch-pool")).toHaveText(
+    "55% of 100% declared",
+  );
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByLabel("Project name", { exact: true })).toHaveValue(
+    "Neptune",
+  );
+  await expect(page.getByLabel("Description", { exact: true })).toHaveValue(
+    "Build it with us.",
+  );
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByLabel("Stake for your role", { exact: true }),
+  ).toHaveValue("35");
+  await expect(page.getByLabel("Role 2", { exact: true })).toHaveValue(
+    "Designer",
+  );
+  await page
+    .getByRole("button", { name: "Remove role The writer", exact: true })
+    .click();
+  await expect(page.getByLabel("Role 1", { exact: true })).toHaveValue(
+    "Designer",
+  );
+  await expect(page.getByTestId("pitch-pool")).toHaveText(
+    "43% of 100% declared",
+  );
+  await page.getByLabel("Stake for role 1", { exact: true }).press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(
+    new RegExp(`/projects/neptune\\?author=${FOUNDER}`),
+  );
+  const nodes = relay.events.filter((event) => event.kind === 37010);
+  const pitches = relay.events.filter((event) => event.kind === 37015);
+  expect(nodes).toHaveLength(1);
+  expect(pitches).toHaveLength(1);
+  expect(pitches[0].tags).toContainEqual([
+    "role",
+    "the-founder",
+    "The founder",
+    "35",
+  ]);
+  expect(pitches[0].tags).toContainEqual(["role", "designer", "Designer", "8"]);
+  expect(JSON.parse(pitches[0].content)).toMatchObject({
+    summary: "A telescope network.",
+    description: "Build it with us.",
+  });
+});
+
+test("pitch project validation reveals the address and keeps focus beside the error", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await openPitch(page, relay);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByTestId("pitch-name-error")).toHaveText(
+    "Give your project a name.",
+  );
+  await expect(page.getByLabel("Project name", { exact: true })).toBeFocused();
+  await fillProject(page);
+  await page.getByText("Customize page address", { exact: true }).click();
+  await page.getByLabel("Project id", { exact: true }).fill("INVALID ADDRESS");
+  await page.getByText("Customize page address", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const address = page.getByLabel("Project id", { exact: true });
+  await expect(address).toBeVisible();
+  await expect(address).toBeFocused();
+  await expect(address).toHaveAttribute(
+    "aria-describedby",
+    "pitch-id-feedback",
+  );
+  await expect(page.getByTestId("pitch-id-error")).toContainText(
+    "Project id must",
+  );
+  expect(
+    relay.events.filter((event) => [37010, 37015].includes(event.kind)),
+  ).toHaveLength(0);
+  await address.fill("custom-neptune");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(address).toHaveValue("custom-neptune");
+});
+
+for (const source of ["team", "launch"] as const) {
+  test(`pitching from an existing ${source} keeps its identity and filters the picker to your records`, async ({
+    page,
+  }) => {
+    const relay = createMockRelay();
+    const owned = source === "team" ? nodeEvent() : launchEvent();
+    const stranger = {
+      ...owned,
+      id: "stranger",
+      pubkey: ALICE,
+      tags: owned.tags.map((tag) =>
+        tag[0] === "d"
+          ? ["d", "someone-else"]
+          : tag[0] === "name"
+            ? ["name", "Someone else's project"]
+            : tag,
+      ),
+    };
+    relay.seed(owned);
+    relay.seed(stranger);
+    await openPitch(page, relay);
+    await page
+      .getByRole("button", {
+        name: source === "team" ? "Existing team" : "From a launch",
+        exact: true,
+      })
+      .click();
+    const picker = page.getByLabel(source === "team" ? "Your team" : "Launch", {
+      exact: true,
+    });
+    await expect(
+      page.getByRole("button", { name: "Continue", exact: true }),
+    ).toBeDisabled();
+    await expect(picker.locator('option[value="nebula"]')).toHaveCount(1);
+    await expect(picker.locator('option[value="someone-else"]')).toHaveCount(0);
+    await picker.selectOption("nebula");
+    if (source === "launch")
+      await expect(
+        page.getByLabel("Project name", { exact: true }),
+      ).toHaveValue("Nebula");
+    await fillProject(page, "Nebula");
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Publish pitch", exact: true })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "Pitch a project" }),
+    ).toHaveCount(0);
+    const pitch = relay.events.find((event) => event.kind === 37015);
+    expect(pitch?.tags).toContainEqual(["d", "nebula"]);
+    expect(
+      relay.events.filter(
+        (event) =>
+          event.kind === 37010 && !["node-1", "stranger"].includes(event.id),
+      ),
+    ).toHaveLength(source === "team" ? 0 : 1);
+  });
+}
+
+test("a partial pitch publish retries only the pitch and lands on the finished project", async ({
+  page,
+}) => {
+  let refusePitch = true;
+  const relay = createMockRelay({
+    refuse: (event) =>
+      event.kind === 37015 && refusePitch ? "Temporarily unavailable" : null,
+  });
+  const dialog = await openPitch(page, relay);
+  await fillProject(page);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Publish pitch", exact: true })
+    .click();
+  await expect(page.getByTestId("pitch-partial-error")).toContainText(
+    "isn't on the board yet",
+  );
+  await expect(page.getByTestId("pitch-partial-error")).toBeInViewport();
+  await expect(page.getByLabel("Your role", { exact: true })).toHaveValue(
+    "The founder",
+  );
+  expect(relay.events.filter((event) => event.kind === 37010)).toHaveLength(1);
+  refusePitch = false;
+  await page
+    .getByRole("button", { name: "Retry the pitch", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(
+    new RegExp(`/projects/neptune\\?author=${FOUNDER}`),
+  );
+  expect(relay.events.filter((event) => event.kind === 37010)).toHaveLength(1);
+  expect(relay.events.filter((event) => event.kind === 37015)).toHaveLength(1);
+});
+
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 640 },
+]) {
+  for (const theme of ["light", "dark"]) {
+    test(`pitch fields align and actions stay visible at ${viewport.width}px in ${theme} mode`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize(viewport);
+      const relay = createMockRelay();
+      const dialog = await openPitch(page, relay, theme);
+      await fillProject(page);
+      const headingColor = await dialog
+        .locator("h2")
+        .evaluate((element) => getComputedStyle(element).color);
+      for (const label of [
+        dialog.getByRole("button", { name: "New project", exact: true }),
+        dialog.getByTestId("wizard-stepper").locator("> p"),
+      ]) {
+        expect(
+          await label.evaluate((element) => getComputedStyle(element).color),
+        ).toBe(headingColor);
+      }
+      await waitForAnimations(page);
+      await dialog.screenshot({
+        path: testInfo.outputPath("pitch-project.png"),
+      });
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      // Space activates the focused button, just as a pointer does.
+      const add = page.getByRole("button", { name: "Add a role", exact: true });
+      await add.focus();
+      await add.press("Space");
+      await page.getByLabel("Role 2", { exact: true }).fill("Designer");
+      await page.getByLabel("Stake for role 2", { exact: true }).fill("8");
+      const rows = page.getByTestId(/pitch-role-row-/);
+      await expect(rows).toHaveCount(3);
+      const rects = await rows.evaluateAll((rows) =>
+        rows.map((row) => {
+          const [name, stake] = row.querySelectorAll("input");
+          const a = name.getBoundingClientRect();
+          const b = stake.getBoundingClientRect();
+          return {
+            nameY: a.y,
+            stakeY: b.y,
+            nameH: a.height,
+            stakeH: b.height,
+            stakeX: b.x,
+          };
+        }),
+      );
+      for (const rect of rects) {
+        expect(Math.abs(rect.nameY - rect.stakeY)).toBeLessThan(1);
+        expect(rect.nameH).toBe(rect.stakeH);
+        expect(Math.abs(rect.stakeX - rects[0].stakeX)).toBeLessThan(1);
+      }
+      const publish = page.getByRole("button", {
+        name: "Publish pitch",
+        exact: true,
+      });
+      const footer = await publish.boundingBox();
+      if (!footer) throw new Error("Publish action is missing");
+      expect(footer.y + footer.height).toBeLessThanOrEqual(
+        viewport.height - 16,
+      );
+      const width = await dialog.evaluate((element) => ({
+        width: element.clientWidth,
+        scroll: element.scrollWidth,
+        page: document.documentElement.scrollWidth,
+      }));
+      expect(width.scroll).toBeLessThanOrEqual(width.width);
+      expect(width.page).toBeLessThanOrEqual(viewport.width);
+      const scroll = page.getByTestId("pitch-form-scroll");
+      await scroll.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      await waitForAnimations(page);
+      await dialog.screenshot({ path: testInfo.outputPath("pitch-team.png") });
+      // More roles must grow only the scroll area; the final action stays put.
+      for (let n = 0; n < 4; n++) await add.click();
+      const metrics = await scroll.evaluate((element) => ({
+        client: element.clientHeight,
+        scroll: element.scrollHeight,
+      }));
+      expect(metrics.scroll).toBeGreaterThan(metrics.client);
+      await scroll.focus();
+      await scroll.press("PageDown");
+      await expect
+        .poll(() => scroll.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      const after = await publish.boundingBox();
+      expect(after?.y).toBe(footer.y);
+      // Closing returns focus to the form's opener.
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(
+        page
+          .getByRole("button", { name: "Pitch a project", exact: true })
+          .first(),
+      ).toBeFocused();
+    });
+  }
+}

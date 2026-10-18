@@ -103,17 +103,15 @@ export function Segmented<T extends string>({
 }) {
   return (
     <fieldset data-testid={testId}>
-      <legend className="text-sm font-medium text-black dark:text-white">
-        {label}
-      </legend>
-      <div className="mt-1 flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      <div className="mt-1 flex gap-1 rounded-lg bg-foreground/5 p-1">
         {options.map((option) => (
           <button
             aria-pressed={value === option.value}
             className={`flex-1 rounded-md px-2 py-1 text-sm ${
               value === option.value
-                ? "bg-white shadow-sm dark:bg-black"
-                : "text-black/60 dark:text-white/60"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground"
             }`}
             key={option.value}
             onClick={() => onChange(option.value)}
@@ -141,14 +139,17 @@ export function Stepper({
   steps,
   current,
   currentTitle,
+  label = "Steps to set up a sale",
 }: {
   steps: readonly StepperStep[];
   current: string;
   currentTitle: string;
+  /** The flow this progress list describes. */
+  label?: string;
 }) {
   const index = steps.findIndex((step) => step.key === current);
   return (
-    <nav aria-label="Steps to set up a sale" data-testid="wizard-stepper">
+    <nav aria-label={label} data-testid="wizard-stepper">
       <ol className="flex flex-wrap items-center gap-1.5">
         {steps.map((step, position) => {
           const done = position < index;
@@ -159,20 +160,17 @@ export function Stepper({
                 aria-current={isCurrent ? "step" : undefined}
                 className={`text-xs ${
                   isCurrent
-                    ? "font-semibold text-black dark:text-white"
+                    ? "font-semibold text-foreground"
                     : done
-                      ? "text-black/70 dark:text-white/70"
-                      : "text-black/40 dark:text-white/40"
+                      ? "text-foreground/70"
+                      : "text-muted-foreground"
                 }`}
                 data-testid={`wizard-step-${step.key}`}
               >
                 {position + 1}. {step.label}
               </span>
               {position < steps.length - 1 ? (
-                <span
-                  aria-hidden
-                  className="text-xs text-black/30 dark:text-white/30"
-                >
+                <span aria-hidden className="text-xs text-muted-foreground">
                   ›
                 </span>
               ) : null}
@@ -180,7 +178,7 @@ export function Stepper({
           );
         })}
       </ol>
-      <p className="mt-1 text-base font-semibold text-black dark:text-white">
+      <p className="mt-1 text-base font-semibold text-foreground">
         {currentTitle}
       </p>
     </nav>

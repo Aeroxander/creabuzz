@@ -13,31 +13,31 @@
  */
 
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { AlertTriangle, ArrowRight, Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
-import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
+import { Modal } from "@/features/launchpad/ui/Modal";
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog";
+  Segmented,
+  Stepper,
+} from "@/features/launchpad/ui/create-wizard/fields";
+import {
+  PitchField,
+  RoleRowInputs,
+  StakeSummary,
+  type RoleRow,
+} from "./PitchFields";
 import {
   MAX_DESCRIPTION_LEN,
   MAX_NAME_LEN,
   MAX_ROLES,
   MAX_SUMMARY_LEN,
   PitchValidationError,
-  POOL_PCT,
   buildPitchTemplate,
   slugify,
   type PitchInput,
@@ -52,129 +52,29 @@ import {
 
 type Mode = "new" | "node" | "launch";
 
-interface RoleRow {
-  /** Stable React key — row identity survives adds and removes. */
-  uid: number;
-  label: string;
-  pct: string;
-}
+type Step = "project" | "team";
 
-const MODES: { id: Mode; label: string; hint: string }[] = [
+const STEPS = [
+  { key: "project", label: "Project" },
+  { key: "team", label: "Team & stake" },
+];
+const MODES: { value: Mode; label: string; hint: string }[] = [
   {
-    id: "new",
+    value: "new",
     label: "New project",
-    hint: "Creates the org node and the pitch.",
+    hint: "Give your idea a home on the project board.",
   },
   {
-    id: "node",
-    label: "Existing org node",
-    hint: "Pins a pitch to a node that already exists.",
+    value: "node",
+    label: "Existing team",
+    hint: "Add a pitch to a team you already run.",
   },
   {
-    id: "launch",
+    value: "launch",
     label: "From a launch",
-    hint: "The launch's id becomes the project id.",
+    hint: "Connect your pitch to a launch you already created.",
   },
 ];
-
-function Field({
-  id,
-  label,
-  hint,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  error?: string | null;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label
-        className="text-sm font-medium text-black dark:text-white"
-        htmlFor={id}
-      >
-        {label}
-      </label>
-      <div className="mt-1">{children}</div>
-      {error ? (
-        <p
-          className="mt-1 text-xs text-red-600 dark:text-red-400"
-          data-testid={`${id}-error`}
-        >
-          {error}
-        </p>
-      ) : hint ? (
-        <p className="mt-1 text-xs text-black/60 dark:text-white/60">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function RoleRowInputs({
-  row,
-  index,
-  onChange,
-  onRemove,
-}: {
-  row: RoleRow;
-  index: number;
-  onChange: (next: RoleRow) => void;
-  onRemove?: () => void;
-}) {
-  const slug = slugify(row.label);
-  return (
-    <div className="flex items-end gap-2">
-      <div className="min-w-0 flex-1">
-        <Field
-          id={`role-label-${index}`}
-          label={index === 0 ? "Your role" : `Role ${index}`}
-        >
-          <Input
-            id={`role-label-${index}`}
-            onChange={(e) => onChange({ ...row, label: e.target.value })}
-            placeholder="The writer"
-            value={row.label}
-          />
-        </Field>
-        <p className="mt-1 text-2xs text-black/50 dark:text-white/50">
-          {slug ? (
-            <>
-              id: <code className="font-mono">{slug}</code>
-            </>
-          ) : (
-            "letters, digits and dashes become the id"
-          )}
-        </p>
-      </div>
-      <div className="w-24">
-        <Field id={`role-pct-${index}`} label="Stake %">
-          <Input
-            id={`role-pct-${index}`}
-            inputMode="numeric"
-            max={100}
-            min={1}
-            onChange={(e) => onChange({ ...row, pct: e.target.value })}
-            type="number"
-            value={row.pct}
-          />
-        </Field>
-      </div>
-      {onRemove ? (
-        <button
-          aria-label={`Remove role ${row.label || index + 1}`}
-          className="mb-2 rounded-md p-1.5 text-black/40 hover:bg-black/5 hover:text-black dark:text-white/40 dark:hover:bg-white/10"
-          onClick={onRemove}
-          type="button"
-        >
-          <X className="h-4 w-4" aria-hidden />
-        </button>
-      ) : null}
-    </div>
-  );
-}
 
 export function PitchDialog({
   open,
@@ -188,6 +88,8 @@ export function PitchDialog({
   const { data: events } = useProjectEvents();
   const launches = useLaunches();
 
+  const [step, setStep] = useState<Step>("project");
+  const [addressOpen, setAddressOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("new");
   const [name, setName] = useState("");
   const [nodeId, setNodeId] = useState("");
@@ -206,10 +108,11 @@ export function PitchDialog({
   const [selectedNode, setSelectedNode] = useState("");
   const [selectedLaunch, setSelectedLaunch] = useState("");
   const [fieldError, setFieldError] = useState<{
-    field: string;
+    field: PitchValidationError["field"];
     message: string;
   } | null>(null);
   const [lastInput, setLastInput] = useState<CreatePitchInput | null>(null);
+  const publishErrorRef = useRef<HTMLDivElement>(null);
 
   // Only your own nodes: the pitch's author becomes the project's founder,
   // so pinning a pitch to someone else's node would misattribute the seat
@@ -231,9 +134,26 @@ export function PitchDialog({
       : mode === "launch"
         ? selectedLaunch
         : derivedId;
-  const declaredPool =
-    (Number(myRole.pct) || 0) +
-    openRoles.reduce((total, role) => total + (Number(role.pct) || 0), 0);
+  useEffect(() => {
+    if (!open) return;
+    const id = fieldError
+      ? {
+          nodeId:
+            mode === "new"
+              ? "pitch-id"
+              : mode === "node"
+                ? "pitch-node"
+                : "pitch-launch",
+          name: "pitch-name",
+          summary: "pitch-summary",
+          description: "pitch-description",
+          roles: "role-label-0",
+        }[fieldError.field]
+      : step === "project"
+        ? "pitch-name"
+        : "role-label-0";
+    if (id) document.getElementById(id)?.focus();
+  }, [open, step, fieldError, mode]);
 
   function pickLaunch(launchId: string) {
     setSelectedLaunch(launchId);
@@ -247,8 +167,7 @@ export function PitchDialog({
     setIdTouched(true);
   }
 
-  function submit() {
-    setFieldError(null);
+  function buildInput(): CreatePitchInput {
     const founderSlug = slugify(myRole.label) ?? "";
     const roles: RoleDeclaration[] = [
       {
@@ -275,20 +194,19 @@ export function PitchDialog({
       mode === "node"
         ? null
         : { nodeId: pitch.nodeId, name: pitch.name, blurb: pitch.summary };
-    try {
-      // Validate before anything is published: a rejected pitch must not
-      // leave a node behind.
-      buildPitchTemplate(pitch);
-    } catch (error) {
-      if (error instanceof PitchValidationError) {
-        setFieldError({ field: error.field, message: error.message });
-        return;
-      }
-      throw error;
-    }
-    const input: CreatePitchInput = { pitch, node };
-    setLastInput(input);
-    create.mutate(input, {
+    return { pitch, node };
+  }
+
+  function showValidation(error: PitchValidationError) {
+    setFieldError({ field: error.field, message: error.message });
+    setStep(error.field === "roles" ? "team" : "project");
+    if (error.field === "nodeId" && mode === "new") setAddressOpen(true);
+  }
+
+  function publish(next: CreatePitchInput) {
+    if (create.isPending) return;
+    setLastInput(next);
+    create.mutate(next, {
       onSuccess: (result) => {
         onOpenChange(false);
         void navigate({
@@ -298,11 +216,51 @@ export function PitchDialog({
         });
       },
       onError: (error) => {
-        if (error instanceof PitchValidationError) {
-          setFieldError({ field: error.field, message: error.message });
-        }
+        if (error instanceof PitchValidationError) showValidation(error);
       },
     });
+  }
+
+  function advance() {
+    if (create.isPending) return;
+    setFieldError(null);
+    const next = buildInput();
+    // A blank name has no derived address yet. Ask for the name first.
+    if (!name.trim()) {
+      showValidation(
+        new PitchValidationError("name", "Give your project a name."),
+      );
+      return;
+    }
+    try {
+      // Every project field is checked before continuing; role issues belong
+      // to the next step. The final action validates the entire snapshot again.
+      buildPitchTemplate(next.pitch);
+    } catch (error) {
+      if (!(error instanceof PitchValidationError)) throw error;
+      if (error.field !== "roles") {
+        showValidation(error);
+        return;
+      }
+    }
+    setStep("team");
+  }
+
+  function submit() {
+    if (create.isPending) return;
+    setFieldError(null);
+    const next = buildInput();
+    try {
+      // Validate before either write: a rejected pitch must not leave a node.
+      buildPitchTemplate(next.pitch);
+    } catch (error) {
+      if (error instanceof PitchValidationError) {
+        showValidation(error);
+        return;
+      }
+      throw error;
+    }
+    publish(next);
   }
 
   const publishError = create.isError ? create.error : null;
@@ -311,275 +269,421 @@ export function PitchDialog({
       ? publishError
       : null;
 
+  useEffect(() => {
+    if (open && publishError) {
+      publishErrorRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, publishError]);
+
+  const errorFor = (field: PitchValidationError["field"]) =>
+    fieldError?.field === field ? fieldError.message : null;
+  const sourceMissing =
+    (mode === "node" && !selectedNode) ||
+    (mode === "launch" && !selectedLaunch);
+  const roleError = errorFor("roles");
+  const close = () => {
+    if (!create.isPending) onOpenChange(false);
+  };
+
+  if (!open) return null;
+
   return (
-    <AlertDialog onOpenChange={onOpenChange} open={open}>
-      <AlertDialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Pitch a project</AlertDialogTitle>
-          <AlertDialogDescription>
-            Say what it is, the role you take, and the roles you need. Declared
-            stakes set the pool a joiner's recorded grant comes out of.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+    <Modal label="Pitch a project" onClose={close} wide>
+      <form
+        className="flex max-h-[calc(100dvh-4.5rem)] flex-col"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (step === "project") advance();
+          else submit();
+        }}
+      >
+        <header className="flex shrink-0 items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Pitch a project</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Share the idea and the team you need. Publish when you're ready.
+            </p>
+          </div>
+          <Button
+            aria-label="Close pitch form"
+            className="-mr-2 -mt-1 shrink-0 text-muted-foreground"
+            disabled={create.isPending}
+            onClick={close}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <X aria-hidden className="h-4 w-4" />
+          </Button>
+        </header>
 
-        <div
-          className="flex flex-wrap gap-2"
-          aria-label="Pitch source"
-          role="tablist"
-        >
-          {MODES.map((option) => (
-            <button
-              aria-selected={mode === option.id}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium",
-                mode === option.id
-                  ? "bg-black text-white dark:bg-white dark:text-black"
-                  : "bg-black/5 text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15",
-              )}
-              key={option.id}
-              onClick={() => setMode(option.id)}
-              role="tab"
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="mt-4 shrink-0 border-b border-border/60 pb-3">
+          <Stepper
+            current={step}
+            currentTitle={
+              step === "project"
+                ? "What are you building?"
+                : "Who will build it with you?"
+            }
+            label="Steps to pitch a project"
+            steps={STEPS}
+          />
         </div>
-        <p className="text-2xs text-black/50 dark:text-white/50">
-          {MODES.find((m) => m.id === mode)?.hint}
-        </p>
 
-        {mode === "node" ? (
-          <Field
-            error={fieldError?.field === "nodeId" ? fieldError.message : null}
-            id="pitch-node"
-            label="Org node"
-          >
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-              id="pitch-node"
-              onChange={(e) => setSelectedNode(e.target.value)}
-              value={selectedNode}
+        <section
+          aria-label={step === "project" ? "Project details" : "Team and stake"}
+          className="min-h-0 overflow-y-auto overscroll-contain py-4 pr-1"
+          data-testid="pitch-form-scroll"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users can scroll the form without leaving its fields.
+          tabIndex={0}
+        >
+          <fieldset className="min-w-0 space-y-4" disabled={create.isPending}>
+            <legend className="sr-only">
+              {step === "project" ? "Project details" : "Team and stake"}
+            </legend>
+            {step === "project" ? (
+              <>
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.04] p-3">
+                  <Segmented
+                    label="Start from"
+                    onChange={setMode}
+                    options={MODES}
+                    value={mode}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {MODES.find((option) => option.value === mode)?.hint}
+                  </p>
+                  {mode === "node" ? (
+                    <div className="mt-3">
+                      <PitchField
+                        error={errorFor("nodeId")}
+                        hint="Choose a team you own to add it to the project board."
+                        id="pitch-node"
+                        label="Your team"
+                      >
+                        <select
+                          aria-describedby="pitch-node-feedback"
+                          aria-invalid={
+                            Boolean(errorFor("nodeId")) || undefined
+                          }
+                          className="h-10 w-full rounded-md border border-input bg-background/60 px-3 text-sm"
+                          id="pitch-node"
+                          onChange={(event) =>
+                            setSelectedNode(event.target.value)
+                          }
+                          value={selectedNode}
+                        >
+                          <option value="">Choose a team…</option>
+                          {existingNodes.map((node) => (
+                            <option
+                              key={`${node.author}:${node.id}`}
+                              value={node.id}
+                            >
+                              {node.name}
+                            </option>
+                          ))}
+                        </select>
+                      </PitchField>
+                      {existingNodes.length === 0 ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          No team of yours yet. Choose New project to start one.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : mode === "launch" ? (
+                    <div className="mt-3">
+                      <PitchField
+                        error={errorFor("nodeId")}
+                        hint="The project and launch will share a page address."
+                        id="pitch-launch"
+                        label="Launch"
+                      >
+                        <select
+                          aria-describedby="pitch-launch-feedback"
+                          aria-invalid={
+                            Boolean(errorFor("nodeId")) || undefined
+                          }
+                          className="h-10 w-full rounded-md border border-input bg-background/60 px-3 text-sm"
+                          id="pitch-launch"
+                          onChange={(event) => pickLaunch(event.target.value)}
+                          value={selectedLaunch}
+                        >
+                          <option value="">Choose a launch…</option>
+                          {(launches.data ?? [])
+                            .filter(
+                              (launch) => launch.record.author === myPubkey,
+                            )
+                            .map((launch) => (
+                              <option
+                                key={launch.record.id}
+                                value={launch.record.id}
+                              >
+                                {launch.record.name}
+                              </option>
+                            ))}
+                        </select>
+                      </PitchField>
+                    </div>
+                  ) : null}
+                </div>
+
+                <PitchField
+                  error={errorFor("name")}
+                  hint="The name people will see on the project board."
+                  id="pitch-name"
+                  label="Project name"
+                >
+                  <Input
+                    aria-describedby="pitch-name-feedback"
+                    aria-invalid={Boolean(errorFor("name")) || undefined}
+                    className="h-10 bg-background/60"
+                    id="pitch-name"
+                    maxLength={MAX_NAME_LEN}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Nebula"
+                    value={name}
+                  />
+                </PitchField>
+                <PitchField
+                  error={errorFor("summary")}
+                  hint={`${summary.length}/${MAX_SUMMARY_LEN} · The idea in one sentence.`}
+                  id="pitch-summary"
+                  label="One-line pitch"
+                >
+                  <Input
+                    aria-describedby="pitch-summary-feedback"
+                    aria-invalid={Boolean(errorFor("summary")) || undefined}
+                    className="h-10 bg-background/60"
+                    id="pitch-summary"
+                    maxLength={MAX_SUMMARY_LEN}
+                    onChange={(event) => setSummary(event.target.value)}
+                    placeholder="A social app for stargazers."
+                    value={summary}
+                  />
+                </PitchField>
+                <PitchField
+                  error={errorFor("description")}
+                  hint={`${description.length}/${MAX_DESCRIPTION_LEN} · Optional. Give future teammates a little more context.`}
+                  id="pitch-description"
+                  label="Description"
+                >
+                  <textarea
+                    aria-describedby="pitch-description-feedback"
+                    aria-invalid={Boolean(errorFor("description")) || undefined}
+                    className="min-h-24 w-full resize-y rounded-md border border-input bg-background/60 px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                    id="pitch-description"
+                    maxLength={MAX_DESCRIPTION_LEN}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="What problem are you solving, and what do you want to make together?"
+                    rows={3}
+                    value={description}
+                  />
+                </PitchField>
+                {mode === "new" ? (
+                  <details
+                    className="rounded-xl border border-border/60 px-3 py-2"
+                    onToggle={(event) =>
+                      setAddressOpen(event.currentTarget.open)
+                    }
+                    open={addressOpen}
+                  >
+                    <summary className="cursor-pointer text-xs font-medium">
+                      Customize page address
+                    </summary>
+                    <div className="mt-3 pb-1">
+                      <PitchField
+                        error={errorFor("nodeId")}
+                        hint="Suggested from the name. Choose carefully: this address stays with the project."
+                        id="pitch-id"
+                        label="Project id"
+                      >
+                        <Input
+                          aria-describedby="pitch-id-feedback"
+                          aria-invalid={
+                            Boolean(errorFor("nodeId")) || undefined
+                          }
+                          className="h-10 bg-background/60 font-mono"
+                          id="pitch-id"
+                          onChange={(event) => {
+                            setIdTouched(true);
+                            setNodeId(event.target.value);
+                          }}
+                          value={derivedId}
+                        />
+                      </PitchField>
+                    </div>
+                  </details>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.04] px-3 py-2.5">
+                  <p className="break-words text-sm font-semibold">{name}</p>
+                  <p className="mt-0.5 break-words text-xs text-muted-foreground">
+                    {summary}
+                  </p>
+                </div>
+                {roleError ? (
+                  <p
+                    className="text-xs text-red-600 dark:text-red-400"
+                    data-testid="pitch-roles-error"
+                    id="pitch-roles-error"
+                    role="alert"
+                  >
+                    {roleError}
+                  </p>
+                ) : null}
+                <div className="rounded-xl border border-border/60 p-3">
+                  <RoleRowInputs
+                    index={0}
+                    invalid={Boolean(roleError)}
+                    onChange={setMyRole}
+                    row={myRole}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    The role you take as the founder and your proposed stake.
+                  </p>
+                </div>
+                <section
+                  aria-labelledby="pitch-open-roles"
+                  className="rounded-xl border border-border/60 p-3"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold" id="pitch-open-roles">
+                      Open roles
+                    </h3>
+                    {openRoles.length < MAX_ROLES - 1 ? (
+                      <Button
+                        className="h-8"
+                        onClick={() =>
+                          setOpenRoles((current) => [
+                            ...current,
+                            { uid: nextUid.current++, label: "", pct: "5" },
+                          ])
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Plus aria-hidden className="mr-1 h-3 w-3" /> Add a role
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="space-y-3">
+                    {openRoles.map((role, index) => (
+                      <RoleRowInputs
+                        index={index + 1}
+                        invalid={Boolean(roleError)}
+                        key={role.uid}
+                        onChange={(next) =>
+                          setOpenRoles((current) =>
+                            current.map((row) =>
+                              row.uid === role.uid ? next : row,
+                            ),
+                          )
+                        }
+                        onRemove={() =>
+                          setOpenRoles((current) =>
+                            current.filter((row) => row.uid !== role.uid),
+                          )
+                        }
+                        row={role}
+                      />
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {openRoles.length
+                      ? "People can request a role at its proposed stake. You approve who joins."
+                      : "You can pitch solo. Add a role when you know who you need."}
+                  </p>
+                </section>
+                <StakeSummary founder={myRole} openRoles={openRoles} />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Stakes are declarations until a grant is recorded. Recorded
+                  and revocable until the project's DAO adopts the map. Not a
+                  legal contract.
+                </p>
+              </>
+            )}
+          </fieldset>
+
+          {partial ? (
+            <div
+              className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+              data-testid="pitch-partial-error"
+              ref={publishErrorRef}
+              role="alert"
             >
-              <option value="">Choose an org node…</option>
-              {existingNodes.length === 0 ? (
-                <option disabled value="__none">
-                  No org node of yours yet. Use “New project” first.
-                </option>
-              ) : (
-                existingNodes.map((node) => (
-                  <option key={`${node.author}:${node.id}`} value={node.id}>
-                    {node.name} ({node.id})
-                  </option>
-                ))
-              )}
-            </select>
-          </Field>
-        ) : null}
-
-        {mode === "launch" ? (
-          <Field
-            error={fieldError?.field === "nodeId" ? fieldError.message : null}
-            id="pitch-launch"
-            label="Launch"
-            hint="Using the launch id keeps the project and the raise addressable as the same record."
-          >
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-              id="pitch-launch"
-              onChange={(e) => pickLaunch(e.target.value)}
-              value={selectedLaunch}
-            >
-              <option value="">Choose a launch…</option>
-              {/* Your own launches only: the launch id becomes the project id,
-                  so adopting a stranger's launch would bridge to their raise. */}
-              {(launches.data ?? [])
-                .filter((launch) => launch.record.author === myPubkey)
-                .map((launch) => (
-                  <option key={launch.record.id} value={launch.record.id}>
-                    {launch.record.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        ) : null}
-
-        <Field
-          error={fieldError?.field === "name" ? fieldError.message : null}
-          id="pitch-name"
-          label="Project name"
-        >
-          <Input
-            id="pitch-name"
-            maxLength={MAX_NAME_LEN}
-            onChange={(e) => setName(e.target.value)}
-            value={name}
-          />
-        </Field>
-
-        {mode === "new" ? (
-          <Field
-            error={fieldError?.field === "nodeId" ? fieldError.message : null}
-            hint="Stable id. It keys the project's org node, requests, and grants."
-            id="pitch-id"
-            label="Project id"
-          >
-            <Input
-              id="pitch-id"
-              onChange={(e) => {
-                setIdTouched(true);
-                setNodeId(e.target.value);
-              }}
-              value={derivedId}
-            />
-          </Field>
-        ) : null}
-
-        <Field
-          error={fieldError?.field === "summary" ? fieldError.message : null}
-          id="pitch-summary"
-          label="One-line pitch"
-          hint={`${summary.length}/${MAX_SUMMARY_LEN}`}
-        >
-          <Input
-            id="pitch-summary"
-            maxLength={MAX_SUMMARY_LEN}
-            onChange={(e) => setSummary(e.target.value)}
-            value={summary}
-          />
-        </Field>
-
-        <Field
-          error={
-            fieldError?.field === "description" ? fieldError.message : null
-          }
-          id="pitch-description"
-          label="Description"
-          hint={`${description.length}/${MAX_DESCRIPTION_LEN} (plain text for now)`}
-        >
-          <textarea
-            className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-            id="pitch-description"
-            maxLength={MAX_DESCRIPTION_LEN}
-            onChange={(e) => setDescription(e.target.value)}
-            value={description}
-          />
-        </Field>
-
-        <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-          <RoleRowInputs index={0} onChange={setMyRole} row={myRole} />
-          <div className="mt-3 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-black dark:text-white">
-                Roles you need
-              </span>
-              <span
-                className={`text-2xs ${declaredPool > POOL_PCT ? "font-semibold text-red-600 dark:text-red-400" : "text-black/50 dark:text-white/50"}`}
-                data-testid="pitch-pool"
-              >
-                {declaredPool}% of the {POOL_PCT}% pool declared
-              </span>
-            </div>
-            {openRoles.map((role, index) => (
-              <RoleRowInputs
-                index={index + 1}
-                key={role.uid}
-                onChange={(next) =>
-                  setOpenRoles((current) =>
-                    current.map((row) => (row.uid === role.uid ? next : row)),
-                  )
-                }
-                onRemove={() =>
-                  setOpenRoles((current) =>
-                    current.filter((row) => row.uid !== role.uid),
-                  )
-                }
-                row={role}
-              />
-            ))}
-            {fieldError?.field === "roles" ? (
-              <p
-                className="text-xs text-red-600 dark:text-red-400"
-                data-testid="pitch-roles-error"
-              >
-                {fieldError.message}
+              <p className="flex items-start gap-2">
+                <AlertTriangle
+                  aria-hidden
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                <span>
+                  Your project was created, but the pitch didn't send, so it
+                  isn't on the board yet.{" "}
+                  <span className="text-muted-foreground">
+                    {partial.message}
+                  </span>
+                </span>
               </p>
-            ) : null}
-            {openRoles.length < MAX_ROLES - 1 ? (
               <Button
+                className="mt-2"
+                disabled={create.isPending}
                 onClick={() =>
-                  setOpenRoles((current) => [
-                    ...current,
-                    { uid: nextUid.current++, label: "", pct: "5" },
-                  ])
+                  lastInput && publish({ ...lastInput, skipNode: true })
                 }
                 size="sm"
                 type="button"
-                variant="outline"
               >
-                <Plus className="mr-1 h-3 w-3" aria-hidden /> Add a role
+                Retry the pitch
               </Button>
-            ) : null}
-          </div>
-        </div>
-
-        {partial ? (
-          <div
-            className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
-            data-testid="pitch-partial-error"
-            role="alert"
-          >
-            <p className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <span>
-                Your project's org node is on the server, but the pitch didn't
-                send, so it isn't on the board yet.{" "}
-                <span className="text-black/60 dark:text-white/60">
-                  {partial.message}
-                </span>
-              </span>
-            </p>
-            <Button
-              className="mt-2"
-              disabled={create.isPending}
-              onClick={() =>
-                lastInput && create.mutate({ ...lastInput, skipNode: true })
-              }
-              size="sm"
-              type="button"
+            </div>
+          ) : publishError ? (
+            <div
+              className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300"
+              data-testid="pitch-error"
+              ref={publishErrorRef}
             >
-              Retry the pitch
-            </Button>
-          </div>
-        ) : publishError ? (
-          <div
-            className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300"
-            data-testid="pitch-error"
-          >
-            <SignRecovery
-              message={publishError.message}
-              messageTestId="pitch-error-message"
-              onUnlocked={() => lastInput && create.mutate(lastInput)}
-              testId="pitch-sign-recovery"
-            />
-          </div>
-        ) : null}
+              <SignRecovery
+                message={publishError.message}
+                messageTestId="pitch-error-message"
+                onUnlocked={() => lastInput && publish(lastInput)}
+                testId="pitch-sign-recovery"
+              />
+            </div>
+          ) : null}
+        </section>
 
-        <AlertDialogFooter>
-          <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 pt-4">
           <Button
-            disabled={
-              create.isPending ||
-              (mode === "node" && !selectedNode) ||
-              (mode === "launch" && !selectedLaunch)
+            disabled={create.isPending}
+            onClick={
+              step === "project"
+                ? close
+                : () => {
+                    setFieldError(null);
+                    setStep("project");
+                  }
             }
-            onClick={submit}
             type="button"
+            variant="ghost"
           >
-            {create.isPending ? "Publishing…" : "Publish pitch"}
+            {step === "project" ? "Cancel" : "Back"}
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          <Button disabled={create.isPending || sourceMissing} type="submit">
+            {create.isPending
+              ? "Publishing…"
+              : step === "project"
+                ? "Continue"
+                : "Publish pitch"}
+            {step === "project" ? (
+              <ArrowRight aria-hidden className="ml-1.5 h-4 w-4" />
+            ) : null}
+          </Button>
+        </footer>
+      </form>
+    </Modal>
   );
 }
