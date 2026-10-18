@@ -30,9 +30,12 @@ fail() { printf '\033[31m[%s] FAIL:\033[0m %s\n' "${WORLD_NAME:-world}" "$*" >&2
 cp -p "$DEPLOYMENTS"/*.json "$BACKUP"/ 2>/dev/null || true
 cleanup() {
   RPC_URL="$RPC" STATE_DIR="$STATE" ./scripts/dev-chain.sh down >/dev/null 2>&1 || true
-  # `dev-chain.sh down` can leave the node running (and every node leaves its state on disk until it exits): stop
-  # whatever still listens on this run's port, or each run leaks a chain and hundreds of megabytes.
-  lsof -ti "tcp:${PORT}" 2>/dev/null | xargs kill 2>/dev/null || true
+  # Stop only the Anvil this run recorded, never a process found merely by its port.
+  local own_pid
+  own_pid="$(cat "$STATE/anvil.pid" 2>/dev/null || true)"
+  if [[ -n "$own_pid" ]] && ps -o command= -p "$own_pid" 2>/dev/null | grep -Eq "anvil.* --port[ =]${PORT}( |\$)"; then
+    kill "$own_pid" 2>/dev/null || true
+  fi
   for f in "$BACKUP"/*.json; do
     [[ -f "$f" ]] && cp -p "$f" "$DEPLOYMENTS/$(basename "$f")"
   done

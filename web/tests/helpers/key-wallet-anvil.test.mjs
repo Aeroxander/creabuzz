@@ -62,6 +62,17 @@ async function rpc(url, method, params = []) {
   return body.result;
 }
 
+async function waitForReceipt(url, hash) {
+  // An accepted transaction hash can arrive before automining commits the
+  // receipt, especially while the full suite is using the machine.
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const receipt = await rpc(url, "eth_getTransactionReceipt", [hash]);
+    if (receipt) return receipt;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail(`Transaction ${hash} was not mined within the receipt wait`);
+}
+
 test("a transaction the wallet signs is accepted by a real node, and two in flight take different nonces", async (t) => {
   const anvil = await startAnvil();
   if (!anvil) {
@@ -96,7 +107,7 @@ test("a transaction the wallet signs is accepted by a real node, and two in flig
       }),
     ]);
     for (const hash of [first, second]) {
-      const receipt = await rpc(anvil.url, "eth_getTransactionReceipt", [hash]);
+      const receipt = await waitForReceipt(anvil.url, hash);
       assert.equal(receipt.status, "0x1");
       assert.equal(
         receipt.from.toLowerCase(),
@@ -121,9 +132,7 @@ test("a transaction the wallet signs is accepted by a real node, and two in flig
       method: "eth_sendTransaction",
       params: [{ from: wallet.address, data: "0x6001600c60003960016000f300" }],
     });
-    const receipt = await rpc(anvil.url, "eth_getTransactionReceipt", [
-      created,
-    ]);
+    const receipt = await waitForReceipt(anvil.url, created);
     assert.equal(receipt.status, "0x1");
     assert.match(receipt.contractAddress, /^0x[0-9a-f]{40}$/);
   } finally {
