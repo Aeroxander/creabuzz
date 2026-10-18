@@ -492,6 +492,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Read the evidence",
     { timeout: 60_000 },
   );
+  // The line says when the window closes, why it is shown to this person and what happens if they do nothing.
+  const why = backerOne.getByTestId("home-waiting-why").first();
+  await expect(why).toContainText("Closes");
+  await expect(why).toContainText("You hold Shares in this project.");
+  await expect(why).toContainText("If nobody objects, the milestone unlocks");
   await backerOne.getByTestId("home-waiting-open").first().click();
   await expect(backerOne.getByTestId("challenge-milestones")).toBeVisible({
     timeout: 30_000,
@@ -635,11 +640,31 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Open to objections",
   );
   await passTime(28 * DAY + 60);
-  // Home tells the team its milestone is ready to finish.
+  // A project whose lock cannot be read is said so on Home, never shown as "nothing is waiting": here the node refuses the
+  // lock's questions, and the page asks again when told to.
+  await founder.route(ANVIL_URL, (route) =>
+    route.request().postData()?.includes("0x0681ca55")
+      ? route.abort()
+      : route.continue(),
+  );
   await founder.goto("/");
+  await expect(founder.getByTestId("home-waiting-unread")).toContainText(
+    "Could not read Nebula DAO just now",
+    { timeout: 60_000 },
+  );
+  await expect(founder.getByTestId("home-waiting-item")).toHaveCount(0);
+  await founder.unroute(ANVIL_URL);
+  await founder.getByTestId("home-waiting-retry").click();
+  await expect(founder.getByTestId("home-waiting-unread")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  // Home tells the team its milestone is ready to finish.
   await expect(founder.getByTestId("home-waiting")).toContainText(
     "Finish it to unlock your tokens",
     { timeout: 60_000 },
+  );
+  await expect(founder.getByTestId("home-waiting-why").first()).toContainText(
+    "Your tokens stay locked until someone finishes it.",
   );
   await shot(founder, "4-founder-home-waiting");
   // The untouched page notices the window has closed, and offers to finish it, without a reload.

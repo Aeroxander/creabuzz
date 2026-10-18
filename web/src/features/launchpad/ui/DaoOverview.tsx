@@ -13,9 +13,11 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
 import { challengeAttention } from "../lib/challenge-attention";
+import { deadline } from "../lib/challenge-copy";
 import {
   attentionItems,
   overviewCounts,
+  rankAttention,
   summaryLine,
 } from "../lib/dao-overview";
 import { formatUnits } from "../lib/dao-actions";
@@ -77,18 +79,37 @@ export function DaoOverview({
   });
 
   const challengeLock = useChallengeLock(dao);
-  const items = [
-    ...attentionItems({
-      decisions: decisions.data,
-      work: work.data,
-      wallet,
-      titleOf,
-      labelOf,
-    }),
-    ...(challengeLock.data && wallet
-      ? challengeAttention(challengeLock.data, wallet)
-      : []),
-  ];
+  // The chain's own time, in which every deadline here is given.
+  const clock =
+    challengeLock.data?.now ??
+    decisions.data?.chainTime ??
+    work.data?.chainTime ??
+    0;
+  // Most urgent first: what closes soonest comes before what can wait.
+  const items = rankAttention(
+    [
+      ...attentionItems({
+        decisions: decisions.data,
+        work: work.data,
+        wallet,
+        titleOf,
+        labelOf,
+      }),
+      ...(challengeLock.data && wallet
+        ? challengeAttention(challengeLock.data, wallet)
+        : []),
+    ],
+    clock,
+  );
+  // A read that failed with nothing earlier to show: an empty list would be a guess, not an answer.
+  const unread = [decisions, work, challengeLock].some(
+    (q) => q.isError && q.data === undefined,
+  );
+  const retryReads = () => {
+    for (const q of [decisions, work, challengeLock]) {
+      if (q.isError) void q.refetch();
+    }
+  };
   const counts = overviewCounts(decisions.data, work.data);
   const loading = decisions.isLoading || work.isLoading;
   const money = holdings.data?.treasury;
@@ -152,33 +173,72 @@ export function DaoOverview({
             Connect your wallet in the Decisions or Work tab to see what is
             waiting for you.
           </p>
-        ) : items.length === 0 ? (
-          <p
-            className="mt-1 text-sm text-muted-foreground"
-            data-testid="dao-nothing"
-          >
-            {loading ? "Checking…" : "Nothing is waiting for you."}
-          </p>
         ) : (
-          <ul className="mt-2 divide-y divide-border/60">
-            {items.map((item) => (
-              <li
-                className="flex items-center justify-between gap-3 py-2"
-                data-testid="dao-attention"
-                key={item.key}
+          <>
+            {unread ? (
+              <div
+                className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                data-testid="dao-unread"
+                role="status"
               >
-                <span className="text-sm">{item.text}</span>
+                <span>
+                  {items.length === 0
+                    ? "Could not read this project just now, so we cannot say whether anything is waiting for you."
+                    : "Could not read all of this project just now, so this list may be missing something."}
+                </span>
                 <Button
-                  onClick={() => onOpen(item.tab)}
+                  data-testid="dao-unread-retry"
+                  onClick={retryReads}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
-                  {item.action}
+                  Try again
                 </Button>
-              </li>
-            ))}
-          </ul>
+              </div>
+            ) : null}
+            {items.length === 0 ? (
+              unread ? null : (
+                <p
+                  className="mt-1 text-sm text-muted-foreground"
+                  data-testid="dao-nothing"
+                >
+                  {loading ? "Checking…" : "Nothing is waiting for you."}
+                </p>
+              )
+            ) : (
+              <ul className="mt-2 divide-y divide-border/60">
+                {items.map((item) => (
+                  <li
+                    className="flex items-start justify-between gap-3 py-2"
+                    data-testid="dao-attention"
+                    key={item.key}
+                  >
+                    <span className="text-sm">
+                      {item.text}
+                      {item.why || item.ifIgnored || item.due ? (
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {item.due !== undefined && item.due > clock
+                            ? `Closes ${deadline(item.due)}. `
+                            : ""}
+                          {item.why ? `${item.why} ` : ""}
+                          {item.ifIgnored ?? ""}
+                        </span>
+                      ) : null}
+                    </span>
+                    <Button
+                      onClick={() => onOpen(item.tab)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {item.action}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </Card>
 

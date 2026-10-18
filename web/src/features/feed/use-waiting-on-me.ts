@@ -5,7 +5,8 @@
  * "Their DAOs" are the ones whose Shares they hold (from the wallets they might hold in, as on the Portfolio) and the
  * ones they started, and only DAOs a launch names are looked at, so a DAO somebody wrote about on a post is never read
  * as theirs. It reuses each DAO's own page logic (`attentionItems`), so Home and the DAO's page can never disagree about
- * what is waiting. Bounded: a few DAOs, newest first. A DAO that could not be read is left out, not shown as "nothing".
+ * what is waiting. Bounded: a few DAOs, newest first. The list is ranked across projects (what has a deadline first,
+ * soonest first), and a DAO that could not be read is reported as such, never shown as "nothing is waiting".
  */
 
 import { useQueries } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import { useMemo } from "react";
 import {
   type AttentionItem,
   attentionItems,
+  rankEntries,
 } from "@/features/launchpad/lib/dao-overview";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { reviewerTargets } from "@/features/launchpad/lib/reviewer-launches";
@@ -35,10 +37,13 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 /** The most DAOs read for this: each costs a handful of chain reads. */
 export const MAX_DAOS = 6;
 
-export interface WaitingInDao {
+/** One line of the queue: a thing waiting on this person in one project, with the clock its deadline is in. */
+export interface QueueEntry {
   launch: Launch;
   dao: string;
-  items: AttentionItem[];
+  item: AttentionItem;
+  /** The chain's own time when it was read: `item.due` is in this clock. */
+  now: number;
 }
 
 interface Target {
@@ -49,8 +54,13 @@ interface Target {
 }
 
 export function useWaitingOnMe(): {
-  waiting: WaitingInDao[];
+  /** Everything waiting, most urgent first. */
+  queue: QueueEntry[];
+  /** Projects that could not be read in full just now: what is listed may be missing something. */
+  incomplete: Launch[];
   loading: boolean;
+  /** Ask again about the projects that could not be read. */
+  retry: () => void;
 } {
   const me = existingUserPubkey();
   const launches = useLaunches();
@@ -105,37 +115,55 @@ export function useWaitingOnMe(): {
     queries: targets.map((t) => challengeLockQuery(t.dao)),
   });
 
-  const waiting = targets.flatMap((target, i): WaitingInDao[] => {
-    const decided = decisions[i]?.data;
-    const worked = work[i]?.data;
-    const lock = challenge[i]?.data;
-    // Nothing could be read: unknown, not "nothing is waiting".
-    if (!decided && !worked && !lock) return [];
-    const items = [
-      ...(decided || worked
-        ? attentionItems({
-            decisions: decided,
-            work: worked,
-            wallet: target.wallet,
-            titleOf: decisionTitler({
-              launch: target.launch,
-              dao: target.dao,
-              factory: context[i]?.data?.factory,
-              mandates: worked?.mandates.map((m) => m.address),
-            }),
-          })
-        : []),
-      // A project whose milestones unlock unless holders object: what that asks of this person.
-      ...(lock ? challengeAttention(lock, target.wallet) : []),
-    ];
-    return items.length > 0
-      ? [{ launch: target.launch, dao: target.dao, items }]
-      : [];
-  });
+  const queue = rankEntries(
+    targets.flatMap((target, i): QueueEntry[] => {
+      const decided = decisions[i]?.data;
+      const worked = work[i]?.data;
+      const lock = challenge[i]?.data;
+      // Nothing could be read: that is reported through `incomplete`, never as "nothing is waiting".
+      if (!decided && !worked && !lock) return [];
+      const items = [
+        ...(decided || worked
+          ? attentionItems({
+              decisions: decided,
+              work: worked,
+              wallet: target.wallet,
+              titleOf: decisionTitler({
+                launch: target.launch,
+                dao: target.dao,
+                factory: context[i]?.data?.factory,
+                mandates: worked?.mandates.map((m) => m.address),
+              }),
+            })
+          : []),
+        // A project whose milestones unlock unless holders object: what that asks of this person.
+        ...(lock ? challengeAttention(lock, target.wallet) : []),
+      ];
+      const now = lock?.now ?? decided?.chainTime ?? worked?.chainTime ?? 0;
+      return items.map((item) => ({
+        launch: target.launch,
+        dao: target.dao,
+        item,
+        now,
+      }));
+    }),
+  );
+
+  // A read that failed and has nothing earlier to show leaves a hole in the list, even when the others worked.
+  const failed = (i: number) =>
+    [decisions[i], work[i], challenge[i]].some(
+      (q) => q?.isError && q.data === undefined,
+    );
+  const incomplete = targets.filter((_, i) => failed(i)).map((t) => t.launch);
+  const retry = () => {
+    for (const results of [decisions, work, challenge]) {
+      for (const q of results) if (q.isError) void q.refetch();
+    }
+  };
 
   const loading =
     holdings.data === undefined && holdings.error === undefined
       ? me !== null
       : decisions.some((q) => q.isLoading) || work.some((q) => q.isLoading);
-  return { waiting, loading };
+  return { queue, incomplete, loading, retry };
 }

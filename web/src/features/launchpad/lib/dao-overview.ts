@@ -25,6 +25,12 @@ export interface AttentionItem {
   /** The label of the one button. */
   action: string;
   tab: AttentionTab;
+  /** Unix seconds when this changes by itself (a window closes, a vote ends), when there is such a moment. */
+  due?: number;
+  /** Why it is shown to this person, in a few words ("You hold Shares in this project."). */
+  why?: string;
+  /** What happens if they do nothing, in one sentence. */
+  ifIgnored?: string;
 }
 
 const OPEN_DECISION: readonly Decision["state"][] = [
@@ -96,6 +102,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           : "You are a reviewer on a work budget. Post your bond before you judge a claim.",
         action: "Post your bond",
         tab: "work",
+        why: "You are a named reviewer.",
+        ifIgnored: "You cannot judge anything until your bond is posted.",
       });
     }
     for (const claim of mandate.claims) {
@@ -114,6 +122,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           text: "Your claim was approved. You can take your payout now.",
           action: "Take it",
           tab: "work",
+          why: "It is your claim.",
+          ifIgnored: "The payout waits until you take it.",
         });
       }
       if (
@@ -127,13 +137,16 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           text: `${who(claim.record.contributor)} filed a claim that needs your review.`,
           action: "Review it",
           tab: "work",
+          why: "You are a reviewer on this work budget.",
+          ifIgnored:
+            "The claim stays open until enough reviewers have judged it.",
         });
       }
     }
   }
 
   const capacity = decisions?.walletCapacity ?? 0n;
-  const now = decisions?.chainTime ?? 0;
+  const now = decisions?.chainTime ?? work?.chainTime ?? 0;
   for (const decision of decisions?.decisions ?? []) {
     if (decision.state === "Active" && capacity > 0n) {
       items.push({
@@ -142,6 +155,12 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         text: `Open for your vote: ${titleOf(decision)}.`,
         action: "Vote",
         tab: "decisions",
+        ...(decision.rules && decision.rules.expiresAt > 0n
+          ? { due: Number(decision.rules.expiresAt) }
+          : {}),
+        why: "You hold Shares in this project.",
+        ifIgnored:
+          "If it does not gain enough support in time, it expires and nothing changes.",
       });
     } else if (decision.state === "Succeeded" || waitIsOver(decision, now)) {
       items.push({
@@ -153,6 +172,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
             : `Ready to run: ${titleOf(decision)}.`,
         action: "Open it",
         tab: "decisions",
+        why: "Anyone can move an approved decision along.",
+        ifIgnored: "It does not run until someone does.",
       });
     }
   }
@@ -170,13 +191,64 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
             text: `The work of ${who(claim.record.contributor)} is done. The DAO can vote to award Shares for it.`,
             action: "Put it to a vote",
             tab: "decisions",
+            why: "You hold Shares in this project.",
+            ifIgnored:
+              "The contributor is not awarded Shares until a vote passes.",
           });
         }
       }
     }
   }
-  const order = ["bond", "payout", "review", "vote", "move", "award"];
-  return items.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+  return rankAttention(items, now);
+}
+
+const KIND_ORDER: readonly AttentionItem["kind"][] = [
+  "bond",
+  "payout",
+  "review",
+  "vote",
+  "move",
+  "award",
+];
+
+/**
+ * Most urgent first. Whatever has a moment after which it changes by itself (a window closes, a vote ends) comes first,
+ * soonest first, because that is where waiting costs something; then the rest, by what they ask of the person (a bond to
+ * post or a payout to take before a vote, a step anyone can take last). Equal items keep the order they came in.
+ *
+ * Each entry carries the clock of the chain it was read from: a deadline is in that chain's time, so entries from
+ * different projects (or a local test chain far ahead of the wall clock) are each judged against their own.
+ */
+export function rankEntries<T extends { item: AttentionItem; now: number }>(
+  entries: readonly T[],
+): T[] {
+  const timed = ({ item, now }: T) => item.due !== undefined && item.due > now;
+  return entries
+    .map((entry, at) => ({ entry, at }))
+    .sort((a, b) => {
+      const aTimed = timed(a.entry);
+      const bTimed = timed(b.entry);
+      if (aTimed !== bTimed) return aTimed ? -1 : 1;
+      if (aTimed && bTimed) {
+        const byDue = (a.entry.item.due ?? 0) - (b.entry.item.due ?? 0);
+        if (byDue !== 0) return byDue;
+      }
+      const byKind =
+        KIND_ORDER.indexOf(a.entry.item.kind) -
+        KIND_ORDER.indexOf(b.entry.item.kind);
+      return byKind !== 0 ? byKind : a.at - b.at;
+    })
+    .map(({ entry }) => entry);
+}
+
+/** {@link rankEntries} for the items of one project, all read at the same time `now`. */
+export function rankAttention<T extends AttentionItem>(
+  items: readonly T[],
+  now: number,
+): T[] {
+  return rankEntries(items.map((item) => ({ item, now }))).map(
+    ({ item }) => item,
+  );
 }
 
 export interface OverviewCounts {

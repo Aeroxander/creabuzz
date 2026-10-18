@@ -15,6 +15,10 @@ const date = (seconds: number) =>
     day: "numeric",
   });
 
+/** What the person is to the project, as the reason a line is shown to them. */
+const HOLDER = "You hold Shares in this project.";
+const TEAM = "You are on the team.";
+
 /**
  * The lines for `wallet`, one per milestone that needs them. A holder is anyone not on the team who holds Shares in the DAO
  * (the caller only asks about DAOs the person is part of); the team is whoever the lock names.
@@ -34,6 +38,7 @@ export function challengeAttention(
       suffix: string,
       text: string,
       action: string,
+      more: Pick<AttentionItem, "due" | "why" | "ifIgnored"> = {},
     ) =>
       items.push({
         key: `${key}-${suffix}`,
@@ -41,6 +46,7 @@ export function challengeAttention(
         text,
         action,
         tab: "milestones",
+        ...more,
       });
     switch (m.stage) {
       case "ready":
@@ -51,6 +57,12 @@ export function challengeAttention(
             ? `Milestone ${n} waited out its objection window and nobody objected. Finish it to unlock your tokens.`
             : `Milestone ${n} waited out its objection window and nobody objected. Anyone can finish it.`,
           "Finish it",
+          {
+            why: onTeam ? TEAM : "Anyone can finish it.",
+            ifIgnored: onTeam
+              ? "Your tokens stay locked until someone finishes it."
+              : "The team's tokens stay locked until someone finishes it.",
+          },
         );
         break;
       case "waiting":
@@ -60,6 +72,12 @@ export function challengeAttention(
             "read",
             `The team published milestone ${n}. Holders can object until ${date(m.windowEnds)}. Read the evidence, and object if it was not reached.`,
             "Read the evidence",
+            {
+              due: m.windowEnds,
+              why: HOLDER,
+              ifIgnored:
+                "If nobody objects, the milestone unlocks and the team's tokens are free.",
+            },
           );
         }
         break;
@@ -72,6 +90,12 @@ export function challengeAttention(
             "vote",
             `Holders are voting on an objection to milestone ${n} until ${date(ends)}. Your vote counts; the team's does not.`,
             "Vote",
+            {
+              due: ends,
+              why: HOLDER,
+              ifIgnored:
+                "The objection stands only if more holders are against than for it and enough of them took part; with less interest than that, the milestone stands.",
+            },
           );
         }
         break;
@@ -83,6 +107,10 @@ export function challengeAttention(
           "settle",
           `The vote on milestone ${n} has ended. Anyone can settle it.`,
           "Settle it",
+          {
+            why: "Anyone can settle a vote that has ended.",
+            ifIgnored: "Nothing changes until someone settles it.",
+          },
         );
         break;
       default:
@@ -102,6 +130,10 @@ export function challengeAttention(
         "bond",
         `The month after milestone ${n} unlocked is over. Take your bond back.`,
         "Return the bond",
+        {
+          why: TEAM,
+          ifIgnored: "Your bond stays in the lock until you take it back.",
+        },
       );
     }
   }

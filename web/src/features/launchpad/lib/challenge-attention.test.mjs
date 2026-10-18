@@ -166,3 +166,38 @@ test("the wallet is matched whatever its case", () => {
     /unlock your tokens/,
   );
 });
+
+test("each line says why it is shown, and what happens if nothing is done, and holders' lines say when", () => {
+  const waiting = view([
+    milestone({
+      stage: "waiting",
+      phase: "pending",
+      windowEnds: NOW + 3 * DAY,
+    }),
+  ]);
+  const [read] = challengeAttention(waiting, BACKER);
+  assert.equal(read.due, NOW + 3 * DAY);
+  assert.match(read.why, /hold Shares/);
+  assert.match(read.ifIgnored, /If nobody objects, the milestone unlocks/);
+
+  const voting = view([
+    milestone({
+      stage: "voting",
+      phase: "voting",
+      objection: { ...open, voteEnds: NOW + 2 * DAY },
+    }),
+  ]);
+  const [vote] = challengeAttention(voting, BACKER);
+  assert.equal(vote.due, NOW + 2 * DAY);
+  assert.match(vote.ifIgnored, /milestone stands/);
+
+  const ready = view([
+    milestone({ stage: "ready", phase: "pending", windowEnds: NOW - 1 }),
+  ]);
+  const [finishTeam] = challengeAttention(ready, FOUNDER);
+  assert.match(finishTeam.why, /on the team/);
+  assert.match(finishTeam.ifIgnored, /Your tokens stay locked/);
+  assert.equal(finishTeam.due, undefined, "finishing has no deadline");
+  const [finishAnyone] = challengeAttention(ready, BACKER);
+  assert.match(finishAnyone.ifIgnored, /team's tokens stay locked/);
+});

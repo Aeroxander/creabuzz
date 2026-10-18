@@ -5,6 +5,8 @@ import {
   attentionItems,
   isOpenDecision,
   overviewCounts,
+  rankAttention,
+  rankEntries,
   summaryLine,
 } from "./dao-overview.ts";
 
@@ -307,4 +309,85 @@ test("the bond reminder comes before everything else", () => {
     titleOf,
   });
   assert.equal(items[0].kind, "bond");
+});
+
+const line = (key, kind, extra = {}) => ({
+  key,
+  kind,
+  text: key,
+  action: "Open",
+  tab: "decisions",
+  ...extra,
+});
+
+test("what has a deadline comes first, soonest first, then the rest by what it asks of the person", () => {
+  const items = [
+    line("award", "award"),
+    line("vote-later", "vote", { due: 500 }),
+    line("payout", "payout"),
+    line("vote-soon", "vote", { due: 200 }),
+    line("lapsed", "vote", { due: 50 }), // its moment has passed: no longer timed
+    line("bond", "bond"),
+  ];
+  assert.deepEqual(
+    rankAttention(items, 100).map((i) => i.key),
+    ["vote-soon", "vote-later", "bond", "payout", "lapsed", "award"],
+  );
+  // Equal items keep the order they came in, and nothing is dropped or invented.
+  const same = [line("b", "move"), line("a", "move"), line("c", "move")];
+  assert.deepEqual(
+    rankAttention(same, 100).map((i) => i.key),
+    ["b", "a", "c"],
+  );
+  assert.deepEqual(rankAttention([], 100), []);
+});
+
+test("entries from different chains are each judged against their own clock", () => {
+  // A local chain that is months ahead of another: the same due moment is past on one and ahead on the other.
+  const ahead = { item: line("ahead", "vote", { due: 1_000 }), now: 2_000 };
+  const behind = { item: line("behind", "vote", { due: 1_000 }), now: 500 };
+  const plain = { item: line("plain", "payout"), now: 500 };
+  assert.deepEqual(
+    rankEntries([plain, ahead, behind]).map((e) => e.item.key),
+    ["behind", "plain", "ahead"],
+  );
+});
+
+test("an open decision says when it ends, why it is yours and what happens if you let it pass", () => {
+  const [item] = attentionItems({
+    decisions: snap([
+      decision("a", "Active", { rules: { delay: 3600n, expiresAt: 20_000n } }),
+    ]),
+    work: undefined,
+    wallet: ME,
+    titleOf,
+  });
+  assert.equal(item.due, 20_000);
+  assert.match(item.why, /hold Shares/);
+  assert.match(item.ifIgnored, /expires and nothing changes/);
+  // A decision whose rules were not read has no moment to name, and says nothing it does not know.
+  const [bare] = attentionItems({
+    decisions: snap([decision("b", "Active")]),
+    work: undefined,
+    wallet: ME,
+    titleOf,
+  });
+  assert.equal(bare.due, undefined);
+});
+
+test("the decisions most urgent to this person are listed before the ones that can wait", () => {
+  const items = attentionItems({
+    decisions: snap([
+      decision("late", "Active", { rules: { delay: 0n, expiresAt: 90_000n } }),
+      decision("soon", "Active", { rules: { delay: 0n, expiresAt: 20_000n } }),
+      decision("approved", "Succeeded"),
+    ]),
+    work: undefined,
+    wallet: ME,
+    titleOf,
+  });
+  assert.deepEqual(
+    items.map((i) => i.key),
+    ["vote-soon", "vote-late", "move-approved"],
+  );
 });
