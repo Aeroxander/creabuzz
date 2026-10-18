@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { waitForAnimations } from "../../../desktop/tests/helpers/animations";
 
 import { createMockRelay } from "./mock-relay";
 
@@ -333,7 +334,7 @@ test("a post opens with its replies, takes replies and answers to replies, and s
     ["e", p.id, "", "reply"],
   ]);
 
-  // ...and an answer to someone's reply, which says whom it answers.
+  // ...and an answer to someone's reply, with its composer under that reply.
   await page
     .getByTestId(`board-reply-${first.id}`)
     .getByTestId("board-reply-to")
@@ -341,11 +342,15 @@ test("a post opens with its replies, takes replies and answers to replies, and s
   await expect(page.getByTestId("board-replying-to")).toContainText(
     "Replying to",
   );
+  await expect(page.locator("#board-reply-box")).toBeFocused();
+  await expect(
+    page.getByTestId(`board-reply-${first.id}`).getByTestId("board-reply-form"),
+  ).toBeVisible();
   await page.locator("#board-reply-box").fill("Agreed.");
   await page.getByTestId("board-reply-submit").click();
-  await expect(page.getByTestId("board-replies").locator("> li")).toHaveCount(
-    3,
-  );
+  await expect(
+    page.getByTestId(`board-reply-${first.id}`).locator("> ol > li"),
+  ).toHaveCount(1);
   const nested = relay.events
     .filter((e) => e.kind === 45003 && e.pubkey === OWNER)
     .at(-1);
@@ -354,7 +359,9 @@ test("a post opens with its replies, takes replies and answers to replies, and s
     ["e", p.id, "", "root"],
     ["e", first.id, "", "reply"],
   ]);
-  await expect(page.getByTestId("board-replies")).toContainText("replying to");
+  await expect(
+    page.getByTestId(`board-reply-${first.id}`).locator("> ol > li"),
+  ).toHaveAttribute("data-testid", `board-reply-${nested?.id}`);
 
   // The thread is linkable: a reload opens the same post.
   await page.reload();
@@ -363,12 +370,243 @@ test("a post opens with its replies, takes replies and answers to replies, and s
     "Which editor?",
   );
   await expect(page.getByTestId("board-replies").locator("> li")).toHaveCount(
-    3,
+    2,
   );
+  await expect(
+    page.getByTestId(`board-reply-${first.id}`).locator("> ol > li"),
+  ).toHaveAttribute("data-testid", `board-reply-${nested?.id}`);
   await page.getByTestId("board-back").click();
   await expect(page.getByTestId("board-posts")).toBeVisible();
   await expect(page).not.toHaveURL(/post=/);
 });
+
+test("the reply box follows the chosen parent, keeps the draft, and sends to that parent by keyboard", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const p = post(ANN, now() - 500, "Plan the release");
+  const first = {
+    ...reply(ANN, now() - 400, p.id),
+    content: "Start with the web app.",
+  };
+  const second = {
+    ...reply(BOB, now() - 300, p.id),
+    content: "What about mobile?",
+  };
+  for (const event of [p, first, second]) relay.seed(event);
+  await open(page, relay, { post: p.id });
+
+  const firstAction = page
+    .getByTestId(`board-reply-content-${first.id}`)
+    .getByTestId("board-reply-to");
+  await firstAction.focus();
+  await firstAction.press("Enter");
+  const box = page.locator("#board-reply-box");
+  const formParent = () =>
+    page
+      .getByTestId("board-reply-form")
+      .evaluate((el) => el.closest("li")?.getAttribute("data-testid") ?? null);
+  await expect(box).toBeFocused();
+  await box.fill("Let's test it first.");
+  expect(await formParent()).toBe(`board-reply-${first.id}`);
+
+  await page
+    .getByTestId(`board-reply-content-${second.id}`)
+    .getByTestId("board-reply-to")
+    .click();
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue("Let's test it first.");
+  expect(await formParent()).toBe(`board-reply-${second.id}`);
+  await expect(page.getByTestId("board-reply-form")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Reply to the post instead" }).click();
+  await expect(box).toBeFocused();
+  expect(await formParent()).toBeNull();
+  await expect(box).toHaveValue("Let's test it first.");
+  await firstAction.click();
+  await box.press("Control+Enter");
+  await expect(
+    page.getByTestId(`board-reply-${first.id}`).locator("> ol > li"),
+  ).toHaveCount(1);
+  await expect(page.getByTestId(`board-reply-${first.id}`)).toContainText(
+    "Let's test it first.",
+  );
+  const written = relay.events.find(
+    (event) => event.kind === 45003 && event.pubkey === OWNER,
+  );
+  expect(written?.tags).toEqual([
+    ["h", BOARD],
+    ["e", p.id, "", "root"],
+    ["e", first.id, "", "reply"],
+  ]);
+  await expect(box).toHaveValue("");
+});
+
+test("a refused nested reply keeps its draft and parent for retry", async ({
+  page,
+}) => {
+  let refusing = true;
+  const relay = relayWithBoard({
+    refuse: (event) =>
+      refusing && event.kind === 45003 ? "restricted: try again later" : null,
+  });
+  const p = post(ANN, now() - 500, "Discuss it");
+  const parent = reply(BOB, now() - 400, p.id);
+  relay.seed(p);
+  relay.seed(parent);
+  await open(page, relay, { post: p.id });
+  const branch = page.getByTestId(`board-reply-${parent.id}`);
+  await branch.getByTestId("board-reply-to").click();
+  await page.locator("#board-reply-box").fill("Keep this answer.");
+  await page.getByTestId("board-reply-submit").click();
+  await expect(branch.getByTestId("board-reply-problem")).toContainText(
+    "try again later",
+  );
+  await expect(branch.getByTestId("board-reply-form")).toBeVisible();
+  await expect(page.locator("#board-reply-box")).toHaveValue(
+    "Keep this answer.",
+  );
+
+  refusing = false;
+  await page.getByTestId("board-reply-submit").click();
+  await expect(branch.locator("> ol > li")).toHaveCount(1);
+  await expect(branch).toContainText("Keep this answer.");
+  expect(
+    relay.events.filter(
+      (event) => event.kind === 45003 && event.pubkey === OWNER,
+    ),
+  ).toHaveLength(1);
+});
+
+test("deleting the selected parent keeps descendants and offers an explicit way to retarget the draft", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const p = post(ANN, now() - 500, "Still discussing");
+  const parent = reply(ANN, now() - 400, p.id);
+  const child = {
+    ...reply(BOB, now() - 300, p.id, parent.id),
+    content: "This answer should remain visible.",
+  };
+  for (const event of [p, parent, child]) relay.seed(event);
+  await open(page, relay, { post: p.id });
+  await liveOnBoard(page, relay);
+  await page
+    .getByTestId(`board-reply-content-${parent.id}`)
+    .getByTestId("board-reply-to")
+    .click();
+  await page.locator("#board-reply-box").fill("My unfinished answer.");
+  relay.deliver({
+    id: eid(),
+    kind: 5,
+    pubkey: ANN,
+    created_at: now(),
+    content: "",
+    sig: "sig",
+    tags: [
+      ["h", BOARD],
+      ["e", parent.id],
+    ],
+  });
+  await expect(page.getByTestId(`board-reply-${parent.id}`)).toHaveCount(0);
+  await expect(page.getByTestId("board-replies")).toContainText(child.content);
+  await expect(page.getByTestId("board-replying-to")).toContainText(
+    "no longer here",
+  );
+  await expect(page.locator("#board-reply-box")).toBeFocused();
+  await expect(page.locator("#board-reply-box")).toHaveValue(
+    "My unfinished answer.",
+  );
+  await expect(page.getByTestId("board-reply-submit")).toBeDisabled();
+
+  await page.getByRole("button", { name: "Reply to the post instead" }).click();
+  await expect(page.locator("#board-reply-box")).toBeFocused();
+  await page.getByTestId("board-reply-submit").click();
+  await expect(page.getByTestId("board-replies")).toContainText(
+    "My unfinished answer.",
+  );
+  const written = relay.events.find(
+    (event) => event.kind === 45003 && event.pubkey === OWNER,
+  );
+  expect(written?.tags).toEqual([
+    ["h", BOARD],
+    ["e", p.id, "", "reply"],
+  ]);
+});
+
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`nested replies keep their branches and fit at ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const relay = relayWithBoard();
+    const p = post(
+      ANN,
+      now() - 600,
+      "How should we ship the first version?",
+      "Let's agree on a small release we can try together.",
+    );
+    const parent = {
+      ...reply(ANN, now() - 500, p.id),
+      content: "Start with a small group and collect their feedback.",
+    };
+    const other = {
+      ...reply(BOB, now() - 400, p.id),
+      content: "We should also write a short welcome guide.",
+    };
+    const branch = [parent];
+    for (let i = 0; i < 6; i++)
+      branch.push({
+        ...reply(i % 2 ? ANN : BOB, now() - 300 + i, p.id, branch.at(-1)?.id),
+        content:
+          i === 0
+            ? "Agreed. Can we invite the first ten people this week?"
+            : `Follow-up ${i}: keep the first release small and easy to use.`,
+      });
+    for (const event of [p, other, ...branch.toReversed()]) relay.seed(event);
+    await open(page, relay, { post: p.id });
+    await expect(page.getByTestId("board-replies").locator("> li")).toHaveCount(
+      2,
+    );
+    for (let i = 1; i < branch.length; i++) {
+      await expect(
+        page
+          .getByTestId(`board-reply-${branch[i - 1].id}`)
+          .locator("> ol > li"),
+      ).toHaveAttribute("data-testid", `board-reply-${branch[i].id}`);
+    }
+    const firstBounds = await page
+      .getByTestId(`board-reply-content-${parent.id}`)
+      .boundingBox();
+    const childBounds = await page
+      .getByTestId(`board-reply-content-${branch[1].id}`)
+      .boundingBox();
+    expect(childBounds?.x).toBeGreaterThan(firstBounds?.x ?? 0);
+    const deepest = page.getByTestId(
+      `board-reply-content-${branch.at(-1)?.id}`,
+    );
+    expect((await deepest.boundingBox())?.width).toBeGreaterThan(200);
+    const thread = page.getByTestId("board-thread");
+    expect(
+      await thread.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+
+    await page
+      .getByTestId(`board-reply-content-${parent.id}`)
+      .getByTestId("board-reply-to")
+      .click();
+    await page
+      .locator("#board-reply-box")
+      .fill("Yes, let's invite them and learn from what they need.");
+    await waitForAnimations(page);
+    await thread.screenshot({
+      path: testInfo.outputPath("board-nested-replies.png"),
+    });
+  });
+}
 
 test("a vote is one record, changing it is another, and pressing it again takes it back", async ({
   page,

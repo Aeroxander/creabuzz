@@ -25,7 +25,7 @@ One community is your entire workspace. Work, conversation, agents, automation, 
 *Desktop app supports all seven surfaces today.*
 
 - **Stream** — Slack-like, fast. Mandatory topics → sub-replies. Zero-notification default.
-- **Forum** — Discourse-like, slow. Post → flat replies. Zero-notification default.
+- **Forum** — Async discussions. Replies nest under the post or comment they answer. Zero-notification default.
 - **Workflow** — Structured, traceable. Steps → approval gates. Approvals only.
 
 One event log. One search index. Three lenses.

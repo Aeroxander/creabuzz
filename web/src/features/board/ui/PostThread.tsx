@@ -1,14 +1,14 @@
 /**
  * One post opened: its text, the replies under it, and a box to reply.
  *
- * Replies are in the order they were written, each with its own vote; an answer
- * to another reply says whom it answers. Only the author can delete their own
+ * Replies nest under the comment they answer, with an inline composer at the
+ * selected parent. Only the author can delete their own
  * post or reply, after a confirmation. A slot above the text takes the header
  * for a post that is about a DAO decision.
  */
 
 import { ArrowLeft, ScrollText } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -20,9 +20,11 @@ import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 import type { BoardComment, BoardPost } from "../lib/board-model";
+import { commentThreads } from "../lib/comment-threads";
 import type { BoardActions } from "../use-board-actions";
 import { AuthorChip } from "./AuthorChip";
 import { BoardMarkdown } from "./BoardMarkdown";
+import { CommentReplies } from "./CommentReplies";
 import { VoteButtons } from "./VoteButtons";
 
 interface Target {
@@ -58,11 +60,33 @@ export function PostThread({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Target | null>(null);
+  const replyBox = useRef<HTMLTextAreaElement>(null);
+  const sending = useRef(false);
+  const focusRequested = useRef(false);
 
   const nameOf = (pubkey: string) =>
     resolveUserName(profiles?.[pubkey], pubkey);
   const byId = new Map(comments.map((c) => [c.id, c]));
   const replyingTo = replyTo ? byId.get(replyTo) : undefined;
+  const threads = useMemo(() => commentThreads(comments), [comments]);
+  const focusTarget = replyTo === null ? null : (replyingTo?.id ?? post.id);
+
+  useEffect(() => {
+    if (focusTarget !== null || focusRequested.current)
+      replyBox.current?.focus();
+    focusRequested.current = false;
+  }, [focusTarget]);
+
+  const selectReply = (id: string | null) => {
+    if (sending.current) return;
+    setProblem(null);
+    if (id === replyTo) {
+      replyBox.current?.focus();
+      return;
+    }
+    focusRequested.current = true;
+    setReplyTo(id);
+  };
 
   const run = async (what: string, work: () => Promise<unknown>) => {
     try {
@@ -80,11 +104,19 @@ export function PostThread({
   };
 
   const sendReply = async () => {
+    if (sending.current) return;
     if (!needAccount("reply")) return;
+    if (replyTo !== null && !replyingTo) {
+      setProblem(
+        "That reply is no longer here. Choose another reply, or reply to the post instead.",
+      );
+      return;
+    }
     if (draft.trim() === "") {
       setProblem("Write something first.");
       return;
     }
+    sending.current = true;
     setBusy(true);
     setProblem(null);
     try {
@@ -102,6 +134,7 @@ export function PostThread({
           : "Couldn't send that. Try again.",
       );
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -115,6 +148,78 @@ export function PostThread({
       if (target.kind === "post") onBack();
     });
   };
+
+  const replyForm = (
+    <form
+      className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/20 p-3"
+      data-testid="board-reply-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void sendReply();
+      }}
+    >
+      {replyTo !== null ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="board-replying-to"
+          id="board-reply-target"
+          role={replyingTo ? "status" : "alert"}
+        >
+          {replyingTo
+            ? `Replying to ${nameOf(replyingTo.author)}.`
+            : "The reply you selected is no longer here. Your draft is kept."}{" "}
+          <button
+            className="underline"
+            disabled={busy}
+            onClick={() => selectReply(null)}
+            type="button"
+          >
+            Reply to the post instead
+          </button>
+        </p>
+      ) : null}
+      <label className="sr-only" htmlFor="board-reply-box">
+        Write a reply
+      </label>
+      <textarea
+        aria-describedby={replyTo !== null ? "board-reply-target" : undefined}
+        className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+        disabled={busy}
+        id="board-reply-box"
+        ref={replyBox}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            void sendReply();
+          }
+        }}
+        placeholder={
+          me === null ? "Create your account to reply." : "Write a reply"
+        }
+        value={draft}
+      />
+      {problem ? (
+        <p
+          className="text-xs text-destructive"
+          data-testid="board-reply-problem"
+          role="alert"
+        >
+          {problem}
+        </p>
+      ) : null}
+      <div>
+        <Button
+          data-testid="board-reply-submit"
+          disabled={busy || (replyTo !== null && !replyingTo)}
+          size="sm"
+          type="submit"
+        >
+          {busy ? "Sending…" : "Reply"}
+        </Button>
+      </div>
+    </form>
+  );
 
   return (
     <div
@@ -175,136 +280,38 @@ export function PostThread({
               <BoardMarkdown text={post.body} />
             </div>
           ) : null}
+          <button
+            className="mt-2 text-xs text-muted-foreground underline disabled:opacity-50"
+            data-testid="board-reply-post"
+            disabled={busy}
+            onClick={() => selectReply(null)}
+            type="button"
+          >
+            Reply to post
+          </button>
         </div>
       </article>
 
+      {!replyingTo ? <div className="px-4 pb-4">{replyForm}</div> : null}
       <section aria-label="Replies" className="border-t px-4 py-3">
         <h3 className="text-sm font-semibold">
           {comments.length === 1 ? "1 reply" : `${comments.length} replies`}
         </h3>
-        <ol className="mt-3 flex flex-col gap-4" data-testid="board-replies">
-          {comments.map((comment) => {
-            const parent = comment.replyTo
-              ? byId.get(comment.replyTo)
-              : undefined;
-            return (
-              <li
-                className="flex gap-2"
-                data-testid={`board-reply-${comment.id}`}
-                key={comment.id}
-              >
-                <VoteButtons
-                  myVote={comment.myVote}
-                  onVote={(direction) => vote(comment, direction)}
-                  score={comment.score}
-                  subject={`reply by ${nameOf(comment.author)}`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <AuthorChip
-                      badge={badges?.[comment.author]}
-                      profile={profiles?.[comment.author]}
-                      pubkey={comment.author}
-                    />
-                    <span>{shortRelativeTime(comment.createdAt)}</span>
-                    {parent ? (
-                      <span>replying to {nameOf(parent.author)}</span>
-                    ) : null}
-                  </div>
-                  <BoardMarkdown text={comment.body} />
-                  <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
-                    <button
-                      className="underline"
-                      data-testid="board-reply-to"
-                      onClick={() => {
-                        setReplyTo(comment.id);
-                        document.getElementById("board-reply-box")?.focus();
-                      }}
-                      type="button"
-                    >
-                      Reply
-                    </button>
-                    {me !== null && me === comment.author ? (
-                      <button
-                        className="underline"
-                        data-testid="board-delete-reply"
-                        onClick={() =>
-                          setDeleting({ kind: "reply", id: comment.id })
-                        }
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-
-      <form
-        className="mt-auto flex flex-col gap-2 border-t p-4"
-        data-testid="board-reply-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void sendReply();
-        }}
-      >
-        {replyingTo ? (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="board-replying-to"
-          >
-            Replying to {nameOf(replyingTo.author)}.{" "}
-            <button
-              className="underline"
-              onClick={() => setReplyTo(null)}
-              type="button"
-            >
-              Reply to the post instead
-            </button>
-          </p>
-        ) : null}
-        <label className="sr-only" htmlFor="board-reply-box">
-          Write a reply
-        </label>
-        <textarea
-          className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-          id="board-reply-box"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-              event.preventDefault();
-              void sendReply();
-            }
+        <CommentReplies
+          context={{
+            profiles,
+            badges,
+            me,
+            busy,
+            replyTo,
+            replyForm,
+            onVote: vote,
+            onReply: selectReply,
+            onDelete: (id) => setDeleting({ kind: "reply", id }),
           }}
-          placeholder={
-            me === null ? "Create your account to reply." : "Write a reply"
-          }
-          value={draft}
+          threads={threads}
         />
-        {problem ? (
-          <p
-            className="text-xs text-destructive"
-            data-testid="board-reply-problem"
-            role="alert"
-          >
-            {problem}
-          </p>
-        ) : null}
-        <div>
-          <Button
-            data-testid="board-reply-submit"
-            disabled={busy}
-            size="sm"
-            type="submit"
-          >
-            {busy ? "Sending…" : "Reply"}
-          </Button>
-        </div>
-      </form>
+      </section>
 
       <ConfirmDialog
         confirmLabel="Delete"

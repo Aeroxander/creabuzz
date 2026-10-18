@@ -168,6 +168,7 @@ export function BoardView({
         badges={extras.badges}
         comments={board.comments.get(open.id) ?? []}
         header={extras.header}
+        key={open.id}
         me={me}
         needAccount={needAccount}
         onBack={() => onOpenPost(null)}
