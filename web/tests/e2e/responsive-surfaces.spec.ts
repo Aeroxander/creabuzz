@@ -149,7 +149,11 @@ async function overflow(page: Page) {
   });
 }
 
-/** Controls that are clipped out of the viewport cannot be reached at all. */
+/**
+ * Controls that are clipped out of the viewport cannot be reached at all. A control that sits past the edge of a strip that
+ * scrolls sideways (a tab bar on a phone) can be reached by scrolling it, so it does not count, as long as the strip itself
+ * is on screen.
+ */
 async function expectNoClippedControls(page: Page, container: string) {
   const containers = await page.locator(container).count();
   expect(
@@ -162,7 +166,28 @@ async function expectNoClippedControls(page: Page, container: string) {
       nodes
         .map((node) => {
           const rect = node.getBoundingClientRect();
+          // The nearest ancestor that is meant to scroll sideways (a vertical scroller's computed overflow-x is also "auto", so
+          // the class is what says so) and really has more to show than fits.
+          let strip: Element | null = node.parentElement;
+          while (strip) {
+            const style = getComputedStyle(strip);
+            if (
+              (strip.classList.contains("overflow-x-auto") ||
+                strip.classList.contains("overflow-x-scroll")) &&
+              (style.overflowX === "auto" || style.overflowX === "scroll") &&
+              strip.scrollWidth > strip.clientWidth
+            ) {
+              break;
+            }
+            strip = strip.parentElement;
+          }
+          const stripRect = strip?.getBoundingClientRect();
+          const reachableByScrolling =
+            stripRect !== undefined &&
+            stripRect.left >= -1 &&
+            stripRect.right <= window.innerWidth + 1;
           return {
+            reachableByScrolling,
             label: (node.getAttribute("aria-label") || node.textContent || "")
               .trim()
               .slice(0, 24),
@@ -173,7 +198,9 @@ async function expectNoClippedControls(page: Page, container: string) {
         })
         .filter(
           (r) =>
-            r.width > 0 && (r.right > window.innerWidth + 1 || r.left < -1),
+            r.width > 0 &&
+            !r.reachableByScrolling &&
+            (r.right > window.innerWidth + 1 || r.left < -1),
         ),
     );
   expect(
