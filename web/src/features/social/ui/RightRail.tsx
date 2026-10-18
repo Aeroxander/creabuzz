@@ -1,6 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
+
+import { launchCoord, LaunchVoteCard } from "@/features/feed/ui/LaunchVoteCard";
+import { EMPTY_TALLY, sortByMode } from "@/features/feed/lib/ranking";
+import { useFeedNotes, useVoteTallies } from "@/features/feed/use-feed";
+import { useLaunches } from "@/features/launchpad/use-launches";
 
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
@@ -47,6 +52,65 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
         {title}
       </h2>
       {children}
+    </section>
+  );
+}
+
+/** The launches drawing the most weighted support right now, with how much is being said about each. */
+function TrendingLaunchesCard() {
+  const launches = useLaunches();
+  const notes = useFeedNotes();
+  const { tallies } = useVoteTallies();
+  const trending = useMemo(
+    () =>
+      sortByMode(
+        (launches.data ?? []).filter(
+          (l) => l.record.stage !== "draft" && l.record.stage !== "failed",
+        ),
+        "hot",
+        (l) => tallies.get(launchCoord(l.record))?.score ?? 0,
+        (l) => l.record.createdAt,
+      ).slice(0, 4),
+    [launches.data, tallies],
+  );
+  const postsPerLaunch = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const note of notes.data ?? []) {
+      for (const coord of note.launches) {
+        counts.set(coord, (counts.get(coord) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [notes.data]);
+  if (trending.length === 0) return null;
+  return (
+    <section
+      aria-labelledby="trending-launches-title"
+      className="glass overflow-hidden rounded-2xl border"
+    >
+      <h2
+        className="px-4 pb-1 pt-3 text-lg font-bold text-black dark:text-white"
+        id="trending-launches-title"
+      >
+        Trending launches
+      </h2>
+      <ul
+        className="flex flex-col gap-2 p-3 pt-1"
+        data-testid="trending-launches"
+      >
+        {trending.map((launch) => {
+          const coord = launchCoord(launch.record);
+          return (
+            <li key={coord}>
+              <LaunchVoteCard
+                comments={postsPerLaunch.get(coord) ?? 0}
+                record={launch.record}
+                tally={tallies.get(coord) ?? EMPTY_TALLY}
+              />
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -99,11 +163,12 @@ function WhoToFollowCard() {
   );
 }
 
-/** The right rail: search, trending hashtags and people worth following. */
+/** The right rail: search, trending launches and hashtags, and people worth following. */
 export function RightRail() {
   return (
     <div className="flex flex-col gap-4">
       <SearchBox />
+      <TrendingLaunchesCard />
       <TrendingCard />
       <WhoToFollowCard />
     </div>

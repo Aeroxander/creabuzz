@@ -171,6 +171,7 @@ test("Home connects project reports, reading history, discussion and the four ma
   seed(relay);
   await install(page, relay);
   await page.goto("/");
+  await page.getByTestId("social-tab-projects").click();
   const progress = page.getByTestId("project-progress");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).not.toContainText("Fake official update");
@@ -208,6 +209,7 @@ test("Home connects project reports, reading history, discussion and the four ma
     ),
   );
   await page.reload();
+  await page.getByTestId("social-tab-projects").click();
   await expect(page.getByTestId("project-progress")).toContainText(
     "1 new to you",
   );
@@ -259,6 +261,7 @@ test("marking reports from multiple projects uses one atomic reading-history wri
     };
   });
   await page.goto("/");
+  await page.getByTestId("social-tab-projects").click();
   const progress = page.getByTestId("project-progress");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).toContainText("Second project ships");

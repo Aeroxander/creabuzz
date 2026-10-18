@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { HomeHero } from "@/features/feed/ui/HomeHero";
+import { HomeYours } from "@/features/feed/ui/HomeYours";
+import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
-import { APP_NAME } from "@/shared/constants/brand";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
@@ -12,26 +14,26 @@ import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
 import { PageBar, SocialShell } from "./SocialShell";
 import { TabStrip } from "./TabStrip";
-import { useLaunchUpdates } from "../use-launch-updates";
 import { useRankedRows } from "../use-ranking";
-import { useFollowing, useNotesById, useTimeline } from "../use-social-data";
+import { useFollowing, useTimeline } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 
-type Tab = "creaton" | "updates" | "following";
+type Tab = "everyone" | "following" | "projects";
 
 const TABS: readonly { id: Tab; label: string }[] = [
-  { id: "creaton", label: APP_NAME },
-  { id: "updates", label: "Launch Updates" },
+  { id: "everyone", label: "Everyone" },
   { id: "following", label: "Following" },
+  { id: "projects", label: "Projects" },
 ];
 
 /**
- * The social home: every post on this relay (the community feed), or just the
- * people you follow, with a composer on top.
+ * Home: every post on this server (ranked by recency and trust-weighted likes), or just the people you follow, or the
+ * projects' own progress reports, with one composer on top. Above it, for someone signed in, what is waiting on them and
+ * their organizations; for a visitor, what this place is for.
  */
 export function SocialHomePage() {
   const me = existingUserPubkey();
-  const [tab, setTab] = useState<Tab>("creaton");
+  const [tab, setTab] = useState<Tab>("everyone");
   const following = useFollowing(me);
 
   const authors =
@@ -42,38 +44,27 @@ export function SocialHomePage() {
     key: [tab, authors ? [...authors].sort().join(",") : "all"],
     authors,
     reposts: true,
-    enabled: tab === "creaton" || (tab === "following" && following.isSuccess),
+    enabled: tab === "everyone" || (tab === "following" && following.isSuccess),
   });
-  // Updates: the teams' official launch updates, newest first.
-  const launchUpdates = useLaunchUpdates();
-  const updateRows = useNotesById(
-    launchUpdates.updates.slice(0, 50).map((u) => u.id),
-  );
   const loaded = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
-  // Creaton: recency lifted by trust-weighted engagement. Following stays
+  // Everyone: recency lifted by trust-weighted engagement. Following stays
   // strictly chronological.
-  const rows = useRankedRows(loaded, tab === "creaton");
+  const rows = useRankedRows(loaded, tab === "everyone");
 
   return (
     <SocialShell>
-      <PageBar title="Feed">
+      <PageBar title="Home">
         <TabStrip label="Timeline" onChange={setTab} tabs={TABS} value={tab} />
       </PageBar>
+      <div className="flex flex-col gap-3 px-3 pt-3" data-testid="home-top">
+        {me ? <HomeYours me={me} /> : null}
+        <HomeHero />
+      </div>
       <PostComposer />
-      {tab === "updates" ? (
-        launchUpdates.isLoading || updateRows.isLoading ? (
-          <TimelineSkeleton />
-        ) : (updateRows.data?.length ?? 0) === 0 ? (
-          <EmptyState
-            testId="social-updates-empty"
-            title="No launch updates yet"
-          >
-            When a launch's team posts an update, it appears here. For launches
-            you follow, it also reaches your notifications.
-          </EmptyState>
-        ) : (
-          <PostList rows={updateRows.data ?? []} />
-        )
+      {tab === "projects" ? (
+        <div className="p-3">
+          <ProjectProgressFeed />
+        </div>
       ) : tab === "following" && !me ? (
         <EmptyState title="Sign in to see who you follow">
           {needAccountTo("follow people and see their posts here")}

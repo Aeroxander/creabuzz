@@ -17,7 +17,7 @@ import { useNotificationBadge } from "../use-discovery";
 import { RightRail } from "./RightRail";
 
 type NavLinkTarget =
-  | { to: "/social" }
+  | { to: "/" }
   | { to: "/social/explore" }
   | { to: "/social/notifications" }
   | { to: "/social/messages" }
@@ -40,10 +40,10 @@ function useNavEntries(): NavEntry[] {
   return [
     {
       key: "feed",
-      label: "Feed",
+      label: "Home",
       icon: Feather,
-      link: { to: "/social" },
-      prefix: "/social",
+      link: { to: "/" },
+      prefix: "/",
     },
     {
       key: "explore",
@@ -111,12 +111,12 @@ function useCompose() {
       return el !== null;
     };
     if (focus()) return;
-    void navigate({ to: "/social" }).then(() => setTimeout(focus, 150));
+    void navigate({ to: "/" }).then(() => setTimeout(focus, 150));
   };
 }
 
 function pathMatches(pathname: string, prefix: string): boolean {
-  if (prefix === "/social") return pathname === "/social";
+  if (prefix === "/") return pathname === "/";
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
@@ -133,6 +133,7 @@ export function SocialShell({
   rail?: boolean;
 }) {
   const entries = useNavEntries();
+  const mobileEntries = entries.filter((entry) => entry.key !== "feed");
   const compose = useCompose();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -165,20 +166,24 @@ export function SocialShell({
         </nav>
 
         <div className="glass min-h-full min-w-0 border-x">
-          <nav
-            aria-label="Social"
-            className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"
-            data-testid="social-nav-mobile"
-          >
-            {entries.map((entry) => (
-              <SocialNavLink
-                compact
-                entry={entry}
-                key={entry.key}
-                pathname={pathname}
-              />
-            ))}
-          </nav>
+          {/* On a phone Home is already in the app's own tab bar, so the strip only carries the rest, and is left out when
+              that is just one thing. */}
+          {mobileEntries.length > 1 ? (
+            <nav
+              aria-label="Social"
+              className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"
+              data-testid="social-nav-mobile"
+            >
+              {mobileEntries.map((entry) => (
+                <SocialNavLink
+                  compact
+                  entry={entry}
+                  key={entry.key}
+                  pathname={pathname}
+                />
+              ))}
+            </nav>
+          ) : null}
           <div className="min-h-full">{children}</div>
         </div>
 

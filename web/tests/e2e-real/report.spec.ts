@@ -33,7 +33,7 @@ test("a member reports a post and the owner sees it in the moderation queue", as
   const inviteUrl = await makeInviteLink(owner);
 
   // The owner posts to the community's social feed.
-  await owner.goto("/social");
+  await owner.goto("/");
   await owner.getByTestId("social-composer-input").fill(post);
   await owner.getByTestId("social-composer-submit").click();
   await expect(
@@ -42,7 +42,7 @@ test("a member reports a post and the owner sees it in the moderation queue", as
 
   // The invited person finds it and reports it.
   const member = await joinWithInvite(browser, inviteUrl, host);
-  await member.goto(`http://${host}/social`);
+  await member.goto(`http://${host}/`);
   const theirs = member.getByTestId("social-post").filter({ hasText: post });
   await expect(theirs).toBeVisible({ timeout: 30_000 });
   await theirs.getByTestId("social-report").click();
@@ -70,7 +70,7 @@ test("your own post offers no Report", async ({ page: owner }) => {
   const name = unique();
   await signInAsNewAccount(owner);
   await createCommunity(owner, name);
-  await owner.goto("/social");
+  await owner.goto("/");
   await owner.getByTestId("social-composer-input").fill(`A post ${name}`);
   await owner.getByTestId("social-composer-submit").click();
   const mine = owner

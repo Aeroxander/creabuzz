@@ -2,7 +2,7 @@ import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   component: lazyRouteComponent(
-    () => import("@/features/feed/ui/FeedPage"),
-    "FeedPage",
+    () => import("@/features/social/ui/SocialHomePage"),
+    "SocialHomePage",
   ),
 });

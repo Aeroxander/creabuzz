@@ -65,19 +65,24 @@ test("a post appears on Home and a reply opens its thread", async ({
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 
-  await page.getByTestId("composer-input").fill("Shipping the #agents MVP");
-  await page.getByTestId("composer-submit").click();
-  const card = page.getByTestId("note-card").filter({ hasText: "MVP" });
+  await page
+    .getByTestId("social-composer-input")
+    .fill("Shipping the #agents MVP");
+  await page.getByTestId("social-composer-submit").click();
+  const card = page.getByTestId("social-post").filter({ hasText: "MVP" });
   await expect(card).toBeVisible();
   const post = relay.events.find((e) => e.kind === 1);
   expect(post?.tags).toContainEqual(["t", "agents"]);
   expect(post?.tags.some((t) => t[0] === "h")).toBe(false);
 
-  await card.getByTestId("note-reply").click();
-  await page.getByTestId("reply-composer-input").fill("Congrats!");
-  await page.getByTestId("reply-composer-submit").click();
-  await expect(page.getByTestId("thread-replies")).toContainText("Congrats!");
-  await expect(card.getByTestId("note-reply")).toHaveText("1 reply");
+  // Replying opens the post's own page, where the conversation is.
+  await card.getByTestId("social-reply").click();
+  await expect(page).toHaveURL(/\/social\/post\//);
+  await page.getByTestId("social-reply-composer-input").fill("Congrats!");
+  await page.getByTestId("social-reply-composer-submit").click();
+  await expect(
+    page.getByTestId("social-post").filter({ hasText: "Congrats!" }),
+  ).toBeVisible();
   const reply = relay.events.find(
     (e) => e.kind === 1 && e.content === "Congrats!",
   );
@@ -90,21 +95,21 @@ test("a note's author can delete it from Home", async ({ page }) => {
   await relay.install(page);
   await signIn(page);
   await page.goto("/");
-  await page.getByTestId("composer-input").fill("A note I will delete");
-  await page.getByTestId("composer-submit").click();
+  await page.getByTestId("social-composer-input").fill("A note I will delete");
+  await page.getByTestId("social-composer-submit").click();
   const mine = page
-    .getByTestId("note-card")
+    .getByTestId("social-post")
     .filter({ hasText: "A note I will delete" });
   await expect(mine).toBeVisible();
   // Other people's notes carry no delete button.
   await expect(
     page
-      .getByTestId("note-card")
+      .getByTestId("social-post")
       .filter({ hasText: "Someone else's note" })
-      .getByTestId("note-delete"),
+      .getByTestId("social-delete"),
   ).toHaveCount(0);
 
-  await mine.getByTestId("note-delete").click();
+  await mine.getByTestId("social-delete").click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(mine).toHaveCount(0);
   const note = relay.events.find((e) => e.content === "A note I will delete");
@@ -114,10 +119,12 @@ test("a note's author can delete it from Home", async ({ page }) => {
     .toContainEqual(["e", note?.id]);
 });
 
-test("votes are trust-weighted: an org admin outweighs a swarm of new keys", async ({
+test("votes are trust-weighted: an org admin outweighs a swarm of new keys (on a launch's discussion)", async ({
   page,
 }) => {
   const relay = createMockRelay();
+  // Posts on Home are liked, not voted; up and down votes live where a team talks about its launch.
+  relay.seed({ ...LAUNCH, tags: [...LAUNCH.tags, ["team", ALICE, "member"]] });
   // The admin owns the org root; the relay only accepts a root from an admin.
   relay.seed(
     event({
@@ -127,7 +134,12 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys", asy
       content: JSON.stringify({ name: "Org", holders: [ADMIN], scope: {} }),
     }),
   );
-  const note = event({ kind: 1, pubkey: ALICE, content: "Weighted post" });
+  const note = event({
+    kind: 1,
+    pubkey: ALICE,
+    tags: [["a", COORD]],
+    content: "Weighted post",
+  });
   relay.seed(note);
   const vote = (pubkey: string, content: string) =>
     relay.seed(
@@ -146,7 +158,8 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys", asy
   for (const n of ["1", "2", "3", "4", "5"]) vote(n.repeat(64), "-");
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
+  await page.getByRole("tab", { name: "Discussion" }).click();
 
   const card = page
     .getByTestId("note-card")
@@ -208,9 +221,9 @@ test("a launch's discussion is posted with its coordinate and shows on Home", as
 
   await page.getByTestId("app-nav-home").click();
   const card = page
-    .getByTestId("note-card")
+    .getByTestId("social-post")
     .filter({ hasText: "Backing this one." });
-  await expect(card.getByTestId("note-launch")).toHaveText("Nebula DAO");
+  await expect(card.getByRole("link", { name: "Nebula DAO" })).toBeVisible();
   await expect(page.getByTestId("trending-launches")).toContainText(
     "Nebula DAO",
   );
@@ -321,16 +334,16 @@ test("posts are only copied to public relays when the author opts in", async ({
   await signIn(page);
   await page.goto("/");
 
-  await page.getByTestId("composer-input").fill("Only here");
-  await page.getByTestId("composer-submit").click();
+  await page.getByTestId("social-composer-input").fill("Only here");
+  await page.getByTestId("social-composer-submit").click();
   await expect(
-    page.getByTestId("note-card").filter({ hasText: "Only here" }),
+    page.getByTestId("social-post").filter({ hasText: "Only here" }),
   ).toBeVisible();
   expect(publicSockets).toEqual([]);
 
-  await page.getByTestId("composer-mirror").check();
-  await page.getByTestId("composer-input").fill("Everywhere");
-  await page.getByTestId("composer-submit").click();
+  await page.getByTestId("social-composer-mirror").check();
+  await page.getByTestId("social-composer-input").fill("Everywhere");
+  await page.getByTestId("social-composer-submit").click();
   await expect.poll(() => publicSockets.length).toBe(2);
 });
 

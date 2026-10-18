@@ -270,7 +270,7 @@ test("raises you backed come from your wallet's bids, and a raise that can't be 
   );
 });
 
-test("on a phone, Portfolio is one of the four destinations and Home still links to it", async ({
+test("on a phone, Portfolio is one of the four destinations", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 780 });
@@ -288,7 +288,7 @@ test("on a phone, Portfolio is one of the four destinations and Home still links
     .evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(nav).toBe(0);
 
-  await page.getByTestId("home-portfolio-link").click();
+  await page.getByTestId("app-nav-portfolio").click();
   await expect(page).toHaveURL(/\/portfolio$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Portfolio" }),

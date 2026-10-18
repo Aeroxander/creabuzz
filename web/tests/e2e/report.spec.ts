@@ -181,18 +181,18 @@ test("a post by someone else on Home can be reported, and your own cannot", asyn
   await relay.install(page);
   await signIn(page);
   await page.goto("/");
-  await page.getByTestId("composer-input").fill("A note of my own");
-  await page.getByTestId("composer-submit").click();
+  await page.getByTestId("social-composer-input").fill("A note of my own");
+  await page.getByTestId("social-composer-submit").click();
   const mine = page
-    .getByTestId("note-card")
+    .getByTestId("social-post")
     .filter({ hasText: "A note of my own" });
   await expect(mine).toBeVisible();
-  await expect(mine.getByTestId("note-report")).toHaveCount(0);
+  await expect(mine.getByTestId("social-report")).toHaveCount(0);
 
   const theirs = page
-    .getByTestId("note-card")
+    .getByTestId("social-post")
     .filter({ hasText: "Send me your seed phrase" });
-  await theirs.getByTestId("note-report").click();
+  await theirs.getByTestId("social-report").click();
   await page.getByTestId("report-reason-spam").check();
   await page.getByTestId("report-submit").click();
   await expect(page.getByTestId("report-form")).toHaveCount(0);
@@ -492,9 +492,9 @@ test("a post by someone else on Home can be banned for, by the owner, and the di
   await signIn(page);
   await page.goto("/");
   const theirs = page
-    .getByTestId("note-card")
+    .getByTestId("social-post")
     .filter({ hasText: "Send me your seed phrase" });
-  await theirs.getByTestId("note-ban").click();
+  await theirs.getByTestId("social-ban").click();
   await expect(page.getByTestId("ban-form")).toBeVisible();
   await expectAccessible(page, "the ban dialog on a post");
   await page.getByTestId("ban-yes").click();

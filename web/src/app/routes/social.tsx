@@ -1,10 +1,11 @@
-import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-const SocialHomePage = lazyRouteComponent(
-  () => import("@/features/social/ui/SocialHomePage"),
-  "SocialHomePage",
-);
-
+/**
+ * The feed lives on Home. This address keeps working for old links and bookmarks; every other page of the social section
+ * (`/social/explore`, `/social/notifications`, ...) is its own route and is unchanged.
+ */
 export const Route = createFileRoute("/social")({
-  component: SocialHomePage,
+  beforeLoad: () => {
+    throw redirect({ to: "/", replace: true });
+  },
 });

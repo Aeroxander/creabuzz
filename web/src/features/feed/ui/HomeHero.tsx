@@ -84,7 +84,7 @@ function Welcome() {
   return (
     <section
       aria-labelledby="welcome-title"
-      className="glass relative overflow-hidden rounded-2xl border px-6 py-8 sm:px-10 sm:py-10"
+      className="glass relative overflow-hidden rounded-2xl border px-5 py-6 sm:px-10 sm:py-10"
       data-testid="home-welcome"
     >
       <div
@@ -117,21 +117,26 @@ function Welcome() {
           <Link to="/discover">Look around</Link>
         </Button>
       </div>
-      <ul className="mt-8 grid gap-4 sm:grid-cols-3">
-        {IDEAS.map(({ icon: Icon, title, body }) => (
-          <li className="flex gap-3" key={title}>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-primary-ink">
-              <Icon aria-hidden className="h-4 w-4" />
-            </span>
-            <span>
-              <span className="block text-sm font-bold">{title}</span>
-              <span className="block text-sm text-muted-foreground">
-                {body}
+      <details className="mt-6" data-testid="home-welcome-ideas">
+        <summary className="cursor-pointer text-sm font-semibold underline-offset-2 hover:underline">
+          How it works
+        </summary>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-3">
+          {IDEAS.map(({ icon: Icon, title, body }) => (
+            <li className="flex gap-3" key={title}>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-primary-ink">
+                <Icon aria-hidden className="h-4 w-4" />
               </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+              <span>
+                <span className="block text-sm font-bold">{title}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {body}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
     </section>
   );
 }
