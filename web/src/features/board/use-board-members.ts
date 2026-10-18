@@ -7,9 +7,11 @@
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { buildAddMemberEvent } from "@/features/channels/lib/channel-create-events";
+import { subscribeChannel } from "@/features/channels/subscribe-channel";
+import { KIND_MEMBER_LIST } from "@/features/communities/lib/access";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -17,6 +19,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { type BoardMember, parseMembers } from "./lib/members";
 
 const KIND_GROUP_MEMBERS = 39002;
+const KIND_GROUP_ADMINS = 39001;
 
 async function fetchMembers(boardId: string): Promise<BoardMember[]> {
   const records = await queryEvents(relayWsUrl(), {
@@ -65,4 +68,40 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
     error: query.error,
     add,
   };
+}
+
+/**
+ * Keeps who may remove things on an open board current. The board's and the community's rosters are read again when either
+ * changes (someone is appointed or removed as an admin) and whenever the returned function is called, because a roster read
+ * once goes stale and never refreshes by itself.
+ */
+export function useRosterSync(boardId: string): () => void {
+  const client = useQueryClient();
+  const refresh = useCallback(() => {
+    void client.invalidateQueries({ queryKey: ["board-members", boardId] });
+    void client.invalidateQueries({ queryKey: ["community-people"] });
+  }, [client, boardId]);
+  useEffect(() => {
+    const since = Math.floor(Date.now() / 1000) - 10;
+    const stops = [
+      subscribeChannel(
+        relayWsUrl(),
+        {
+          kinds: [KIND_GROUP_ADMINS, KIND_GROUP_MEMBERS],
+          "#d": [boardId],
+          since,
+        },
+        { onEvent: refresh },
+      ),
+      subscribeChannel(
+        relayWsUrl(),
+        { kinds: [KIND_MEMBER_LIST], since },
+        { onEvent: refresh },
+      ),
+    ];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [boardId, refresh]);
+  return refresh;
 }

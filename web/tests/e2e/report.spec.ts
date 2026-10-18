@@ -106,7 +106,7 @@ test("a message by someone else can be reported with a reason and a note, and it
   await theirRow(page).hover();
   await theirRow(page).getByTestId("report-button").click();
   await expect(page.getByRole("dialog")).toContainText(
-    "Only this community's moderators will see this",
+    "Only this community's moderators will see this, and who you are",
   );
   // A reason has to be chosen first: nothing is sent without one.
   await expect(page.getByTestId("report-submit")).toBeDisabled();

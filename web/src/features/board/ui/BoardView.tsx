@@ -19,6 +19,7 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -31,12 +32,17 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
-import { type BoardPost, buildBoard } from "../lib/board-model";
+import {
+  type BoardPost,
+  buildBoard,
+  keepRemovals,
+  unfamiliarRemovers,
+} from "../lib/board-model";
 import { boardRemovers, canAddMembers } from "../lib/members";
 import type { PostStatus } from "../lib/post-status";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
-import { useBoardMembers } from "../use-board-members";
+import { useBoardMembers, useRosterSync } from "../use-board-members";
 import { BoardList } from "./BoardList";
 import { PostThread } from "./PostThread";
 
@@ -112,10 +118,31 @@ export function BoardView({
     return set;
   }, [members, community.people]);
   const canModerate = canAddMembers(members, me);
+  // What moderators have removed stays removed for this reader even if that moderator's role is later withdrawn.
+  const removedSoFar = useRef<{ board: string; ids: ReadonlySet<string> }>({
+    board: channel.id,
+    ids: new Set(),
+  });
+  const kept = useMemo(() => {
+    const previous =
+      removedSoFar.current.board === channel.id
+        ? removedSoFar.current.ids
+        : new Set<string>();
+    const ids = keepRemovals(previous, records.events, removers);
+    removedSoFar.current = { board: channel.id, ids };
+    return ids;
+  }, [records.events, removers, channel.id]);
   const board = useMemo(
-    () => buildBoard(records.events, me, removers),
-    [records.events, me, removers],
+    () => buildBoard(records.events, me, removers, kept),
+    [records.events, me, removers, kept],
   );
+  // The roster is read once and goes stale: keep it current, and look again when someone not known to be an owner or admin
+  // sends a removal (they may have been appointed since). Their removal is still ignored until the roster says otherwise.
+  const refreshRoster = useRosterSync(channel.id);
+  const unfamiliar = unfamiliarRemovers(records.events, removers).join(",");
+  useEffect(() => {
+    if (unfamiliar !== "") refreshRoster();
+  }, [unfamiliar, refreshRoster]);
 
   const authors = useMemo(() => {
     const set = new Set(board.posts.map((p) => p.author));

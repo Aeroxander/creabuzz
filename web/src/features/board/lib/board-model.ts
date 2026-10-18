@@ -151,37 +151,88 @@ function tally(
   return { score, myVote, myVoteIds };
 }
 
-/**
- * Ids removed by a deletion their own author sent, or by a removal from one of `removers` (the board's owners and admins)
- * of a post or a reply on this board.
- */
-function deletedIds(
+/** Posts and replies on this board that a removal event names, with who sent it and who wrote the target. */
+function removalsOfOthers(
+  events: readonly BoardEvent[],
+): { sender: string; target: string }[] {
+  const authors = new Map(events.map((event) => [event.id, event.pubkey]));
+  const kinds = new Map(events.map((event) => [event.id, event.kind]));
+  const found: { sender: string; target: string }[] = [];
+  for (const event of events) {
+    if (event.kind !== KIND_MODERATION_DELETE) continue;
+    for (const tag of event.tags) {
+      if (tag[0] !== "e" || typeof tag[1] !== "string") continue;
+      const kind = kinds.get(tag[1]);
+      if (kind !== KIND_FORUM_POST && kind !== KIND_FORUM_COMMENT) continue;
+      if (authors.get(tag[1]) === event.pubkey) continue;
+      found.push({ sender: event.pubkey, target: tag[1] });
+    }
+  }
+  return found;
+}
+
+/** Ids a removal from one of `removers` takes away: someone else's post or reply on this board. */
+export function removedByModerators(
   events: readonly BoardEvent[],
   removers: ReadonlySet<string>,
 ): Set<string> {
+  return new Set(
+    removalsOfOthers(events)
+      .filter(({ sender }) => removers.has(sender))
+      .map(({ target }) => target),
+  );
+}
+
+/**
+ * Who sent a removal of someone else's post or reply without being a known owner or admin of the board. Their removal is not
+ * applied, but the roster the board holds may be out of date (someone was appointed after it was read), so the caller checks
+ * the roster again when this list changes. Sorted and without repeats.
+ */
+export function unfamiliarRemovers(
+  events: readonly BoardEvent[],
+  removers: ReadonlySet<string>,
+): string[] {
+  return [
+    ...new Set(
+      removalsOfOthers(events)
+        .filter(({ sender }) => !removers.has(sender))
+        .map(({ sender }) => sender),
+    ),
+  ].sort();
+}
+
+/**
+ * What moderators have removed so far, remembered: a removal that was accepted from someone who was an owner or admin then stays
+ * in force if their role is later withdrawn. Returns `previous` itself when nothing was added.
+ */
+export function keepRemovals(
+  previous: ReadonlySet<string>,
+  events: readonly BoardEvent[],
+  removers: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const now = removedByModerators(events, removers);
+  if ([...now].every((id) => previous.has(id))) return previous;
+  return new Set([...previous, ...now]);
+}
+
+/** Ids removed by a deletion their own author sent, by a moderator's removal, or earlier by a moderator and remembered. */
+function deletedIds(
+  events: readonly BoardEvent[],
+  removers: ReadonlySet<string>,
+  kept: ReadonlySet<string>,
+): Set<string> {
   const authors = new Map(events.map((event) => [event.id, event.pubkey]));
-  const kinds = new Map(events.map((event) => [event.id, event.kind]));
-  const deleted = new Set<string>();
+  const deleted = new Set<string>(kept);
   for (const event of events) {
     if (event.kind !== KIND_DELETION && event.kind !== KIND_MODERATION_DELETE) {
       continue;
     }
     for (const tag of event.tags) {
       if (tag[0] !== "e" || typeof tag[1] !== "string") continue;
-      if (authors.get(tag[1]) === event.pubkey) {
-        deleted.add(tag[1]);
-        continue;
-      }
-      const target = kinds.get(tag[1]);
-      if (
-        event.kind === KIND_MODERATION_DELETE &&
-        removers.has(event.pubkey) &&
-        (target === KIND_FORUM_POST || target === KIND_FORUM_COMMENT)
-      ) {
-        deleted.add(tag[1]);
-      }
+      if (authors.get(tag[1]) === event.pubkey) deleted.add(tag[1]);
     }
   }
+  for (const id of removedByModerators(events, removers)) deleted.add(id);
   return deleted;
 }
 
@@ -189,8 +240,9 @@ export function buildBoard(
   events: readonly BoardEvent[],
   me: string | null,
   removers: ReadonlySet<string> = new Set(),
+  kept: ReadonlySet<string> = new Set(),
 ): Board {
-  const deleted = deletedIds(events, removers);
+  const deleted = deletedIds(events, removers, kept);
   const live = events.filter((event) => !deleted.has(event.id));
   const votes = votesByTarget(live);
 

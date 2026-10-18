@@ -623,6 +623,10 @@ By hand, on a board with posts and replies by two other people:
    board, and goes at once.
 3. **Other readers.** With the same board open on a second screen, a post or reply you remove disappears there without a
    reload, and stays gone after one. A removal that comes from anyone who is not one of the board's owners or admins is ignored.
+   **Roster changes.** Keep a board open as an ordinary reader. From another session make someone a board admin, and have them
+   remove a post or reply: the first reader loses it without a reload. Then withdraw that admin's role: what they removed
+   stays gone, and a new removal from them is ignored (the server refuses it too). If the reader had missed the role change,
+   the first removal from someone it does not know makes it check the roster again.
 4. **Ban (the community's owner or admin only).** The button appears beside Remove for them, and not for anyone else.
 
 Not done yet: a visible marker where something was removed and the sanitized room action log (A5), room restrictions

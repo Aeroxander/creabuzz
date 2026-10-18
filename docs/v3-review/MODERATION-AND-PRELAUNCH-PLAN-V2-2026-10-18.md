@@ -61,22 +61,27 @@ reviewer ran it"), the invariant-test and bid-badge findings (source reading onl
 
 ## 3. Phase A: before public social content
 
+**Current scope, in one place (supersedes anything below that says otherwise).** Built: A3 (board report and removal).
+Open: A0 (operator and appeal route), the chat counterpart of A3 (a room owner removing other people's messages),
+A4 block rules, A5 log and removal marker, A6 Testnet chip, A7 small additions. Deferred: A1 (engineering). Dropped for the
+pilot: A2. Not in the pilot: moderator roles, emergency override, link or follow gates, approve-first, proof of work.
+
 Honest effort: A0, A1, A3, A4 and A6/A7 are days of work; A2 is a relay schema, authorization, event, CLI and client
 change (plan for one to two weeks). If the social launch cannot wait for A2, launch with ordinary room-owner delete and kick,
 the operator as the community-wide backstop, and a plain statement that kicks in open rooms are not durable.
 
-**A0. Operator, abuse and appeal process.** A named recipient for platform-safety escalations, a takedown runbook, an abuse
+**A0. Operator, abuse and appeal process. (Open: the user is the operator; the appeal route is still to be named.)** A named recipient for platform-safety escalations, a takedown runbook, an abuse
 contact, terms of use, and an appeal route that does not depend on the person being moderated. Operational, not code; not
 legal advice. Gates any public user content.
 
-**A1. Report privacy (fixes the P1).** On the server: a report whose target is the actor (or an owner or admin when the
+**A1. Report privacy. (Deferred for the sole-operator pilot; the dialog wording is fixed. Original design follows for when there are other admins.)** On the server: a report whose target is the actor (or an owner or admin when the
 actor is not the operator) is excluded from that actor's queue and visible only to the operator; notes and reporter fields
 are never returned to the accused; any future room-moderator queue is scoped to that room and redacted (reporter
 removed, notes shown only when the room's own members authored them). Acceptance: a reported owner cannot see the reporter
 or the note; a moderator sees nothing from other rooms; the reporter still gets the outcome message. Limit stated in the
 docs: a host with database access can read everything.
 
-**A2. Durable room restriction.** A new per-channel restriction state, separate from `removed_at`. It is checked at every
+**A2. Durable room restriction. (Dropped for the pilot: see section 9. Kept only as the design to use if approval gating proves not to be enough.)** A new per-channel restriction state, separate from `removed_at`. It is checked at every
 way back in and every write: the open-join path (9021), self-add and privileged add (9000), invitation paths, and event
 writes to the channel. Kick and voluntary leave keep today's behavior (a person can come back to an open room). Defined
 unban, transaction and race handling with the membership lock, cache invalidation, an audit row and a notice. A new signed
@@ -85,24 +90,24 @@ current code): a restricted key cannot return through 9021, through its own 9000
 non-elevated member; it cannot write; a person who left on their own can return; other rooms, login, the feed, DMs and
 reading records are unaffected; unban restores; an owner or admin cannot be restricted by a lower role.
 
-**A3. Board reporting and removal that readers see. (Built 18 October, uncommitted at the time of writing this line; see the commit log.)** Report on posts and replies, Remove for a board's owners and admins with live application to other readers, and Ban for community owners and admins; a removal is applied only when its sender is a board or community owner or admin, only to a post or reply, and never to a vote. Not built: the visible removal marker and the action log (A5). `ReportDialog` on board posts and comments. Founder or owner delete (the
+**A3. Board reporting and removal that readers see. (Built 18 October; see the commit log. Includes the roster refresh and remembered removals found in review.)** Report on posts and replies, Remove for a board's owners and admins with live application to other readers, and Ban for community owners and admins; a removal is applied only when its sender is a board or community owner or admin, only to a post or reply, and never to a vote. Not built: the visible removal marker and the action log (A5). `ReportDialog` on board posts and comments. Founder or owner delete (the
 server already allows 9005 on 45001/45003). The board client must consume authorized moderation removals and the relay's
 40099 tombstones and honor them only with scope and provenance checks, not any event that looks like a 9005. Acceptance:
 two open readers both see a post and a comment disappear and a tombstone appear without a refresh; an arbitrary 9005-shaped
 event from a non-moderator changes nothing.
 Touches `board/ui/*` and `board/use-board.ts`, `board/lib/board-model.ts` (uncommitted user work: coordinate first).
 
-**A4. Personal mute and block.** Define what Block does: DMs, mentions, notifications, boards, the progress feed; whether the
+**A4. Personal mute and block. (Not built.)** Define what Block does: DMs, mentions, notifications, boards, the progress feed; whether the
 list is public (NIP-51 allows private entries); that a financial deadline is never hidden by a personal mute. Extend the
 existing Profile mute accordingly.
 
-**A5. Sanitized room action log.** Action, safe category or rule number, acting role, time. No reporter, no report notes, no
+**A5. Sanitized room action log. (Not built; also the visible removal marker.)** Action, safe category or rule number, acting role, time. No reporter, no report notes, no
 free text that could carry doxxing.
 
-**A6. Testnet chip.** One chip beside the logo, driven by the configured chain and deployment metadata (mainnet includes
+**A6. Testnet chip. (Not built; unblocked now that the navigation work is committed.)** One chip beside the logo, driven by the configured chain and deployment metadata (mainnet includes
 Base, not just chain 1). Touches `AppNav.tsx` (uncommitted work of the other agent: after it is committed).
 
-**A7. Small additions.** A welcome and Start-here post, starter boards, follow suggestions on an empty Following tab, the
+**A7. Small additions. (Not built.)** A welcome and Start-here post, starter boards, follow suggestions on an empty Following tab, the
 public-Nostr "cannot be recalled" warning, honest labels: Team from the current launch record; **Backer only when
 participation is confirmed on chain with a valid key binding, otherwise "recorded bid"**; Reviewer only from a real
 appointment source. No fabricated activity counts.

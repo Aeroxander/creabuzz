@@ -1228,6 +1228,43 @@ function boardMembers(role: "owner" | "admin" | "member") {
   };
 }
 
+/** The membership record as the server rewrites it when roles change: `admins` get the admin role. */
+function boardMembersWith(admins: string[], at: number) {
+  return {
+    id: `members-board-${at}`,
+    pubkey: "b".repeat(64),
+    created_at: at,
+    kind: 39002,
+    tags: [
+      ["d", BOARD],
+      ...[ANN, BOB, OWNER].map((who) => [
+        "p",
+        who,
+        "",
+        admins.includes(who) ? "admin" : "member",
+      ]),
+    ],
+    content: "",
+    sig: "sig",
+  };
+}
+
+/** A moderator's removal of a post or reply, as the relay delivers it once it has checked the sender's role. */
+function removalFrom(sender: string, target: string) {
+  return {
+    id: eid(),
+    pubkey: sender,
+    created_at: now(),
+    kind: 9005,
+    tags: [
+      ["h", BOARD],
+      ["e", target],
+    ],
+    content: "",
+    sig: "sig",
+  };
+}
+
 const openThread = async (page: Page, id: string) => {
   await page
     .getByTestId(`board-post-${id}`)
@@ -1365,23 +1402,87 @@ test("a removal reaches another reader's open board at once, and only when an ow
   // The members have to be read before a removal can be matched to someone who may send one.
   await expect.poll(() => relay.requestsFor(39002)).toBeGreaterThan(0);
 
-  const removal = (sender: string, target: string) => ({
-    id: eid(),
-    pubkey: sender,
-    created_at: now(),
-    kind: 9005,
-    tags: [
-      ["h", BOARD],
-      ["e", target],
-    ],
-    content: "",
-    sig: "sig",
-  });
   // Someone who is not an owner or admin: the board ignores it.
-  relay.deliver(removal(BOB, spam.id));
+  relay.deliver(removalFrom(BOB, spam.id));
   await page.waitForTimeout(500);
   await expectRows(page, ["Fine post", "Spam post"]);
   // The owner's removal of a post on the board: it goes at once, with no reload.
-  relay.deliver(removal(OWNER, spam.id));
+  relay.deliver(removalFrom(OWNER, spam.id));
+  await expectRows(page, ["Fine post"]);
+});
+
+/** A reader's board has asked to hear about roster changes, so a change delivered now will reach it. */
+const rosterWatched = (relay: ReturnType<typeof createMockRelay>) =>
+  expect
+    .poll(() =>
+      relay
+        .subscriptionFilters()
+        .some(
+          (f) =>
+            f.kinds?.includes(39002) &&
+            (f["#d"] as string[] | undefined)?.includes(BOARD),
+        ),
+    )
+    .toBe(true);
+
+test("an open board follows a newly appointed admin's removal without a reload, and keeps it after that admin is demoted", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const spam = post(BOB, now() - 600, "Spam post");
+  const fine = post(BOB, now() - 500, "Fine post");
+  relay.seed(boardMembersWith([], 102));
+  for (const e of [spam, fine]) relay.seed(e);
+  await open(page, relay, { signedIn: false });
+  await expectRows(page, ["Fine post", "Spam post"]);
+  await liveOnBoard(page, relay);
+  await rosterWatched(relay);
+
+  // Another session makes ANN an admin; the reader's roster follows, and ANN's removal then counts.
+  const promoted = boardMembersWith([ANN], now() + 10);
+  relay.seed(promoted);
+  relay.deliver(promoted);
+  relay.deliver(removalFrom(ANN, spam.id));
+  await expectRows(page, ["Fine post"]);
+
+  // ANN is demoted. What was removed stays removed, and a removal from ANN now counts for nothing.
+  const demoted = boardMembersWith([], now() + 20);
+  relay.seed(demoted);
+  relay.deliver(demoted);
+  await expect.poll(() => relay.requestsFor(39002)).toBeGreaterThanOrEqual(3);
+  // Give the answer time to reach the board: until then it still thinks ANN is an admin, as it should.
+  await page.waitForTimeout(600);
+  await expectRows(page, ["Fine post"]);
+  // The list holds still while it is read, so a removed post that came back would wait behind this notice, not show.
+  await expect(page.getByTestId("board-show-new")).toHaveCount(0);
+  relay.deliver(removalFrom(ANN, fine.id));
+  await page.waitForTimeout(600);
+  await expectRows(page, ["Fine post"]);
+  await expect(page.getByTestId("board-show-new")).toHaveCount(0);
+});
+
+test("a removal from someone the reader does not yet know to be an admin makes the board check the roster again", async ({
+  page,
+}) => {
+  const relay = relayWithBoard();
+  const spam = post(BOB, now() - 600, "Spam post");
+  const fine = post(BOB, now() - 500, "Fine post");
+  relay.seed(boardMembersWith([], 102));
+  for (const e of [spam, fine]) relay.seed(e);
+  await open(page, relay, { signedIn: false });
+  await expectRows(page, ["Fine post", "Spam post"]);
+  await liveOnBoard(page, relay);
+  await rosterWatched(relay);
+  const before = relay.requestsFor(39002);
+
+  // The server already lists ANN as an admin, but the reader never heard (no roster event reached it).
+  relay.seed(boardMembersWith([ANN], now() + 10));
+  relay.deliver(removalFrom(ANN, spam.id));
+  await expectRows(page, ["Fine post"]);
+  expect(relay.requestsFor(39002)).toBeGreaterThan(before);
+
+  // Someone who is still not an admin after the check changes nothing (OWNER here is an ordinary member, and not the author).
+  relay.deliver(removalFrom(OWNER, fine.id));
+  await page.waitForTimeout(600);
   await expectRows(page, ["Fine post"]);
 });

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { arrange, buildBoard, filterPosts, sortPosts } from "./board-model.ts";
+import {
+  arrange,
+  buildBoard,
+  filterPosts,
+  keepRemovals,
+  removedByModerators,
+  sortPosts,
+  unfamiliarRemovers,
+} from "./board-model.ts";
 
 const ME = "m".repeat(64);
 const ANN = "a".repeat(64);
@@ -500,5 +508,57 @@ describe("a moderator's removal", () => {
     const p = post(ANN, 1);
     const board = buildBoard([p, removal(ANN, 5, p.id)], ME, removers);
     assert.equal(board.posts.length, 0);
+  });
+});
+
+describe("keeping the roster honest", () => {
+  const MOD = "d".repeat(64);
+  const NEW = "e".repeat(64);
+
+  it("names a sender it does not know to be an owner or admin, so the roster can be read again", () => {
+    const p = post(ANN, 1);
+    const c = comment(BOB, 2, p.id);
+    const v = vote(ME, 3, p.id);
+    const events = [
+      p,
+      c,
+      v,
+      removal(NEW, 4, p.id),
+      removal(NEW, 5, c.id),
+      removal(MOD, 6, c.id),
+      removal(ANN, 7, p.id), // the author removing their own post: nothing to check
+      removal(BOB, 8, v.id), // a vote, which a removal never applies to
+      removal(BOB, 9, "9".repeat(64)), // not on this board
+    ];
+    assert.deepEqual(unfamiliarRemovers(events, new Set([MOD])), [NEW]);
+    assert.deepEqual(unfamiliarRemovers(events, new Set([MOD, NEW])), []);
+    assert.deepEqual(unfamiliarRemovers([p, c], new Set()), []);
+  });
+
+  it("applies a removal once the roster names the sender, from the events already held", () => {
+    const p = post(ANN, 1);
+    const events = [p, removal(NEW, 4, p.id)];
+    assert.equal(buildBoard(events, ME, new Set()).posts.length, 1);
+    assert.equal(buildBoard(events, ME, new Set([NEW])).posts.length, 0);
+  });
+
+  it("keeps a removal in force after the person who sent it is no longer an owner or admin", () => {
+    const p = post(ANN, 1);
+    const q = post(BOB, 2, "Other");
+    const events = [p, q, removal(MOD, 5, p.id)];
+    const first = keepRemovals(new Set(), events, new Set([MOD]));
+    assert.deepEqual([...first], [p.id]);
+    // The role is withdrawn: the sender is no longer in the roster, and the removal still holds.
+    const kept = keepRemovals(first, events, new Set());
+    assert.equal(kept, first, "nothing new, so the same set comes back");
+    const board = buildBoard(events, ME, new Set(), kept);
+    assert.deepEqual(
+      board.posts.map((x) => x.id),
+      [q.id],
+    );
+    // A removal that arrives after the role was withdrawn is not applied.
+    const late = [...events, removal(MOD, 9, q.id)];
+    assert.equal(buildBoard(late, ME, new Set(), kept).posts.length, 1);
+    assert.deepEqual([...removedByModerators(late, new Set())], []);
   });
 });

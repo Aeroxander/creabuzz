@@ -61,8 +61,10 @@ export function ReportDialog({
     <Modal label={`Report ${what}`} onClose={onClose}>
       <h2 className="text-lg font-bold">Report {what}</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">
-        Only this community's moderators will see this. Nothing is removed
-        because you reported it; they decide what to do.
+        Only this community's moderators will see this, and who you are. Nothing
+        is removed because you reported it; they decide what to do. If you are
+        reporting the community's owner, there is no one independent to review
+        it yet.
       </p>
       <form
         className="mt-4 flex flex-col gap-3"
