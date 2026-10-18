@@ -92,29 +92,36 @@ test("a team is picked, set up step by step, and its first channel opens", async
   relay.seed(general);
   await open(page, relay);
 
-  // Every bundled team is offered, and each says who it is for.
+  // Two starting points come first, in plain words; the other teams wait under "More kinds of team".
   const picker = page.getByTestId("start-project");
   await expect(picker).toBeVisible();
   await expect(
     picker.getByRole("heading", { name: "Set up this community" }),
   ).toBeVisible();
-  await expect(picker).toContainText("Existing channels are reused.");
   await expect(page.getByTestId("start-project-confirm")).toHaveText(
     "Set up community",
   );
   await expect(
     page.getByTestId("template-option-ai-media-studio"),
   ).toBeChecked();
-  await expect(picker).toContainText(
-    "For filmmakers, musicians and audio storytellers",
-  );
-  await expect(picker).toContainText("Web & App Studio");
+  await expect(picker).toContainText("Creative project");
+  await expect(picker).toContainText("Technical project");
+  await expect(picker).toContainText("Film, music, audio or any creative work");
   await expect(picker).toContainText(
     "4 channels · 2 boards · 6 AI helpers · 3 shared pages",
   );
+  const more = page.getByTestId("more-templates");
+  await expect(more).toHaveJSProperty("open", false);
+  await expect(
+    more.getByTestId("template-option-crypto-app-studio"),
+  ).toBeHidden();
 
-  // The preview says what will be made, in plain words.
+  // What it adds is one line until asked for, then said in plain words.
   const preview = page.getByTestId("template-preview");
+  await expect(preview).toHaveJSProperty("open", false);
+  await expect(preview.getByText("#writers-room")).toBeHidden();
+  await page.getByTestId("template-preview-toggle").click();
+  await expect(preview).toContainText("Channels that already exist here");
   await expect(preview).toContainText("#writers-room");
   await expect(preview).toContainText("The Writer");
   await expect(preview).toContainText(
@@ -257,6 +264,30 @@ test("a community with no channels offers community setup instead of showing a d
   await expect(page.getByTestId("start-project")).toBeVisible();
 });
 
+test("another kind of team can be picked from under More kinds of team", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ deriveChannels: true });
+  relay.seed(general);
+  await open(page, relay);
+
+  await page
+    .getByTestId("more-templates")
+    .getByText("More kinds of team")
+    .click();
+  const crypto = page.getByTestId("template-option-crypto-app-studio");
+  await expect(crypto).toBeAttached();
+  await crypto.check({ force: true });
+  await expect(crypto).toBeChecked();
+  await expect(
+    page.getByTestId("template-option-ai-media-studio"),
+  ).not.toBeChecked();
+  // The preview follows the pick, and setup is offered for it.
+  await page.getByTestId("template-preview-toggle").click();
+  await expect(page.getByTestId("template-preview")).toContainText("#security");
+  await expect(page.getByTestId("start-project-confirm")).toBeEnabled();
+});
+
 test("members see the restriction before setup and can recheck after promotion", async ({
   page,
 }) => {
@@ -365,6 +396,8 @@ for (const viewport of [
     const scroll = page.getByTestId("community-setup-scroll");
     const confirm = page.getByTestId("start-project-confirm");
     await expect(confirm).toBeEnabled();
+    // The long view: everything the team adds, opened. The panel must scroll so none of it is out of reach.
+    await page.getByTestId("template-preview-toggle").click();
     expect(
       await scroll.evaluate((el) => el.scrollHeight > el.clientHeight),
     ).toBe(true);

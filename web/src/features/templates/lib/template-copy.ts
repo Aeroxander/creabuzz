@@ -27,6 +27,30 @@ const AUDIENCE: Record<string, string> = {
   "vanilla-app-studio": "For any web or app startup, without the ceremony.",
 };
 
+/**
+ * The two starting points shown first, in the words a newcomer would use for what they are making. They stand in for the
+ * bundled teams that fit most people; every other team sits under "More kinds of team".
+ */
+export const PRESETS: readonly { id: string; title: string; blurb: string }[] =
+  [
+    {
+      id: "ai-media-studio",
+      title: "Creative project",
+      blurb: "Film, music, audio or any creative work, made with AI helpers.",
+    },
+    {
+      id: "vanilla-app-studio",
+      title: "Technical project",
+      blurb: "A web or app product, with a builder, a reviewer and a lead.",
+    },
+  ];
+
+export function templatePreset(
+  id: string,
+): { id: string; title: string; blurb: string } | null {
+  return PRESETS.find((preset) => preset.id === id) ?? null;
+}
+
 export function templateTitle(
   summary: Pick<TemplateSummary, "id" | "name">,
 ): string {

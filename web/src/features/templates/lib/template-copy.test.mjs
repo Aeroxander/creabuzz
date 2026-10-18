@@ -6,7 +6,9 @@ import { TEMPLATE_INDEX } from "@creaton/core/templates/catalog-index.generated.
 
 import {
   describeDefaultLimit,
+  PRESETS,
   templateAudience,
+  templatePreset,
   templateCounts,
   templateTitle,
 } from "./template-copy.ts";
@@ -27,6 +29,24 @@ test("every bundled template has a plain title and a line about who it is for", 
     templateTitle({ id: "ai-media-studio", name: "AI Media Studio" }),
     "AI Media Studio",
   );
+});
+
+test("the two starting points are bundled teams, in plain words, and are not copied from anywhere else", () => {
+  assert.equal(PRESETS.length, 2);
+  for (const preset of PRESETS) {
+    assert.ok(
+      TEMPLATE_INDEX.some((t) => t.id === preset.id),
+      `${preset.id} is not a bundled team`,
+    );
+    assert.deepEqual(templatePreset(preset.id), preset);
+    assert.ok(preset.blurb.length > 0 && preset.blurb.length <= 80);
+  }
+  assert.deepEqual(
+    PRESETS.map((p) => p.title),
+    ["Creative project", "Technical project"],
+  );
+  // Teams that are not a starting point stay under "More kinds of team".
+  assert.equal(templatePreset("crypto-app-studio"), null);
 });
 
 test("counts say what a template makes and leave out what it does not", () => {

@@ -26,8 +26,10 @@ import { Card } from "@/shared/ui/card";
 
 import {
   describeDefaultLimit,
+  PRESETS,
   templateAudience,
   templateCounts,
+  templatePreset,
   templateTitle,
 } from "../lib/template-copy";
 import type { StepResult, StepStatus } from "../lib/run-plan";
@@ -99,15 +101,25 @@ function Progress({ results, busy }: { results: StepResult[]; busy: boolean }) {
   );
 }
 
+/** Everything a team adds, behind one line: most people pick a starting point and never open this. */
 function Preview({ summary }: { summary: TemplateSummary }) {
   const limit = describeDefaultLimit(summary.defaultBudget);
   return (
-    <div
+    <details
       className="mt-4 rounded-xl border bg-secondary/30 p-4 text-sm"
       data-testid="template-preview"
     >
-      <h3 className="font-semibold">What you get</h3>
-      <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+      <summary
+        className="cursor-pointer font-semibold"
+        data-testid="template-preview-toggle"
+      >
+        See everything it adds
+      </summary>
+      <p className="mt-2 text-muted-foreground">{summary.description}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Channels that already exist here are reused.
+      </p>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Channels and boards
@@ -184,7 +196,46 @@ function Preview({ summary }: { summary: TemplateSummary }) {
           is set up here.
         </p>
       ) : null}
-    </div>
+    </details>
+  );
+}
+
+function Option({
+  template,
+  selected,
+  onPick,
+}: {
+  template: TemplateSummary;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  const preset = templatePreset(template.id);
+  const line = preset ? preset.blurb : templateAudience(template.id);
+  return (
+    <label
+      className={`flex cursor-pointer flex-col gap-1 rounded-xl border p-3 text-sm ${
+        selected ? "border-primary bg-primary/5" : "border-border"
+      } focus-within:ring-2 focus-within:ring-ring`}
+    >
+      <input
+        checked={selected}
+        className="sr-only"
+        data-testid={`template-option-${template.id}`}
+        name="template"
+        onChange={onPick}
+        type="radio"
+        value={template.id}
+      />
+      <span className="font-semibold">
+        {preset ? preset.title : templateTitle(template)}
+      </span>
+      {line ? (
+        <span className="text-xs text-muted-foreground">{line}</span>
+      ) : null}
+      <span className="text-xs text-muted-foreground">
+        {templateCounts(template)}
+      </span>
+    </label>
   );
 }
 
@@ -197,7 +248,14 @@ export function StartProject({
   /** Go to a part of the community. */
   onOpenView: (view: ProjectDestination) => void;
 }) {
-  const [choice, setChoice] = useState<string>(TEMPLATE_INDEX[0]?.id ?? "");
+  const presets = PRESETS.flatMap((preset) =>
+    TEMPLATE_INDEX.filter((t) => t.id === preset.id),
+  );
+  const others = TEMPLATE_INDEX.filter((t) => !templatePreset(t.id));
+  const [choice, setChoice] = useState<string>(
+    presets[0]?.id ?? TEMPLATE_INDEX[0]?.id ?? "",
+  );
+  const [moreOpen, setMoreOpen] = useState(false);
   const { state, apply, reset, access, refreshAccess } = useTemplateApply();
   const signedIn = existingUserPubkey() !== null;
   const summary = TEMPLATE_INDEX.find((t) => t.id === choice) ?? null;
@@ -316,8 +374,7 @@ export function StartProject({
         Set up this community
       </h2>
       <p className="mt-0.5 text-sm text-muted-foreground">
-        Add a ready-made team, AI helpers and shared pages to this community.
-        Existing channels are reused. You can change anything afterwards.
+        Pick a starting point. You can change anything afterwards.
       </p>
       {signedIn && access !== "allowed" ? (
         <div className="mt-3 text-sm" data-testid="start-project-access">
@@ -345,47 +402,39 @@ export function StartProject({
       <fieldset className="mt-4">
         <legend className="sr-only">Choose a team</legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          {TEMPLATE_INDEX.map((template) => {
-            const selected = template.id === choice;
-            const audience = templateAudience(template.id);
-            return (
-              <label
-                className={`flex cursor-pointer flex-col gap-1 rounded-xl border p-3 text-sm ${
-                  selected ? "border-primary bg-primary/5" : "border-border"
-                } focus-within:ring-2 focus-within:ring-ring`}
-                key={template.id}
-              >
-                <input
-                  checked={selected}
-                  className="sr-only"
-                  data-testid={`template-option-${template.id}`}
-                  name="template"
-                  onChange={() => setChoice(template.id)}
-                  type="radio"
-                  value={template.id}
-                />
-                <span className="font-semibold">{templateTitle(template)}</span>
-                {audience ? (
-                  <span className="text-xs text-muted-foreground">
-                    {audience}
-                  </span>
-                ) : null}
-                <span className="text-xs text-muted-foreground">
-                  {templateCounts(template)}
-                </span>
-              </label>
-            );
-          })}
+          {presets.map((template) => (
+            <Option
+              key={template.id}
+              onPick={() => setChoice(template.id)}
+              selected={template.id === choice}
+              template={template}
+            />
+          ))}
         </div>
+        {others.length > 0 ? (
+          <details
+            className="mt-3 text-sm"
+            data-testid="more-templates"
+            onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+            open={moreOpen}
+          >
+            <summary className="cursor-pointer text-muted-foreground">
+              More kinds of team
+            </summary>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {others.map((template) => (
+                <Option
+                  key={template.id}
+                  onPick={() => setChoice(template.id)}
+                  selected={template.id === choice}
+                  template={template}
+                />
+              ))}
+            </div>
+          </details>
+        ) : null}
       </fieldset>
-      {summary ? (
-        <>
-          <p className="mt-4 text-sm text-muted-foreground">
-            {summary.description}
-          </p>
-          <Preview summary={summary} />
-        </>
-      ) : null}
+      {summary ? <Preview summary={summary} /> : null}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {signedIn ? (
           <Button
