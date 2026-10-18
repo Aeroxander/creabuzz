@@ -89,7 +89,11 @@ export function LaunchHero({
       </Link>
       <div className="relative">
         <div
-          className="h-40 overflow-hidden rounded-2xl sm:h-52"
+          className={
+            stage === "graduated"
+              ? "h-16 overflow-hidden rounded-2xl sm:h-20"
+              : "h-40 overflow-hidden rounded-2xl sm:h-52"
+          }
           style={
             record.image
               ? undefined
@@ -192,12 +196,20 @@ export function LaunchHero({
 
       {stats.length > 0 ? (
         <dl
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+          className={
+            stage === "graduated"
+              ? "flex flex-wrap gap-3"
+              : "grid grid-cols-2 gap-3 sm:grid-cols-3"
+          }
           data-testid="launch-hero-stats"
         >
           {stats.map((stat) => (
             <div
-              className="rounded-xl bg-secondary/60 px-4 py-3"
+              className={
+                stage === "graduated"
+                  ? "rounded-lg bg-secondary/60 px-3 py-1.5"
+                  : "rounded-xl bg-secondary/60 px-4 py-3"
+              }
               key={stat.label}
             >
               <dt className="text-xs font-semibold text-muted-foreground">

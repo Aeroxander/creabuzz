@@ -22,6 +22,7 @@ import { useWorkBoard, type WorkItem } from "../use-work-board";
 import { useTaskPlanning } from "../use-task-planning";
 import { NextUpList } from "./NextUpList";
 import { BoardIdeas } from "./BoardIdeas";
+import { TaskDeliveryPanel } from "./TaskDeliveryPanel";
 import { TaskPlanningPanel } from "./TaskPlanningPanel";
 import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import { RecentThread, TaskHistory } from "./WorkBoardThread";
@@ -159,7 +160,9 @@ export function WorkBoard({
   const { agents } = useAgentRoster();
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
-  const [view, setView] = useState<"list" | "board" | "next">("board");
+  const [view, setView] = useState<"list" | "board" | "next">(
+    initialItemId ? "list" : "board",
+  );
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialItemId ?? null,
   );
@@ -289,6 +292,8 @@ export function WorkBoard({
         // writes them all, and a missing one would publish as a clear.
         milestone: item.milestone,
         reward: item.reward,
+        delivery: item.delivery ?? null,
+        approver: item.approver,
       }),
       sig: "",
     });
@@ -580,6 +585,16 @@ export function WorkBoard({
                       void updateTask(asTask(selected), patch).catch(
                         reportActionFailure("Couldn't save the task"),
                       )
+                    }
+                  />
+                ) : null}
+
+                {selected.type === "task" ? (
+                  <TaskDeliveryPanel
+                    key={`delivery-${selected.key}`}
+                    item={selected}
+                    onSave={(delivery) =>
+                      updateTask(asTask(selected), { delivery })
                     }
                   />
                 ) : null}

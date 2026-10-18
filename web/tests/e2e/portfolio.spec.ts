@@ -270,7 +270,7 @@ test("raises you backed come from your wallet's bids, and a raise that can't be 
   );
 });
 
-test("on a phone, Portfolio is one of the five tabs and Home still links to it", async ({
+test("on a phone, Portfolio is one of the four destinations and Home still links to it", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 780 });
@@ -279,8 +279,8 @@ test("on a phone, Portfolio is one of the five tabs and Home still links to it",
   await signIn(page);
   await page.goto("/");
   await expect(page.getByTestId("app-nav-home")).toBeVisible();
-  // Five destinations, so their labels stay readable at 360px: Projects now lives under Discover.
-  await expect(page.getByTestId("app-nav").getByRole("link")).toHaveCount(5);
+  // Four destinations plus the account control; projects, launches and markets live under Discover.
+  await expect(page.getByTestId("app-nav").getByRole("link")).toHaveCount(4);
   await expect(page.getByTestId("app-nav-portfolio")).toBeVisible();
   await expect(page.getByTestId("app-nav-projects")).toHaveCount(0);
   const nav = await page

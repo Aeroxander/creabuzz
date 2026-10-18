@@ -3,10 +3,8 @@ import {
   Briefcase,
   Compass,
   Home,
-  Feather,
   type LucideIcon,
   MessagesSquare,
-  Rocket,
   Search,
 } from "lucide-react";
 
@@ -25,8 +23,7 @@ interface NavItem {
   /** Whether a pathname belongs to this section. */
   matches: (pathname: string) => boolean;
   /**
-   * Top bar only. The phone tab bar keeps to five tabs so its labels stay
-   * readable at 360px; phones reach these from a page instead.
+   * Optional secondary destinations can stay out of the four-item phone bar.
    */
   wideOnly?: boolean;
 }
@@ -36,36 +33,24 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: "/",
     label: "Home",
     icon: Home,
-    matches: (p) => p === "/",
-  },
-  {
-    to: "/social",
-    label: "Social",
-    icon: Feather,
-    // Profiles (`/u/…`) are part of the social section.
-    matches: (p) => p.startsWith("/social") || p.startsWith("/u/"),
-    // On phones: the link beside Home's title (the tab bar keeps five tabs).
-    wideOnly: true,
-  },
-  {
-    to: "/c",
-    label: "Communities",
-    icon: MessagesSquare,
-    matches: (p) => p === "/c" || p.startsWith("/c/") || p.startsWith("/repos"),
+    matches: (p) => p === "/" || p.startsWith("/social") || p.startsWith("/u/"),
   },
   {
     to: "/discover",
     label: "Discover",
     icon: Compass,
-    // The project board is a view of the same directory, so it lives under Discover rather than as a seventh tab.
-    matches: (p) => p.startsWith("/discover") || p.startsWith("/projects"),
+    // Projects, launches and their markets are destinations within Discover.
+    matches: (p) =>
+      p.startsWith("/discover") ||
+      p.startsWith("/projects") ||
+      p.startsWith("/launchpad") ||
+      p === "/markets",
   },
   {
-    to: "/launchpad",
-    label: "Launches",
-    icon: Rocket,
-    // The market board is the other side of the same section: raising money, and what the Shares trade at.
-    matches: (p) => p.startsWith("/launchpad") || p === "/markets",
+    to: "/c",
+    label: "Workspaces",
+    icon: MessagesSquare,
+    matches: (p) => p === "/c" || p.startsWith("/c/") || p.startsWith("/repos"),
   },
   {
     to: "/portfolio",
@@ -201,7 +186,7 @@ function NavLink({
             ? "text-foreground after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-[3px] after:rounded-full after:bg-primary"
             : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground"
         }`}
-        data-testid={`app-nav-${item.label.toLowerCase()}`}
+        data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
         to={item.to}
       >
         {item.label}
@@ -216,7 +201,7 @@ function NavLink({
           ? "bg-primary/15 text-primary-ink"
           : "text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground"
       }`}
-      data-testid={`app-nav-${item.label.toLowerCase()}`}
+      data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
       to={item.to}
     >
       <Icon aria-hidden className="h-5 w-5" />

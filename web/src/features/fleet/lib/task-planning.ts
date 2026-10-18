@@ -37,6 +37,7 @@ export const TASK_STICKY_FIELDS = [
   "milestone",
   "reward",
   "source",
+  "delivery",
 ] as const;
 
 /** Rows kept per task — enough history to merge, bounded against floods. */
@@ -123,7 +124,14 @@ export function mergeTaskRows(
   if (has(newestBody, "approver")) {
     merged.approver = newestBody.approver;
   }
-  const done = newestBody.status === "done" ? newest.id : null;
+  let done: string | null = null;
+  let lastStatus: unknown = null;
+  for (const row of sorted) {
+    const status = jsonObject(row.content).status;
+    if (status === "done" && lastStatus !== "done") done = row.id;
+    if (status !== undefined) lastStatus = status;
+  }
+  if (newestBody.status !== "done") done = null;
   return {
     event: { ...newest, content: JSON.stringify(merged) },
     creator: sorted[0].pubkey.toLowerCase(),

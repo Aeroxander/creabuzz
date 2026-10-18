@@ -4,11 +4,11 @@
  * and always carry explicit kinds.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { signAsUser } from "@/shared/lib/identity";
+import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
 import { publishEvent } from "@/shared/lib/publish-event";
 import {
   buildOrgBudgetContent,
@@ -27,6 +27,8 @@ const BUDGETS_FETCH_LIMIT = 50;
 
 export type WebBudget = {
   id: string;
+  /** Signer of the recorded limit; a subject alone does not establish authority. */
+  author: string;
   dtag: string;
   subject: string | null;
   window: BudgetWindow;
@@ -37,6 +39,7 @@ export type WebBudget = {
 
 function budgetFromEvent(event: {
   id: string;
+  pubkey: string;
   tags: string[][];
   content: string;
 }): WebBudget | null {
@@ -59,6 +62,7 @@ function budgetFromEvent(event: {
   const dtag = event.tags.find((t) => t[0] === "d")?.[1] ?? event.id;
   return {
     id: event.id,
+    author: event.pubkey,
     dtag,
     subject: typeof parsed.subject === "string" ? parsed.subject : null,
     window: windowValue as BudgetWindow,
@@ -77,38 +81,33 @@ export function useBudgets(): {
   error: string | null;
   reload: () => void;
 } {
-  const [budgets, setBudgets] = useState<WebBudget[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    setLoading(true);
-    queryEvents(relayWsUrl(), {
-      kinds: [KIND_ORG_BUDGET],
-      limit: BUDGETS_FETCH_LIMIT,
-    })
-      .then((events) => {
-        setBudgets(
-          events
-            .map(budgetFromEvent)
-            .filter((b): b is WebBudget => b !== null)
-            .sort((a, b) => a.dtag.localeCompare(b.dtag)),
-        );
-        setError(null);
-      })
-      .catch(() => {
-        setError(
-          "The server did not answer the budget query. Check the connection, then retry.",
-        );
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  return { budgets, loading, error, reload };
+  const relay = relayWsUrl();
+  const identity = existingUserPubkey();
+  const query = useQuery({
+    queryKey: ["org-budgets", relay, identity],
+    staleTime: 15_000,
+    retry: 1,
+    queryFn: async () =>
+      (
+        await queryEvents(relay, {
+          kinds: [KIND_ORG_BUDGET],
+          limit: BUDGETS_FETCH_LIMIT,
+        })
+      )
+        .map(budgetFromEvent)
+        .filter((b): b is WebBudget => b !== null)
+        .sort((a, b) => a.dtag.localeCompare(b.dtag)),
+  });
+  return {
+    budgets: query.data ?? [],
+    loading: query.isPending,
+    error: query.isError
+      ? "The server did not answer the budget query. Check the connection, then retry."
+      : null,
+    reload: () => {
+      void query.refetch();
+    },
+  };
 }
 
 /**

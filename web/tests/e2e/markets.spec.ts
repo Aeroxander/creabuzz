@@ -84,7 +84,7 @@ test("Launches links to Markets and keeps its tab lit there", async ({
   await open(page, "/launchpad");
   await page.getByTestId("open-markets").click();
   await expect(page).toHaveURL(/\/markets$/);
-  await expect(page.getByTestId("app-nav-launches")).toHaveAttribute(
+  await expect(page.getByTestId("app-nav-discover")).toHaveAttribute(
     "aria-current",
     "page",
   );

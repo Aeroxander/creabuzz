@@ -424,6 +424,14 @@ test("invite asks Safari users to choose their Mac download", async ({
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/26.5 Safari/605.1.15",
   });
+  // This checks the fallback destination, not GitHub's availability. The popup needs a context-wide route.
+  await context.route("https://github.com/block/buzz/releases", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<title>Releases</title>",
+    }),
+  );
   await context.addInitScript(() => {
     Object.defineProperties(navigator, {
       platform: { configurable: true, value: "MacIntel" },
@@ -685,7 +693,10 @@ test("an unknown address shows the not-found view", async ({ page }) => {
 });
 
 /** Relay mock where only the channel query succeeds; everything else is refused. */
-async function mockPartialRelay(page: import("@playwright/test").Page) {
+async function mockPartialRelay(
+  page: import("@playwright/test").Page,
+  readBindings = false,
+) {
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
@@ -702,6 +713,10 @@ async function mockPartialRelay(page: import("@playwright/test").Page) {
         string,
         { kinds?: number[] },
       ];
+      if (readBindings && filter.kinds?.includes(37017)) {
+        ws.send(JSON.stringify(["EOSE", subId]));
+        return;
+      }
       if ((filter.kinds ?? []).includes(39000)) {
         ws.send(
           JSON.stringify([
@@ -969,14 +984,17 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
 }) => {
   const address = `0x${"ab".repeat(20)}`;
   await page.addInitScript(
-    ([addr]) => {
+    ([addr, pubkey]) => {
       window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
       window.localStorage.setItem(
         "buzz.siwe.binding",
-        JSON.stringify({ address: addr, pubkey: "b".repeat(64), boundAt: 1 }),
+        JSON.stringify({ address: addr, pubkey, boundAt: 1 }),
       );
     },
-    [address],
+    [
+      address,
+      getPublicKey(Uint8Array.from(Buffer.from("1".repeat(64), "hex"))),
+    ],
   );
   const bodies: unknown[] = [];
   await page.route("**/auth/siwe/revoke", async (route) => {
@@ -989,7 +1007,7 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await mockPartialRelay(page);
+  await mockPartialRelay(page, true);
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
 
@@ -1001,7 +1019,10 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
   await page.getByTestId("confirm-accept").click();
 
   await expect(page.getByTestId("wallet-binding")).toBeHidden();
-  expect(bodies).toHaveLength(1);
+  await expect.poll(() => bodies.length).toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("buzz.siwe.binding")))
+    .toBeNull();
   const proof = (
     bodies[0] as {
       nostr_proof: { kind: number; content: string; tags: string[][] };

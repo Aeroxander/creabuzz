@@ -127,7 +127,15 @@ export function DiscoverPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8">
       <PageHeader
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/launchpad" data-testid="discover-launches">
+                Launches
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/markets">Markets</Link>
+            </Button>
             <Button asChild size="sm" variant="ghost">
               <Link data-testid="discover-board" to="/projects">
                 Project board

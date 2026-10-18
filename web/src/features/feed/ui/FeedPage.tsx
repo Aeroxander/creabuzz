@@ -19,6 +19,7 @@ import {
 import { Composer } from "./Composer";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { HomeHero } from "./HomeHero";
+import { ProjectProgressFeed } from "./ProjectProgressFeed";
 import { HomeYours } from "./HomeYours";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ThreadList } from "./ThreadList";
@@ -115,13 +116,13 @@ export function FeedPage() {
               <Home aria-hidden className="h-5 w-5" /> Home
             </h1>
             {/* Phones only: the rail's Social and Portfolio tabs have no room in the tab bar. */}
-            <div className="flex items-center md:hidden">
+            <div className="flex items-center">
               <Link
                 className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
                 data-testid="home-social-link"
                 to="/social"
               >
-                <Feather aria-hidden className="h-4 w-4" /> Social
+                <Feather aria-hidden className="h-4 w-4" /> People & posts
               </Link>
               <Link
                 className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
@@ -132,14 +133,17 @@ export function FeedPage() {
               </Link>
             </div>
           </div>
-          <div className="mt-3">
-            <HomeHero />
-          </div>
           {me ? (
             <div className="mt-3 flex flex-col gap-3">
               <HomeYours me={me} />
             </div>
           ) : null}
+          <div className="mt-3">
+            <HomeHero />
+          </div>
+          <div className="mt-3">
+            <ProjectProgressFeed />
+          </div>
           <div className="mt-3">
             <Composer />
           </div>

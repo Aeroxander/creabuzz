@@ -14,6 +14,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import type { TaskPriority } from "../use-agent-tasks";
 import type { TaskSource } from "./task-source";
+import { taskDeliveryTags } from "./task-delivery";
 
 /** What a person fills in to create a task. */
 export interface NewTaskInput {
@@ -42,7 +43,7 @@ export async function publishTaskEvent(
 ): Promise<void> {
   const signed = await signAsUser({
     kind: KIND_AGENT_TASK,
-    tags,
+    tags: taskDeliveryTags(tags, body.delivery),
     content: JSON.stringify(body),
   });
   const result = await publishEvent(relayWsUrl(), signed, {

@@ -35,6 +35,7 @@ import {
   publishNewTask,
   publishTaskEvent,
 } from "./lib/task-publish";
+import type { TaskDelivery } from "./lib/task-delivery";
 import type { TaskSource } from "./lib/task-source";
 import {
   parseTask,
@@ -89,6 +90,7 @@ export interface WorkItem {
   latestRowId: string | null;
   /** Row that marked the task done, while it is done (tasks only). */
   doneRowId: string | null;
+  delivery?: TaskDelivery | null;
   updatedAt: number;
 }
 
@@ -181,6 +183,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       title?: string;
       milestone?: string | null;
       reward?: number | null;
+      delivery?: TaskDelivery | null;
     },
   ) => Promise<void>;
 } {
@@ -259,6 +262,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       milestone: task.milestone,
       reward: task.reward,
       source: task.source,
+      delivery: task.delivery,
       creator: merged.creator,
       latestRowId: merged.latestRowId,
       doneRowId: merged.doneRowId,
@@ -526,6 +530,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
           labels: task.labels,
           milestone: task.milestone,
           reward: task.reward,
+          delivery: task.delivery ?? null,
           _taskId: task.id,
         },
         "task update rejected",
@@ -589,6 +594,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
         title?: string;
         milestone?: string | null;
         reward?: number | null;
+        delivery?: TaskDelivery | null;
       },
     ) => {
       await publishTaskRow(
@@ -602,9 +608,11 @@ export function useWorkBoard(channels?: { id: string }[]): {
           milestone:
             patch.milestone !== undefined ? patch.milestone : task.milestone,
           reward: patch.reward !== undefined ? patch.reward : task.reward,
+          delivery:
+            patch.delivery !== undefined ? patch.delivery : task.delivery,
         },
         task.status,
-        null,
+        task.approver ?? null,
       );
     },
     [publishTaskRow],

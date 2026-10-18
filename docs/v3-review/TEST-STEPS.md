@@ -578,3 +578,28 @@ Sepolia testnet in `docs/sepolia-testnet.md`):
 What to check a person understands (the pilot's questions, `PILOT-RUNBOOK.md`): the page says a milestone nobody objects to
 unlocks, the team's own tokens do not count in the vote, a backer can still leave with their share while one waits, and the last
 milestone is protected only by its bond.
+
+
+## 4ac. Connected DAO OS and project progress (D60, 2026-10-18)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke dao-os.spec.ts
+scripts/web-work-e2e.sh --retries=0
+scripts/web-challenge-e2e.sh --retries=0
+pnpm --dir web build  # restore the standard build after local-chain journeys
+```
+
+By hand, using a test project and development wallets:
+
+1. **Find the project.** Main navigation has Home, Discover, Workspaces and Portfolio on desktop and phone. Discover offers Launches and Markets. The existing Communities page is still reachable through Workspaces. Home offers People & posts.
+2. **Share actual progress.** Open your project and Post update. Name a shipped artifact or demo, include its URL, credit contributors and say what comes next. Include only artifacts intended for the project's update feed. Home's Project progress shows your signed team report with its author and an artifact link. A report is not shown as independently verified work.
+3. **Follow and catch up.** Follow a second project. Its reports appear in Following & yours. All projects remains available. Open a project's overview, leave, then publish another update and return: the new loaded report is labeled New to you. Mark shown updates as read; a reload preserves that in this browser. Another account or relay has separate reading history. A failed read is reported and offers Retry rather than a reassuring empty feed.
+4. **Link work.** In Workspaces, open Work, choose a task in List view, then Delivery & payment. Choose its project and paste an output link. Save: a signed task update is sent, and the page says no payment was sent. Reload and verify the links remain. An older agent status row that omits delivery metadata must not erase them. A refused write leaves the draft for another attempt.
+5. **Link a claim explicitly.** On the project's network, select an existing claim and save the reference. Its status is read from the chain. Open project claim takes you to that exact claim. Saving the link or marking the task done never sends a payment transaction, approves the claim or awards Shares. Payment remains the claim workflow's explicit action.
+6. **Supervise helpers.** Open People & agents. See the founder-managed community seats, team-recorded tasks, outputs, heartbeat recency and review needs. Only team-signed task rows appear here; outside participants’ updates remain on the community Work board. An outside task naming the project or assigning a teammate must not appear in the overview or introduce a helper. Outside evidence posts must not appear as team progress. Recorded limits in this view must be signed by the founder. If a read fails, Reload records recovers without leaving the tab or reloading the document. Recorded budgets show their enforcement labels; they are not presented as measured costs. Follow the links to the existing Org budget/permission/emergency-stop controls and to the tab helper's run/stop control. An unknown role or limit stays unknown.
+7. **Review urgency and layout.** A claim approaching expiry appears before a vote with a later deadline and explains how an unanswered claim can lapse. On Home, personal actions appear above onboarding. In a completed DAO, actions and treasury figures precede the compact progress feed. On a phone, project destinations scroll rather than wrap into several rows; milestone rules expand without hiding the current milestone or transaction confirmations.
+
+Working looks like: all of these destinations are reachable from the project, failed reads/writes have recovery, reading history is local, and every financial action still has its separate authorization step. The remaining investor execution/data-provider work is not implied by these screens.

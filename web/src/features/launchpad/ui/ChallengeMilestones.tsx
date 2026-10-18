@@ -124,8 +124,10 @@ export function ChallengeMilestones({
           part of them stays locked: it cannot be sold or moved until a
           milestone is reached.
         </p>
-        <div className="mt-2 text-sm" data-testid="challenge-rules">
-          <p>A milestone is reached like this:</p>
+        <details className="mt-2 text-sm" data-testid="challenge-rules">
+          <summary className="cursor-pointer font-medium">
+            How milestone unlocks work
+          </summary>
           <ol className="mt-1 list-decimal space-y-1 pl-5">
             <li>
               The team publishes its evidence and posts a bond of{" "}
@@ -158,7 +160,7 @@ export function ChallengeMilestones({
             objected to. Once the last one has unlocked, what stands behind it
             is the bond.
           </p>
-        </div>
+        </details>
         <p className="mt-2 text-sm text-muted-foreground">
           Backers can still leave with their share of the treasury while a
           milestone waits.

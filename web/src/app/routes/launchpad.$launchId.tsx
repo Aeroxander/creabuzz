@@ -10,7 +10,21 @@ import {
 interface LaunchSearch {
   author?: string;
   action?: LaunchAction;
-  tab?: "decisions" | "record" | "milestones" | "work";
+  tab?:
+    | "overview"
+    | "decisions"
+    | "record"
+    | "milestones"
+    | "work"
+    | "agents"
+    | "updates"
+    | "discussion"
+    | "treasury"
+    | "mybids"
+    | "manage"
+    | "proposals";
+  claim?: string;
+  mandate?: string;
   /** One decision to show: its id. Opens the Decisions tab and highlights that card. */
   decision?: string;
 }
@@ -27,11 +41,31 @@ export const Route = createFileRoute("/launchpad/$launchId")({
     // `?tab=decisions` opens that tab (a discussion on a board links straight to the vote), and `?tab=record` opens the
     // DAO's track record, which is what people share.
     tab:
-      search.tab === "decisions" ||
-      search.tab === "record" ||
-      search.tab === "milestones" ||
-      search.tab === "work"
-        ? search.tab
+      typeof search.tab === "string" &&
+      [
+        "overview",
+        "decisions",
+        "record",
+        "milestones",
+        "work",
+        "agents",
+        "updates",
+        "discussion",
+        "treasury",
+        "mybids",
+        "manage",
+        "proposals",
+      ].includes(search.tab)
+        ? (search.tab as LaunchSearch["tab"])
+        : undefined,
+    claim:
+      typeof search.claim === "string" && /^0x[0-9a-f]{64}$/i.test(search.claim)
+        ? search.claim.toLowerCase()
+        : undefined,
+    mandate:
+      typeof search.mandate === "string" &&
+      /^0x[0-9a-f]{40}$/i.test(search.mandate)
+        ? search.mandate.toLowerCase()
         : undefined,
     decision:
       typeof search.decision === "string" &&
@@ -51,12 +85,14 @@ const LaunchDetailPage = lazyRouteComponent(
 
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
-  const { author, action, tab, decision } = Route.useSearch();
+  const { author, action, tab, decision, claim, mandate } = Route.useSearch();
   const sandbox = launchId === "nebula-sandbox";
   return (
     <LaunchDetailPage
+      key={`${author ?? "unknown"}:${launchId}`}
       action={action}
       author={author}
+      initialClaim={claim && mandate ? { id: claim, mandate } : undefined}
       initialDecision={decision}
       initialTab={tab}
       launchId={launchId}

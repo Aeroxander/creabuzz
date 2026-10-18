@@ -31,10 +31,18 @@ import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
+import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
+import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { MilestoneProgressCard } from "./MilestoneProgressCard";
 import { SpendingCard } from "./SpendingCard";
 
-export type OverviewTarget = "decisions" | "work" | "record" | "milestones";
+export type OverviewTarget =
+  | "decisions"
+  | "work"
+  | "record"
+  | "milestones"
+  | "agents"
+  | "treasury";
 
 export function DaoOverview({
   launch,
@@ -111,7 +119,8 @@ export function DaoOverview({
     }
   };
   const counts = overviewCounts(decisions.data, work.data);
-  const loading = decisions.isLoading || work.isLoading;
+  const loading =
+    decisions.isLoading || work.isLoading || challengeLock.isLoading;
   const money = holdings.data?.treasury;
   const symbol = sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "");
   const shares = (value: bigint | null | undefined) =>
@@ -126,46 +135,6 @@ export function DaoOverview({
 
   return (
     <div className="flex flex-col gap-4" data-testid="dao-overview">
-      <Card className="p-4">
-        <h2 className="text-base font-bold">Where things stand</h2>
-        <p
-          className="mt-1 text-sm text-muted-foreground"
-          data-testid="dao-summary"
-        >
-          {loading
-            ? "Reading from the network…"
-            : decisions.isError && work.isError
-              ? "Couldn't read this project from the network. Try again in a moment."
-              : summaryLine(counts)}
-        </p>
-      </Card>
-
-      {!loading &&
-      work.data &&
-      counts.workBudgets === 0 &&
-      counts.openDecisions === 0 ? (
-        <Card className="p-4" data-testid="dao-start-work">
-          <h3 className="text-sm font-semibold">
-            {(counts.carriedOut ?? 0) > 0
-              ? "Set up a work budget"
-              : "Set up the first work budget"}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            A work budget sets aside Shares (and money, if you want) for people
-            to earn by doing work. Holders vote on it, then anyone can file a
-            claim for what they did and reviewers check it.
-          </p>
-          <Button
-            className="mt-2"
-            onClick={() => onOpen("decisions")}
-            size="sm"
-            type="button"
-          >
-            Put a work budget to a vote
-          </Button>
-        </Card>
-      ) : null}
-
       <Card className="p-4" data-testid="dao-needs-you">
         <h3 className="text-sm font-semibold">Needs you</h3>
         {wallet === null ? (
@@ -241,23 +210,6 @@ export function DaoOverview({
           </>
         )}
       </Card>
-
-      <MilestoneProgressCard
-        dao={dao}
-        launch={launch}
-        onOpen={() => onOpen("milestones")}
-      />
-
-      {spending && sale ? (
-        <SpendingCard
-          decimals={sale.decimals}
-          labelOf={labelOf}
-          onOpenDecisions={() => onOpen("decisions")}
-          summary={spending}
-          symbol={symbol}
-        />
-      ) : null}
-
       <div className="grid gap-3 sm:grid-cols-3">
         <Figure
           label="In the treasury"
@@ -291,6 +243,62 @@ export function DaoOverview({
           }
         />
       </div>
+      <ProjectDeliveryOverview launch={launch} dao={dao} onOpen={onOpen} />
+      <Card className="p-4">
+        <h2 className="text-base font-bold">Where things stand</h2>
+        <p
+          className="mt-1 text-sm text-muted-foreground"
+          data-testid="dao-summary"
+        >
+          {loading
+            ? "Reading from the network…"
+            : decisions.isError && work.isError
+              ? "Couldn't read this project from the network. Try again in a moment."
+              : summaryLine(counts)}
+        </p>
+      </Card>
+
+      {!loading &&
+      work.data &&
+      counts.workBudgets === 0 &&
+      counts.openDecisions === 0 ? (
+        <Card className="p-4" data-testid="dao-start-work">
+          <h3 className="text-sm font-semibold">
+            {(counts.carriedOut ?? 0) > 0
+              ? "Set up a work budget"
+              : "Set up the first work budget"}
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A work budget sets aside Shares (and money, if you want) for people
+            to earn by doing work. Holders vote on it, then anyone can file a
+            claim for what they did and reviewers check it.
+          </p>
+          <Button
+            className="mt-2"
+            onClick={() => onOpen("decisions")}
+            size="sm"
+            type="button"
+          >
+            Put a work budget to a vote
+          </Button>
+        </Card>
+      ) : null}
+
+      <MilestoneProgressCard
+        dao={dao}
+        launch={launch}
+        onOpen={() => onOpen("milestones")}
+      />
+
+      {spending && sale ? (
+        <SpendingCard
+          decimals={sale.decimals}
+          labelOf={labelOf}
+          onOpenDecisions={() => onOpen("decisions")}
+          summary={spending}
+          symbol={symbol}
+        />
+      ) : null}
 
       <Card
         className="flex flex-wrap items-center justify-between gap-3 p-4"
@@ -345,6 +353,7 @@ export function DaoOverview({
         </Card>
       ) : null}
 
+      <ProjectProgressFeed project={launch} compact />
       <details
         className="rounded-xl border border-border/60 px-3 py-2"
         data-testid="dao-raise-details"

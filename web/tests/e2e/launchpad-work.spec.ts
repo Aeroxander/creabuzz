@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { createMockRelay } from "./mock-relay";
 import { publishedEvents } from "../helpers/published-events";
 
 /**
@@ -298,6 +299,61 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     "Awarding Shares is a decision the DAO votes on",
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
+
+  // Link a relay task to the real claim. The save is a signed reference update, never another EVM operation.
+  const linker = await context.newPage();
+  const taskRelay = createMockRelay();
+  taskRelay.seed(record);
+  taskRelay.seed({
+    id: "a".repeat(64),
+    kind: 44011,
+    pubkey: FOUNDER,
+    created_at: 100,
+    tags: [["d", "linked-docs"]],
+    content: JSON.stringify({ title: "Write the docs", status: "done" }),
+    sig: "sig",
+  });
+  await taskRelay.install(linker);
+  await installAnvilWallet(linker, CONTRIBUTOR, { rpcUrl: ANVIL_URL });
+  await linker.addInitScript(
+    ([nsec, rpcUrl]) => {
+      localStorage.setItem("buzz.identity.nsec", nsec);
+      localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [NSEC, ANVIL_URL],
+  );
+  await linker.goto(`/c/127.0.0.1:4173?view=work&work=${FOUNDER}:linked-docs`);
+  const delivery = linker.getByTestId("task-delivery");
+  await expect(delivery).toBeVisible();
+  await delivery
+    .getByTestId("task-delivery-project")
+    .selectOption(`37001:${FOUNDER}:nebula-work`);
+  const paidOption = delivery
+    .getByTestId("task-delivery-claim")
+    .locator("option")
+    .filter({ hasText: "Paid" });
+  await expect(paidOption).toHaveCount(1, { timeout: 30_000 });
+  const claimRef = await paidOption.getAttribute("value");
+  if (!claimRef) throw new Error("The real paid claim had no reference");
+  await delivery.getByTestId("task-delivery-claim").selectOption(claimRef);
+  await delivery
+    .getByTestId("task-delivery-output")
+    .fill("https://example.com/pr/1");
+  const beforeLink = await rpc("eth_blockNumber");
+  await delivery.getByTestId("task-delivery-save").click();
+  await expect(delivery).toContainText("No payment was sent");
+  expect(await rpc("eth_blockNumber")).toBe(beforeLink);
+  const saved = taskRelay.events.filter((e) => e.kind === 44011).at(-1);
+  expect(JSON.parse(saved?.content ?? "{}").delivery.claim.id).toBe(
+    claimRef.split(":")[1],
+  );
+  await delivery.getByRole("link", { name: "Open project claim" }).click();
+  await expect(linker.getByTestId("work-claim-status")).toContainText("Paid", {
+    timeout: 30_000,
+  });
+  await expect(
+    linker.locator(`[id="claim-${claimRef.replace(":", "-")}"]`),
+  ).toBeFocused();
 
   // ── a reviewer who is done takes their bond back: ask, wait out the days, take it ─────────────
   if (REVIEWER_BOND !== "") {

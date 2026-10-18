@@ -1,6 +1,6 @@
 import { markFirstStep } from "@/shared/lib/first-steps";
 import type { ChallengeIntent } from "../lib/challenge";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -15,7 +15,6 @@ import { LaunchHero } from "./LaunchHero";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
 import { cn } from "@/shared/lib/cn";
 import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import {
@@ -51,6 +50,9 @@ import { RecordTab } from "./RecordTab";
 import { WorkTab } from "./WorkTab";
 import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
+import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
+import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
+import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { ProposalCard } from "./ProposalCard";
@@ -70,6 +72,7 @@ type Tab =
   | "decisions"
   | "work"
   | "record"
+  | "agents"
   | "manage";
 
 export function LaunchDetailPage({
@@ -79,6 +82,7 @@ export function LaunchDetailPage({
   sandbox,
   initialTab,
   initialDecision,
+  initialClaim,
 }: {
   launchId: string;
   author: string | undefined;
@@ -94,6 +98,7 @@ export function LaunchDetailPage({
   initialTab?: Tab;
   /** One decision to highlight on the Decisions tab (`?decision=`). */
   initialDecision?: string;
+  initialClaim?: { id: string; mandate: string };
 }) {
   const { launch: realLaunch, isLoading } = useLaunch(launchId, author);
   const launch = sandbox
@@ -127,7 +132,7 @@ export function LaunchDetailPage({
   }, [lookedAt]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
-  const [tab, setTab] = useState<Tab>(
+  const [tab, setLocalTab] = useState<Tab>(
     initialTab ?? (initialDecision ? "decisions" : "overview"),
   );
   const [bidOpen, setBidOpen] = useState(false);
@@ -141,7 +146,21 @@ export function LaunchDetailPage({
     if (tab !== "decisions") setChallenge(null);
   }, [tab]);
   const follows = useLaunchFollows();
-  const navigate = useNavigate();
+  const navigate = useNavigate({ from: "/launchpad/$launchId" });
+  const setTab = useCallback(
+    (next: Tab) => {
+      setLocalTab(next);
+      void navigate({
+        search: (previous) => ({ ...previous, tab: next }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+  useEffect(() => {
+    const next = initialTab ?? (initialDecision ? "decisions" : "overview");
+    setLocalTab(next === "manage" && !isFounder ? "overview" : next);
+  }, [initialTab, initialDecision, isFounder]);
   // Read before any early return: hooks keep their order. It resolves which DAO, if any, this launch belongs to.
   const orgMoney = useOrgMoney();
 
@@ -156,7 +175,7 @@ export function LaunchDetailPage({
     }
     setMybidsAutoAction(action);
     setTab("mybids");
-  }, [action]);
+  }, [action, setTab]);
 
   if (isLoading || !launch) {
     return (
@@ -254,6 +273,7 @@ export function LaunchDetailPage({
       : []),
     ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
     ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
+    { id: "agents", label: "People & agents" },
     ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
     { id: "treasury", label: "Treasury" },
     // Onchain bids only exist when the launch has an auction linked.
@@ -270,7 +290,9 @@ export function LaunchDetailPage({
   // makes the page look broken rather than early.
   const visibleTabs = idea
     ? tabs.filter((t) =>
-        ["overview", "discussion", "updates", "manage"].includes(t.id),
+        ["overview", "agents", "discussion", "updates", "manage"].includes(
+          t.id,
+        ),
       )
     : tabs;
 
@@ -347,12 +369,12 @@ export function LaunchDetailPage({
         />
       ) : null}
 
-      {sandbox ? null : (
+      {sandbox || stage === "graduated" ? null : (
         <LaunchChatCard isFounder={isFounder} launch={launch} />
       )}
 
       <div
-        className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border"
+        className="flex gap-x-5 overflow-x-auto border-b border-border"
         role="tablist"
         aria-label="Launch sections"
       >
@@ -365,10 +387,10 @@ export function LaunchDetailPage({
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "-mb-px border-b-[3px] px-1 pb-2 text-base font-semibold transition-colors",
+                "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
                 tab === t.id
                   ? "border-primary text-foreground"
-                  : "border-transparent text-foreground/60 hover:text-foreground",
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
               type="button"
             >
@@ -378,7 +400,15 @@ export function LaunchDetailPage({
       </div>
 
       {tab === "overview" && idea ? (
-        <IdeaOverview record={launch.record} />
+        <>
+          <IdeaOverview record={launch.record} />
+          <ProjectDeliveryOverview
+            launch={launch}
+            dao={workDao}
+            onOpen={setTab}
+          />
+          <ProjectProgressFeed project={launch} compact />
+        </>
       ) : null}
       {tab === "overview" && !idea ? (
         workDao && stage === "graduated" ? (
@@ -402,9 +432,15 @@ export function LaunchDetailPage({
         />
       ) : null}
       {tab === "discussion" && !sandbox ? (
-        <LaunchDiscussion record={launch.record} updates={launch.updates} />
+        <>
+          {stage === "graduated" ? (
+            <LaunchChatCard isFounder={isFounder} launch={launch} />
+          ) : null}
+          <LaunchDiscussion record={launch.record} updates={launch.updates} />
+        </>
       ) : null}
-      {tab === "updates" ? <UpdatesTab launch={launch} /> : null}
+      {tab === "updates" ? <ProjectProgressFeed project={launch} /> : null}
+      {tab === "agents" ? <ProjectAgents launch={launch} /> : null}
       {tab === "proposals" ? (
         <ProposalsTab launch={launch} onDissent={() => setTab("treasury")} />
       ) : null}
@@ -433,6 +469,7 @@ export function LaunchDetailPage({
         <WorkTab
           dao={workDao}
           launch={launch}
+          focusClaim={initialClaim}
           onChallenge={(intent) => {
             setChallenge(intent);
             setTab("decisions");
@@ -483,31 +520,6 @@ export function LaunchDetailPage({
         />
       ) : null}
     </div>
-  );
-}
-
-function UpdatesTab({ launch }: { launch: TabLaunch }) {
-  if (launch.updates.length === 0) {
-    return (
-      <p className="text-sm text-black/60 dark:text-white/60">
-        No updates yet. Founders post signed updates here.
-      </p>
-    );
-  }
-  return (
-    <ol className="flex max-w-2xl flex-col gap-3">
-      {launch.updates.map((u) => (
-        <li key={u.id}>
-          <Card className="p-4">
-            <h3 className="text-sm font-semibold">{u.title}</h3>
-            <p className="mt-0.5 text-xs tabular-nums text-black/60 dark:text-white/60">
-              {new Date(u.createdAt * 1000).toLocaleString()}
-            </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{u.body}</p>
-          </Card>
-        </li>
-      ))}
-    </ol>
   );
 }
 

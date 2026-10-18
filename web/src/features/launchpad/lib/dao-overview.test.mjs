@@ -391,3 +391,43 @@ test("the decisions most urgent to this person are listed before the ones that c
     ["vote-soon", "vote-late", "move-approved"],
   );
 });
+
+test("a review claim's expiry outranks a later vote and says what inaction risks", () => {
+  const c = claim("urgent", "Open");
+  c.record.expiresAt = 10001;
+  const items = attentionItems({
+    wallet: ME,
+    decisions: snap([
+      decision("later", "Active", { rules: { delay: 0n, expiresAt: 96400n } }),
+    ]),
+    work: {
+      chainTime: 10000,
+      mandates: [mandate([c], { walletIsReviewer: true })],
+    },
+    titleOf,
+  });
+  assert.equal(items[0].key, "review-urgent");
+  assert.equal(items[0].due, 10001);
+  assert.match(items[0].ifIgnored, /anyone can close/);
+  assert.match(items[0].ifIgnored, /stake and reserved payment/);
+  const expired = attentionItems({
+    wallet: ME,
+    decisions: undefined,
+    work: {
+      chainTime: 10002,
+      mandates: [mandate([c], { walletIsReviewer: true })],
+    },
+    titleOf,
+  });
+  assert.match(expired[0].ifIgnored, /can now close/);
+  const boundary = attentionItems({
+    wallet: ME,
+    decisions: undefined,
+    work: {
+      chainTime: 10001,
+      mandates: [mandate([c], { walletIsReviewer: true })],
+    },
+    titleOf,
+  });
+  assert.doesNotMatch(boundary[0].ifIgnored, /can now close/);
+});

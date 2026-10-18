@@ -11,6 +11,7 @@ import {
   type NostrFilter,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { KIND_AGENT_CAPABILITIES } from "@/shared/constants/kinds";
@@ -69,14 +70,24 @@ export function useAgentRoster(): {
   loading: boolean;
   /** Set when the relay read failed; the view shows a retry, not "no agents". */
   loadError: unknown;
+  reload: () => void;
 } {
+  const wsUrl = relayWsUrl();
+  const identity = existingUserPubkey();
+  const scope = `${wsUrl}:${identity ?? "guest"}`;
+  const [loadedScope, setLoadedScope] = useState(scope);
+  const [reloadToken, setReloadToken] = useState(0);
   const [agents, setAgents] = useState<Record<string, AgentCapabilities>>({});
   const [loading, setLoading] = useState(true);
   /** Kept so the fleet view can report a failed read instead of "no agents". */
   const [loadError, setLoadError] = useState<unknown>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadToken explicitly restarts this read and subscription for Retry.
   useEffect(() => {
-    const wsUrl = relayWsUrl();
+    setLoadedScope(scope);
+    setAgents({});
+    setLoading(true);
+    setLoadError(null);
     // Heartbeat rows flood history (one per agent per minute), so pull a wide
     // window and keep newest-per-identity client-side. Identities are
     // author-qualified: keying on the `d` tag alone let one member's
@@ -88,6 +99,7 @@ export function useAgentRoster(): {
     let disposed = false;
 
     const upsert = (event: NostrEvent) => {
+      if (disposed) return;
       const parsed = parseAnnouncement(event);
       if (!parsed) return;
       const key = rosterKey(parsed.pubkey, parsed.id);
@@ -147,7 +159,7 @@ export function useAgentRoster(): {
       clearInterval(livenessTimer);
       unsubscribe();
     };
-  }, []);
+  }, [wsUrl, scope, reloadToken]);
 
   const sorted = useMemo(
     () =>
@@ -158,5 +170,10 @@ export function useAgentRoster(): {
     [agents],
   );
 
-  return { agents: sorted, loading, loadError };
+  return {
+    agents: loadedScope === scope ? sorted : [],
+    loading: loading || loadedScope !== scope,
+    loadError: loadedScope === scope ? loadError : null,
+    reload: () => setReloadToken((t) => t + 1),
+  };
 }

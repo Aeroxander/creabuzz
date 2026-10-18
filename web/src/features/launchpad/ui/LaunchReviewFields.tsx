@@ -10,7 +10,7 @@ const CHOICES: { mode: ReviewMode; title: string; detail: string }[] = [
     mode: "challenge",
     title: "Holders can object (recommended)",
     detail:
-      "The team publishes evidence, holders get a week to object, and with no objection the tokens unlock. There are no reviewers to find or keep reachable.",
+      "The team publishes evidence, holders get time to object, and with no objection anyone can finalize the unlock. There are no reviewers to find or keep reachable.",
   },
   {
     mode: "panel",
@@ -45,6 +45,14 @@ export function LaunchReviewFields({
     requiredRaised && /^\d+$/.test(requiredRaised)
       ? (BigInt(requiredRaised) * BigInt(CHALLENGE_DEFAULTS.bondBps)) / 10_000n
       : null;
+  // Illustration of the 20/30/50 split, using the same size scaling as windowFor.
+  let earliest = 0;
+  const exampleDays = [1, 2, 3].map((multiplier, index) => {
+    earliest +=
+      CHALLENGE_DEFAULTS.window * multiplier +
+      (index ? CHALLENGE_DEFAULTS.clawback : 0);
+    return earliest / 86_400;
+  });
   return (
     <div className="mt-3" data-testid="launch-review">
       <fieldset className="grid gap-2">
@@ -109,6 +117,15 @@ export function LaunchReviewFields({
                 only your bond stands behind it.
               </li>
             </ul>
+            <p className="mt-2" data-testid="launch-earliest-unlocks">
+              For example, with a 20% / 30% / 50% milestone split, the earliest
+              unlocks are days {exampleDays.join(", ")} after the first report,
+              and you can reclaim the final bond on day{" "}
+              {exampleDays[2] + CHALLENGE_DEFAULTS.clawback / 86_400}. This
+              assumes immediate publication when allowed, no objections or
+              retries, and someone finalizing each unlock. Actual delivery and
+              objections can make it take longer.
+            </p>
             <p className="mt-2">
               Backers see all of this before they bid, and no vote can change
               it.

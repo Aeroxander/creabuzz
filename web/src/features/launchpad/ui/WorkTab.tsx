@@ -1,5 +1,5 @@
 import { type ChallengeIntent, challengeFor } from "../lib/challenge";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -60,9 +60,11 @@ export function WorkTab({
   dao,
   onOpenDecisions,
   onChallenge,
+  focusClaim,
 }: {
   launch: Launch;
   dao: string;
+  focusClaim?: { id: string; mandate: string };
   /** Go to the Decisions tab, where the DAO's votes are opened. */
   onOpenDecisions?: () => void;
   /** Go to the Decisions tab with the form for doubting (or unwinding) one claim already filled in. */
@@ -86,6 +88,22 @@ export function WorkTab({
     [work.data],
   );
   const labelOf = useWalletLabels(people);
+  const focusedClaim = useRef<string | null>(null);
+  useEffect(() => {
+    const focusKey = focusClaim
+      ? `${focusClaim.mandate}:${focusClaim.id}`
+      : null;
+    if (!focusClaim || !work.data || focusedClaim.current === focusKey) return;
+    const frame = requestAnimationFrame(() => {
+      const element = document.getElementById(
+        `claim-${focusClaim.mandate}-${focusClaim.id}`,
+      );
+      element?.scrollIntoView({ block: "center" });
+      element?.focus({ preventScroll: true });
+      if (element) focusedClaim.current = focusKey;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusClaim, work.data]);
 
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">
@@ -515,6 +533,8 @@ function MandateCard({
             return (
               <li
                 className="rounded-lg border border-black/10 p-2 text-sm dark:border-white/10"
+                id={`claim-${mandate.address.toLowerCase()}-${claim.id.toLowerCase()}`}
+                tabIndex={-1}
                 data-testid="work-claim"
                 key={claim.id}
               >

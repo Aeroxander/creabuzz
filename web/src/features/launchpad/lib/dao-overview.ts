@@ -137,9 +137,15 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           text: `${who(claim.record.contributor)} filed a claim that needs your review.`,
           action: "Review it",
           tab: "work",
+          ...(claim.record.expiresAt > 0
+            ? { due: claim.record.expiresAt }
+            : {}),
           why: "You are a reviewer on this work budget.",
           ifIgnored:
-            "The claim stays open until enough reviewers have judged it.",
+            claim.record.expiresAt > 0 &&
+            (work?.chainTime ?? 0) > claim.record.expiresAt
+              ? "Anyone can now close this unanswered claim and return its stake and reserved payment."
+              : "After its deadline, anyone can close an unanswered claim and return its stake and reserved payment.",
         });
       }
     }

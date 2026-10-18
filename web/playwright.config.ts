@@ -48,6 +48,7 @@ export default defineConfig({
         // content. One assertion, but it is the whole bug.
         "**/stack-check.spec.ts",
         "**/feed.spec.ts",
+        "**/dao-os.spec.ts",
         "**/responsive.spec.ts",
         "**/responsive-surfaces.spec.ts",
         "**/a11y.spec.ts",

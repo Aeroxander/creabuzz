@@ -22,6 +22,10 @@ export function PostUpdateDialog({
       <h2 className="text-lg font-semibold text-black dark:text-white">
         Post update
       </h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Published to this project's update feed on this server. Include only
+        artifacts you intend to share.
+      </p>
       <div className="mt-3 flex flex-col gap-3">
         <div>
           <label className="text-sm font-medium" htmlFor="update-title">
@@ -31,7 +35,7 @@ export function PostUpdateDialog({
             id="update-title"
             className="mt-1"
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Milestone 1 verified"
+            placeholder="What shipped this week?"
             value={title}
           />
         </div>
@@ -43,7 +47,7 @@ export function PostUpdateDialog({
             id="update-body"
             className="mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
             onChange={(e) => setBody(e.target.value)}
-            placeholder="What shipped, what unlocked, what is next?"
+            placeholder="Show the artifact or demo, credit the people and agents who helped, and say what comes next."
             rows={4}
             value={body}
           />

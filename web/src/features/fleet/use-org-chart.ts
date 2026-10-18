@@ -6,6 +6,7 @@ import {
   type NostrFilter,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_ORG_NODE } from "@/shared/constants/kinds";
 
@@ -23,9 +24,8 @@ import {
  *
  * Mirrors `use-agent-roster`: pulls a wide window of node events (explicit
  * kinds for the relay's p-gate), keeps newest-per-(author, d) client-side via
- * `indexOrgNodes`, and assembles the forest with `buildOrgTree`. A failing
- * load leaves whatever was already there in place — an org chart that
- * disappears on a transient error is worse than a stale one.
+ * `indexOrgNodes`, and assembles the forest with `buildOrgTree`. A failed
+ * read exposes retry; switching relay or account never retains old roles.
  *
  * Each stored index entry remembers its source event, so the live
  * subscription re-indexes real wire events (not lossy projections) and the
@@ -39,16 +39,25 @@ export function useOrgChart(): {
   byKey: Record<string, OrgNodeEntry>;
   loading: boolean;
   loadError: unknown;
+  reload: () => void;
 } {
+  const wsUrl = relayWsUrl();
+  const identity = existingUserPubkey();
+  const scope = `${wsUrl}:${identity ?? "guest"}`;
+  const [loadedScope, setLoadedScope] = useState(scope);
+  const [reloadToken, setReloadToken] = useState(0);
   const [eventsByKey, setEventsByKey] = useState<Record<string, OrgNodeEvent>>(
     {},
   );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadToken explicitly restarts this read and subscription for Retry.
   useEffect(() => {
     setLoading(true);
-    const wsUrl = relayWsUrl();
+    setLoadedScope(scope);
+    setEventsByKey({});
+    setLoadError(null);
     const filter: NostrFilter = {
       kinds: [KIND_ORG_NODE],
       limit: 1000,
@@ -59,6 +68,7 @@ export function useOrgChart(): {
     // stores the newest wire event per (author, d) individually, so the
     // merge needs no projection and loses nothing.
     const upsert = (event: NostrEvent) => {
+      if (disposed) return;
       if (event.kind !== KIND_ORG_NODE) return;
       const wire = event as unknown as OrgNodeEvent;
       const d = wire.tags.find((t) => t[0] === "d")?.[1];
@@ -109,12 +119,20 @@ export function useOrgChart(): {
       disposed = true;
       unsubscribe();
     };
-  }, []);
+  }, [wsUrl, scope, reloadToken]);
 
   // Derive the forest from stored events each render; the index and the tree
   // are pure functions of the events, so no derived state can go stale.
-  const byKey = indexOrgNodes(Object.values(eventsByKey));
-  return { forest: buildOrgTree(byKey), byKey, loading, loadError };
+  const byKey = indexOrgNodes(
+    loadedScope === scope ? Object.values(eventsByKey) : [],
+  );
+  return {
+    forest: buildOrgTree(byKey),
+    byKey,
+    loading: loading || loadedScope !== scope,
+    loadError: loadedScope === scope ? loadError : null,
+    reload: () => setReloadToken((t) => t + 1),
+  };
 }
 
 export { orgNodeKey };
