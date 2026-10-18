@@ -30,11 +30,27 @@ const general = {
   sig: "sig",
 };
 
+function membership(role: "owner" | "admin" | "member", created_at = 100) {
+  return {
+    id: `members-${role}-${created_at}`,
+    pubkey: "b".repeat(64),
+    created_at,
+    kind: 13534,
+    tags: [["-"], ["member", ME, role]],
+    content: "",
+    sig: "sig",
+  };
+}
+
 async function open(
   page: import("@playwright/test").Page,
   relay: ReturnType<typeof createMockRelay>,
-  { signedIn = true } = {},
+  {
+    signedIn = true,
+    role = "owner",
+  }: { signedIn?: boolean; role?: "owner" | "admin" | "member" | null } = {},
 ) {
+  if (role) relay.seed(membership(role));
   await relay.install(page);
   if (signedIn) {
     await page.addInitScript((nsec) => {
@@ -43,6 +59,9 @@ async function open(
   }
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
+  if (await page.getByTestId("open-channel-list").isVisible()) {
+    await page.getByTestId("open-channel-list").click();
+  }
   await page.getByTestId("start-project-toggle").click();
 }
 
@@ -76,6 +95,13 @@ test("a team is picked, set up step by step, and its first channel opens", async
   // Every bundled team is offered, and each says who it is for.
   const picker = page.getByTestId("start-project");
   await expect(picker).toBeVisible();
+  await expect(
+    picker.getByRole("heading", { name: "Set up this community" }),
+  ).toBeVisible();
+  await expect(picker).toContainText("Existing channels are reused.");
+  await expect(page.getByTestId("start-project-confirm")).toHaveText(
+    "Set up community",
+  );
   await expect(
     page.getByTestId("template-option-ai-media-studio"),
   ).toBeChecked();
@@ -152,7 +178,7 @@ test("a team is picked, set up step by step, and its first channel opens", async
   );
 });
 
-test("a refused step says what to do, keeps what went through, and Try again finishes without repeating anything", async ({
+test("a refusal after preflight keeps progress and retry finishes without repeating anything", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -165,7 +191,7 @@ test("a refused step says what to do, keeps what went through, and Try again fin
         : null,
   });
   relay.seed(general);
-  await open(page, relay);
+  await open(page, relay, { role: "admin" });
   await page.getByTestId("start-project-confirm").click();
 
   await expect(page.getByTestId("start-project-problem-text")).toContainText(
@@ -208,7 +234,7 @@ test("someone without an account is asked to create one first", async ({
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
 });
 
-test("a community with no channels asks to start a project instead of showing a dead end", async ({
+test("a community with no channels offers community setup instead of showing a dead end", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -230,6 +256,140 @@ test("a community with no channels asks to start a project instead of showing a 
   await page.getByTestId("empty-community-start").click();
   await expect(page.getByTestId("start-project")).toBeVisible();
 });
+
+test("members see the restriction before setup and can recheck after promotion", async ({
+  page,
+}) => {
+  let writes = 0;
+  const relay = createMockRelay({
+    refuse: () => {
+      writes += 1;
+      return null;
+    },
+  });
+  relay.seed(general);
+  await open(page, relay, { role: "member" });
+  await page.getByTestId("template-option-vanilla-app-studio").focus();
+  await page.keyboard.press("Space");
+  await expect(
+    page.getByTestId("template-option-vanilla-app-studio"),
+  ).toBeChecked();
+  await expect(page.getByTestId("start-project-access")).toContainText(
+    "Only this community's owner or an admin",
+  );
+  await expect(page.getByTestId("start-project-confirm")).toBeDisabled();
+  expect(writes).toBe(0);
+  expect(await firstSteps(page)).toEqual([]);
+
+  relay.seed(membership("admin", 200));
+  await page.getByTestId("start-project-check-access").click();
+  await expect(page.getByTestId("start-project-confirm")).toBeEnabled();
+  expect(writes).toBe(0);
+});
+
+test("a missing member list never grants setup permission", async ({
+  page,
+}) => {
+  let writes = 0;
+  const relay = createMockRelay({
+    refuse: () => {
+      writes += 1;
+      return null;
+    },
+  });
+  relay.seed(general);
+  await open(page, relay, { role: null });
+  await expect(page.getByTestId("start-project-access")).toContainText(
+    "Couldn't confirm your role",
+  );
+  await expect(page.getByTestId("start-project-confirm")).toBeDisabled();
+  expect(writes).toBe(0);
+});
+
+test("permission lost after opening the picker is caught before any writes", async ({
+  page,
+}) => {
+  let writes = 0;
+  const relay = createMockRelay({
+    refuse: () => {
+      writes += 1;
+      return null;
+    },
+  });
+  relay.seed(general);
+  await open(page, relay);
+  await expect(page.getByTestId("start-project-confirm")).toBeEnabled();
+  relay.seed(membership("member", 200));
+  await page.getByTestId("start-project-confirm").click();
+  await expect(page.getByTestId("start-project-access")).toContainText(
+    "Only this community's owner or an admin",
+  );
+  await expect(page.getByTestId("start-project-confirm")).toBeDisabled();
+  expect(writes).toBe(0);
+});
+
+test("a failed permission read disables setup and offers a working retry", async ({
+  page,
+}) => {
+  let writes = 0;
+  const relay = createMockRelay({
+    refuse: () => {
+      writes += 1;
+      return null;
+    },
+  });
+  relay.seed(general);
+  relay.setClosingSockets((filter) => filter?.kinds?.includes(13534) ?? false);
+  await open(page, relay);
+  await expect(page.getByTestId("start-project-access")).toContainText(
+    "Couldn't check your community permissions",
+  );
+  await expect(page.getByTestId("start-project-confirm")).toBeDisabled();
+  expect(writes).toBe(0);
+  relay.setClosingSockets(false);
+  await page.getByTestId("start-project-check-access").click();
+  await expect(page.getByTestId("start-project-confirm")).toBeEnabled();
+});
+
+for (const viewport of [
+  { width: 1024, height: 480 },
+  { width: 390, height: 600 },
+]) {
+  test(`community setup scrolls by pointer and keyboard at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const relay = createMockRelay();
+    relay.seed(general);
+    await open(page, relay);
+    const scroll = page.getByTestId("community-setup-scroll");
+    const confirm = page.getByTestId("start-project-confirm");
+    await expect(confirm).toBeEnabled();
+    expect(
+      await scroll.evaluate((el) => el.scrollHeight > el.clientHeight),
+    ).toBe(true);
+    const bounds = await scroll.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect((bounds?.y ?? 0) + (bounds?.height ?? 0)).toBeLessThanOrEqual(
+      viewport.height,
+    );
+
+    await scroll.hover();
+    await page.mouse.wheel(0, 4000);
+    await expect(confirm).toBeInViewport();
+    const bottom = await scroll.evaluate((el) => el.scrollTop);
+    await scroll.focus();
+    await scroll.press("PageUp");
+    await expect
+      .poll(() => scroll.evaluate((el) => el.scrollTop))
+      .toBeLessThan(bottom);
+    await scroll.press("PageDown");
+    await expect(confirm).toBeInViewport();
+    // Keyboard users can reach the action as well as scroll its panel.
+    await confirm.focus();
+    await expect(confirm).toBeFocused();
+  });
+}
 
 test("a community that has channels does not show the empty prompt", async ({
   page,

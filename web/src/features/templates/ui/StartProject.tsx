@@ -1,10 +1,9 @@
 /**
- * Start a project: pick a ready-made team, see what it will set up, and set it
- * up.
+ * Set up the current community: pick a ready-made team and preview its additions.
  *
  * The picker shows the bundled templates (channels, AI helpers, shared pages, a
- * default limit for the helpers) in plain words and says who each is for. Starting
- * one writes everything as you, one step at a time, shows each step as it goes,
+ * default limit for the helpers) in plain words and says who each is for. After
+ * checking your role, setup writes as you, one step at a time, shows each step,
  * and, if the server refuses one, says which and what to do, keeps what went
  * through, and lets the same button pick up from there.
  *
@@ -199,7 +198,7 @@ export function StartProject({
   onOpenView: (view: ProjectDestination) => void;
 }) {
   const [choice, setChoice] = useState<string>(TEMPLATE_INDEX[0]?.id ?? "");
-  const { state, apply, reset } = useTemplateApply();
+  const { state, apply, reset, access, refreshAccess } = useTemplateApply();
   const signedIn = existingUserPubkey() !== null;
   const summary = TEMPLATE_INDEX.find((t) => t.id === choice) ?? null;
   const busy = state.phase === "reading" || state.phase === "running";
@@ -209,7 +208,7 @@ export function StartProject({
     const firstId = first ? state.report.channelIds[first.id] : undefined;
     return (
       <Card className="m-3 p-5" data-testid="start-project-done">
-        <h2 className="text-lg font-semibold">Your project is ready</h2>
+        <h2 className="text-lg font-semibold">Your community is set up</h2>
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           {state.entry.template.name} is set up. There is a welcome message in #
           {first?.name ?? "the first channel"}.
@@ -256,7 +255,11 @@ export function StartProject({
         : null;
     return (
       <Card className="m-3 p-5" data-testid="start-project-problem">
-        <h2 className="text-lg font-semibold">The project did not finish</h2>
+        <h2 className="text-lg font-semibold">
+          {state.phase === "stopped"
+            ? "Setup did not finish"
+            : "Setup needs attention"}
+        </h2>
         <p
           className="mt-1 text-sm text-destructive"
           data-testid="start-project-problem-text"
@@ -291,14 +294,14 @@ export function StartProject({
       <Card className="m-3 p-5" data-testid="start-project-running">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
           <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-          Starting {state.entry.template.name}
+          Setting up {state.entry.template.name}
         </h2>
         <div className="mt-3">
           {state.phase === "running" ? (
             <Progress busy results={state.results} />
           ) : (
             <p className="text-sm text-muted-foreground" role="status">
-              Checking what is already here…
+              Checking your permissions and what is already here…
             </p>
           )}
         </div>
@@ -310,12 +313,35 @@ export function StartProject({
     <Card className="m-3 p-5" data-testid="start-project">
       <h2 className="flex items-center gap-2 text-lg font-semibold">
         <Users aria-hidden className="h-5 w-5" />
-        Start a project
+        Set up this community
       </h2>
       <p className="mt-0.5 text-sm text-muted-foreground">
-        Pick a ready-made team. Channels, AI helpers and shared pages are set up
-        for you in about a minute, and you can change anything afterwards.
+        Add a ready-made team, AI helpers and shared pages to this community.
+        Existing channels are reused. You can change anything afterwards.
       </p>
+      {signedIn && access !== "allowed" ? (
+        <div className="mt-3 text-sm" data-testid="start-project-access">
+          <p role="status">
+            {access === "checking"
+              ? "Checking your community permissions…"
+              : access === "denied"
+                ? "Only this community's owner or an admin can set up its team. Ask one of them to do this."
+                : access === "error"
+                  ? "Couldn't check your community permissions. Check the connection, then try again."
+                  : "Couldn't confirm your role in this community. Ask its owner or an admin, or check again."}
+          </p>
+          {access !== "checking" ? (
+            <Button
+              className="mt-2"
+              data-testid="start-project-check-access"
+              onClick={() => void refreshAccess()}
+              variant="outline"
+            >
+              Check again
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <fieldset className="mt-4">
         <legend className="sr-only">Choose a team</legend>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -364,10 +390,10 @@ export function StartProject({
         {signedIn ? (
           <Button
             data-testid="start-project-confirm"
-            disabled={!summary}
+            disabled={!summary || access !== "allowed"}
             onClick={() => summary && void apply(summary.id)}
           >
-            Start this project
+            Set up community
           </Button>
         ) : (
           <>
@@ -378,7 +404,7 @@ export function StartProject({
               {CREATE_ACCOUNT}
             </Button>
             <span className="text-sm text-muted-foreground">
-              to start a project here.
+              to continue. Community setup needs an owner or admin account.
             </span>
           </>
         )}

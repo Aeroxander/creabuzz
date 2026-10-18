@@ -1,15 +1,16 @@
 /**
- * Starting a project from a template, from the browser.
+ * Setting up an existing community from a template, from the browser.
  *
- * Reads what the server already holds, plans, then sends one record per step as
- * the signed-in person, stopping at the first the server refuses. Applying the
+ * Checks the viewer's role, reads what the server already holds, plans, then
+ * sends one record per step as the signed-in person, stopping at the first the
+ * server refuses. Applying the
  * same template again resumes from the server's own records, so a failure in
  * the middle is never a mess to clean up. The bundled templates are loaded when
  * one is picked, so the page itself does not carry them.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useState } from "react";
 
 import {
   describeStep,
@@ -22,6 +23,11 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { openUserPublisher } from "@/shared/lib/publish-as-user";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import {
+  isAdminRole,
+  KIND_NIP43_MEMBERSHIP_LIST,
+  viewerRoleFromEvents,
+} from "@/features/wiki/lib/live-members";
 
 import { explainStepFailure } from "./lib/explain";
 import {
@@ -44,8 +50,7 @@ export type ApplyState =
 /** Bounded reads: a community never makes us pull more than this of anything. */
 const READ_LIMIT = 500;
 
-async function loadExisting(templateId: string, me: string) {
-  const url = relayWsUrl();
+async function loadExisting(url: string, templateId: string, me: string) {
   const [channelRecords, markerRecords, orgRecords] = await Promise.all([
     queryEvents(url, { kinds: [CHANNEL_METADATA_KIND], limit: READ_LIMIT }),
     queryEvents(url, {
@@ -85,22 +90,63 @@ function initialResults(entry: TemplateEntry, plan: PlanStep[]): StepResult[] {
 
 export function useTemplateApply() {
   const queryClient = useQueryClient();
+  const me = existingUserPubkey();
+  const url = relayWsUrl();
   const [state, setState] = useState<ApplyState>({ phase: "idle" });
+  const applying = useRef(false);
+  // The relay's member list carries community roles. Scope the cache to both
+  // relay and identity, and never interpret a missing list as permission.
+  const accessQuery = useQuery({
+    queryKey: ["template-setup-access", url, me],
+    queryFn: async () => {
+      const events = await queryEvents(url, {
+        kinds: [KIND_NIP43_MEMBERSHIP_LIST],
+        limit: 5,
+      });
+      const role = viewerRoleFromEvents(events, me);
+      return isAdminRole(role) ? "allowed" : role ? "denied" : "unknown";
+    },
+    enabled: me !== null,
+    retry: false,
+  });
+  const refreshAccess = accessQuery.refetch;
+  const access = !me
+    ? "anonymous"
+    : accessQuery.isFetching
+      ? "checking"
+      : accessQuery.isError
+        ? "error"
+        : (accessQuery.data ?? "checking");
 
   const apply = useCallback(
     async (templateId: string) => {
-      const me = existingUserPubkey();
+      if (applying.current) return;
+      applying.current = true;
       let entry: TemplateEntry | null = null;
       try {
         if (!me)
-          throw new Error("Create your account first, then start a project.");
+          throw new Error(
+            "Create your account first, then set up your community.",
+          );
         const { TEMPLATE_CATALOG } = await import(
           "@creaton/core/templates/catalog.generated.ts"
         );
         entry = TEMPLATE_CATALOG[templateId] ?? null;
         if (!entry) throw new Error("That template is not available.");
         setState({ phase: "reading", entry });
-        const existing = await loadExisting(entry.template.id, me);
+        // Always check again at the action boundary: the role shown by the
+        // picker may have changed since it opened. No writes precede this.
+        const permission = await refreshAccess({ throwOnError: true });
+        if (permission.data !== "allowed") {
+          setState({ phase: "idle" });
+          return;
+        }
+        const existing = await loadExisting(url, entry.template.id, me);
+        if (existingUserPubkey() !== me || relayWsUrl() !== url) {
+          throw new Error(
+            "Your account or community changed. Reopen community setup and try again.",
+          );
+        }
         const plan = planApply(entry, existing);
         setState({
           phase: "running",
@@ -149,13 +195,15 @@ export function useTemplateApply() {
           message:
             error instanceof Error && error.message
               ? error.message
-              : "Couldn't start the project. Check the connection, then try again.",
+              : "Couldn't set up the community. Check the connection, then try again.",
         });
+      } finally {
+        applying.current = false;
       }
     },
-    [queryClient],
+    [queryClient, me, url, refreshAccess],
   );
 
   const reset = useCallback(() => setState({ phase: "idle" }), []);
-  return { state, apply, reset };
+  return { state, apply, reset, access, refreshAccess };
 }

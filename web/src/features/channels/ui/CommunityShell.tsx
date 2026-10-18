@@ -362,7 +362,7 @@ export function CommunityShell({
             data-testid="start-project-toggle"
           >
             <Rocket className="h-3.5 w-3.5" />
-            Start a project
+            Set up community
           </button>
           <button
             type="button"
@@ -529,20 +529,28 @@ export function CommunityShell({
           </div>
           <div className="buzz-content-card mb-2 mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col">
             {showingStart ? (
-              <Suspense
-                fallback={<ViewLoadingFallback label="Loading templates…" />}
+              <section
+                aria-label="Community setup"
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                data-testid="community-setup-scroll"
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to focus this scroll container to scroll it.
+                tabIndex={0}
               >
-                <StartProject
-                  onOpenChannel={(channelId) => {
-                    selectChannel(channelId);
-                    setShowingStart(false);
-                  }}
-                  onOpenView={(view) => {
-                    setShowingStart(false);
-                    setView(view === "agents" ? "fleet" : view);
-                  }}
-                />
-              </Suspense>
+                <Suspense
+                  fallback={<ViewLoadingFallback label="Loading templates…" />}
+                >
+                  <StartProject
+                    onOpenChannel={(channelId) => {
+                      selectChannel(channelId);
+                      setShowingStart(false);
+                    }}
+                    onOpenView={(view) => {
+                      setShowingStart(false);
+                      setView(view === "agents" ? "fleet" : view);
+                    }}
+                  />
+                </Suspense>
+              </section>
             ) : showingDms ? (
               <Suspense
                 fallback={<ViewLoadingFallback label="Loading messages…" />}
@@ -664,7 +672,7 @@ export function CommunityShell({
                       Nothing here yet
                     </p>
                     <p className="max-w-sm">
-                      Start from a ready-made team and this community fills with
+                      Choose a ready-made team and this community fills with
                       channels, AI helpers and shared pages.
                     </p>
                     <button
@@ -673,7 +681,7 @@ export function CommunityShell({
                       onClick={() => showStart(true)}
                       type="button"
                     >
-                      Start a project
+                      Set up community
                     </button>
                   </>
                 ) : (
