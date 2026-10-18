@@ -266,7 +266,7 @@ export function DaoOverview({
               ? "This project did not raise money"
               : money === null
                 ? "Could not be read"
-                : undefined
+                : "What the DAO holds now. Money already set aside for work is not counted."
           }
           testId="dao-figure-treasury"
           value={

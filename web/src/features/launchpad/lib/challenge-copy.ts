@@ -9,11 +9,12 @@
  * Pure and alias-free: `challenge-copy.test.mjs` drives it under `node --test`.
  */
 
-import type {
-  ChallengeLockView,
-  ChallengeMilestone,
-  ChallengeStage,
-  ChallengeTerms,
+import {
+  type ChallengeLockView,
+  type ChallengeMilestone,
+  type ChallengeStage,
+  type ChallengeTerms,
+  objectionCarries,
 } from "./milestone-challenge.ts";
 
 const DAY = 86_400;
@@ -222,6 +223,25 @@ export function challengeActions(
   return actions;
 }
 
+/**
+ * How an unlocked milestone got through, in plain words: no objection is not the same as holders having looked and agreed,
+ * and an unlock that was later upheld against says so.
+ */
+function howItStood(m: ChallengeMilestone, terms: ChallengeTerms): string {
+  // The lock keeps the latest objection: after a turned-down attempt it is still there when the retry goes through
+  // unopposed. This attempt began a window before its window ends, and an objection to it ends its vote after that.
+  const startedAt = m.windowEnds - m.nextWindow;
+  const o =
+    m.objection && (m.objection.late || m.objection.voteEnds > startedAt)
+      ? m.objection
+      : null;
+  if (!o) return "Nobody objected.";
+  if (!o.late) return "A holder objected, but the objection did not stand.";
+  return objectionCarries(o, terms.minRejectBps)
+    ? "A holder objected later and holders upheld it: the team's remaining locked tokens were burned."
+    : "A holder objected later, but the objection did not stand.";
+}
+
 /** The sentence under a milestone's name: where it stands and what happens next. */
 export function challengeHeadline(
   m: ChallengeMilestone,
@@ -245,9 +265,9 @@ export function challengeHeadline(
     case "vote-ended":
       return "The vote has ended. Anyone can settle it.";
     case "unlocked-open":
-      return `Unlocked on ${date(m.unlockedAt)}. For ${span(m.unlockedAt + terms.clawback - now)} more a holder can raise one more objection; if holders uphold it, the team's remaining locked tokens are burned.`;
+      return `Unlocked on ${date(m.unlockedAt)}. ${howItStood(m, terms)} For ${span(m.unlockedAt + terms.clawback - now)} more a holder can raise one more objection; if holders uphold it, the team's remaining locked tokens are burned.`;
     case "unlocked":
-      return `Unlocked on ${date(m.unlockedAt)}.`;
+      return `Unlocked on ${date(m.unlockedAt)}. ${howItStood(m, terms)}`;
     case "late-voting":
       return open
         ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}. If it is upheld, the team's remaining locked tokens are burned.`

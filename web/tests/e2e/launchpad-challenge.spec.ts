@@ -681,6 +681,10 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(backerTwo.getByTestId("challenge-summary")).toContainText(
     "1 of 2 milestones unlocked. 120,000,000 tokens still locked.",
   );
+  // The retry went through unopposed: the objection that sent the first attempt back is not this attempt's.
+  await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
+    "Nobody objected.",
+  );
   await shot(backerTwo, "5-unlocked");
   say("the milestone unlocked and the team's first 40% is free");
   // The unlocked part can now move; the rest still cannot.
@@ -763,6 +767,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   expect(await balanceOf(shares, FOUNDER_WALLET)).toBe((TEAM * 40n) / 100n);
   say(
     "the late objection was upheld and the remaining locked Shares were burned",
+  );
+  // The milestone says so afterwards, instead of only "Unlocked".
+  await openMilestones(backerTwo);
+  await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
+    "holders upheld it: the team's remaining locked tokens were burned",
   );
   await openMilestones(founder);
   await expect(founder.getByTestId("challenge-summary")).toContainText(

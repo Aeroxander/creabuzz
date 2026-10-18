@@ -375,6 +375,78 @@ test("the gate for a milestone is built from the read of the one before it, and 
   assert.equal(challengeGateFor(view, 5).previous.phase, "none");
 });
 
+test("an unlocked milestone says how it got through: nobody objected is not the same as holders having looked", () => {
+  const say = (milestone) => challengeHeadline(milestone, TERMS, NOW);
+  const stood = (extra) =>
+    m({
+      stage: "unlocked",
+      phase: "stood",
+      unlockedAt: NOW - 40 * DAY,
+      ...extra,
+    });
+  assert.match(say(stood()), /Unlocked on .*Nobody objected\./);
+  // An objection that failed before the unlock.
+  const failed = objection({
+    open: false,
+    late: false,
+    rejectWeight: WAD,
+    acceptWeight: 3n * WAD,
+  });
+  assert.match(
+    say(stood({ objection: failed })),
+    /A holder objected, but the objection did not stand\./,
+  );
+  // The lock still holds the objection that sent an earlier attempt back: a retry nobody objected to is not "objected".
+  const earlier = objection({
+    open: false,
+    late: false,
+    voteEnds: NOW - 60 * DAY, // before this attempt began (its window ended 41 days ago and ran 14)
+    rejectWeight: 60n * WAD,
+    acceptWeight: WAD,
+  });
+  assert.match(
+    say(
+      stood({
+        attempts: 1,
+        windowEnds: NOW - 41 * DAY,
+        nextWindow: 14 * DAY,
+        objection: earlier,
+      }),
+    ),
+    /Nobody objected\./,
+  );
+  // A late objection that did not stand, and one that was upheld (and burned what was still locked).
+  assert.match(
+    say(
+      stood({
+        lateObjected: true,
+        objection: { ...failed, late: true },
+      }),
+    ),
+    /A holder objected later, but the objection did not stand\./,
+  );
+  const upheld = say(
+    stood({
+      lateObjected: true,
+      objection: objection({
+        open: false,
+        late: true,
+        rejectWeight: 60n * WAD,
+        acceptWeight: WAD,
+      }),
+    }),
+  );
+  assert.match(
+    upheld,
+    /holders upheld it: the team's remaining locked tokens were burned/,
+  );
+  // Still inside the month, it says how it got through and what can still happen.
+  const inMonth = say(
+    m({ stage: "unlocked-open", phase: "stood", unlockedAt: NOW - DAY }),
+  );
+  assert.match(inMonth, /Nobody objected\. For 29 days more/);
+});
+
 test("a deadline is an exact moment with its time zone", () => {
   const text = deadline(1_800_000_000);
   assert.match(text, /\d{1,2}:\d{2}/);
