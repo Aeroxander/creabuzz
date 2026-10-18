@@ -45,8 +45,6 @@ const WORDS_TWO =
   "Version 1.0 is released at the same address, with its documentation published";
 const EVIDENCE_ONE =
   "The beta is live at https://beta.example.org and the source is at https://example.org/src.";
-const EVIDENCE_TWO =
-  "Now with the contracts and docs: https://beta.example.org/docs and release notes at https://example.org/1.0.";
 
 test.skip(
   !ANVIL_URL || !CURRENCY || !KIT,
@@ -74,6 +72,8 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   return body.result;
 }
 
+// Any nonzero evidence hash: the lock refuses before it ever looks at it.
+const EVIDENCE_HASH_FOR_CHECK = "ab".repeat(32);
 const word = (value: string | bigint) =>
   (typeof value === "bigint" ? value.toString(16) : value.slice(2))
     .toLowerCase()
@@ -683,6 +683,27 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   // ── The bond waits out the month: not before ────────────────────────────────────────────────────────
   await openMilestones(founder);
   await expect(founder.getByTestId("challenge-release-0")).toHaveCount(0);
+  // The next milestone cannot be published while the one before can still be objected to late: what is still locked has
+  // to stay locked behind it. The card says until when, offers no button, and the lock itself refuses it.
+  await expect(founder.getByTestId("challenge-publish-note-1")).toContainText(
+    "Holders can still object to milestone 1 until",
+  );
+  await expect(founder.getByTestId("challenge-publish-button-1")).toHaveCount(
+    0,
+  );
+  await expect(
+    rpc("eth_call", [
+      {
+        from: FOUNDER_WALLET,
+        to: lock,
+        data: `0x2ecea788${word(1n)}${EVIDENCE_HASH_FOR_CHECK}`,
+      },
+      "latest",
+    ]),
+  ).rejects.toThrow();
+  say(
+    "the next milestone cannot be published inside the month for a late objection",
+  );
 
   // ── A late objection, upheld: what is still locked is burned, what unlocked stays ───────────────────
   const supplyBefore = await callWord(shares, "0x18160ddd");

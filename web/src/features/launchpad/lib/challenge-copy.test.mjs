@@ -6,6 +6,7 @@ import {
   NO_VIEWER,
   challengeActions,
   challengeDone,
+  challengeGateFor,
   challengeHeadline,
   challengePublishBlock,
   deadline,
@@ -61,7 +62,7 @@ const me = (over = {}) => ({
   voted: false,
   ...over,
 });
-const OPEN = { block: 1_000, previousStood: true };
+const OPEN = { block: 1_000, now: NOW, previous: null };
 const actions = (milestone, who, gate = OPEN) =>
   challengeActions(milestone, TERMS, NOW, who, gate);
 
@@ -256,38 +257,122 @@ test("the headline says where a milestone stands and what happens next, in plain
   );
 });
 
-test("the team cannot publish before the lock's earliest block, or before the milestone before it has stood", () => {
+test("the team cannot publish before the lock's earliest block, or before the milestone before it is settled", () => {
   const team = me({ onTeam: true, weight: 0n });
-  assert.deepEqual(actions(m(), team, { block: 104, previousStood: true }), []);
-  assert.deepEqual(actions(m(), team, { block: 105, previousStood: true }), [
-    "publish",
-  ]);
+  const first = (block) => ({ block, now: NOW, previous: null });
+  assert.deepEqual(actions(m(), team, first(104)), []);
+  assert.deepEqual(actions(m(), team, first(105)), ["publish"]);
+  const after = (previous) => ({ block: 1_000, now: NOW, previous });
+  const settled = {
+    phase: "stood",
+    unlockedAt: NOW - 31 * DAY,
+    objection: null,
+  };
+  // Not unlocked yet, in its month for a late objection, a late vote still open: nothing to send.
+  const stages = {
+    pending: { phase: "pending", unlockedAt: 0, objection: null },
+    month: { phase: "stood", unlockedAt: NOW - DAY, objection: null },
+    open: {
+      phase: "stood",
+      unlockedAt: NOW - 31 * DAY,
+      objection: objection({ late: true, voteEnds: NOW + DAY }),
+    },
+  };
+  for (const [name, previous] of Object.entries(stages)) {
+    assert.deepEqual(actions(m({ index: 1 }), team, after(previous)), [], name);
+  }
+  assert.deepEqual(actions(m({ index: 1 }), team, after(settled)), ["publish"]);
+  // A late vote that has been settled no longer holds the next one back.
   assert.deepEqual(
-    actions(m({ index: 1 }), team, { block: 1_000, previousStood: false }),
+    actions(
+      m({ index: 1 }),
+      team,
+      after({
+        ...settled,
+        objection: objection({ open: false, late: true }),
+      }),
+    ),
+    ["publish"],
+  );
+  // The last moment of the month is still inside it.
+  assert.deepEqual(
+    actions(
+      m({ index: 1 }),
+      team,
+      after({
+        phase: "stood",
+        unlockedAt: NOW - 30 * DAY + 1,
+        objection: null,
+      }),
+    ),
     [],
   );
   assert.deepEqual(
-    actions(m({ index: 1 }), team, { block: 1_000, previousStood: true }),
+    actions(
+      m({ index: 1 }),
+      team,
+      after({ phase: "stood", unlockedAt: NOW - 30 * DAY, objection: null }),
+    ),
     ["publish"],
   );
   // What is said instead of the button.
   assert.match(
-    challengePublishBlock(0, TERMS, { block: 100, previousStood: true }),
+    challengePublishBlock(0, TERMS, first(100)),
     /opens when the buyers can claim, at block 105. The chain is at block 100/,
   );
   assert.match(
-    challengePublishBlock(2, TERMS, { block: 1_000, previousStood: false }),
+    challengePublishBlock(2, TERMS, after(stages.pending)),
     /Milestones go in order: milestone 2 has to unlock first/,
   );
+  const month = challengePublishBlock(2, TERMS, after(stages.month));
+  assert.match(month, /Holders can still object to milestone 2 until /);
+  assert.match(month, /Milestone 3 can be published after that/);
+  assert.ok(
+    month.includes(deadline(NOW - DAY + 30 * DAY)),
+    "it says the exact moment the month ends",
+  );
+  assert.match(
+    challengePublishBlock(2, TERMS, after(stages.open)),
+    /A vote on an objection to milestone 2 is still open/,
+  );
   assert.equal(challengePublishBlock(0, TERMS, OPEN), null);
+  assert.equal(challengePublishBlock(1, TERMS, after(settled)), null);
   // The other actions do not depend on it.
   assert.deepEqual(
     actions(m({ stage: "ready", phase: "pending" }), me(), {
       block: 1,
-      previousStood: false,
+      now: NOW,
+      previous: stages.pending,
     }),
     ["finish"],
   );
+});
+
+test("the gate for a milestone is built from the read of the one before it, and from a fresher block and clock when there is one", () => {
+  const view = {
+    block: 500,
+    now: NOW,
+    milestones: [
+      m({ index: 0, phase: "stood", unlockedAt: NOW - DAY }),
+      m({ index: 1 }),
+    ],
+  };
+  assert.deepEqual(challengeGateFor(view, 0), {
+    block: 500,
+    now: NOW,
+    previous: null,
+  });
+  assert.equal(challengeGateFor(view, 1).previous.unlockedAt, NOW - DAY);
+  assert.equal(
+    challengeGateFor(view, 1, { block: 900, now: NOW + 60 }).block,
+    900,
+  );
+  assert.equal(
+    challengeGateFor(view, 1, { block: 900, now: NOW + 60 }).now,
+    NOW + 60,
+  );
+  // A milestone the read does not have is not settled.
+  assert.equal(challengeGateFor(view, 5).previous.phase, "none");
 });
 
 test("a deadline is an exact moment with its time zone", () => {

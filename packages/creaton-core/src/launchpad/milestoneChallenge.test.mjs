@@ -425,13 +425,149 @@ test("a lock that is not a challenge lock reads as nothing", async () => {
     ),
     null,
   );
-  assert.equal(
-    await readChallengeLock(fakeLock({ milestones: [], team: [] }), LOCK),
-    null,
-  );
   await assert.rejects(
     () => readChallengeLock(fakeLock({ milestones: [], team: [] }), "0x12"),
     /lock/,
+  );
+});
+
+/** A chain that answers `reply` to the call whose selector is `signature`, and as `inner` does to everything else. */
+function replying(inner, signature, reply) {
+  return {
+    now: inner.now,
+    blockNumber: inner.blockNumber,
+    async call(to, data) {
+      if (data.slice(0, 10) === selectorOf(signature)) {
+        return typeof reply === "function" ? reply(inner, to, data) : reply;
+      }
+      return inner.call(to, data);
+    },
+  };
+}
+
+const ONE_MILESTONE = () =>
+  fakeLock({
+    team: [FOUNDER],
+    milestones: [{ check: CHECK_A, bps: 10_000, nextWindow: 7 * DAY }],
+  });
+
+test("an empty, cut-off or impossible answer is unknown, never 'not a challenge lock'", async () => {
+  const noAnswer = /empty or cut off|cannot exist/;
+  // Every question the reader asks: an empty reply ("0x", which a node gives for an address with no code) and a reply a
+  // byte short must each throw, not read as zero.
+  const asked = [
+    "milestoneCount()",
+    "dao()",
+    "window()",
+    "votePeriod()",
+    "clawback()",
+    "minRejectBps()",
+    "earliestBlock()",
+    "bondToken()",
+    "bond()",
+    "deposit()",
+    "team()",
+    "lockedOf(address)",
+    "checkOf(uint256)",
+    "shareOf(uint256)",
+    "windowFor(uint256)",
+    "milestone(uint256)",
+    "objection(uint256)",
+  ];
+  for (const signature of asked) {
+    for (const reply of ["0x", `0x${"0".repeat(62)}`]) {
+      await assert.rejects(
+        () =>
+          readChallengeLock(replying(ONE_MILESTONE(), signature, reply), LOCK),
+        (error) => {
+          assert.match(error.message, noAnswer, `${signature} ${reply}`);
+          assert.doesNotMatch(error.message, /revert/i);
+          return true;
+        },
+        `${signature} answering ${reply}`,
+      );
+    }
+  }
+  // A tuple with its tail missing is cut off even when the first words are there.
+  await assert.rejects(
+    () =>
+      readChallengeLock(
+        replying(ONE_MILESTONE(), "objection(uint256)", hex(0, 0, 0)),
+        LOCK,
+      ),
+    noAnswer,
+  );
+  // A reply that is not hex is not an answer either.
+  await assert.rejects(
+    () =>
+      readChallengeLock(
+        replying(ONE_MILESTONE(), "dao()", `0x${"zz".repeat(32)}`),
+        LOCK,
+      ),
+    noAnswer,
+  );
+  // Impossible: a lock has between one milestone and the cap, a team, phases that exist and shares that add up.
+  for (const [what, chain] of [
+    ["no milestones", replying(ONE_MILESTONE(), "milestoneCount()", hex(0))],
+    ["too many", replying(ONE_MILESTONE(), "milestoneCount()", hex(9))],
+    ["an empty team", replying(ONE_MILESTONE(), "team()", hex(32, 0))],
+    [
+      "an oversized team",
+      replying(ONE_MILESTONE(), "team()", hex(32, 17, ...Array(17).fill(1n))),
+    ],
+    [
+      "a phase that does not exist",
+      replying(
+        ONE_MILESTONE(),
+        "milestone(uint256)",
+        hex(4, 0, 0, 0, 0, 0, 0, 0),
+      ),
+    ],
+    [
+      "a share of nothing",
+      replying(ONE_MILESTONE(), "shareOf(uint256)", hex(0)),
+    ],
+    [
+      "a share of more than all",
+      replying(ONE_MILESTONE(), "shareOf(uint256)", hex(10_001)),
+    ],
+    ["no window", replying(ONE_MILESTONE(), "window()", hex(0))],
+    ["no minimum", replying(ONE_MILESTONE(), "minRejectBps()", hex(0))],
+    [
+      "an address with something in the top bytes",
+      replying(ONE_MILESTONE(), "dao()", `0x${"ff".repeat(32)}`),
+    ],
+  ]) {
+    await assert.rejects(
+      () => readChallengeLock(chain, LOCK),
+      /empty or cut off|cannot exist/,
+      what,
+    );
+  }
+  // Shares that add up to more than all of the allocation are not a lock's.
+  await assert.rejects(
+    () =>
+      readChallengeLock(
+        fakeLock({
+          team: [FOUNDER],
+          milestones: [
+            { check: CHECK_A, bps: 6000, nextWindow: 7 * DAY },
+            { check: CHECK_B, bps: 6000, nextWindow: 7 * DAY },
+          ],
+        }),
+        LOCK,
+      ),
+    /cannot exist/,
+  );
+  // Only a refusal is a confirmed "not a challenge lock".
+  assert.equal(
+    await readChallengeLock(
+      replying(ONE_MILESTONE(), "milestoneCount()", () => {
+        throw new Error("execution reverted");
+      }),
+      LOCK,
+    ),
+    null,
   );
 });
 
@@ -504,4 +640,38 @@ test("a DAO's challenge lock is found from its Shares, and a DAO with another ki
     },
   };
   await assert.rejects(() => findChallengeLock(down, DAO), /503/);
+  // Nor is an empty answer: a DAO or Shares address that returns nothing says nothing about a lock.
+  const empty = (target, signature) => ({
+    now: lock.now,
+    blockNumber: lock.blockNumber,
+    async call(to, data) {
+      if (to === target && data.slice(0, 10) === selectorOf(signature)) {
+        return "0x";
+      }
+      return chainFor(LOCK).call(to, data);
+    },
+  });
+  await assert.rejects(
+    () => findChallengeLock(empty(DAO, "shares()"), DAO),
+    /empty or cut off/,
+  );
+  await assert.rejects(
+    () => findChallengeLock(empty(SHARES, "lockGuard()"), DAO),
+    /empty or cut off/,
+  );
+  // A guard with no code answers milestoneCount() with nothing at all: unknown, not a panel.
+  const codeless = {
+    now: lock.now,
+    blockNumber: lock.blockNumber,
+    async call(to, data) {
+      if (to === DAO) return hex(SHARES);
+      if (to === SHARES) return hex(LOCK);
+      assert.equal(data.slice(0, 10), selectorOf("milestoneCount()"));
+      return "0x";
+    },
+  };
+  await assert.rejects(
+    () => findChallengeLock(codeless, DAO),
+    /empty or cut off/,
+  );
 });

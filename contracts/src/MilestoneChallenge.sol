@@ -29,8 +29,9 @@ interface IChallengePolicy {
 /// reached), different way of reaching a milestone: nobody has to approve it.
 ///
 ///  1. A team member publishes evidence for a milestone (its hash goes with the call) and posts a bond. Milestones are
-///     published in order: one can be published only once the one before it has stood, so the tranches still ahead are
-///     locked while an earlier milestone can still be objected to late.
+///     published in order: one can be published only once the one before it has stood, its month for a late objection
+///     is over and no vote on it is open. So every tranche still ahead is locked, and is burned, while an earlier
+///     milestone can still be objected to late (only the last milestone has nothing behind it but its bond).
 ///  2. A public window opens. It is longer for a big tranche and doubles after each rejected attempt.
 ///  3. No objection: anyone can finish it once the window has passed, and the tranche unlocks for the whole team, each
 ///     member getting the soulbound badge.
@@ -131,7 +132,9 @@ contract MilestoneChallenge {
 
     uint256 private _entered = 1;
 
-    event Submitted(uint256 indexed index, address indexed submitter, bytes32 evidence, uint64 windowEnds, uint128 bond);
+    event Submitted(
+        uint256 indexed index, address indexed submitter, bytes32 evidence, uint64 windowEnds, uint128 bond
+    );
     event Objected(
         uint256 indexed index, address indexed objector, bool late, uint48 snapshot, uint64 voteEnds, uint256 eligible
     );
@@ -149,6 +152,7 @@ contract MilestoneChallenge {
     error UnknownMilestone();
     error NotTeam();
     error OutOfOrder();
+    error EarlierStillOpen();
     error TooEarly();
     error WrongPhase();
     error WindowOpen();
@@ -308,8 +312,16 @@ contract MilestoneChallenge {
         if (block.number < earliestBlock) revert TooEarly();
         Milestone storage m = milestone[index];
         if (m.phase != Phase.None || evidence == bytes32(0) || !_openFor(index)) revert WrongPhase();
-        // In order: the tranches still ahead stay locked while an earlier milestone can still be objected to late.
-        if (index != 0 && milestone[index - 1].phase != Phase.Stood) revert OutOfOrder();
+        // In order, and not before the one before is settled: the tranches still ahead stay locked for as long as an earlier
+        // milestone can be objected to late. Every unlock starts here, and the milestone before was itself published only
+        // once the one before it was settled, so when this one can unlock nothing earlier is open to a late objection.
+        if (index != 0) {
+            Milestone storage previous = milestone[index - 1];
+            if (previous.phase != Phase.Stood) revert OutOfOrder();
+            if (block.timestamp < previous.unlockedAt + clawback || objection[index - 1].open) {
+                revert EarlierStillOpen();
+            }
+        }
         uint64 ends = uint64(block.timestamp) + windowFor(index);
         m.phase = Phase.Pending;
         m.submitter = msg.sender;

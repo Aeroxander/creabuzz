@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 
-import { challengePublishBlock } from "./lib/challenge-copy";
+import { challengeGateFor, challengePublishBlock } from "./lib/challenge-copy";
 import { challengeUpdateContent } from "./lib/challenge-evidence";
 import { challengeEvidenceHash } from "./lib/challenge-evidence";
 import { evidenceProblem } from "./lib/evidence";
@@ -89,20 +89,25 @@ export function useChallengeActions(input: {
         }
         // The lock would refuse it before the sale's claim block, or out of order, after the evidence and the bond approval had
         // already gone: ask the chain's current block first, so nothing is spent on a step that cannot succeed.
-        let block: number;
+        let fresh: { block: number; now: number };
         try {
-          block = await endpointChain(getRpcEndpoint()).blockNumber();
+          const chain = endpointChain(getRpcEndpoint());
+          const [block, now] = await Promise.all([
+            chain.blockNumber(),
+            chain.now(),
+          ]);
+          fresh = { block, now };
         } catch {
           setProblem(
             "Could not check whether publishing is open yet, so nothing was sent. Try again.",
           );
           return false;
         }
-        const closed = challengePublishBlock(index, terms, {
-          block,
-          previousStood:
-            index === 0 || view.milestones[index - 1]?.phase === "stood",
-        });
+        const closed = challengePublishBlock(
+          index,
+          terms,
+          challengeGateFor(view, index, fresh),
+        );
         if (closed) {
           setProblem(closed);
           return false;

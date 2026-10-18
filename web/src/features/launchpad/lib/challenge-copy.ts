@@ -10,6 +10,7 @@
  */
 
 import type {
+  ChallengeLockView,
   ChallengeMilestone,
   ChallengeStage,
   ChallengeTerms,
@@ -112,8 +113,34 @@ export const NO_VIEWER: ChallengeViewer = {
 export interface ChallengeGate {
   /** The chain's latest block: a milestone cannot be published before the lock's earliest block. */
   block: number;
-  /** The milestone before this one has stood (the first has nothing before it): milestones go in order. */
-  previousStood: boolean;
+  /** The chain's clock, in unix seconds. */
+  now: number;
+  /**
+   * The milestone before this one (null for the first). Milestones go in order, and the next is published only once the one
+   * before has stood, its time for a late objection is over and no vote on it is open: until then the tokens still ahead
+   * stay locked, so a late objection has something to burn.
+   */
+  previous: Pick<
+    ChallengeMilestone,
+    "phase" | "unlockedAt" | "objection"
+  > | null;
+}
+
+/** The gate for publishing milestone `index`, from a read of the lock (or from a fresher block and clock). */
+export function challengeGateFor(
+  view: Pick<ChallengeLockView, "milestones" | "block" | "now">,
+  index: number,
+  fresh: { block: number; now: number } = view,
+): ChallengeGate {
+  const before = view.milestones[index - 1];
+  return {
+    block: fresh.block,
+    now: fresh.now,
+    previous:
+      index === 0
+        ? null
+        : (before ?? { phase: "none", unlockedAt: 0, objection: null }),
+  };
 }
 
 /** Why publishing is not open yet, in words, or null when it is. */
@@ -125,8 +152,18 @@ export function challengePublishBlock(
   if (gate.block < terms.earliestBlock) {
     return `Publishing opens when the buyers can claim, at block ${terms.earliestBlock}. The chain is at block ${gate.block}.`;
   }
-  if (!gate.previousStood) {
-    return `Milestones go in order: milestone ${index} has to unlock first.`;
+  const before = gate.previous;
+  if (before) {
+    if (before.phase !== "stood") {
+      return `Milestones go in order: milestone ${index} has to unlock first.`;
+    }
+    if (before.objection?.open) {
+      return `A vote on an objection to milestone ${index} is still open. Milestone ${index + 1} can be published once it is settled, so that what is still locked stays at stake.`;
+    }
+    const opens = before.unlockedAt + terms.clawback;
+    if (gate.now < opens) {
+      return `Holders can still object to milestone ${index} until ${deadline(opens)}. Milestone ${index + 1} can be published after that, so that what is still locked stays at stake.`;
+    }
   }
   return null;
 }

@@ -24,10 +24,15 @@ with their share.
    stands and unlocks. (Your call: silence is consent; the bar for an objector is therefore low.)
 6. **Clawback**: for a month after an unlock, a holder can object again, once. If that is upheld, every team member's
    remaining locked Shares are burned and the bond is forfeited. The tranche that already unlocked stays unlocked.
-7. **In order**: a milestone can be published only once the one before it has stood. So when an earlier milestone is
-   objected to late, the tranches still ahead are still locked and are what gets burned. (Without this, a team could
-   publish every milestone at once, unlock them all together, and leave nothing for a late objection to burn.) What stands
-   behind the last milestone is the bond; the pilot says so.
+7. **In order, and settled**: a milestone can be published only once the one before it has stood, its month for a late
+   objection is over, and no vote on it is open. Every unlock begins with a publication, and the one before was itself
+   published only after the one before that was settled, so by the time a milestone can unlock nothing earlier can still
+   be objected to. So when a milestone is objected to late, every tranche still ahead is still locked and is what gets
+   burned. (Without this, a team could publish every milestone at once, or publish the next while an earlier vote was
+   open, and leave nothing for a late objection to burn: an independent review reproduced both.) What stands behind the
+   last milestone is only the bond, because nothing is left to burn once it has unlocked; the pilot says so. The price is
+   pace: a milestone's evidence cannot be published until the month after the one before it has passed, which a team that
+   is still building the next one rarely notices.
 
 Nothing here lets a vote free locked Shares. The lock stays set-once, forfeiting still burns instead of freeing, and
 the DAO can still forfeit a departed founder's tranches.

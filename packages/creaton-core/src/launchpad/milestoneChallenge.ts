@@ -12,7 +12,7 @@
  */
 
 import { encodeFunctionData, selectorOf } from "./evmAbi.ts";
-import { decodeAddress, encodeCall0 } from "./work.ts";
+import { encodeCall0 } from "./work.ts";
 import type { WorkChain } from "./workRead.ts";
 
 /** What the reader needs of a chain: view calls, the chain's own clock, and its latest block number. */
@@ -277,15 +277,35 @@ export function challengeStage(
   }
 }
 
-const body = (hex: string): string => hex.replace(/^0x/, "");
-const word = (hex: string, i: number): bigint =>
-  BigInt(`0x${body(hex).slice(i * 64, (i + 1) * 64) || "0"}`);
-const addr = (hex: string, i: number): string =>
-  `0x${body(hex).slice(i * 64 + 24, (i + 1) * 64)}`.toLowerCase();
-const bytes32 = (hex: string, i: number): string =>
-  `0x${body(hex)
-    .slice(i * 64, (i + 1) * 64)
-    .padStart(64, "0")}`;
+/**
+ * What a reply that is not a lock's answer says. It never contains the word the node uses for a refused call, so it is never
+ * taken for one: a reply that cannot be read is "unknown", not "not a challenge lock".
+ */
+const BAD_REPLY =
+  "The chain's answer was empty or cut off, so nothing was read. Try again in a moment.";
+const IMPOSSIBLE =
+  "The chain described a milestone lock that cannot exist, so nothing was read. Try again in a moment.";
+
+/**
+ * Word `i` (32 bytes) of a reply. An empty, short or non-hex reply throws: a word that is not there is never read as zero,
+ * because zero is an answer (no milestones, no team, the zero address) and a missing one is not.
+ */
+function slot(hex: string, i: number): string {
+  const text = typeof hex === "string" ? hex.replace(/^0x/, "") : "";
+  const found = text.slice(i * 64, (i + 1) * 64);
+  if (found.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(found)) {
+    throw new Error(BAD_REPLY);
+  }
+  return found;
+}
+const word = (hex: string, i: number): bigint => BigInt(`0x${slot(hex, i)}`);
+/** An address word: the top twelve bytes are zero, or it is not an address. */
+const addr = (hex: string, i: number): string => {
+  const found = slot(hex, i);
+  if (!/^0{24}/.test(found)) throw new Error(BAD_REPLY);
+  return `0x${found.slice(24)}`.toLowerCase();
+};
+const bytes32 = (hex: string, i: number): string => `0x${slot(hex, i)}`;
 
 function assertAddress(value: string, what: string): void {
   if (!ADDRESS_RE.test(value)) throw new Error(`${what} is not an address`);
@@ -297,13 +317,19 @@ const call1 = (signature: string, value: number) =>
 /** `address[]` returned by `team()`: offset, length, then the addresses. */
 function decodeAddressArray(hex: string, max: number): string[] {
   const offset = Number(word(hex, 0)) / 32;
-  const length = Math.min(Number(word(hex, offset)), max);
+  if (!Number.isInteger(offset)) throw new Error(BAD_REPLY);
+  const length = Number(word(hex, offset));
+  // A lock always has a team: an empty or oversized one is not a reply from a lock.
+  if (length < 1 || length > max) throw new Error(IMPOSSIBLE);
   return Array.from({ length }, (_, i) => addr(hex, offset + 1 + i));
 }
 
 /**
- * The challenge lock, or null when `lock` does not answer like one (a panel lock, an older DAO, or nothing). Everything
- * is read from the chain: only the lock's own answers decide what can happen.
+ * The challenge lock, or null when `lock` refuses the question (a panel's lock has no `milestoneCount()`, so the call reverts).
+ * Anything else that is not a whole, possible answer throws: an empty or cut-off reply, a count of no milestones or more than
+ * a lock can have, a phase or share that cannot be. Those say nothing about which lock this is, and must never be taken for
+ * "not a challenge lock" (which shows the panel's screens and hides an open objection). Everything is read from the chain:
+ * only the lock's own answers decide what can happen.
  */
 export async function readChallengeLock(
   chain: ChallengeChain,
@@ -322,10 +348,12 @@ export async function readChallengeLock(
     if (isRevert(error)) return null;
     throw error;
   }
-  const count = Math.min(Number(word(countHex, 0)), MAX_CHALLENGE_MILESTONES);
-  if (count === 0) return null;
-  const read = (signature: string) =>
-    chain.call(lock, encodeCall0(signature)).then((hex) => hex);
+  const count = Number(word(countHex, 0));
+  // A lock has at least one milestone and at most the cap: anything else is not a reply from a challenge lock.
+  if (count < 1 || count > MAX_CHALLENGE_MILESTONES) {
+    throw new Error(IMPOSSIBLE);
+  }
+  const read = (signature: string) => chain.call(lock, encodeCall0(signature));
   const [
     dao,
     window,
@@ -353,7 +381,7 @@ export async function readChallengeLock(
     chain.now(),
     chain.blockNumber(),
   ]);
-  const token = decodeAddress(bondToken);
+  const token = addr(bondToken, 0);
   const terms: ChallengeTerms = {
     window: Number(word(window, 0)),
     votePeriod: Number(word(votePeriod, 0)),
@@ -364,6 +392,15 @@ export async function readChallengeLock(
     bond: word(bond, 0),
     deposit: word(deposit, 0),
   };
+  // The lock's own constructor refuses these: a reply that says otherwise did not come from a challenge lock.
+  if (
+    terms.window < 1 ||
+    terms.votePeriod < 1 ||
+    terms.minRejectBps < 1 ||
+    terms.minRejectBps > 10_000
+  ) {
+    throw new Error(IMPOSSIBLE);
+  }
   const milestones = await Promise.all(
     Array.from({ length: count }, async (_, i): Promise<ChallengeMilestone> => {
       const [check, share, next, state, objection] = await Promise.all([
@@ -373,7 +410,12 @@ export async function readChallengeLock(
         chain.call(lock, call1(CHALLENGE_SIGNATURES.milestone, i)),
         chain.call(lock, call1(CHALLENGE_SIGNATURES.objection, i)),
       ]);
-      const phase = PHASES[Number(word(state, 0))] ?? "none";
+      // The whole tuples are there, or this is not a lock's answer (an objection that does not exist is all zeros, not short).
+      slot(state, 7);
+      slot(objection, 8);
+      const phase = PHASES[Number(word(state, 0))];
+      const bps = Number(word(share, 0));
+      if (!phase || bps < 1 || bps > 10_000) throw new Error(IMPOSSIBLE);
       const submitter = addr(state, 3);
       const evidence = bytes32(state, 4);
       // An objection exists once someone has raised one: its objector is never the zero address.
@@ -402,7 +444,7 @@ export async function readChallengeLock(
       return {
         index: i,
         checkHash: bytes32(check, 0),
-        bps: Number(word(share, 0)),
+        bps,
         nextWindow: Number(word(next, 0)),
         ...partial,
         submitter: submitter === ZERO_ADDRESS ? null : submitter,
@@ -412,6 +454,10 @@ export async function readChallengeLock(
       };
     }),
   );
+  // Each milestone unlocks a part of the allocation: together they cannot be more than all of it.
+  if (milestones.reduce((sum, m) => sum + m.bps, 0) > 10_000) {
+    throw new Error(IMPOSSIBLE);
+  }
   const team = decodeAddressArray(teamHex, MAX_CHALLENGE_TEAM);
   const lockedEach = await Promise.all(
     team.map((member) =>
@@ -427,7 +473,7 @@ export async function readChallengeLock(
   );
   return {
     lock: lock.toLowerCase(),
-    dao: decodeAddress(dao),
+    dao: addr(dao, 0),
     terms,
     team,
     locked: lockedEach.reduce((sum, hex) => sum + word(hex, 0), 0n),
@@ -447,11 +493,9 @@ export async function findChallengeLock(
   dao: string,
 ): Promise<ChallengeLockView | null> {
   assertAddress(dao, "the DAO");
-  const shares = decodeAddress(await chain.call(dao, encodeCall0("shares()")));
+  const shares = addr(await chain.call(dao, encodeCall0("shares()")), 0);
   if (shares === ZERO_ADDRESS) return null;
-  const guard = decodeAddress(
-    await chain.call(shares, encodeCall0("lockGuard()")),
-  );
+  const guard = addr(await chain.call(shares, encodeCall0("lockGuard()")), 0);
   if (guard === ZERO_ADDRESS) return null;
   return readChallengeLock(chain, guard);
 }

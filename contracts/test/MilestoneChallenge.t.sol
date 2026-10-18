@@ -193,7 +193,8 @@ contract MilestoneChallengeTest is VotingFixture {
         _submit(0);
         assertEq(cash.balanceOf(ALICE), before_ - BOND);
         assertEq(_held(), BOND);
-        (MilestoneChallenge.Phase phase,, , address submitter, bytes32 ev, uint64 ends,, uint128 held) = lock.milestone(0);
+        (MilestoneChallenge.Phase phase,,, address submitter, bytes32 ev, uint64 ends,, uint128 held) =
+            lock.milestone(0);
         assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.Pending));
         assertEq(submitter, ALICE);
         assertEq(ev, EVIDENCE);
@@ -223,6 +224,7 @@ contract MilestoneChallengeTest is VotingFixture {
     function test_a_bigger_tranche_waits_longer() public {
         _stand(0);
         _stand(1);
+        _pass(30 days);
         vm.prank(ALICE);
         lock.submit(2, EVIDENCE);
         (,,,,, uint64 ends,,) = lock.milestone(2);
@@ -307,8 +309,16 @@ contract MilestoneChallengeTest is VotingFixture {
         _object(BOB, 0);
         assertEq(cash.balanceOf(BOB), before_ - DEPOSIT);
         assertEq(_held(), BOND + DEPOSIT);
-        (bool open, bool late, address objector,, uint64 voteEnds, uint128 dep, uint256 eligible, uint256 rej, uint256 acc)
-        = lock.objection(0);
+        (
+            bool open,
+            bool late,
+            address objector,,
+            uint64 voteEnds,
+            uint128 dep,
+            uint256 eligible,
+            uint256 rej,
+            uint256 acc
+        ) = lock.objection(0);
         assertTrue(open);
         assertFalse(late);
         assertEq(objector, BOB);
@@ -444,7 +454,8 @@ contract MilestoneChallengeTest is VotingFixture {
         _pass(7 days);
         lock.resolve(0);
 
-        (MilestoneChallenge.Phase phase,, uint8 attempts, address submitter, bytes32 ev,,, uint128 held) = lock.milestone(0);
+        (MilestoneChallenge.Phase phase,, uint8 attempts, address submitter, bytes32 ev,,, uint128 held) =
+            lock.milestone(0);
         assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
         assertEq(attempts, 1);
         assertEq(submitter, address(0));
@@ -623,14 +634,21 @@ contract MilestoneChallengeTest is VotingFixture {
         vm.expectRevert(MilestoneChallenge.OutOfOrder.selector);
         lock.submit(1, EVIDENCE);
         _stand(0);
+        // Stood is not enough either: the month for a late objection to the one before has to be over first.
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.EarlierStillOpen.selector);
+        lock.submit(1, EVIDENCE);
+        _pass(30 days);
         vm.prank(ALICE);
         lock.submit(1, EVIDENCE); // now it can go
     }
 
     function test_the_tranches_ahead_are_the_collateral_for_a_late_objection_to_an_earlier_milestone() public {
         _stand(0);
+        // The next one cannot even be published while the one before can still be objected to late: it is still locked.
         vm.prank(DAVE);
-        lock.submit(1, EVIDENCE); // the next one is published but has not stood: it is still locked
+        vm.expectRevert(MilestoneChallenge.EarlierStillOpen.selector);
+        lock.submit(1, EVIDENCE);
         uint256 supplyBefore = shares.totalSupply();
         _pass(1 days);
         _object(BOB, 0);
@@ -644,9 +662,70 @@ contract MilestoneChallengeTest is VotingFixture {
         assertEq(shares.balanceOf(ALICE), 20e18);
     }
 
+    /// An independent review's reproduction: the last milestone was published and unlocked while a late vote on an earlier
+    /// one was open, and the late objection was then upheld with nothing left to burn. Now the last milestone cannot be
+    /// published while the earlier month runs, nor while a vote on it is open, so its tranche is still locked and burned.
+    function test_the_last_tranche_stays_locked_while_an_earlier_milestone_can_be_objected_to_or_is_being_voted_on()
+        public
+    {
+        _stand(0);
+        _stand(1); // the first was settled before this one was even published
+        _pass(10 days);
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.EarlierStillOpen.selector);
+        lock.submit(2, EVIDENCE); // inside the month for a late objection to milestone two
+        _object(BOB, 1); // a late objection to milestone two; its vote runs five days
+        _pass(25 days); // the month is over and so is the vote, but nobody has settled it
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.EarlierStillOpen.selector);
+        lock.submit(2, EVIDENCE);
+        uint256 supplyBefore = shares.totalSupply();
+        lock.resolve(1);
+        // Upheld by silence (the objection is big enough to count): the last tranche (half of each member's Shares) was
+        // still locked, and is burned.
+        assertEq(supplyBefore - shares.totalSupply(), 75e18);
+        assertEq(lock.lockedOf(ALICE), 0);
+        assertEq(lock.lockedOf(DAVE), 0);
+    }
+
+    function test_a_vote_opened_in_the_last_second_of_the_month_still_holds_the_next_milestone() public {
+        _stand(0);
+        _pass(30 days - 1);
+        _object(BOB, 0);
+        _pass(1); // the month is over, the vote is open
+        vm.prank(ALICE);
+        vm.expectRevert(MilestoneChallenge.EarlierStillOpen.selector);
+        lock.submit(1, EVIDENCE);
+        _vote(CAROL, 0, false);
+        _vote(ERIN, 0, false);
+        _vote(FRANK, 0, false);
+        _pass(5 days);
+        lock.resolve(0); // not upheld: it stands, and the next one can go
+        vm.prank(ALICE);
+        lock.submit(1, EVIDENCE);
+    }
+
+    function test_a_lock_with_no_clawback_period_only_waits_for_the_one_before_to_stand() public {
+        (address[] memory who, uint256[] memory totals) = _team();
+        MilestoneChallenge.Terms memory t = _terms();
+        t.clawback = 0;
+        MilestoneChallenge quick = new MilestoneChallenge(address(dao), who, totals, _checks(), _bps(), t);
+        vm.prank(ALICE);
+        cash.approve(address(quick), type(uint256).max);
+        vm.prank(ALICE);
+        quick.submit(0, EVIDENCE);
+        _pass(quick.windowFor(0));
+        quick.finish(0);
+        vm.prank(ALICE);
+        quick.submit(1, EVIDENCE);
+    }
+
     // ---- the clawback ------------------------------------------------------------------------
 
+    /// Publish and finish a milestone nobody objects to. Past the first, the month for a late objection to the one before
+    /// has to be over first.
     function _stand(uint256 index) internal {
+        if (index != 0) _pass(30 days);
         vm.prank(ALICE);
         lock.submit(index, EVIDENCE);
         _pass(lock.windowFor(index));
@@ -746,6 +825,7 @@ contract MilestoneChallengeTest is VotingFixture {
         // The 21-day milestone caps at sixty days (milestones go in order, so the two before it stand first).
         _stand(0);
         _stand(1);
+        _pass(30 days);
         for (uint256 i; i < 2; ++i) {
             vm.prank(ALICE);
             lock.submit(2, EVIDENCE);
@@ -822,12 +902,13 @@ contract MilestoneChallengeTest is VotingFixture {
         _pass(28 days);
         lock.finish(0); // it stands; the bond stays until the clawback period ends
         assertEq(_held(), 100e18);
+        _pass(30 days); // the month for a late objection to it
         vm.prank(ALICE);
         lock.submit(1, EVIDENCE); // the next milestone, with its own bond
         assertEq(_held(), 200e18);
-        _pass(30 days);
         lock.releaseBond(0);
         assertEq(_held(), 100e18);
+        _pass(14 days);
         lock.finish(1);
         _pass(30 days);
         lock.releaseBond(1);

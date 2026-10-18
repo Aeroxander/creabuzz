@@ -537,7 +537,7 @@ Backers: claim promptly after the claim block; a decision opened right then has 
 ## 4ab. Milestones that unlock unless holders object (D56, D57, 2026-10-18)
 
 ```bash
-cd contracts && REQUIRE_CONTRACT_ARTIFACTS=true forge test      # the whole suite (394 tests); the lock has 36 of its own and the kit launches one end to end
+cd contracts && REQUIRE_CONTRACT_ARTIFACTS=true forge test      # the whole suite (397 tests); the lock has 39 of its own and the kit launches one end to end
 scripts/web-challenge-e2e.sh                                    # REAL chain, real browsers: the whole story below, about a minute
 ```
 
@@ -571,7 +571,9 @@ Sepolia testnet in `docs/sepolia-testnet.md`):
    and the founder can move exactly that part and not one Share more.
 9. **A month after, the bond comes back** with **Return the team's bond** (not before).
 10. **A late objection.** Inside the month a backer can object once more. If holders uphold it, **the milestones still ahead are
-    burned** (they were locked, because milestones go in order) and what already unlocked stays.
+    burned** (they were locked, because milestones go in order) and what already unlocked stays. While that month runs, the
+    founder's card for the next milestone says **Holders can still object to milestone N until <date and time>** and offers no
+    Publish button; once the month and any vote are over it opens.
 
 What to check a person understands (the pilot's questions, `PILOT-RUNBOOK.md`): the page says a milestone nobody objects to
 unlocks, the team's own tokens do not count in the vote, a backer can still leave with their share while one waits, and the last

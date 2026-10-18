@@ -50,8 +50,9 @@ posts a bond; for a week (longer for a big milestone, and longer again after eac
 object; with no objection anyone finishes it and the tokens unlock. An objection starts a vote of holders, where the team's own
 tokens do not count, and it stands only if more is against the milestone than for it and at least 3% of what could vote is
 against it. A month after an unlock one more objection is possible, and if holders uphold it the team's remaining locked
-tokens are burned. Milestones go in order, so the tranches still ahead are locked while an earlier milestone can be objected
-to; what stands behind the last milestone is the bond, and the page says so. A holder's weight in a vote is the Shares they
+tokens are burned. Milestones go in order, and the next can be published only after the month for late objections to the one before (and any
+vote on it) is over, so the tranches still ahead stay locked while an earlier milestone can be objected to; what stands behind
+the last milestone is only the bond, and the page says so. A holder's weight in a vote is the Shares they
 owned just before the objection, never delegated votes. There is nobody to recruit, nobody to keep reachable, and no panel that can run out.
 
 The weakness is plain and the page says it: a milestone nobody objects to unlocks, so the protection is only as good as the

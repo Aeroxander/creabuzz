@@ -151,9 +151,10 @@ export function PowersCard({
           <p className="mt-1">
             For {span(challenge.clawback)} after an unlock one more objection is
             possible, and if holders uphold it the team&apos;s remaining locked
-            Shares are burned. Milestones are published in order, so the ones
-            still ahead are locked while an earlier one can be objected to; what
-            stands behind the last milestone is the bond.
+            Shares are burned. Milestones are published in order, and the next
+            only once the one before has had its time for late objections, so
+            the Shares still ahead stay locked while an earlier milestone can be
+            objected to; what stands behind the last milestone is the bond.
           </p>
           <p className="mt-1 text-black/60 dark:text-white/60">
             This protects you only as far as someone is watching: a milestone

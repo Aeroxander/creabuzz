@@ -103,8 +103,10 @@ export function LaunchReviewFields({
                 locked tokens are burned.
               </li>
               <li>
-                Milestones are published in order. Once the last one has
-                unlocked, only your bond stands behind it.
+                Milestones are published in order, and the next only once the
+                one before has had its time for late objections, so what is
+                still locked stays at stake. Once the last one has unlocked,
+                only your bond stands behind it.
               </li>
             </ul>
             <p className="mt-2">

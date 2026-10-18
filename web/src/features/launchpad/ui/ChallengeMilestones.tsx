@@ -19,6 +19,7 @@ import {
   type ChallengeViewer,
   NO_VIEWER,
   challengeActions,
+  challengeGateFor,
   challengePublishBlock,
   span,
 } from "../lib/challenge-copy";
@@ -110,11 +111,8 @@ export function ChallengeMilestones({
   const labelOf = useWalletLabels(people);
 
   const actions = useChallengeActions({ launch, dao, view, wordsOf });
-  // What the lock needs before a milestone can be published: the sale's claim block, and the milestone before it standing.
-  const gateFor = (index: number) => ({
-    block: view.block,
-    previousStood: index === 0 || view.milestones[index - 1]?.phase === "stood",
-  });
+  // What the lock needs before a milestone can be published: the sale's claim block, and the milestone before it settled.
+  const gateFor = (index: number) => challengeGateFor(view, index);
   const unlocked = view.milestones.filter((m) => m.phase === "stood").length;
 
   return (
@@ -154,9 +152,11 @@ export function ChallengeMilestones({
             </li>
           </ol>
           <p className="mt-2 text-muted-foreground">
-            Milestones are published in order, so the ones still ahead are
-            locked while an earlier one can be objected to. Once the last one
-            has unlocked, what stands behind it is the bond.
+            Milestones are published in order, and the next only once the one
+            before has had its time for late objections. So the tokens still
+            ahead stay locked, and are burned, while an earlier milestone can be
+            objected to. Once the last one has unlocked, what stands behind it
+            is the bond.
           </p>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
