@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
+import { mainnetEnabled } from "@/features/launchpad/chain";
 import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
 import { Button } from "@/shared/ui/button";
@@ -66,6 +67,24 @@ export function hidesAppNav(pathname: string): boolean {
 }
 
 /**
+ * A small "Testnet" tag beside the logo for as long as this build cannot reach real money, so nobody has to be told
+ * on each screen that it is a test version. It goes away when the build enables mainnet, which brings the unaudited
+ * notice on every money screen instead.
+ */
+export function TestnetChip() {
+  if (mainnetEnabled()) return null;
+  return (
+    <span
+      className="hidden shrink-0 rounded-full border border-border bg-secondary px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground sm:inline"
+      data-testid="testnet-chip"
+      title="This is a test version. Nothing here uses real money."
+    >
+      Testnet
+    </span>
+  );
+}
+
+/**
  * The app's one navigation: a top bar on wide screens (logo, search, sections,
  * account), a bottom tab bar on phones. Exactly one is mounted (not both
  * hidden by CSS), so there is one profile menu, one set of landmarks and one
@@ -92,6 +111,7 @@ export function AppNav() {
             {APP_NAME.toLowerCase()}
           </span>
         </Link>
+        <TestnetChip />
         <HeaderSearch />
         <div className="ml-auto flex items-center gap-0.5">
           {NAV_ITEMS.map((item) => (

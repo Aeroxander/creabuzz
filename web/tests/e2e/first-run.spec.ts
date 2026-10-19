@@ -236,3 +236,24 @@ test("a person who joins another community is given their profile there, once, a
       .map((event) => JSON.parse(event.content).name),
   ).toEqual(["Frida the Founder"]);
 });
+
+test("the top bar says Testnet beside the logo while the build cannot reach real money", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(channel);
+  await relay.install(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const chip = page.getByTestId("testnet-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveText("Testnet");
+  // Beside the logo, not somewhere else in the bar.
+  const logo = await page
+    .getByRole("link", { name: /home$/i })
+    .first()
+    .boundingBox();
+  const tag = await chip.boundingBox();
+  expect(logo && tag && tag.x >= logo.x + logo.width - 1).toBe(true);
+  expect(Math.abs((logo?.y ?? 0) - (tag?.y ?? 0))).toBeLessThan(40);
+});
