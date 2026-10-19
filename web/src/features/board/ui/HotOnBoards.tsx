@@ -24,7 +24,7 @@ const SHOWN = 3;
 const RECENT_SECONDS = 7 * 24 * 3600;
 
 export function HotOnBoards({ onSeeAll }: { onSeeAll: () => void }) {
-  const feed = useBoardFeed();
+  const feed = useBoardFeed({ live: false });
   const navigate = useNavigate();
   const top = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);

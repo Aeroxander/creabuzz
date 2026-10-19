@@ -1,6 +1,8 @@
 /**
- * The boards front page on Home: every board's posts in one list, Hot, New or Top, with each board one tap away and
- * a "New post" that asks which board it goes on. Voting works from the list; a post opens on its board's own page.
+ * The boards front page on Home: the posts of the boards you joined (or of every board), Hot, New or Top (by day, week,
+ * month or all time), with each board one tap away and a "New post" that asks which board it goes on. Voting works from
+ * the list; a post opens on its board's own page. New posts by other people are counted live and shown on request, and
+ * older posts are read a page at a time.
  *
  * The order is taken when the posts arrive and when the reader picks a sort, so a vote does not make the post under
  * the cursor jump; the counts change in place.
@@ -19,18 +21,25 @@ import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
 import {
+  FEED_PERIOD_LABELS,
   FEED_SORT_LABELS,
+  type FeedPeriod,
   type FeedPost,
   type FeedSort,
   sortFeed,
+  withinPeriod,
 } from "../lib/board-feed";
 import type { BoardEvent } from "../lib/board-model";
 import { useBoardActions } from "../use-board-actions";
-import { FEED_POST_LIMIT, useBoardFeed } from "../use-board-feed";
+import { useBoardFeed } from "../use-board-feed";
+import { useMyBoards } from "../use-my-boards";
 import { PostComposer } from "./PostComposer";
 import { PostRow } from "./PostRow";
+import { StartBoardForm } from "./StartBoardForm";
 
 const SORTS = Object.keys(FEED_SORT_LABELS) as FeedSort[];
+const PERIODS = Object.keys(FEED_PERIOD_LABELS) as FeedPeriod[];
+type Scope = "mine" | "all";
 
 function needAccount(action: string): boolean {
   if (existingUserPubkey() !== null) return true;
@@ -115,34 +124,50 @@ function FeedComposer({
 }
 
 export function BoardFeed() {
-  const feed = useBoardFeed();
+  const mine = useMyBoards();
+  const [chosenScope, setChosenScope] = useState<Scope | null>(null);
+  // Until the reader picks, show their boards when they have joined any, and every board otherwise.
+  const scope: Scope = chosenScope ?? (mine.joined.size > 0 ? "mine" : "all");
+  const joinedIds = useMemo(() => [...mine.joined.keys()], [mine.joined]);
+  const feed = useBoardFeed({
+    scope: scope === "mine" ? joinedIds : null,
+    enabled: !mine.isLoading,
+  });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [sort, setSort] = useState<FeedSort>("hot");
+  const [period, setPeriod] = useState<FeedPeriod>("week");
   const [composing, setComposing] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [order, setOrder] = useState<string[] | null>(null);
 
+  // Joined boards first, then the rest, each by name.
   const boardList = useMemo(
     () =>
       [...feed.boards.entries()]
-        .map(([id, board]) => ({ id, ...board }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [feed.boards],
+        .map(([id, board]) => ({ id, ...board, joined: mine.joined.has(id) }))
+        .sort(
+          (a, b) =>
+            Number(b.joined) - Number(a.joined) || a.name.localeCompare(b.name),
+        ),
+    [feed.boards, mine.joined],
   );
 
-  // Hold the order still: take it when posts first arrive or the sort changes, not on every vote.
+  // Hold the order still: take it when a new set of posts arrives (first load, older page, "show new") or the sort or
+  // window changes, never on a vote, so the post under the cursor does not move.
   const ready = !feed.isLoading;
-  const postCount = feed.posts.length;
-  // feed.posts changes on every vote; only a new set of posts (or a new sort) re-sorts.
+  const postKey = feed.posts
+    .map((p) => p.id)
+    .sort()
+    .join(",");
   // biome-ignore lint/correctness/useExhaustiveDependencies: held still on purpose, see above
   useEffect(() => {
     if (!ready) return;
-    setOrder(
-      sortFeed(feed.posts, sort, Math.floor(Date.now() / 1000)).map(
-        (p) => p.id,
-      ),
-    );
-  }, [ready, sort, postCount]);
+    const now = Math.floor(Date.now() / 1000);
+    const pool =
+      sort === "top" ? withinPeriod(feed.posts, period, now) : feed.posts;
+    setOrder(sortFeed(pool, sort, now).map((p) => p.id));
+  }, [ready, sort, period, postKey]);
 
   const rows = useMemo(() => {
     const byId = new Map(feed.posts.map((post) => [post.id, post]));
@@ -155,19 +180,38 @@ export function BoardFeed() {
     useMemo(() => rows.map((post) => post.author), [rows]),
   );
 
+  const choice = (active: boolean) =>
+    `rounded px-2.5 py-1 text-xs font-medium ${
+      active
+        ? "bg-secondary text-foreground"
+        : "text-muted-foreground hover:bg-secondary/60"
+    }`;
+  const noneJoined = scope === "mine" && mine.joined.size === 0;
+
   return (
     <div className="flex flex-col gap-3 p-3" data-testid="board-feed">
       <div className="flex flex-wrap items-center gap-2">
+        <fieldset className="m-0 flex min-w-0 rounded-md border p-0.5">
+          <legend className="sr-only">Whose boards</legend>
+          {(["mine", "all"] as const).map((key) => (
+            <button
+              aria-pressed={scope === key}
+              className={choice(scope === key)}
+              data-testid={`board-feed-scope-${key}`}
+              key={key}
+              onClick={() => setChosenScope(key)}
+              type="button"
+            >
+              {key === "mine" ? "Your boards" : "All boards"}
+            </button>
+          ))}
+        </fieldset>
         <fieldset className="m-0 flex min-w-0 rounded-md border p-0.5">
           <legend className="sr-only">Sort posts</legend>
           {SORTS.map((key) => (
             <button
               aria-pressed={sort === key}
-              className={`rounded px-2.5 py-1 text-xs font-medium ${
-                sort === key
-                  ? "bg-secondary text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60"
-              }`}
+              className={choice(sort === key)}
               data-testid={`board-feed-sort-${key}`}
               key={key}
               onClick={() => setSort(key)}
@@ -177,6 +221,23 @@ export function BoardFeed() {
             </button>
           ))}
         </fieldset>
+        {sort === "top" ? (
+          <label className="flex items-center gap-1 text-xs">
+            <span className="sr-only">Top posts from</span>
+            <select
+              className="h-7 rounded-md border border-input bg-background px-1.5 text-xs"
+              data-testid="board-feed-period"
+              onChange={(event) => setPeriod(event.target.value as FeedPeriod)}
+              value={period}
+            >
+              {PERIODS.map((key) => (
+                <option key={key} value={key}>
+                  {FEED_PERIOD_LABELS[key]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <Button
           aria-label="Refresh boards"
           onClick={feed.refetch}
@@ -186,12 +247,28 @@ export function BoardFeed() {
         >
           <RefreshCw aria-hidden className="h-4 w-4" />
         </Button>
+        <Button
+          className="ml-auto"
+          data-testid="board-feed-start"
+          onClick={() => {
+            if (needAccount("start a board")) {
+              setComposing(false);
+              setStarting(true);
+            }
+          }}
+          size="sm"
+          variant="outline"
+        >
+          Start a board
+        </Button>
         {boardList.length > 0 ? (
           <Button
-            className="ml-auto"
             data-testid="board-feed-new-post"
             onClick={() => {
-              if (needAccount("post")) setComposing(true);
+              if (needAccount("post")) {
+                setStarting(false);
+                setComposing(true);
+              }
             }}
             size="sm"
           >
@@ -206,17 +283,33 @@ export function BoardFeed() {
             {boardList.map((board) => (
               <li key={board.id}>
                 <Link
-                  className="block whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium hover:bg-secondary"
+                  className={`block whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium hover:bg-secondary ${
+                    board.joined ? "border-primary/50 bg-primary/10" : ""
+                  }`}
+                  data-joined={board.joined || undefined}
                   params={{ boardId: board.id }}
                   title={board.description || undefined}
                   to="/b/$boardId"
                 >
                   {board.name}
+                  {board.joined ? (
+                    <span className="sr-only"> (joined)</span>
+                  ) : null}
                 </Link>
               </li>
             ))}
           </ul>
         </nav>
+      ) : null}
+
+      {starting ? (
+        <StartBoardForm
+          onCancel={() => setStarting(false)}
+          onStarted={(boardId) => {
+            setStarting(false);
+            void navigate({ to: "/b/$boardId", params: { boardId } });
+          }}
+        />
       ) : null}
 
       {composing ? (
@@ -236,6 +329,23 @@ export function BoardFeed() {
         />
       ) : null}
 
+      <div
+        aria-live="polite"
+        className="sticky top-14 z-10 self-center"
+        role="status"
+      >
+        {feed.fresh > 0 ? (
+          <button
+            className="rounded-full border bg-card px-4 py-1.5 text-xs font-medium shadow-sm"
+            data-testid="board-feed-show-new"
+            onClick={feed.refetch}
+            type="button"
+          >
+            {feed.fresh === 1 ? "1 new post" : `${feed.fresh} new posts`}. Show
+          </button>
+        ) : null}
+      </div>
+
       {feed.error ? (
         <QueryError
           description="The server did not answer, so no board posts can be shown."
@@ -244,24 +354,41 @@ export function BoardFeed() {
           testId="board-feed-error"
           title="Couldn't load the boards"
         />
-      ) : feed.isLoading || order === null ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          Loading posts…
-        </p>
-      ) : boardList.length === 0 ? (
+      ) : boardList.length === 0 && !feed.isLoading ? (
         <p
           className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
           data-testid="board-feed-no-boards"
         >
-          This server has no boards yet. A community's owners can add one from
-          its workspace.
+          There are no boards here yet. Start the first one.
+        </p>
+      ) : noneJoined ? (
+        <p
+          className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+          data-testid="board-feed-none-joined"
+        >
+          You haven't joined a board yet. Open one above and press Join, or look
+          at{" "}
+          <button
+            className="underline"
+            onClick={() => setChosenScope("all")}
+            type="button"
+          >
+            all boards
+          </button>
+          .
+        </p>
+      ) : feed.isLoading || order === null ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Loading posts…
         </p>
       ) : rows.length === 0 ? (
         <p
           className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
           data-testid="board-feed-empty"
         >
-          No posts yet. Start the first discussion.
+          {sort === "top" && period !== "all"
+            ? `No posts ${FEED_PERIOD_LABELS[period].toLowerCase()}. Try a longer time.`
+            : "No posts yet. Start the first discussion."}
         </p>
       ) : (
         <ul className="flex flex-col gap-3" data-testid="board-feed-posts">
@@ -279,10 +406,17 @@ export function BoardFeed() {
           ))}
         </ul>
       )}
-      {feed.truncated ? (
-        <p className="text-xs text-muted-foreground">
-          Showing the newest {FEED_POST_LIMIT} posts.
-        </p>
+      {feed.hasOlder && !noneJoined && rows.length > 0 ? (
+        <Button
+          className="self-center"
+          data-testid="board-feed-older"
+          disabled={feed.loadingOlder}
+          onClick={feed.loadOlder}
+          size="sm"
+          variant="outline"
+        >
+          {feed.loadingOlder ? "Loading…" : "Show older posts"}
+        </Button>
       ) : null}
     </div>
   );

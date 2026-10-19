@@ -27,21 +27,19 @@ that fits it (D61 still holds for short posts).
 
 ## 2. What boards still lack before they replace Reddit
 
-In rough order of how much a regular Reddit user would miss each:
+Built since (D64): joining a board and a "Your boards" view; anyone can start a board (5 a day for people who do not
+run the community); pictures and links in posts with a thumbnail and the site's name in lists; Top by today, this week,
+this month or all time; older posts a page at a time; a live "N new posts" notice on the Boards tab.
 
-1. **Join a board** and a "Your boards" view of only the boards you joined (today the tab shows every board you can
-   read). Open boards should be one tap to join.
-2. **Anyone can start a board.** Today only a community's owners and admins can. A product call: Reddit lets anyone
-   create one; with open communities (D33) that also means spam boards, so it likely needs a small rule (an account a few
-   days old, a cap per person, owners can close one).
-3. **Pictures and links in posts**, with a thumbnail in the list (link posts and image posts are most of Reddit).
-4. **Top by period** (today / this week / all time) and paging past the newest 150 posts.
-5. **Live "N new posts"** on the Boards tab (a single board is live already; the front page is a snapshot).
-6. **Profiles show board posts and a score** (the sum of votes on what you wrote), plus "joined" and post count next to
+Still missing, in rough order of how much a regular Reddit user would miss each:
+
+1. **Profiles show board posts and a score** (the sum of votes on what you wrote), plus "joined" and post count next to
    the large picture: the old forum author panel.
-7. **Pin and lock a thread, board rules** in a side panel, and notifications when someone replies to your post.
-8. **Work and fun** (you said later): a board says whether it is for work or for fun, and Home can show one, the other or
-   both. Cheap to add once boards carry a kind; worth it once there are enough boards to annoy people.
+2. **Pin and lock a thread, board rules** in a side panel, and notifications when someone replies to your post.
+3. **Search** across board posts from the top bar.
+4. **Work and fun** (you said later): a board says whether it is for work or for fun, and Home can show one, the other or
+   both.
+5. **Video and several pictures per post**, and a picture viewer.
 
 The chat and the short-post feed are close to Slack and X already. The gaps worth closing for the MVP: chat threads and
 unread markers that survive a reload, search across posts and boards from the top bar, and replies to board posts in

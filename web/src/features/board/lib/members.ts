@@ -67,3 +67,29 @@ export function parsePersonInput(text: string): string | null {
   }
   return null;
 }
+
+/**
+ * The boards a person is a member of, with their role on each, from the membership records (kind 39002) the server
+ * returned. Only the newest record for a board counts: an older one that still lists them is out of date.
+ */
+export function joinedBoards(
+  records: readonly {
+    created_at: number;
+    tags: string[][];
+  }[],
+  me: string,
+): Map<string, string> {
+  const newest = new Map<string, { created_at: number; tags: string[][] }>();
+  for (const record of records) {
+    const d = record.tags.find((tag) => tag[0] === "d")?.[1];
+    if (!d) continue;
+    const seen = newest.get(d);
+    if (!seen || record.created_at > seen.created_at) newest.set(d, record);
+  }
+  const joined = new Map<string, string>();
+  for (const [board, record] of newest) {
+    const mine = parseMembers(record.tags).find((m) => m.pubkey === me);
+    if (mine) joined.set(board, mine.role);
+  }
+  return joined;
+}

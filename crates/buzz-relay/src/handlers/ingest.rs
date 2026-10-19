@@ -2599,6 +2599,35 @@ pub(crate) fn validate_wiki_correction_envelope(event: &Event) -> Result<(), Str
     Ok(())
 }
 
+/// Anyone in a community may start a board, but not more than `boards_per_person_per_day` in a day unless they own or
+/// administer the community. The count includes boards since deleted, so deleting does not make room for more.
+async fn check_board_creation_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.boards_per_person_per_day;
+    if limit == 0 {
+        return Ok(());
+    }
+    let author_hex = event.pubkey.to_hex();
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    let since = chrono::Utc::now() - chrono::Duration::hours(24);
+    let started = state
+        .db
+        .count_boards_created_since(tenant.community(), &event.pubkey.to_bytes(), since)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error counting boards: {e}")))?;
+    if started >= i64::from(limit) {
+        return Err(IngestError::Rejected(format!(
+            "rate-limited: you can start {limit} boards a day; try again tomorrow"
+        )));
+    }
+    Ok(())
+}
+
 /// Whether the signer is a community owner/admin (`relay_members.role`) — the
 /// authority tier that bypasses team-seat checks and purges on delete.
 async fn is_community_admin_or_owner(
@@ -4929,6 +4958,10 @@ async fn ingest_event_inner(
             channel_type_str.parse().map_err(|_| {
                 IngestError::Rejected(format!("invalid channel_type: {channel_type_str}"))
             })?;
+
+        if channel_type == buzz_db::channel::ChannelType::Forum {
+            check_board_creation_limit(state, tenant, &event).await?;
+        }
 
         if let Some(client_uuid) = channel_id {
             let name = create_name.unwrap_or_default();

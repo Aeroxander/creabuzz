@@ -28,6 +28,7 @@ import { type PostStatus, priorityMap } from "../lib/post-status";
 import { type BoardRecords, POST_LIMIT } from "../use-board";
 import type { BoardActions } from "../use-board-actions";
 import { BoardPeople } from "./BoardPeople";
+import { JoinBoardButton } from "./JoinBoardButton";
 import { PostComposer } from "./PostComposer";
 import { PostRow } from "./PostRow";
 
@@ -205,6 +206,9 @@ export function BoardList({
             >
               People
             </Button>
+          ) : null}
+          {channel.visibility === "public" ? (
+            <JoinBoardButton boardId={channel.id} boardName={channel.name} />
           ) : null}
           <Button
             data-testid="board-new-post"

@@ -1,14 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { MessageSquare, ScrollText } from "lucide-react";
+import { ExternalLink, MessageSquare, ScrollText } from "lucide-react";
 
 import {
   type Profile,
   resolveUserName,
 } from "@/features/profiles/use-profiles";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
-import { previewText } from "../lib/board-feed";
+import { postMedia, previewText } from "../lib/board-feed";
 import type { BoardPost } from "../lib/board-model";
 import type { PostStatus } from "../lib/post-status";
 import { TONE_CLASS } from "./status-tone";
@@ -17,6 +18,7 @@ import { VoteButtons } from "./VoteButtons";
 /**
  * One post in a list, laid out like a forum post: the score, then the author's picture large enough to recognise, who
  * and when (and, on the boards front page, which board), the title, the first lines of the text and how many replies.
+ * A post with a picture shows it small at the side, and a post with a link names the site it goes to.
  *
  * A post about a DAO decision has no vote arrows. It is not ranked by votes (a vote here is not the DAO's vote and
  * would read as support), so where the arrows would be it says what it is, and where the decision stands when known.
@@ -40,6 +42,7 @@ export function PostRow({
 }) {
   const name = resolveUserName(profile, post.author);
   const preview = post.body ? previewText(post.body) : "";
+  const media = postMedia(post.body);
   return (
     <li
       className="flex gap-2 rounded-xl border bg-card p-3"
@@ -102,14 +105,40 @@ export function PostRow({
             </div>
           </div>
         </div>
-        <button
-          className="mt-2 block max-w-full text-left text-base font-semibold hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-          data-testid="board-post-title"
-          onClick={onOpen}
-          type="button"
-        >
-          {post.title}
-        </button>
+        <div className="mt-2 flex gap-3">
+          <div className="min-w-0 flex-1">
+            <button
+              className="block max-w-full text-left text-base font-semibold hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              data-testid="board-post-title"
+              onClick={onOpen}
+              type="button"
+            >
+              {post.title}
+            </button>
+            {media.link ? (
+              <a
+                className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-primary-ink hover:underline"
+                data-testid="board-post-link"
+                href={media.link.url}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="truncate">{media.link.host}</span>
+                <ExternalLink aria-hidden className="h-3 w-3 shrink-0" />
+              </a>
+            ) : null}
+          </div>
+          {media.image ? (
+            <img
+              alt=""
+              className="h-20 w-20 shrink-0 rounded-lg border object-cover sm:h-24 sm:w-24"
+              data-testid="board-post-thumbnail"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              src={rewriteRelayUrl(media.image)}
+            />
+          ) : null}
+        </div>
         {preview ? (
           <p
             className="mt-1 line-clamp-3 text-sm text-muted-foreground"

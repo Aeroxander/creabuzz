@@ -2,6 +2,8 @@
 pub mod admin_action_worker;
 pub mod admin_outbox_worker;
 pub mod auth;
+#[cfg(test)]
+mod board_limit_tests;
 /// NIP-ORG budget enforcement — relay-side ingest gate.
 pub mod budget_enforcement;
 /// Pure NIP-29 channel membership-authority decisions (kinds 9000/9001/9022).

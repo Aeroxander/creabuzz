@@ -707,3 +707,32 @@ By hand, against the local server (`just relay`, then the web app), signed in, i
 
 Not done: joining a board, anyone creating a board, pictures in posts, Top by period, live updates on the front page
 (see SOCIAL-MVP-ROADMAP-2026-10-19.md).
+
+## 4ah. Joining boards, starting boards, pictures, Top by period, live posts (D64, 2026-10-19)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke board-feed.spec.ts board.spec.ts
+cargo test -p buzz-relay --lib -- board_limit --ignored     # needs Postgres + Redis
+```
+
+By hand, against the local server, with two accounts (two browsers, or a normal and a private window):
+
+1. **Start a board.** As the first account, Home → Boards → **Start a board**, give it a name and a line about it. You land
+   on the board; its header says **Yours**.
+2. **Post with a picture and a link.** **New post**, **Add a picture**, then a link in the text. In the Boards tab the
+   post shows the picture small beside the title and the link's site (for example "itch.io") under it.
+3. **Join.** As the second account, Boards tab → it starts on **All boards** (you joined nothing) → open the board →
+   **Join**. Back on the Boards tab it now starts on **Your boards**, and the board's chip is highlighted. Press
+   **Joined** on the board to leave; Your boards then says how to join one.
+4. **Live.** Keep the second account on the Boards tab. Post on any board as the first account: "1 new post. Show" appears
+   within a second or two, the list does not move, and **Show** brings the post in.
+5. **Top.** Choose **Top**: a time menu appears (Today / This week / This month / All time) and changes what is listed.
+6. **Older posts.** With more than 100 posts, **Show older posts** at the bottom adds the next 100.
+7. **Limit.** As an account that is not a community owner or admin, start a sixth board in a day: it is refused with
+   "You can start 5 boards a day; try again tomorrow." and the name stays in the box.
+
+Not checked locally: the picture upload itself (the local media store did not answer). If uploads fail the same way in
+chat, it is the media store setup.

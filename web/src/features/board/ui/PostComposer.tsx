@@ -4,8 +4,10 @@
  * draft.
  */
 
-import { useState } from "react";
+import { ImagePlus } from "lucide-react";
+import { useRef, useState } from "react";
 
+import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
@@ -31,6 +33,30 @@ export function PostComposer({
   const [body, setBody] = useState(initialBody);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  /** Upload a picture to the server and add it to the text, where the post's list card picks it up as its thumbnail. */
+  const addPicture = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setProblem(null);
+    try {
+      const uploaded = await uploadBlob(file);
+      setBody((text) => {
+        const before = text.trimEnd();
+        return `${before}${before ? "\n\n" : ""}![](${uploaded.url})\n`;
+      });
+    } catch (error) {
+      const said = error instanceof Error ? error.message.trim() : "";
+      setProblem(
+        `That picture didn't upload${said ? ` (the server said: ${said})` : ""}. Try again, or paste a link to a picture.`,
+      );
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
 
   const submit = async () => {
     const found = draftProblem(title, body);
@@ -89,6 +115,33 @@ export function PostComposer({
         placeholder="Add details (optional). You can use Markdown."
         value={body}
       />
+      <div>
+        <input
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="sr-only"
+          data-testid="board-composer-file"
+          id="board-post-picture"
+          onChange={(event) => void addPicture(event.target.files?.[0])}
+          ref={fileInput}
+          tabIndex={-1}
+          type="file"
+        />
+        <Button
+          data-testid="board-composer-picture"
+          disabled={busy || uploading}
+          onClick={() => fileInput.current?.click()}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <ImagePlus aria-hidden className="mr-1 h-4 w-4" />
+          {uploading ? "Uploading…" : "Add a picture"}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {" "}
+          Paste a link in the text to share one.
+        </span>
+      </div>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {problem ? (
         <p
@@ -102,7 +155,7 @@ export function PostComposer({
       <div className="flex gap-2">
         <Button
           data-testid="board-composer-submit"
-          disabled={busy}
+          disabled={busy || uploading}
           size="sm"
           type="submit"
         >

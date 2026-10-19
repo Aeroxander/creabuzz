@@ -80,3 +80,46 @@ describe("boardRemovers", () => {
     assert.equal(boardRemovers([]).size, 0);
   });
 });
+
+describe("joinedBoards", () => {
+  const ME = "a".repeat(64);
+  const OTHER = "b".repeat(64);
+  const record = (d, at, people) => ({
+    created_at: at,
+    tags: [["d", d], ...people.map(([pk, role]) => ["p", pk, "", role])],
+  });
+
+  it("lists each board the person is on, with their role", async () => {
+    const { joinedBoards } = await import("./members.ts");
+    const joined = joinedBoards(
+      [
+        record("film", 10, [[ME, "owner"]]),
+        record("music", 10, [
+          [OTHER, "owner"],
+          [ME, "member"],
+        ]),
+        record("art", 10, [[OTHER, "owner"]]),
+      ],
+      ME,
+    );
+    assert.deepEqual(
+      [...joined],
+      [
+        ["film", "owner"],
+        ["music", "member"],
+      ],
+    );
+  });
+
+  it("goes by the newest record, so leaving is honoured", async () => {
+    const { joinedBoards } = await import("./members.ts");
+    const joined = joinedBoards(
+      [
+        record("music", 10, [[ME, "member"]]),
+        record("music", 20, [[OTHER, "owner"]]),
+      ],
+      ME,
+    );
+    assert.equal(joined.size, 0);
+  });
+});

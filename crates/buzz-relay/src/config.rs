@@ -431,6 +431,12 @@ pub struct Config {
     /// would not stop a script; this one does.
     pub self_serve_max_per_hour: u32,
 
+    /// The most boards one person who is not a community owner or admin may start in a day
+    /// (`BUZZ_BOARDS_PER_PERSON_PER_DAY`, default 5; 0 turns the limit off). Anyone in a community may start a board;
+    /// this keeps one account from filling a community's front page with them. Chat rooms are not counted: launches
+    /// and project templates create several at once.
+    pub boards_per_person_per_day: u32,
+
     /// Deployment-level relay operator pubkeys allowed to use the
     /// `/operator/communities` management endpoints.
     ///
@@ -1123,6 +1129,15 @@ impl Config {
             _ => 30,
         };
 
+        let boards_per_person_per_day = match std::env::var("BUZZ_BOARDS_PER_PERSON_PER_DAY") {
+            Ok(raw) if !raw.trim().is_empty() => raw.trim().parse::<u32>().map_err(|_| {
+                ConfigError::InvalidValue(format!(
+                    "BUZZ_BOARDS_PER_PERSON_PER_DAY must be a whole number, got {raw:?}"
+                ))
+            })?,
+            _ => 5,
+        };
+
         let relay_operator_pubkeys = match std::env::var("RELAY_OPERATOR_PUBKEYS") {
             Ok(raw) => {
                 let mut pubkeys = Vec::new();
@@ -1698,6 +1713,7 @@ impl Config {
             relay_operator_api_origin,
             self_serve_community_domain,
             self_serve_max_per_hour,
+            boards_per_person_per_day,
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
             allow_nip_oa_auth,
@@ -3072,6 +3088,25 @@ mod tests {
             Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_SELF_SERVE_MAX_PER_HOUR")
         ));
         assert_eq!(good.expect("config").self_serve_max_per_hour, 5);
+    }
+
+    #[test]
+    fn boards_per_person_default_to_five_and_must_be_a_whole_number() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_BOARDS_PER_PERSON_PER_DAY");
+        let default = Config::from_env();
+        std::env::set_var("BUZZ_BOARDS_PER_PERSON_PER_DAY", "many");
+        let bad = Config::from_env();
+        std::env::set_var("BUZZ_BOARDS_PER_PERSON_PER_DAY", "0");
+        let off = Config::from_env();
+        std::env::remove_var("BUZZ_BOARDS_PER_PERSON_PER_DAY");
+
+        assert_eq!(default.expect("config").boards_per_person_per_day, 5);
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_BOARDS_PER_PERSON_PER_DAY")
+        ));
+        assert_eq!(off.expect("config").boards_per_person_per_day, 0);
     }
 
     #[test]

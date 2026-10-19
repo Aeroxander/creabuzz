@@ -173,3 +173,54 @@ describe("previewText", () => {
     assert.ok(long.length <= 31);
   });
 });
+
+describe("withinPeriod", () => {
+  it("keeps only posts inside the window, and everything for All time", async () => {
+    const { withinPeriod } = await import("./board-feed.ts");
+    const posts = [
+      { id: "h", createdAt: NOW - HOUR },
+      { id: "d3", createdAt: NOW - 3 * 24 * HOUR },
+      { id: "d20", createdAt: NOW - 20 * 24 * HOUR },
+      { id: "d90", createdAt: NOW - 90 * 24 * HOUR },
+    ];
+    const ids = (period) => withinPeriod(posts, period, NOW).map((p) => p.id);
+    assert.deepEqual(ids("day"), ["h"]);
+    assert.deepEqual(ids("week"), ["h", "d3"]);
+    assert.deepEqual(ids("month"), ["h", "d3", "d20"]);
+    assert.deepEqual(ids("all"), ["h", "d3", "d20", "d90"]);
+  });
+});
+
+describe("postMedia", () => {
+  it("finds the first picture and the first link, by site", async () => {
+    const { postMedia } = await import("./board-feed.ts");
+    assert.deepEqual(
+      postMedia(
+        "Look ![still](https://cdn.example/a.png) and read [the paper](https://www.arxiv.org/abs/1) or https://b.example/x",
+      ),
+      {
+        image: "https://cdn.example/a.png",
+        link: { url: "https://www.arxiv.org/abs/1", host: "arxiv.org" },
+      },
+    );
+  });
+
+  it("takes a bare image address as the picture, not the link", async () => {
+    const { postMedia } = await import("./board-feed.ts");
+    assert.deepEqual(
+      postMedia("https://cdn.example/b.jpg?w=2 then https://site.example"),
+      {
+        image: "https://cdn.example/b.jpg?w=2",
+        link: { url: "https://site.example/", host: "site.example" },
+      },
+    );
+  });
+
+  it("never offers a script or data address", async () => {
+    const { postMedia } = await import("./board-feed.ts");
+    assert.deepEqual(
+      postMedia("![x](javascript:alert(1)) [y](data:text/html,hi) plain words"),
+      { image: null, link: null },
+    );
+  });
+});

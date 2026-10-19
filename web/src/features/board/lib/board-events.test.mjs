@@ -139,3 +139,19 @@ describe("moderationDeletionDraft", () => {
     );
   });
 });
+
+describe("membershipDraft", () => {
+  it("joins with 9021 and leaves with 9022, naming the board", async () => {
+    const { membershipDraft } = await import("./board-events.ts");
+    assert.deepEqual(membershipDraft({ boardId: "b1", join: true }), {
+      kind: 9021,
+      tags: [["h", "b1"]],
+      content: "",
+    });
+    assert.deepEqual(membershipDraft({ boardId: "b1", join: false }), {
+      kind: 9022,
+      tags: [["h", "b1"]],
+      content: "",
+    });
+  });
+});

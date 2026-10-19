@@ -184,6 +184,31 @@ pub async fn create_channel(
     Ok(record)
 }
 
+/// How many boards (forum channels) one person has created in a community since `since`, deleted ones included, so
+/// deleting does not reset a limit on starting new ones.
+pub async fn count_boards_created_since(
+    pool: &PgPool,
+    community_id: CommunityId,
+    created_by: &[u8],
+    since: DateTime<Utc>,
+) -> Result<i64> {
+    let row = sqlx::query(
+        r#"
+        SELECT COUNT(*) AS n FROM channels
+        WHERE community_id = $1
+          AND created_by = $2
+          AND created_at >= $3
+          AND channel_type = 'forum'
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(created_by)
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.try_get::<i64, _>("n")?)
+}
+
 /// Creates a channel with a client-supplied UUID (idempotent via ON CONFLICT DO NOTHING).
 ///
 /// Returns `(record, true)` if the channel was newly created, or `(record, false)` if a
@@ -838,6 +863,17 @@ impl Db {
             ttl_seconds,
         )
         .await
+    }
+
+    /// How many boards one person has created in a community since `since` (see the free function).
+    #[datastore_span(name = "count_boards_created_since", system = "postgresql")]
+    pub async fn count_boards_created_since(
+        &self,
+        community_id: CommunityId,
+        created_by: &[u8],
+        since: DateTime<Utc>,
+    ) -> Result<i64> {
+        count_boards_created_since(&self.pool, community_id, created_by, since).await
     }
 
     /// Creates a channel with a client-supplied UUID.
