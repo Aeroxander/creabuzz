@@ -290,8 +290,8 @@ export function RecordBidDialog({
           Before you bid: your money goes to the project&apos;s treasury, which
           holders vote on, and the team votes too. The milestones lock the
           team&apos;s own tokens until each milestone has been reached and
-          judged; they do not stop a vote from spending the treasury. If the sale misses its
-          minimum, every bid is refunded.
+          judged; they do not stop a vote from spending the treasury. If the
+          sale misses its minimum, every bid is refunded.
         </p>
       ) : null}
       {!auction ? (

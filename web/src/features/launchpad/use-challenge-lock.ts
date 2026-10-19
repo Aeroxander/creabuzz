@@ -105,6 +105,7 @@ export function useChallengeLockState(dao: string | null): LockState {
   }, [refetch]);
 
   // Say so when it stops asking on its own.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `dataUpdatedAt` is the trigger: each answer from the chain restarts the clock.
   useEffect(() => {
     if (paused) return;
     const left = POLL_FOR_MS - (Date.now() - askedAt.current);
