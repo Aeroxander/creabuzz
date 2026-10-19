@@ -219,7 +219,13 @@ let USDC;
 async function usdcBalance(who) {
   return word(await call(USDC, encAddr("balanceOf(address)", who)));
 }
+async function isBlocked(who) {
+  return word(await call(USDC, encAddr("blocked(address)", who))) !== 0n;
+}
+
+/** Top an agent up with test USDC; an agent the issuer blocks gets nothing (the test currency refuses it, like USDC). */
 async function mintUsdc(to, amount) {
+  if (await isBlocked(to)) return;
   if (!ok(await send(DEPLOYER, USDC, enc("mint(address,uint256)", ["address", "uint256"], [to, amount])))) {
     throw new Error("minting USDC failed");
   }
@@ -386,6 +392,7 @@ async function runSales(sales) {
     currentStep = `sale block ${number}`;
     for (const [{ p, bidders, intensity }, book] of open) {
       const b = pick(bidders);
+      if (await isBlocked(b)) continue; // a blocked agent cannot pay for a bid
       if (chance(intensity) && (await now()).number < p.endBlock - 2) await placeBid(p, book.get(b), b);
     }
     await rpc("evm_mine", []);
@@ -549,7 +556,10 @@ async function checkInvariants(expect) {
       if (ms[j].phase !== 0) broke("D58: a later milestone moved while an earlier could be objected to", `k=${k} j=${j}`);
     }
   }
-  if (lockUsdc !== owed) broke("the lock holds other than its bonds and open deposits", `${lockUsdc} != ${owed}`);
+  // What settling a vote could not pay a blocked payee waits in the lock too (D67).
+  const payees = [...team, ...BACKERS, CONTRIBUTOR, ATTACKER, P.dao];
+  for (const h of await callMany(payees.map((a) => [P.lock, encAddr("owed(address)", a)]))) owed += word(h);
+  if (lockUsdc !== owed) broke("the lock holds other than its bonds, open deposits and what it owes", `${lockUsdc} != ${owed}`);
 
   // Money out of the DAO: only an exit (exactly the preview) or an executed vote that met its bars.
   const out = expect.daoUsdcBefore - daoUsdc;
@@ -676,7 +686,10 @@ async function stepExit(expect) {
   const before = await usdcBalance(who);
   const r = await send(who, P.dao, encodeRagequitCalldata({ tokens: [USDC], sharesToBurn, lootToBurn: 0n }));
   if (!ok(r)) {
-    broke("an exit the screen offered was refused", `${who} ${sharesToBurn}`);
+    // A holder the currency's issuer blocks cannot be paid, so their exit fails; anyone else's must go through.
+    const blocked = await isBlocked(who);
+    if (!(blocked && due !== 0n)) broke("an exit the screen offered was refused", `${who} ${sharesToBurn}`);
+    hit("exit.refusedBlocked");
     return;
   }
   const got = (await usdcBalance(who)) - before;
@@ -898,7 +911,8 @@ async function msResolve(k, m, expect) {
   expect.supplyBefore = supplyBefore;
   const r = await send(pick(BACKERS), P.lock, encodeChallengeResolve(k));
   if (!ok(r)) {
-    hit("milestone.resolveRefused");
+    // msResolve waits out the vote first, so a refusal here means an ended vote could not be settled.
+    broke("a vote that had ended could not be settled", `milestone ${k}`);
     return;
   }
   const burned = supplyBefore - word(await call(P.shares, S.totalSupply));
@@ -1007,6 +1021,24 @@ async function stepAttack() {
   hit("attack.refused");
 }
 
+/** The currency's issuer blocks or unblocks a holder (as USDC's can), and blocked payees come back for what they are owed. */
+async function stepIssuer() {
+  const who = pick([...(await holders()), CONTRIBUTOR]);
+  if (chance(0.5)) {
+    const on = chance(0.5);
+    await send(DEPLOYER, USDC, enc("setBlocked(address,bool)", ["address", "bool"], [who, on]));
+    hit(on ? "issuer.block" : "issuer.unblock");
+    return;
+  }
+  const owed = word(await call(P.lock, encAddr("owed(address)", who)));
+  const before = await usdcBalance(who);
+  const r = await send(who, P.lock, sel("withdrawOwed()"));
+  if (ok(r) && (await usdcBalance(who)) - before !== owed) broke("withdrawOwed paid other than what was owed", who);
+  const blocked = await isBlocked(who);
+  if (!ok(r) && !blocked) broke("an unblocked payee could not take what was owed", who);
+  if (ok(r) && owed > 0n) hit("lock.withdrawOwed");
+}
+
 async function stepTime() {
   await passTime(randInt(3600, 5 * 86400));
   hit("time");
@@ -1108,6 +1140,7 @@ async function main() {
     [stepWork, 5],
     [stepReviewerBond, 4],
     [stepAttack, 4],
+    [stepIssuer, 2],
     [stepTime, 9],
   ];
   const total = actions.reduce((a, [, w]) => a + w, 0);
@@ -1134,6 +1167,7 @@ async function main() {
       hit(`client.${action.name}`);
       if (!(e instanceof Error) || !/DecisionInputError|must|cannot|Pick|Give|Name/.test(`${e.name} ${e.message}`)) {
         breaks.push({ step: currentStep, invariant: "simulation error", detail: String(e?.stack ?? e).slice(0, 400) });
+        console.log(`  !! simulation error at ${currentStep}: ${String(e?.message ?? e).slice(0, 200)}`);
       }
     }
     await checkInvariants(expect);

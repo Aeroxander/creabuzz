@@ -80,6 +80,12 @@ const MUTATIONS = [
     "            index;",
   ],
   [
+    "settling a vote reverts again when a payee is blocked (the D67 fix undone)",
+    "contracts/src/MilestoneChallenge.sol",
+    "        if (amount == 0) return;\n        (bool ok, bytes memory ret) = bondToken.call(",
+    "        if (amount == 0) return;\n        IERC20(bondToken).safeTransfer(to, amount);\n        return;\n        (bool ok, bytes memory ret) = bondToken.call(",
+  ],
+  [
     "web exit preview ignores the DAO's own Shares",
     "web/src/features/launchpad/lib/ragequit-position.ts",
     "return input.daoHeld >= outstanding ? 0n : outstanding - input.daoHeld;",

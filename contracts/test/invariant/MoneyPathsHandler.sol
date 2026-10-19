@@ -22,6 +22,18 @@ contract MockUSDC is ERC20 {
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
+
+    /// @notice Like USDC's issuer, block an address: transfers to or from it revert.
+    mapping(address => bool) public blocked;
+
+    function setBlocked(address who, bool on) external {
+        blocked[who] = on;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        require(!blocked[from] && !blocked[to], "blocked");
+        super._update(from, to, value);
+    }
 }
 
 /// @notice Drives one launched project after its sale (the buyers have claimed): a patched Moloch DAO with a treasury in
@@ -119,6 +131,15 @@ contract MoneyPathsHandler is Test {
 
     function reviewers() external view returns (address[] memory) {
         return _reviewers;
+    }
+
+    /// @notice Every account that can be owed money by the lock: the actors and the DAO.
+    function payees() external view returns (address[] memory list) {
+        list = new address[](_team.length + _backers.length + 4);
+        uint256 n;
+        for (uint256 i; i < _team.length; ++i) list[n++] = _team[i];
+        for (uint256 i; i < _backers.length; ++i) list[n++] = _backers[i];
+        (list[n++], list[n++], list[n++], list[n]) = (looter, contributor, ATTACKER, address(dao));
     }
 
     function claimIds() external view returns (bytes32[] memory) {
@@ -272,7 +293,10 @@ contract MoneyPathsHandler is Test {
         vm.prank(who);
         (bool ok,) = address(dao).call(abi.encodeCall(Moloch.ragequit, (tokens, sharesToBurn, lootToBurn)));
         if (ok && sharesToBurn > burnable) _fail("locked Shares were ragequit");
-        if (!ok && sharesToBurn <= burnable) _fail("an exit within the free Shares was refused");
+        // A holder the currency blocks cannot be paid, so their exit fails; anyone else's must go through.
+        if (!ok && sharesToBurn <= burnable && !(usdc.blocked(who) && dueUsdc != 0)) {
+            _fail("an exit within the free Shares was refused");
+        }
         if (!ok) {
             _hit("ragequit.refusedLocked");
             return;
@@ -556,6 +580,11 @@ contract MoneyPathsHandler is Test {
         (,,,, uint64 voteEnds,,,,) = lock.objection(index);
         vm.warp(voteEnds);
         vm.roll(vm.getBlockNumber() + 1);
+        // Sometimes the currency's issuer blocks the objector while the vote runs: settling must still go through.
+        if ((r >> 56) % 4 == 0) {
+            usdc.setBlocked(objector, true);
+            _hit("issuer.blockObjector");
+        }
         _resolve(index);
     }
 
@@ -622,7 +651,10 @@ contract MoneyPathsHandler is Test {
             }
         }
         uint256 supplyBefore = shares.totalSupply();
+        (,,,, uint64 voteEnds,,,,) = lock.objection(index);
         try lock.resolve(index) {} catch {
+            // Liveness: once the vote has ended anyone must be able to settle it, whoever the currency blocks.
+            if (block.timestamp >= voteEnds) _fail("a vote that had ended could not be settled");
             return;
         }
         uint256 burned = supplyBefore - shares.totalSupply();
@@ -871,6 +903,30 @@ contract MoneyPathsHandler is Test {
         (bool ok,) = target.call(data);
         if (ok) _fail("a privileged door opened for an outsider");
         _hit("attack.refused");
+    }
+
+    // ---- the currency's issuer ----------------------------------------------------------------------
+
+    /// @notice The issuer blocks (or unblocks) one of the actors, as USDC's can. Nothing they are owed may be lost, and
+    /// nothing anyone else does may get stuck because of it.
+    function issuerBlocks(uint256 whoSeed, bool on) external step {
+        address who = _anyone(whoSeed);
+        usdc.setBlocked(who, on);
+        _hit(on ? bytes32("issuer.block") : bytes32("issuer.unblock"));
+    }
+
+    /// @notice Someone takes what settling a vote could not pay them; only ever to themselves.
+    function withdrawOwed(uint256 whoSeed) external step {
+        address who = _anyone(whoSeed);
+        uint256 amount = lock.owed(who);
+        uint256 before = usdc.balanceOf(who);
+        vm.prank(who);
+        try lock.withdrawOwed() {
+            if (usdc.balanceOf(who) - before != amount) _fail("withdrawOwed paid other than what was owed");
+            if (amount != 0) _hit("lock.withdrawOwed");
+        } catch {
+            if (!usdc.blocked(who)) _fail("an unblocked payee could not take what was owed");
+        }
     }
 
     // ---- time ---------------------------------------------------------------------------------------

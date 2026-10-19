@@ -795,7 +795,8 @@ commands rerun all of it; each cleans up after itself and touches no real networ
    `testFuzz_exit_pays_exactly_what_the_screen_shows` (65 runs; it calls `node`, so the web's own exit preview is what
    the chain is held to) and `testFuzz_slash_takes_at_most_what_is_held` (256 runs), all passing. `-vv` prints, per run,
    which paths were reached (`milestone.lateUpheld`, `govern.executed`, `work.payout`, …). The whole suite
-   (`forge test`) then reports 413 passed, 0 failed, 2 skipped.
+   (`forge test`) then reports 415 passed, 0 failed, 2 skipped (the two added by D67 are
+   `test/MilestoneChallengeBlocklist.t.sol`).
 2. **The simulation on a real chain.**
 
    ```bash
@@ -805,7 +806,7 @@ commands rerun all of it; each cleans up after itself and touches no real networ
    It boots its own anvil, launches projects through the launch kit, runs their sales with two dozen bidders (one sale
    misses its target on purpose), settles every bid with the web's own "Your bids and tokens" logic, then takes 3,000
    random steps (transfers, exits through the web's exit screen code, proposals and votes, milestones and objections,
-   work budgets, bonds, an attacker, time passing), starting a fresh project whenever one's milestones are settled.
+   work budgets, bonds, the currency's issuer blocking people, an attacker, time passing), starting a fresh project whenever one's milestones are settled.
    Working looks like: a line per sale ("raise met; bidders paid … USDC, DAO holds …" and one "raise missed; bidders paid
    0 USDC"), `3000 steps, 3000 invariant checks, 0 breaks`, exit code 0, and a report in
    `target/simulate-raise/report.json`. About two minutes. Any other `--seed` gives a different history.
@@ -815,9 +816,13 @@ commands rerun all of it; each cleans up after itself and touches no real networ
    node scripts/contracts-mutation-check.mjs
    ```
 
-   It removes each of twelve guards in turn (the lock, D51, D57, D58, the vote bars, the slash, the claim window, the
-   clawback, and two in the web exit preview), runs step 1, and restores the file. Working looks like: twelve lines
-   ending in `caught (…)` and `every mutation was caught`.
+   It removes each of thirteen guards in turn (the lock, D51, D57, D58, the vote bars, the slash, the claim window, the
+   clawback, the D67 settlement fallback, and two in the web exit preview), runs step 1, and restores the file. Working
+   looks like: thirteen lines ending in `caught (…)` and `every mutation was caught`.
+4. **A blocked objector (D67).** `cd contracts && forge test --match-path test/MilestoneChallengeBlocklist.t.sol`: an
+   upheld objection (and an upheld late one) settles although the currency now blocks the objector; the objector's
+   bounty waits in `owed`, nobody else can take it, and it is theirs once unblocked. The invariant handler and the
+   simulation also have the currency's issuer block and unblock people at random.
 
 Not covered here: the panel lock (`MilestoneLock`) is held by its own tests, not by the invariants; the simulation
 uses the holder challenge only. Sepolia and mainnet are not touched.

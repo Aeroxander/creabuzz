@@ -52,6 +52,11 @@ the DAO can still forfeit a departed founder's tranches.
 If the objection is upheld before the unlock: the tranche stays locked, half the bond goes to the objector (with the
 deposit back), half to the DAO, and the team may try again with a doubled window.
 
+Settling a vote never waits on the currency (D67): if the currency refuses a payment (its issuer can block an address,
+as USDC's can), that amount is kept in the lock for its owner (`owed`) and the settlement goes on. The owner takes it
+with `withdrawOwed`, only to their own address, once the currency lets them. Without this, one blocked objector would
+have held every later milestone up for good.
+
 ## Who votes, and how much
 
 - Anyone who is not a team member. A team member cannot object or vote on their own milestones.

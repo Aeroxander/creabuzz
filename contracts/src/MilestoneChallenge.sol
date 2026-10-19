@@ -130,6 +130,10 @@ contract MilestoneChallenge {
     mapping(uint256 index => uint256) private _round;
     mapping(uint256 index => mapping(uint256 round => mapping(address voter => bool))) private _voted;
 
+    /// @notice What settling a vote could not pay out because the currency refused the transfer (an issuer can block an
+    /// address, as USDC's can). It waits here for its owner, who takes it with `withdrawOwed` once the currency lets them.
+    mapping(address => uint256) public owed;
+
     uint256 private _entered = 1;
 
     event Submitted(
@@ -145,6 +149,8 @@ contract MilestoneChallenge {
     event ClawedBack(uint256 indexed index, uint96 burned);
     event BondReleased(uint256 indexed index, address indexed to, uint128 amount);
     event Forfeited(address indexed beneficiary, uint96 amount);
+    event Owed(address indexed to, uint256 amount);
+    event OwedWithdrawn(address indexed to, uint256 amount);
 
     error OnlyDao();
     error BadSchedule();
@@ -421,20 +427,20 @@ contract MilestoneChallenge {
                 m.submitter = address(0);
                 m.evidence = bytes32(0);
                 if (m.attempts < type(uint8).max) ++m.attempts;
-                _pay(objector, dep + held / 2);
-                _pay(dao, held - held / 2);
+                _payOrOwe(objector, dep + held / 2);
+                _payOrOwe(dao, held - held / 2);
             } else {
-                _pay(dao, dep);
+                _payOrOwe(dao, dep);
                 _stand(index, m);
             }
         } else if (upheld) {
             uint128 held = m.bond;
             m.bond = 0;
-            _pay(objector, dep + held / 2);
-            _pay(dao, held - held / 2);
+            _payOrOwe(objector, dep + held / 2);
+            _payOrOwe(dao, held - held / 2);
             _clawBack(index);
         } else {
-            _pay(dao, dep);
+            _payOrOwe(dao, dep);
         }
     }
 
@@ -447,6 +453,15 @@ contract MilestoneChallenge {
         m.bond = 0;
         _pay(m.submitter, held);
         emit BondReleased(index, m.submitter, held);
+    }
+
+    /// @notice Take what settling a vote could not pay you at the time. Only to the address it is owed to.
+    function withdrawOwed() external nonReentrant {
+        uint256 amount = owed[msg.sender];
+        if (amount == 0) return;
+        owed[msg.sender] = 0;
+        IERC20(bondToken).safeTransfer(msg.sender, amount);
+        emit OwedWithdrawn(msg.sender, amount);
     }
 
     // ---- the DAO ------------------------------------------------------------------------------------
@@ -512,6 +527,15 @@ contract MilestoneChallenge {
 
     function _pay(address to, uint256 amount) private {
         if (amount != 0) IERC20(bondToken).safeTransfer(to, amount);
+    }
+
+    /// @dev Pay `amount` to `to`, or, when the currency refuses (reverts or answers false), keep it for them in `owed`.
+    function _payOrOwe(address to, uint256 amount) private {
+        if (amount == 0) return;
+        (bool ok, bytes memory ret) = bondToken.call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        if (ok && (ret.length == 0 || (ret.length >= 32 && abi.decode(ret, (uint256)) == 1))) return;
+        owed[to] += amount;
+        emit Owed(to, amount);
     }
 
     function _min(uint256 a, uint256 b) private pure returns (uint256) {

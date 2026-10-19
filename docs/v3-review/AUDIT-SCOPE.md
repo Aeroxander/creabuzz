@@ -1,7 +1,8 @@
 # Audit scope: the milestone-locked raise
 
-Status: prepared 2026-10-19 on branch `audit-groundwork` (from `v4-governance-rework` at `e72c8911b`). Nothing in
-`contracts/src` changed while preparing it: the invariant tests, fuzz tests and the simulation found no bug to fix.
+Status: prepared 2026-10-19 on branch `audit-groundwork` (from `v4-governance-rework` at `e72c8911b`). One contract
+changed while preparing it: `MilestoneChallenge` no longer lets a currency-blocked payee stall the settlement of a vote
+(D67, found walking the ethskills checklists, §10). Everything else in `contracts/src` is as it was.
 This is the groundwork for the external audit the roadmap requires before any raise goes live
 ([SOCIAL-MVP-ROADMAP-2026-10-19.md §5](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Mainnet stays off until that audit is done
 and its report replaces the "unaudited" notice.
@@ -34,7 +35,7 @@ after the tag needs either a re-review of that file or a written reason why it i
 
 ## 2. Contracts in scope
 
-Lines are total and source lines (no blanks or comments) at `e72c8911b`.
+Lines are total and source lines (no blanks or comments) at `e72c8911b`, except where marked.
 
 | Contract | File | Lines (source) | Role in the raise |
 |---|---|---|---|
@@ -43,7 +44,7 @@ Lines are total and source lines (no blanks or comments) at `e72c8911b`.
 | CCA interfaces | `src/CCA.sol` | 66 (30) | Mirrored interfaces of the upstream auction; `test/PinnedInterfaces.t.sol` compares them with the pinned source. |
 | Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,641 (1,636) | The DAO, its treasury, ragequit, the Shares ERC-20(C) with the lock guard. Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 64 `@@CREABUZZ PATCH` blocks, 314 lines inside them, upstream text kept in comments (`scripts/check-majeur-fork.mjs` enforces it). The runtime size is within 47 bytes of the 24,576-byte limit. |
 | `AllocationVoting` (+ `IVotingWeight`) | `src/AllocationVoting.sol`, `src/VotingWeight.sol` | 629 (465) + 21 (13) | The only ballot: snapshots of owned Shares, two lanes, quorum, approval, review, hold time, the governor's queue reset. Cloned per DAO. |
-| `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 520 (401) + 30 (21) | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58). |
+| `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 544 (420) + 30 (21) after D67 | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58). |
 | `MilestoneLock` (+ factory) | `src/MilestoneLock.sol`, `src/MilestoneLockFactory.sol` | 199 (133) + 30 (20) | The panel lock: a tranche unlocks on a `Paid` claim in the DAO's named panel mandate. |
 | `MilestoneBadge` | `src/MilestoneBadge.sol` | 118 (85) | Soulbound record minted on unlock. Moves no value. |
 | `TreasuryMandate` (+ factory) | `src/TreasuryMandate.sol` | 416 (314) | Work budgets: a DAO-approved, finite budget in currency and/or Shares; projects; claim binding; reviewer slashing; closing. The factory is also where the panel is named. |
@@ -112,14 +113,15 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 4 | While any milestone can still be objected to late (or has a vote open), no later milestone has been published; an upheld late objection burns exactly what is still locked, and for any milestone but the last that is more than nothing unless the DAO already forfeited it (D58) | `invariant_later_milestones_wait_while_an_earlier_can_be_objected_to`, handler `_resolve` | every step and every resolve | D58 month guard removed; clawback removed |
 | 5 | A milestone vote counts the Shares the voter owned just before the objection, capped by what they hold now; the team cannot object or vote (D57) | handler `_object`/`_vote`, including Shares passed to another wallet after the objection | every objection vote | weight not capped by the current balance |
 | 6 | A reviewer's bond is taken only by a passed vote, never beyond what they hold (stake first, then bond waiting to be taken back), and what is taken reaches the DAO | `governSlash`, `BondSlashFuzz.t.sol` | every step | slash open to anyone; slash paying more than it took |
-| 7 | Custody: the lock holds exactly its unpaid bonds and the deposits of open objections; the panel exactly every stake and pending unbond; the claim escrow exactly the stakes and reservations of claims in play | `invariant_lock_holds_exactly_bonds_and_open_deposits`, `invariant_panel_holds_exactly_the_bonds`, `invariant_claim_escrow_is_fully_backed` | lock and panel every step | — |
+| 7 | Custody: the lock holds exactly its unpaid bonds, the deposits of open objections and what it owes blocked payees; the panel exactly every stake and pending unbond; the claim escrow exactly the stakes and reservations of claims in play | `invariant_lock_holds_exactly_bonds_and_open_deposits`, `invariant_panel_holds_exactly_the_bonds`, `invariant_claim_escrow_is_fully_backed` | lock and panel every step | — |
+| 7a | Liveness: once a milestone vote has ended, anyone can settle it, whoever the currency's issuer blocks (D67) | handler `_resolve`, with an issuer that blocks and unblocks actors and sometimes the objector mid-vote | every resolve | settlement reverting again on a blocked payee |
 | 8 | A payout is paid only for an approved claim, after its 7-day challenge window, exactly the claim plus the stake | handler `_payout` | — | challenge window ignored |
 | 9 | A work budget's money leaves only to a claim it reserved for or back to the DAO, and is never over-allocated | `_checkMoney`, `invariant_budget_and_vote_ledger_bounds` | budget creation counted against the vote | — |
 | 10 | The voting ledger mirrors the Shares (`totalCapacity == totalSupply`); no Shares are minted after the sale outside a vote, and burns happen only on exits, forfeits and upheld late objections | `invariant_budget_and_vote_ledger_bounds` | every step | — |
 | 11 | The sale: bidders on a met raise paid exactly what the DAO received (plus dust left in the auction), nobody paid above their limit; every bid on a missed raise is refunded in full and the DAO receives nothing | — (the CCA is exercised on a real chain) | after every sale | — |
 | 12 | A tranche is freed only by a milestone that stood, and is never both freed and forfeited | `invariant_tranches_free_only_with_their_milestone` | — | — |
 
-The mutation run is reproducible: the list of guards and their replacements is in §8.
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, thirteen guards).
 
 ## 6. Observations made while preparing (no behaviour changed)
 
@@ -169,27 +171,29 @@ See [TEST-STEPS.md §4aj](TEST-STEPS.md). In short:
 cd contracts && forge test                                   # the whole suite, including the new invariants
 cd contracts && forge test --match-path "test/invariant/*"   # only the money-path invariants and fuzz tests
 scripts/simulate-raise.sh --steps 3000 --seed 7              # the agent-based simulation on its own anvil
-node scripts/contracts-mutation-check.mjs                    # break each guard once; every one must be caught
+node scripts/contracts-mutation-check.mjs                    # break each of 13 guards once; every one must be caught
 ```
 
 ## 9. What the simulation found
 
-**Zero invariant breaks.** Three runs of 3,000 steps each (seeds 7, 11 and 23, about 90 seconds each on a laptop),
-9,000 invariant checks after individual steps plus a sale check after each of 35 sales:
+**Zero invariant breaks.** Three runs of 3,000 steps each (seeds 7, 11 and 23, about 100 seconds each on a laptop),
+9,000 invariant checks after individual steps plus a sale check after each of 35 sales. These are the runs after D67,
+with the currency's issuer blocking and unblocking people; the runs before it were also clean.
 
 | What happened (all three runs) | Count |
 |---|---|
 | Projects launched through the kit (2 at the start of each run, then a fresh one whenever a schedule was settled) | 35 |
 | Sales that met their target / missed it on purpose | 32 / 3 |
-| Bids placed / refused by the auction (below the clearing price, or at its last block) | 1,536 / 392 |
-| Bid exits and Share claims through the web's "Your bids and tokens" logic | 1,536 / 434 |
-| Exits through the web's exit screen code (team members among them) / exits into locked Shares refused | 383 (42) / 2 |
-| Share transfers / transfers into locked Shares refused | 890 / 66 |
-| Proposals opened / allocations cast / executed (payments, work budgets, forfeits, payments to the "attacker" that the holders voted for) | 373 / 8,084 / 43 |
-| Milestones published / finished unchallenged / objections upheld before unlock / objections that failed | 91 / 26 / 29 / 36 |
-| Late objections raised / upheld (each burned exactly what was still locked) / failed | 47 / 18 / 29 |
-| Bonds released after the month | 30 |
-| Privileged calls tried by an outsider or a holder (all refused) | 384 |
+| Bids placed / refused by the auction (below the clearing price, or at its last block) | 1,482 / 342 |
+| Bid exits and Share claims through the web's "Your bids and tokens" logic | 1,482 / 391 |
+| Exits through the web's exit screen code (team members among them) / refused because locked / refused because the currency blocked the holder | 319 (43) / 2 / 61 |
+| Share transfers / transfers into locked Shares refused | 872 / 62 |
+| Proposals opened / allocations cast / executed (payments, work budgets, slashes, forfeits, and payments to the "attacker" that the holders voted for) | 388 / 7,971 / 43 |
+| Milestones published / finished unchallenged / objections upheld before unlock / objections that failed | 78 / 29 / 22 / 25 |
+| Late objections raised / upheld (each burned exactly what was still locked) / failed | 42 / 20 / 22 |
+| Bonds released after the month | 20 |
+| The currency's issuer blocking / unblocking a holder | 56 / 41 |
+| Privileged calls tried by an outsider or a holder (all refused) | 335 |
 
 What the sales showed every time: on a met raise, what the bidders paid equals what the DAO received plus the dust
 the auction keeps (8 to 15 base units of USDC, a thousandth of a cent, and about 20 base units of Shares, from the
@@ -197,9 +201,107 @@ auction's own rounding), nobody paid above their own limit, and the bidders clai
 Shares on sale. On the missed raise every bid came back in full and the DAO received nothing; the 6,000,000 Shares stay
 in the auction until the DAO votes to recover them (`GraduationExecutor.recoverFailedLaunch` is the DAO's call only).
 
-What the simulation reaches only thinly: work-budget claims (13 filed, 8 budgets created by a vote, no payout), which
+What the simulation reaches only thinly: work-budget claims (42 filed, 11 budgets created by a vote, no payout), which
 the Forge invariants cover instead (`work.payout`, `govern.freeze`, `govern.unwind`, `govern.slash` in every run of
 the handler); and the named-panel lock, which neither covers (its own 30-odd unit tests do).
 
 What it found along the way, outside the contracts: the first runs filled the laptop's disk, because anvil keeps
 every block's state on disk unless told not to (§6, item 7).
+
+## 10. The ethskills audit checklists (2026-10-19)
+
+Walked against the contracts in §2 with the method of [ethskills' audit skill](https://ethskills.com/audit/SKILL.md):
+its master index, then the checklists its routing table picks for this code: general, precision math, ERC-20,
+governance, access control, denial of service, assembly (CREATE2 clones, transient storage), proxies (clone
+initializers) and signatures. The skill's own pipeline runs one sub-agent per checklist and files GitHub issues; here one
+reviewer walked them all, and nothing was filed (the remote is public). Not applicable to this code: oracles, AMM (the
+auction is upstream), lending, staking, ERC-4626, ERC-4337 (passkey wallets are outside the raise path), bridges,
+flash loans (votes read ownership at the block before the proposal), ERC-721 (the badges are soulbound with no
+callbacks), chain-specific (Sepolia only; on a rollup, `block.number` drives the sale, the claim block and every
+snapshot, which needs its own review). Severity uses the skill's definitions.
+
+## [ES-1] A blocked objector stalled the settlement of a milestone vote for good (fixed, D67)
+**Severity**: High (permanent DoS under a precondition), fixed
+**Category**: evm-audit-erc20 (blocklists), evm-audit-dos (blocklisted recipient)
+**Location**: `MilestoneChallenge.resolve()`
+**Description**: `resolve` paid the objector (deposit plus half the bond) and the DAO inside the call that settles the
+vote. A USDC-style currency reverts transfers to a blocked address.
+**Proof of Concept**: an objection is upheld; the issuer blocks the objector before anyone calls `resolve`; every
+`resolve` reverts; `objection.open` stays true; `submit` of the next milestone reverts `EarlierStillOpen` forever; the
+bond and deposit never leave the lock; an upheld late objection never burns. Reproduced on the old contract by
+`test/MilestoneChallengeBlocklist.t.sol` (both tests reverted with "blocked").
+**Recommendation (done)**: a refused payment out of `resolve` is credited to `owed[payee]` and the settlement goes on;
+`withdrawOwed()` pays it to `msg.sender` only. The invariants now include a blocking issuer and a liveness check.
+
+## [ES-2] A blocked contributor can strand a claim's reserve
+**Severity**: Medium (owner-only fund loss), not fixed
+**Category**: evm-audit-erc20, evm-audit-dos
+**Location**: `ClaimStake.expire()`, `ClaimStake.resolveFrozen()`
+**Description**: both return the reserve to the budget and the stake to the contributor in one call. If the contributor
+is blocked, both revert, so the reserve for that claim cannot go back to the budget (and on to the DAO).
+**Proof of Concept**: a funded claim; the contributor is blocked; the claim lapses, `expire` reverts; the DAO freezes it,
+`resolveFrozen` reverts.
+**Recommendation**: the same pay-or-owe pattern as D67. `TreasuryMandateFactory` is 261 bytes under the size limit
+because it embeds `TreasuryMandate`, which embeds `ClaimStake` and `VerifierSet`; deploy those through their own
+factories first (as the locks are), then apply it.
+
+## [ES-3] Unclaimed sale Shares count in the DAO's voting supply
+**Severity**: Low
+**Category**: evm-audit-governance (quorum based on a supply nobody can vote)
+**Location**: `AllocationVoting._votingSupply()`; `DaoLaunchKit` (no exclusion of the auction)
+**Description**: Shares bought in the sale stay in the auction until each bid is exited and claimed. They are neither the
+DAO's nor excluded, so they raise every quorum (20% of voting supply in the full lane) without being able to vote.
+**Proof of Concept**: a sale where most buyers have not claimed: the first proposals need more turnout from the buyers who
+have claimed than the lane's 20% suggests.
+**Recommendation**: `exitBid` and `claimTokens` on the auction are callable by anyone (tokens always go to the bid's
+owner), so a keeper (or the app, on the first holder's visit) can claim every bid at the claim block. Alternatively the kit
+predicts the auction's address and adds it to the policy's exclusions in the DAO's initialization.
+
+## [ES-4] `ClaimStake` expects a `bool` from `transfer`
+**Severity**: Low
+**Category**: evm-audit-erc20 (missing return values)
+**Location**: `ClaimStake` (`IERC20Minimal`)
+**Description**: every other contract uses `SafeERC20` or Solady-style helpers; `ClaimStake` decodes a `bool`. A currency
+whose `transfer` returns nothing (USDT on Ethereum) would make every stake, reserve and payout revert.
+**Recommendation**: `SafeERC20`, once the factory has room (see ES-2). The pilot's currency is USDC, which returns `bool`.
+
+## [ES-5] The pinned compilers carry known bugs
+**Severity**: Low
+**Category**: evm-audit-general (compiler version)
+**Location**: solc 0.8.26 (kit, executor, allowlist hook) and 0.8.30 (everything else), `via_ir`, optimizer on
+**Description**: the Solidity bug list names, for these versions, `YulOptimizerKnowledgeBaseStaleBookkeeping` (applies:
+the optimizer is on), the two stack-spill bugs in mutual recursion (via-IR; we did not search the code exhaustively for
+mutual recursion), and others whose conditions this code does not meet (no `transient` state variables, no
+named-argument custom errors in `require`, no custom storage layout). All are fixed by 0.8.38.
+**Recommendation**: freeze on solc 0.8.38 or later where the CCA's pin allows, and rerun the suite, the simulation and
+the mutation check.
+
+## [ES-6] Abstentions count toward quorum and not toward approval
+**Severity**: Info
+**Category**: evm-audit-governance (quorum excluding abstentions)
+**Location**: `AllocationVoting.thresholdsMet()`
+**Description**: with `minYesVotesAbsolute` at its default of zero, a proposal can reach quorum on abstentions and pass
+with a small "for" if nobody opposes. Opposition is free (it never draws on a holder's pool), and the review, hold and
+delay give at least 84 hours to oppose or leave.
+**Recommendation**: a non-zero `minYes` per lane, or a product decision that this is acceptable.
+
+## [ES-7] The proposal threshold reads current, not snapshot, ownership
+**Severity**: Info
+**Category**: evm-audit-governance (flash loan plus proposal creation)
+**Location**: `Moloch._openAllocationProposal()`
+**Description**: opening checks `policy.capacity(owner)` now; borrowed Shares could open a proposal. Voting on it uses
+the snapshot, so this only allows opening. The launch default threshold is zero anyway.
+
+## [ES-8] Other items checked and holding
+**Severity**: Info
+- Splitting an exit into several ragequits never pays more than one exit of the same Shares (each floor is at most the
+  exact share of what is left; the sum is at most the floor of the whole).
+- `multicall` is not payable, so `msg.value` cannot be reused across its delegatecalls; `nonReentrant` (transient
+  storage) is cleared after each call.
+- Calls to user-supplied tokens in `ragequit` tolerate addresses with no code (`balanceOfThis` reads zero; the transfer
+  helper checks code); the token list must be strictly ascending, so no token is paid twice.
+- Majeur's top-256 badge seats update on every Shares balance change; bounded (at most 256 slots read).
+- The clones are not upgradeable; the implementations (`Shares`, `Loot`, `Badges`, `AllocationVoting`) can be
+  initialized by anyone, which touches only their own unused storage (§6, item 3).
+- `TreasuryMandate.close()` transfers even a zero balance back; a currency that reverts on zero transfers would block
+  closing an empty budget (USDC does not).

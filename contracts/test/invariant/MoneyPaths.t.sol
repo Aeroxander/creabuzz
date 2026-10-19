@@ -148,7 +148,7 @@ contract MoneyPathsInvariantTest is Test {
         vm.roll(block.number + 1);
         targetContract(address(handler));
         // Weighted: whole milestone rounds and whole votes reach deep states, so they come up more often than single steps.
-        bytes4[] memory weighted = new bytes4[](38);
+        bytes4[] memory weighted = new bytes4[](40);
         uint256 n;
         for (uint256 i; i < 6; ++i) weighted[n++] = handler.milestoneRound.selector;
         for (uint256 i; i < 2; ++i) weighted[n++] = handler.governPay.selector;
@@ -176,6 +176,8 @@ contract MoneyPathsInvariantTest is Test {
         weighted[n++] = handler.returnUnused.selector;
         weighted[n++] = handler.reviewerBond.selector;
         weighted[n++] = handler.attack.selector;
+        weighted[n++] = handler.issuerBlocks.selector;
+        weighted[n++] = handler.withdrawOwed.selector;
         weighted[n++] = handler.elapse.selector;
         assert(n == weighted.length);
         targetSelector(FuzzSelector({addr: address(handler), selectors: weighted}));
@@ -229,8 +231,8 @@ contract MoneyPathsInvariantTest is Test {
 
     // ---- 5. bonds, deposits and escrows -------------------------------------------------------------
 
-    /// @notice The lock holds exactly the bonds it has not paid out and the deposits of open objections (plus anything
-    /// pushed into it from outside, which nothing can take out).
+    /// @notice The lock holds exactly the bonds it has not paid out, the deposits of open objections, and what settling a
+    /// vote could not pay a blocked payee (plus anything pushed into it from outside, which nothing can take out).
     function invariant_lock_holds_exactly_bonds_and_open_deposits() public view {
         uint256 owed;
         for (uint256 k; k < lock.milestoneCount(); ++k) {
@@ -238,6 +240,10 @@ contract MoneyPathsInvariantTest is Test {
             (bool open,,,,, uint128 deposit,,,) = lock.objection(k);
             owed += bond;
             if (open) owed += deposit;
+        }
+        address[] memory payees = handler.payees();
+        for (uint256 i; i < payees.length; ++i) {
+            owed += lock.owed(payees[i]);
         }
         assertEq(usdc.balanceOf(address(lock)), owed + handler.donatedToLock(), "lock custody");
     }
