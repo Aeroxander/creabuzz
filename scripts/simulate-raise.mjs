@@ -229,7 +229,7 @@ async function mintUsdc(to, amount) {
 
 let anvil;
 async function boot() {
-  anvil = spawn("anvil", ["--port", String(PORT), "--chain-id", "31337", "--auto-impersonate", "--silent", "--gas-limit", "60000000", "--block-base-fee-per-gas", "0", "--prune-history"], {
+  anvil = spawn("anvil", ["--port", String(PORT), "--chain-id", "31337", "--auto-impersonate", "--silent", "--gas-limit", "60000000", "--block-base-fee-per-gas", "0", "--prune-history=500"], {
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
@@ -242,8 +242,8 @@ async function boot() {
   }
   throw new Error(`anvil did not start on ${RPC}`);
 }
-// Thousands of blocks of history would otherwise land in ~/.foundry/anvil/tmp (gigabytes per run): the node keeps only
-// the latest state (`--prune-history`) and is stopped with SIGINT, the signal on which it cleans up after itself.
+// Thousands of blocks of history would otherwise land in ~/.foundry/anvil/tmp (gigabytes per run, and anvil leaves the
+// folder behind whatever signal stops it): `--prune-history=500` keeps the last 500 states in memory and none on disk.
 function stopAnvil() {
   if (anvil && !anvil.killed) anvil.kill("SIGINT");
 }
