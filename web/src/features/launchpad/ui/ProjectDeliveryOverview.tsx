@@ -111,8 +111,8 @@ export function ProjectDeliveryOverview({
       ) : null}
       {tasks.isSuccess && !tasks.data.incomplete && !active.length ? (
         <p className="mt-2 text-sm text-muted-foreground">
-          No active work in the linked records. Create or link a task from the
-          workspace Work board.
+          No work is under way yet. Tasks the team adds in the workspace&apos;s
+          Work tab show up here.
         </p>
       ) : null}
       <ul className="mt-2 divide-y divide-border">
@@ -133,7 +133,7 @@ export function ProjectDeliveryOverview({
                   : ""}
                 {t.milestone ? ` · ${t.milestone}` : ""}
                 {t.delivery?.claim
-                  ? ` · Claim reference recorded by ${nameOf(t.linkedBy ?? t.author)}; approval and payment not implied`
+                  ? ` · Claim noted by ${nameOf(t.linkedBy ?? t.author)}. Not approved or paid yet.`
                   : ""}
               </span>
             </span>
@@ -150,8 +150,7 @@ export function ProjectDeliveryOverview({
       </ul>
       {active.length > 5 || tasks.data?.truncated ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          A bounded selection of linked work is shown. Open the workspace for
-          more.
+          Showing the first five. Open the workspace for the rest.
         </p>
       ) : null}
       <Link
@@ -163,9 +162,8 @@ export function ProjectDeliveryOverview({
         Open workspace Work board
       </Link>
       <p className="mt-2 text-xs text-muted-foreground">
-        This overview uses team-signed task records. Other participants’ task
-        updates remain on the workspace board. Work status does not authorize
-        payment; claims and team-token unlocks follow their own review rules.
+        This list comes from the team&apos;s own tasks. A finished task does not
+        pay anyone; payments and unlocks follow their own review.
       </p>
     </Card>
   );
