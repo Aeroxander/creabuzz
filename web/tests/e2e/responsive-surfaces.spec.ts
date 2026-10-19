@@ -320,6 +320,34 @@ test("launchpad directory fits", async ({ page }) => {
   await shot(page, "17-mobile-launchpad");
 });
 
+test("discover's actions all fit on a phone", async ({ page }) => {
+  await mockRelay(page);
+  await page.goto("/discover");
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+  // The four actions in the header wrap onto a second line; none is cut off at the edge.
+  for (const name of [
+    "Launches",
+    "Markets",
+    "Project board",
+    "Pitch a project",
+  ]) {
+    const control = page
+      .getByRole(name === "Pitch a project" ? "button" : "link", { name })
+      .first();
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(
+      (box?.x ?? 0) + (box?.width ?? 0),
+      `${name} runs past the right edge`,
+    ).toBeLessThanOrEqual(MOBILE.width);
+    expect(
+      box?.x ?? 0,
+      `${name} starts left of the screen`,
+    ).toBeGreaterThanOrEqual(0);
+  }
+  await expectNoOverflow(page, "discover");
+});
+
 test("launchpad create dialog fits", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/launchpad");

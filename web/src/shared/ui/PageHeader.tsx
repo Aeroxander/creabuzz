@@ -43,7 +43,8 @@ export function PageHeader({
         )}
       >
         <div className="min-w-0 flex-1 basis-56 space-y-1">{copy}</div>
-        <div className="shrink-0">{action}</div>
+        {/* Capped to the row so a wide set of buttons wraps inside it instead of running off a phone's edge. */}
+        <div className="max-w-full shrink-0">{action}</div>
       </div>
     );
   }
