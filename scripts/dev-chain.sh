@@ -22,7 +22,8 @@
 #   4. a USDC-like currency mock for sales: MockPairedTokenERC20("Dev USDC",
 #      "dUSDC", 6 decimals) + `deployments/dev-currency-<chainid>.json`
 #      then the CCA factory + Permit2 placed at their canonical addresses, then
-#      the DaoLaunchKit (one-transaction DAO launch) + `deployments/dao-launch-kit-<chainid>.json`
+#      the DaoLaunchKit (one-transaction DAO launch) + `deployments/dao-launch-kit-<chainid>.json`, and the
+#      ContributorKit (a contributor project, no sale, ready for work) + `deployments/contributor-kit-<chainid>.json`
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -288,6 +289,7 @@ plan_lines() {
   echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still says $CURRENCY_SYMBOL]"
   echo "  5. cca          place the CCA factory + Permit2 at their canonical addresses (anvil_setCode)  [skipped: the code there already matches the build output]"
   echo "  6. launch kit   deploy DaoLaunchKit (summoner + CCA factory + the Shares implementation)  [skipped: deployments/dao-launch-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner and factory]"
+  echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -656,6 +658,76 @@ deploy_launch_kit() {
   echo "  ✓ DaoLaunchKit at $address (manifest $(kit_manifest_path))"
 }
 
+contributor_kit_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/contributor-kit-${CHAIN_ID}.json"
+}
+
+contributor_kit_address() {
+  manifest_role "$(contributor_kit_manifest_path)" "contributor-kit"
+}
+
+# Guard: the manifest exists, its kit has code, and it still points at THIS chain's Summoner.
+contributor_kit_deployed() {
+  local address summoner want_summoner
+  [[ -f "$(contributor_kit_manifest_path)" ]] || return 1
+  address=$(contributor_kit_address)
+  [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
+  want_summoner=$(lower "$(manifest_role "$(org_manifest_path)" summoner)")
+  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]]
+}
+
+deploy_contributor_kit() {
+  echo
+  if contributor_kit_deployed; then
+    echo "── contributor kit: already at $(contributor_kit_address) — skipped (idempotent)"
+    return 0
+  fi
+  local summoner bytecode args receipt status address block
+  summoner=$(manifest_role "$(org_manifest_path)" summoner)
+  [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
+    || fail_step "contributor-kit" "no deployed Summoner to point the kit at (org dao step first)"
+  echo "── contributor kit: deploying ContributorKit (summoner $summoner)"
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/ContributorKit.sol) >/dev/null; then
+    fail_step "contributor-kit" "forge build src/ContributorKit.sol failed"
+  fi
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/ContributorKit.sol/ContributorKit.json" bytecode.object) \
+    || fail_step "contributor-kit" "cannot read the ContributorKit artifact"
+  args=$(cast abi-encode "constructor(address)" "$summoner") \
+    || fail_step "contributor-kit" "cast abi-encode constructor args failed"
+  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+      --create "0x${bytecode#0x}${args#0x}" 2>&1); then
+    echo "$receipt" >&2
+    fail_step "contributor-kit" "cast send --create failed"
+  fi
+  status=$(node -e '
+    const r = JSON.parse(process.argv[1]);
+    console.log(r.status === "0x1" || r.status === 1 ? "success" : String(r.status ?? "?"));
+  ' "$receipt")
+  address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
+  block=$(node -e 'console.log(Number(BigInt(JSON.parse(process.argv[1]).blockNumber ?? "0x0")))' "$receipt")
+  [[ "$status" == "success" && -n "$address" && "$(code_bytes "$address")" != "0" ]] \
+    || fail_step "contributor-kit" "deploy tx mined as ${status:-unknown} (no code at ${address:-<none>})"
+  [[ "$(lower "$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$summoner")" ]] \
+    || fail_step "contributor-kit" "the deployed kit does not report the summoner $summoner"
+  node -e '
+    const fs = require("fs");
+    const [file, chainId, tx, block, address] = process.argv.slice(1);
+    fs.writeFileSync(file, JSON.stringify({
+      chainId: Number(chainId),
+      project: "buzz-dev-chain",
+      note: "scripts/dev-chain.sh — ContributorKit(summoner)",
+      tx,
+      block: Number(block),
+      roles: [{ role: "contributor-kit", address }],
+    }) + "\n");
+  ' "$(contributor_kit_manifest_path)" "$CHAIN_ID" \
+    "$(node -e 'console.log(JSON.parse(process.argv[1]).transactionHash ?? "")' "$receipt")" \
+    "$block" "$address" \
+    || fail_step "contributor-kit" "deployed at $address but could not write $(contributor_kit_manifest_path)"
+  echo "  ✓ ContributorKit at $address (manifest $(contributor_kit_manifest_path))"
+}
+
 fund_accounts() {
   echo
   echo "── fund: minting $CURRENCY_SYMBOL up to 1,000,000 per dev account (6dp)"
@@ -728,6 +800,7 @@ up() {
   deploy_currency
   place_cca
   deploy_launch_kit
+  deploy_contributor_kit
   fund_accounts
 
   echo
@@ -740,7 +813,9 @@ up() {
   echo "  currency:   $(currency_address) ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)"
   echo "  cca:        factory $CCA_FACTORY_ADDRESS, Permit2 $PERMIT2_ADDRESS"
   echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
+  echo "  contributor kit: $(contributor_kit_address) (contributor-kit-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
+  echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"
@@ -815,7 +890,7 @@ status() {
     fi
   fi
 
-  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json; do
+  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json "$DEPLOYMENTS_DIR"/contributor-kit-*.json; do
     [[ -f "$f" ]] || continue
     while read -r role address; do
       [[ -n "$role" && -n "$address" ]] || continue

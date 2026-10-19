@@ -4,7 +4,8 @@
 #
 # What Sepolia already has and this does not touch: Uniswap's auction factory, Permit2, Circle's USDC, Limit Break's
 # validator and TokenMaster router, and the passkey-account factory. What it deploys: the summoner whose Shares carry the
-# milestone lock guard, and the kit that launches a DAO and its sale in one transaction. LBAMM is not deployed (Limit
+# milestone lock guard, the kit that launches a DAO and its sale in one transaction, and the kit that starts a contributor
+# project (no sale) on the same summoner. LBAMM is not deployed (Limit
 # Break's registry lists it as not deployed, and its README rules out live-network use).
 #
 # Two modes:
@@ -93,10 +94,11 @@ OUT="$BACKUP/forge.out"
 BROADCAST_FLAG=(--broadcast)
 (cd contracts && PRIVATE_KEY="$KEY" forge script script/DeployLaunchKit.s.sol --rpc-url "$RPC" "${BROADCAST_FLAG[@]}" >"$OUT" 2>&1) \
   || { tail -40 "$OUT"; fail "forge script failed"; }
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="launch-kit").address)' "$MANIFEST")
 SUMMONER=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="summoner").address)' "$MANIFEST")
+CONTRIBUTOR_KIT=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="contributor-kit").address)' "$MANIFEST")
 SHARES_IMPL=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="shares-implementation").address)' "$MANIFEST")
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -108,6 +110,10 @@ step "checking what the chain now holds"
 [[ "$(lower "$(cast call "$KIT" 'sharesImplementation()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SHARES_IMPL")" ]] || fail "the kit does not name the Shares implementation"
 [[ "$(lower "$(cast call "$KIT" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" ]] || fail "the kit does not name the summoner's work budget factory"
 echo "  ✓ the kit at $KIT names the summoner, the auction factory, the Shares implementation and the work budget factory it was given"
+[[ "$(cast codesize "$CONTRIBUTOR_KIT" --rpc-url "$RPC")" != "0" ]] || fail "no code at the contributor kit $CONTRIBUTOR_KIT"
+[[ "$(lower "$(cast call "$CONTRIBUTOR_KIT" 'summoner()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SUMMONER")" ]] || fail "the contributor kit does not name this summoner"
+[[ "$(lower "$(cast call "$CONTRIBUTOR_KIT" 'budgetFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" ]] || fail "the contributor kit does not name the summoner's work budget factory"
+echo "  ✓ the contributor kit at $CONTRIBUTOR_KIT names the same summoner and work budget factory"
 
 if [[ "$MODE" == "rehearse" ]]; then
   step "rehearsal passed. To deploy for real: put SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY in .env and run with --broadcast"
@@ -116,5 +122,5 @@ else
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
 fi
