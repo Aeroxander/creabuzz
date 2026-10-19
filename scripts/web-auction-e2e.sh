@@ -70,7 +70,10 @@ json_field() { node -e 'const a=JSON.parse(require("fs").readFileSync(process.ar
 
 # ── 2. chain ────────────────────────────────────────────────────────────────
 step "booting anvil on ${RPC}"
-anvil --port "$PORT" --chain-id 31337 --silent >/dev/null 2>&1 &
+# --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
+# disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
+# it is stopped, SIGINT included.
+anvil --port "$PORT" --chain-id 31337 --prune-history=500 --silent >/dev/null 2>&1 &
 ANVIL_PID=$!
 for _ in $(seq 1 40); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.25; done
 cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil did not start"; exit 2; }

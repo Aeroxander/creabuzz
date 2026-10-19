@@ -310,7 +310,10 @@ boot_anvil() {
   mkdir -p "$STATE_DIR"
   echo "── anvil: booting on $RPC_HOST:$RPC_PORT (chain id $DEV_CHAIN_ID)"
   echo "   log: $LOG_FILE   pid: $PID_FILE"
-  nohup anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id "$DEV_CHAIN_ID" \
+  # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
+  # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
+  # it is stopped, SIGINT included.
+  nohup anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id "$DEV_CHAIN_ID" --prune-history=500 \
     >"$LOG_FILE" 2>&1 &
   local pid=$!
   echo "$pid" >"$PID_FILE"
