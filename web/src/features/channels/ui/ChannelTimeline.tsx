@@ -21,6 +21,7 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 
 import type { Channel } from "../use-channels";
+import { useModeratorRemovals } from "../use-moderator-removals";
 import {
   isOverlayKind,
   useChannelMessages,
@@ -155,9 +156,11 @@ function MessageRow({
   onReply,
   onEdit,
   onDelete,
+  onRemove,
   ownPubkey,
   overlayContent,
   isDeleted,
+  removedByModerator,
   profile,
   agent,
   highlighted,
@@ -173,9 +176,13 @@ function MessageRow({
   onReply?: (eventId: string) => void;
   onEdit?: (event: NostrEvent) => void;
   onDelete?: (eventId: string) => void;
+  /** Given only to a reader who owns or administers the room: remove someone else's message. */
+  onRemove?: (eventId: string) => void;
   ownPubkey: string;
   overlayContent?: string;
   isDeleted?: boolean;
+  /** The message was removed by a moderator, not deleted by its author. */
+  removedByModerator?: boolean;
   profile?: Profile;
   agent?: { name: string };
 }) {
@@ -228,7 +235,7 @@ function MessageRow({
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="font-semibold leading-message-author text-foreground">
             {agent?.name ?? resolveUserName(profile, event.pubkey)}
           </span>
@@ -244,7 +251,8 @@ function MessageRow({
               minute: "2-digit",
             })}
           </time>
-          <span className="ml-auto flex items-center gap-2 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 dark:text-white/60">
+          {/* Shown on hover or focus; a touch screen has no hover, so there they are always shown. */}
+          <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 dark:text-white/60">
             {!isDeleted && (
               <>
                 <button
@@ -316,6 +324,17 @@ function MessageRow({
                 <Ban className="h-3 w-3" /> Ban
               </button>
             )}
+            {!isOwn && !isDeleted && onRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove(event.id)}
+                className="flex items-center gap-1 hover:text-red-500"
+                aria-label="Remove message"
+                data-testid="remove-button"
+              >
+                <Trash2 className="h-3 w-3" /> Remove
+              </button>
+            )}
             {isOwn && onDelete && (
               <button
                 type="button"
@@ -331,7 +350,9 @@ function MessageRow({
         </div>
         {isDeleted ? (
           <p className="mt-0.5 text-sm italic text-black/60 dark:text-white/60">
-            message deleted
+            {removedByModerator
+              ? "message removed by a moderator"
+              : "message deleted"}
           </p>
         ) : (
           <div className="mt-0.5 break-words text-message leading-relaxed text-black dark:text-white [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-black/5 [&_pre]:p-2 [&_pre]:dark:bg-white/10">
@@ -378,6 +399,7 @@ function ThreadTree({
   onReply,
   onEdit,
   onDelete,
+  onRemove,
   depth,
   profileByPubkey,
   agentByPubkey,
@@ -392,11 +414,16 @@ function ThreadTree({
   onReply: (eventId: string) => void;
   onEdit?: (event: NostrEvent) => void;
   onDelete?: (eventId: string) => void;
+  onRemove?: (eventId: string) => void;
   depth: number;
   profileByPubkey: Map<string, Profile | undefined>;
   agentByPubkey: Map<string, { name: string }>;
   ownPubkey: string;
-  overlays: { edits: Map<string, string>; deleted: Set<string> };
+  overlays: {
+    edits: Map<string, string>;
+    deleted: ReadonlySet<string>;
+    removed: ReadonlySet<string>;
+  };
   channelId: string;
   highlightedId?: string | null;
 }) {
@@ -414,9 +441,11 @@ function ThreadTree({
         onReply={onReply}
         onEdit={onEdit}
         onDelete={onDelete}
+        onRemove={onRemove}
         ownPubkey={ownPubkey}
         overlayContent={overlays.edits.get(event.id)}
         isDeleted={overlays.deleted.has(event.id)}
+        removedByModerator={overlays.removed.has(event.id)}
         profile={profileByPubkey.get(event.pubkey)}
         agent={agentByPubkey.get(event.pubkey)}
         channelId={channelId}
@@ -431,6 +460,7 @@ function ThreadTree({
           onReply={onReply}
           onEdit={onEdit}
           onDelete={onDelete}
+          onRemove={onRemove}
           depth={depth + 1}
           profileByPubkey={profileByPubkey}
           agentByPubkey={agentByPubkey}
@@ -469,7 +499,17 @@ export function ChannelTimeline({
       ?.scrollIntoView({ block: "center" });
   }, [highlightedId, messages]);
   const reactionsByTarget = useReactionGroups(messages);
-  const overlays = useMessageOverlays(messages);
+  const authorOverlays = useMessageOverlays(messages);
+  const moderation = useModeratorRemovals(channel.id, messages.ordered);
+  // What the author deleted and what a moderator removed both read as gone; the marker says which.
+  const overlays = useMemo(
+    () => ({
+      edits: authorOverlays.edits,
+      deleted: new Set([...authorOverlays.deleted, ...moderation.removed]),
+      removed: moderation.removed,
+    }),
+    [authorOverlays, moderation.removed],
+  );
   const authors = useMemo(
     () => [...new Set(messages.ordered.map((e) => e.pubkey))],
     [messages.ordered],
@@ -492,6 +532,8 @@ export function ChannelTimeline({
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   /** Message awaiting delete confirmation; the app's dialog, not `confirm()`. */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  /** Message a moderator is about to remove, awaiting confirmation. */
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const ownPubkey = userPubkey();
 
   const startEdit = (event: NostrEvent) => {
@@ -520,6 +562,16 @@ export function ChannelTimeline({
     } catch (error) {
       console.error("[delete]", error);
       toast.error("Couldn't delete message", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const removeMessage = async (eventId: string) => {
+    try {
+      await moderation.remove(eventId);
+    } catch (error) {
+      toast.error("Couldn't remove message", {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -738,6 +790,11 @@ export function ChannelTimeline({
                 onReply={(id) => setReplyTo(id)}
                 onEdit={(event) => startEdit(event)}
                 onDelete={(id) => setPendingDelete(id)}
+                onRemove={
+                  moderation.canRemove
+                    ? (id) => setPendingRemove(id)
+                    : undefined
+                }
                 depth={0}
                 profileByPubkey={profileByPubkey}
                 agentByPubkey={agentByPubkey}
@@ -777,6 +834,19 @@ export function ChannelTimeline({
         }}
         open={pendingDelete !== null}
         title="Delete this message?"
+      />
+
+      <ConfirmDialog
+        confirmLabel="Remove message"
+        description="It is taken away for everyone in this channel. The person stays; to keep them out, use Ban."
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => {
+          const target = pendingRemove;
+          setPendingRemove(null);
+          if (target) void removeMessage(target);
+        }}
+        open={pendingRemove !== null}
+        title="Remove this message?"
       />
     </div>
   );

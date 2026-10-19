@@ -26,7 +26,6 @@ import { toast } from "sonner";
 
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import type { Channel } from "@/features/channels/use-channels";
-import { useCommunityPeople } from "@/features/communities/use-access";
 import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
@@ -38,11 +37,11 @@ import {
   keepRemovals,
   unfamiliarRemovers,
 } from "../lib/board-model";
-import { boardRemovers, canAddMembers } from "../lib/members";
+import { canAddMembers } from "../lib/members";
 import type { PostStatus } from "../lib/post-status";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
-import { useBoardMembers, useRosterSync } from "../use-board-members";
+import { useChannelRemovers, useRosterSync } from "../use-board-members";
 import { BoardList } from "./BoardList";
 import { PostThread } from "./PostThread";
 
@@ -107,16 +106,7 @@ export function BoardView({
   const actions = useBoardActions(channel.id, records.add);
   // Who may remove other people's words here: the board's owners and admins, and the community's. A removal sent by anyone
   // else is not applied.
-  const { members } = useBoardMembers(channel.id, true);
-  const community = useCommunityPeople();
-  const removers = useMemo(() => {
-    const set = new Set(boardRemovers(members));
-    for (const person of community.people) {
-      if (person.role === "owner" || person.role === "admin")
-        set.add(person.pubkey);
-    }
-    return set;
-  }, [members, community.people]);
+  const { members, removers } = useChannelRemovers(channel.id);
   const canModerate = canAddMembers(members, me);
   // What moderators have removed stays removed for this reader even if that moderator's role is later withdrawn.
   const removedSoFar = useRef<{ board: string; ids: ReadonlySet<string> }>({

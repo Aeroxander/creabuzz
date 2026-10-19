@@ -16,7 +16,9 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { type BoardMember, parseMembers } from "./lib/members";
+import { useCommunityPeople } from "@/features/communities/use-access";
+
+import { type BoardMember, boardRemovers, parseMembers } from "./lib/members";
 
 const KIND_GROUP_MEMBERS = 39002;
 const KIND_GROUP_ADMINS = 39001;
@@ -104,4 +106,25 @@ export function useRosterSync(boardId: string): () => void {
     };
   }, [boardId, refresh]);
   return refresh;
+}
+
+/**
+ * Who may remove other people's words in a room or on a board: its own owners and admins and the community's. Anyone else's
+ * removal is not applied. The roster is read once and goes stale, so pair this with `useRosterSync`.
+ */
+export function useChannelRemovers(channelId: string): {
+  members: BoardMember[];
+  removers: ReadonlySet<string>;
+} {
+  const { members } = useBoardMembers(channelId, true);
+  const community = useCommunityPeople();
+  const removers = useMemo(() => {
+    const set = new Set(boardRemovers(members));
+    for (const person of community.people) {
+      if (person.role === "owner" || person.role === "admin")
+        set.add(person.pubkey);
+    }
+    return set;
+  }, [members, community.people]);
+  return { members, removers };
 }
