@@ -119,12 +119,12 @@ function Preview({ summary }: { summary: TemplateSummary }) {
       <p className="mt-1 text-xs text-muted-foreground">
         Channels that already exist here are reused.
       </p>
-      <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Channels and boards
-          </dt>
-          <dd>
+          </h3>
+          <div>
             <ul className="mt-1 space-y-1">
               {summary.channels.map((channel) => (
                 <li key={channel.name}>
@@ -142,53 +142,53 @@ function Preview({ summary }: { summary: TemplateSummary }) {
                 </li>
               ))}
             </ul>
-          </dd>
+          </div>
         </div>
         <div className="space-y-3">
           {summary.helpers.length > 0 ? (
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 AI helpers
-              </dt>
-              <dd className="mt-1">
+              </h3>
+              <div className="mt-1">
                 {summary.helpers.join(", ")}
                 <span className="block text-xs text-muted-foreground">
                   Each starts as an open seat. Next you choose where each one
                   runs: in this browser, on the server, or on your computer.
                 </span>
-              </dd>
+              </div>
             </div>
           ) : null}
           {summary.pages.length > 0 ? (
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Shared pages
-              </dt>
-              <dd className="mt-1">{summary.pages.join(", ")}</dd>
+              </h3>
+              <div className="mt-1">{summary.pages.join(", ")}</div>
             </div>
           ) : null}
           {summary.automations.length > 0 ? (
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Automations
-              </dt>
-              <dd className="mt-1">
+              </h3>
+              <div className="mt-1">
                 {summary.automations
                   .map((a) => a.replace(/-/g, " "))
                   .join(", ")}
-              </dd>
+              </div>
             </div>
           ) : null}
           {limit ? (
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 A limit for helpers
-              </dt>
-              <dd className="mt-1">{limit}</dd>
+              </h3>
+              <div className="mt-1">{limit}</div>
             </div>
           ) : null}
         </div>
-      </dl>
+      </div>
       {summary.needsCommandLine.length > 0 ? (
         <p className="mt-3 text-xs text-muted-foreground">
           One extra skill ({summary.needsCommandLine.join(", ")}) is added from

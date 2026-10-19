@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import * as nip44 from "nostr-tools/nip44";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createDirectMessageWraps } from "../../src/features/social/lib/nip17.ts";
 import { createMockRelay } from "./mock-relay";
 
@@ -82,10 +83,13 @@ test("a conversation can be reported, and muting it takes it out of the inbox un
     { timeout: 20_000 },
   );
 
+  await expectAccessible(page, "a private conversation with Mute and Report");
+
   // Report: the reason is chosen first, and what is sent names the person, with the reason on the tag.
   await page.getByTestId("conversation-report").click();
   await expect(page.getByRole("dialog")).toContainText("Report Alice Archer");
   await expect(page.getByTestId("report-submit")).toBeDisabled();
+  await expectAccessible(page, "the report-a-person dialog");
   await page.getByTestId("report-reason-spam").check();
   await page.getByTestId("report-submit").click();
   await expect(page.getByTestId("report-form")).toHaveCount(0);

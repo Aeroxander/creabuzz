@@ -219,7 +219,7 @@ function NavLink({
       className={`flex min-w-14 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 py-1.5 text-2xs font-semibold transition-colors ${
         active
           ? "bg-primary/15 text-primary-ink"
-          : "text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground"
+          : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
       }`}
       data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
       to={item.to}

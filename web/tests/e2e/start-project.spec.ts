@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -116,12 +117,18 @@ test("a team is picked, set up step by step, and its first channel opens", async
     more.getByTestId("template-option-crypto-app-studio"),
   ).toBeHidden();
 
+  await expectAccessible(page, "the community setup picker");
+
   // What it adds is one line until asked for, then said in plain words.
   const preview = page.getByTestId("template-preview");
   await expect(preview).toHaveJSProperty("open", false);
   await expect(preview.getByText("#writers-room")).toBeHidden();
   await page.getByTestId("template-preview-toggle").click();
   await expect(preview).toContainText("Channels that already exist here");
+  await expectAccessible(
+    page,
+    "the community setup picker with its details open",
+  );
   await expect(preview).toContainText("#writers-room");
   await expect(preview).toContainText("The Writer");
   await expect(preview).toContainText(

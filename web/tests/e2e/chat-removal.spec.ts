@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
+import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
 
@@ -160,6 +161,7 @@ test("removing asks first, sends one removal for that message, and the message r
   const ask = page.getByRole("alertdialog");
   await expect(ask).toContainText("Remove this message?");
   await expect(ask).toContainText("The person stays");
+  await expectAccessible(page, "the remove-message confirmation");
   // Cancelling sends nothing.
   await ask.getByRole("button", { name: "Cancel" }).click();
   expect(relay.events.filter((e) => e.kind === 9005)).toHaveLength(0);
@@ -316,5 +318,6 @@ test("on a phone the message actions are there without hovering, and the page do
     viewport?.width ?? 0,
   );
   await expectNoSidewaysScroll(page, "a chat message with every action");
+  await expectAccessible(page, "a chat room with every moderator action shown");
   await context.close();
 });

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
@@ -247,6 +248,7 @@ test("the top bar says Testnet beside the logo while the build cannot reach real
   await page.goto("/");
   const chip = page.getByTestId("testnet-chip");
   await expect(chip).toBeVisible();
+  await expectAccessible(page, "Home with the Testnet tag");
   await expect(chip).toHaveText("Testnet");
   // Beside the logo, not somewhere else in the bar.
   const logo = await page
