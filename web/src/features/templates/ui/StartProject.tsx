@@ -1,5 +1,5 @@
 /**
- * Set up the current community: pick a ready-made team and preview its additions.
+ * Set up the current community: pick a starting point and preview its additions.
  *
  * The picker shows the bundled templates (channels, AI helpers, shared pages, a
  * default limit for the helpers) in plain words and says who each is for. After

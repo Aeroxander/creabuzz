@@ -672,8 +672,8 @@ export function CommunityShell({
                       Nothing here yet
                     </p>
                     <p className="max-w-sm">
-                      Choose a ready-made team and this community fills with
-                      channels, AI helpers and shared pages.
+                      Pick a creative or a technical project and this community
+                      fills with channels, AI helpers and shared pages.
                     </p>
                     <button
                       className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
