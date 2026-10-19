@@ -18,6 +18,7 @@ import { Route as discoverRouteImport } from "./routes/discover";
 import { Route as cRouteImport } from "./routes/c";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as uDotpubkeyRouteImport } from "./routes/u.$pubkey";
+import { Route as startDotcontributorRouteImport } from "./routes/start.contributor";
 import { Route as socialDotsearchRouteImport } from "./routes/social.search";
 import { Route as socialDotnotificationsRouteImport } from "./routes/social.notifications";
 import { Route as socialDotmessagesRouteImport } from "./routes/social.messages";
@@ -97,6 +98,11 @@ const indexRoute = indexRouteImport.update({
 const uDotpubkeyRoute = uDotpubkeyRouteImport.update({
   id: "/u/$pubkey",
   path: "/u/$pubkey",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const startDotcontributorRoute = startDotcontributorRouteImport.update({
+  id: "/start/contributor",
+  path: "/start/contributor",
   getParentRoute: () => rootRouteImport,
 } as any);
 const socialDotsearchRoute = socialDotsearchRouteImport.update({
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   "/social/messages": typeof socialDotmessagesRoute;
   "/social/notifications": typeof socialDotnotificationsRoute;
   "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
   "/u/$pubkey": typeof uDotpubkeyRoute;
   "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
   "/social/post/$id": typeof socialDotpostDotidRoute;
@@ -231,6 +238,7 @@ export interface FileRoutesByTo {
   "/social/messages": typeof socialDotmessagesRoute;
   "/social/notifications": typeof socialDotnotificationsRoute;
   "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
   "/u/$pubkey": typeof uDotpubkeyRoute;
   "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
   "/social/post/$id": typeof socialDotpostDotidRoute;
@@ -262,6 +270,7 @@ export interface FileRoutesById {
   "/social/messages": typeof socialDotmessagesRoute;
   "/social/notifications": typeof socialDotnotificationsRoute;
   "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
   "/u/$pubkey": typeof uDotpubkeyRoute;
   "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
   "/social/post/$id": typeof socialDotpostDotidRoute;
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | "/social/messages"
     | "/social/notifications"
     | "/social/search"
+    | "/start/contributor"
     | "/u/$pubkey"
     | "/social/messages/$peer"
     | "/social/post/$id"
@@ -324,6 +334,7 @@ export interface FileRouteTypes {
     | "/social/messages"
     | "/social/notifications"
     | "/social/search"
+    | "/start/contributor"
     | "/u/$pubkey"
     | "/social/messages/$peer"
     | "/social/post/$id"
@@ -354,6 +365,7 @@ export interface FileRouteTypes {
     | "/social/messages"
     | "/social/notifications"
     | "/social/search"
+    | "/start/contributor"
     | "/u/$pubkey"
     | "/social/messages/$peer"
     | "/social/post/$id"
@@ -385,6 +397,7 @@ export interface RootRouteChildren {
   socialDotmessagesRoute: typeof socialDotmessagesRoute;
   socialDotnotificationsRoute: typeof socialDotnotificationsRoute;
   socialDotsearchRoute: typeof socialDotsearchRoute;
+  startDotcontributorRoute: typeof startDotcontributorRoute;
   uDotpubkeyRoute: typeof uDotpubkeyRoute;
   socialDotmessagesDotpeerRoute: typeof socialDotmessagesDotpeerRoute;
   socialDotpostDotidRoute: typeof socialDotpostDotidRoute;
@@ -483,6 +496,13 @@ declare module "@tanstack/react-router" {
       path: "/u/$pubkey";
       fullPath: "/u/$pubkey";
       preLoaderRoute: typeof uDotpubkeyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/start/contributor": {
+      id: "/start/contributor";
+      path: "/start/contributor";
+      fullPath: "/start/contributor";
+      preLoaderRoute: typeof startDotcontributorRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/social/search": {
@@ -617,6 +637,7 @@ const rootRouteChildren: RootRouteChildren = {
   socialDotmessagesRoute: socialDotmessagesRoute,
   socialDotnotificationsRoute: socialDotnotificationsRoute,
   socialDotsearchRoute: socialDotsearchRoute,
+  startDotcontributorRoute: startDotcontributorRoute,
   uDotpubkeyRoute: uDotpubkeyRoute,
   socialDotmessagesDotpeerRoute: socialDotmessagesDotpeerRoute,
   socialDotpostDotidRoute: socialDotpostDotidRoute,

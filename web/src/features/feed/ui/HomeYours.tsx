@@ -53,7 +53,10 @@ export function HomeYours({ me }: { me: string }) {
                       Idea
                     </span>
                   ) : (
-                    <StageBadge stage={effectiveStage(launch)} />
+                    <StageBadge
+                      record={launch.record}
+                      stage={effectiveStage(launch)}
+                    />
                   )}
                 </span>
                 <Link

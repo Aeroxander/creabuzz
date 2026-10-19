@@ -133,6 +133,11 @@ export interface ChainEnv {
    */
   VITE_DAO_LAUNCH_KITS?: string;
   /**
+   * The DAO maker (`OrgBinding`) per chain, as JSON: `{"31337":"0x…"}`. It makes a DAO with no sale at all, which is what
+   * a contributor project is. A chain with no entry cannot start one from the app.
+   */
+  VITE_ORG_BINDINGS?: string;
+  /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
    * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
@@ -180,7 +185,25 @@ export function daoLaunchKit(
   chainId: string | number | null,
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
-  const raw = env?.VITE_DAO_LAUNCH_KITS?.trim();
+  return addressForChain(env?.VITE_DAO_LAUNCH_KITS, chainId);
+}
+
+/**
+ * The DAO maker on `chainId` that a contributor project is started with, or null when the build does not name one.
+ * Never guessed, for the same reason as the launch kit; the same strict JSON map of chain id to address.
+ */
+export function orgBinding(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_ORG_BINDINGS, chainId);
+}
+
+function addressForChain(
+  value: string | undefined,
+  chainId: string | number | null,
+): string | null {
+  const raw = value?.trim();
   if (!raw || chainId === null) return null;
   try {
     const map: unknown = JSON.parse(raw);

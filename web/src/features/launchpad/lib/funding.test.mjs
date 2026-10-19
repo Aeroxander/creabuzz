@@ -13,6 +13,7 @@ import {
   fundingContent,
   fundingCounts,
   fundingSummary,
+  isContributorProject,
   matchesFunding,
   parseFunding,
   planningIsStale,
@@ -156,6 +157,35 @@ test("a stage that already says so is done even without a receipt", () => {
     "done",
   );
   assert.equal(chainRaise(launch({ record: { stage: "failed" } }), 10), "done");
+});
+
+test("a contributor project never raised, so its DAO stage is not a closed raise", () => {
+  const contributor = {
+    stage: "graduated",
+    funding: status({
+      stance: "not-raising",
+      seeking: ["contributors"],
+      path: "contributors",
+    }),
+    tokenPlan: { mode: "dao" },
+    auction: null,
+  };
+  assert.equal(isContributorProject(contributor), true);
+  assert.equal(chainRaise(launch({ record: contributor }), 10), "none");
+  assert.equal(
+    effectiveFunding(launch({ record: contributor }), 10).stance,
+    "not-raising",
+  );
+  // Each half is needed: a declared path alone, a DAO with an auction, or a minted token is not one.
+  for (const record of [
+    { ...contributor, tokenPlan: null },
+    { ...contributor, auction: "0x".padEnd(42, "1") },
+    { ...contributor, tokenPlan: { mode: "mint" } },
+    { ...contributor, funding: status({ path: "auction" }) },
+  ]) {
+    assert.equal(isContributorProject(record), false);
+    assert.equal(chainRaise(launch({ record }), 10), "done");
+  }
 });
 
 test("an open sale window is open; past it the raise is settling", () => {

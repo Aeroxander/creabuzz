@@ -16,6 +16,7 @@ interface LaunchSearch {
     | "record"
     | "milestones"
     | "work"
+    | "contributions"
     | "agents"
     | "updates"
     | "discussion"
@@ -48,6 +49,7 @@ export const Route = createFileRoute("/launchpad/$launchId")({
         "record",
         "milestones",
         "work",
+        "contributions",
         "agents",
         "updates",
         "discussion",

@@ -128,6 +128,28 @@ export function StartPage() {
         description="Most projects go in this order. You can begin at any step, and come back to the others later."
         title="Start something"
       />
+      <section
+        className="flex flex-col gap-3 rounded-2xl border border-primary/60 bg-primary/5 p-5"
+        data-testid="start-contributor"
+      >
+        <h2 className="text-base font-bold">
+          Start a contributor project: no money, Shares for work
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          The project cannot raise money. Its token, its Shares, goes only to
+          people whose work the reviewers accept, and a page shows who earned
+          how much and for what. It is the simplest way to build something
+          together.
+        </p>
+        <div>
+          <Button asChild data-testid="start-go-contributor" size="sm">
+            <Link to="/start/contributor">Start a contributor project</Link>
+          </Button>
+        </div>
+      </section>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        Or plan a raise, step by step
+      </h2>
       <ol className="flex flex-col gap-3" data-testid="start-steps">
         {steps.map((step, index) => (
           <Step index={index} key={step.key} step={step} />

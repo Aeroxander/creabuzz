@@ -127,7 +127,7 @@ export function LaunchHero({
                 Idea
               </span>
             ) : (
-              <StageBadge stage={stage} />
+              <StageBadge record={record} stage={stage} />
             )}
             {record.category ? (
               <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-bold">

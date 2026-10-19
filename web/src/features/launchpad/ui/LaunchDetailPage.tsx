@@ -24,7 +24,7 @@ import {
   usePublishMirror,
 } from "../use-launches";
 import { effectiveStage, isEvmAddress, type Launch } from "../models";
-import { effectiveFundingAt } from "../lib/funding";
+import { effectiveFundingAt, isContributorProject } from "../lib/funding";
 import { saleView } from "../lib/sale-action";
 import { SaleActionButton } from "./SaleActionButton";
 import { isIdea } from "../lib/idea";
@@ -48,6 +48,7 @@ import { ManagePanel } from "./ManagePanel";
 import { DecisionsTab } from "./DecisionsTab";
 import { RecordTab } from "./RecordTab";
 import { WorkTab } from "./WorkTab";
+import { ContributionsTab } from "./ContributionsTab";
 import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
@@ -71,6 +72,7 @@ type Tab =
   | "mybids"
   | "decisions"
   | "work"
+  | "contributions"
   | "record"
   | "agents"
   | "manage";
@@ -249,6 +251,8 @@ export function LaunchDetailPage({
     orgBindings: orgMoney.data?.bindings ?? [],
   });
   const idea = isIdea(launch.record);
+  // A DAO made with no sale: its Shares are only ever earned for work, so who earned them leads, and no sale copy shows.
+  const contributor = isContributorProject(launch.record);
   const coord = launchCoord(launch.record);
   const followed = follows.followed.has(coord);
 
@@ -265,14 +269,20 @@ export function LaunchDetailPage({
     id: "proposals" as const,
     label: `Proposals (${launch.proposals.length})`,
   };
+  const contributionsTab = {
+    id: "contributions" as const,
+    label: "Contributions",
+  };
   const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
     { id: "overview", label: "Overview" },
+    ...(workDao && contributor ? [contributionsTab] : []),
     // The agreement a backer follows: shown for any project whose team tokens unlock against milestones, funded or not.
     ...(launch.record.unlocks?.mode === "milestones"
       ? [{ id: "milestones" as const, label: "Milestones" }]
       : []),
     ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
     ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
+    ...(workDao && !contributor ? [contributionsTab] : []),
     { id: "agents", label: "People & agents" },
     ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
     { id: "treasury", label: "Treasury" },
@@ -299,8 +309,10 @@ export function LaunchDetailPage({
   const raiseOverview = (
     <>
       {/* The TrustGraph surface: gate state, published roots, the graph. */}
-      <PriceChartCard launch={launch} />
-      {workDao ? <TradeCard dao={workDao} launch={launch} /> : null}
+      {contributor ? null : <PriceChartCard launch={launch} />}
+      {workDao && !contributor ? (
+        <TradeCard dao={workDao} launch={launch} />
+      ) : null}
       <OverviewTab
         launch={launch}
         onOpenMilestones={() => setTab("milestones")}
@@ -347,9 +359,18 @@ export function LaunchDetailPage({
             : null
         }
         note={
-          /* §7 "Launch page copy": what a buyer acquires, said before the
-             bid button — ownership only, never a yield. */
-          <OwnershipOnlyNote className="max-w-60 text-right" />
+          contributor ? (
+            <p
+              className="max-w-60 text-right text-xs text-muted-foreground"
+              data-testid="contributor-note"
+            >
+              Nothing is for sale. Shares are earned only for accepted work.
+            </p>
+          ) : (
+            /* §7 "Launch page copy": what a buyer acquires, said before the
+               bid button — ownership only, never a yield. */
+            <OwnershipOnlyNote className="max-w-60 text-right" />
+          )
         }
         onToggleFollow={() => follows.toggle(coord)}
         record={launch.record}
@@ -476,6 +497,9 @@ export function LaunchDetailPage({
           }}
           onOpenDecisions={() => setTab("decisions")}
         />
+      ) : null}
+      {tab === "contributions" && workDao ? (
+        <ContributionsTab dao={workDao} launch={launch} />
       ) : null}
       {tab === "record" && workDao ? (
         <RecordTab dao={workDao} launch={launch} onOpen={(t) => setTab(t)} />

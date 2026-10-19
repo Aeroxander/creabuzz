@@ -1,4 +1,5 @@
 import type { ChallengeIntent } from "../lib/challenge";
+import { isContributorProject } from "../lib/funding";
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { recordSaleCurrency } from "../chain";
@@ -41,7 +42,11 @@ export function DecisionsTab({
     ? recordSaleCurrency(launch.record)
     : null;
   const currencyDecimals = sale?.decimals;
-  const { exchange } = useVerifiedExchange(launch.record.chainId);
+  const verified = useVerifiedExchange(launch.record.chainId);
+  // A contributor project promised no sale: its decisions do not offer to put its Shares on a market.
+  const exchange = isContributorProject(launch.record)
+    ? null
+    : verified.exchange;
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);

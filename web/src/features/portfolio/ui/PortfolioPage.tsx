@@ -195,7 +195,7 @@ function RaiseRow({ raise }: { raise: BackedRaise }) {
       <Card className="flex flex-col gap-2 p-4" data-testid="portfolio-raise">
         <div className="flex items-start gap-2">
           <LaunchLink launch={launch} />
-          <StageBadge stage={effectiveStage(launch)} />
+          <StageBadge record={launch.record} stage={effectiveStage(launch)} />
         </div>
         <p className="text-sm">
           You put in{" "}
@@ -521,7 +521,10 @@ function FollowingSection() {
             >
               <div className="flex items-start gap-2">
                 <LaunchLink launch={launch} />
-                <StageBadge stage={effectiveStage(launch)} />
+                <StageBadge
+                  record={launch.record}
+                  stage={effectiveStage(launch)}
+                />
               </div>
               {launch.record.pitch ? (
                 <p className="line-clamp-2 text-sm text-black/70 dark:text-white/70">

@@ -196,8 +196,28 @@ export interface FundingLaunch {
     endBlock: number | null;
     funding: FundingStatus | null;
     createdAt: number;
+    /** Read only to tell a contributor project apart (`isContributorProject`); a caller may leave them out. */
+    auction?: string | null;
+    tokenPlan?: { mode: string } | null;
   };
   receipts: readonly { table: string }[];
+}
+
+/**
+ * A contributor project: a DAO made with no sale at all, whose Shares are only ever awarded for accepted work. The
+ * record says "contributors only" and names the DAO's own Shares, and no auction is linked to it. Its DAO exists from
+ * the first day, so its saved stage is the one a DAO has; that stage must never be read as a sale that took place.
+ */
+export function isContributorProject(record: {
+  funding?: FundingStatus | null;
+  auction?: string | null;
+  tokenPlan?: { mode: string } | null;
+}): boolean {
+  return (
+    record.funding?.path === "contributors" &&
+    record.tokenPlan?.mode === "dao" &&
+    !record.auction
+  );
 }
 
 /**
@@ -210,6 +230,8 @@ export function chainRaise(
   head: number | bigint | null,
 ): ChainRaise {
   const { stage, endBlock } = launch.record;
+  // Nothing was ever sold, so there is no raise to be open, closing or closed.
+  if (isContributorProject(launch.record)) return "none";
   if (launch.receipts.some((r) => SETTLED_TABLES.includes(r.table))) {
     return "done";
   }

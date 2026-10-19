@@ -32,7 +32,7 @@ export type LaunchCardRecord = Pick<
   | "requiredRaised"
 > &
   // Optional: a preview filled from a form need not carry it.
-  Partial<Pick<LaunchRecord, "unlocks">>;
+  Partial<Pick<LaunchRecord, "unlocks" | "funding" | "auction" | "tokenPlan">>;
 
 export interface LaunchCardProps {
   record: LaunchCardRecord;
@@ -159,7 +159,7 @@ export function LaunchCard({
               Idea
             </span>
           ) : (
-            <StageBadge stage={stage} />
+            <StageBadge record={record} stage={stage} />
           )}
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">

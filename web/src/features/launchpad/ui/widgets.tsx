@@ -13,6 +13,7 @@ import {
   fundingSummary,
   type FundingStance,
   type ResolvedFunding,
+  isContributorProject,
 } from "../lib/funding";
 import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
@@ -27,7 +28,21 @@ const STAGE_LABELS: Record<LaunchStage, string> = {
   failed: "Failed",
 };
 
-export function StageBadge({ stage }: { stage: LaunchStage }) {
+export function StageBadge({
+  stage,
+  record,
+}: {
+  stage: LaunchStage;
+  /** The launch's record, so a contributor project is never labelled with a sale it never had. */
+  record?: Partial<Pick<LaunchRecord, "funding" | "auction" | "tokenPlan">>;
+}) {
+  if (record && isContributorProject(record)) {
+    return (
+      <Badge data-testid="contributor-badge" variant="secondary">
+        Contributor project
+      </Badge>
+    );
+  }
   return <Badge variant="secondary">{STAGE_LABELS[stage]}</Badge>;
 }
 
