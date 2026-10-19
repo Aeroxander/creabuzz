@@ -28,6 +28,7 @@ import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$pro
 import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as cDothostRouteImport } from "./routes/c.$host";
+import { Route as bDotboardIdRouteImport } from "./routes/b.$boardId";
 import { Route as socialDottagDottagRouteImport } from "./routes/social.tag.$tag";
 import { Route as socialDotpostDotidRouteImport } from "./routes/social.post.$id";
 import { Route as socialDotmessagesDotpeerRouteImport } from "./routes/social.messages.$peer";
@@ -148,6 +149,11 @@ const cDothostRoute = cDothostRouteImport.update({
   path: "/c/$host",
   getParentRoute: () => rootRouteImport,
 } as any);
+const bDotboardIdRoute = bDotboardIdRouteImport.update({
+  id: "/b/$boardId",
+  path: "/b/$boardId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const socialDottagDottagRoute = socialDottagDottagRouteImport.update({
   id: "/social/tag/$tag",
   path: "/social/tag/$tag",
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
   "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
   "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -243,6 +251,7 @@ export interface FileRoutesById {
   "/repos": typeof reposRoute;
   "/social": typeof socialRoute;
   "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | "/repos"
     | "/social"
     | "/start"
+    | "/b/$boardId"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -303,6 +313,7 @@ export interface FileRouteTypes {
     | "/repos"
     | "/social"
     | "/start"
+    | "/b/$boardId"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | "/repos"
     | "/social"
     | "/start"
+    | "/b/$boardId"
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
@@ -362,6 +374,7 @@ export interface RootRouteChildren {
   reposRoute: typeof reposRoute;
   socialRoute: typeof socialRoute;
   startRoute: typeof startRoute;
+  bDotboardIdRoute: typeof bDotboardIdRoute;
   cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
   launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
@@ -542,6 +555,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof cDothostRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/b/$boardId": {
+      id: "/b/$boardId";
+      path: "/b/$boardId";
+      fullPath: "/b/$boardId";
+      preLoaderRoute: typeof bDotboardIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/social/tag/$tag": {
       id: "/social/tag/$tag";
       path: "/social/tag/$tag";
@@ -586,6 +606,7 @@ const rootRouteChildren: RootRouteChildren = {
   reposRoute: reposRoute,
   socialRoute: socialRoute,
   startRoute: startRoute,
+  bDotboardIdRoute: bDotboardIdRoute,
   cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
   launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,

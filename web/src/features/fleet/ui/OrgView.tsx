@@ -201,7 +201,7 @@ function OrgNodeCard({
                     <button
                       type="button"
                       className="rounded-full border border-red-200 px-1.5 py-0.5 text-2xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
-                      data-testid={`stop-agent-${pubkey.slice(0, 6)}`}
+                      data-testid={`stop-agent-${pubkey}`}
                       onClick={() =>
                         setStopTarget({
                           pubkey: pubkey.trim().toLowerCase(),

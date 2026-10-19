@@ -80,10 +80,13 @@ export function CommentReplies({
                     badge={badges?.[comment.author]}
                     profile={profiles?.[comment.author]}
                     pubkey={comment.author}
+                    size="md"
                   />
                   <span>{shortRelativeTime(comment.createdAt)}</span>
                 </div>
-                <BoardMarkdown text={comment.body} />
+                <div className="mt-1.5">
+                  <BoardMarkdown text={comment.body} />
+                </div>
                 <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
                   <button
                     aria-label={`Reply to ${name}`}

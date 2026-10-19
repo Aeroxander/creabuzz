@@ -1,16 +1,22 @@
+import { Link } from "@tanstack/react-router";
 import { MessageSquare, ScrollText } from "lucide-react";
 
-import type { Profile } from "@/features/profiles/use-profiles";
+import {
+  type Profile,
+  resolveUserName,
+} from "@/features/profiles/use-profiles";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
 
+import { previewText } from "../lib/board-feed";
 import type { BoardPost } from "../lib/board-model";
 import type { PostStatus } from "../lib/post-status";
-import { AuthorChip } from "./AuthorChip";
 import { TONE_CLASS } from "./status-tone";
 import { VoteButtons } from "./VoteButtons";
 
 /**
- * One post in the list: score, title, who and when, how many replies.
+ * One post in a list, laid out like a forum post: the score, then the author's picture large enough to recognise, who
+ * and when (and, on the boards front page, which board), the title, the first lines of the text and how many replies.
  *
  * A post about a DAO decision has no vote arrows. It is not ranked by votes (a vote here is not the DAO's vote and
  * would read as support), so where the arrows would be it says what it is, and where the decision stands when known.
@@ -19,6 +25,7 @@ export function PostRow({
   post,
   profile,
   status,
+  board,
   onOpen,
   onVote,
 }: {
@@ -26,12 +33,16 @@ export function PostRow({
   profile: Profile | undefined;
   /** Where the decision this post is about stands, when it could be read and checked. */
   status?: PostStatus;
+  /** The board the post is on, shown when the list mixes boards. */
+  board?: { id: string; name: string };
   onOpen: () => void;
   onVote: (direction: "up" | "down") => void;
 }) {
+  const name = resolveUserName(profile, post.author);
+  const preview = post.body ? previewText(post.body) : "";
   return (
     <li
-      className="flex gap-2 rounded-xl border p-3"
+      className="flex gap-2 rounded-xl border bg-card p-3"
       data-testid={`board-post-${post.id}`}
     >
       {post.proposal ? (
@@ -50,17 +61,64 @@ export function PostRow({
         />
       )}
       <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2.5">
+          <Link
+            aria-hidden
+            className="shrink-0"
+            params={{ pubkey: post.author }}
+            tabIndex={-1}
+            to="/u/$pubkey"
+          >
+            <UserAvatar
+              avatarUrl={profile?.picture ?? null}
+              displayName={name}
+              size="lg"
+            />
+          </Link>
+          <div className="min-w-0 text-xs leading-snug">
+            <Link
+              className="block truncate text-sm font-semibold text-foreground hover:underline"
+              data-testid="board-post-author"
+              params={{ pubkey: post.author }}
+              to="/u/$pubkey"
+            >
+              {name}
+            </Link>
+            <div className="flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
+              {board ? (
+                <>
+                  <Link
+                    className="font-medium text-foreground/80 hover:underline"
+                    data-testid="board-post-board"
+                    params={{ boardId: board.id }}
+                    to="/b/$boardId"
+                  >
+                    {board.name}
+                  </Link>
+                  <span aria-hidden>·</span>
+                </>
+              ) : null}
+              <span>{shortRelativeTime(post.createdAt)}</span>
+            </div>
+          </div>
+        </div>
         <button
-          className="block max-w-full text-left text-base font-semibold hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-2 block max-w-full text-left text-base font-semibold hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="board-post-title"
           onClick={onOpen}
           type="button"
         >
           {post.title}
         </button>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <AuthorChip profile={profile} pubkey={post.author} />
-          <span>{shortRelativeTime(post.createdAt)}</span>
+        {preview ? (
+          <p
+            className="mt-1 line-clamp-3 text-sm text-muted-foreground"
+            data-testid="board-post-preview"
+          >
+            {preview}
+          </p>
+        ) : null}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <MessageSquare aria-hidden className="h-3.5 w-3.5" />
             {post.commentCount === 1

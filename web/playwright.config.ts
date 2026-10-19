@@ -72,6 +72,7 @@ export default defineConfig({
         "**/start-project.spec.ts",
         "**/helpers.spec.ts",
         "**/board.spec.ts",
+        "**/board-feed.spec.ts",
         "**/home-checklist.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",

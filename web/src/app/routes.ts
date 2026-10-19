@@ -4,6 +4,7 @@ export const routes = rootRoute("root.tsx", [
   index("index.tsx"),
   route("/c", "c.tsx"),
   route("/u/$pubkey", "u.$pubkey.tsx"),
+  route("/b/$boardId", "b.$boardId.tsx"),
   route("/discover", "discover.tsx"),
   route("/start", "start.tsx"),
   route("/c/$host", "c.$host.tsx"),

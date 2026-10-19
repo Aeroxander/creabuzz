@@ -680,3 +680,30 @@ By hand, with two accounts in one community (one an owner or admin, one a member
    the conversation is gone, with a line saying how many are hidden. Unmute from their profile and it returns.
 
 Not done: removing a whole thread at once, and a room action log.
+
+## 4ag. Boards in the feed (D63, 2026-10-19)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke board-feed.spec.ts board.spec.ts
+```
+
+By hand, against the local server (`just relay`, then the web app), signed in, in a community with at least two boards
+(the workspace sidebar's **New board** makes one):
+
+1. **Boards tab.** Home → **Boards**. Every board's posts are in one list; each shows a large picture, the author, the
+   board's name, the time, the title and the first lines. **Hot / New / Top** re-order it. The board chips open a board.
+2. **Post from Home.** **New post**, pick a board in "Post on", write a title and some text, Post. You land on the post on
+   that board's own page (the address is `/b/…?post=…`), with your picture large above the title.
+3. **Vote.** Back (the arrow in the title bar) returns to the Boards tab, not Everyone. Press the up arrow on someone's post:
+   the score goes up and the arrow stays pressed; the list does not jump. Press it again to take it back.
+4. **Reply.** Open a post, reply; the reply shows your picture beside your name.
+5. **Everyone.** Home → **Everyone**: "Hot on the boards" shows up to three recent board posts above the short posts.
+   **See all boards** switches to the Boards tab.
+6. **Workspace.** The same board in the community workspace's sidebar shows the same posts and the same forum layout.
+7. **Phone.** On a phone-sized window the Boards tab, the chips and the cards fit with no sideways scrolling.
+
+Not done: joining a board, anyone creating a board, pictures in posts, Top by period, live updates on the front page
+(see SOCIAL-MVP-ROADMAP-2026-10-19.md).

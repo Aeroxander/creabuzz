@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 
 import { HomeHero } from "@/features/feed/ui/HomeHero";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
@@ -18,22 +18,43 @@ import { useRankedRows } from "../use-ranking";
 import { useFollowing, useTimeline } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 
-type Tab = "everyone" | "following" | "projects";
+type Tab = "everyone" | "following" | "boards" | "projects";
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "everyone", label: "Everyone" },
   { id: "following", label: "Following" },
+  { id: "boards", label: "Boards" },
   { id: "projects", label: "Projects" },
 ];
 
+const BoardFeed = lazy(() =>
+  import("@/features/board/ui/BoardFeed").then((m) => ({
+    default: m.BoardFeed,
+  })),
+);
+const HotOnBoards = lazy(() =>
+  import("@/features/board/ui/HotOnBoards").then((m) => ({
+    default: m.HotOnBoards,
+  })),
+);
+
 /**
  * Home: every post on this server (ranked by recency and trust-weighted likes), or just the people you follow, or the
- * projects' own progress reports, with one composer on top. Above it, for someone signed in, what is waiting on them and
+ * boards' long-form discussions with up and down votes, or the projects' own progress reports, with one composer on top.
+ * Everyone also shows the hottest board posts above the short posts, so the boards are part of the feed. Above it, for someone signed in, what is waiting on them and
  * their organizations; for a visitor, what this place is for.
  */
 export function SocialHomePage() {
   const me = existingUserPubkey();
-  const [tab, setTab] = useState<Tab>("everyone");
+  const search = useSearch({ from: "/" });
+  const tab: Tab = search.tab ?? "everyone";
+  const navigate = useNavigate();
+  const setTab = (next: Tab) =>
+    void navigate({
+      to: "/",
+      search: next === "everyone" ? {} : { tab: next },
+      replace: true,
+    });
   const following = useFollowing(me);
 
   const authors =
@@ -60,8 +81,17 @@ export function SocialHomePage() {
         {me ? <HomeYours me={me} /> : null}
         <HomeHero />
       </div>
-      <PostComposer />
-      {tab === "projects" ? (
+      {tab === "boards" ? null : <PostComposer />}
+      {tab === "everyone" ? (
+        <Suspense fallback={null}>
+          <HotOnBoards onSeeAll={() => setTab("boards")} />
+        </Suspense>
+      ) : null}
+      {tab === "boards" ? (
+        <Suspense fallback={<TimelineSkeleton />}>
+          <BoardFeed />
+        </Suspense>
+      ) : tab === "projects" ? (
         <div className="p-3">
           <ProjectProgressFeed />
         </div>

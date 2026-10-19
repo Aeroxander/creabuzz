@@ -257,14 +257,12 @@ export function PostThread({
           />
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-bold" data-testid="board-thread-title">
-            {post.title}
-          </h2>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <AuthorChip
               badge={badges?.[post.author]}
               profile={profiles?.[post.author]}
               pubkey={post.author}
+              size="xl"
             />
             <span>{shortRelativeTime(post.createdAt)}</span>
             {me !== null && me === post.author ? (
@@ -293,6 +291,12 @@ export function PostThread({
               }}
             />
           </div>
+          <h2
+            className="mt-3 text-lg font-bold"
+            data-testid="board-thread-title"
+          >
+            {post.title}
+          </h2>
           {header}
           {post.body ? (
             <div className="mt-3" data-testid="board-thread-body">
