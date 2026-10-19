@@ -297,7 +297,11 @@ export function LaunchesPage() {
         </span>
       </div>
 
-      <div className="flex flex-col gap-2">
+      {/* Filters only mean something once there is a list to filter: on an empty tab every chip would read zero. */}
+      <div
+        className={cn("flex flex-col gap-2", filtered.length === 0 && "hidden")}
+        data-testid="launch-chips"
+      >
         <fieldset className="min-w-0 border-0 p-0">
           <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
             Funding
