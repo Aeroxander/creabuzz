@@ -163,11 +163,10 @@ function WhoToFollowCard() {
   );
 }
 
-/** The right rail: search, trending launches and hashtags, and people worth following. */
+/** The right rail: trending launches and hashtags, and people worth following. Search is in the top bar, which is always on screen when this is. */
 export function RightRail() {
   return (
     <div className="flex flex-col gap-4">
-      <SearchBox />
       <TrendingLaunchesCard />
       <TrendingCard />
       <WhoToFollowCard />
