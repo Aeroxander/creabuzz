@@ -314,7 +314,10 @@ trap cleanup EXIT
 
 if ! cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
   echo "no anvil at $RPC_URL — booting one (killed on exit; a pre-existing anvil is never touched)"
-  anvil --port "${RPC_URL##*:}" >/dev/null 2>&1 &
+  # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
+  # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
+  # it is stopped, SIGINT included.
+  anvil --port "${RPC_URL##*:}" --prune-history=500 >/dev/null 2>&1 &
   OWN_ANVIL_PID=$!
   for _ in $(seq 1 50); do
     cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 && break

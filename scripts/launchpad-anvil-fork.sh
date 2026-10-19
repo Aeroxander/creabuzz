@@ -33,12 +33,15 @@ rpc_alive() {
 
 if ! rpc_alive; then
   echo "-- starting anvil fork on $RPC_URL (block $FORK_BLOCK)"
+  # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
+  # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
+  # it is stopped, SIGINT included.
   if [[ "$FORK_BLOCK" == "latest" ]]; then
-    anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id 31337 \
+    anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id 31337 --prune-history=500 \
       --fork-url "$SEPOLIA_RPC_URL" \
       >"$(mktemp -t launchpad-anvil-fork.XXXXXX.log)" 2>&1 &
   else
-    anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id 31337 \
+    anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id 31337 --prune-history=500 \
       --fork-url "$SEPOLIA_RPC_URL" --fork-block-number "$FORK_BLOCK" \
       >"$(mktemp -t launchpad-anvil-fork.XXXXXX.log)" 2>&1 &
   fi

@@ -73,7 +73,10 @@ step "forking Sepolia into a local anvil on ${RPC}"
 # ("block not found" while the fork is being made).
 HEAD_BLOCK="$(cast block-number --rpc-url "$FORK_URL" 2>/dev/null || true)"
 [[ "$HEAD_BLOCK" =~ ^[0-9]+$ ]] || fail "could not read the head of $FORK_URL"
-anvil --fork-url "$FORK_URL" --fork-block-number "$((HEAD_BLOCK - 10))" --port "$ANVIL_PORT" --silent >"$STATE/anvil.log" 2>&1 &
+# --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
+# disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
+# it is stopped, SIGINT included.
+anvil --fork-url "$FORK_URL" --fork-block-number "$((HEAD_BLOCK - 10))" --port "$ANVIL_PORT" --prune-history=500 --silent >"$STATE/anvil.log" 2>&1 &
 ANVIL_PID=$!
 for _ in $(seq 1 60); do
   [[ "$(cast chain-id --rpc-url "$RPC" 2>/dev/null || true)" == "$SEPOLIA_CHAIN_ID" ]] && break
