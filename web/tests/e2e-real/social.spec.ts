@@ -75,7 +75,7 @@ test("the Creaton feed shows every post on the relay, including reposts", async 
 }) => {
   const fixture = fixtureOrSkip();
   const errors = await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   await expect(page.getByTestId("social-shell")).toBeVisible({
     timeout: 20_000,
   });
@@ -103,7 +103,7 @@ test("Following shows the people you follow and nobody else", async ({
 }) => {
   const fixture = fixtureOrSkip();
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   await page.getByTestId("social-tab-following").click();
   // Dev follows Alice (and sees their own posts). The seeded posts may be a few
   // pages down once earlier runs have added more.
@@ -133,7 +133,7 @@ test("a post with a hashtag and a mention is stored with the right tags and find
   test.slow();
   const fixture = fixtureOrSkip();
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   const tag = `tag${RUN}`;
   const input = page.getByTestId("social-composer-input");
   await input.click();
@@ -175,7 +175,7 @@ test("a like is stored and still shown after a reload", async ({ page }) => {
   const text = unique("like me");
   const note = await post("carol", { kind: 1, tags: [], content: text });
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   const card = postCard(page, text);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.getByTestId("social-like").click();
@@ -249,7 +249,7 @@ test("a repost shows on your timeline and can be undone", async ({ page }) => {
   const text = unique("repost me");
   const note = await post("bob", { kind: 1, tags: [], content: text });
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   const card = postCard(page, text);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.getByTestId("social-repost").click();
@@ -269,7 +269,7 @@ test("a repost shows on your timeline and can be undone", async ({ page }) => {
   // The original is embedded so other clients can show it without a lookup.
   expect(JSON.parse(reposts[0].content).id).toBe(note.id);
 
-  await page.goto("/");
+  await page.goto("/social");
   await expect(
     page
       .getByTestId("social-post")
@@ -310,7 +310,7 @@ test("a quote post carries a q tag and shows the quoted post as a card", async (
   const original = unique("quote this");
   const note = await post("carol", { kind: 1, tags: [], content: original });
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   const card = postCard(page, original);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.getByTestId("social-repost").click();
@@ -330,7 +330,7 @@ test("a quote post carries a q tag and shows the quoted post as a card", async (
   );
   expect(stored[0].content).toContain("nostr:nevent1");
 
-  await page.goto("/");
+  await page.goto("/social");
   const quote = postCard(page, comment);
   await expect(quote).toBeVisible({ timeout: 20_000 });
   await expect(quote.getByTestId("social-quote-card")).toContainText(original);
@@ -344,7 +344,7 @@ test("bookmarks are private: stored encrypted, listed after a reload", async ({
   const text = unique("save me");
   const note = await post("alice", { kind: 1, tags: [], content: text });
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   const card = postCard(page, text);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.getByTestId("social-bookmark").click();
@@ -378,7 +378,7 @@ test("notifications list likes, replies, mentions and follows with an unread bad
 }) => {
   const fixture = fixtureOrSkip();
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   await expect(page.getByTestId("social-unread").first()).toBeVisible({
     timeout: 20_000,
   });
@@ -397,7 +397,7 @@ test("notifications list likes, replies, mentions and follows with an unread bad
   await expect(page.locator('[data-kind="like"]')).toContainText("and 1 other");
 
   // Viewing them clears the badge, and it stays cleared after a reload.
-  await page.goto("/");
+  await page.goto("/social");
   await expect(page.getByTestId("social-unread")).toHaveCount(0, {
     timeout: 20_000,
   });
@@ -569,7 +569,7 @@ test("muting someone hides their posts from your timelines", async ({
   const text = unique("mute test");
   await post("carol", { kind: 1, tags: [], content: text });
   await signInAsDev(page, fixture);
-  await page.goto("/");
+  await page.goto("/social");
   await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
 
   await page.goto(`/u/${fixture.people.carol}`);
@@ -594,7 +594,7 @@ test("muting someone hides their posts from your timelines", async ({
     )
     .toBe(true);
 
-  await page.goto("/");
+  await page.goto("/social");
   await expect(page.getByTestId("social-post-list")).toBeVisible({
     timeout: 20_000,
   });
@@ -622,7 +622,7 @@ test("muting someone hides their posts from your timelines", async ({
       { timeout: 20_000 },
     )
     .toBe(false);
-  await page.goto("/");
+  await page.goto("/social");
   await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
 });
 
@@ -719,7 +719,7 @@ test("launch mode: the team's update is stored as a normal note, marked and show
     content: fake,
   });
 
-  await page.goto("/");
+  await page.goto("/social");
   await expect(page.getByTestId("social-composer-launch-mode")).toBeVisible({
     timeout: 20_000,
   });
@@ -836,7 +836,7 @@ test("you can delete your own post; other people's posts have no delete button",
   const theirs = unique("not mine");
   await post("carol", { kind: 1, tags: [], content: theirs });
 
-  await page.goto("/");
+  await page.goto("/social");
   await page.getByTestId("social-composer-input").fill(mine);
   await page.getByTestId("social-composer-submit").click();
   const card = postCard(page, mine);

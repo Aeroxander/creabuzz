@@ -330,7 +330,7 @@ test("in an open community a spammer who is not on the list can be banned from t
 
   // Anyone with the address can post: nobody asked this person to join, and they are not on the list of people.
   const spammer = await newPerson(browser);
-  await spammer.goto(`http://${host}/`);
+  await spammer.goto(`http://${host}/social`);
   await spammer.getByTestId("social-composer-input").fill(post);
   await spammer.getByTestId("social-composer-submit").click();
   await expect(
@@ -338,7 +338,7 @@ test("in an open community a spammer who is not on the list can be banned from t
   ).toBeVisible({ timeout: 30_000 });
 
   // The owner sees the post and bans the person who wrote it.
-  await owner.goto("/");
+  await owner.goto("/social");
   const theirs = owner.getByTestId("social-post").filter({ hasText: post });
   await expect(theirs).toBeVisible({ timeout: 30_000 });
   await theirs.getByTestId("social-ban").click();
