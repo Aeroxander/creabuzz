@@ -8,8 +8,9 @@
 # queue): an owner makes a community (open unless they press the other button), a stranger is turned away, an
 # invite link lets exactly one person in, the same link is refused for a second, the owner opens the community and the
 # stranger gets in, and closes it again. board-ideas.spec.ts: a member's board post becomes a task
-# and they claim the finder's credit. Nothing is mocked: real signed requests, real database rows, real WebSocket
-# sign-in.
+# and they claim the finder's credit. chat-removal.spec.ts: an owner removes a member's chat message and board post, the
+# member's open page shows it gone without a reload, and a reload does not bring it back. Nothing is mocked: real signed
+# requests, real database rows, real WebSocket sign-in.
 #
 # ⚠️  DEV ONLY. Needs Postgres and Redis running (see `just services`). Uses its own database, dropped on exit.
 #
@@ -71,4 +72,4 @@ curl -fsS -m 2 "http://localhost:$PORT/self-serve/communities" | grep -q '"enabl
 step "running the browser spec"
 cd web
 BUZZ_REAL_RELAY_URL="http://localhost:$PORT" E2E_INVITE_PORT="$PORT" \
-  node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/invite-only.spec.ts tests/e2e-real/report.spec.ts tests/e2e-real/board-ideas.spec.ts --reporter=list "$@"
+  node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/invite-only.spec.ts tests/e2e-real/report.spec.ts tests/e2e-real/chat-removal.spec.ts tests/e2e-real/board-ideas.spec.ts --reporter=list "$@"
