@@ -16,24 +16,21 @@ trade, it should trade a non-voting claim on the treasury, not the Shares that s
   app offers no way to set one (`sales(currency)` is empty; the journey checks it).
 - The app **offers no market** for it: the "Put Shares on the market" and "Collect the trading fees" decisions are
   hidden for a contributor project, Markets lists no pool for it, and the page says "Nothing is for sale".
-- The Shares are still **ordinary transferable tokens**. Anyone holding them can send them to another wallet, and
-  someone could sell them privately or put them into a pool outside the app. The Start page says this plainly ("Shares
-  can still be sent from one wallet to another. There is no market for them here."). Today the protection against
-  trading is the app's design. The contracts do not enforce it.
+- **Shares cannot be sent between wallets** (D66). The contributor kit locks transfers when the project is born, so
+  nobody can sell them privately or put them in a pool either: the chain refuses the transfer. Awards still mint and
+  leaving still burns. The Start page says so ("Shares cannot be sent from one wallet to another, so nobody can sell
+  them. The project can vote to change that later.").
 
-## Recommendation 1: lock transfers when the project is born (small, next)
+## Recommendation 1: lock transfers when the project is born (built, D66)
 
 The patched DAO's Shares have `setTransfersLocked(bool)`, callable only by the DAO. While it is on, a transfer is
 refused unless it goes to or from the DAO itself. **Minting and burning are not affected**: an award still mints Shares
 to the contributor, and leaving with your share of the treasury (ragequit) still burns them. So locking takes nothing
 away from the contributor path.
 
-The first decision a contributor project opens can carry the lock with the work budget, in one batch:
-`batchCalls([factory.createMandate(...), shares.setTransfersLocked(true)])`. This needs **no contract change**. It is a
-change to `firstBudgetDecision` in `web/src/features/start/lib/contributor-project.ts`, plus one assertion in the journey
-(a transfer between two contributors reverts once the budget ran). It would make "there is no market" true on the chain
-rather than only in the app. Until that first vote runs, transfers stay open, but during those days only the founder
-holds Shares.
+Built in the contributor kit ([CONTRIBUTOR-KIT.md](CONTRIBUTOR-KIT.md)): the lock is one of the setup calls the DAO
+makes while it is born, so there is no moment when the Shares are free. The journey checks that a transfer from the
+founder is refused on the chain.
 
 A later vote could switch the lock off. That is right: it is the project's decision. The app should then treat it as
 opening a market (Recommendation 2), with its own decision kind and copy, not as a technical setting.

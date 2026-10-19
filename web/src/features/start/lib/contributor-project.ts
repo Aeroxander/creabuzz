@@ -1,56 +1,46 @@
 /**
  * A contributor project, as data: a DAO made with no sale at all, whose Shares are earned only for accepted work.
  *
- * What the founder fills in becomes three things, in order:
+ * What the founder fills in becomes two things, in order:
  *
- * 1. one transaction to the DAO maker (`OrgBinding.summonAndBind`), which makes the DAO with the founder as its only
- *    holder and production voting settings it checks and reads back. It makes no sale and takes no money;
- * 2. the project's public record, which names that DAO and says "contributors only";
- * 3. the first decision of the DAO: a work budget that pays in Shares only, opened for the founder to back.
+ * 1. one transaction to the contributor kit (`ContributorKit.launch`), which makes, at once: the DAO with the founder as
+ *    its only holder and no sale; its first work budget, paying in Shares only, with the reviewers the founder named; the
+ *    first project inside it, managed by the founder; and a lock that keeps Shares from being sent between wallets. The
+ *    kit reads all of it back and makes nothing unless all of it came out as asked. So people can claim work the same
+ *    day, with no vote first: until anyone else holds Shares, a vote would protect nobody
+ *    (docs/v3-review/CONTRIBUTOR-KIT.md);
+ * 2. the project's public record, which names that DAO and says "contributors only".
  *
- * The DAO maker files each DAO under a 32-byte key. The key here is derived from the founder and the project's id, so
- * a reload can ask the chain whether this project's DAO already exists instead of making a second one.
+ * The DAO's address follows from the founder and a salt derived from the project, so a reload can ask the chain whether
+ * this project's DAO already exists instead of making a second one.
  *
  * Alias-free on purpose: `contributor-project.test.mjs` drives it under `node --test`.
  */
 
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import {
   type AbiType,
   encodeFunctionData,
 } from "@creaton/core/launchpad/evmAbi.ts";
-import {
-  type DecisionDraft,
-  DecisionInputError,
-  mandateDecision,
-} from "@creaton/core/launchpad/daoActions.ts";
+import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import type { CreateLaunchInput } from "../../launchpad/use-launches.ts";
 import { suggestSymbol } from "../../launchpad/models.ts";
 import { slugFromName } from "../../launchpad/lib/wizard.ts";
 
 export const NAME_MAX = 60;
 export const PITCH_MAX = 140;
+/** A project name is a label of up to 32 bytes, as the work budget stores it. */
+export const PROJECT_NAME_MAX = 32;
+export const CHECK_MAX = 280;
 /** Whole Shares are what people type; the token has 18 decimals like every DAO's Shares here. */
 export const SHARE_UNIT = 10n ** 18n;
 /** A ceiling for what one form may create: a billion Shares. */
 export const MAX_WHOLE_SHARES = 1_000_000_000n;
 export const MAX_REVIEWERS = 32;
-/** How long the first work budget stays open, in days. */
+/** How long the first work budget, and the first project in it, stay open, in days. */
 export const BUDGET_DAYS = 90;
-
-/** The voting settings every contributor project's DAO is born with (the DAO maker refuses weaker ones). */
-export const GOVERNANCE = {
-  /** 5% of the Shares must take part in a vote. */
-  quorumBps: 500,
-  /** A holder can leave with their part of whatever the treasury holds (nothing, unless someone gives it money). */
-  ragequittable: true,
-  /** A decision lapses after 14 days. */
-  proposalTTL: 14n * 86_400n,
-  /** An approved decision waits one day before it can run. */
-  timelockDelay: 86_400n,
-} as const;
 
 /** What the form starts with. */
 export const CONTRIBUTOR_DEFAULTS = {
@@ -63,16 +53,20 @@ export interface ContributorDraft {
   name: string;
   pitch: string;
   symbol: string;
-  /** Whole Shares the founder starts with, so they can open and back the first votes. */
+  /** Whole Shares the founder starts with, so they can open and back the project's votes. */
   founderShares: string;
   /** Whole Shares the first work budget may award in all. */
   budgetShares: string;
-  /** Whole Shares any one project inside that budget may award. */
+  /** Whole Shares any one project inside that budget may award; the first project gets this much. */
   projectCap: string;
   /** One wallet address per line (commas and spaces work too). */
   reviewers: string;
   /** How many reviewers must agree; empty for a simple majority. */
   quorum: string;
+  /** The first project's short name ("docs"). */
+  projectName: string;
+  /** What finished work in it looks like, in a sentence: every claim states it, and the reviewers judge against it. */
+  projectCheck: string;
 }
 
 export class ContributorInputError extends Error {
@@ -130,6 +124,8 @@ export interface ContributorTerms {
   capWhole: bigint;
   reviewers: string[];
   quorum: number;
+  projectName: string;
+  projectCheck: string;
   /** Basis points of all Shares the contributors would hold if the whole first budget were awarded. */
   contributorsAtFullBudgetBps: number;
 }
@@ -218,6 +214,25 @@ export function contributorTerms(
       "You are a reviewer and one approval is enough, so you could approve work alone. Ask for 2 or more, or leave yourself out.",
     );
 
+  const projectName = draft.projectName.trim();
+  if (projectName.length === 0)
+    fail("projectName", "Name the first project, in a word or two.");
+  if (utf8ToBytes(projectName).length > PROJECT_NAME_MAX)
+    fail(
+      "projectName",
+      `Keep the project's name to ${PROJECT_NAME_MAX} letters.`,
+    );
+  if (projectName.startsWith("0x"))
+    fail("projectName", "Start the project's name with a letter.");
+  const projectCheck = draft.projectCheck.trim();
+  if (projectCheck.length < 5)
+    fail(
+      "projectCheck",
+      "Say what finished work looks like, so reviewers know what to check.",
+    );
+  if (projectCheck.length > CHECK_MAX)
+    fail("projectCheck", `Keep it under ${CHECK_MAX} characters.`);
+
   const total = founderWhole + budgetWhole;
   const contributorsAtFullBudgetBps = Number((budgetWhole * 10_000n) / total);
   return {
@@ -229,6 +244,8 @@ export function contributorTerms(
     capWhole,
     reviewers,
     quorum,
+    projectName,
+    projectCheck,
     contributorsAtFullBudgetBps,
   };
 }
@@ -290,13 +307,13 @@ export function formatBps(bps: number): string {
   return `${tenths % 10 === 0 ? tenths / 10 : (tenths / 10).toFixed(1)}%`;
 }
 
-// ---- the key the DAO maker files the DAO under -------------------------------------------------
+// ---- the salt the DAO's address follows from ---------------------------------------------------
 
 /**
- * The 32-byte key for one project: the founder's public key and the project's id, under a fixed label. The same project
- * always maps to the same key, so the chain can say whether its DAO was made already.
+ * The 32-byte salt for one project: the founder's public key and the project's id, under a fixed label. The kit scopes
+ * it to the sending wallet too, so the same project from the same wallet always maps to the same DAO address.
  */
-export function contributorRootId(author: string, launchId: string): string {
+export function contributorSalt(author: string, launchId: string): string {
   return `0x${bytesToHex(
     keccak_256(
       utf8ToBytes(`creaton:contributor-project:37001:${author}:${launchId}`),
@@ -304,181 +321,139 @@ export function contributorRootId(author: string, launchId: string): string {
   )}`;
 }
 
-// ---- the DAO maker's calls ----------------------------------------------------------------------
+// ---- the work budget's address --------------------------------------------------------------------
 
-/** `OrgBinding.summonAndBind(bytes32, SummonParams)`, with the struct spelled out as the ABI sees it. */
-export const SUMMON_AND_BIND_SIGNATURE =
-  "summonAndBind(bytes32,(string,string,string,uint16,bool,uint96,uint64,uint64,address,bytes32,address[],uint256[]))";
+function rlpNonce(nonce: bigint): Uint8Array {
+  if (nonce === 0n) return Uint8Array.of(0x80);
+  if (nonce < 0x80n) return Uint8Array.of(Number(nonce));
+  const hex = nonce.toString(16);
+  const bytes = hexToBytes(hex.length % 2 ? `0${hex}` : hex);
+  return Uint8Array.of(0x80 + bytes.length, ...bytes);
+}
 
-const SUMMON_PARAMS: AbiType = {
+/**
+ * Where a contract makes its next contract with a plain CREATE: `keccak256(rlp([sender, nonce]))`, last 20 bytes. The
+ * work budget factory makes budgets this way, so the kit is told where the next one will be.
+ */
+export function createAddress(sender: string, nonce: bigint): string {
+  if (!ADDRESS_RE.test(sender)) throw new Error("invalid sender address");
+  if (nonce < 0n) throw new Error("invalid nonce");
+  const nonceBytes = rlpNonce(nonce);
+  const payload = Uint8Array.of(
+    0x94,
+    ...hexToBytes(sender.slice(2).toLowerCase()),
+    ...nonceBytes,
+  );
+  const encoded = Uint8Array.of(0xc0 + payload.length, ...payload);
+  return `0x${bytesToHex(keccak_256(encoded)).slice(24)}`;
+}
+
+// ---- the kit's calls ----------------------------------------------------------------------------
+
+/** `ContributorKit.launch(Params)`, with the struct spelled out as the ABI sees it. */
+export const KIT_LAUNCH_SIGNATURE =
+  "launch((string,string,uint256,bytes32,address,uint128,uint128,uint64,address[],uint256,address,bytes32,address,uint128,uint64,bytes32))";
+
+const KIT_PARAMS: AbiType = {
   tuple: [
     "string",
     "string",
-    "string",
-    "uint16",
-    "bool",
-    "uint96",
+    "uint256",
+    "bytes32",
+    "address",
+    "uint128",
+    "uint128",
     "uint64",
-    "uint64",
+    { array: "address" },
+    "uint256",
     "address",
     "bytes32",
-    { array: "address" },
-    { array: "uint256" },
+    "address",
+    "uint128",
+    "uint64",
+    "bytes32",
   ],
 };
 
-export interface SummonCall {
-  rootId: string;
-  name: string;
-  symbol: string;
-  /** The DAO code the DAO maker's factory copies (read from the chain, never typed). */
-  molochImpl: string;
+export interface KitLaunch {
+  terms: ContributorTerms;
+  salt: string;
+  /** The founder's wallet: the only holder, and the first project's manager. */
   founder: string;
-  /** In whole Shares. */
-  founderWhole: bigint;
+  /** The token claims name for an optional deposit (the network's USDC). */
+  currency: string;
+  /** Where the work budget factory's next budget will be (`createAddress(factory, nonce)`). */
+  predictedBudget: string;
+  /** The chain's clock, in seconds. */
+  now: number;
 }
 
-/** The smallest number of Shares that may open a decision: 1% of the starting Shares, at least one unit. */
-export function proposalThreshold(founderWhole: bigint): bigint {
-  const total = founderWhole * SHARE_UNIT;
-  return total / 100n === 0n ? 1n : total / 100n;
-}
-
-/** The one transaction that makes the DAO: the founder its only holder, the voting settings above, no sale. */
-export function encodeSummonAndBind(call: SummonCall): string {
+/** The one transaction that makes the whole project: DAO, budget, first project, transfer lock. No sale. */
+export function encodeKitLaunch(launch: KitLaunch): string {
   for (const [value, what] of [
-    [call.molochImpl, "implementation"],
-    [call.founder, "founder"],
+    [launch.founder, "founder"],
+    [launch.currency, "currency"],
+    [launch.predictedBudget, "budget"],
   ] as const) {
     if (!ADDRESS_RE.test(value)) throw new Error(`invalid ${what} address`);
   }
-  if (!/^0x[0-9a-f]{64}$/.test(call.rootId))
-    throw new Error("invalid project key");
+  if (!/^0x[0-9a-f]{64}$/.test(launch.salt))
+    throw new Error("invalid project salt");
+  const { terms } = launch;
+  const expires = BigInt(launch.now + BUDGET_DAYS * 86_400);
   return encodeFunctionData(
-    SUMMON_AND_BIND_SIGNATURE,
-    ["bytes32", SUMMON_PARAMS],
+    KIT_LAUNCH_SIGNATURE,
+    [KIT_PARAMS],
     [
-      call.rootId,
       [
-        call.name,
-        call.symbol,
-        "",
-        BigInt(GOVERNANCE.quorumBps),
-        GOVERNANCE.ragequittable,
-        proposalThreshold(call.founderWhole),
-        GOVERNANCE.proposalTTL,
-        GOVERNANCE.timelockDelay,
-        call.molochImpl,
-        call.rootId,
-        [call.founder],
-        [call.founderWhole * SHARE_UNIT],
+        terms.name,
+        terms.symbol,
+        terms.founderWhole * SHARE_UNIT,
+        launch.salt,
+        launch.currency,
+        terms.budgetWhole * SHARE_UNIT,
+        terms.capWhole * SHARE_UNIT,
+        expires,
+        terms.reviewers,
+        BigInt(terms.quorum),
+        launch.predictedBudget,
+        idWord(terms.projectName),
+        launch.founder,
+        terms.capWhole * SHARE_UNIT,
+        expires,
+        hashText(terms.projectCheck),
       ],
     ],
   );
 }
 
-/** `bindingOf(bytes32)`: the DAO already filed under a key (zero when none), and when. */
-export function encodeBindingOf(rootId: string): string {
-  return encodeFunctionData("bindingOf(bytes32)", ["bytes32"], [rootId]);
-}
-
-/** `binderOf(bytes32)`: who filed it. */
-export function encodeBinderOf(rootId: string): string {
-  return encodeFunctionData("binderOf(bytes32)", ["bytes32"], [rootId]);
+/** `predictDao(founder, founderShares, salt)`: where this project's DAO is, or will be. */
+export function encodePredictDao(
+  founder: string,
+  founderWhole: bigint,
+  salt: string,
+): string {
+  return encodeFunctionData(
+    "predictDao(address,uint256,bytes32)",
+    ["address", "uint256", "bytes32"],
+    [founder, founderWhole * SHARE_UNIT, salt],
+  );
 }
 
 export const CALL_SUMMONER = encodeFunctionData("summoner()", [], []);
-export const CALL_GET_IMPLEMENTATION = encodeFunctionData(
-  "getImplementation()",
+export const CALL_BUDGET_FACTORY = encodeFunctionData(
+  "budgetFactory()",
   [],
   [],
 );
 export const CALL_SHARES = encodeFunctionData("shares()", [], []);
-export const CALL_VOTING_WEIGHT = encodeFunctionData("votingWeight()", [], []);
-export const CALL_MANDATE_FACTORY = encodeFunctionData(
-  "mandateFactory()",
-  [],
-  [],
-);
 export const CALL_DECIMALS = encodeFunctionData("decimals()", [], []);
-
-/** `DaoBound(bytes32 indexed rootId, address indexed dao, uint64 boundAt, string uri)`. */
-export const TOPIC_DAO_BOUND = `0x${bytesToHex(
-  keccak_256(utf8ToBytes("DaoBound(bytes32,address,uint64,string)")),
-)}`;
 
 /** The address in the last 20 bytes of the first 32-byte word of an answer or a log topic. */
 export function wordAddress(word: string): string {
   const hex = word.replace(/^0x/, "");
   if (hex.length < 64) throw new Error("the answer is not a word");
   return `0x${hex.slice(24, 64).toLowerCase()}`;
-}
-
-export const ZERO_ADDRESS = ZERO;
-
-/** The DAO the DAO maker's receipt names for this key, or null when no log in it does. */
-export function daoFromReceiptLogs(
-  logs: readonly { address?: string; topics?: readonly string[] }[],
-  binding: string,
-  rootId: string,
-): string | null {
-  for (const log of logs) {
-    const topics = log.topics ?? [];
-    if (
-      log.address?.toLowerCase() === binding.toLowerCase() &&
-      topics[0]?.toLowerCase() === TOPIC_DAO_BOUND &&
-      topics[1]?.toLowerCase() === rootId.toLowerCase() &&
-      topics[2]
-    )
-      return wordAddress(topics[2]);
-  }
-  return null;
-}
-
-// ---- the first decision -------------------------------------------------------------------------
-
-/**
- * The DAO's first decision: a work budget that pays in Shares only. Claims under it still name a currency for any
- * deposit a contributor chooses to put up, so it needs one that exists on this network.
- */
-export function firstBudgetDecision(input: {
-  terms: Pick<
-    ContributorTerms,
-    "budgetWhole" | "capWhole" | "reviewers" | "quorum"
-  >;
-  dao: string;
-  factory: string;
-  currency: string;
-  currencyDecimals: number;
-  /** The chain's clock, in seconds. */
-  now: number;
-}): DecisionDraft {
-  try {
-    return mandateDecision({
-      dao: input.dao,
-      factory: input.factory,
-      currency: input.currency,
-      currencyDecimals: input.currencyDecimals,
-      budget: 0n,
-      cap: 0n,
-      shareBudget: input.terms.budgetWhole * SHARE_UNIT,
-      shareCap: input.terms.capWhole * SHARE_UNIT,
-      expiresAt: input.now + BUDGET_DAYS * 86_400,
-      reviewers: input.terms.reviewers,
-      quorum: input.terms.quorum,
-      reviewerBond: 0n,
-      now: input.now,
-    });
-  } catch (error) {
-    if (error instanceof DecisionInputError)
-      throw new ContributorInputError("reviewers", error.message);
-    throw error;
-  }
-}
-
-/** A fixed nonce for the first decision, so sending it twice names the same decision rather than a second one. */
-export function firstBudgetNonce(rootId: string): string {
-  return `0x${bytesToHex(keccak_256(utf8ToBytes(`${rootId}:first-work-budget`)))}`;
 }
 
 // ---- the public record --------------------------------------------------------------------------

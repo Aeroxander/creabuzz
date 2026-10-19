@@ -1,25 +1,26 @@
 /**
- * React wiring for starting a contributor project: which network, which DAO maker and currency it has, whether the
- * founder can send, and the run itself (`lib/contributor-flow.ts`) bound to the injected wallet, the chain and the
+ * React wiring for starting a contributor project: which network, which contributor kit and currency it has, whether
+ * the founder can send, and the run itself (`lib/contributor-flow.ts`) bound to the injected wallet, the chain and the
  * server. The job is kept in this browser per founder, so a reload offers to finish it instead of starting over.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
+  contributorKit,
   daoLaunchKit,
   ethCall,
   ethChainId,
   getRpcEndpoint,
+  isContractDeployed,
   isMainnetChain,
   localUsdcAddress,
   mainnetEnabled,
+  ethPendingNonce,
   networkLabel,
-  orgBinding,
 } from "@/features/launchpad/chain";
 import { ideaId } from "@/features/launchpad/lib/idea";
 import { usdcAddress } from "@/features/launchpad/lib/sale-currency";
-import type { AuctionTxReceiptWithLogs } from "@creaton/core/launchpad/auctionPlan.ts";
 import { makeWalletAuctionEffects } from "@/features/launchpad/lib/wallet-effects";
 import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
 import {
@@ -43,7 +44,7 @@ import {
   CALL_DECIMALS,
   CALL_SUMMONER,
   type ContributorDraft,
-  contributorRootId,
+  contributorSalt,
   contributorTerms,
   wordAddress,
 } from "./lib/contributor-project";
@@ -95,18 +96,20 @@ export function useContributorStart() {
     queryKey: ["start", "contributor", "network", endpoint],
     queryFn: async () => {
       const chainId = Number(await ethChainId(endpoint));
-      const binding = orgBinding(chainId);
-      const kit = daoLaunchKit(chainId);
+      const kit = contributorKit(chainId);
+      const launchKit = daoLaunchKit(chainId);
       const currency = usdcAddress(chainId, localUsdcAddress());
       const [expectedSummoner, decimals] = await Promise.all([
-        kit ? ethCall(endpoint, kit, CALL_SUMMONER).then(wordAddress) : null,
+        launchKit
+          ? ethCall(endpoint, launchKit, CALL_SUMMONER).then(wordAddress)
+          : null,
         currency
           ? ethCall(endpoint, currency, CALL_DECIMALS).then((hex) =>
               Number(BigInt(hex.slice(0, 66))),
             )
           : null,
       ]);
-      return { chainId, binding, expectedSummoner, currency, decimals };
+      return { chainId, kit, expectedSummoner, currency, decimals };
     },
     staleTime: 60_000,
     retry: 1,
@@ -136,7 +139,7 @@ export function useContributorStart() {
         message:
           "The network could not be reached. Check the network setting and try again.",
       };
-    const { chainId, binding, currency, decimals } = network.data;
+    const { chainId, kit, currency, decimals } = network.data;
     if (isMainnetChain(chainId) && !mainnetEnabled())
       return {
         ok: false,
@@ -144,11 +147,11 @@ export function useContributorStart() {
         message:
           "Contributor projects are only offered on test networks for now.",
       };
-    if (!binding)
+    if (!kit)
       return {
         ok: false,
         reason: "unavailable",
-        message: `Contributor projects cannot be started on ${networkLabel(chainId)} yet: this app does not know a contract there that makes the DAO.`,
+        message: `Contributor projects cannot be started on ${networkLabel(chainId)} yet: this app does not know a contract there that makes one.`,
       };
     if (!currency || decimals === null)
       return {
@@ -167,7 +170,7 @@ export function useContributorStart() {
         ok: false,
         reason: "wallet",
         message:
-          "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the DAO.",
+          "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
       };
     if (wallet.chainId !== chainId)
       return {
@@ -197,15 +200,14 @@ export function useContributorStart() {
         start,
         {
           call: (to, data) => ethCall(endpoint, to, data),
+          codeAt: (address) => isContractDeployed(endpoint, address),
+          // The pending count: a budget another project is making in a block not yet mined is counted too.
+          nonceOf: (address) => ethPendingNonce(endpoint, address),
           send: async (to, data) => {
             const receipt = await wallets.send({ to, data, value: "0x0" });
             return {
               txHash: receipt.txHash,
               status: receipt.status === "success" ? "success" : "reverted",
-              logs: ((receipt as AuctionTxReceiptWithLogs).logs ?? []) as {
-                address?: string;
-                topics?: string[];
-              }[],
             };
           },
           now: () => chain.now(),
@@ -232,32 +234,27 @@ export function useContributorStart() {
   const start = useCallback(
     (draft: ContributorDraft) => {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
-      const { chainId, binding, expectedSummoner, currency, decimals } =
-        network.data;
+      const { chainId, kit, expectedSummoner, currency } = network.data;
       const terms = contributorTerms(draft, wallet.address);
       const taken = (launches.data ?? [])
         .filter((launch) => launch.record.author === me)
         .map((launch) => launch.record.id);
       const launchId = ideaId(terms.name, taken);
       run({
-        version: 1,
+        version: 2,
         author: me,
         launchId,
-        rootId: contributorRootId(me, launchId),
+        salt: contributorSalt(me, launchId),
         chainId,
-        binding: binding as string,
+        kit: kit as string,
         expectedSummoner,
         founder: wallet.address.toLowerCase(),
         currency: currency as string,
-        currencyDecimals: decimals as number,
         draft,
         dao: null,
         shares: null,
         createTx: null,
         recorded: false,
-        budget: null,
-        budgetTx: null,
-        budgetOpened: false,
       });
     },
     [gate.ok, network.data, me, wallet.address, launches.data, run],

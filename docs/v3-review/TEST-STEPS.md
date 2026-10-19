@@ -737,10 +737,11 @@ By hand, against the local server, with two accounts (two browsers, or a normal 
 Not checked locally: the picture upload itself (the local media store did not answer). If uploads fail the same way in
 chat, it is the media store setup.
 
-## 4ai. Contributor projects: no sale, Shares for accepted work (D65, 2026-10-19)
+## 4ai. Contributor projects: no sale, Shares for accepted work, ready on day one (D65, D66, 2026-10-19)
 
 ```bash
 . ./bin/activate-hermit
+(cd contracts && forge test --match-contract ContributorKitTest)
 pnpm --dir web test
 pnpm --dir web build
 pnpm --dir web exec playwright test --project=smoke contributor-project.spec.ts
@@ -748,27 +749,33 @@ scripts/web-contributor-e2e.sh        # the whole journey in pages, on a throwaw
 ```
 
 The journey script boots its own chain and builds the app for it. To try it by hand, boot a dev chain
-(`scripts/dev-chain.sh`), then build the web app with the DAO maker and the dev currency it reports:
-`VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC=<currency> VITE_ORG_BINDINGS='{"31337":"<org-dao-31337.json factory>"}'`.
-Use a wallet on the local chain (account 0 as the founder; two other accounts as reviewers).
+(`scripts/dev-chain.sh`; its summary prints the line), then build the web app with the contributor kit and the dev
+currency it reports:
+`VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC=<currency> VITE_CONTRIBUTOR_KITS='{"31337":"<contributor-kit-31337.json>"}'`.
+Use a wallet on the local chain (account 0 as the founder; two other accounts as reviewers, a third as a contributor).
 
 1. **Start.** Start → **Start a contributor project**. The first box says the project cannot raise money, that there is
-   no sale, that Shares are earned only for accepted work, and that Shares can still be sent between wallets.
+   no sale, that Shares are earned only for accepted work, that people can claim work as soon as it exists, and that
+   Shares cannot be sent between wallets.
 2. **Preview.** Type a name: the short name fills itself in. Change "Shares to earn": the line under the form says what
    share of all Shares contributors would hold if the whole budget were awarded.
-3. **Make it.** Name two reviewers and press **Start the project**. The wallet asks twice. The three steps tick
-   (make the DAO, publish, open the first work budget), and **Open the project's decisions** appears.
-4. **Reload part way.** Start another project and reload the page after the first wallet prompt went through. The page
-   offers **Finish setting it up**; pressing it does not ask to make a second DAO.
-5. **The page.** On the project, the header says **Contributor project** (not "Sale completed"), the right side says
-   "Nothing is for sale", and the second tab is **Contributions**, which says nobody has earned Shares yet and counts your
-   starting Shares as "not from work".
-6. **First budget.** Decisions: back "Set aside a work budget", let the review and the waiting day pass, run it. On a
-   build with a market configured (`VITE_LBAMM_ADDRESSES`), **New decision** offers "Put Shares on the market" for a
-   DAO that raised, and not for this project (no automated test covers this yet).
-7. **Earn.** Approve a project inside the budget, file a claim as a contributor, take it on as the manager, approve it
-   as two reviewers, finish it, take it after the waiting period, and vote the award (as in 4w). The Contributions tab
-   then shows that person, the Shares, the claim's name and its project, and their part of all Shares.
+3. **Make it.** Name two reviewers, a first project ("docs") and what finished work looks like, and press **Start the
+   project**. The wallet asks **once**. Both steps tick, and **Open the project's work** appears.
+4. **Reload part way.** Start another project with the server stopped (or offline after the wallet approved), so the
+   project is made but not published. Reopen Start: it offers **Finish setting it up**, and pressing it publishes without
+   asking the wallet to make a second project.
+5. **The page.** The header says **Contributor project** (not "Sale completed"), the right side says "Nothing is for
+   sale", and the second tab is **Contributions**, which says nobody has earned Shares yet and counts your starting
+   Shares as "not from work". **Decisions** is empty: nothing needed a vote.
+6. **Work on day one.** As the contributor, Work → file a claim in "docs" with the same check words. As the founder,
+   take it on. As the two reviewers, approve it. Finish it, wait out the challenge window (on a local chain:
+   `cast rpc anvil_increaseTime 700000` and `cast rpc anvil_mine 1`), and take it as the contributor.
+7. **Award.** As the founder, Decisions → **Award Shares for a claim**, back it, let the review and wait pass, run it.
+   The Contributions tab then shows the contributor, the Shares, "write-docs in the project docs", and their part of all
+   Shares.
+8. **Locked.** In a wallet, try to send some Shares to another address: the network refuses it.
+9. **Market.** On a build with a market configured (`VITE_LBAMM_ADDRESSES`), **New decision** offers "Put Shares on the
+   market" for a DAO that raised, and not for this project (no automated test covers this yet).
 
-Not covered: Sepolia. `scripts/sepolia-deploy.sh` does not deploy the DAO maker yet, so a Sepolia build shows
-"Contributor projects cannot be started on Sepolia yet".
+Not covered: Sepolia. `scripts/sepolia-deploy.sh` now deploys the contributor kit, but it has not been broadcast, so a
+Sepolia build says "Contributor projects cannot be started on Sepolia yet".

@@ -2,8 +2,9 @@
  * Start a contributor project: a DAO with no sale, whose Shares are earned only for accepted work.
  *
  * The page says plainly what the project cannot do before it asks for anything, shows who would hold what if the
- * whole first budget were awarded, and then runs the three steps (`use-contributor-start.ts`). A run cut short by a
- * reload or a refusal is offered again from where it stopped.
+ * whole first budget were awarded, and then makes it in one transaction and publishes it (`use-contributor-start.ts`).
+ * People can claim work the moment it exists. A run cut short by a reload or a refusal is offered again from where it
+ * stopped.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -42,6 +43,8 @@ const EMPTY: ContributorDraft = {
   ...CONTRIBUTOR_DEFAULTS,
   reviewers: "",
   quorum: "",
+  projectName: "",
+  projectCheck: "",
 };
 
 /** What a contributor project is and is not, said before the form. */
@@ -60,13 +63,17 @@ function WhatItIs() {
           Shares.
         </li>
         <li>
-          You start with some Shares so you can open and back the first votes.
-          The project's Contributions tab shows everyone who holds Shares from
-          work, how many, and for what.
+          People can claim work as soon as the project exists: its first work
+          budget and first project are set up with it, with no vote to wait for.
         </li>
         <li>
-          Shares can still be sent from one wallet to another. There is no
-          market for them here.
+          You start with some Shares so you can open and back the project's
+          votes. The project's Contributions tab shows everyone who holds Shares
+          from work, how many, and for what.
+        </li>
+        <li>
+          Shares cannot be sent from one wallet to another, so nobody can sell
+          them. The project can vote to change that later.
         </li>
       </ul>
     </Card>
@@ -146,7 +153,7 @@ export function ContributorStartPage() {
     ? {
         to: "/launchpad/$launchId" as const,
         params: { launchId: job.launchId },
-        search: { author: job.author, tab: "decisions" as const },
+        search: { author: job.author, tab: "work" as const },
       }
     : null;
 
@@ -174,14 +181,15 @@ export function ContributorStartPage() {
           {done && projectLink ? (
             <div className="flex flex-col gap-3" data-testid="contributor-done">
               <p className="text-sm">
-                The project and its DAO exist, and its first work budget is open
-                for a vote. Back it on the Decisions tab. Once enough of the
-                Shares back it and its waiting day has passed, run it; then
-                approve a first project inside it, and people can claim work.
+                The project exists, with its first work budget and its first
+                project, and people can claim work on it now. You take each
+                claim on, the reviewers you named approve it, and then the
+                project votes to award the Shares. Share the link to the Work
+                tab with the people you want to work with.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button asChild data-testid="contributor-open-project">
-                  <Link {...projectLink}>Open the project's decisions</Link>
+                  <Link {...projectLink}>Open the project's work</Link>
                 </Button>
                 <Button onClick={start.clear} type="button" variant="outline">
                   Start another
@@ -298,6 +306,22 @@ export function ContributorStartPage() {
             testId="contributor-quorum"
             value={draft.quorum}
           />
+          <TextField
+            hint="The first thing people can work on, in a word or two (for example: docs). You manage it: you take each claim on."
+            label="First project"
+            onChange={set("projectName")}
+            placeholder="docs"
+            testId="contributor-project-name"
+            value={draft.projectName}
+          />
+          <TextAreaField
+            hint="Every claim says it meets this, and the reviewers check the work against these words."
+            label="What finished work looks like"
+            onChange={set("projectCheck")}
+            placeholder="The pages are merged and reviewed"
+            testId="contributor-project-check"
+            value={draft.projectCheck}
+          />
 
           {preview ? (
             <p
@@ -354,8 +378,7 @@ export function ContributorStartPage() {
               Start the project
             </Button>
             <span className="text-xs text-muted-foreground">
-              Your wallet is asked twice: once to make the DAO, once to open the
-              first work budget for a vote.
+              Your wallet is asked once.
             </span>
           </div>
         </Card>

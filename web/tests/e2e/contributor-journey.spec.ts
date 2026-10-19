@@ -6,19 +6,19 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
 /**
  * A contributor project from start to award, entirely from pages, against a REAL local chain: no command line.
  *
- * Opt-in: `scripts/web-contributor-e2e.sh` boots the chain (with the DAO maker) and builds the app for it, then runs
- * this spec. The founder starts the project on the Start page, which makes its DAO with no sale, publishes it and opens
- * its first work budget; everything after is done in pages, each as the wallet of the person whose job it is. What is
- * stubbed: the relay (it keeps what pages publish and hands it to the others) and the wallets (`window.ethereum`
- * forwarding to Anvil's unlocked accounts).
+ * Opt-in: `scripts/web-contributor-e2e.sh` boots the chain (with the contributor kit) and builds the app for it, then
+ * runs this spec. The founder starts the project on the Start page: one transaction makes its DAO with no sale, its
+ * first work budget and first project, and locks its Shares; then it is published. Work starts at once, with no vote:
+ * everything after is done in pages, each as the wallet of the person whose job it is. What is stubbed: the relay (it
+ * keeps what pages publish and hands it to the others) and the wallets (`window.ethereum` forwarding to Anvil's
+ * unlocked accounts).
  */
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
-const BINDING = process.env.E2E_BINDING ?? "";
+const KIT = process.env.E2E_KIT ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
-const MANAGER = process.env.E2E_MANAGER ?? "";
 const FOUNDER_WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const NSEC = "33".repeat(32);
 const FOUNDER = getPublicKey(
@@ -28,8 +28,8 @@ const CHECK = "docs merged and reviewed";
 const E18 = 10n ** 18n;
 
 test.skip(
-  !ANVIL_URL || !BINDING || !CONTRIBUTOR,
-  "set E2E_ANVIL_URL, E2E_BINDING and E2E_CONTRIBUTOR (scripts/web-contributor-e2e.sh does)",
+  !ANVIL_URL || !KIT || !CONTRIBUTOR,
+  "set E2E_ANVIL_URL, E2E_KIT and E2E_CONTRIBUTOR (scripts/web-contributor-e2e.sh does)",
 );
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
@@ -147,12 +147,12 @@ async function carryOut(page: Page, toApprove: number, toWait: number) {
   });
 }
 
-test("a contributor project is started from the page, a claim is accepted, and the award shows on its contributions", async ({
+test("a contributor project is started from the page, work is claimed the same day, and the award shows on its contributions", async ({
   context,
 }) => {
   test.setTimeout(600_000);
 
-  // ── 1. the founder starts it: a DAO with no sale, the project, its first work budget ─────────
+  // ── 1. the founder starts it: one transaction makes the DAO, its budget and first project; then it is published ──
   const founder = await context.newPage();
   await open(founder, FOUNDER_WALLET, "/start");
   await founder.getByTestId("start-go-contributor").click();
@@ -169,6 +169,8 @@ test("a contributor project is started from the page, a claim is accepted, and t
   await founder
     .getByTestId("contributor-reviewers")
     .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  await founder.getByTestId("contributor-project-name").fill("docs");
+  await founder.getByTestId("contributor-project-check").fill(CHECK);
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
     timeout: 20_000,
   });
@@ -177,73 +179,67 @@ test("a contributor project is started from the page, a claim is accepted, and t
   await expect(founder.getByTestId("contributor-done")).toBeVisible({
     timeout: 120_000,
   });
-  await expect(founder.getByTestId("contributor-step-create")).toHaveAttribute(
-    "data-status",
-    "done",
-  );
+  // One wallet prompt: the whole project is one transaction.
+  const sent = BigInt(String(await rpc("eth_blockNumber"))) - blockBefore;
+  expect(sent).toBe(1n);
 
-  // The chain agrees: the DAO maker filed one DAO for this project, the founder holds its only Shares, and it has no sale.
-  const daoBound = await rpc("eth_getLogs", [
-    {
-      address: BINDING,
-      fromBlock: `0x${blockBefore.toString(16)}`,
-      toBlock: "latest",
-    },
-  ]);
-  const bound = (daoBound as { topics: string[] }[]).filter(
+  // The chain agrees: the kit made one project for this founder, the founder holds its only Shares, nothing is for
+  // sale, and the Shares cannot be sent between wallets.
+  const launched = (
+    (await rpc("eth_getLogs", [
+      {
+        address: KIT,
+        fromBlock: `0x${blockBefore.toString(16)}`,
+        toBlock: "latest",
+      },
+    ])) as { topics: string[] }[]
+  ).filter(
     (log) =>
       log.topics[0] ===
-      "0x8c724736a761e84e54207b4fa4b41f626d0ffc61381c8d10ce9a83dffdf45c24",
+      "0x9dec7eb8f63140ffdc1e32aab051934ead41f327697e78bfb0eb2c911303ca18",
   );
-  expect(bound).toHaveLength(1);
-  const dao = wordAddress(bound[0].topics[2]);
+  expect(launched).toHaveLength(1);
+  expect(wordAddress(launched[0].topics[1])).toBe(FOUNDER_WALLET.toLowerCase());
+  const dao = wordAddress(launched[0].topics[2]);
   const shares = wordAddress(await call(dao, "0x03314efa"));
   const sharesOf = async (holder: string) =>
     BigInt(await call(shares, `0x70a08231${addressArg(holder)}`));
   expect(await sharesOf(FOUNDER_WALLET)).toBe(200n * E18);
   expect(BigInt(await call(shares, "0x18160ddd"))).toBe(200n * E18);
-  // `sales(address)` for the network's currency: no price, so nothing can be bought from the DAO.
-  const currency = String(
-    (published.find((e) => e.kind === 37001) as { content?: string })
-      ?.content ?? "{}",
-  );
-  const currencyAddress = (JSON.parse(currency) as { currency?: string })
-    .currency;
-  expect(currencyAddress).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  const record = published.find((e) => e.kind === 37001) as
+    | { content?: string }
+    | undefined;
+  const currency = (
+    JSON.parse(record?.content ?? "{}") as { currency?: string }
+  ).currency;
+  expect(currency).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  // `sales(currency)`: no price, so nothing can be bought from the DAO.
   expect(
     BigInt(
-      (
-        await call(dao, `0xc6b9f06a${addressArg(currencyAddress as string)}`)
-      ).slice(0, 66),
+      (await call(dao, `0xc6b9f06a${addressArg(currency as string)}`)).slice(
+        0,
+        66,
+      ),
     ),
   ).toBe(0n);
+  // `transfer(reviewer, 1)` from the founder is refused: the Shares are locked.
+  await expect(
+    rpc("eth_call", [
+      {
+        from: FOUNDER_WALLET,
+        to: shares,
+        data: `0xa9059cbb${addressArg(REVIEWER1)}${1n.toString(16).padStart(64, "0")}`,
+      },
+      "latest",
+    ]),
+  ).rejects.toThrow();
 
-  // ── 2. the founder backs and runs the first work budget, then approves a project inside it ───
+  // ── 2. the same day, with no vote: a contributor files a claim that asks for no money ──────────────
   await founder.getByTestId("contributor-open-project").click();
   await expect(founder.getByTestId("contributor-badge")).toHaveText(
     "Contributor project",
     { timeout: 30_000 },
   );
-  await expect(founder.getByTestId("decision-card").first()).toContainText(
-    "Set aside a work budget",
-    { timeout: 30_000 },
-  );
-  await carryOut(founder, 175_000, 90_000);
-
-  await refresh(founder, "Decisions");
-  await founder.getByTestId("decision-new").click();
-  await founder.getByTestId("decision-kind-project").click();
-  await founder.getByTestId("project-name").fill("docs");
-  await founder.getByTestId("project-manager").fill(MANAGER);
-  await founder.getByTestId("project-shares").fill("40");
-  await founder.getByTestId("project-check").fill(CHECK);
-  await founder.getByTestId("decision-draft-submit").click();
-  await expect(founder.getByTestId("decision-opened")).toBeVisible({
-    timeout: 60_000,
-  });
-  await carryOut(founder, 90_000, 90_000);
-
-  // ── 3. a contributor files a claim that asks for no money ─────────────────────────────────
   const contributor = await context.newPage();
   await open(contributor, CONTRIBUTOR, projectPath("work"));
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
@@ -259,11 +255,10 @@ test("a contributor project is started from the page, a claim is accepted, and t
     timeout: 90_000,
   });
 
-  // ── 4. the manager takes it on, two reviewers approve, it is finished ─────────────────────
-  const manager = await context.newPage();
-  await open(manager, MANAGER, projectPath("work"));
-  await manager.getByTestId("work-bind").click();
-  await expect(manager.getByTestId("work-claim-next")).toContainText(
+  // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
+  await refresh(founder, "Work");
+  await founder.getByTestId("work-bind").click();
+  await expect(founder.getByTestId("work-claim-next")).toContainText(
     "0 of 2 approvals",
     { timeout: 60_000 },
   );
@@ -276,9 +271,9 @@ test("a contributor project is started from the page, a claim is accepted, and t
       { timeout: 60_000 },
     );
   }
-  await refresh(manager, "Work");
-  await manager.getByTestId("work-settle").click();
-  await expect(manager.getByTestId("work-claim-status")).toContainText(
+  await refresh(founder, "Work");
+  await founder.getByTestId("work-settle").click();
+  await expect(founder.getByTestId("work-claim-status")).toContainText(
     "Approved",
     { timeout: 60_000 },
   );
@@ -291,7 +286,7 @@ test("a contributor project is started from the page, a claim is accepted, and t
   );
   expect(await sharesOf(CONTRIBUTOR)).toBe(0n);
 
-  // ── 5. the DAO votes the award ──────────────────────────────────────────────────────────────
+  // ── 4. the award is still the project's vote ────────────────────────────────────────────────────
   await refresh(founder, "Decisions");
   await founder.getByTestId("decision-new").click();
   await founder.getByTestId("decision-kind-award").click();
@@ -306,7 +301,7 @@ test("a contributor project is started from the page, a claim is accepted, and t
   await carryOut(founder, 90_000, 90_000);
   expect(await sharesOf(CONTRIBUTOR)).toBe(25n * E18);
 
-  // ── 6. anyone, with no wallet, reads who earned what, for which work ──────────────────────
+  // ── 5. anyone, with no wallet, reads who earned what, for which work ────────────────────────────
   const reader = await context.newPage();
   await open(reader, null, projectPath("contributions"));
   const person = reader.getByTestId("contribution-person");

@@ -199,6 +199,12 @@ test("Start offers a contributor project, says it cannot raise money, and shows 
   await expect(page.getByTestId("contributor-no-raise")).toContainText(
     "Shares are earned only for accepted work",
   );
+  await expect(page.getByTestId("contributor-no-raise")).toContainText(
+    "Shares cannot be sent from one wallet to another, so nobody can sell them",
+  );
+  // The first project is part of the form: work can start the day the project exists.
+  await expect(page.getByTestId("contributor-project-name")).toBeVisible();
+  await expect(page.getByTestId("contributor-project-check")).toBeVisible();
 
   // The short name follows the name until the founder types their own.
   await page.getByTestId("contributor-name").fill("Docs Commons");

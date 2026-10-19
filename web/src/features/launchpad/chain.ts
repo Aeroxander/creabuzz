@@ -133,10 +133,11 @@ export interface ChainEnv {
    */
   VITE_DAO_LAUNCH_KITS?: string;
   /**
-   * The DAO maker (`OrgBinding`) per chain, as JSON: `{"31337":"0x…"}`. It makes a DAO with no sale at all, which is what
-   * a contributor project is. A chain with no entry cannot start one from the app.
+   * The contributor kit per chain, as JSON: `{"31337":"0x…"}`. It makes a contributor project in one transaction: a DAO
+   * with no sale, its first work budget and project, its Shares locked against transfers. A chain with no entry cannot
+   * start one from the app.
    */
-  VITE_ORG_BINDINGS?: string;
+  VITE_CONTRIBUTOR_KITS?: string;
   /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
@@ -189,14 +190,14 @@ export function daoLaunchKit(
 }
 
 /**
- * The DAO maker on `chainId` that a contributor project is started with, or null when the build does not name one.
- * Never guessed, for the same reason as the launch kit; the same strict JSON map of chain id to address.
+ * The contributor kit on `chainId`, or null when the build does not name one. Never guessed, for the same reason as the
+ * launch kit; the same strict JSON map of chain id to address.
  */
-export function orgBinding(
+export function contributorKit(
   chainId: string | number | null,
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
-  return addressForChain(env?.VITE_ORG_BINDINGS, chainId);
+  return addressForChain(env?.VITE_CONTRIBUTOR_KITS, chainId);
 }
 
 function addressForChain(
@@ -638,6 +639,21 @@ export async function ethCall(
   const result = await rpc(endpoint, "eth_call", [{ to, data }, "latest"]);
   if (typeof result !== "string") throw new Error("bad eth_call return");
   return result;
+}
+
+/**
+ * An address's nonce, counting transactions not yet mined: for a contract, how many contracts it has made, which is
+ * where its next one goes.
+ */
+export async function ethPendingNonce(
+  endpoint: string,
+  address: string,
+): Promise<bigint> {
+  return decodeQuantity(
+    String(
+      await rpc(endpoint, "eth_getTransactionCount", [address, "pending"]),
+    ),
+  );
 }
 
 /** Chain identity used to match the wallet to the credit preview RPC. */
