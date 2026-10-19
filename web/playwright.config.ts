@@ -57,6 +57,7 @@ export default defineConfig({
         "**/responsive-surfaces.spec.ts",
         "**/a11y.spec.ts",
         "**/a11y-pilot.spec.ts",
+        "**/a11y-phone.spec.ts",
         "**/sandbox.spec.ts",
         "**/multi-user.spec.ts",
         "**/browser-agent.spec.ts",
