@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -36,6 +37,12 @@ import { usePeople } from "../use-people";
 import { useSocialPublish } from "../use-social-actions";
 import { useFollowing } from "../use-social-data";
 import { CREATE_ACCOUNT } from "@/features/identity/lib/account-copy";
+
+/** Grow the box to fit what is written in it. */
+function resize(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
 
 const MENTION_QUERY = /(?:^|\s)@([\p{L}\p{N}_]{0,32})$/u;
 
@@ -99,6 +106,20 @@ export function PostComposer({
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
 
+  // Where the caret goes once a chosen mention has been written into the box. It is set in the same commit that writes the
+  // text, not a frame later: a key typed straight after choosing someone would otherwise land at the end and then have the
+  // caret put back in front of it.
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const pos = pendingCaret.current;
+    const el = ref.current;
+    if (pos === null || !el) return;
+    pendingCaret.current = null;
+    el.focus();
+    el.setSelectionRange(pos, pos);
+    resize(el);
+  });
+
   if (!me) {
     return (
       <div className="border-b border-black/10 px-4 py-4 text-sm text-black/70 dark:border-white/10 dark:text-white/70">
@@ -123,27 +144,16 @@ export function PostComposer({
 
   const remaining = MAX_POST_CHARS - [...text].length;
 
-  const resize = (el: HTMLTextAreaElement) => {
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
-
   const insertMention = (pubkey: string) => {
     if (!mention) return;
     const start = caret - mention[1].length - 1;
     const uri = `${mentionUri(pubkey)} `;
     const next = text.slice(0, start) + uri + text.slice(caret);
+    const pos = start + uri.length;
+    pendingCaret.current = pos;
     setText(next);
+    setCaret(pos);
     setActive(0);
-    requestAnimationFrame(() => {
-      const el = ref.current;
-      if (!el) return;
-      const pos = start + uri.length;
-      el.focus();
-      el.setSelectionRange(pos, pos);
-      setCaret(pos);
-      resize(el);
-    });
   };
 
   const submit = (event?: FormEvent) => {
