@@ -8,6 +8,7 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { countOf } from "@/shared/lib/count-of";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -20,6 +21,7 @@ import {
   usePublishDmRelayList,
 } from "../use-messages";
 import { usePeople } from "../use-people";
+import { useMutedPeople } from "../use-social-actions";
 import { useFollowing } from "../use-social-data";
 import { PageBar, SocialShell } from "./SocialShell";
 import { EmptyState, TimelineSkeleton } from "./Status";
@@ -137,6 +139,12 @@ export function MessagesPage() {
   const conversations = useConversations();
   const people = usePeople((conversations.data ?? []).map((c) => c.peer));
   const [composing, setComposing] = useState(false);
+  // Conversations with people you muted stay out of the inbox; their profile is where you unmute them.
+  const muted = useMutedPeople().data;
+  const shown = (conversations.data ?? []).filter(
+    (conversation) => !muted?.has(conversation.peer),
+  );
+  const hidden = (conversations.data?.length ?? 0) - shown.length;
 
   return (
     <SocialShell>
@@ -170,7 +178,7 @@ export function MessagesPage() {
                 ? conversations.error.message
                 : "Try again."}
             </EmptyState>
-          ) : !conversations.data?.length ? (
+          ) : shown.length === 0 ? (
             <EmptyState
               testId="social-messages-empty"
               title="Your inbox is empty"
@@ -179,7 +187,7 @@ export function MessagesPage() {
               above.
             </EmptyState>
           ) : (
-            conversations.data.map((c) => {
+            shown.map((c) => {
               const profile = people[c.peer];
               const name = resolveUserName(profile, c.peer);
               return (
@@ -213,6 +221,16 @@ export function MessagesPage() {
               );
             })
           )}
+          {hidden > 0 ? (
+            <p
+              className="px-4 py-3 text-xs text-black/60 dark:text-white/60"
+              data-testid="social-muted-hidden"
+            >
+              Hidden: {countOf(hidden, "conversation", "conversations")} with
+              people you muted. Unmute someone from their profile to see their
+              messages again.
+            </p>
+          ) : null}
         </>
       )}
     </SocialShell>

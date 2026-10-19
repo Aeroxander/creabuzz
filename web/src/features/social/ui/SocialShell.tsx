@@ -242,10 +242,13 @@ function SocialNavLink({
 export function PageBar({
   title,
   back,
+  actions,
   children,
 }: {
   title: ReactNode;
   back?: ReactNode;
+  /** Buttons at the right end of the title row. */
+  actions?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -255,6 +258,9 @@ export function PageBar({
         <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-black dark:text-white">
           {title}
         </h1>
+        {actions ? (
+          <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
+        ) : null}
       </div>
       {children}
     </header>

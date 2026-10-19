@@ -33,6 +33,7 @@ export default defineConfig({
         "**/community-access.spec.ts",
         "**/report.spec.ts",
         "**/chat-removal.spec.ts",
+        "**/social-safety.spec.ts",
         "**/launchpad-empty.spec.ts",
         "**/social-mention.spec.ts",
         "**/invite-join.spec.ts",

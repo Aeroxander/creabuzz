@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Link as LinkIcon, Mail, VolumeX } from "lucide-react";
+import { ArrowLeft, Link as LinkIcon, Mail } from "lucide-react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { PaymentWalletCard } from "@/features/identity/ui/PaymentWalletCard";
@@ -12,14 +11,14 @@ import {
 import { tokenize } from "@/features/social/lib/content";
 import { EditProfileDialog } from "@/features/social/ui/EditProfileDialog";
 import { PostList } from "@/features/social/ui/PostList";
+import {
+  MutePersonButton,
+  ReportPersonButton,
+} from "@/features/social/ui/PersonSafety";
 import { PageBar, SocialShell } from "@/features/social/ui/SocialShell";
 import { EmptyState, TimelineSkeleton } from "@/features/social/ui/Status";
 import { TabStrip } from "@/features/social/ui/TabStrip";
 import { usePeople } from "@/features/social/use-people";
-import {
-  useMutedPeople,
-  useToggleMute,
-} from "@/features/social/use-social-actions";
 import {
   useFollowerCount,
   useFollowing,
@@ -184,9 +183,6 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const name = resolveUserName(profile, pubkey);
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
-  const mutedQuery = useMutedPeople();
-  const muted = mutedQuery.data?.has(pubkey) ?? false;
-  const toggleMute = useToggleMute();
   const isSelf = me === pubkey;
   const hue = bannerHue(pubkey);
 
@@ -245,37 +241,12 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
               </Button>
             ) : me ? (
               <>
-                <Button
-                  aria-label={muted ? "Unmute" : "Mute"}
-                  aria-pressed={muted}
-                  className="rounded-full"
-                  data-testid="profile-mute"
-                  disabled={toggleMute.isPending || !mutedQuery.isSuccess}
-                  onClick={() =>
-                    toggleMute.mutate(
-                      { pubkey, muted: !muted },
-                      {
-                        onSuccess: () =>
-                          toast.success(muted ? "Unmuted" : "Muted"),
-                        onError: (error) =>
-                          toast.error(
-                            error instanceof Error
-                              ? error.message
-                              : "That didn't work.",
-                          ),
-                      },
-                    )
-                  }
-                  size="icon"
-                  title={muted ? "Unmute" : "Mute"}
-                  type="button"
-                  variant="outline"
-                >
-                  <VolumeX
-                    aria-hidden
-                    className={muted ? "text-red-600" : undefined}
-                  />
-                </Button>
+                <MutePersonButton pubkey={pubkey} testId="profile-mute" />
+                <ReportPersonButton
+                  name={name}
+                  pubkey={pubkey}
+                  testId="profile-report"
+                />
                 <Button
                   asChild
                   className="rounded-full"

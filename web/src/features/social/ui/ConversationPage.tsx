@@ -13,6 +13,7 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { parseEntity } from "../lib/entity";
 import { useConversations, useSendMessage } from "../use-messages";
 import { usePeople } from "../use-people";
+import { MutePersonButton, ReportPersonButton } from "./PersonSafety";
 import { PageBar, SocialShell } from "./SocialShell";
 import { EmptyState, TimelineSkeleton } from "./Status";
 
@@ -67,6 +68,18 @@ export function ConversationPage() {
   return (
     <SocialShell rail={false}>
       <PageBar
+        actions={
+          me && peer !== me ? (
+            <>
+              <MutePersonButton pubkey={peer} testId="conversation-mute" />
+              <ReportPersonButton
+                name={name}
+                pubkey={peer}
+                testId="conversation-report"
+              />
+            </>
+          ) : null
+        }
         back={
           <Link
             aria-label="Back to messages"
