@@ -631,3 +631,52 @@ By hand, on a board with posts and replies by two other people:
 
 Not done yet: a visible marker where something was removed and the sanitized room action log (A5), room restrictions
 (dropped for the pilot), and removal by a community owner or admin from the board itself (they use the moderation queue).
+
+## 4ae. One Home, two starting points, a Testnet tag (D61, 2026-10-19)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke feed.spec.ts start-project.spec.ts first-run.spec.ts social-mention.spec.ts launchpad-empty.spec.ts responsive-surfaces.spec.ts
+```
+
+By hand, signed in on a phone-sized window and on a wide one:
+
+1. **Home is the social page.** Open `/`: the composer, Everyone / Following / Projects, and under the top bar a "Get started"
+   card. `/social` goes to `/`. Post something with a `#tag`: it shows in Everyone, in the tag's page, and after a reload. Like,
+   reply and repost it from a second account. There is one search box (the top bar), not two.
+2. **Setup.** Workspaces → open the community → Set up community. Two cards (Creative project, Technical project); "More
+   kinds of team" opens the other two; "See everything it adds" opens the long list. Pick Technical, set it up, and the first
+   channel opens. On a phone nothing is cut off.
+3. **Testnet.** A small "Testnet" tag sits beside the logo on a wide window. It is not there on a phone (the top bar is not).
+4. **Mentions.** In the post box type `@` and the start of a name you follow, choose them, then keep typing at once: the words
+   come out in order behind the mention.
+5. **Empty launchpad.** On a server with no launches, Launchpad shows "No launches yet" and the sandbox, and no row of
+   filters. Add a launch and the filters appear.
+
+## 4af. Removing a chat message, and acting on a person (2026-10-19)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke chat-removal.spec.ts social-safety.spec.ts report.spec.ts
+scripts/web-invite-only-e2e.sh        # real server: chat and board removal, reporting a post and a person
+```
+
+By hand, with two accounts in one community (one an owner or admin, one a member):
+
+1. **Remove.** The owner opens a room where the member wrote something. On the member's message there is **Remove** (never on
+   the owner's own). It asks first and says the person stays. Confirm: the message becomes "message removed by a moderator".
+2. **The member's screen.** With the same room open as the member, the message goes without a reload, and a reload does not
+   bring it back. The member is offered no Remove on anything.
+3. **Roster.** Make the member an admin from the owner's account; they now see Remove. Withdraw it: they see none again.
+4. **Phone.** On a phone-sized window, the actions under a message (Copy, Link, Reply, Report, Remove, Ban, Delete) are always
+   visible and wrap; nothing is cut off at the right edge.
+5. **Report a person.** Open someone's profile: a flag button next to Mute. Choose a reason, send. The owner's moderation queue
+   shows it with the reason and the note. Your own profile has neither Mute nor Report.
+6. **Mute from a conversation.** Open a private conversation: Mute and Report are in the title bar. Mute, go back to Messages:
+   the conversation is gone, with a line saying how many are hidden. Unmute from their profile and it returns.
+
+Not done: removing a whole thread at once, and a room action log.

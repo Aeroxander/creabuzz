@@ -77,7 +77,7 @@ export function BoardPage() {
             <Plus className="mr-1 h-4 w-4" /> Pitch a project
           </Button>
         }
-        description="Projects pitch themselves here. Pick a role, ask for a stake, and the founder's approval becomes a recorded ownership grant (revocable until the project's DAO adopts it, never a legal contract)."
+        description="Founders pitch projects here. Pick a role and ask to join; if the founder agrees, your share is recorded. It is not a legal contract, and it can be undone until the project's DAO takes it on."
         title={
           <span className="flex items-center gap-2">
             <LayoutGrid className="h-5 w-5" /> Project board
