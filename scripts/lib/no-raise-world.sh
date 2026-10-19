@@ -5,7 +5,7 @@
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain, nothing else.
 #
-# Set WORLD_NAME before sourcing to label the output. Provides: the dev accounts (KEY_* / addresses), `world_up`,
+# Set WORLD_NAME before sourcing to label the output (and WORLD_NO_CLI=1 when the journey never runs the CLI). Provides: the dev accounts (KEY_* / addresses), `world_up`,
 # the helpers `as`, `jget`, `warp`, `decide`, `shares_of`, and one function per step of the journey.
 
 set -euo pipefail
@@ -66,7 +66,8 @@ world_up() {
   SHARES=$(cast call "$DAO" "shares()(address)" --rpc-url "$RPC")
   step "dao ${DAO}  mandate factory ${FACTORY}"
 
-  if [[ -n "${BUZZ_BIN:-}" ]]; then BUZZ="$BUZZ_BIN"; else
+  # A journey that never runs the CLI (WORLD_NO_CLI=1) skips building it.
+  if [[ "${WORLD_NO_CLI:-}" == "1" ]]; then BUZZ=""; elif [[ -n "${BUZZ_BIN:-}" ]]; then BUZZ="$BUZZ_BIN"; else
     step "building the CLI"
     cargo build -q -p buzz-cli || fail "cargo build failed"
     BUZZ="$REPO_ROOT/target/debug/buzz"

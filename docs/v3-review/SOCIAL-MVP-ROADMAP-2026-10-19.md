@@ -62,13 +62,18 @@ What has to be true before strangers use it (hosting and mainnet are yours, as b
 
 Most of this exists already on the chain side: a project's DAO can open a work budget that pays in Shares (not money),
 contributors claim tasks, reviewers accept the work, and the Shares are awarded (`scripts/cli-no-raise-e2e.sh` runs that
-whole journey; the Work tab and claim form are in the web app). What is missing for it to be a product:
+whole journey; the Work tab and claim form are in the web app). Built in the web app (D65,
+`scripts/web-contributor-e2e.sh` runs it in pages on a local chain):
 
-- A **"Start a contributor project"** path in Start that sets up the DAO with no sale at all, says plainly that it cannot
-  raise money, and opens a first work budget.
-- A **contribution page**: who earned how much of the token and for what, from the accepted claims.
-- A rule for **when the token can be traded**, if ever. Without a market, the legal and audit exposure is far smaller,
-  which is the reason to ship this before the raise.
+- **Built:** a **"Start a contributor project"** path in Start that makes the DAO with no sale at all, says plainly that
+  it cannot raise money, and opens a first work budget paying in Shares.
+- **Built:** a **Contributions** tab: who earned how much of the token and for which claim, read from the chain's award
+  events.
+- **Recommended, not built:** the rule for **when the token can be traded**
+  ([CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)). In short: not before the raise path is audited, lock
+  transfers in the first decision next, and if a market ever opens, trade a non-voting claim, not the voting Shares.
+  Without a market, the legal and audit exposure is far smaller, which is the reason to ship this before the raise.
+- **Still to do:** deploy the DAO maker (`OrgBinding`) on Sepolia beside the kit, so a Sepolia build can start one.
 - The contracts it uses (DAO, work budgets, Shares) are a smaller audit scope than the raise; on mainnet they still need
   that audit first.
 

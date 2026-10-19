@@ -182,6 +182,9 @@ export function useContributorStart() {
     (start: ContributorJob) => {
       if (inFlight.current || !storageKey || !wallet.wallet) return;
       inFlight.current = true;
+      // Kept before anything is sent: a reload during the first wallet prompt then offers to finish this project.
+      storeJob(storageKey, start);
+      setJob(start);
       let state = stateForJob(start);
       setFlow(state);
       const wallets = makeWalletAuctionEffects({
