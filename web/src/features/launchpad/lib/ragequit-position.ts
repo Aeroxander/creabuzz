@@ -18,6 +18,7 @@
  *
  *   total = shares.totalSupply() + loot.totalSupply()      // BEFORE the burn
  *   total -= shares.balanceOf(dao) + loot.balanceOf(dao)   // patch: the DAO's own
+ *   total -= lockGuard.totalLocked()                        // patch (D72): Shares still locked
  *   amt   = sharesToBurn + lootToBurn
  *   pool  = tk == address(0) ? dao.balance : balanceOfThis(tk)
  *   due   = mulDiv(pool, amt, total)                        // floor
@@ -48,6 +49,7 @@ export const SELECTOR_DECIMALS = "0x313ce567"; // decimals()
 export const SELECTOR_SYMBOL = "0x95d89b41"; // symbol()
 export const SELECTOR_LOCK_GUARD = "0x36bc529d"; // lockGuard()
 export const SELECTOR_LOCKED_OF = "0xa5f1e282"; // lockedOf(address)
+export const SELECTOR_TOTAL_LOCKED = "0x56891412"; // totalLocked()
 
 function addressWord(address: string): string {
   return address.toLowerCase().slice(2).padStart(64, "0");
@@ -126,6 +128,7 @@ export interface RagequitRead {
     | "loot-total"
     | "lock-guard"
     | "locked-of"
+    | "total-locked"
     | "pool";
   to: string;
   data: string;
@@ -228,6 +231,15 @@ export function buildLockedOfRead(guard: string, holder: string): RagequitRead {
   };
 }
 
+/** `totalLocked()` on the lock guard: every Share it still holds back, which the exit leaves out (D72). */
+export function buildTotalLockedRead(guard: string): RagequitRead {
+  return {
+    name: "total-locked",
+    to: guard.toLowerCase(),
+    data: SELECTOR_TOTAL_LOCKED,
+  };
+}
+
 /**
  * What the holder can actually burn: the balance minus whatever the lock guard
  * still holds back (the patched Shares refuse a burn that would dip into it).
@@ -267,14 +279,23 @@ export interface PositionInput {
    * the denominator, so they never shrink a member's payout.
    */
   daoHeld: bigint;
+  /**
+   * Every Share the milestone lock still holds back (`totalLocked()`, zero with no lock). They can never leave yet, so
+   * the patched exit leaves them out of the denominator too (D72).
+   */
+  lockedTotal: bigint;
   /** Per-token DAO pools (token address → balance). */
   pools: ReadonlyArray<{ token: string; pool: bigint }>;
 }
 
-/** The exit denominator: everything outstanding except what the DAO holds. */
+/**
+ * The exit denominator: everything outstanding except what the DAO holds and what the lock still holds back. A locked
+ * total above what is left makes the chain refuse the exit; here it claims nothing.
+ */
 export function exitDenominator(input: PositionInput): bigint {
   const outstanding = input.sharesTotal + input.lootTotal;
-  return input.daoHeld >= outstanding ? 0n : outstanding - input.daoHeld;
+  const left = input.daoHeld >= outstanding ? 0n : outstanding - input.daoHeld;
+  return input.lockedTotal >= left ? 0n : left - input.lockedTotal;
 }
 
 /**
@@ -318,6 +339,8 @@ export interface RagequitPosition {
   lootTotal: bigint;
   /** Shares + loot the DAO holds itself (outside the exit denominator). */
   daoHeld: bigint;
+  /** Every Share the lock still holds back, across the team (outside the exit denominator, D72). */
+  lockedTotal: bigint;
   /** Pools + claimable rows for a full exit of the burnable Shares (loot untouched). */
   rows: ClaimableRow[];
   /** True when nobody but the DAO holds Shares or Loot. */
@@ -366,10 +389,15 @@ export async function fetchRagequitPosition(
     await ethCall(endpoint, guardRead.to, guardRead.data),
   );
   let sharesLocked = 0n;
+  let lockedTotal = 0n;
   if (!/^0x0{40}$/.test(guard)) {
     const lockedRead = buildLockedOfRead(guard, holder);
     sharesLocked = decodeU256(
       await ethCall(endpoint, lockedRead.to, lockedRead.data),
+    );
+    const totalRead = buildTotalLockedRead(guard);
+    lockedTotal = decodeU256(
+      await ethCall(endpoint, totalRead.to, totalRead.data),
     );
   }
   const sharesTotal = results.get("shares-total") as bigint;
@@ -400,6 +428,7 @@ export async function fetchRagequitPosition(
     sharesTotal,
     lootTotal,
     daoHeld,
+    lockedTotal,
     pools,
   };
   const rows = deriveClaimablePosition(input);
@@ -414,6 +443,7 @@ export async function fetchRagequitPosition(
     sharesTotal,
     lootTotal,
     daoHeld,
+    lockedTotal,
     rows,
     zeroSupply: exitDenominator(input) === 0n,
   };

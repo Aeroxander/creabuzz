@@ -389,13 +389,14 @@ contract DaoLaunchKitTest is Test {
         (uint96 votingSupply,,,,,,,,,) = dao.proposalVotingRules(1);
         assertEq(votingSupply, 700e18 - waiting);
         assertEq(policy.weightFor(bytes32(uint256(1)), address(dao), uint48(block.number - 1)), 0);
-        // And her exit divides the treasury by the 700 that are members' Shares, not by 1000.
+        // And her exit divides the treasury by the members' Shares that can leave: 700 less the team's 240 still locked
+        // (D72), not by 1000 or 700.
         address[] memory assets = new address[](1);
         assets[0] = address(currency);
         uint256 before_ = currency.balanceOf(alice);
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 700e18);
+        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 460e18);
         assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO's allocation is untouched");
     }
 
@@ -440,8 +441,8 @@ contract DaoLaunchKitTest is Test {
         dao.ragequit(assets, 180e18, 0);
         assertEq(
             currency.balanceOf(alice) - beforeExit,
-            uint256(800e18) * 180e18 / 700e18,
-            "800 over the 700 member Shares, times her 180"
+            uint256(800e18) * 180e18 / 460e18,
+            "800 over the 460 member Shares that can leave (700 less the team's 240 still locked, D72), times her 180"
         );
     }
 
@@ -553,7 +554,8 @@ contract DaoLaunchKitTest is Test {
         uint256 before_ = currency.balanceOf(alice);
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 700e18);
+        // 700 member Shares less the team's 240 still locked (D72).
+        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 460e18);
     }
 
     function test_governance_can_only_be_held_closed_once_and_only_into_the_future() public {

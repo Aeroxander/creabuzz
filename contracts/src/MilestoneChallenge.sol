@@ -133,6 +133,9 @@ contract MilestoneChallenge {
     /// @notice What settling a vote could not pay out because the currency refused the transfer (an issuer can block an
     /// address, as USDC's can). It waits here for its owner, who takes it with `withdrawOwed` once the currency lets them.
     mapping(address => uint256) public owed;
+    /// @notice Every tranche still neither unlocked nor forfeited, across the team: the Shares the DAO's exit leaves out of its
+    /// total (D72). Kept as a counter so an exit reads one slot, not every tranche; it always equals the sum of `lockedOf`.
+    uint256 public totalLocked;
 
     uint256 private _entered = 1;
 
@@ -232,6 +235,7 @@ contract MilestoneChallenge {
                 uint256 amount = (totals[b] * bps[i]) / BPS;
                 if (amount == 0) revert BadSchedule();
                 _tranches[who].push(Tranche(checks[i], uint96(amount), false, false));
+                totalLocked += amount;
             }
         }
     }
@@ -483,6 +487,7 @@ contract MilestoneChallenge {
             Tranche storage t = _tranches[_team[b]][index];
             if (t.unlocked || t.forfeited) continue;
             t.unlocked = true;
+            totalLocked -= t.amount;
             uint256 id = badge.mint(_team[b], t.checkHash, uint16(index), t.amount);
             emit Unlocked(_team[b], index, t.amount, id);
         }
@@ -504,6 +509,7 @@ contract MilestoneChallenge {
                 total += t[i].amount;
             }
         }
+        totalLocked -= total;
         if (total != 0) IChallengeShares(IChallengeDao(dao).shares()).burnForfeited(beneficiary, total);
         emit Forfeited(beneficiary, total);
     }

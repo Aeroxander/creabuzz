@@ -62,8 +62,11 @@ contract RecordingValidator {
 /// @dev A lock guard with settable locked amounts.
 contract FixedLocks {
     mapping(address => uint256) public lockedOf;
+    /// @dev The sum of `lockedOf`, as a real lock keeps it (D72).
+    uint256 public totalLocked;
 
     function set(address holder, uint256 amount) external {
+        totalLocked = totalLocked - lockedOf[holder] + amount;
         lockedOf[holder] = amount;
     }
 }

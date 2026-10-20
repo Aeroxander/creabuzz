@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 import {VotingFixture} from "./helpers/VotingFixture.sol";
-import {Shares} from "../src/majeur/MolochPatched.sol";
+import {Moloch, Shares} from "../src/majeur/MolochPatched.sol";
 
 /// @dev Read through an interface so the test compiles (and fails) against a DAO without them.
 interface IExitFlags {
@@ -13,6 +13,17 @@ interface IExitFlags {
 contract RefusingGuard {
     function lockedOf(address) external pure returns (uint256) {
         revert("no exit");
+    }
+}
+
+/// @dev A guard whose locked total is more than exists: the exit must refuse, not wrap around (D72).
+contract OverreportingGuard {
+    function lockedOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function totalLocked() external pure returns (uint256) {
+        return 1_000_000e18;
     }
 }
 
@@ -140,5 +151,14 @@ contract ExitProtectionsTest is VotingFixture {
         vm.prank(address(dao));
         vm.expectRevert(Shares.LockGuardSet.selector);
         shares.setLockGuard(refusing);
+    }
+
+    function test_a_locked_total_larger_than_what_exists_makes_the_exit_refuse_not_pay() public {
+        address guard = address(new OverreportingGuard());
+        vm.prank(address(dao));
+        shares.setLockGuard(guard);
+        vm.prank(ALICE);
+        vm.expectRevert(Moloch.NotOk.selector);
+        dao.ragequit(ether_, 10e18, 0);
     }
 }

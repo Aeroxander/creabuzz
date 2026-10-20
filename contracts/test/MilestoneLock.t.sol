@@ -11,6 +11,10 @@ import {Shares} from "../src/majeur/MolochPatched.sol";
 
 /// @notice The founders hold their Shares and vote with them from the start, but the part a milestone covers cannot
 /// be sold or ragequit until reviewers have judged that milestone and it has been unlocked.
+interface ILockedTotal {
+    function totalLocked() external view returns (uint256);
+}
+
 contract MilestoneLockTest is VotingFixture {
     address internal constant DAVE = address(0xDA7E);
     address internal constant ERIN = address(0xE41);
@@ -269,8 +273,10 @@ contract MilestoneLockTest is VotingFixture {
     // ---- the DAO's escape -----------------------------------------------------------------------
 
     function test_the_dao_can_forfeit_what_a_founder_never_earned_and_it_is_burned_not_freed() public {
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 80e18, "30% and 50% of her 100 (D72)");
         _earn(bytes32("alpha"), PROJECT, CHECK_ONE);
         lock.unlock(ALICE, 0, address(mandate), bytes32("alpha"));
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 50e18, "the first tranche left the total");
         vm.prank(ALICE);
         vm.expectRevert(MilestoneLock.OnlyDao.selector);
         lock.forfeit(ALICE);
@@ -287,6 +293,7 @@ contract MilestoneLockTest is VotingFixture {
         uint256 supply = shares.totalSupply();
         vm.prank(address(dao));
         assertEq(lock.forfeit(ALICE), 50e18, "the unearned second tranche");
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 0);
         // Burned on the spot: the supply fell by exactly that, and she never held it free.
         assertEq(shares.totalSupply(), supply - 50e18);
         assertEq(shares.balanceOf(ALICE), 50e18);

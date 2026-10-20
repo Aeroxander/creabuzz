@@ -1094,6 +1094,20 @@ contract Moloch {
             // can never be ragequit: leaving them in the denominator would shrink every member's exit by their weight.
             total -= _shares.balanceOf(address(this)) + _loot.balanceOf(address(this));
     // @@CREABUZZ PATCH END ragequit-excludes-treasury-shares
+    // @@CREABUZZ PATCH BEGIN ragequit-excludes-locked-shares
+            // Shares a milestone lock still holds back can never leave, so they claim nothing yet (D72): a holder who
+            // leaves before a milestone takes their full part of what is left, and each unlock adds its tranche to the
+            // total. Locked Shares are held by team members, never by the DAO, so nothing is subtracted twice; and this
+            // runs unchecked, so a total larger than what exists must refuse rather than wrap.
+            {
+                address guard = _shares.lockGuard();
+                if (guard != address(0)) {
+                    uint256 lockedTotal = ISharesLockGuard(guard).totalLocked();
+                    if (lockedTotal > total) revert NotOk();
+                    total -= lockedTotal;
+                }
+            }
+    // @@CREABUZZ PATCH END ragequit-excludes-locked-shares
     // @@CREABUZZ PATCH BEGIN ragequit-leaving-flag
             // Shares and Loot accept a burn only while this is up (D73), so no vote can burn a holder's units: the
             // only burns are a holder's own exit here, and the milestone lock's forfeits through `burnForfeited`.
@@ -1414,6 +1428,8 @@ interface IShareTransferValidator {
 /// @notice Who may not move how many of a holder's Shares: the floor a balance cannot go below.
 interface ISharesLockGuard {
     function lockedOf(address holder) external view returns (uint256);
+    /// @notice Every Share the lock still holds back, across all holders (D72).
+    function totalLocked() external view returns (uint256);
 }
 // @@CREABUZZ PATCH END erc20c-interfaces
 contract Shares {

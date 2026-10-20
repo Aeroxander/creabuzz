@@ -115,11 +115,16 @@ contract MilestoneLock {
                 uint256 amount = (totals[b] * bps[i]) / BPS;
                 if (amount == 0) revert BadSchedule();
                 _tranches[who].push(Tranche(checks[i], uint96(amount), false, false));
+                totalLocked += amount;
             }
         }
     }
 
     // ---- what the Shares contract asks ------------------------------------------------------------
+
+    /// @notice Every tranche still neither unlocked nor forfeited, across the team: the Shares the DAO's exit leaves out of its
+    /// total (D72). Kept as a counter so an exit reads one slot, not every tranche; it always equals the sum of `lockedOf`.
+    uint256 public totalLocked;
 
     /// @notice How many of `holder`'s Shares cannot leave yet: the tranches neither unlocked nor forfeited.
     function lockedOf(address holder) external view returns (uint256 locked) {
@@ -175,6 +180,7 @@ contract MilestoneLock {
 
         claimUsed[claims][claimId] = true;
         tranche.unlocked = true;
+        totalLocked -= tranche.amount;
         uint256 id = badge.mint(beneficiary, tranche.checkHash, uint16(index), tranche.amount);
         emit Unlocked(beneficiary, index, tranche.amount, claimId, id);
     }
@@ -193,6 +199,7 @@ contract MilestoneLock {
                 total += t[i].amount;
             }
         }
+        totalLocked -= total;
         if (total != 0) IMilestoneShares(IMilestoneDao(dao).shares()).burnForfeited(beneficiary, total);
         emit Forfeited(beneficiary, total);
     }

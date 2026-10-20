@@ -3,7 +3,7 @@
 // module, so the Forge test compares the chain's ragequit with the code people see, not with a copy of it.
 //
 // Usage: node exit-preview.mjs <sharesBalance> <locked> <lootToBurn> <lootBalance> <sharesTotal> <lootTotal>
-//                              <daoHeld> <poolUsdc> <poolEth>
+//                              <daoHeld> <lockedTotal> <poolUsdc> <poolEth>
 // Prints 0x + abi.encode(uint256 burnable, uint256 dueUsdc, uint256 dueEth): the exit burns every free Share (as the
 // screen offers) plus `lootToBurn` Loot.
 import {
@@ -19,6 +19,7 @@ const [
   sharesTotal,
   lootTotal,
   daoHeld,
+  lockedTotal,
   poolUsdc,
   poolEth,
 ] = process.argv.slice(2).map((v) => BigInt(v));
@@ -32,6 +33,7 @@ const rows = deriveClaimablePosition({
   sharesTotal,
   lootTotal,
   daoHeld,
+  lockedTotal,
   pools: [
     { token: "usdc", pool: poolUsdc },
     { token: "eth", pool: poolEth },

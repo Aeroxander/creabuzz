@@ -60,16 +60,17 @@ contract RagequitPreviewFfiTest is Test {
         uint256 sharesTotal = shares.totalSupply();
         uint256 lootTotal = loot.totalSupply();
         uint256 daoHeld = shares.balanceOf(address(dao)) + loot.balanceOf(address(dao));
+        uint256 lockedTotal = lock.totalLocked();
         uint256 poolUsdc = usdc.balanceOf(address(dao));
         uint256 poolEth = address(dao).balance;
 
         (uint256 burnable, uint256 dueUsdc, uint256 dueEth) = _screen(
-            [sharesBalance, locked, lootToBurn, lootBalance, sharesTotal, lootTotal, daoHeld, poolUsdc, poolEth]
+            [sharesBalance, locked, lootToBurn, lootBalance, sharesTotal, lootTotal, daoHeld, lockedTotal, poolUsdc, poolEth]
         );
 
         // The Solidity port the invariant handler uses says the same thing as the screen.
         assertEq(burnable, ExitPreview.burnable(sharesBalance, locked), "port: burnable");
-        uint256 total = ExitPreview.denominator(sharesTotal, lootTotal, daoHeld);
+        uint256 total = ExitPreview.denominator(sharesTotal, lootTotal, daoHeld, lockedTotal);
         assertEq(dueUsdc, ExitPreview.due(poolUsdc, burnable + lootToBurn, total), "port: USDC");
         assertEq(dueEth, ExitPreview.due(poolEth, burnable + lootToBurn, total), "port: ETH");
 
@@ -141,12 +142,12 @@ contract RagequitPreviewFfiTest is Test {
         vm.roll(block.number + 1);
     }
 
-    function _screen(uint256[9] memory v) internal returns (uint256 burnable, uint256 dueUsdc, uint256 dueEth) {
-        string[] memory cmd = new string[](12);
+    function _screen(uint256[10] memory v) internal returns (uint256 burnable, uint256 dueUsdc, uint256 dueEth) {
+        string[] memory cmd = new string[](13);
         cmd[0] = "node";
         cmd[1] = "--experimental-strip-types";
         cmd[2] = "test/ffi/exit-preview.mjs";
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < 10; ++i) {
             cmd[3 + i] = vm.toString(v[i]);
         }
         (burnable, dueUsdc, dueEth) = abi.decode(vm.ffi(cmd), (uint256, uint256, uint256));

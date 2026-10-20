@@ -24,6 +24,7 @@ import {
   buildLockedOfRead,
   buildLockGuardRead,
   buildRagequitReads,
+  buildTotalLockedRead,
   buildSupplyReads,
   burnableShares,
   decodeAddress,
@@ -37,6 +38,7 @@ import {
   SELECTOR_LOOT,
   SELECTOR_RAGEQUITTABLE,
   SELECTOR_SHARES,
+  SELECTOR_TOTAL_LOCKED,
   SELECTOR_TOTAL_SUPPLY,
 } from "./ragequit-position.ts";
 import { ETH_TOKEN } from "./ragequit-tx.ts";
@@ -59,6 +61,7 @@ test("the read vocabulary is the pinned token representation (cast sig goldens)"
   assert.equal(SELECTOR_RAGEQUITTABLE, "0x14a6d7de");
   assert.equal(SELECTOR_LOCK_GUARD, "0x36bc529d"); // cast sig 'lockGuard()'
   assert.equal(SELECTOR_LOCKED_OF, "0xa5f1e282"); // cast sig 'lockedOf(address)'
+  assert.equal(SELECTOR_TOTAL_LOCKED, "0x56891412"); // cast sig 'totalLocked()'
 });
 
 test("position reads are balanceOf/totalSupply on TOKEN addresses — not 37011 events", () => {
@@ -135,6 +138,47 @@ test("the lock reads are lockGuard() on the Shares token, then lockedOf(holder) 
   );
 });
 
+test("Shares a milestone lock still holds back leave the denominator too (D72)", () => {
+  // 1000 Shares: the DAO holds 300, the team's 240 are still locked. A backer
+  // with 180 takes 180 of the 460 that can leave, not 180 of 700.
+  const input = {
+    sharesToBurn: 180n,
+    lootToBurn: 0n,
+    sharesBalance: 180n,
+    lootBalance: 0n,
+    sharesTotal: 1000n,
+    lootTotal: 0n,
+    daoHeld: 300n,
+    lockedTotal: 240n,
+    pools: [{ token: ETH_TOKEN, pool: 800n }],
+  };
+  assert.equal(exitDenominator(input), 460n);
+  assert.equal(deriveClaimablePosition(input)[0].due, 313n); // floor(800*180/460)
+});
+
+test("a locked total above what can leave claims nothing, as the chain refuses it", () => {
+  const input = {
+    sharesToBurn: 10n,
+    lootToBurn: 0n,
+    sharesBalance: 10n,
+    lootBalance: 0n,
+    sharesTotal: 100n,
+    lootTotal: 0n,
+    daoHeld: 50n,
+    lockedTotal: 60n,
+    pools: [{ token: ETH_TOKEN, pool: 1000n }],
+  };
+  assert.equal(exitDenominator(input), 0n);
+  assert.equal(deriveClaimablePosition(input)[0].due, 0n);
+});
+
+test("the locked total is totalLocked() on the guard", () => {
+  const guard = `0x${"ee".repeat(20)}`;
+  const read = buildTotalLockedRead(guard);
+  assert.equal(read.to, guard);
+  assert.equal(read.data, SELECTOR_TOTAL_LOCKED);
+});
+
 test("Shares the DAO holds itself leave the denominator (ragequit-excludes-treasury-shares)", () => {
   // 1000 Shares outstanding, 760 of them the DAO's own: a member with 100
   // takes 100/240 of each pool, not 100/1000.
@@ -146,6 +190,7 @@ test("Shares the DAO holds itself leave the denominator (ragequit-excludes-treas
     sharesTotal: 1000n,
     lootTotal: 0n,
     daoHeld: 760n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 2400n }],
   };
   assert.equal(exitDenominator(input), 240n);
@@ -163,6 +208,7 @@ test("loot the DAO holds also leaves the denominator", () => {
     sharesTotal: 100n,
     lootTotal: 100n,
     daoHeld: 100n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 1000n }],
   };
   assert.equal(exitDenominator(input), 100n);
@@ -178,6 +224,7 @@ test("when only the DAO holds anything the denominator is zero and nothing is cl
     sharesTotal: 100n,
     lootTotal: 0n,
     daoHeld: 100n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 1000n }],
   };
   assert.equal(exitDenominator(input), 0n);
@@ -208,6 +255,7 @@ test("full-shares exit: due = pool * shares / (sharesTotal + lootTotal)", () => 
     sharesTotal: 1000n,
     lootTotal: 500n, // loot counts in the denominator (Moloch.sol:772)
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [
       { token: ETH_TOKEN, pool: 300n },
       { token: ERC20, pool: 7n },
@@ -229,6 +277,7 @@ test("partial burns prorate against the same pre-burn denominator", () => {
     sharesTotal: 1000n,
     lootTotal: 1000n,
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 1000n }],
   });
   // amt = 500, total = 2000 → quarter of the pool.
@@ -244,6 +293,7 @@ test("zero supply claims zero — the chain's mulDiv(…, 0) must never be reach
     sharesTotal: 0n,
     lootTotal: 0n,
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 100n }],
   });
   assert.equal(rows[0].due, 0n);
@@ -258,6 +308,7 @@ test("a zero burn claims zero (NotOk would revert onchain)", () => {
     sharesTotal: 100n,
     lootTotal: 100n,
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 100n }],
   });
   assert.equal(rows[0].due, 0n);
@@ -272,6 +323,7 @@ test("overdraw detection flags burns above the holder's own position", () => {
     sharesTotal: 100n,
     lootTotal: 100n,
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [],
   };
   assert.equal(overdrawsPosition(base), true);
@@ -290,6 +342,7 @@ test("floor rounding never overpays — a full-exit due is bounded by the pool",
     sharesTotal: 7n,
     lootTotal: 0n,
     daoHeld: 0n,
+    lockedTotal: 0n,
     pools: [{ token: ETH_TOKEN, pool: 10n }],
   });
   assert.equal(rows[0].due, 4n); // 10*3/7 = 4.28… → 4

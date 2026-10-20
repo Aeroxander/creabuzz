@@ -44,6 +44,7 @@ import {
 } from "../lib/ragequit-flow";
 import { buildRagequitTx, ETH_TOKEN } from "../lib/ragequit-tx";
 import {
+  exitDenominator,
   fetchRagequitPosition,
   fetchTokenInfo,
   overdrawsPosition,
@@ -370,10 +371,20 @@ function PositionBody({
             <dd className="text-right">{formatShares(position.lootBalance)}</dd>
           </>
         ) : null}
-        <dt>Shares held outside the DAO</dt>
+        <dt>Shares that can leave now</dt>
         <dd className="text-right">
           {formatShares(
-            position.sharesTotal + position.lootTotal - position.daoHeld,
+            exitDenominator({
+              sharesToBurn: 0n,
+              lootToBurn: 0n,
+              sharesBalance: position.sharesBalance,
+              lootBalance: position.lootBalance,
+              sharesTotal: position.sharesTotal,
+              lootTotal: position.lootTotal,
+              daoHeld: position.daoHeld,
+              lockedTotal: position.lockedTotal,
+              pools: [],
+            }),
           )}
         </dd>
       </dl>
@@ -444,6 +455,7 @@ function RagequitDialog({
         sharesTotal: position.sharesTotal,
         lootTotal: position.lootTotal,
         daoHeld: position.daoHeld,
+        lockedTotal: position.lockedTotal,
         pools: [],
       })
     : true;

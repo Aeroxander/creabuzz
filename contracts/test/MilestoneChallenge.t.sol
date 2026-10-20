@@ -9,6 +9,11 @@ import {Shares} from "../src/majeur/MolochPatched.sol";
 /// @notice The founders vote with their Shares from the start, but the part a milestone covers cannot be sold or
 /// ragequit until the milestone has stood: published, waited out, and either not objected to or objected to without the
 /// holders upholding it.
+/// @dev Read through an interface so these tests compile (and fail) against a lock without the counter.
+interface ILockedTotal {
+    function totalLocked() external view returns (uint256);
+}
+
 contract MilestoneChallengeTest is VotingFixture {
     address internal constant DAVE = address(0xDA7E); // the second team member
     address internal constant ERIN = address(0xE41);
@@ -837,6 +842,62 @@ contract MilestoneChallengeTest is VotingFixture {
     }
 
     // ---- the DAO --------------------------------------------------------------------------------
+
+    // ---- the exit counts only the Shares that can leave (D72) -------------------------------------
+
+    /// @dev Everyone outside the DAO, less what the lock still holds: Shares 470.5 + BOB's Loot 100 - the DAO's 200.
+    function _exitPays(address who, uint256 amount) internal returns (uint256 paid) {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+        uint256 before_ = who.balance;
+        vm.prank(who);
+        dao.ragequit(tokens, amount, 0);
+        paid = who.balance - before_;
+    }
+
+    function _lockedTotalMatchesTheTeam() internal view {
+        assertEq(ILockedTotal(address(lock)).totalLocked(), lock.lockedOf(ALICE) + lock.lockedOf(DAVE));
+    }
+
+    function test_leaving_before_any_milestone_counts_only_the_shares_that_can_leave() public {
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 150e18);
+        _lockedTotalMatchesTheTeam();
+        // 370.5 outside the DAO, 150 of them locked: BOB's 60 are 60 of the 220.5 that can leave.
+        vm.deal(address(dao), 220.5 ether);
+        assertEq(_exitPays(BOB, 60e18), 60 ether);
+    }
+
+    function test_an_unlock_adds_the_teams_tranche_to_the_exit_total() public {
+        _submit(0);
+        _pass(7 days);
+        lock.finish(0);
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 120e18, "20% of the team's 150 unlocked");
+        _lockedTotalMatchesTheTeam();
+        vm.deal(address(dao), 250.5 ether);
+        assertEq(_exitPays(BOB, 60e18), 60 ether, "60 of the 250.5 that can leave now");
+    }
+
+    function test_a_forfeit_leaves_every_other_exit_unchanged() public {
+        vm.prank(address(dao));
+        lock.forfeit(DAVE);
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 100e18);
+        _lockedTotalMatchesTheTeam();
+        // DAVE's 50 were burned and were locked: the total that can leave is still 220.5.
+        vm.deal(address(dao), 220.5 ether);
+        assertEq(_exitPays(BOB, 60e18), 60 ether);
+    }
+
+    function test_an_upheld_late_objection_lowers_the_locked_total_by_what_it_burns() public {
+        _stand(0);
+        uint256 lockedBefore = ILockedTotal(address(lock)).totalLocked();
+        assertEq(lockedBefore, 120e18);
+        _pass(10 days);
+        _object(BOB, 0);
+        _pass(5 days);
+        lock.resolve(0);
+        assertEq(ILockedTotal(address(lock)).totalLocked(), 0, "everything still locked was burned");
+        _lockedTotalMatchesTheTeam();
+    }
 
     function test_the_dao_can_give_up_a_departed_members_tranches_and_nobody_else_can() public {
         vm.prank(BOB);

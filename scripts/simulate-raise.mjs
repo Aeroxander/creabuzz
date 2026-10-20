@@ -680,6 +680,7 @@ async function stepExit(expect) {
     sharesTotal: position.sharesTotal,
     lootTotal: position.lootTotal,
     daoHeld: position.daoHeld,
+    lockedTotal: position.lockedTotal,
     pools: position.rows.map((row) => ({ token: row.token, pool: row.pool })),
   });
   const due = rows[0].due;

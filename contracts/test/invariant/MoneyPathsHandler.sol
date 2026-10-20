@@ -274,7 +274,10 @@ contract MoneyPathsHandler is Test {
         if (sharesToBurn == 0 && lootToBurn == 0) return;
         uint256 burnable = ExitPreview.burnable(sBal, lock.lockedOf(who));
         uint256 total = ExitPreview.denominator(
-            shares.totalSupply(), loot.totalSupply(), shares.balanceOf(address(dao)) + loot.balanceOf(address(dao))
+            shares.totalSupply(),
+            loot.totalSupply(),
+            shares.balanceOf(address(dao)) + loot.balanceOf(address(dao)),
+            lock.totalLocked()
         );
         address[] memory tokens = new address[](withEth ? 2 : 1);
         if (withEth) {

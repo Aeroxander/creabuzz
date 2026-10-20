@@ -13,10 +13,16 @@ library ExitPreview {
         return locked >= balance ? 0 : balance - locked;
     }
 
-    /// @dev `exitDenominator`: everything outstanding except what the DAO holds itself.
-    function denominator(uint256 sharesTotal, uint256 lootTotal, uint256 daoHeld) internal pure returns (uint256) {
+    /// @dev `exitDenominator`: everything outstanding except what the DAO holds itself and what the lock still holds
+    /// back (D72).
+    function denominator(uint256 sharesTotal, uint256 lootTotal, uint256 daoHeld, uint256 lockedTotal)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256 outstanding = sharesTotal + lootTotal;
-        return daoHeld >= outstanding ? 0 : outstanding - daoHeld;
+        uint256 left = daoHeld >= outstanding ? 0 : outstanding - daoHeld;
+        return lockedTotal >= left ? 0 : left - lockedTotal;
     }
 
     /// @dev One row of `deriveClaimablePosition`: floor(pool * amt / total), zero for a zero denominator or burn.
