@@ -71,6 +71,8 @@ contract ContributorKit {
     uint64 internal constant PROPOSAL_TTL = 14 days;
     uint64 internal constant TIMELOCK = 1 days;
     uint16 internal constant QUORUM_BPS = 500;
+    /// @dev `Shares.NO_CAP`: awards only, with no yearly limit.
+    uint16 internal constant NO_CAP = type(uint16).max;
 
     constructor(Summoner summoner_) {
         if (address(summoner_).code.length == 0) revert InvalidTerms();
@@ -123,7 +125,7 @@ contract ContributorKit {
         address predicted = predictDao(msg.sender, p.founderShares, p.salt);
         uint96 threshold = thresholdFor(p.founderShares);
 
-        Call[] memory setup = new Call[](withProject ? 5 : 4);
+        Call[] memory setup = new Call[](withProject ? 6 : 5);
         setup[0] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (threshold)));
         setup[1] = Call(
             address(budgetFactory),
@@ -147,7 +149,9 @@ contract ContributorKit {
         setup[next++] = Call(predicted, 0, abi.encodeCall(Moloch.setTransfersLocked, (true, true)));
         // No lock guard, decided now and for good: a guard a later vote installed could refuse every exit (D73).
         address predictedShares = _predictShares(predicted);
-        setup[next] = Call(predictedShares, 0, abi.encodeCall(Shares.setLockGuard, (address(0))));
+        setup[next++] = Call(predictedShares, 0, abi.encodeCall(Shares.setLockGuard, (address(0))));
+        // Shares only from reviewed awards, with no yearly limit (D79): a vote the founder carries cannot mint more.
+        setup[next] = Call(predictedShares, 0, abi.encodeCall(Shares.setIssuanceRule, (NO_CAP)));
 
         (address[] memory holders, uint256[] memory amounts) = _holders(msg.sender, p.founderShares);
         dao = address(
@@ -175,6 +179,7 @@ contract ContributorKit {
                 || made.timelockDelay() != TIMELOCK || policy == address(0) || AllocationVoting(policy).dao() != dao
                 || budgetFactory.daos(budget) != dao || !Shares(address(made.shares())).transfersLocked()
                 || address(made.shares()) != predictedShares || !Shares(predictedShares).lockGuardSet()
+                || !Shares(predictedShares).awardsOnly() || Shares(predictedShares).issuanceCapBps() != NO_CAP
         ) revert SetupNotApplied();
         if (withProject) {
             (address manager,,,,, uint128 shareBudget,) = TreasuryMandate(budget).projects(p.projectId);

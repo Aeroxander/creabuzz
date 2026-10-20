@@ -102,6 +102,9 @@ interface IKitSetThreshold {
 interface IKitLockable {
     function setLockGuard(address guard) external;
     function lockGuardSet() external view returns (bool);
+    function setIssuanceRule(uint16 capBps) external;
+    function awardsOnly() external view returns (bool);
+    function issuanceCapBps() external view returns (uint16);
 }
 
 /// @title DaoLaunchKit
@@ -137,6 +140,8 @@ contract DaoLaunchKit {
     IKitAuctionFactory public immutable factory;
     /// @notice The Shares implementation the summoner's DAOs clone: the DAO's Shares address is computed from it, so
     /// the lock can be pointed at them in the DAO's own initialization.
+    /// @notice The most new Shares a year in a DAO this kit makes, in basis points of the Shares that count on exit (D76).
+    uint16 public constant YEARLY_ISSUANCE_BPS = 1000;
     address public immutable sharesImplementation;
     /// @notice The work budget factory of the summoner's DAOs, where the milestone panel is named.
     IKitMandateFactory public immutable mandateFactory;
@@ -327,7 +332,7 @@ contract DaoLaunchKit {
             revert PanelMismatch();
         }
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = 3 + (p.proposalThreshold == 0 ? 0 : 1) + (lock != address(0) && !challenged ? 1 : 0);
+        uint256 calls = 4 + (p.proposalThreshold == 0 ? 0 : 1) + (lock != address(0) && !challenged ? 1 : 0);
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
@@ -347,6 +352,10 @@ contract DaoLaunchKit {
         // The lock guard is chosen now, and a launch with no team chooses "none": either way no later vote can install
         // one, which could refuse every exit (D73).
         initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
+        // New Shares only as pay for reviewed work, at most 10% a year of the Shares that count on exit (D76). A later
+        // vote may lower it, never raise it.
+        initCalls[next++] =
+            KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setIssuanceRule, (YEARLY_ISSUANCE_BPS)));
         if (lock != address(0)) {
             if (!challenged) {
                 initCalls[next++] = KitCall(
@@ -365,6 +374,10 @@ contract DaoLaunchKit {
         address shares = IKitDao(dao).shares();
         require(shares == predictedShares, "kit: shares address");
         require(IKitLockable(shares).lockGuardSet(), "kit: lock guard");
+        require(
+            IKitLockable(shares).awardsOnly() && IKitLockable(shares).issuanceCapBps() == YEARLY_ISSUANCE_BPS,
+            "kit: issuance rule"
+        );
         // The factory the panel was named in is the one this DAO's own voting policy uses, or the lock would not honour it.
         require(IKitDao(dao).votingWeight() == predictedPolicy, "kit: policy address");
         require(IKitPolicy(IKitDao(dao).votingWeight()).mandateFactory() == address(mandateFactory), "kit: mandate factory");

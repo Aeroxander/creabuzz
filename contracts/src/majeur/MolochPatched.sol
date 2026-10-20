@@ -126,8 +126,24 @@ contract Moloch {
         AllocationVoting policy = AllocationVoting(votingWeight);
         require(amount != 0 && policy.mandateFactory().daos(mandate) == address(this), NotOk());
         address owner = TreasuryMandate(mandate).consumeContribution(claimId, amount);
+        // Shares under the issuance rule accept a mint only while this is up (D76): new Shares are pay for reviewed work.
+        assembly ("memory-safe") {
+            tstore(AWARDING_SLOT, 1)
+        }
         if (convert) convertLootToShares(owner, amount);
         else shares.mintFromMoloch(owner, amount);
+        assembly ("memory-safe") {
+            tstore(AWARDING_SLOT, 0)
+        }
+    }
+
+    uint256 constant AWARDING_SLOT = 0x6372656162757a7a2e617761726473; // "creabuzz.awards"
+
+    /// @notice True only while `awardContribution` mints: the one time Shares under the issuance rule accept a mint.
+    function awarding() public view returns (bool on) {
+        assembly ("memory-safe") {
+            on := tload(AWARDING_SLOT)
+        }
     }
 
     /// @notice Atomic notifications from the DAO's actual ownership tokens.
@@ -1624,10 +1640,72 @@ contract Shares {
     // @@CREABUZZ PATCH END erc20c-surface
 
     function mintFromMoloch(address to, uint256 amount) public payable onlyDAO {
+    // @@CREABUZZ PATCH BEGIN shares-issuance-mint
+        if (awardsOnly) {
+            // New Shares are pay for reviewed work: only an award mints them, within the year's allowance, and a
+            // reserve the DAO holds is spent on the award before anything new is created (D76).
+            if (!Moloch(DAO).awarding()) revert Unauthorized();
+            _countIssued(amount);
+            uint256 held = balanceOf[DAO];
+            if (held != 0) {
+                uint256 moved = held < amount ? held : amount;
+                _moveTokens(DAO, to, moved);
+                amount -= moved;
+                if (amount == 0) return;
+            }
+        }
+    // @@CREABUZZ PATCH END shares-issuance-mint
         _mint(to, amount);
         _autoSelfDelegate(to);
         _afterVotingBalanceChange(to, int256(amount));
     }
+    // @@CREABUZZ PATCH BEGIN shares-issuance-rule
+
+    /// @notice "Awards only, with no yearly limit": the setting contributor projects use (D79).
+    uint16 public constant NO_CAP = type(uint16).max;
+    /// @notice Once on, never off: Shares are minted, or leave the DAO's own holding, only inside an award.
+    bool public awardsOnly;
+    /// @notice The most new Shares a year, in basis points of the Shares that count when someone leaves; `NO_CAP` for
+    /// none. It can be lowered and never raised.
+    uint16 public issuanceCapBps;
+    /// @notice When the current year of the allowance began (the first new Share starts the first one).
+    uint64 public yearStart;
+    /// @notice The Shares that counted when someone leaves, at the start of the year: outside the DAO, less still locked.
+    uint128 public yearBase;
+    /// @notice New Shares (minted or handed out of the DAO's holding) so far this year.
+    uint128 public issuedThisYear;
+
+    event IssuanceRuleSet(uint16 capBps);
+    error IssuanceRuleFixed();
+    error OverIssuance();
+
+    /// @notice Turn the issuance rule on with a yearly cap, or lower the cap. The kits call it at birth (D76, D79).
+    function setIssuanceRule(uint16 capBps) public payable onlyDAO {
+        if ((capBps > 10_000 && capBps != NO_CAP) || (awardsOnly && capBps > issuanceCapBps)) revert IssuanceRuleFixed();
+        awardsOnly = true;
+        issuanceCapBps = capBps;
+        emit IssuanceRuleSet(capBps);
+    }
+
+    function _countIssued(uint256 amount) internal {
+        uint16 cap = issuanceCapBps;
+        if (cap == NO_CAP) return;
+        if (yearStart == 0 || block.timestamp >= uint256(yearStart) + 365 days) {
+            uint256 base = totalSupply - balanceOf[DAO];
+            address guard = lockGuard;
+            if (guard != address(0)) {
+                uint256 locked = ISharesLockGuard(guard).totalLocked();
+                base = locked >= base ? 0 : base - locked;
+            }
+            yearStart = uint64(block.timestamp);
+            yearBase = uint128(base);
+            issuedThisYear = 0;
+        }
+        uint256 issued = uint256(issuedThisYear) + amount;
+        if (issued * 10_000 > uint256(yearBase) * cap) revert OverIssuance();
+        issuedThisYear = uint128(issued);
+    }
+    // @@CREABUZZ PATCH END shares-issuance-rule
 
     function burnFromMoloch(address from, uint256 amount) public payable onlyDAO {
     // @@CREABUZZ PATCH BEGIN shares-burn-lock
@@ -1672,6 +1750,8 @@ contract Shares {
 
     function _moveTokens(address from, address to, uint256 amount) internal {
     // @@CREABUZZ PATCH BEGIN shares-transfer-lock
+        // Under the issuance rule the DAO's own Shares leave only as an award (D76): handing them out is issuing them.
+        if (awardsOnly && from == DAO && to != DAO && !Moloch(DAO).awarding()) revert Unauthorized();
         _requireUnlocked(from, amount);
     // @@CREABUZZ PATCH END shares-transfer-lock
     // @@CREABUZZ PATCH BEGIN shares-transfer-recipient
@@ -2230,6 +2310,10 @@ contract Loot {
     }
 
     function mintFromMoloch(address to, uint256 amount) public payable onlyDAO {
+        // @@CREABUZZ PATCH BEGIN loot-issuance-closed
+        // A DAO under the issuance rule never creates Loot: it would count when someone leaves without being an award.
+        if (Moloch(DAO).shares().awardsOnly()) revert Unauthorized();
+        // @@CREABUZZ PATCH END loot-issuance-closed
         _mint(to, amount);
     }
 

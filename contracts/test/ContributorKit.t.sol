@@ -101,6 +101,12 @@ contract ContributorKitTest is Test {
         Shares shares = dao.shares();
         assertEq(shares.lockGuard(), address(0));
         assertTrue(shares.lockGuardSet(), "the choice of no lock is made at birth and is final (D73)");
+        // Shares only from reviewed awards, with no yearly limit (D79): a vote the founder carries cannot mint.
+        assertTrue(shares.awardsOnly());
+        assertEq(shares.issuanceCapBps(), shares.NO_CAP());
+        vm.prank(address(dao));
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        shares.mintFromMoloch(FOUNDER, 1);
         vm.prank(address(dao));
         vm.expectRevert(Shares.LockGuardSet.selector);
         shares.setLockGuard(address(this));

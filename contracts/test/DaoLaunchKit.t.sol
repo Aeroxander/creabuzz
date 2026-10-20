@@ -9,7 +9,7 @@ import {MilestoneChallengeFactory} from "../src/MilestoneChallengeFactory.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
-import {Call, Moloch, Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
+import {Call, Loot, Moloch, Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {
     LaunchCurrency,
     LaunchPermit2,
@@ -205,6 +205,17 @@ contract DaoLaunchKitTest is Test {
         assertEq(shares.balanceOf(address(auction)), SALE, "the sale tranche sits in the auction");
         assertEq(shares.balanceOf(address(executor)), 0, "and the executor passed it all on");
         assertEq(shares.balanceOf(address(kit)), 0);
+
+        // New Shares only as pay for reviewed work, at most 10% a year (D76): a passed vote cannot mint, and Loot is closed.
+        assertTrue(shares.awardsOnly());
+        assertEq(shares.issuanceCapBps(), 1000);
+        vm.prank(address(dao));
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        shares.mintFromMoloch(founder, 1);
+        Loot loot = dao.loot();
+        vm.prank(address(dao));
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        loot.mintFromMoloch(founder, 1);
 
         // The founders vote with all of it from the first block.
         assertEq(shares.getVotes(founder), 225e18);

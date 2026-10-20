@@ -167,6 +167,34 @@ const MUTATIONS = [
     "",
     "test/ExitProtections.t.sol",
   ],
+  [
+    "D76: a passed vote can mint Shares again under the issuance rule",
+    "contracts/src/majeur/MolochPatched.sol",
+    "            if (!Moloch(DAO).awarding()) revert Unauthorized();\n            _countIssued(amount);",
+    "            _countIssued(amount);",
+    "test/IssuanceRule.t.sol",
+  ],
+  [
+    "D76: awards no longer count against the year's allowance",
+    "contracts/src/majeur/MolochPatched.sol",
+    "            _countIssued(amount);\n            uint256 held = balanceOf[DAO];",
+    "            uint256 held = balanceOf[DAO];",
+    "test/IssuanceRule.t.sol",
+  ],
+  [
+    "D76: the DAO can hand out its own Shares outside an award again",
+    "contracts/src/majeur/MolochPatched.sol",
+    "        if (awardsOnly && from == DAO && to != DAO && !Moloch(DAO).awarding()) revert Unauthorized();",
+    "",
+    "test/IssuanceRule.t.sol",
+  ],
+  [
+    "D76: Loot can be minted under the issuance rule again",
+    "contracts/src/majeur/MolochPatched.sol",
+    "        if (Moloch(DAO).shares().awardsOnly()) revert Unauthorized();",
+    "",
+    "test/IssuanceRule.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);
