@@ -1,9 +1,9 @@
 # Tokenomics for fundraising projects: a proposal (2026-10-21)
 
-Status: a proposal for you to decide on before the contracts are frozen for the external audit. Nothing here is built and
-no code or contract was changed to write it. Each recommendation names the change it would need and what it does to the
-audit scope ([AUDIT-SCOPE.md](AUDIT-SCOPE.md)). Once you decide, each accepted item becomes a DECISIONS row (D72 onward)
-and, for a contract change, a short write-up before the code, as the plan asks.
+Status: **decided 2026-10-21**: you accepted T1 to T8 as written; they are D72 to D79 in [DECISIONS.md](DECISIONS.md), and
+the contract changes are written up in [TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md). Nothing is built yet.
+The text below is the proposal as you accepted it. Each recommendation names the change it would need and what it does to the
+audit scope ([AUDIT-SCOPE.md](AUDIT-SCOPE.md)).
 
 It covers the six open questions about the raise: what a backer gets, limits on the split, dilution, trading after the
 sale, the founder's control in contributor projects, and what needs a lawyer. The worked examples (a $50k film, a $250k

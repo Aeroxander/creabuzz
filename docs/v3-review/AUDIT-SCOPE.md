@@ -9,6 +9,11 @@ This is the groundwork for the external audit the roadmap requires before any ra
 ([SOCIAL-MVP-ROADMAP-2026-10-19.md §5](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Mainnet stays off until that audit is done
 and its report replaces the "unaudited" notice.
 
+**Changes still to come before the freeze (D72–D79, decided 2026-10-21, not built).** The tokenomics decisions change
+`ragequit`, `Shares`, `Loot`, both milestone locks and both kits, and remove seven functions from the patched DAO
+([TOKENOMICS-CONTRACT-CHANGES.md §9](TOKENOMICS-CONTRACT-CHANGES.md)). The tables below describe the contracts before
+them.
+
 **Freeze before sending.** Tag the commit the auditors receive and pin it here. A change to any file in the table below
 after the tag needs either a re-review of that file or a written reason why it is outside the money paths.
 
