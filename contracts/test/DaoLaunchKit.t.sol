@@ -375,11 +375,14 @@ contract DaoLaunchKitTest is Test {
         vm.prank(alice);
         auction.claimTokens(aliceBid);
         vm.roll(block.number + 1);
-        // Voting supply leaves out the DAO's own 300: 1000 total, 700 that could ever vote.
+        // Voting supply leaves out the DAO's own 300 (1000 total, 700 that could ever vote) and, since ES-3, the Shares
+        // still waiting in the auction for Bob and Carol to claim them.
+        uint256 waiting = shares.balanceOf(address(auction));
+        assertGt(waiting, 0);
         vm.prank(alice);
         dao.castVote(1, 1, 180e18);
         (uint96 votingSupply,,,,,,,,,) = dao.proposalVotingRules(1);
-        assertEq(votingSupply, 700e18);
+        assertEq(votingSupply, 700e18 - waiting);
         assertEq(policy.weightFor(bytes32(uint256(1)), address(dao), uint48(block.number - 1)), 0);
         // And her exit divides the treasury by the 700 that are members' Shares, not by 1000.
         address[] memory assets = new address[](1);
@@ -435,6 +438,54 @@ contract DaoLaunchKitTest is Test {
             uint256(800e18) * 180e18 / 700e18,
             "800 over the 700 member Shares, times her 180"
         );
+    }
+
+    /// ES-3: Shares a buyer has not claimed yet sit in the auction, where nobody can vote them. They must not raise the
+    /// bar every proposal has to clear: the launch keeps the auction out of the DAO's voting supply from the start, so a
+    /// proposal's electorate is the Shares that can actually vote, and a buyer's Shares count as soon as they are claimed.
+    function test_shares_waiting_in_the_auction_never_raise_the_bar_a_proposal_must_clear() public {
+        _needArtifacts();
+        (Moloch dao, IExecutor executor, IAuction auction) = _launch(bytes32("unclaimed"));
+        Shares shares = dao.shares();
+        AllocationVoting policy = AllocationVoting(dao.votingWeight());
+        assertTrue(policy.isExcluded(address(auction)), "the auction is outside the voting supply from birth");
+
+        vm.roll(START_BLOCK);
+        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
+        vm.roll(END_BLOCK + 1);
+        auction.checkpoint();
+        executor.executeGraduation(address(auction));
+        vm.roll(END_BLOCK + 2);
+        vm.prank(bob);
+        auction.exitBid(bobBid);
+        vm.prank(alice);
+        auction.exitPartiallyFilledBid(aliceBid, START_BLOCK, 0);
+        vm.roll(CLAIM_BLOCK);
+        vm.prank(bob);
+        auction.claimTokens(bobBid); // Alice has not claimed: her Shares are still in the auction
+        uint256 waiting = shares.balanceOf(address(auction));
+        assertGt(waiting, 0, "some Shares are still waiting to be claimed");
+        vm.roll(vm.getBlockNumber() + 1);
+
+        bytes memory data = abi.encodeCall(Moloch.setQuorumBps, (uint16(1000)));
+        uint256 id = dao.proposalId(0, address(dao), 0, data, bytes32("es3"));
+        vm.prank(bob);
+        dao.castVote(id, 1, 1);
+        uint48 snap = dao.snapshotBlock(id);
+        (uint96 votingSupply,,,,,,,,,) = policy.proposals(id);
+        uint256 canVote = shares.getPastTotalSupply(snap) - shares.balanceOf(address(dao)) - waiting;
+        assertEq(votingSupply, canVote, "the electorate is what can vote, not what waits in the auction");
+
+        // Once Alice claims, her Shares count for the next proposal.
+        vm.prank(alice);
+        auction.claimTokens(aliceBid);
+        vm.roll(vm.getBlockNumber() + 1);
+        uint256 id2 = dao.proposalId(0, address(dao), 0, data, bytes32("es3-2"));
+        vm.prank(bob);
+        dao.castVote(id2, 1, 1);
+        (uint96 votingSupply2,,,,,,,,,) = policy.proposals(id2);
+        assertEq(votingSupply2, canVote + waiting - shares.balanceOf(address(auction)));
     }
 
     /// The team votes with its Shares from the first block, and a proposal's electorate is fixed when it opens. A

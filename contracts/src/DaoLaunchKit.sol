@@ -39,6 +39,7 @@ interface IKitDao {
 interface IKitPolicy {
     function mandateFactory() external view returns (address);
     function setGovernanceStart(uint64 startBlock) external;
+    function setExcluded(address holder, bool on) external;
 }
 
 interface IKitAuction {
@@ -88,6 +89,10 @@ interface IKitAuctionFactory {
     function create(address token, uint256 amount, bytes calldata configData, bytes32 salt)
         external
         returns (address auction);
+    function getAddress(address token, uint256 amount, bytes calldata configData, bytes32 salt, address sender)
+        external
+        view
+        returns (address);
 }
 
 interface IKitSetThreshold {
@@ -321,7 +326,7 @@ contract DaoLaunchKit {
             revert PanelMismatch();
         }
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = 1 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : (challenged ? 1 : 2));
+        uint256 calls = 2 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : (challenged ? 1 : 2));
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
@@ -329,6 +334,11 @@ contract DaoLaunchKit {
         address predictedPolicy = _predictClone(predictedDao, summoner.policyImplementation());
         initCalls[next++] =
             KitCall(predictedPolicy, 0, abi.encodeCall(IKitPolicy.setGovernanceStart, (p.governanceStartBlock)));
+        // Shares a buyer has not claimed yet wait in the auction, where nobody can vote them: keep it out of the voting
+        // supply, or they would raise every proposal's bar until each buyer claims (ES-3). Checked against the real
+        // auction below.
+        address predictedAuction = factory.getAddress(predictedShares, p.saleSupply, p.auctionConfig, p.auctionSalt, address(this));
+        initCalls[next++] = KitCall(predictedPolicy, 0, abi.encodeCall(IKitPolicy.setExcluded, (predictedAuction, true)));
         if (p.proposalThreshold != 0) {
             initCalls[next++] =
                 KitCall(predictedDao, 0, abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold)));
@@ -365,6 +375,7 @@ contract DaoLaunchKit {
 
         // 5. The auction: created, bound and funded in the same call.
         auction = factory.create(shares, p.saleSupply, p.auctionConfig, p.auctionSalt);
+        require(auction == predictedAuction, "kit: auction address");
         exec.bindAuction(auction);
         exec.fundAuction(auction, p.saleSupply);
         // Fail closed: the block governance opens at is the block the buyers can claim from.
