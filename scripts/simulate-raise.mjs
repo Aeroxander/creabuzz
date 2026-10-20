@@ -211,7 +211,6 @@ const REVIEWERS = [agent("reviewer-0"), agent("reviewer-1"), agent("reviewer-2")
 const CONTRIBUTOR = agent("contributor");
 const CCA_FACTORY = "0x000000001F26a0044BaA66024e7b6599c61963F8";
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-const BURN = "0x000000000000000000000000000000000000dead";
 const USDC_UNIT = 1_000_000n;
 
 let USDC;
@@ -597,12 +596,15 @@ async function passing(id, atTimestamp) {
   const snap = word(snapHex);
   const queued = word(queuedHex);
   if (expiresAt === 0n) return false;
-  const [total, daoCap, burnCap] = await callMany([
+  // Voting supply: everything at the snapshot less what can never vote, the DAO's own Shares and every holder the
+  // policy excludes (the burn address and, since D69, the auction holding unclaimed Shares).
+  const excluded = decodeParameters([{ array: "address" }], await call(P.policy, sel("excludedHolders()")))[0];
+  const [total, daoCap, ...excludedCaps] = await callMany([
     [P.shares, encUint("getPastTotalSupply(uint48)", snap)],
     [P.policy, enc("getPastCapacity(address,uint48)", ["address", "uint48"], [P.dao, snap])],
-    [P.policy, enc("getPastCapacity(address,uint48)", ["address", "uint48"], [BURN, snap])],
+    ...excluded.map((a) => [P.policy, enc("getPastCapacity(address,uint48)", ["address", "uint48"], [a, snap])]),
   ]);
-  const expectSupply = word(total) - word(daoCap) - word(burnCap);
+  const expectSupply = excludedCaps.reduce((acc, h) => acc - word(h), word(total) - word(daoCap));
   const laneQuorum = (expectSupply * (bounded ? 1000n : 2000n) + 9999n) / 10000n;
   const t = BigInt(atTimestamp);
   const earliest = since + hold > reviewEndsAt ? since + hold : reviewEndsAt;
@@ -1052,6 +1054,9 @@ let MANDATE_FACTORY;
 /** Make `project` the one the steps act on. */
 async function adopt(project) {
   P = project;
+  // D69: Shares waiting in the auction for their buyers are outside the voting supply from the DAO's birth.
+  const auctionExcluded = word(await call(P.policy, encAddr("isExcluded(address)", P.auction))) !== 0n;
+  if (!auctionExcluded) broke("the auction is not outside the voting supply", P.auction);
   const [countHex, teamHex, clawHex, rejectHex] = await callMany([
     [P.lock, sel("milestoneCount()")],
     [P.lock, sel("team()")],

@@ -3,7 +3,8 @@
  * scripts/contracts-mutation-check.mjs — break each money-path guard once and check that a test fails.
  *
  * For every entry below it replaces one guard in a contract (or in the web exit preview) with a broken version, runs the
- * money-path invariant and fuzz tests (`contracts/test/invariant/`), and puts the file back with `git checkout`. A guard
+ * money-path invariant and fuzz tests (`contracts/test/invariant/`, plus any test file the entry names; an entry marked
+ * "full" runs the whole suite, which the launch kit's tests need), and puts the file back with `git checkout`. A guard
  * whose removal no test notices is reported as MISSED and the script exits 1. It refuses to start while any file it would
  * touch has uncommitted changes, so it can never throw away work.
  *
@@ -17,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** [what is broken, file (from the repo root), the guard, its broken replacement] */
+/** [what is broken, file (from the repo root), the guard, its broken replacement, optional: an extra test file or "full"] */
 const MUTATIONS = [
   [
     "lock guard ignored (Shares)",
@@ -86,6 +87,27 @@ const MUTATIONS = [
     "        if (amount == 0) return;\n        IERC20(bondToken).safeTransfer(to, amount);\n        return;\n        (bool ok, bytes memory ret) = bondToken.call(",
   ],
   [
+    "a blocked contributor's stake reverts the reserve's return again (D68 / ES-2 undone)",
+    "contracts/src/ClaimStake.sol",
+    "        if (amount == 0) return;\n        (bool ok, bytes memory ret) = address(currency).call(",
+    "        if (amount == 0) return;\n        currency.safeTransfer(to, amount);\n        return;\n        (bool ok, bytes memory ret) = address(currency).call(",
+    "test/ClaimStakeCurrency.t.sol",
+  ],
+  [
+    "the claim escrow expects a bool from transfer again (D68 / ES-4 undone)",
+    "contracts/src/ClaimStake.sol",
+    "        if (total != 0) currency.safeTransfer(claim.contributor, total);",
+    "        if (total != 0) require(currency.transfer(claim.contributor, total));",
+    "test/ClaimStakeCurrency.t.sol",
+  ],
+  [
+    "unclaimed sale Shares count in the voting supply again (D69 / ES-3 undone)",
+    "contracts/src/DaoLaunchKit.sol",
+    "        initCalls[next++] = KitCall(predictedPolicy, 0, abi.encodeCall(IKitPolicy.setExcluded, (predictedAuction, true)));",
+    "        next++;",
+    "full",
+  ],
+  [
     "web exit preview ignores the DAO's own Shares",
     "web/src/features/launchpad/lib/ragequit-position.ts",
     "return input.daoHeld >= outstanding ? 0n : outstanding - input.daoHeld;",
@@ -112,7 +134,7 @@ if (dirty) {
 }
 
 let missed = 0;
-for (const [i, name, file, guard, broken] of chosen) {
+for (const [i, name, file, guard, broken, extra] of chosen) {
   const path = join(ROOT, file);
   const source = readFileSync(path, "utf8");
   if (source.split(guard).length !== 2) {
@@ -123,7 +145,10 @@ for (const [i, name, file, guard, broken] of chosen) {
   writeFileSync(path, source.replace(guard, broken));
   let out;
   try {
-    out = spawnSync("forge", ["test", "--match-path", "test/invariant/*"], {
+    // A filtered run compiles only what it needs; the kit's tests need the full build (they deploy its artifact).
+    const args = extra === "full" ? ["test"] : ["test", "--match-path", extra ? `{test/invariant/*,${extra}}` : "test/invariant/*"];
+    out = spawnSync("forge", args, {
+      env: { ...process.env, REQUIRE_CONTRACT_ARTIFACTS: "1" },
       cwd: join(ROOT, "contracts"),
       encoding: "utf8",
       maxBuffer: 1 << 28,

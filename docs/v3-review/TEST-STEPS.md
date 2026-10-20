@@ -797,8 +797,10 @@ commands rerun all of it; each cleans up after itself and touches no real networ
    `testFuzz_exit_pays_exactly_what_the_screen_shows` (65 runs; it calls `node`, so the web's own exit preview is what
    the chain is held to) and `testFuzz_slash_takes_at_most_what_is_held` (256 runs), all passing. `-vv` prints, per run,
    which paths were reached (`milestone.lateUpheld`, `govern.executed`, `work.payout`, …). The whole suite
-   (`forge test`) then reports 415 passed, 0 failed, 2 skipped (the two added by D67 are
-   `test/MilestoneChallengeBlocklist.t.sol`).
+   (`forge test`) then reports 419 passed, 0 failed, 2 skipped (D67 added
+   `test/MilestoneChallengeBlocklist.t.sol`, D68 `test/ClaimStakeCurrency.t.sol`, D69 a launch-kit test). Since D70 every
+   first-party contract compiles with solc 0.8.37; if forge says no such version exists, run `scripts/ensure-solc.sh`
+   once.
 2. **The simulation on a real chain.**
 
    ```bash
@@ -818,9 +820,10 @@ commands rerun all of it; each cleans up after itself and touches no real networ
    node scripts/contracts-mutation-check.mjs
    ```
 
-   It removes each of thirteen guards in turn (the lock, D51, D57, D58, the vote bars, the slash, the claim window, the
-   clawback, the D67 settlement fallback, and two in the web exit preview), runs step 1, and restores the file. Working
-   looks like: thirteen lines ending in `caught (…)` and `every mutation was caught`.
+   It removes each of sixteen guards in turn (the lock, D51, D57, D58, the vote bars, the slash, the claim window, the
+   clawback, the D67 and D68 fallbacks, the escrow's SafeERC20, the D69 auction exclusion, and two in the web exit
+   preview), runs step 1 (plus the test that pins that fix; the kit's runs the whole suite), and restores the file.
+   Working looks like: sixteen lines ending in `caught (…)` and `every mutation was caught`.
 4. **A blocked objector (D67).** `cd contracts && forge test --match-path test/MilestoneChallengeBlocklist.t.sol`: an
    upheld objection (and an upheld late one) settles although the currency now blocks the objector; the objector's
    bounty waits in `owed`, nobody else can take it, and it is theirs once unblocked. The invariant handler and the

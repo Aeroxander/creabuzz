@@ -1,8 +1,10 @@
 # Audit scope: the milestone-locked raise
 
 Status: prepared 2026-10-19 on branch `audit-groundwork` (from `v4-governance-rework` at `e72c8911b`). One contract
-changed while preparing it: `MilestoneChallenge` no longer lets a currency-blocked payee stall the settlement of a vote
-(D67, found walking the ethskills checklists, §10). Everything else in `contracts/src` is as it was.
+changed while preparing it, each with a failing test first and a DECISIONS row, after walking the ethskills checklists
+(§10): a currency-blocked payee can no longer stall a milestone vote (D67) or strand a claim's reserve (D68), the claim
+escrow works with currencies whose `transfer` returns nothing (D68), unclaimed sale Shares no longer count in the
+voting supply (D69), and every first-party contract compiles with solc 0.8.37 (D70). Line counts in §2 are from before.
 This is the groundwork for the external audit the roadmap requires before any raise goes live
 ([SOCIAL-MVP-ROADMAP-2026-10-19.md §5](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Mainnet stays off until that audit is done
 and its report replaces the "unaudited" notice.
@@ -117,12 +119,12 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 7 | Custody: the lock holds exactly its unpaid bonds, the deposits of open objections and what it owes blocked payees; the panel exactly every stake and pending unbond; the claim escrow exactly the stakes and reservations of claims in play | `invariant_lock_holds_exactly_bonds_and_open_deposits`, `invariant_panel_holds_exactly_the_bonds`, `invariant_claim_escrow_is_fully_backed` | lock and panel every step | — |
 | 7a | Liveness: once a milestone vote has ended, anyone can settle it, whoever the currency's issuer blocks (D67) | handler `_resolve`, with an issuer that blocks and unblocks actors and sometimes the objector mid-vote | every resolve | settlement reverting again on a blocked payee |
 | 8 | A payout is paid only for an approved claim, after its 7-day challenge window, exactly the claim plus the stake | handler `_payout` | — | challenge window ignored |
-| 9 | A work budget's money leaves only to a claim it reserved for or back to the DAO, and is never over-allocated | `_checkMoney`, `invariant_budget_and_vote_ledger_bounds` | budget creation counted against the vote | — |
-| 10 | The voting ledger mirrors the Shares (`totalCapacity == totalSupply`); no Shares are minted after the sale outside a vote, and burns happen only on exits, forfeits and upheld late objections | `invariant_budget_and_vote_ledger_bounds` | every step | — |
+| 9 | A work budget's money leaves only to a claim it reserved for or back to the DAO, and is never over-allocated; a lapsed claim can always be expired, whoever the currency blocks (D68) | `_checkMoney`, `invariant_budget_and_vote_ledger_bounds`, handler `expireClaim` | budget creation counted against the vote | the escrow's pay-or-owe fallback undone |
+| 10 | The voting ledger mirrors the Shares (`totalCapacity == totalSupply`); no Shares are minted after the sale outside a vote, and burns happen only on exits, forfeits and upheld late objections; Shares waiting in the auction are outside the voting supply (D69) | `invariant_budget_and_vote_ledger_bounds`; `DaoLaunchKit.t.sol` | every step | the kit's auction exclusion removed |
 | 11 | The sale: bidders on a met raise paid exactly what the DAO received (plus dust left in the auction), nobody paid above their limit; every bid on a missed raise is refunded in full and the DAO receives nothing | — (the CCA is exercised on a real chain) | after every sale | — |
 | 12 | A tranche is freed only by a milestone that stood, and is never both freed and forfeited | `invariant_tranches_free_only_with_their_milestone` | — | — |
 
-The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, thirteen guards).
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, sixteen guards).
 
 ## 6. Observations made while preparing (no behaviour changed)
 
@@ -172,14 +174,17 @@ See [TEST-STEPS.md §4aj](TEST-STEPS.md). In short:
 cd contracts && forge test                                   # the whole suite, including the new invariants
 cd contracts && forge test --match-path "test/invariant/*"   # only the money-path invariants and fuzz tests
 scripts/simulate-raise.sh --steps 3000 --seed 7              # the agent-based simulation on its own anvil
-node scripts/contracts-mutation-check.mjs                    # break each of 13 guards once; every one must be caught
+node scripts/contracts-mutation-check.mjs                    # break each of 16 guards once; every one must be caught
 ```
 
 ## 9. What the simulation found
 
 **Zero invariant breaks.** Three runs of 3,000 steps each (seeds 7, 11 and 23, about 100 seconds each on a laptop),
-9,000 invariant checks after individual steps plus a sale check after each of 35 sales. These are the runs after D67,
-with the currency's issuer blocking and unblocking people; the runs before it were also clean.
+9,000 invariant checks after individual steps plus a sale check after each of 35 sales. These are the runs on the
+contracts after D67–D70 (solc 0.8.37, the currency's issuer blocking and unblocking people); the runs before them were
+also clean, and with the same seeds the activity below is identical. After D69 the simulation's own independent vote
+check at first flagged 43 executions: it still computed voting supply without the auction the launch now excludes. It
+reads the policy's exclusion list now, and checks that every launch excludes its auction.
 
 | What happened (all three runs) | Count |
 |---|---|
@@ -234,20 +239,20 @@ bond and deposit never leave the lock; an upheld late objection never burns. Rep
 **Recommendation (done)**: a refused payment out of `resolve` is credited to `owed[payee]` and the settlement goes on;
 `withdrawOwed()` pays it to `msg.sender` only. The invariants now include a blocking issuer and a liveness check.
 
-## [ES-2] A blocked contributor can strand a claim's reserve
-**Severity**: Medium (owner-only fund loss), not fixed
+## [ES-2] A blocked contributor can strand a claim's reserve (fixed, D68)
+**Severity**: Medium (owner-only fund loss), fixed
 **Category**: evm-audit-erc20, evm-audit-dos
 **Location**: `ClaimStake.expire()`, `ClaimStake.resolveFrozen()`
 **Description**: both return the reserve to the budget and the stake to the contributor in one call. If the contributor
 is blocked, both revert, so the reserve for that claim cannot go back to the budget (and on to the DAO).
 **Proof of Concept**: a funded claim; the contributor is blocked; the claim lapses, `expire` reverts; the DAO freezes it,
 `resolveFrozen` reverts.
-**Recommendation**: the same pay-or-owe pattern as D67. `TreasuryMandateFactory` is 261 bytes under the size limit
-because it embeds `TreasuryMandate`, which embeds `ClaimStake` and `VerifierSet`; deploy those through their own
-factories first (as the locks are), then apply it.
+**Recommendation (done, D68)**: the same pay-or-owe pattern as D67. `TreasuryMandateFactory` was 261 bytes under the
+size limit because it embedded `ClaimStake` and `VerifierSet` through `TreasuryMandate`; a new `MandatePartsFactory`
+makes them, and the factory is now 11,507 bytes. `test/ClaimStakeCurrency.t.sol` failed on the old escrow.
 
-## [ES-3] Unclaimed sale Shares count in the DAO's voting supply
-**Severity**: Low
+## [ES-3] Unclaimed sale Shares count in the DAO's voting supply (fixed, D69)
+**Severity**: Low, fixed
 **Category**: evm-audit-governance (quorum based on a supply nobody can vote)
 **Location**: `AllocationVoting._votingSupply()`; `DaoLaunchKit` (no exclusion of the auction)
 **Description**: Shares bought in the sale stay in the auction until each bid is exited and claimed. They are neither the
@@ -255,16 +260,16 @@ DAO's nor excluded, so they raise every quorum (20% of voting supply in the full
 **Proof of Concept**: a sale where most buyers have not claimed: the first proposals need more turnout from the buyers who
 have claimed than the lane's 20% suggests.
 **Recommendation**: `exitBid` and `claimTokens` on the auction are callable by anyone (tokens always go to the bid's
-owner), so a keeper (or the app, on the first holder's visit) can claim every bid at the claim block. Alternatively the kit
-predicts the auction's address and adds it to the policy's exclusions in the DAO's initialization.
+owner), so a keeper could claim every bid at the claim block. Done instead (D69): the kit predicts the auction's address
+and adds it to the policy's exclusions in the DAO's initialization, and requires the auction to land there.
 
-## [ES-4] `ClaimStake` expects a `bool` from `transfer`
-**Severity**: Low
+## [ES-4] `ClaimStake` expects a `bool` from `transfer` (fixed, D68)
+**Severity**: Low, fixed
 **Category**: evm-audit-erc20 (missing return values)
 **Location**: `ClaimStake` (`IERC20Minimal`)
 **Description**: every other contract uses `SafeERC20` or Solady-style helpers; `ClaimStake` decodes a `bool`. A currency
 whose `transfer` returns nothing (USDT on Ethereum) would make every stake, reserve and payout revert.
-**Recommendation**: `SafeERC20`, once the factory has room (see ES-2). The pilot's currency is USDC, which returns `bool`.
+**Recommendation (done, D68)**: `SafeERC20`, now that the factory has room (see ES-2).
 
 ## [ES-5] The pinned compilers carry known bugs (fixed, D70)
 **Severity**: Low, fixed
