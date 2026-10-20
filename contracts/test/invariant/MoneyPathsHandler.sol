@@ -759,11 +759,19 @@ contract MoneyPathsHandler is Test {
         } catch {}
     }
 
+    /// @notice Anyone lets a claim lapse. Liveness (ES-2): once an open claim is past its deadline this must always go
+    /// through, whoever the currency blocks, so its reserve can never be stranded.
     function expireClaim(uint256 claimSeed) external step {
         if (_claimIds.length == 0) return;
-        try claims.expire(_claimIds[claimSeed % _claimIds.length]) {
+        bytes32 claimId = _claimIds[claimSeed % _claimIds.length];
+        (,,, ClaimStake.Status status,,, uint64 expiresAt,) = claims.claims(claimId);
+        try claims.expire(claimId) {
             _hit("work.expire");
-        } catch {}
+        } catch {
+            if (status == ClaimStake.Status.Open && block.timestamp > expiresAt) {
+                _fail("a lapsed claim could not be expired");
+            }
+        }
     }
 
     /// @notice One claim played through: filed, reserved for in a project, judged by the reviewers, settled, perhaps frozen

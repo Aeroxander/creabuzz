@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {VerifierSet} from "./VerifierSet.sol";
 import {IRoyaltyDistributor} from "./RoyaltyDistributor.sol";
 
@@ -14,7 +16,8 @@ import {IRoyaltyDistributor} from "./RoyaltyDistributor.sol";
 /// a treasury freeze suspends a claim and `resolveFrozen` unwinds it.
 ///
 /// Money accounting (solvency): the contract holds exactly
-/// `sum(open stakes) + sum(funded[claimId])` of `currency`. A claim's `amount`
+/// `sum(open stakes) + sum(funded[claimId]) + sum(owed)` of `currency` (`owed`: a stake the currency refused to return
+/// to a blocked contributor, waiting for them). A claim's `amount`
 /// is self-declared by the contributor, so it is NEVER paid from a shared pool:
 /// `payout` moves `amount` only out of that claim's own `funded` reservation
 /// (`Underfunded` otherwise) plus the contributor's own stake, so one claim can
@@ -31,10 +34,20 @@ import {IRoyaltyDistributor} from "./RoyaltyDistributor.sol";
 /// The unlock is *attestation*, never a price read — the resolved §7.4 rule
 /// (verifier milestones primary, TWAP backstop deferred).
 contract ClaimStake {
+    using SafeERC20 for IERC20;
+
+    /// @notice A stake the currency refused to return to its contributor (its issuer can block an address, as USDC's
+    /// can). Kept here for them so that the reserve beside it still goes back to the budget; they take it with
+    /// `withdrawOwed` once the currency lets them, only to their own address.
+    mapping(address => uint256) public owed;
+
+    event Owed(address indexed to, uint256 amount);
+    event OwedWithdrawn(address indexed to, uint256 amount);
+
     VerifierSet public immutable verifiers;
     address public immutable treasury;
     /// @notice Escrowed currency held for milestone payouts + stakes.
-    IERC20Minimal public immutable currency;
+    IERC20 public immutable currency;
 
     enum Status {
         Open, // claimed, awaiting quorum
@@ -130,7 +143,6 @@ contract ClaimStake {
 
     error AlreadySettled(bytes32 claimId);
     error NotOpen(bytes32 claimId);
-    error MintFailed(address token, address recipient, uint256 amount);
     /// @notice No claim exists under this id.
     error UnknownClaim(bytes32 claimId);
     /// @notice A claim needs a non-zero evidence hash (it is also what marks the id taken).
@@ -147,7 +159,7 @@ contract ClaimStake {
     constructor(VerifierSet verifiers_, address treasury_, address currency_) {
         verifiers = verifiers_;
         treasury = treasury_;
-        currency = IERC20Minimal(currency_);
+        currency = IERC20(currency_);
     }
 
     /// @notice One-shot wiring of the launch's RoyaltyDistributor.
@@ -216,9 +228,7 @@ contract ClaimStake {
         });
         approvalsAtSubmit[claimId] = verifiers.approvalCount(claimId);
         objectionsAtSubmit[claimId] = verifiers.objectionCount(claimId);
-        if (stake > 0 && !currency.transferFrom(contributor, address(this), stake)) {
-            revert MintFailed(address(currency), contributor, stake);
-        }
+        if (stake > 0) currency.safeTransferFrom(contributor, address(this), stake);
         emit ClaimSubmitted(claimId, contributor, amount, stake, evidenceHash);
     }
 
@@ -236,9 +246,7 @@ contract ClaimStake {
         uint256 already = funded[claimId];
         if (already + amount > claim.amount) revert OverFunded(claimId, already, amount, claim.amount);
         funded[claimId] = already + amount;
-        if (!currency.transferFrom(msg.sender, address(this), amount)) {
-            revert MintFailed(address(currency), address(this), amount);
-        }
+        currency.safeTransferFrom(msg.sender, address(this), amount);
         emit ClaimFunded(claimId, amount, already + amount);
     }
 
@@ -301,12 +309,8 @@ contract ClaimStake {
         emit ClaimExpired(claimId, stakeBack, reserveBack);
         uint256 toContributor = stakeBack;
         uint256 toTreasury = reserveBack;
-        if (toContributor > 0 && !currency.transfer(claim.contributor, toContributor)) {
-            revert MintFailed(address(currency), claim.contributor, toContributor);
-        }
-        if (toTreasury > 0 && !currency.transfer(treasury, toTreasury)) {
-            revert MintFailed(address(currency), treasury, toTreasury);
-        }
+        _payOrOwe(claim.contributor, toContributor);
+        if (toTreasury > 0) currency.safeTransfer(treasury, toTreasury);
     }
 
     /// @notice The two deadlines. Governance-only, and neither may be zero:
@@ -358,9 +362,7 @@ contract ClaimStake {
             emit StakeSlashed(claimId, claim.contributor, slashed);
             if (reserved > 0) emit ReserveRecovered(claimId, reserved);
             uint256 total = slashed + reserved;
-            if (total > 0 && !currency.transfer(treasury, total)) {
-                revert MintFailed(address(currency), treasury, total);
-            }
+            if (total > 0) currency.safeTransfer(treasury, total);
         } else {
             revert NotOpen(claimId);
         }
@@ -382,9 +384,7 @@ contract ClaimStake {
         claim.status = Status.Paid;
         funded[claimId] = reserved - claim.amount;
         uint256 total = claim.amount + claim.stake;
-        if (total != 0 && !currency.transfer(claim.contributor, total)) {
-            revert MintFailed(address(currency), claim.contributor, total);
-        }
+        if (total != 0) currency.safeTransfer(claim.contributor, total);
         emit ClaimPaid(claimId);
     }
 
@@ -426,18 +426,28 @@ contract ClaimStake {
         claim.stake = 0;
         funded[claimId] = 0;
         emit FrozenClaimResolved(claimId, claim.contributor, stakeBack, reserved);
-        if (reserved > 0 && !currency.transfer(treasury, reserved)) {
-            revert MintFailed(address(currency), treasury, reserved);
-        }
-        if (stakeBack > 0 && !currency.transfer(claim.contributor, stakeBack)) {
-            revert MintFailed(address(currency), claim.contributor, stakeBack);
-        }
+        if (reserved > 0) currency.safeTransfer(treasury, reserved);
+        _payOrOwe(claim.contributor, stakeBack);
     }
-}
 
-interface IERC20Minimal {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    /// @notice Take a stake the currency could not return to you at the time. Only to the address it is owed to.
+    function withdrawOwed() external {
+        uint256 amount = owed[msg.sender];
+        if (amount == 0) return;
+        owed[msg.sender] = 0;
+        currency.safeTransfer(msg.sender, amount);
+        emit OwedWithdrawn(msg.sender, amount);
+    }
+
+    /// @dev Return `amount` to `to`, or, when the currency refuses (reverts or answers false), keep it for them in `owed`,
+    /// so that the rest of the call (the reserve going back to the budget) is never held up by one address.
+    function _payOrOwe(address to, uint256 amount) private {
+        if (amount == 0) return;
+        (bool ok, bytes memory ret) = address(currency).call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        if (ok && (ret.length == 0 || (ret.length >= 32 && abi.decode(ret, (uint256)) == 1))) return;
+        owed[to] += amount;
+        emit Owed(to, amount);
+    }
 }
 
 // The RoyaltyDistributor surface ClaimStake drives (defined on

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ClaimStake} from "./ClaimStake.sol";
 import {VerifierSet} from "./VerifierSet.sol";
+import {MandatePartsFactory} from "./MandatePartsFactory.sol";
 
 interface IMandateDao {
     function shares() external view returns (address);
@@ -125,7 +126,8 @@ contract TreasuryMandate {
         uint256 quorum,
         uint128 reviewerBond_,
         address bondToken_,
-        bool milestonePanel_
+        bool milestonePanel_,
+        MandatePartsFactory parts
     ) {
         // Each budget is all-or-nothing: a cap with no budget (or a budget with no cap) cannot be spent sensibly.
         if (
@@ -149,9 +151,11 @@ contract TreasuryMandate {
         reviewerBond = reviewerBond_;
         reviewerBondToken = bondToken_;
         milestonePanel = milestonePanel_;
-        VerifierSet panel = new VerifierSet(address(this), quorum);
+        // The panel and the escrow come from a separate factory (the budget factory would not fit under the size limit
+        // with their code inside); this budget owns both.
+        (VerifierSet panel, ClaimStake escrow) = parts.make(address(this), quorum, currency_);
         verifiers = panel;
-        claims = new ClaimStake(panel, address(this), currency_);
+        claims = escrow;
         claims.setWindows(30 days, CHALLENGE_WINDOW); // an unapproved claim still lapses after 30 days, as before
         panel.setClaimStake(address(claims));
         if (reviewerBond_ != 0) panel.setBond(bondToken_, reviewerBond_);
@@ -324,6 +328,13 @@ contract TreasuryMandate {
 /// own immutable mandates, with the caller as their governing DAO.
 contract TreasuryMandateFactory {
     using SafeERC20 for IERC20;
+    /// @notice Makes each budget's reviewer panel and claim escrow (see `MandatePartsFactory`).
+    MandatePartsFactory public immutable parts;
+
+    constructor() {
+        parts = new MandatePartsFactory();
+    }
+
     mapping(address => address) public daos;
     /// @notice The mandate a DAO named, when it was born, as the panel that judges the milestones its team's Shares are
     /// locked behind (zero for a DAO that named none). Set once, by the DAO itself; the milestone lock honours no other.
@@ -404,7 +415,8 @@ contract TreasuryMandateFactory {
             quorum,
             reviewerBond,
             bondToken,
-            milestonePanel
+            milestonePanel,
+            parts
         );
         if (budget != 0) {
             IERC20(currency).safeTransferFrom(msg.sender, address(mandate), budget);

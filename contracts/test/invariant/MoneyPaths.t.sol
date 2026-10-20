@@ -260,7 +260,8 @@ contract MoneyPathsInvariantTest is Test {
         assertEq(usdc.balanceOf(address(panel)), owed, "panel custody");
     }
 
-    /// @notice The claim escrow holds exactly the stakes and reservations of claims still in play.
+    /// @notice The claim escrow holds exactly the stakes and reservations of claims still in play, and the stakes it owes
+    /// blocked contributors.
     function invariant_claim_escrow_is_fully_backed() public view {
         bytes32[] memory ids = handler.claimIds();
         uint256 owed;
@@ -273,6 +274,11 @@ contract MoneyPathsInvariantTest is Test {
             ) owed += stake + funded;
             else if (status == ClaimStake.Status.Paid) owed += funded;
             else assertEq(funded, 0, "a settled claim kept a reservation");
+        }
+        // Stakes the currency refused to return to a blocked contributor wait in the escrow too (ES-2).
+        address[] memory payees = handler.payees();
+        for (uint256 i; i < payees.length; ++i) {
+            owed += claims.owed(payees[i]);
         }
         assertEq(usdc.balanceOf(address(claims)), owed, "claim escrow custody");
     }
