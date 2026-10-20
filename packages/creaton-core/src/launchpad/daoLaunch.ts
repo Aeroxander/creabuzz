@@ -34,6 +34,23 @@ const MAX_UINT96 = (1n << 96n) - 1n;
 /** The lock holds at most this many milestones per team member. */
 export const MAX_MILESTONES = 8;
 
+/**
+ * The limits the launch kit enforces on every launch (D74, D75): checked here first so the form can say what to fix
+ * before a wallet is asked. Whole percents of the supply.
+ */
+export const LAUNCH_LIMITS = {
+  /** The sale is at least this share of all Shares. */
+  minSalePercent: 60,
+  /** The team at most this share. */
+  maxTeamPercent: 35,
+  /** The DAO's own reserve at most this share. */
+  maxDaoPercent: 20,
+  /** A team's Shares are all behind this many milestones or more... */
+  minMilestones: 2,
+  /** ...none of which unlocks more than this share of them. */
+  maxMilestonePercent: 50,
+} as const;
+
 export interface DaoLaunchSeat {
   /** The team member's wallet: they hold and vote with their Shares from the first block. */
   address: string;
@@ -376,6 +393,24 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
     );
   }
   if (sale === 0) fail("sale share", "Sell at least some of the supply.");
+  if (sale < LAUNCH_LIMITS.minSalePercent) {
+    fail(
+      "sale share",
+      `Sell at least ${LAUNCH_LIMITS.minSalePercent}% of the Shares, so backers hold most of the votes from the start.`,
+    );
+  }
+  if (team > LAUNCH_LIMITS.maxTeamPercent) {
+    fail(
+      "team share",
+      `The team can hold at most ${LAUNCH_LIMITS.maxTeamPercent}% of the Shares.`,
+    );
+  }
+  if (dao > LAUNCH_LIMITS.maxDaoPercent) {
+    fail(
+      "treasury share",
+      `The DAO can keep at most ${LAUNCH_LIMITS.maxDaoPercent}% of the Shares for itself.`,
+    );
+  }
 
   const saleSupply = (total * BigInt(sale)) / 100n;
   const teamTotal = (total * BigInt(team)) / 100n;
@@ -453,6 +488,30 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
       `The milestones unlock ${milestonePercent}% of the team's Shares, which is more than all of them.`,
     );
   }
+  if (teamTotal > 0n) {
+    if (milestones.length < LAUNCH_LIMITS.minMilestones) {
+      fail(
+        "milestones",
+        `Hold the team's Shares behind at least ${LAUNCH_LIMITS.minMilestones} milestones.`,
+      );
+    }
+    if (milestonePercent !== 100) {
+      fail(
+        "milestones",
+        `The milestones must hold back all of the team's Shares; these hold back ${milestonePercent}%.`,
+      );
+    }
+    if (
+      milestones.some(
+        (milestone) => milestone.percent > LAUNCH_LIMITS.maxMilestonePercent,
+      )
+    ) {
+      fail(
+        "milestones",
+        `No milestone can unlock more than ${LAUNCH_LIMITS.maxMilestonePercent}% of the team's Shares.`,
+      );
+    }
+  }
 
   const threshold = wholeUnits(
     inputs.proposalThreshold || "0",
@@ -496,6 +555,13 @@ export function planDaoLaunch(inputs: DaoLaunchInputs): DaoLaunchPlan {
     fail("raise target", "The raise target must be above zero.");
   if (requiredRaised > (1n << 128n) - 1n)
     fail("raise target", "That raise target is too large.");
+  // The sale sells out or refunds (D74): the target is at least the whole tranche at the starting price.
+  if (requiredRaised < (floorPrice * saleSupply) >> 96n) {
+    fail(
+      "raise target",
+      "The raise target has to be the whole sale at the starting price: either it all sells, or every bid is refunded.",
+    );
+  }
   const challenge = inputs.challenge
     ? planChallenge(inputs.challenge, {
         milestones: milestoneChecks.length,
@@ -764,11 +830,15 @@ export function describeDaoLaunch(plan: DaoLaunchPlan): {
   treasury: bigint;
   total: bigint;
   /**
-   * The part of the treasury backers can leave with if the whole sale sells and all of them leave, in basis points.
-   * The DAO's own Shares do not count, so it is the sale against the sale plus the team: the team's Shares are
-   * outstanding (locked, but theirs) and share the treasury with the backers once they unlock.
+   * The part of the treasury backers can leave with once every milestone has unlocked, if the whole sale sells and all
+   * of them leave, in basis points: the sale against the sale plus the team (the DAO's own Shares never count).
    */
   backersExitBps: number;
+  /**
+   * The same before any milestone: Shares a lock still holds back are left out of the exit (D72), so with the whole team
+   * locked it is all of it.
+   */
+  backersExitBpsBeforeMilestones: number;
   /** The part of the team's allocation held back until a milestone is reached, in basis points (0 when none is). */
   teamLockedBps: number;
 } {
@@ -780,6 +850,12 @@ export function describeDaoLaunch(plan: DaoLaunchPlan): {
     treasury: plan.daoShares,
     total: plan.totalSupply,
     backersExitBps: Number((plan.saleSupply * 10_000n) / outstanding),
+    backersExitBpsBeforeMilestones: Number(
+      (plan.saleSupply * 10_000n) /
+        (outstanding -
+          (team * BigInt(plan.milestoneBps.reduce((a, b) => a + b, 0))) /
+            10_000n),
+    ),
     teamLockedBps: plan.milestoneBps.reduce((a, b) => a + b, 0),
   };
 }

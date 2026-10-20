@@ -11,13 +11,12 @@
  * | Wizard choice       | Issuance schedule            | Graduation line |
  * | ------------------- | ---------------------------- | --------------- |
  * | Fixed price         | one flat rate over the window | 100% of the floor raise (sell out or refund) |
- * | Liquidity bootstrap | 70/20/10 across the thirds    | 20% of the floor raise (seed liquidity fast) |
- * | Graduating auction  | `buildSchedule` 60/30/10      | 15% of the floor raise (the app's preset) |
+ * | Liquidity bootstrap | 70/20/10 across the thirds    | 100% of the floor raise |
+ * | Graduating auction  | `buildSchedule` 60/30/10      | 100% of the floor raise |
  *
- * The 60/30/10 schedule and the 15% line are exactly what
- * `standardLaunchPreset` has always produced, so choosing the default sale
- * type changes nothing about the deployed shape — pinned by the parity test
- * in `wizard.test.mjs`.
+ * Every launch sells its whole tranche or refunds every bid (D74): the launch kit refuses a lower line, because with
+ * one a raise that met its target could have sold a small part of the tranche while the team kept all of its Shares.
+ * The kinds now differ only in how the tranche comes onto the market; demand above the floor still raises the price.
  *
  * Plain-language money lives here too: a founder types a price per token or a
  * raise target in whole units, and these helpers turn that into the Q96 and
@@ -67,17 +66,17 @@ export const SALE_PLANS: Readonly<Record<SaleKind, SalePlan>> = {
     key: "liquidity-bootstrap",
     label: "Liquidity bootstrap",
     blurb:
-      "Most of the tranche comes online in the first third of the window to seed trading, and graduates on a modest raise.",
+      "Most of the tranche comes online in the first third of the window. It all sells, or every bid refunds.",
     shape: "front-loaded",
-    thresholdPercent: 20,
+    thresholdPercent: 100,
   },
   "graduating-auction": {
     key: "graduating-auction",
     label: "Graduating auction",
     blurb:
-      "A release that starts fast and tapers, with a graduation line: clear it and the sale settles, miss it and every bid refunds.",
+      "A release that starts fast and tapers. It all sells at the floor or higher, or every bid refunds.",
     shape: "standard",
-    thresholdPercent: 15,
+    thresholdPercent: 100,
   },
 };
 

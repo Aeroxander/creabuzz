@@ -250,10 +250,10 @@ export function DaoLaunchPanel({
             Backers can leave with
           </dt>
           <dd>
-            {percentText(summary.backersExitBps)} of the treasury if the sale
-            sells out
+            {percentText(summary.backersExitBpsBeforeMilestones)} of what is
+            left in the treasury before the first milestone
             {summary.team > 0n
-              ? `; your team's ${percentText(10_000 - summary.backersExitBps)} ${summary.teamLockedBps > 0 ? "is held back until its milestones are reached" : "is not locked"}`
+              ? `, and ${percentText(summary.backersExitBps)} once every milestone has unlocked (your team's Shares count only as they unlock)`
               : ""}
           </dd>
         </dl>

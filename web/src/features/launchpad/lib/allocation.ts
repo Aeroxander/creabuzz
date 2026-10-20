@@ -73,15 +73,38 @@ export const DAO_RESERVE_KEYS = [
   "community",
 ] as const;
 
-/** The shape a new own-DAO launch starts from: a fifth sold, a fifth for the team, the rest in the DAO. */
+/**
+ * The shape a new own-DAO launch starts from (D75): three quarters sold, a quarter for the team (all of it behind the
+ * milestones), and no reserve in the DAO. The launch kit refuses a sale under 60%, a team over 35% and a reserve over
+ * 20% (`LAUNCH_LIMITS` in the shared package).
+ */
 export const STANDARD_DAO_ALLOCATION: SupplyAllocation = {
-  sale: 20,
-  team: 20,
-  treasury: 60,
+  sale: 75,
+  team: 25,
+  treasury: 0,
   liquidity: 0,
   milestones: 0,
   community: 0,
 };
+
+/** The other two starting splits for an own-DAO launch: a smaller team, and the largest the kit allows. */
+export const DAO_ALLOCATION_PRESETS: ReadonlyArray<{
+  key: "standard" | "small-team" | "large-team";
+  label: string;
+  allocation: SupplyAllocation;
+}> = [
+  { key: "standard", label: "Standard", allocation: STANDARD_DAO_ALLOCATION },
+  {
+    key: "small-team",
+    label: "Small team",
+    allocation: { ...STANDARD_DAO_ALLOCATION, sale: 80, team: 20 },
+  },
+  {
+    key: "large-team",
+    label: "Large team",
+    allocation: { ...STANDARD_DAO_ALLOCATION, sale: 65, team: 35 },
+  },
+];
 
 /** The DAO's share: every part that is neither sold nor the team's. */
 export function daoReserve(allocation: SupplyAllocation): number {

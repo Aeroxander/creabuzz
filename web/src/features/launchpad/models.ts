@@ -500,7 +500,9 @@ export const LAUNCH_DEFAULTS = {
   floorPrice: "792281625140000",
   tickSpacing: "79228162514",
   requiredRaised: "299999999998",
-  supply: "200000000",
+  // The sale tranche: 30 million Shares at a cent raise the default 300,000 when all of them sell, which is what a
+  // sale must do (D74: it sells out or refunds).
+  supply: "30000000",
   admission: "curated",
 } as const;
 

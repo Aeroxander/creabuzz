@@ -305,11 +305,12 @@ async function launch(kit, founder, label, requiredRaisedUsdc, team) {
   const plan = planDaoLaunch({
     name: `Sim ${label}`,
     symbol: `SIM${label}`,
-    totalSupply: "10000000",
+    // The sale sells out or refunds (D74): the tranche at a cent is the target, so the supply follows from it.
+    totalSupply: ((requiredRaisedUsdc * 100n * 100n) / 60n).toString(),
     allocation: { sale: 60, team: 25, dao: 15 },
     team,
     milestones: [
-      { check: `${label}: beta live at a public address`, percent: 20 },
+      { check: `${label}: beta live at a public address`, percent: 30 },
       { check: `${label}: first customers are paying`, percent: 30 },
       { check: `${label}: version one released`, percent: 40 },
     ],
@@ -655,10 +656,13 @@ async function stepTransfer(expect) {
   const locked = word(lockedHex);
   const free = locked >= balance ? 0n : balance - locked;
   const amount = chance(0.3) && locked > 0n ? free + randBig(1n, locked) : randBig(0n, balance);
+  // Every launch locks transfers between wallets (D77): only the auction may send or receive Shares.
+  const transfersLocked = word(await call(P.shares, sel("transfersLocked()"))) !== 0n;
   const r = await send(from, P.shares, enc("transfer(address,uint256)", ["address", "uint256"], [to, amount]));
   if (ok(r) && amount > free) broke("locked Shares moved", `${from} moved ${amount} with ${free} free`);
-  if (!ok(r) && amount <= free) broke("free Shares could not be moved", `${from} ${amount} <= ${free}`);
-  hit(ok(r) ? "transfer" : "transfer.refusedLocked");
+  if (ok(r) && transfersLocked && amount > 0n) broke("Shares moved between wallets while transfers are locked", `${from} -> ${to}`);
+  if (!ok(r) && amount <= free && !transfersLocked) broke("free Shares could not be moved", `${from} ${amount} <= ${free}`);
+  hit(ok(r) ? "transfer" : transfersLocked ? "transfer.refusedTransferLock" : "transfer.refusedLocked");
 }
 
 async function stepExit(expect) {

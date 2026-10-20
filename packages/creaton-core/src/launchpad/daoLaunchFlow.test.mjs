@@ -17,9 +17,12 @@ const plan = planDaoLaunch({
   name: "Nebula",
   symbol: "NEB",
   totalSupply: "1000",
-  allocation: { sale: 40, team: 30, dao: 30 },
+  allocation: { sale: 60, team: 30, dao: 10 },
   team: [{ address: LAUNCHER, percent: 100 }],
-  milestones: [{ check: "alpha shipped", percent: 100 }],
+  milestones: [
+    { check: "alpha shipped", percent: 50 },
+    { check: "first customers", percent: 50 },
+  ],
   panel: {
     reviewers: [
       "0x00000000000000000000000000000000000000a1",
@@ -35,7 +38,7 @@ const plan = planDaoLaunch({
   currency: "0x3333333333333333333333333333333333333333",
   floorPrice: "79228162514264337593543950336",
   tickSpacing: "79228162514264337593543950336",
-  requiredRaised: "500000000000000000000",
+  requiredRaised: "600000000000000000000",
   startBlock: 100,
   endBlock: 102,
   claimBlock: 105,

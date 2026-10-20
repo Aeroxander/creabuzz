@@ -45,7 +45,9 @@ export const BUDGET_DAYS = 90;
 /** What the form starts with. */
 export const CONTRIBUTOR_DEFAULTS = {
   founderShares: "100000",
-  budgetShares: "100000",
+  // Three times the founder's, the least the contributor kit accepts (D79): once it is all awarded, the people who did
+  // the work hold three quarters.
+  budgetShares: "300000",
   projectCap: "25000",
 } as const;
 
@@ -172,6 +174,12 @@ export function contributorTerms(
       "projectCap",
       "One project cannot earn more than the whole budget holds.",
     );
+  // D79: the contributor kit refuses a founder stake above a third of the first budget.
+  if (founderWhole * 3n > budgetWhole)
+    fail(
+      "founderShares",
+      "Start with at most a third of the Shares the first budget can award, so the people who do the work can end up holding most of the project.",
+    );
 
   const reviewers = reviewerList(draft.reviewers);
   if (reviewers.length === 0)
@@ -203,15 +211,11 @@ export function contributorTerms(
       "quorum",
       `How many reviewers must agree: a whole number from 1 to ${reviewers.length}.`,
     );
-  // The founder may sit on the panel, but never be the only judge of work: one approval from them would be enough.
-  if (
-    founderWallet &&
-    quorum === 1 &&
-    lower.includes(founderWallet.toLowerCase())
-  )
+  // D79: the founder does not judge the first budget's work; the contributor kit refuses a panel with them on it.
+  if (founderWallet && lower.includes(founderWallet.toLowerCase()))
     fail(
-      "quorum",
-      "You are a reviewer and one approval is enough, so you could approve work alone. Ask for 2 or more, or leave yourself out.",
+      "reviewers",
+      "You cannot review the first budget's work yourself. Name other people: they check everyone's claims, yours too.",
     );
 
   const projectName = draft.projectName.trim();
