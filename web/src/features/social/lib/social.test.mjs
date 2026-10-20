@@ -215,7 +215,7 @@ describe("post events", () => {
 
 describe("engagement", () => {
   const target = hex("1");
-  it("counts likes, reposts, quotes and direct replies once each", () => {
+  it("counts votes, reposts, quotes and direct replies once each", () => {
     const like = ev({
       id: hex("2"),
       kind: 7,
@@ -241,18 +241,50 @@ describe("engagement", () => {
       }),
     ];
     assert.deepEqual(computeEngagement([target], related, ALICE).get(target), {
-      likes: 1,
+      ups: 1,
+      downs: 1,
       reposts: 1,
       quotes: 1,
       replies: 1,
-      likedByViewer: true,
+      myVote: "+",
+      myVoteIds: [hex("2")],
       viewerRepostId: hex("4"),
     });
   });
 
+  it("counts each person's newest vote once, and keeps all of the viewer's for taking it back", () => {
+    const vote = (id, content, at, pubkey = ALICE) =>
+      ev({
+        id: hex(id),
+        kind: 7,
+        content,
+        pubkey,
+        created_at: at,
+        tags: [["e", target]],
+      });
+    const out = computeEngagement(
+      [target],
+      [vote("a", "+", 10), vote("b", "-", 20), vote("c", "+", 15, hex("9"))],
+      ALICE,
+    ).get(target);
+    assert.equal(out.ups, 1);
+    assert.equal(out.downs, 1);
+    assert.equal(out.myVote, "-");
+    assert.deepEqual(out.myVoteIds, [hex("b"), hex("a")]);
+  });
+
+  it("ignores emoji reactions as votes", () => {
+    const out = computeEngagement(
+      [target],
+      [ev({ id: hex("e"), kind: 7, content: "🔥", tags: [["e", target]] })],
+      ALICE,
+    ).get(target);
+    assert.equal(out.ups + out.downs, 0);
+  });
+
   it("starts every requested id at zero", () => {
     const out = computeEngagement([target], [], null);
-    assert.equal(out.get(target).likes, 0);
+    assert.equal(out.get(target).ups, 0);
     assert.equal(out.get(target).viewerRepostId, null);
   });
 });

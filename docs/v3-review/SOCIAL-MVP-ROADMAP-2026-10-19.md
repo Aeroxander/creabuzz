@@ -25,6 +25,13 @@ until you say otherwise: the pilot's format is unchanged, it is just no longer t
 Likes stay on short posts and up/down votes stay on board posts: one feed, two kinds of post, each with the engagement
 that fits it (D61 still holds for short posts).
 
+## 1b. One timeline (built, D71, 2026-10-20)
+
+Everyone is now General: short posts and every board's posts together, Hot / New / Top. Following is the people you
+follow, from General and every board. Every post has up and down votes; a short post's replies nest Reddit style; one
+composer posts to General or a board; Boards is a directory to join and start boards; profiles show both kinds of post
+and a score. This replaces the Boards tab feed and the "Hot on the boards" strip of section 1.
+
 ## 2. What boards still lack before they replace Reddit
 
 Built since (D64): joining a board and a "Your boards" view; anyone can start a board (5 a day for people who do not
@@ -33,8 +40,8 @@ this month or all time; older posts a page at a time; a live "N new posts" notic
 
 Still missing, in rough order of how much a regular Reddit user would miss each:
 
-1. **Profiles show board posts and a score** (the sum of votes on what you wrote), plus "joined" and post count next to
-   the large picture: the old forum author panel.
+1. **Profiles**: board posts and a score are built (D71); still missing is "joined" and post count next to the large
+   picture, the old forum author panel.
 2. **Pin and lock a thread, board rules** in a side panel, and notifications when someone replies to your post.
 3. **Search** across board posts from the top bar.
 4. **Work and fun** (you said later): a board says whether it is for work or for fun, and Home can show one, the other or

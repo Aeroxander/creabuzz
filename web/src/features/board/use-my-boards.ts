@@ -20,6 +20,9 @@ export interface MyBoards {
   /** Board id → the reader's role on it. Empty for a signed-out reader. */
   joined: ReadonlyMap<string, string>;
   isLoading: boolean;
+  /** The member lists could not be read: `joined` is then unknown, not empty. */
+  failed: boolean;
+  retry: () => void;
   /** Join (true) or leave (false) a board. Throws with a plain message when the server refuses. */
   setJoined: (boardId: string, join: boolean) => Promise<void>;
 }
@@ -84,6 +87,8 @@ export function useMyBoards(): MyBoards {
   return {
     joined,
     isLoading: me !== null && query.isLoading,
+    failed: me !== null && query.isError,
+    retry: () => void query.refetch(),
     setJoined,
   };
 }

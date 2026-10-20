@@ -24,6 +24,21 @@ export function JoinBoardButton({
   const role = mine.joined.get(boardId);
   const runsIt = role === "owner" || role === "admin";
 
+  // Unknown is not "not joined": an owner would otherwise be offered Join on their own board.
+  if (mine.failed) {
+    return (
+      <Button
+        data-testid="board-join-retry"
+        onClick={mine.retry}
+        size="sm"
+        title="Your boards couldn't be checked"
+        variant="outline"
+      >
+        Check again
+      </Button>
+    );
+  }
+
   if (runsIt) {
     return (
       <span

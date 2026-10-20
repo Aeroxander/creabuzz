@@ -12,6 +12,11 @@ import { tokenize } from "@/features/social/lib/content";
 import { EditProfileDialog } from "@/features/social/ui/EditProfileDialog";
 import { PostList } from "@/features/social/ui/PostList";
 import {
+  SCORE_POSTS,
+  useAuthorScore,
+} from "@/features/social/use-author-score";
+import { useMixedTimeline } from "@/features/social/use-mixed-timeline";
+import {
   MutePersonButton,
   ReportPersonButton,
 } from "@/features/social/ui/PersonSafety";
@@ -42,7 +47,7 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "posts", label: "Posts" },
   { id: "replies", label: "Replies" },
   { id: "media", label: "Media" },
-  { id: "likes", label: "Likes" },
+  { id: "likes", label: "Upvoted" },
   { id: "launches", label: "Launches" },
 ];
 
@@ -72,6 +77,7 @@ function Count({
   );
 }
 
+/** Posts: their short posts and board posts together, newest first. Replies and Media: short posts only. */
 function AuthorPosts({
   pubkey,
   tab,
@@ -83,17 +89,22 @@ function AuthorPosts({
     key: ["author", pubkey, tab],
     authors: [pubkey],
     reposts: tab === "posts",
+    enabled: tab !== "posts",
     select:
-      tab === "posts"
-        ? (row) => row.replyToId === null
-        : tab === "replies"
-          ? (row) => row.replyToId !== null
-          : (row) =>
-              tokenize(row.event.content).some((t) => t.type === "image"),
+      tab === "replies"
+        ? (row) => row.replyToId !== null
+        : (row) => tokenize(row.event.content).some((t) => t.type === "image"),
+  });
+  const mixed = useMixedTimeline({
+    tab: "following",
+    authors: [pubkey],
+    enabled: tab === "posts",
   });
   const rows = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
-  if (timeline.isLoading) return <TimelineSkeleton />;
-  if (rows.length === 0) {
+  const loading = tab === "posts" ? mixed.isLoading : timeline.isLoading;
+  const empty = tab === "posts" ? mixed.items.length === 0 : rows.length === 0;
+  if (loading) return <TimelineSkeleton />;
+  if (empty) {
     return (
       <EmptyState testId="profile-posts-list" title="Nothing here yet">
         When this account posts, it shows up here.
@@ -102,14 +113,24 @@ function AuthorPosts({
   }
   return (
     <div data-testid="profile-posts-list">
-      <PostList
-        hasMore={timeline.hasNextPage}
-        loadingMore={timeline.isFetchingNextPage}
-        onLoadMore={() => {
-          if (!timeline.isFetchingNextPage) void timeline.fetchNextPage();
-        }}
-        rows={rows}
-      />
+      {tab === "posts" ? (
+        <PostList
+          boards={mixed.boards}
+          hasMore={mixed.hasMore}
+          items={mixed.items}
+          loadingMore={mixed.loadingMore}
+          onLoadMore={mixed.loadMore}
+        />
+      ) : (
+        <PostList
+          hasMore={timeline.hasNextPage}
+          loadingMore={timeline.isFetchingNextPage}
+          onLoadMore={() => {
+            if (!timeline.isFetchingNextPage) void timeline.fetchNextPage();
+          }}
+          rows={rows}
+        />
+      )}
     </div>
   );
 }
@@ -122,8 +143,8 @@ function Likes({ pubkey }: { pubkey: string }) {
   }
   if (!notes.data?.length) {
     return (
-      <EmptyState title="No likes yet">
-        Posts this account likes show up here.
+      <EmptyState title="No upvotes yet">
+        Posts this account voted up show up here.
       </EmptyState>
     );
   }
@@ -183,6 +204,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const name = resolveUserName(profile, pubkey);
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
+  const score = useAuthorScore(pubkey);
   const isSelf = me === pubkey;
   const hue = bannerHue(pubkey);
 
@@ -296,7 +318,16 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           </a>
         ) : null}
         <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
-        <div className="mt-3 flex gap-5">
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+          <span
+            title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts`}
+          >
+            <Count
+              label={score.data === 1 || score.data === -1 ? "point" : "points"}
+              testId="profile-score"
+              value={score.data === undefined ? "–" : String(score.data)}
+            />
+          </span>
           <Count
             label="Following"
             testId="profile-following-count"

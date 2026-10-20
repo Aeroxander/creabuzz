@@ -194,7 +194,7 @@ export function likerWeight(trust: LikerTrust, blend: number): number {
 }
 
 export interface PostSignals {
-  /** Weighted sum of likes, reposts and replies on the post. */
+  /** Weighted sum of votes (up minus down), reposts and replies on the post. */
   engagement: number;
   /** Unix seconds the post (or its repost) entered the feed. */
   at: number;
@@ -204,10 +204,12 @@ const HOT_TIME_UNIT = 45_000;
 
 /**
  * A post's ranking score: recency plus a logarithmic lift from engagement.
- * `strength` scales the lift (see {@link rankingStrength}); at 0 the order is
- * purely chronological.
+ * Engagement below zero (more trusted down votes than up) pushes the post down
+ * by the same log scale. `strength` scales the lift (see {@link rankingStrength});
+ * at 0 the order is purely chronological.
  */
 export function rankScore(post: PostSignals, strength: number): number {
-  const lift = Math.log10(1 + Math.max(0, post.engagement));
+  const magnitude = Math.log10(1 + Math.abs(post.engagement));
+  const lift = post.engagement < 0 ? -magnitude : magnitude;
   return post.at / HOT_TIME_UNIT + strength * lift;
 }

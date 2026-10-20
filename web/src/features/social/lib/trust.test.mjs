@@ -136,3 +136,10 @@ test("with no ranking strength the order is purely by time", () => {
   const much = { engagement: 5_000, at: 1_000_000 - 20_000 };
   assert.ok(rankScore(much, 1) > rankScore(newer, 1));
 });
+
+test("down votes push a post below a quiet one of the same age", () => {
+  const quiet = { engagement: 0, at: 1_000_000 };
+  const disliked = { engagement: -5, at: 1_000_000 };
+  assert.ok(rankScore(quiet, 1) > rankScore(disliked, 1));
+  assert.equal(rankScore(disliked, 0), rankScore(quiet, 0));
+});

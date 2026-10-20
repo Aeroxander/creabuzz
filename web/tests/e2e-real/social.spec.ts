@@ -169,7 +169,9 @@ test("a post with a hashtag and a mention is stored with the right tags and find
   ).toBeVisible();
 });
 
-test("a like is stored and still shown after a reload", async ({ page }) => {
+test("an up vote is stored and still shown after a reload", async ({
+  page,
+}) => {
   test.slow();
   const fixture = fixtureOrSkip();
   const text = unique("like me");
@@ -178,8 +180,8 @@ test("a like is stored and still shown after a reload", async ({ page }) => {
   await page.goto("/social");
   const card = postCard(page, text);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await card.getByTestId("social-like").click();
-  await expect(card.getByTestId("social-like")).toHaveAttribute(
+  await card.getByTestId("social-vote-up").click();
+  await expect(card.getByTestId("social-vote-up")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -199,12 +201,12 @@ test("a like is stored and still shown after a reload", async ({ page }) => {
 
   await page.reload();
   const again = postCard(page, text);
-  await expect(again.getByTestId("social-like")).toHaveAttribute(
+  await expect(again.getByTestId("social-vote-up")).toHaveAttribute(
     "aria-pressed",
     "true",
     { timeout: 20_000 },
   );
-  await expect(again.getByTestId("social-like")).toContainText("1");
+  await expect(again.getByTestId("social-vote-score")).toContainText("1");
 });
 
 test("replying from the thread page stores NIP-10 reply tags and shows the conversation", async ({

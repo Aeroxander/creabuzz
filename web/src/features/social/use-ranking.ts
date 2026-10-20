@@ -92,12 +92,26 @@ export function useTrustModel() {
   }, [lists.data, profiles.data, me]);
 }
 
+/** How the Everyone tab scores a post: one scale for notes and, through {@link boardEngagement}, board posts. */
+export interface NoteRanking {
+  /** False until the trust model and the loaded notes' engagement are read; scores are then 0. */
+  ready: boolean;
+  /** A note row's score. */
+  scoreNote: (row: Row) => number;
+  /** A note's trust-weighted engagement alone (votes, reposts, replies), for Top. */
+  engagementOf: (id: string) => number;
+  /** A score for any post, from its engagement and when it entered the feed. */
+  scoreOf: (engagement: number, at: number) => number;
+}
+
 /**
- * `rows` ordered for the Creaton tab. Until the trust model and the engagement
- * of the loaded posts are known, the rows stay in feed order — the ranking only
- * ever refines the chronological list, so there is no empty or half-sorted state.
+ * Scores for `rows` on the Creaton tab's scale: recency lifted by engagement, each person's newest vote counting once
+ * (up adds, down takes away), weighted by trust, with reposts and replies counting too.
  */
-export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
+export function useNoteRanking(
+  rows: readonly Row[],
+  enabled: boolean,
+): NoteRanking {
   const model = useTrustModel();
   const { priority } = useLaunchUpdates();
   const ids = useMemo(
@@ -131,42 +145,78 @@ export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
   });
 
   return useMemo(() => {
-    if (!enabled || !model || !ready || rows.length === 0) return [...rows];
+    if (!enabled || !model || !ready) {
+      return {
+        ready: false,
+        scoreNote: () => 0,
+        scoreOf: () => 0,
+        engagementOf: () => 0,
+      };
+    }
     const engagement = new Map<string, number>();
+    const add = (target: string, amount: number) =>
+      engagement.set(target, (engagement.get(target) ?? 0) + amount);
     const seen = new Set<string>();
+    // Each person's newest vote on a target counts once.
+    const newestVote = new Map<
+      string,
+      { at: number; id: string; up: boolean }
+    >();
     for (const event of events) {
       if (seen.has(event.id)) continue;
       seen.add(event.id);
       const target = lastTagValue(event.tags, "e");
       if (!target) continue;
       if (event.kind === KIND_REACTION) {
-        if (event.content !== "+" && event.content !== "") continue;
-        engagement.set(
-          target,
-          (engagement.get(target) ?? 0) + model.weightOf(event.pubkey),
-        );
+        const up = event.content === "+" || event.content === "";
+        if (!up && event.content !== "-") continue;
+        const key = `${target}\u0000${event.pubkey}`;
+        const seenVote = newestVote.get(key);
+        if (
+          !seenVote ||
+          event.created_at > seenVote.at ||
+          (event.created_at === seenVote.at && event.id > seenVote.id)
+        ) {
+          newestVote.set(key, { at: event.created_at, id: event.id, up });
+        }
       } else if (event.kind === KIND_REPOST) {
-        engagement.set(
-          target,
-          (engagement.get(target) ?? 0) + 1.5 * model.weightOf(event.pubkey),
-        );
+        add(target, 1.5 * model.weightOf(event.pubkey));
       } else if (event.kind === KIND_TEXT_NOTE) {
-        engagement.set(
-          target,
-          (engagement.get(target) ?? 0) + 0.5 * model.weightOf(event.pubkey),
-        );
+        add(target, 0.5 * model.weightOf(event.pubkey));
       }
     }
-    const scoreOf = (row: Row) =>
-      rankScore(
-        {
-          engagement: engagement.get(row.event.id) ?? 0,
-          at:
-            (row.repostedBy?.at ?? row.event.created_at) +
-            (priority.has(row.event.id) ? PRIORITY_UPDATE_BONUS_SECONDS : 0),
-        },
-        model.strength,
+    for (const [key, vote] of newestVote) {
+      const [target, voter] = key.split("\u0000");
+      add(target, (vote.up ? 1 : -1) * model.weightOf(voter));
+    }
+    const scoreOf = (amount: number, at: number) =>
+      rankScore({ engagement: amount, at }, model.strength);
+    const scoreNote = (row: Row) =>
+      scoreOf(
+        engagement.get(row.event.id) ?? 0,
+        (row.repostedBy?.at ?? row.event.created_at) +
+          (priority.has(row.event.id) ? PRIORITY_UPDATE_BONUS_SECONDS : 0),
       );
-    return [...rows].sort((a, b) => scoreOf(b) - scoreOf(a));
-  }, [enabled, model, ready, rows, events, priority]);
+    return {
+      ready: true,
+      scoreNote,
+      scoreOf,
+      engagementOf: (id: string) => engagement.get(id) ?? 0,
+    };
+  }, [enabled, model, ready, events, priority]);
+}
+
+/**
+ * `rows` ordered for the Creaton tab. Until the trust model and the engagement
+ * of the loaded posts are known, the rows stay in feed order — the ranking only
+ * ever refines the chronological list, so there is no empty or half-sorted state.
+ */
+export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
+  const ranking = useNoteRanking(rows, enabled);
+  return useMemo(() => {
+    if (!ranking.ready || rows.length === 0) return [...rows];
+    return [...rows].sort(
+      (a, b) => ranking.scoreNote(b) - ranking.scoreNote(a),
+    );
+  }, [ranking, rows]);
 }

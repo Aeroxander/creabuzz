@@ -3,9 +3,12 @@ import { Loader2 } from "lucide-react";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
 
+import { BoardPostCard } from "../../board/ui/BoardPostCard";
+import type { BoardEvent } from "../../board/lib/board-model";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
-import type { Row } from "../lib/timeline";
+import type { TimelineItem } from "../lib/mixed-timeline";
+import { activityAt, type Row } from "../lib/timeline";
 import { useLaunchUpdates } from "../use-launch-updates";
 import { engagementOf, useEngagementMap, usePeople } from "../use-people";
 import { useBookmarkIds, useMutedPeople } from "../use-social-actions";
@@ -13,7 +16,7 @@ import { PostCard } from "./PostCard";
 import { TimelineSkeleton } from "./Status";
 
 /** Launch coordinate → launch name, so a post about a launch names it. */
-function useLaunchName(): (coord: string) => string | null {
+export function useLaunchName(): (coord: string) => string | null {
   const launches = useLaunches().data;
   const names = useMemo(() => {
     const map = new Map<string, string>();
@@ -31,18 +34,30 @@ function useLaunchName(): (coord: string) => string | null {
   return (coord) => names.get(coord) ?? null;
 }
 
+/** Board posts in a mixed timeline: their boards' names, and where a vote the server accepted goes. */
+export interface BoardContext {
+  names: ReadonlyMap<string, { name: string }>;
+  add: (event: BoardEvent) => void;
+}
+
 /**
  * Posts with everything a card needs resolved in batches: authors' profiles,
  * engagement counts, which are bookmarked, and who you muted (hidden). Calls
  * `onLoadMore` as the end of the list scrolls into view.
+ *
+ * Takes plain note rows, or a mixed timeline (`items`) of notes and board posts with the `boards` they need.
  */
 export function PostList({
   rows,
+  items,
+  boards,
   hasMore = false,
   loadingMore = false,
   onLoadMore,
 }: {
-  rows: readonly Row[];
+  rows?: readonly Row[];
+  items?: readonly TimelineItem[];
+  boards?: BoardContext;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -54,30 +69,50 @@ export function PostList({
   const launchName = useLaunchName();
   const officialUpdates = useLaunchUpdates().ids;
 
+  const all = useMemo<readonly TimelineItem[]>(
+    () =>
+      items ??
+      (rows ?? []).map((row) => ({
+        kind: "note" as const,
+        key: `n:${row.event.id}:${row.repostedBy?.pubkey ?? ""}`,
+        row,
+        at: activityAt(row),
+      })),
+    [items, rows],
+  );
   const visible = useMemo(
     () =>
       muted?.size
-        ? rows.filter(
-            (r) =>
-              !muted.has(r.event.pubkey) &&
-              !(r.repostedBy && muted.has(r.repostedBy.pubkey)),
+        ? all.filter((item) =>
+            item.kind === "board"
+              ? !muted.has(item.post.author)
+              : !muted.has(item.row.event.pubkey) &&
+                !(item.row.repostedBy && muted.has(item.row.repostedBy.pubkey)),
           )
-        : rows,
-    [rows, muted],
+        : all,
+    [all, muted],
   );
   const people = usePeople(
     useMemo(
       () =>
-        visible.flatMap((r) =>
-          r.repostedBy
-            ? [r.event.pubkey, r.repostedBy.pubkey]
-            : [r.event.pubkey],
+        visible.flatMap((item) =>
+          item.kind === "board"
+            ? [item.post.author]
+            : item.row.repostedBy
+              ? [item.row.event.pubkey, item.row.repostedBy.pubkey]
+              : [item.row.event.pubkey],
         ),
       [visible],
     ),
   );
   const engagement = useEngagementMap(
-    useMemo(() => visible.map((r) => r.event.id), [visible]),
+    useMemo(
+      () =>
+        visible.flatMap((item) =>
+          item.kind === "note" ? [item.row.event.id] : [],
+        ),
+      [visible],
+    ),
     me,
   );
 
@@ -99,18 +134,37 @@ export function PostList({
 
   return (
     <div data-testid="social-post-list">
-      {visible.map((row) => (
-        <PostCard
-          author={people[row.event.pubkey]}
-          bookmarked={bookmarks?.includes(row.event.id) ?? false}
-          engagement={engagementOf(engagement, row.event.id)}
-          key={`${row.event.id}:${row.repostedBy?.pubkey ?? ""}`}
-          launchName={launchName}
-          launchUpdate={officialUpdates.has(row.event.id)}
-          reposter={row.repostedBy ? people[row.repostedBy.pubkey] : undefined}
-          row={row}
-        />
-      ))}
+      {visible.map((item) =>
+        item.kind === "board" ? (
+          boards ? (
+            <BoardPostCard
+              add={boards.add}
+              author={people[item.post.author]}
+              board={{
+                id: item.post.boardId,
+                name: boards.names.get(item.post.boardId)?.name ?? "Board",
+              }}
+              key={item.key}
+              post={item.post}
+            />
+          ) : null
+        ) : (
+          <PostCard
+            author={people[item.row.event.pubkey]}
+            bookmarked={bookmarks?.includes(item.row.event.id) ?? false}
+            engagement={engagementOf(engagement, item.row.event.id)}
+            key={item.key}
+            launchName={launchName}
+            launchUpdate={officialUpdates.has(item.row.event.id)}
+            reposter={
+              item.row.repostedBy
+                ? people[item.row.repostedBy.pubkey]
+                : undefined
+            }
+            row={item.row}
+          />
+        ),
+      )}
       <div className="flex h-14 items-center justify-center" ref={sentinel}>
         {loadingMore ? (
           <Loader2

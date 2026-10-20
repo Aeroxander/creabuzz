@@ -1,5 +1,10 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
+
+import {
+  FEED_PERIOD_LABELS,
+  type FeedPeriod,
+} from "@/features/board/lib/board-feed";
 
 import { HomeHero } from "@/features/feed/ui/HomeHero";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
@@ -14,8 +19,8 @@ import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
 import { PageBar, SocialShell } from "./SocialShell";
 import { TabStrip } from "./TabStrip";
-import { useRankedRows } from "../use-ranking";
-import { useFollowing, useTimeline } from "../use-social-data";
+import { type TimelineSort, useMixedTimeline } from "../use-mixed-timeline";
+import { useFollowing } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 type Tab = "everyone" | "following" | "boards" | "projects";
@@ -27,22 +32,18 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "projects", label: "Projects" },
 ];
 
-const BoardFeed = lazy(() =>
-  import("@/features/board/ui/BoardFeed").then((m) => ({
-    default: m.BoardFeed,
-  })),
-);
-const HotOnBoards = lazy(() =>
-  import("@/features/board/ui/HotOnBoards").then((m) => ({
-    default: m.HotOnBoards,
+const BoardDirectory = lazy(() =>
+  import("@/features/board/ui/BoardDirectory").then((m) => ({
+    default: m.BoardDirectory,
   })),
 );
 
 /**
- * Home: every post on this server (ranked by recency and trust-weighted likes), or just the people you follow, or the
- * boards' long-form discussions with up and down votes, or the projects' own progress reports, with one composer on top.
- * Everyone also shows the hottest board posts above the short posts, so the boards are part of the feed. Above it, for someone signed in, what is waiting on them and
- * their organizations; for a visitor, what this place is for.
+ * Home. Everyone is the General board: every post on this server, short posts and board posts together, ranked by
+ * recency lifted by votes. Following is the people you follow, from General and every board, newest first. Boards
+ * lists the boards to browse and join, and Projects the projects' own progress reports. One composer on top posts to
+ * General or a board. Above it, for someone signed in, what is waiting on them and their organizations; for a visitor,
+ * what this place is for.
  */
 export function SocialHomePage() {
   const me = existingUserPubkey();
@@ -61,16 +62,15 @@ export function SocialHomePage() {
     tab === "following"
       ? [...(following.data ?? []), ...(me ? [me] : [])]
       : null;
-  const timeline = useTimeline({
-    key: [tab, authors ? [...authors].sort().join(",") : "all"],
+  const [sort, setSort] = useState<TimelineSort>("hot");
+  const [period, setPeriod] = useState<FeedPeriod>("week");
+  const timeline = useMixedTimeline({
+    tab: tab === "following" ? "following" : "everyone",
     authors,
-    reposts: true,
+    sort,
+    period,
     enabled: tab === "everyone" || (tab === "following" && following.isSuccess),
   });
-  const loaded = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
-  // Everyone: recency lifted by trust-weighted engagement. Following stays
-  // strictly chronological.
-  const rows = useRankedRows(loaded, tab === "everyone");
 
   return (
     <SocialShell>
@@ -81,15 +81,18 @@ export function SocialHomePage() {
         {me ? <HomeYours me={me} /> : null}
         <HomeHero />
       </div>
-      {tab === "boards" ? null : <PostComposer />}
+      {tab === "boards" ? null : <PostComposer postTo />}
       {tab === "everyone" ? (
-        <Suspense fallback={null}>
-          <HotOnBoards onSeeAll={() => setTab("boards")} />
-        </Suspense>
+        <SortBar
+          onPeriod={setPeriod}
+          onSort={setSort}
+          period={period}
+          sort={sort}
+        />
       ) : null}
       {tab === "boards" ? (
         <Suspense fallback={<TimelineSkeleton />}>
-          <BoardFeed />
+          <BoardDirectory />
         </Suspense>
       ) : tab === "projects" ? (
         <div className="p-3">
@@ -115,13 +118,13 @@ export function SocialHomePage() {
           </Link>
           .
         </EmptyState>
-      ) : timeline.isError ? (
+      ) : timeline.error ? (
         <div className="p-4">
           <QueryError
             description="The server did not answer the feed query, so no posts can be shown."
             error={timeline.error}
             kinds={[KIND_TEXT_NOTE]}
-            onRetry={() => void timeline.refetch()}
+            onRetry={timeline.refetch}
             relayUrl={relayWsUrl()}
             testId="social-feed-error"
             title="Couldn't load the feed"
@@ -129,20 +132,82 @@ export function SocialHomePage() {
         </div>
       ) : timeline.isLoading || (tab === "following" && following.isLoading) ? (
         <TimelineSkeleton />
-      ) : rows.length === 0 ? (
+      ) : timeline.items.length === 0 ? (
         <EmptyState testId="social-feed-empty" title="Nothing here yet">
           Be the first to post.
         </EmptyState>
       ) : (
         <PostList
-          hasMore={timeline.hasNextPage}
-          loadingMore={timeline.isFetchingNextPage}
-          onLoadMore={() => {
-            if (!timeline.isFetchingNextPage) void timeline.fetchNextPage();
-          }}
-          rows={rows}
+          boards={timeline.boards}
+          hasMore={timeline.hasMore}
+          items={timeline.items}
+          loadingMore={timeline.loadingMore}
+          onLoadMore={timeline.loadMore}
         />
       )}
     </SocialShell>
+  );
+}
+
+const SORT_LABELS: Record<TimelineSort, string> = {
+  hot: "Hot",
+  new: "New",
+  top: "Top",
+};
+
+/** Everyone's order: Hot (newer and better voted first), New, or Top for a period. */
+function SortBar({
+  sort,
+  period,
+  onSort,
+  onPeriod,
+}: {
+  sort: TimelineSort;
+  period: FeedPeriod;
+  onSort: (sort: TimelineSort) => void;
+  onPeriod: (period: FeedPeriod) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 border-b border-black/10 px-4 py-2 dark:border-white/10"
+      data-testid="home-sort"
+    >
+      <fieldset className="m-0 flex min-w-0 rounded-full border border-black/10 p-0.5 dark:border-white/15">
+        <legend className="sr-only">Order posts by</legend>
+        {(Object.keys(SORT_LABELS) as TimelineSort[]).map((key) => (
+          <button
+            aria-pressed={sort === key}
+            className={`rounded-full px-3 py-0.5 text-xs font-semibold ${
+              sort === key
+                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+            }`}
+            data-testid={`home-sort-${key}`}
+            key={key}
+            onClick={() => onSort(key)}
+            type="button"
+          >
+            {SORT_LABELS[key]}
+          </button>
+        ))}
+      </fieldset>
+      {sort === "top" ? (
+        <label className="text-xs">
+          <span className="sr-only">Top posts from</span>
+          <select
+            className="rounded-full border border-black/10 bg-transparent px-2 py-0.5 text-xs dark:border-white/15"
+            data-testid="home-sort-period"
+            onChange={(e) => onPeriod(e.target.value as FeedPeriod)}
+            value={period}
+          >
+            {(Object.keys(FEED_PERIOD_LABELS) as FeedPeriod[]).map((key) => (
+              <option key={key} value={key}>
+                {FEED_PERIOD_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
   );
 }

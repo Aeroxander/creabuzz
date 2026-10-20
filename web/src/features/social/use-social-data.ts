@@ -151,18 +151,29 @@ export function useNotesById(ids: readonly string[]) {
   });
 }
 
-/** A note, the notes above it (oldest first) and its direct replies. */
+/**
+ * A note, the notes above it (oldest first) and every reply in its conversation: replies name the thread's first post
+ * as their root, so one read by root finds them at every depth (the page builds the tree).
+ */
 export function useThread(noteId: string) {
   return useQuery({
     queryKey: [...socialKeys.all, "thread", noteId],
     staleTime: 10_000,
     refetchInterval: 20_000,
     queryFn: async () => {
-      const [found, replies] = await Promise.all([
-        readEvents({ ids: [noteId], kinds: [KIND_TEXT_NOTE], limit: 1 }),
-        readEvents({ kinds: [KIND_TEXT_NOTE], "#e": [noteId], limit: 200 }),
+      const [found] = (await readEvents({
+        ids: [noteId],
+        kinds: [KIND_TEXT_NOTE],
+        limit: 1,
+      })) as SignedEvent[];
+      const note = found ? (buildRows([found])[0] ?? null) : null;
+      const rootId = note?.rootId ?? noteId;
+      const [underRoot, underNote] = await Promise.all([
+        readEvents({ kinds: [KIND_TEXT_NOTE], "#e": [rootId], limit: 500 }),
+        rootId === noteId
+          ? Promise.resolve([])
+          : readEvents({ kinds: [KIND_TEXT_NOTE], "#e": [noteId], limit: 200 }),
       ]);
-      const note = buildRows(found as SignedEvent[])[0] ?? null;
 
       const ancestors: Row[] = [];
       let parentId = note?.replyToId ?? null;
@@ -178,10 +189,11 @@ export function useThread(noteId: string) {
         parentId = row.replyToId;
       }
 
-      const direct = buildRows(replies as SignedEvent[])
-        .filter((r) => r.replyToId === noteId)
-        .sort((a, b) => a.event.created_at - b.event.created_at);
-      return { note, ancestors, replies: direct };
+      const replies = buildRows([
+        ...(underRoot as SignedEvent[]),
+        ...(underNote as SignedEvent[]),
+      ]).filter((r) => r.event.id !== noteId && r.replyToId !== null);
+      return { note, ancestors, replies, isRoot: note?.rootId == null };
     },
   });
 }

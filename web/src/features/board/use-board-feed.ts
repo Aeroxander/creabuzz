@@ -3,19 +3,15 @@
  * in Everyone.
  *
  * Read a page at a time, newest first: each page is the next posts (the server keeps them to the boards this reader may
- * see, or to the boards asked for), then the votes and replies that name those posts. Older pages are read on request.
- * While it is open, new posts by other people are counted live but not shown until asked for, so the list never moves
- * under the reader; what the reader does (a vote) is merged in as soon as the server accepts it.
+ * see, or to the boards asked for), then the votes and replies that name those posts. Older pages are read on request;
+ * what the reader does (a vote) is merged in as soon as the server accepts it. A single board, opened, is live
+ * (`use-board.ts`).
  */
 
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useChannels } from "@/features/channels/use-channels";
-import {
-  subscribeChannel,
-  type SubscriptionStatus,
-} from "@/features/channels/subscribe-channel";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrFilter, queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -41,19 +37,25 @@ interface FeedPage {
   next: number | null;
 }
 
-function postFilter(boards: readonly string[] | null): NostrFilter {
-  return boards === null
-    ? { kinds: [KIND_FORUM_POST] }
-    : { kinds: [KIND_FORUM_POST], "#h": boards.slice(0, MAX_NAMED_BOARDS) };
+function postFilter(
+  boards: readonly string[] | null,
+  authors: readonly string[] | null,
+): NostrFilter {
+  return {
+    kinds: [KIND_FORUM_POST],
+    ...(boards === null ? {} : { "#h": boards.slice(0, MAX_NAMED_BOARDS) }),
+    ...(authors === null ? {} : { authors: [...authors] }),
+  };
 }
 
 async function fetchPage(
   boards: readonly string[] | null,
+  authors: readonly string[] | null,
   until: number | undefined,
 ): Promise<FeedPage> {
   const url = relayWsUrl();
   const posts = await queryEvents(url, {
-    ...postFilter(boards),
+    ...postFilter(boards, authors),
     limit: FEED_PAGE_SIZE,
     ...(until === undefined ? {} : { until }),
   });
@@ -86,7 +88,10 @@ async function fetchPage(
 export interface BoardFeed {
   posts: FeedPost[];
   /** Board id → its name and description, for the chip on each post. */
-  boards: ReadonlyMap<string, { name: string; description: string }>;
+  boards: ReadonlyMap<
+    string,
+    { name: string; description: string; visibility: "public" | "private" }
+  >;
   isLoading: boolean;
   error: unknown;
   /** Read everything again from the newest, taking in any new posts. */
@@ -96,23 +101,20 @@ export interface BoardFeed {
   hasOlder: boolean;
   loadingOlder: boolean;
   loadOlder: () => void;
-  /** Posts by other people that arrived while open and are not shown yet. */
-  fresh: number;
-  liveStatus: SubscriptionStatus | null;
 }
 
 /**
  * `scope` is the boards to read, or null for every board the reader can see. `enabled` false reads nothing (a scope
- * still being worked out). `live` false skips the live count of new posts.
+ * still being worked out). `authors` keeps only posts by those people (the Following timeline).
  */
 export function useBoardFeed({
   scope = null,
+  authors = null,
   enabled = true,
-  live = true,
 }: {
   scope?: readonly string[] | null;
+  authors?: readonly string[] | null;
   enabled?: boolean;
-  live?: boolean;
 } = {}): BoardFeed {
   const channels = useChannels();
   const scopeKey = scope === null ? "all" : [...scope].sort().join(",");
@@ -122,10 +124,22 @@ export function useBoardFeed({
       scopeKey === "all" ? null : scopeKey === "" ? [] : scopeKey.split(","),
     [scopeKey],
   );
-  const empty = named !== null && named.length === 0;
+  const authorKey = authors === null ? "anyone" : [...authors].sort().join(",");
+  const byAuthors = useMemo(
+    () =>
+      authorKey === "anyone"
+        ? null
+        : authorKey === ""
+          ? []
+          : authorKey.split(","),
+    [authorKey],
+  );
+  const empty =
+    (named !== null && named.length === 0) ||
+    (byAuthors !== null && byAuthors.length === 0);
   const query = useInfiniteQuery({
-    queryKey: ["board-feed", scopeKey],
-    queryFn: ({ pageParam }) => fetchPage(named, pageParam),
+    queryKey: ["board-feed", scopeKey, authorKey],
+    queryFn: ({ pageParam }) => fetchPage(named, byAuthors, pageParam),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (page) => page.next ?? undefined,
     enabled: enabled && !empty,
@@ -140,45 +154,22 @@ export function useBoardFeed({
   );
 
   const boards = useMemo(() => {
-    const map = new Map<string, { name: string; description: string }>();
+    const map = new Map<
+      string,
+      { name: string; description: string; visibility: "public" | "private" }
+    >();
     for (const channel of channels.channels) {
       if (channel.type !== "forum") continue;
       map.set(channel.id, {
         name: channel.name,
         description: channel.description,
+        visibility: channel.visibility,
       });
     }
     return map;
   }, [channels.channels]);
 
-  // New posts while open: counted, not shown, until the reader asks.
   const me = existingUserPubkey();
-  const [arrived, setArrived] = useState<ReadonlySet<string>>(() => new Set());
-  const [liveStatus, setLiveStatus] = useState<SubscriptionStatus | null>(null);
-  // The server pushes a board's new posts only to subscriptions that name the board, so "every board" is spelled out
-  // from the board list (up to the server's cap on named boards).
-  const liveKey =
-    named === null
-      ? [...boards.keys()].sort().slice(0, MAX_NAMED_BOARDS).join(",")
-      : scopeKey;
-  useEffect(() => {
-    setArrived(new Set());
-    setLiveStatus(null);
-    if (!enabled || empty || !live || liveKey === "") return;
-    const since = Math.floor(Date.now() / 1000);
-    return subscribeChannel(
-      relayWsUrl(),
-      { kinds: [KIND_FORUM_POST], "#h": liveKey.split(","), since },
-      {
-        onEvent: (event) => {
-          if (event.kind !== KIND_FORUM_POST || event.pubkey === me) return;
-          setArrived((previous) => new Set(previous).add(event.id));
-        },
-        onStatus: setLiveStatus,
-      },
-    );
-  }, [liveKey, enabled, empty, live, me]);
-
   const loaded = query.data?.pages;
   const posts = useMemo(() => {
     const byId = new Map<string, BoardEvent>();
@@ -191,16 +182,12 @@ export function useBoardFeed({
     return buildFeed([...byId.values()], me, visible);
   }, [loaded, mine, me, boards, named]);
 
-  const shownIds = useMemo(() => new Set(posts.map((p) => p.id)), [posts]);
-  const fresh = [...arrived].filter((id) => !shownIds.has(id)).length;
-
   return {
     posts,
     boards,
     isLoading: (!empty && enabled && query.isLoading) || channels.isLoading,
     error: query.error ?? channels.error,
     refetch: () => {
-      setArrived(new Set());
       void query.refetch();
       void channels.refetch();
     },
@@ -210,7 +197,5 @@ export function useBoardFeed({
     loadOlder: () => {
       if (!query.isFetchingNextPage) void query.fetchNextPage();
     },
-    fresh,
-    liveStatus,
   };
 }

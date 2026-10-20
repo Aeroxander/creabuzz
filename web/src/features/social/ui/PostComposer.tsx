@@ -24,6 +24,7 @@ import {
   MAX_POST_CHARS,
   type SignedEventLike,
 } from "../../feed/lib/feed-events";
+import { usePostToBoard } from "../../board/use-post-to-board";
 import { readMirrorSetting, writeMirrorSetting } from "../../feed/lib/mirror";
 import { mentionUri } from "../lib/entity";
 import { buildLaunchUpdate } from "../lib/launch-update";
@@ -65,6 +66,9 @@ function useMentionSuggestions(query: string | null) {
 /**
  * Write a post, a reply or a quote post. Mentions autocomplete from the people
  * you follow; without an identity it offers to create one.
+ *
+ * With `postTo` (Home's composer), "Post to" chooses where a new post goes: General, the short-post timeline everyone
+ * sees, or a board, where a post has a title and can be longer.
  */
 export function PostComposer({
   replyTo,
@@ -72,6 +76,7 @@ export function PostComposer({
   placeholder = "What's happening?",
   autoFocus = false,
   onPosted,
+  postTo = false,
   testId = "social-composer",
 }: {
   replyTo?: { root: SignedEventLike; parent: SignedEventLike } | null;
@@ -79,6 +84,8 @@ export function PostComposer({
   placeholder?: string;
   autoFocus?: boolean;
   onPosted?: () => void;
+  /** Offer "Post to: General or a board". */
+  postTo?: boolean;
   testId?: string;
 }) {
   const me = existingUserPubkey();
@@ -94,7 +101,13 @@ export function PostComposer({
   const teamLaunches = useMyTeamLaunches();
   const [launchMode, setLaunchMode] = useState(false);
   const [launchKey, setLaunchKey] = useState("");
-  const canLaunchMode = !quote && !replyTo && teamLaunches.length > 0;
+  const toBoard = usePostToBoard();
+  const [boardId, setBoardId] = useState("");
+  const [title, setTitle] = useState("");
+  const [boardBusy, setBoardBusy] = useState(false);
+  const onBoard = postTo && !quote && !replyTo && boardId !== "";
+  const canLaunchMode =
+    !quote && !replyTo && !onBoard && teamLaunches.length > 0;
   const chosenLaunch =
     teamLaunches.find((l) => `${l.author}:${l.id}` === launchKey) ??
     teamLaunches[0];
@@ -131,7 +144,7 @@ export function PostComposer({
         >
           {CREATE_ACCOUNT}
         </button>{" "}
-        to post, reply, like and follow. Reading needs no account.
+        to post, reply, vote and follow. Reading needs no account.
         {onboarding ? (
           <OnboardingDialog
             onDone={() => window.location.reload()}
@@ -142,7 +155,10 @@ export function PostComposer({
     );
   }
 
-  const remaining = MAX_POST_CHARS - [...text].length;
+  // A board post can be long (its title is the headline); the short-post limit is for General.
+  const remaining = onBoard
+    ? Number.POSITIVE_INFINITY
+    : MAX_POST_CHARS - [...text].length;
 
   const insertMention = (pubkey: string) => {
     if (!mention) return;
@@ -158,6 +174,26 @@ export function PostComposer({
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
+    if (onBoard) {
+      if (boardBusy) return;
+      setBoardBusy(true);
+      toBoard
+        .post(boardId, title, text)
+        .then(() => {
+          setText("");
+          setTitle("");
+          if (ref.current) ref.current.style.height = "auto";
+          toast.success("Posted to the board");
+          onPosted?.();
+        })
+        .catch((error) =>
+          toast.error(
+            error instanceof Error ? error.message : "Could not post.",
+          ),
+        )
+        .finally(() => setBoardBusy(false));
+      return;
+    }
     let template: ReturnType<typeof buildSocialPost>;
     try {
       template = quote
@@ -225,8 +261,49 @@ export function PostComposer({
         displayName={resolveUserName(myProfile, me)}
       />
       <div className="relative min-w-0 flex-1">
+        {postTo && !quote && !replyTo && toBoard.boards.length > 0 ? (
+          <label className="flex w-fit items-center gap-1.5 text-xs font-medium text-black/70 dark:text-white/70">
+            Post to
+            <select
+              className="rounded-full border border-black/15 bg-transparent px-2 py-0.5 text-xs font-semibold text-sky-700 dark:border-white/20 dark:text-sky-400"
+              data-testid={`${testId}-post-to`}
+              onChange={(e) => setBoardId(e.target.value)}
+              value={boardId}
+            >
+              <option value="">General</option>
+              {toBoard.boards.map((board) => (
+                <option key={board.id} value={board.id}>
+                  {board.name}
+                  {board.joined ? " (joined)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {onBoard ? (
+          <>
+            <label className="sr-only" htmlFor={`${inputId}-title`}>
+              Title
+            </label>
+            <input
+              className="mt-1 w-full bg-transparent pt-1 text-lg font-bold text-black outline-none placeholder:text-black/50 dark:text-white dark:placeholder:text-white/40"
+              data-testid={`${testId}-title`}
+              id={`${inputId}-title`}
+              maxLength={180}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title"
+              value={title}
+            />
+          </>
+        ) : null}
         <label className="sr-only" htmlFor={inputId}>
-          {quote ? "Your comment" : replyTo ? "Your reply" : "Your post"}
+          {quote
+            ? "Your comment"
+            : replyTo
+              ? "Your reply"
+              : onBoard
+                ? "Text (optional)"
+                : "Your post"}
         </label>
         <textarea
           className="min-h-12 w-full resize-none bg-transparent pt-2 text-lg text-black outline-none placeholder:text-black/50 dark:text-white dark:placeholder:text-white/40"
@@ -239,7 +316,9 @@ export function PostComposer({
           }}
           onKeyDown={onKeyDown}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          placeholder={placeholder}
+          placeholder={
+            onBoard ? "Text (optional). You can use Markdown." : placeholder
+          }
           ref={ref}
           rows={1}
           value={text}
@@ -315,15 +394,17 @@ export function PostComposer({
                 ) : null}
               </span>
             ) : null}
-            <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
-              <input
-                checked={mirror}
-                data-testid={`${testId}-mirror`}
-                onChange={(e) => setMirror(e.target.checked)}
-                type="checkbox"
-              />
-              Also share outside this server, on public Nostr
-            </label>
+            {onBoard ? null : (
+              <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+                <input
+                  checked={mirror}
+                  data-testid={`${testId}-mirror`}
+                  onChange={(e) => setMirror(e.target.checked)}
+                  type="checkbox"
+                />
+                Also share outside this server, on public Nostr
+              </label>
+            )}
           </div>
           <span className="flex items-center gap-3">
             {remaining < 200 ? (
@@ -342,12 +423,14 @@ export function PostComposer({
               className="rounded-full px-5 font-semibold"
               data-testid={`${testId}-submit`}
               disabled={
-                publish.isPending || text.trim() === "" || remaining < 0
+                onBoard
+                  ? boardBusy || title.trim() === ""
+                  : publish.isPending || text.trim() === "" || remaining < 0
               }
               size="sm"
               type="submit"
             >
-              {publish.isPending
+              {publish.isPending || boardBusy
                 ? "Posting…"
                 : quote
                   ? "Post"

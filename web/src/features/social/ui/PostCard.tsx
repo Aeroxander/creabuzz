@@ -4,7 +4,6 @@ import {
   Bookmark,
   Bot,
   Flag,
-  Heart,
   Megaphone,
   MessageCircle,
   Quote,
@@ -30,10 +29,11 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { parseLaunchCoordinate, parseNote } from "../../feed/lib/feed-events";
 import type { Engagement } from "../lib/engagement";
-import { buildLike, buildRepost, buildUndo } from "../lib/post-events";
+import { buildRepost, buildUndo } from "../lib/post-events";
 import type { Row } from "../lib/timeline";
 import { useSocialPublish, useToggleBookmark } from "../use-social-actions";
 import { PostContent } from "./PostContent";
+import { PostVotes } from "./PostVotes";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { QuoteDialog } from "./QuoteDialog";
 
@@ -43,19 +43,11 @@ function compact(n: number): string {
     : new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
 }
 
-type Tone =
-  | "reply"
-  | "repost"
-  | "like"
-  | "bookmark"
-  | "share"
-  | "delete"
-  | "report";
+type Tone = "reply" | "repost" | "bookmark" | "share" | "delete" | "report";
 
 const HOVER: Record<Tone, string> = {
   reply: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   repost: "hover:text-emerald-600 [&:hover>span:first-child]:bg-emerald-500/10",
-  like: "hover:text-rose-600 [&:hover>span:first-child]:bg-rose-500/10",
   bookmark: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   share: "hover:text-sky-600 [&:hover>span:first-child]:bg-sky-500/10",
   delete: "hover:text-red-600 [&:hover>span:first-child]:bg-red-500/10",
@@ -65,7 +57,6 @@ const HOVER: Record<Tone, string> = {
 const ACTIVE: Record<Tone, string> = {
   reply: "",
   repost: "text-emerald-600",
-  like: "text-rose-600",
   bookmark: "text-sky-600",
   share: "",
   delete: "",
@@ -95,9 +86,7 @@ function ActionButton({
     <button
       aria-label={label}
       aria-pressed={
-        tone === "like" || tone === "bookmark" || tone === "repost"
-          ? active
-          : undefined
+        tone === "bookmark" || tone === "repost" ? active : undefined
       }
       className={cn(
         "group relative z-10 flex items-center gap-0.5 text-xs text-black/60 transition-colors disabled:cursor-default dark:text-white/60",
@@ -121,7 +110,7 @@ function ActionButton({
 
 /**
  * One post in a timeline: avatar column, author line, text and media, and the
- * action bar — reply, repost (or quote), like, bookmark, share. The whole card
+ * action bar — reply, repost (or quote), up and down votes, bookmark, share. The whole card
  * opens the post through the timestamp's stretched link.
  */
 export function PostCard({
@@ -132,6 +121,7 @@ export function PostCard({
   bookmarked,
   launchName,
   launchUpdate = false,
+  onReply,
 }: {
   row: Row;
   author?: ProfileMetadata;
@@ -141,6 +131,8 @@ export function PostCard({
   launchName: (coord: string) => string | null;
   /** The team's official update for a launch (verified by the caller). */
   launchUpdate?: boolean;
+  /** In a thread: Reply opens a box under this post instead of going to its page. */
+  onReply?: () => void;
 }) {
   const note = row.event;
   const me = existingUserPubkey();
@@ -152,28 +144,16 @@ export function PostCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [deleted, setDeleted] = useState(false);
-  const [liked, setLiked] = useState(false);
 
   const name = resolveUserName(author, note.pubkey);
   const ban = useBanAuthor(note.pubkey, name);
   const handle = resolveUserSecondaryName(author, note.pubkey);
-  const isLiked = engagement.likedByViewer || liked;
   const isReposted = engagement.viewerRepostId !== null;
   const parsed = parseNote(note);
   const launches = parsed?.launches ?? [];
 
   const fail = (error: unknown) =>
     toast.error(error instanceof Error ? error.message : "That didn't work.");
-
-  const like = () => {
-    setLiked(true);
-    publish.mutate(buildLike(note), {
-      onError: (error) => {
-        setLiked(false);
-        fail(error);
-      },
-    });
-  };
 
   const repost = () => {
     setMenuOpen(false);
@@ -254,7 +234,7 @@ export function PostCard({
         >
           <UserAvatar
             avatarUrl={author?.picture ?? null}
-            className="h-10 w-10"
+            className="h-11 w-11"
             displayName={name}
           />
         </Link>
@@ -316,11 +296,13 @@ export function PostCard({
             <ActionButton
               count={engagement.replies}
               label="Reply"
-              onClick={() =>
-                void navigate({
-                  to: "/social/post/$id",
-                  params: { id: note.id },
-                })
+              onClick={
+                onReply ??
+                (() =>
+                  void navigate({
+                    to: "/social/post/$id",
+                    params: { id: note.id },
+                  }))
               }
               testId="social-reply"
               tone="reply"
@@ -378,19 +360,11 @@ export function PostCard({
                 </>
               ) : null}
             </div>
-            <ActionButton
-              active={isLiked}
-              count={
-                engagement.likes + (liked && !engagement.likedByViewer ? 1 : 0)
-              }
-              disabled={!me || isLiked}
-              label={isLiked ? "Liked" : "Like"}
-              onClick={like}
-              testId="social-like"
-              tone="like"
-            >
-              <Heart aria-hidden className={cn(isLiked && "fill-current")} />
-            </ActionButton>
+            <PostVotes
+              engagement={engagement}
+              label={`post by ${name}`}
+              target={note}
+            />
             <ActionButton
               active={bookmarked}
               disabled={!me}

@@ -8,10 +8,11 @@ import { useThread } from "../use-social-data";
 import { BackLink } from "./HashtagPage";
 import { PostComposer } from "./PostComposer";
 import { PostList } from "./PostList";
+import { ReplyTree } from "./ReplyTree";
 import { PageBar, SocialShell } from "./SocialShell";
 import { EmptyState, TimelineSkeleton } from "./Status";
 
-/** One post with the conversation above it and the replies below it. */
+/** One post with the conversation above it and every reply below it, nested under the reply each answers. */
 export function ThreadPage() {
   const { id } = useParams({ from: "/social/post/$id" });
   const thread = useThread(id);
@@ -55,7 +56,11 @@ export function ThreadPage() {
             replyTo={{ root, parent: note.event }}
             testId="social-reply-composer"
           />
-          <PostList rows={thread.data?.replies ?? []} />
+          <ReplyTree
+            focus={{ event: note.event, isRoot: thread.data?.isRoot ?? true }}
+            replies={thread.data?.replies ?? []}
+            root={root}
+          />
         </>
       )}
     </SocialShell>

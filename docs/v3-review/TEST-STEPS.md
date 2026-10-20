@@ -831,3 +831,28 @@ commands rerun all of it; each cleans up after itself and touches no real networ
 
 Not covered here: the panel lock (`MilestoneLock`) is held by its own tests, not by the invariants; the simulation
 uses the holder challenge only. Sepolia and mainnet are not touched.
+
+## 4ai. One timeline: General, Following, votes and threads (D71, 2026-10-20)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke home-timeline.spec.ts board.spec.ts feed.spec.ts
+```
+
+By hand against the local server (the `relay-3001` and `web-3001` entries in `.claude/launch.json`), with two accounts:
+
+1. **Everyone.** Home → Everyone shows short posts and board posts together; a board post has its board's name, a bold
+   title and the first lines. **Hot / New / Top** reorder it; Top has Today / This week / This month / All time.
+2. **Votes.** On a short post press the up arrow: the score goes to 1. Press down: it goes to −1. Press down again: 0.
+   Reload: still 0. The same works on a board post in the timeline.
+3. **Post to.** In the composer pick **Post to: a board**: a Title box appears, the public-Nostr option goes away. Post: it
+   shows at the top of Everyone (New) with the board's name. Switch back to **General** and post a short post.
+4. **Threads.** Open a short post, reply, then press **Reply** on that reply: a box opens right under it. Send: the answer
+   sits under the reply it answers, with a line down the left.
+5. **Following.** As the second account follow the first: Following shows their short posts and their board posts.
+6. **Boards.** The Boards tab lists every board with what it is for and how busy it is, **Join** (or **Yours** on a board
+   you started), and **Start a board**.
+7. **Profile.** Open the first account's profile: Posts shows both kinds; the score counts the second account's votes
+   (your own votes on your own posts do not count).
